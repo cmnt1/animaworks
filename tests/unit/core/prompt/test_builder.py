@@ -8,16 +8,16 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+from core.prompt.assembler import _normalize_headings
 from core.prompt.builder import (
     BuildResult,
     _build_messaging_section,
     _build_org_context,
     _discover_other_animas,
-    _format_anima_entry,
-    _normalize_headings,
     build_system_prompt,
     inject_shortterm,
 )
+from core.prompt.org_context import _format_anima_entry
 
 _MOCK_SECTIONS = (
     "[group1_header]: 1. 動作環境と行動ルール\n"
@@ -25,13 +25,10 @@ _MOCK_SECTIONS = (
     "[group2_header]: 2. あなた自身\n"
     "[group3_header]: 6. 現在の状況\n"
     "[current_state_header]: ## 現在の状態\n"
-    "[pending_tasks_header]: ## 未完了タスク\n"
     "[group4_header]: 3. 記憶と能力\n"
     "[group5_header]: 4. 組織とコミュニケーション\n"
     "[group6_header]: 5. メタ設定\n"
     "[you_marker]:   ← あなた\n"
-    "[common_label]: (共通スキル)\n"
-    "[recent_tool_results_header]: ## Recent Tool Results\n"
 )
 
 _MOCK_FALLBACKS = (
@@ -54,8 +51,6 @@ def _mock_load_prompt_with_builder(default: str = "section"):
             return _MOCK_FALLBACKS
         if name == "builder/task_in_progress":
             return f"## ⚠️ 進行中タスク\n\n{kwargs.get('state', '')}"
-        if name == "builder/task_queue":
-            return f"## 未完了タスク\n\n{kwargs.get('task_summary', '')}"
         if name == "skills_guide":
             return "## スキルと手順書\n\nスキルと手順書はあなたが持つ能力・作業手順です。\n使用する際はskillツールで読み込んでから実行してください。"
         return default
@@ -228,7 +223,7 @@ class TestBuildMessagingSection:
 
         assert "#general" in result
         assert "#ops" in result
-        assert "限定チャネルが見当たらない" in result
+        assert "所属チームの限定チャネル（報告先）: なし" in result
 
 
 # ── build_system_prompt ───────────────────────────────────
@@ -248,17 +243,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = "status: idle"
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="prompt section"):
             result = build_system_prompt(memory)
@@ -279,17 +270,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="prompt"):
             result = build_system_prompt(memory)
@@ -321,18 +308,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = ["topic-a", "topic-b"]
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = ["proc-x"]
-        memory.list_skill_summaries.return_value = [("coding", "Write code")]
-        memory.list_common_skill_summaries.return_value = [("deploy", "Deploy apps")]
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
-        memory.list_procedure_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with (
             patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()),
@@ -345,8 +327,8 @@ class TestBuildSystemPrompt:
             assert "common_skills/deploy/SKILL.md" in prompt
             assert "<available_skills>" in prompt
 
-    def test_memory_guide_uses_counts(self, tmp_path, data_dir):
-        """memory_guide receives knowledge/procedure counts, not file name lists."""
+    def test_memory_guide_only_receives_absolute_root(self, tmp_path, data_dir):
+        """memory_guide omits irrelevant counts and receives the absolute root."""
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
@@ -359,18 +341,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = ["a", "b", "c"]
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = ["p1"]
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
-        memory.list_procedure_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = ["owner"]
 
         captured_calls: list[dict] = []
 
@@ -384,12 +361,7 @@ class TestBuildSystemPrompt:
 
         mg_calls = [c for c in captured_calls if c["name"] == "memory_guide"]
         assert len(mg_calls) == 1
-        kw = mg_calls[0]["kwargs"]
-        assert kw["knowledge_count"] == 3
-        assert kw["procedure_count"] == 1
-        assert "skill_names" not in kw
-        assert "episode_list" not in kw
-        assert "knowledge_list" not in kw
+        assert mg_calls[0]["kwargs"] == {"anima_dir": anima_dir.resolve()}
 
     def test_includes_bootstrap(self, tmp_path, data_dir):
         anima_dir = tmp_path / "animas" / "alice"
@@ -404,17 +376,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = "Bootstrap instructions"
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(memory)
@@ -433,17 +401,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = "status: working"
-        memory.read_pending.return_value = "- task 1"
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -465,17 +429,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(
@@ -486,8 +446,8 @@ class TestBuildSystemPrompt:
             assert "Bash" in result
             assert "animaworks-tool" in result
 
-    def test_s_mode_injects_external_tools_hint_with_direct_tool_priority(self, tmp_path, data_dir):
-        """S mode should prefer dedicated MCP tools over Bash CLI."""
+    def test_s_mode_lists_external_tools_and_direct_tool_priority(self, tmp_path, data_dir):
+        """S mode lists CLI categories and separately permits visible direct tools."""
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
@@ -500,17 +460,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(
@@ -518,8 +474,8 @@ class TestBuildSystemPrompt:
                 tool_registry=["chatwork", "slack_channel_post"],
                 execution_mode="s",
             )
-            assert "External Tools" in result
-            assert "call it directly by tool name" in result
+            assert "外部ツール（`animaworks-tool <name>` 経由）" in result
+            assert "専用の外部ツール" in result
             assert "slack_channel_post" in result
             assert "Use `animaworks-tool <tool> <subcommand>` via Bash" not in result
 
@@ -537,17 +493,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(
@@ -571,11 +523,21 @@ class TestFormatAnimaEntry:
     def test_empty_speciality(self):
         assert _format_anima_entry("alice", "") == "alice"
 
-    def test_with_speciality_and_model(self):
-        assert _format_anima_entry("alice", "frontend", "claude-opus-4-6") == "alice (frontend, Opus)"
+    def test_model_is_not_displayed(self):
+        assert _format_anima_entry("alice", "frontend", "claude-opus-4-6") == "alice (frontend)"
 
-    def test_with_model_only(self):
-        assert _format_anima_entry("alice", None, "bedrock/jp.anthropic.claude-sonnet-4-6") == "alice (Sonnet)"
+    def test_role_qualifier_model_and_path_are_not_displayed(self, tmp_path):
+        result = _format_anima_entry(
+            "alice",
+            "Example社 エンジニア（本番監視・顧客対応）",
+            "secret-model-name",
+            aliases=["alias"],
+            status="running",
+            animas_dir=tmp_path / "animas",
+        )
+        assert result == "alice (Example社 エンジニア) [別名: alias] 【稼働中】"
+        assert "secret-model-name" not in result
+        assert str(tmp_path) not in result
 
 
 # ── _build_org_context ───────────────────────────────────
@@ -592,8 +554,9 @@ class TestBuildOrgContext:
 
         result = _build_org_context("sakura", ["rin", "kotoha"])
         assert "あなたはトップレベルです" in result
-        assert "rin (development, Sonnet)" in result
-        assert "kotoha (communication, Sonnet)" in result
+        assert "rin (development)" in result
+        assert "kotoha (communication)" in result
+        assert "Sonnet" not in result
 
     def test_middle_manager(self, data_dir, make_anima):
         """Middle manager sees supervisor, subordinates, and peers."""
@@ -604,11 +567,12 @@ class TestBuildOrgContext:
 
         result = _build_org_context("rin", ["sakura", "kotoha", "alice"])
         # Supervisor
-        assert "sakura (Sonnet)" in result
+        assert "sakura" in result
         # Subordinate
-        assert "alice (frontend, Sonnet)" in result
+        assert "alice (frontend)" in result
         # Peer
-        assert "kotoha (communication, Sonnet)" in result
+        assert "kotoha (communication)" in result
+        assert "Sonnet" not in result
 
     def test_leaf_worker(self, data_dir, make_anima):
         """Leaf worker sees supervisor and peers but no subordinates."""
@@ -619,12 +583,12 @@ class TestBuildOrgContext:
 
         result = _build_org_context("alice", ["sakura", "rin", "bob"])
         # Supervisor
-        assert "rin (development, Sonnet)" in result
+        assert "rin (development)" in result
         # No subordinates
         assert "部下" in result
         assert "(なし)" in result
         # Peer
-        assert "bob (backend, Sonnet)" in result
+        assert "bob (backend)" in result
 
     def test_solo_anima(self, data_dir, make_anima):
         """Solo anima with no relationships."""
@@ -771,7 +735,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -779,7 +742,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -787,8 +749,9 @@ class TestAssemblyWithTags:
 
         assert "<group_1" in prompt
         assert "</group_1>" in prompt
-        assert "<group_2" in prompt
-        assert "</group_2>" in prompt
+        # Group 2 has no content in this fixture, so its tags are omitted.
+        assert "<group_2" not in prompt
+        assert "</group_2>" not in prompt
 
     def test_prompt_has_section_tags(self, tmp_path, data_dir):
         """Non-header sections wrapped in <section> tags."""
@@ -804,7 +767,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -812,7 +774,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -835,7 +796,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -843,7 +803,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -870,7 +829,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -878,7 +836,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)

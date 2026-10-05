@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _SkillsToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,8 +22,8 @@ from core.time_utils import now_iso, now_local
 from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
+    from core.activity.logger import ActivityLogger
     from core.memory import MemoryManager
-    from core.memory.activity import ActivityLogger
     from core.tooling.dispatch import ExternalToolDispatcher
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -40,9 +44,9 @@ class SkillsToolsMixin:
 
     # ── Tool management ───────────────────────────────────────
 
-    def _handle_refresh_tools(self, args: dict[str, Any]) -> str:
+    def _handle_refresh_tools(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Re-discover personal and common tools, update dispatcher."""
-        from core.tools import discover_common_tools, discover_personal_tools
+        from core.integrations import discover_common_tools, discover_personal_tools
 
         personal = discover_personal_tools(self._anima_dir)
         common = discover_common_tools()
@@ -56,7 +60,7 @@ class SkillsToolsMixin:
         logger.info("refresh_tools: discovered %d tools: %s", len(merged), names)
         return f"Refreshed tools ({len(merged)} discovered): {names}\nThese tools are now available for use."
 
-    def _handle_share_tool(self, args: dict[str, Any]) -> str:
+    def _handle_share_tool(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Copy a personal tool to common_tools/ for all animas."""
         import shutil
 
@@ -101,7 +105,7 @@ class SkillsToolsMixin:
 
     # ── Procedure/Skill outcome tracking ─────────────────────
 
-    def _handle_report_procedure_outcome(self, args: dict[str, Any]) -> str:
+    def _handle_report_procedure_outcome(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Report success/failure of a procedure or skill and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
@@ -201,7 +205,7 @@ class SkillsToolsMixin:
 
     # ── Knowledge outcome tracking ────────────────────────────
 
-    def _handle_report_knowledge_outcome(self, args: dict[str, Any]) -> str:
+    def _handle_report_knowledge_outcome(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Report success/failure of a knowledge file and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
@@ -269,7 +273,7 @@ class SkillsToolsMixin:
             recorder(rel)
         return result
 
-    def _handle_create_skill(self, args: dict[str, Any]) -> str:
+    def _handle_create_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Handle create_skill tool — create skill directory structure."""
         from core.paths import get_common_skills_dir
         from core.tooling.skill_creator import create_skill_directory
@@ -306,6 +310,23 @@ class SkillsToolsMixin:
             base_dir = self._anima_dir / "skills"
 
         skill_dir = base_dir / skill_name
+        skill_md_path = skill_dir / "SKILL.md"
+        from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+        skill_pointer = skill_memory_pointer(
+            skill_md_path, self._anima_dir, common_skills_dir=base_dir if location == "common" else None
+        )
+        if skill_md_path.is_file() and skill_pointer not in self._read_paths:
+            try:
+                existing = skill_md_path.read_text(encoding="utf-8")[:2000]
+            except OSError:
+                existing = "(could not read existing content)"
+            return t("handler.skill_read_before_write", path=skill_pointer or str(skill_md_path), existing=existing)
+        skill_capture = capture_skill_document(
+            skill_md_path,
+            self._anima_dir,
+            common_skills_dir=base_dir if location == "common" else None,
+        )
         result = create_skill_directory(
             skill_name=skill_name,
             description=description,
@@ -328,8 +349,24 @@ class SkillsToolsMixin:
             routing_examples=routing_examples,
         )
 
+        # Ledger creation/overwrite before security metadata is added.
+        if skill_capture is not None and skill_md_path.is_file():
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                skill_md_path,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=skill_md_path.read_text(encoding="utf-8"),
+                after_exists=True,
+                actor=self._anima_name,
+                route="create_skill",
+                reason="skill creation tool",
+                common_skills_dir=base_dir if location == "common" else None,
+            )
+
         # Record create event in usage tracker
-        if (skill_dir / "SKILL.md").exists():
+        if skill_md_path.exists():
             try:
                 from core.skills.models import SkillUsageEventType
                 from core.skills.usage import SkillUsageTracker
@@ -346,13 +383,17 @@ class SkillsToolsMixin:
                 logger.debug("Failed to record skill create event", exc_info=True)
 
         # Run security scan on the newly created skill
-        scan_summary = self._scan_created_skill(skill_dir, trust_level)
+        scan_summary = self._scan_created_skill(
+            skill_dir,
+            trust_level,
+            common_skills_dir=base_dir if location == "common" else None,
+        )
         if scan_summary:
             result += f"\n\n{scan_summary}"
 
         return result
 
-    def _handle_trust_skill(self, args: dict[str, Any]) -> str:
+    def _handle_trust_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Promote a safe skill to trusted operating guidance."""
         from core.skills.trust import promote_skill_to_trusted
         from core.skills.trust_gate import trust_skill_enabled_for_context
@@ -377,19 +418,19 @@ class SkillsToolsMixin:
             return _error_result("TrustSkillFailed", str(exc))
         return _json.dumps({"status": "trusted", **result.to_dict()}, ensure_ascii=False, indent=2)
 
-    def _handle_promote_procedure_to_skill(self, args: dict[str, Any]) -> str:
+    def _handle_promote_procedure_to_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Create or approve a reviewed skill generated from a procedure."""
         from core.tooling.skill_promotion_tool import handle_promote_procedure_to_skill
 
         return handle_promote_procedure_to_skill(self, args)
 
-    def _curator(self):
+    def _curator(self: _SkillsToolsHost):
         from core.paths import get_common_skills_dir
         from core.skills.curator import SkillCurator
 
         return SkillCurator(self._anima_dir, common_skills_dir=get_common_skills_dir())
 
-    def _curator_index_entries(self):
+    def _curator_index_entries(self: _SkillsToolsHost):
         from core.paths import get_common_skills_dir
         from core.skills.index import SkillIndex
 
@@ -402,7 +443,7 @@ class SkillsToolsMixin:
         index.build_index()
         return index.search("", include_blocked=True)
 
-    def _handle_curate_skills(self, args: dict[str, Any]) -> str:
+    def _handle_curate_skills(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Return a deterministic curator report for the current skill catalog."""
         del args
         try:
@@ -413,7 +454,7 @@ class SkillsToolsMixin:
         self._mark_curator_reviewed()
         return _json.dumps(report, ensure_ascii=False, indent=2, default=str)
 
-    def _mark_curator_reviewed(self) -> None:
+    def _mark_curator_reviewed(self: _SkillsToolsHost) -> None:
         """Record the curator review time so heartbeat stops re-injecting reports."""
         try:
             marker_dir = self._anima_dir / "state" / "skill_curator"
@@ -425,28 +466,28 @@ class SkillsToolsMixin:
         except Exception:
             logger.debug("Failed to update curator review marker", exc_info=True)
 
-    def _handle_archive_skill(self, args: dict[str, Any]) -> str:
+    def _handle_archive_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "archived")
 
-    def _handle_restore_skill(self, args: dict[str, Any]) -> str:
+    def _handle_restore_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "active")
 
-    def _handle_block_skill(self, args: dict[str, Any]) -> str:
+    def _handle_block_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "blocked")
 
-    def _handle_unblock_skill(self, args: dict[str, Any]) -> str:
+    def _handle_unblock_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "active")
 
-    def _handle_delete_skill(self, args: dict[str, Any]) -> str:
+    def _handle_delete_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "deleted")
 
-    def _handle_set_skill_lifecycle(self, args: dict[str, Any]) -> str:
+    def _handle_set_skill_lifecycle(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         state = args.get("state", "")
         if not state:
             return _error_result("InvalidArguments", "state is required")
         return self._handle_curator_state_change(args, state)
 
-    def _handle_curator_state_change(self, args: dict[str, Any], state: str) -> str:
+    def _handle_curator_state_change(self: _SkillsToolsHost, args: dict[str, Any], state: str) -> str:
         skill_name = str(args.get("skill_name") or "").strip()
         reason = str(args.get("reason") or "").strip()
         absorbed_into = args.get("absorbed_into")
@@ -462,22 +503,77 @@ class SkillsToolsMixin:
             # Security quarantine remains immediate. Routine curation records
             # proposals; a host-side explicit action can accept them later.
             apply_change = state == "blocked" or load_config().consolidation.curator_auto_apply_enabled
-            operation = curator.change_state if apply_change else curator.propose_state_change
-            event = operation(
-                skill_name,
-                state,
-                reason=reason,
-                actor=self._anima_name,
-                absorbed_into=absorbed_target or None,
-            )
+            duplicate = False
+            if not apply_change:
+                latest_lifecycle_event = next(
+                    (
+                        existing
+                        for existing in reversed(curator.replay_state().events)
+                        if existing.skill_name == skill_name
+                        and existing.event_type in {"state_change_proposed", "state_changed"}
+                    ),
+                    None,
+                )
+                existing_state = (
+                    getattr(latest_lifecycle_event.to_state, "value", latest_lifecycle_event.to_state)
+                    if latest_lifecycle_event is not None
+                    else None
+                )
+                if (
+                    latest_lifecycle_event is not None
+                    and latest_lifecycle_event.event_type == "state_change_proposed"
+                    and existing_state == state
+                ):
+                    event = latest_lifecycle_event
+                    duplicate = True
+                else:
+                    event = curator.propose_state_change(
+                        skill_name,
+                        state,
+                        reason=reason,
+                        actor=self._anima_name,
+                        absorbed_into=absorbed_target or None,
+                    )
+            else:
+                event = curator.change_state(
+                    skill_name,
+                    state,
+                    reason=reason,
+                    actor=self._anima_name,
+                    absorbed_into=absorbed_target or None,
+                )
         except ValueError as exc:
             return _error_result("InvalidArguments", str(exc))
         except Exception as exc:
             logger.exception("skill lifecycle change failed")
             return _error_result("CuratorFailed", str(exc))
-        return event.model_dump_json(indent=2)
+        if apply_change:
+            return event.model_dump_json(indent=2)
 
-    def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
+        payload = event.model_dump(mode="json")
+        payload.update(
+            {
+                "applied": False,
+                "status": "proposed_pending_approval",
+                "duplicate": duplicate,
+                "message": t(
+                    "tooling.skill_state_change_duplicate_pending_approval"
+                    if duplicate
+                    else "tooling.skill_state_change_proposed_pending_approval",
+                    skill_name=skill_name,
+                    state=state,
+                ),
+            }
+        )
+        return _json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def _scan_created_skill(
+        self: _SkillsToolsHost,
+        skill_dir: Path,
+        trust_level: str | None,
+        *,
+        common_skills_dir: Path | None = None,
+    ) -> str:
         """Run security scan on a newly created skill and persist results."""
         from datetime import datetime
 
@@ -493,6 +589,13 @@ class SkillsToolsMixin:
         # Persist scan result into SKILL.md frontmatter
         skill_md_path = skill_dir / "SKILL.md"
         if skill_md_path.exists():
+            from core.skills.ledger import capture_skill_document, record_skill_change
+
+            skill_capture = capture_skill_document(
+                skill_md_path,
+                self._anima_dir,
+                common_skills_dir=common_skills_dir,
+            )
             text = skill_md_path.read_text(encoding="utf-8")
             meta, body = parse_frontmatter(text)
             meta["security"] = {
@@ -504,6 +607,17 @@ class SkillsToolsMixin:
             }
             frontmatter = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
             skill_md_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n", encoding="utf-8")
+            record_skill_change(
+                skill_md_path,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=skill_md_path.read_text(encoding="utf-8"),
+                after_exists=True,
+                actor=self._anima_name,
+                route="create_skill.security_scan",
+                reason="persist scanner metadata",
+                common_skills_dir=common_skills_dir,
+            )
 
         # Build summary message
         verdict = scan_result.verdict
@@ -525,8 +639,8 @@ class SkillsToolsMixin:
 
     # ── Task queue handlers ───────────────────────────────────
 
-    def _handle_backlog_task(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager
+    def _handle_backlog_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
         source = args.get("source", "anima")
@@ -562,9 +676,9 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _handle_update_task(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager
-        from core.tasks_dispatch import update_task
+    def _handle_update_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
+        from core.tasks.dispatch import update_task
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
         task_id = args.get("task_id", "")
@@ -628,10 +742,10 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _handle_list_tasks(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager, mark_executability
+    def _handle_list_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
+        from core.tasks.queue import TaskQueueManager, mark_executability
 
-        manager = TaskQueueManager(self._anima_dir)
+        manager = TaskQueueManager(self._anima_dir, read_only=True)
         status_filter = args.get("status")
         detail = args.get("detail", False)
         tasks = manager.list_tasks(status=status_filter)
@@ -671,69 +785,20 @@ class SkillsToolsMixin:
 
     # ── submit_tasks handler (DAG batch submission) ────────────
 
-    def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_submit_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
-        from core.tasks_dispatch import publish_tasks
+        from core.tooling.policy.submit_tasks import submit_tasks
 
-        batch_id = args.get("batch_id", "")
-        tasks = args.get("tasks", [])
-        if not isinstance(batch_id, str) or not batch_id:
-            return _error_result("InvalidArguments", "batch_id is required")
-        if not isinstance(tasks, list) or not tasks or not all(isinstance(task, dict) for task in tasks):
-            return _error_result("InvalidArguments", "tasks must contain at least one task")
-        submitted_at = now_iso()
-        payloads = [
-            dict(task)
-            if task.get("resume") is True
-            else {
-                "task_type": "llm",
-                "task_id": task.get("task_id"),
-                "batch_id": batch_id,
-                "title": task.get("title"),
-                "description": task.get("description"),
-                "parallel": task.get("parallel", False),
-                "depends_on": task.get("depends_on", []),
-                "context": task.get("context", ""),
-                "acceptance_criteria": task.get("acceptance_criteria", []),
-                "constraints": task.get("constraints", []),
-                "file_paths": task.get("file_paths", []),
-                "allow_multistage": task.get("allow_multistage", False),
-                "submitted_by": self._anima_name,
-                "submitted_at": submitted_at,
-                "reply_to": task.get("reply_to", self._anima_name),
-                "workspace": task.get("workspace", ""),
-                "model": task.get("model", ""),
-            }
-            for task in tasks
-        ]
-        try:
-            entries = publish_tasks(self._anima_dir, payloads)
-        except ValueError as exc:
-            return _error_result("InvalidArguments", str(exc))
-        except Exception as exc:
-            logger.exception("Failed to submit task batch %s", batch_id)
-            return _error_result("PersistenceFailed", str(exc))
-
-        if getattr(self, "_pending_executor_wake", None):
-            self._pending_executor_wake()
-        return _json.dumps(
-            {
-                "status": "submitted",
-                "batch_id": batch_id,
-                "task_count": len(entries),
-                "task_ids": [entry.task_id for entry in entries],
-                "message": (
-                    f"Batch '{batch_id}' submitted with {len(entries)} tasks. "
-                    "Parallel tasks will execute concurrently. "
-                    "Tasks with depends_on will wait for dependencies."
-                ),
-            },
-            ensure_ascii=False,
+        return submit_tasks(
+            self._anima_dir,
+            self._anima_name,
+            args,
+            session_origin=getattr(self, "_session_origin", ""),
         )
 
     # ── Background task handlers ─────────────────────────────
 
-    def _handle_check_background_task(self, args: dict[str, Any]) -> str:
+    def _handle_check_background_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         task_id = args.get("task_id", "")
         if not task_id:
             return _error_result("ValidationError", t("handler.bg_task_id_required"))
@@ -751,12 +816,12 @@ class SkillsToolsMixin:
 
         return _json.dumps(task.to_dict(), ensure_ascii=False, indent=2)
 
-    def _handle_list_background_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_list_background_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         mgr = self._background_manager
         if mgr is None:
             return _error_result("NotEnabled", t("handler.bg_not_enabled"))
 
-        from core.background import TaskStatus
+        from core.tasks.background import TaskStatus
 
         status_filter: TaskStatus | None = None
         raw_status = args.get("status")

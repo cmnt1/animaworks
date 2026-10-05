@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.supervisor.ipc import IPCResponse
+from core.runtime.ipc import IPCResponse
 
 # ── Helpers ──────────────────────────────────────────────────
 

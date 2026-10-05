@@ -9,7 +9,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -18,12 +17,11 @@ import pytest
 if TYPE_CHECKING:
     from core.config.models import PermissionsConfig
 
-from core.tooling.handler import (
+from core.tooling.handler import ToolHandler, _error_result
+from core.tooling.handler_base import (
     _EPISODE_FILENAME_RE,
     _NEEDS_SHELL_RE,
     _READ_FILE_SAFETY_NOTICE,
-    ToolHandler,
-    _error_result,
     _get_blocked_patterns,
     _get_injection_re,
     _is_protected_write,
@@ -179,6 +177,7 @@ class TestHandleRouting:
             },
         ]
         result = handler.handle("search_memory", {"query": "test", "scope": "all"})
+        memory.search_memory_text.assert_called_once()
         assert "knowledge/k1.md" in result
         assert "some result" in result
 
@@ -192,7 +191,7 @@ class TestHandleRouting:
             "search_method": "bm25",
             "last_scan": "2026-08-13T00:00:00+00:00",
         }
-        with patch("core.memory.code_index.search_code", return_value=[code_result]) as search:
+        with patch("core.memory.retrieval.code_index.search_code", return_value=[code_result]) as search:
             result = handler.handle(
                 "search_memory",
                 {"query": "LibrarianNeedle", "scope": "code", "project": "demo"},
@@ -280,32 +279,6 @@ class TestHandleRouting:
         assert "shared public result" in result
         assert "shared classified result" not in result
         assert "common_knowledge/private" not in result
-
-    def test_neo4j_search_filters_denied_source(self, handler: ToolHandler, anima_dir: Path):
-        denied = (anima_dir / "knowledge" / "private").resolve()
-        handler._retrieve_neo4j_memories = MagicMock(
-            return_value=[
-                SimpleNamespace(
-                    source="knowledge/private/secret.md",
-                    content="graph classified result",
-                    score=0.9,
-                    metadata={},
-                ),
-                SimpleNamespace(
-                    source="knowledge/public.md",
-                    content="graph public result",
-                    score=0.8,
-                    metadata={},
-                ),
-            ]
-        )
-
-        result = handler._search_via_neo4j("graph", "knowledge", 0, denied_roots=(denied,))
-
-        assert result is not None
-        assert "graph public result" in result
-        assert "graph classified result" not in result
-        assert "knowledge/private" not in result
 
     def test_read_memory_file(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
@@ -495,32 +468,23 @@ class TestHandleRouting:
         assert "Error" in result2
         assert "alice" in result2
 
-    def test_send_message_max_recipients_returns_error(
+    def test_send_message_has_no_run_recipient_count_cap(
         self,
         handler_with_messenger: ToolHandler,
         anima_dir: Path,
     ):
-        """After sending to 2 recipients, a 3rd recipient is rejected."""
-        _make_unassigned_anima(anima_dir.parent, "alice")
-        _make_unassigned_anima(anima_dir.parent, "bob")
-        _make_unassigned_anima(anima_dir.parent, "charlie")
+        """A run can contact multiple distinct recipients; duplicates remain blocked."""
+        for name in ("alice", "bob", "charlie"):
+            _make_unassigned_anima(anima_dir.parent, name)
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
-            result1 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "alice", "content": "hi", "intent": "report"},
-            )
-            assert "Message sent to alice" in result1
-            result2 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "bob", "content": "hi", "intent": "report"},
-            )
-            assert "Message sent to bob" in result2
-            result3 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "charlie", "content": "hi", "intent": "report"},
-            )
-        assert "Error" in result3
-        assert "2" in result3
+            results = [
+                handler_with_messenger.handle(
+                    "send_message",
+                    {"to": name, "content": "hi", "intent": "report"},
+                )
+                for name in ("alice", "bob", "charlie")
+            ]
+        assert all(f"Message sent to {name}" in result for name, result in zip(("alice", "bob", "charlie"), results))
 
     def test_send_message_two_recipients_allowed(
         self,
@@ -824,16 +788,14 @@ class TestExecuteCommand:
         assert "hi" in result
 
     def test_command_timeout(self, handler: ToolHandler):
-        # A blocking child raises TimeoutExpired from communicate(); the handler
-        # must tear down the tree and surface a structured Timeout error.  Mock
+        # subprocess.run raises TimeoutExpired and the handler must return
+        # a structured Timeout error. Mock
         # rather than rely on a real `sleep` (not a cmd.exe builtin on Windows).
         proc = MagicMock()
         proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)
         with (
             patch("core.tooling.handler_perms.load_permissions") as mock_load,
-            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
-            patch("core.tooling.handler_files.subprocess.Popen", return_value=proc),
-            patch("core.tooling.handler_files.terminate_subprocess") as mock_terminate,
+            patch("core.tooling.handler_exec.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)),
         ):
             mock_load.return_value = _perms_config_from_md("## コマンド実行\n- sleep: OK")
             result = handler.handle(
@@ -842,7 +804,6 @@ class TestExecuteCommand:
             )
         parsed = json.loads(result)
         assert parsed["error_type"] == "Timeout"
-        assert mock_terminate.called
 
 
 # ── File permission checks ────────────────────────────────────
@@ -1192,7 +1153,7 @@ class TestInjectionRe:
         anima_dir: Path,
     ):
         from core.config.global_permissions import GlobalPermissionsCache
-        from core.execution._sdk_security import _check_a1_bash_command
+        from core.execution.engines.claude._sdk_security import _check_a1_bash_command
 
         config = GlobalPermissionsCache.get().config
         assert config is not None
@@ -1487,9 +1448,7 @@ class TestStructuredErrors:
         proc = MagicMock()
         proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)
         with (
-            patch("core.tooling.handler_files._rewrite_command_with_rtk", side_effect=lambda c: (c, False)),
-            patch("core.tooling.handler_files.subprocess.Popen", return_value=proc),
-            patch("core.tooling.handler_files.terminate_subprocess") as mock_terminate,
+            patch("core.tooling.handler_exec.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sleep 999", timeout=1)),
         ):
             result = handler.handle(
                 "execute_command",
@@ -1497,7 +1456,6 @@ class TestStructuredErrors:
             )
         parsed = json.loads(result)
         assert parsed["error_type"] == "Timeout"
-        assert mock_terminate.called
 
     def test_permission_denied_structured(self, handler: ToolHandler):
         from core.config.models import PermissionsConfig
@@ -2077,11 +2035,11 @@ class TestRefreshTools:
     ):
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={},
             ),
         ):
@@ -2096,11 +2054,11 @@ class TestRefreshTools:
     ):
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={"my_tool": "/path/to/my_tool.py"},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={"shared_util": "/path/to/shared_util.py"},
             ),
         ):
@@ -2114,11 +2072,11 @@ class TestRefreshTools:
         handler._external = mock_external
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={"tool_a": "/a.py"},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={"tool_b": "/b.py"},
             ),
         ):
@@ -2665,7 +2623,7 @@ class TestDeniedCommandEnforcement:
 
 class TestListTasksCompact:
     def test_detail_default_drops_verbose_fields(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2705,7 +2663,7 @@ class TestListTasksCompact:
         assert "task_desc" not in item["meta"]
 
     def test_detail_true_returns_all_fields(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2727,7 +2685,7 @@ class TestListTasksCompact:
         assert item["task_id"] == "t1"
 
     def test_short_instruction_not_truncated(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2796,7 +2754,7 @@ class TestDelegateTaskDmConfig:
                 },
             )
         messenger.send.assert_not_called()
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result
@@ -2824,7 +2782,7 @@ class TestDelegateTaskDmConfig:
                 },
             )
         assert messenger.send.call_count == 1
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result

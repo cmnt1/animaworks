@@ -1,10 +1,10 @@
 # Heartbeat: {name}
 
 ## Active Hours
-24 hours (server timezone)
+24 hours (server configuration timezone)
 
 ## Current Time
-Use the value from the current time field in the system prompt. Do not infer from history or schedule.
+Use the value of the `現在時刻` field in the system prompt. Do not infer from history or schedules.
 
 ## Observation Rules
 - If a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` is present, use it as evidence for Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files and do not call the tool again; otherwise call `heartbeat_observe_snapshot` as the fallback
@@ -12,11 +12,11 @@ Use the value from the current time field in the system prompt. Do not infer fro
 - Only if neither snapshot path returns `status: ok`, do not repeat the same blocked path; record or report the blocker
 
 ## Checklist
-- Are there unread messages in Inbox?
-- Are there blockers in ongoing tasks?
-- Have any new files been placed in my workspace?
+- Are there unread messages in the Inbox?
+- Have any blockers occurred in ongoing tasks?
+- Have new files been placed in my workspace?
 - If nothing, do nothing (HEARTBEAT_OK)
 
 ## Notification Rules
-- Only notify stakeholders when deemed urgent
+- Notify relevant parties only when deemed urgent
 - Do not repeat the same notification within 24 hours

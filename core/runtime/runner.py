@@ -1,0 +1,1435 @@
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+"""
+Child process entry point for Anima subprocess.
+
+Usage:
+    python -m core.runtime.runner \\
+        --anima-name sakura \\
+        --socket-path ~/.animaworks/run/sockets/sakura.sock \\
+        --animas-dir ~/.animaworks/animas \\
+        --shared-dir ~/.animaworks/shared
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import logging
+import os
+import sys
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import psutil
+
+from core.exceptions import AnimaNotRunningError, ProcessError  # noqa: F401
+from core.i18n import t
+from core.memory.conversation.streaming_journal import StreamingJournal
+from core.platform.env import get_env
+from core.platform.locks import acquire_file_lock, release_file_lock
+from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids, terminate_pid
+from core.platform.subprocess_entries import SubprocessEntry
+from core.platform.tasks import spawn
+from core.runtime.event_bus import RootEventBus
+from core.runtime.inbox_rate_limiter import InboxRateLimiter
+from core.runtime.ipc import IPCRequest, IPCResponse, IPCServer
+from core.runtime.memory_probe import sample_process_memory
+from core.runtime.scheduler_manager import SchedulerManager
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.time_utils import ensure_aware, now_local
+
+if TYPE_CHECKING:
+    from core.anima.digital_anima import DigitalAnima
+
+logger = logging.getLogger(__name__)
+
+_ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
+_ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
+_ORPHAN_TASK_RUNNER_TERMINATE_GRACE_SEC = 2.0
+_TASK_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.TASK_RUNNER.value,
+    "core.runtime.task_runner",  # legacy name until 2026-11 (S3a)
+)
+
+
+# ── AnimaRunner ──────────────────────────────────────────────────
+
+
+class AnimaRunner:
+    """
+    Runner for a single Anima in a child process.
+
+    Starts a DigitalAnima instance and exposes it via Unix socket IPC.
+    Delegates scheduling, inbox rate limiting, streaming, and pending
+    task execution to dedicated classes.
+    """
+
+    def __init__(self, anima_name: str, socket_path: Path, animas_dir: Path, shared_dir: Path):
+        self.anima_name = anima_name
+        self.socket_path = socket_path
+        self.animas_dir = animas_dir
+        self.shared_dir = shared_dir
+
+        self._anima_dir = animas_dir / anima_name
+        # Child processes (cron commands, helper scripts) inherit this so that
+        # per-Anima credentials resolve to this Anima instead of falling back
+        # to the owner identity.
+        os.environ["ANIMAWORKS_ANIMA_DIR"] = str(self._anima_dir)
+
+        self.anima: DigitalAnima | None = None
+        self.ipc_server: IPCServer | None = None
+        self.inbox_watcher_task: asyncio.Task | None = None
+        self.pending_task_watcher_task: asyncio.Task | None = None
+        self._orphan_cleanup_task: asyncio.Task | None = None
+        self.shutdown_event = asyncio.Event()
+        self._event_bus = RootEventBus()
+        self._event_keepalive_interval = 20.0
+        self._ready_event = asyncio.Event()
+        self._startup_ack_event = asyncio.Event()
+        self._expects_startup_ack = get_env("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
+        self._started_at = now_local()
+        self._lock_file: Any | None = None
+        self._orphan_task_runner_cleanup_done = False
+
+        # Delegate instances (created in run() after anima initialization)
+        self._scheduler_mgr: SchedulerManager | None = None
+        self._inbox_limiter: InboxRateLimiter | None = None
+        self._pending_executor: PendingTaskExecutor | None = None
+        self._streaming_handler: StreamingIPCHandler | None = None
+        self._owner_vector_transport_installed = False
+
+    @staticmethod
+    def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
+        """Return True when the recovered assistant text is already stored.
+
+        Dedup is intentionally marker-independent. If the streaming response
+        completed and was saved cleanly to conversation memory just before the
+        crash — but the journal was not yet deleted — the stored assistant turn
+        carries no interruption marker. Requiring the marker (the legacy
+        behavior) would miss that turn and append a duplicate. We therefore also
+        treat the recovery as already present when the recovered text matches
+        the most recent assistant turn's content with the marker stripped.
+        """
+        if not recovered_text:
+            return False
+        try:
+            state = conv_memory.load()
+            marker = t("anima.response_interrupted")
+            turns = list(getattr(state, "turns", []))
+            for turn in turns:
+                if getattr(turn, "role", "") != "assistant":
+                    continue
+                content = getattr(turn, "content", "") or ""
+                if content == saved_text:
+                    return True
+                if recovered_text in content and marker in content:
+                    return True
+            # Marker-independent check against the most recent assistant turn:
+            # a clean save that completed before the journal was deleted stores
+            # the full response without the interruption marker. Restrict this to
+            # the tail turn to avoid falsely matching unrelated earlier turns.
+            recovered_stripped = recovered_text.strip()
+            for turn in reversed(turns):
+                if getattr(turn, "role", "") != "assistant":
+                    continue
+                content = getattr(turn, "content", "") or ""
+                content_wo_marker = content.replace(marker, "").strip()
+                if recovered_stripped and (
+                    content_wo_marker == recovered_stripped or recovered_stripped in content_wo_marker
+                ):
+                    return True
+                break
+        except Exception:
+            logger.debug("Failed to inspect conversation recovery state", exc_info=True)
+        return False
+
+    @staticmethod
+    def _activity_contains_recovery(
+        activity: Any,
+        *,
+        session_type: str,
+        thread_id: str,
+        recovered_chars: int,
+        trigger: str | None,
+        started_at: str | None,
+        last_event_at: str | None,
+    ) -> bool:
+        """Return True when this journal recovery was already logged."""
+        try:
+            for entry in activity.recent(days=14, limit=1000, types=["error"]):
+                meta = getattr(entry, "meta", {}) or {}
+                if meta.get("session_type") != session_type:
+                    continue
+                if meta.get("thread_id") != thread_id:
+                    continue
+                if meta.get("recovered_chars") != recovered_chars:
+                    continue
+                if meta.get("trigger") != trigger:
+                    continue
+                if meta.get("started_at") != started_at:
+                    continue
+                if meta.get("last_event_at") != last_event_at:
+                    continue
+                return True
+        except Exception:
+            logger.debug("Failed to inspect activity recovery state", exc_info=True)
+        return False
+
+    def _acquire_process_lock(self) -> None:
+        """Acquire an exclusive flock to prevent duplicate processes.
+
+        The lock file is kept open for the lifetime of the process.
+        If another runner for the same Anima is already alive, flock
+        fails immediately and we exit.
+        """
+        lock_dir = self.shared_dir.parent / "run" / "animas"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_dir / f"{self.anima_name}.lock"
+        pid_path = lock_dir / f"{self.anima_name}.pid"
+
+        self._lock_file = open(lock_path, "a+")  # noqa: SIM115
+        try:
+            acquire_file_lock(self._lock_file, exclusive=True, blocking=False)
+        except OSError:
+            existing_pid = pid_path.read_text().strip() if pid_path.exists() else "unknown"
+            logger.error(
+                "DUPLICATE PROCESS: %s is already running (pid=%s). Exiting.",
+                self.anima_name,
+                existing_pid,
+            )
+            self._lock_file.close()
+            self._lock_file = None
+            sys.exit(1)
+
+        pid_path.write_text(str(os.getpid()))
+        logger.info("Process lock acquired: %s (pid=%d)", self.anima_name, os.getpid())
+
+    def _repair_interrupted_heartbeat(self) -> None:
+        """Close a heartbeat left open by the previous process."""
+        if self.anima is None:
+            return
+        try:
+            page = self.anima._activity.recent_page(
+                hours=24,
+                limit=1,
+                types=["heartbeat_start", "heartbeat_end"],
+            )
+            if page.entries and page.entries[0].type == "heartbeat_start":
+                self.anima._activity.log(
+                    "heartbeat_end",
+                    summary="Heartbeat interrupted",
+                    meta={
+                        "status": "interrupted",
+                        "reason": "no terminal event (restart?)",
+                    },
+                    safe=True,
+                )
+        except Exception:
+            logger.debug("Failed to repair interrupted heartbeat", exc_info=True)
+
+    async def run(self) -> None:
+        """
+        Run the anima process.
+
+        Starts IPC server first (creates socket immediately), then
+        initializes DigitalAnima (heavy RAG/model loading).
+        The parent process can connect to the socket early and poll
+        readiness via the ``ping`` method.
+        """
+        try:
+            self._event_bus.bind_loop()
+            from core.activity.logger import set_live_event_sink
+
+            set_live_event_sink(self._event_bus.publish)
+            self._acquire_process_lock()
+            self._cleanup_orphaned_task_runners()
+
+            # Start IPC server first so the socket is created immediately.
+            self.ipc_server = IPCServer(socket_path=self.socket_path, request_handler=self._handle_request)
+            await self.ipc_server.start()
+
+            logger.info("Initializing Anima: %s", self.anima_name)
+
+            # Initialize DigitalAnima (heavy: RAG indexer, model loading)
+            from core.anima.digital_anima import DigitalAnima
+
+            self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
+            self.anima._session_compactor.start(self.anima)
+            self._repair_interrupted_heartbeat()
+
+            # Create delegate instances
+            self._scheduler_mgr = SchedulerManager(
+                anima=self.anima,
+                anima_name=self.anima_name,
+                anima_dir=self._anima_dir,
+                emit_event=self._emit_event,
+            )
+            self._configure_owner_vector_transport()
+            self._inbox_limiter = InboxRateLimiter(
+                anima=self.anima,
+                anima_name=self.anima_name,
+                shutdown_event=self.shutdown_event,
+                scheduler_mgr=self._scheduler_mgr,
+            )
+            self._pending_executor = PendingTaskExecutor(
+                anima=self.anima,
+                anima_name=self.anima_name,
+                anima_dir=self._anima_dir,
+                shutdown_event=self.shutdown_event,
+                task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
+            )
+            self.anima._pending_executor = self._pending_executor
+            from core.tasks.wake import register_wake
+
+            register_wake(self.anima_name, self._pending_executor.wake)
+            self._streaming_handler = StreamingIPCHandler(
+                anima=self.anima,
+                anima_name=self.anima_name,
+                anima_dir=self._anima_dir,
+                task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
+            )
+
+            inbox_limiter = self._inbox_limiter
+            self.anima.set_on_lock_released(inbox_limiter.on_anima_lock_released)
+
+            # Wire on_message_sent callback for WebSocket event emission
+            def _on_message_sent(from_name: str, to_name: str, content: str) -> None:
+                self._emit_event(
+                    "anima.interaction",
+                    {
+                        "from_person": from_name,
+                        "to_person": to_name,
+                        "type": "message",
+                        "summary": content[:200],
+                    },
+                )
+
+            self.anima.set_on_message_sent(_on_message_sent)
+
+            # Crash recovery: check for orphaned streaming journal
+            self._recover_streaming_journal()
+
+            # Clean up stale .tmp files left by interrupted atomic writes
+            from core.platform.atomic_io import cleanup_tmp_files
+
+            cleanup_tmp_files(self._anima_dir / "state")
+            cleanup_tmp_files(self._anima_dir / "knowledge")
+
+            self._ready_event.set()
+            logger.info("Anima process ready: %s", self.anima_name)
+
+            # Startup idle-compress: in-memory compaction timers are lost
+            # on process restart; run compress here so stale conversations
+            # don't block the next chat with a synchronous compress.
+            # Runs as a background task so a slow/hanging LLM call cannot
+            # block readiness and cause repeated startup timeouts.
+            spawn(
+                self._startup_idle_compress(),
+                name=f"startup-idle-compress-{self.anima_name}",
+            )
+
+            if self._expects_startup_ack:
+                await self._wait_for_startup_ack()
+                if self.shutdown_event.is_set():
+                    logger.info(
+                        "Shutdown requested before autonomous services started: %s",
+                        self.anima_name,
+                    )
+                    await self.shutdown_event.wait()
+                    return
+            else:
+                logger.info(
+                    "Startup ack not required by parent; starting autonomous services: %s",
+                    self.anima_name,
+                )
+
+            # Start autonomous scheduler (heartbeat + cron)
+            self._start_autonomous_services()
+
+            logger.info("Autonomous services started: %s", self.anima_name)
+
+            # Wait for shutdown signal
+            await self.shutdown_event.wait()
+
+            logger.info("Shutting down: %s", self.anima_name)
+
+        except Exception as e:
+            logger.exception("Fatal error in AnimaRunner: %s", e)
+            sys.exit(1)
+
+        except BaseException as e:
+            # CancelledError は SIGTERM 時の正常な asyncio シャットダウン。
+            # 捕捉せず伝播させて asyncio.run() の正常終了フローに委ねる。
+            if isinstance(e, asyncio.CancelledError):
+                raise
+            # 全内部ハンドラをすり抜けた BaseException の最終安全弁。
+            logger.critical(
+                "FATAL BaseException in AnimaRunner (%s): %s: %s",
+                self.anima_name,
+                type(e).__name__,
+                e,
+            )
+            sys.exit(getattr(e, "code", 1) if isinstance(e, SystemExit) else 1)
+
+        finally:
+            try:
+                await self._cleanup()
+            finally:
+                from core.activity.logger import set_live_event_sink
+
+                set_live_event_sink(None)
+
+    async def _wait_for_startup_ack(self) -> None:
+        """Wait until the parent supervisor confirms it observed readiness."""
+        ack_task = asyncio.create_task(
+            self._startup_ack_event.wait(),
+            name=f"startup-ack-wait-{self.anima_name}",
+        )
+        shutdown_task = asyncio.create_task(
+            self.shutdown_event.wait(),
+            name=f"startup-ack-shutdown-{self.anima_name}",
+        )
+        try:
+            await asyncio.wait(
+                {ack_task, shutdown_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for task in (ack_task, shutdown_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
+
+    def _configure_owner_vector_transport(self) -> None:
+        """Let the phase3 Anima main reach its own MemoryService directly.
+
+        The Anima main owns the native Chroma handle, so inbox/tool retrieval is
+        routed to the owner MemoryService in-process (no loop-back HTTP).
+        Children that inherit this process's URLs still talk to it over HTTP.
+        """
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        if supervisor is None or supervisor._memory_service is None:
+            return
+        from core.memory.rag.vector_ops import bridge_transport
+        from core.memory.rag.vector_registry import configure_owner_vector_access
+
+        loop = asyncio.get_running_loop()
+
+        async def handle_memory(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            if self.shutdown_event.is_set():
+                from core.runtime.memory_service import MemoryServiceUnavailable
+
+                raise MemoryServiceUnavailable("Anima main memory service is shutting down")
+            # A first inbox query can beat the asynchronous startup task.
+            # start() is idempotent and serializes native DB initialization.
+            await supervisor.start()
+            return await supervisor.handle_memory(method, params)
+
+        configure_owner_vector_access(bridge_transport(handle_memory, loop), anima_name=self.anima_name)
+        self._owner_vector_transport_installed = True
+
+    def _start_autonomous_services(self) -> None:
+        """Start autonomous background services after startup ack."""
+        if not self._scheduler_mgr or not self._inbox_limiter or not self._pending_executor:
+            raise ProcessError("Runner delegates are not initialized")
+
+        self._scheduler_mgr.setup()
+        if (
+            self._scheduler_mgr._task_runner_supervisor is not None
+            and self._scheduler_mgr._task_runner_supervisor._memory_service is not None
+        ):
+            spawn(
+                self._scheduler_mgr._task_runner_supervisor.start(),
+                name=f"anima-main-memory-start-{self.anima_name}",
+            )
+        self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
+        self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
+        self._orphan_cleanup_task = asyncio.create_task(
+            self._orphan_cleanup_loop(),
+            name=f"orphan-cleanup-{self.anima_name}",
+        )
+
+    def _recover_streaming_journal(self) -> None:
+        """Recover partial response from orphaned streaming journals.
+
+        If the previous process crashed during streaming, the journal
+        file survives on disk.  Read it, record the partial response in
+        conversation memory, and log the crash event.
+
+        Checks both ``chat`` and ``heartbeat`` session types, including
+        thread-specific subdirectories.
+        """
+        for session_type in ("chat", "heartbeat", "task", "task_exec", "inbox"):
+            # Collect all thread_ids with orphaned journals
+            thread_ids = StreamingJournal.list_orphan_thread_ids(self._anima_dir, session_type)
+
+            for thread_id in thread_ids:
+                recovery = StreamingJournal.recover(self._anima_dir, session_type, thread_id=thread_id)
+                if recovery is None:
+                    continue
+
+                logger.warning(
+                    "Recovered streaming journal for %s [%s] thread=%s: %d chars, %d tool calls, trigger=%s",
+                    self.anima_name,
+                    session_type,
+                    thread_id,
+                    len(recovery.recovered_text),
+                    len(recovery.tool_calls),
+                    recovery.trigger,
+                )
+
+                has_recovered_payload = bool(recovery.recovered_text.strip()) or bool(recovery.tool_calls)
+                if session_type == "heartbeat" and not has_recovered_payload:
+                    StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
+                    logger.info(
+                        "Discarded empty heartbeat streaming journal for %s thread=%s; no response content was lost",
+                        self.anima_name,
+                        thread_id,
+                    )
+                    continue
+
+                # Only chat sessions write to conversation.json;
+                # heartbeat/task/task_exec/inbox are background and must not
+                # pollute the human↔anima conversation history.
+                if session_type == "chat" and recovery.recovered_text and self.anima:
+                    try:
+                        from core.memory.conversation.memory import ConversationMemory
+
+                        conv_memory = ConversationMemory(
+                            self._anima_dir,
+                            self.anima.model_config,
+                            thread_id=thread_id,
+                        )
+                        saved_text = recovery.recovered_text + "\n" + t("anima.response_interrupted")
+                        if self._conversation_contains_recovery(conv_memory, recovery.recovered_text, saved_text):
+                            logger.info(
+                                "Streaming journal recovery already present in conversation memory for %s [%s] thread=%s",
+                                self.anima_name,
+                                session_type,
+                                thread_id,
+                            )
+                        else:
+                            conv_memory.append_turn("assistant", saved_text)
+                            conv_memory.save()
+                        StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
+                        logger.info(
+                            "Recovered %d chars into conversation memory for %s [%s] thread=%s",
+                            len(recovery.recovered_text),
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to save recovered journal to conversation memory: %s [%s] thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                        )
+                else:
+                    StreamingJournal.confirm_recovery(self._anima_dir, session_type, thread_id=thread_id)
+
+                # Write recovery_note for crashed heartbeat sessions
+                if session_type == "heartbeat":
+                    try:
+                        from core.runtime.state_writer import get_state_writer, run_writer_sync
+                        from core.time_utils import now_iso
+
+                        note_content = t(
+                            "anima.recovery_crash_info",
+                            ts=recovery.last_event_at or recovery.started_at or now_iso(),
+                            recovered_chars=len(recovery.recovered_text),
+                            tool_calls=len(recovery.tool_calls),
+                            trigger=recovery.trigger or "unknown",
+                        )
+                        _state_writer = get_state_writer(self._anima_dir)
+                        run_writer_sync(_state_writer, _state_writer.write_recovery_note(note_content))
+                        logger.info("Recovery note saved for crashed heartbeat: %s", self.anima_name)
+                    except Exception:
+                        logger.debug(
+                            "Failed to save recovery note for crashed heartbeat: %s",
+                            self.anima_name,
+                            exc_info=True,
+                        )
+
+                # Record crash event in activity log
+                recovery_already_logged = False
+                try:
+                    from core.activity.logger import ActivityLogger
+
+                    activity = ActivityLogger(self._anima_dir)
+                    recovery_already_logged = self._activity_contains_recovery(
+                        activity,
+                        session_type=session_type,
+                        thread_id=thread_id,
+                        recovered_chars=len(recovery.recovered_text),
+                        trigger=recovery.trigger,
+                        started_at=recovery.started_at,
+                        last_event_at=recovery.last_event_at,
+                    )
+                    recovery_summary = t(
+                        "runner.recovery_text",
+                        session_type=session_type,
+                    )
+                    recovery_content = recovery_summary
+                    if recovery.recovered_text:
+                        recovery_content = f"{recovery.recovered_text}\n\n{recovery_summary}"
+                    if recovery_already_logged:
+                        logger.info(
+                            "Streaming journal recovery activity already logged for %s [%s] thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                        )
+                    else:
+                        activity.log(
+                            "error",
+                            content=recovery_content,
+                            summary=recovery_summary,
+                            meta={
+                                "recovered_chars": len(recovery.recovered_text),
+                                "trigger": recovery.trigger,
+                                "tool_calls": len(recovery.tool_calls),
+                                "from_person": recovery.from_person,
+                                "started_at": recovery.started_at,
+                                "last_event_at": recovery.last_event_at,
+                                "session_type": session_type,
+                                "thread_id": thread_id,
+                            },
+                        )
+                except Exception:
+                    logger.debug(
+                        "Failed to log crash recovery to activity log: %s [%s] thread=%s",
+                        self.anima_name,
+                        session_type,
+                        thread_id,
+                        exc_info=True,
+                    )
+
+                # Record tool_use events in activity log
+                if recovery.tool_calls and not recovery_already_logged:
+                    try:
+                        from core.activity.logger import ActivityLogger as _AL
+
+                        _activity = _AL(self._anima_dir)
+                        for tc in recovery.tool_calls:
+                            _activity.log(
+                                "tool_use",
+                                summary=f"[recovered] {tc.get('tool', 'unknown')}",
+                                tool=tc.get("tool", "unknown"),
+                                meta={"recovered": True, **tc},
+                            )
+                    except Exception:
+                        logger.debug(
+                            "Failed to log recovered tool_use events: %s [%s] thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                            exc_info=True,
+                        )
+
+    # ── Startup idle compress ──────────────────────────────────
+
+    _STARTUP_COMPRESS_TIMEOUT_SEC = 90
+
+    async def _startup_idle_compress(self) -> None:
+        """Compress idle conversation on process startup.
+
+        In-memory compaction timers (SessionCompactor) are lost on
+        process restart.  This checks whether the chat conversation
+        has been idle long enough and compresses it so the next chat
+        is not blocked by a synchronous compress.
+
+        Applies a timeout so a slow/hanging LLM backend cannot block
+        the process indefinitely.
+        """
+        if not self.anima:
+            return
+        try:
+            from core.memory.conversation.memory import ConversationMemory
+            from core.memory.conversation.models import SESSION_GAP_MINUTES
+
+            conv = ConversationMemory(self._anima_dir, self.anima.model_config)
+            state = conv.load()
+            if not state.turns:
+                return
+
+            from core.time_utils import ensure_aware, now_local
+
+            last_ts = datetime.fromisoformat(state.turns[-1].timestamp)
+            idle_sec = (now_local() - ensure_aware(last_ts)).total_seconds()
+            if idle_sec < SESSION_GAP_MINUTES * 60:
+                return
+
+            if not conv.needs_compression():
+                return
+
+            logger.info(
+                "Startup idle-compress for %s (idle %.0fs, %d turns)",
+                self.anima_name,
+                idle_sec,
+                len(state.turns),
+            )
+            from core.memory.conversation.compression import compress_if_needed
+
+            await asyncio.wait_for(
+                compress_if_needed(
+                    state,
+                    self.anima.model_config,
+                    conv._load_context_window_overrides,
+                    conv.save,
+                    anima_name=conv.anima_name,
+                ),
+                timeout=self._STARTUP_COMPRESS_TIMEOUT_SEC,
+            )
+        except TimeoutError:
+            logger.warning(
+                "Startup idle-compress timed out for %s after %ds — skipping",
+                self.anima_name,
+                self._STARTUP_COMPRESS_TIMEOUT_SEC,
+            )
+        except Exception:
+            logger.debug(
+                "Startup idle-compress failed for %s",
+                self.anima_name,
+                exc_info=True,
+            )
+
+    # ── Orphan Process Cleanup ───────────────────────────────────
+
+    def _cleanup_orphaned_task_runners(self) -> None:
+        """Terminate stale task runners belonging to this data dir and anima."""
+        if self._orphan_task_runner_cleanup_done:
+            return
+        self._orphan_task_runner_cleanup_done = True
+
+        current_pid = os.getpid()
+        try:
+            current = psutil.Process(current_pid)
+            own_descendant_pids = {child.pid for child in current.children(recursive=True)}
+        except (psutil.Error, AttributeError):
+            logger.warning(
+                "Skipping orphan task-runner cleanup for %s: cannot inspect own descendants", self.anima_name
+            )
+            return
+
+        own_data_dir = self.shared_dir.parent.resolve()
+        try:
+            processes = psutil.process_iter()
+            for process in processes:
+                try:
+                    pid = process.pid
+                    if pid == current_pid or pid in own_descendant_pids:
+                        continue
+                    cmdline = process.cmdline()
+                    if not any(marker in cmdline for marker in _TASK_RUNNER_CMDLINE_MARKERS):
+                        continue
+                    if not any(
+                        argument == "--anima" and index + 1 < len(cmdline) and cmdline[index + 1] == self.anima_name
+                        for index, argument in enumerate(cmdline)
+                    ):
+                        continue
+                    try:
+                        process_data_dir = process.environ().get("ANIMAWORKS_DATA_DIR")
+                    except Exception:
+                        continue
+                    if not process_data_dir or Path(process_data_dir).expanduser().resolve() != own_data_dir:
+                        continue
+
+                    logger.warning("Terminating orphaned task runner pid=%d cmdline=%s", pid, " ".join(cmdline))
+                    self._terminate_orphan_task_runner(process)
+                except (psutil.Error, OSError, RuntimeError, TypeError, ValueError):
+                    continue
+        except Exception:
+            logger.debug("Orphan task-runner cleanup failed for %s", self.anima_name, exc_info=True)
+
+    @staticmethod
+    def _terminate_orphan_task_runner(process: psutil.Process) -> None:
+        """Send SIGTERM to an orphan's process group, then SIGKILL survivors."""
+        pid = process.pid
+        try:
+            descendants = process.children(recursive=True)
+        except psutil.Error:
+            descendants = []
+        targets = [process, *descendants]
+        terminate_pid(pid, include_children=True)
+        try:
+            _gone, alive = psutil.wait_procs(targets, timeout=_ORPHAN_TASK_RUNNER_TERMINATE_GRACE_SEC)
+        except psutil.Error:
+            alive = targets
+        if not alive:
+            return
+
+        terminate_pid(pid, force=True, include_children=True)
+        for target in alive:
+            try:
+                target.kill()
+            except psutil.Error:
+                continue
+
+    def _cleanup_orphaned_claude_processes(self) -> None:
+        """Terminate stale Claude CLI descendants of this process.
+
+        Walks the subprocess tree from the current PID, finds processes whose
+        executable name contains ``claude`` (case-insensitive) and is older
+        than :data:`_ORPHAN_MAX_AGE_SEC`, then kills each such process and its
+        descendants.
+
+        Task-runner subtrees (registered job pids and running
+        ``core.runtime.task_runner`` processes plus all their descendants)
+        are excluded: they are managed by ``TaskRunnerSupervisor`` (liveness
+        watchdog and child exit cleanup), so this sweep only targets Claude
+        CLIs the Anima main itself launched (e.g. idle compaction via the SDK).
+
+        Individual process errors are ignored so one bad PID does not block
+        the rest. Failures in the overall walk are logged at DEBUG only.
+        """
+
+        try:
+            current = psutil.Process()
+            scheduler = getattr(self, "_scheduler_mgr", None)
+            supervisor = getattr(scheduler, "_task_runner_supervisor", None) if scheduler is not None else None
+            jobs = getattr(supervisor, "jobs", None) if supervisor is not None else None
+            job_pids: set[int] = set()
+            if isinstance(jobs, dict):
+                job_pids = {job.pid for job in jobs.values() if getattr(job, "pid", None)}
+            excluded = task_runner_subtree_pids(current, job_pids)
+            for child in snapshot_descendants(current.pid):
+                try:
+                    if child.pid in excluded:
+                        continue
+                    proc_name = child.name()
+                    if "claude" not in proc_name.lower():
+                        continue
+                    proc_age_sec = time.time() - child.create_time()
+                    if proc_age_sec <= _ORPHAN_MAX_AGE_SEC:
+                        continue
+                    kill_tree(child.pid, deepest_first=True)
+                    logger.warning(
+                        "Killed orphaned Claude process pid=%s name=%s age_sec=%.1f (orphan cleanup)",
+                        child.pid,
+                        proc_name,
+                        proc_age_sec,
+                    )
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception:
+            logger.debug(
+                "Orphan Claude process cleanup failed for %s",
+                self.anima_name,
+                exc_info=True,
+            )
+
+    async def _orphan_cleanup_loop(self) -> None:
+        """Periodically run :meth:`_cleanup_orphaned_claude_processes` until shutdown.
+
+        Sleeps in chunks of :data:`_ORPHAN_CHECK_INTERVAL_SEC` using
+        ``shutdown_event`` so shutdown is not delayed for the full interval.
+        """
+        while True:
+            try:
+                await asyncio.wait_for(
+                    self.shutdown_event.wait(),
+                    timeout=_ORPHAN_CHECK_INTERVAL_SEC,
+                )
+                break
+            except TimeoutError:
+                self._cleanup_orphaned_claude_processes()
+
+    # ── Event Emission ─────────────────────────────────────────────
+
+    def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Publish an Anima main event for the parent process to broadcast."""
+        self._event_bus.publish({"event": event_type, "data": data})
+
+    def _sample_memory(self, stage: str, *, method: str = "", extra: dict[str, Any] | None = None) -> None:
+        """Best-effort runner RSS/working-set sample."""
+        try:
+            merged_extra = {"method": method} if method else {}
+            if extra:
+                merged_extra.update(extra)
+            sample_process_memory(
+                anima_name=self.anima_name,
+                stage=stage,
+                run_dir=self.shared_dir.parent / "run",
+                extra=merged_extra or None,
+            )
+        except Exception:
+            logger.debug(
+                "Memory sample failed for %s stage=%s", getattr(self, "anima_name", "unknown"), stage, exc_info=True
+            )
+
+    async def _wrap_stream_with_memory_samples(
+        self,
+        stream: AsyncIterator[IPCResponse],
+        *,
+        method: str,
+    ) -> AsyncIterator[IPCResponse]:
+        try:
+            async for response in stream:
+                yield response
+        finally:
+            self._sample_memory("ipc_stream_end", method=method)
+
+    # ── IPC Handlers ──────────────────────────────────────────────
+
+    async def _handle_request(self, request: IPCRequest) -> IPCResponse | AsyncIterator[IPCResponse]:
+        """
+        Handle incoming IPC request.
+
+        Dispatches to appropriate handler based on method.
+        For streaming requests (process_message with stream=True), returns
+        an AsyncIterator[IPCResponse] instead of a single IPCResponse.
+        """
+        if request.method != "ping":
+            self._sample_memory("ipc_start", method=request.method)
+        try:
+            if request.method == "subscribe_events":
+                return self._stream_events(request, keepalive_interval=self._event_keepalive_interval)
+
+            # Check for streaming process_message
+            if request.method == "process_message" and request.params.get("stream") and self._streaming_handler:
+                return self._wrap_stream_with_memory_samples(
+                    self._streaming_handler.handle_stream(request),
+                    method=request.method,
+                )
+
+            handler = self._get_handler(request.method)
+            if not handler:
+                return IPCResponse(
+                    id=request.id, error={"code": "UNKNOWN_METHOD", "message": f"Unknown method: {request.method}"}
+                )
+
+            result = await handler(request.params)
+            if request.method != "ping":
+                result_bytes = 0
+                try:
+                    result_bytes = len(json.dumps(result, default=str).encode("utf-8", errors="replace"))
+                except (TypeError, ValueError):
+                    pass
+                self._sample_memory("ipc_end", method=request.method, extra={"result_bytes": result_bytes})
+            return IPCResponse(id=request.id, result=result)
+
+        except asyncio.CancelledError:
+            if self.shutdown_event.is_set():
+                raise
+            logger.warning(
+                "IPC request cancelled without runner shutdown: %s (id=%s)",
+                request.method,
+                request.id,
+            )
+            return IPCResponse(
+                id=request.id,
+                error={
+                    "code": "REQUEST_CANCELLED",
+                    "message": "Request was cancelled; runner remains alive",
+                },
+            )
+        except Exception as e:
+            logger.exception("Error handling request %s: %s", request.method, e)
+            return IPCResponse(id=request.id, error={"code": "EXECUTION_ERROR", "message": str(e)})
+
+    async def _stream_events(
+        self,
+        request: IPCRequest,
+        *,
+        keepalive_interval: float = 20.0,
+    ) -> AsyncIterator[IPCResponse]:
+        """Stream Anima main events and keepalives until runner shutdown."""
+        events = self._event_bus.subscribe()
+        event_task = asyncio.create_task(anext(events))
+        shutdown_task = asyncio.create_task(self.shutdown_event.wait())
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {event_task, shutdown_task},
+                    timeout=keepalive_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if shutdown_task in done:
+                    break
+                if event_task in done:
+                    try:
+                        event = event_task.result()
+                    except StopAsyncIteration:
+                        break
+                    yield IPCResponse(
+                        id=request.id,
+                        stream=True,
+                        chunk=json.dumps(event, default=str, ensure_ascii=False),
+                    )
+                    event_task = asyncio.create_task(anext(events))
+                else:
+                    yield IPCResponse(
+                        id=request.id,
+                        stream=True,
+                        chunk=json.dumps({"keepalive": True}),
+                    )
+
+            yield IPCResponse(id=request.id, stream=True, done=True)
+        finally:
+            for task in (event_task, shutdown_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(event_task, shutdown_task, return_exceptions=True)
+            await events.aclose()
+
+    def _get_handler(self, method: str) -> Callable[..., Awaitable[dict[str, Any]]] | None:
+        """Get handler for method."""
+        handlers = {
+            "process_message": self._handle_process_message,
+            "greet": self._handle_greet,
+            "run_bootstrap": self._handle_run_bootstrap,
+            "run_heartbeat": self._handle_run_heartbeat,
+            "run_consolidation": self._handle_run_consolidation,
+            "memory": self._handle_memory,
+            "repair_memory": self._handle_repair_memory,
+            "clear_conversation": self._handle_clear_conversation,
+            "compress_conversation": self._handle_compress_conversation,
+            "append_conversation_turns": self._handle_append_conversation_turns,
+            "get_status": self._handle_get_status,
+            "ping": self._handle_ping,
+            "startup_ack": self._handle_startup_ack,
+            "reload_config": self._handle_reload_config,
+            "reschedule_heartbeat": self._handle_reschedule_heartbeat,
+            "reload_activity_schedule": self._handle_reload_activity_schedule,
+            "shutdown": self._handle_shutdown,
+            "interrupt": self._handle_interrupt,
+            "cancel_consolidation": self._handle_cancel_consolidation,
+            "compact_session": self._handle_compact_session,
+        }
+        return handlers.get(method)
+
+    async def _handle_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Expose the phase3 Anima main MemoryService to server-side schedulers."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        method = params.get("method")
+        request_params = params.get("params")
+        if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
+            raise ValueError("Anima main memory service is unavailable")
+        return await supervisor.handle_memory(method, request_params)
+
+    async def _handle_clear_conversation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Clear conversation state through the Anima-main StateWriter."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        from core.memory.conversation.memory import ConversationMemory
+
+        await ConversationMemory(self._anima_dir, self.anima.model_config).aclear()
+        return {"status": "cleared", "anima": self.anima_name}
+
+    async def _handle_append_conversation_turns(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Append a small server-originated voice turn via the Anima main."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        thread_id = params.get("thread_id", "default")
+        turns = params.get("turns")
+        if not isinstance(thread_id, str) or not isinstance(turns, list) or not 1 <= len(turns) <= 2:
+            raise ValueError("append_conversation_turns requires a thread_id and one or two turns")
+        self.anima._validate_thread_id(thread_id)
+        from core.memory.conversation.memory import ConversationMemory
+
+        conversation = ConversationMemory(self._anima_dir, self.anima.model_config, thread_id=thread_id)
+        for turn in turns:
+            if (
+                not isinstance(turn, dict)
+                or not isinstance(turn.get("role"), str)
+                or not isinstance(turn.get("content"), str)
+            ):
+                raise ValueError("conversation turn requires string role and content")
+            conversation.append_turn(turn["role"], turn["content"])
+        await conversation.asave()
+        return {"status": "saved", "anima": self.anima_name}
+
+    async def _handle_compress_conversation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Compress conversation state through the Anima-main StateWriter."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        from core.memory.conversation.memory import ConversationMemory
+
+        conversation = ConversationMemory(self._anima_dir, self.anima.model_config)
+        compressed = await conversation.compress_if_needed()
+        state = conversation.load()
+        return {
+            "compressed": compressed,
+            "anima": self.anima_name,
+            "total_turn_count": state.total_turn_count,
+            "total_token_estimate": state.total_token_estimate,
+        }
+
+    async def _handle_repair_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run phase3 RAG repair in this Anima main instead of the global worker."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        include_shared = params.get("include_shared", True)
+        if supervisor is None or not isinstance(include_shared, bool):
+            raise ValueError("Anima main memory service is unavailable")
+        return await supervisor.repair_memory(include_shared=include_shared)
+
+    async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle non-streaming process_message request."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+        return await self._scheduler_mgr._task_runner_supervisor.run_chat(kind="message", payload=params)
+
+    async def _handle_greet(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle greet request (character click greeting)."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+        return await self._scheduler_mgr._task_runner_supervisor.run_chat(kind="greet", payload=params)
+
+    async def _handle_run_bootstrap(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle run_bootstrap request (background bootstrap execution)."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+        return await self._scheduler_mgr._task_runner_supervisor.run_chat(kind="bootstrap", payload=params)
+
+    async def _handle_run_heartbeat(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle run_heartbeat request."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Heartbeat scheduler is unavailable")
+        await self._scheduler_mgr.heartbeat_tick()
+        return {"status": "completed"}
+
+    async def _handle_run_consolidation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle run_consolidation request (Anima-driven memory consolidation)."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+
+        consolidation_type = params.get("consolidation_type", "daily")
+        project = params.get("project")
+        deadline_s = params.get("deadline_s")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Consolidation task runner supervisor is unavailable")
+
+        payload = {"consolidation_type": consolidation_type}
+        if project is not None:
+            payload["project"] = project
+        if isinstance(deadline_s, (int, float)):
+            payload["deadline_s"] = float(deadline_s)
+        isolated = await self._scheduler_mgr._task_runner_supervisor.run_background(
+            kind="consolidation",
+            payload=payload,
+            display_lane="background",
+        )
+        return {
+            "status": "completed",
+            "summary": str(isolated.get("summary") or "")[:500],
+            "duration_ms": int(isolated.get("duration_ms") or 0),
+        }
+
+    async def _handle_get_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle get_status request."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+
+        scheduler = self._scheduler_mgr.scheduler if self._scheduler_mgr else None
+        bootstrap_status = self.anima.bootstrap_state
+        return {
+            "status": self.anima.primary_status,
+            "active_label": self.anima.primary_task or None,
+            "needs_bootstrap": self.anima.needs_bootstrap,
+            "bootstrap_state": bootstrap_status,
+            "needs_user_input": bootstrap_status.get("needs_user_input", False),
+            "needs_repair": bootstrap_status.get("needs_repair", False),
+            "needs_background_bootstrap": bootstrap_status.get("needs_background_bootstrap", False),
+            "scheduler_running": scheduler.running if scheduler else False,
+            "scheduler_jobs": len(scheduler.get_jobs()) if scheduler else 0,
+        }
+
+    async def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle ping request.
+
+        Returns ``status: "initializing"`` while DigitalAnima is loading,
+        ``status: "ok"`` once ready.  The parent process polls this to
+        confirm readiness.
+        """
+        uptime = (now_local() - ensure_aware(self._started_at)).total_seconds()
+        status = "ok" if self._ready_event.is_set() else "initializing"
+        is_busy = False
+        if self.anima is not None:
+            try:
+                busy_getter = getattr(self.anima, "_has_active_busy_lock", None)
+                if callable(busy_getter):
+                    is_busy = bool(busy_getter())
+            except Exception:
+                logger.debug("Failed to compute ping busy status", exc_info=True)
+        last_progress_at = None
+        busy_since = None
+        if self.anima is not None:
+            lp = getattr(self.anima, "_last_progress_at", None)
+            if lp is not None:
+                last_progress_at = lp.isoformat()
+            bs = getattr(self.anima, "_busy_since", None)
+            if bs is not None:
+                busy_since = bs.isoformat()
+        return {
+            "status": status,
+            "anima": self.anima_name,
+            "uptime_sec": round(uptime, 1),
+            "is_busy": is_busy,
+            "last_progress_at": last_progress_at,
+            "busy_since": busy_since,
+        }
+
+    async def _handle_startup_ack(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle parent supervisor acknowledgement of startup readiness."""
+        self._startup_ack_event.set()
+        return {"status": "acknowledged"}
+
+    async def _handle_reload_config(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Hot-reload ModelConfig from status.json."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        return self.anima.reload_config()
+
+    async def _handle_reschedule_heartbeat(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reschedule heartbeat job with current config (e.g. after activity_level change)."""
+        if self._scheduler_mgr:
+            self._scheduler_mgr.reschedule_heartbeat()
+        return {"status": "rescheduled"}
+
+    async def _handle_reload_activity_schedule(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reload activity schedule job after config change."""
+        if self._scheduler_mgr:
+            self._scheduler_mgr.reload_activity_schedule()
+        return {"status": "reloaded"}
+
+    async def _handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle shutdown request."""
+        logger.info("Shutdown requested for %s", self.anima_name)
+        self.shutdown_event.set()
+        return {"status": "shutting_down"}
+
+    async def _handle_interrupt(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle interrupt request — cancel current LLM session."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+        thread_id = params.get("thread_id")
+        return await self._scheduler_mgr._task_runner_supervisor.interrupt_chat(thread_id=thread_id)
+
+    async def _handle_cancel_consolidation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle cancel_consolidation request — stop a still-running consolidation."""
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Consolidation task runner supervisor is unavailable")
+        return await self._scheduler_mgr._task_runner_supervisor.cancel_consolidation()
+
+    async def _handle_compact_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle a manual compaction request for the given thread.
+
+        Runs the same mode-specific idle compaction as the scheduler but on
+        demand. Returns ``status`` of ``"ok"`` when compaction ran, or
+        ``"skipped"`` when the thread lock could not be acquired in time.
+        """
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+
+        from core.agent.session_compactor import run_idle_compaction
+        from core.skills.activation_state import validate_thread_id
+
+        thread_id = validate_thread_id(params.get("thread_id", "default"))
+        ok = await run_idle_compaction(self.anima, thread_id)
+        return {
+            "status": "ok" if ok else "skipped",
+            "thread_id": thread_id,
+            "mode": self.anima.agent.execution_mode,
+        }
+
+    # ── Cleanup ───────────────────────────────────────────────────
+
+    async def _cleanup(self) -> None:
+        """Clean up resources."""
+        if self.anima is not None:
+            self.anima._session_compactor.shutdown()
+        # Release process lock and remove pidfile
+        if self._lock_file:
+            try:
+                pid_path = self.shared_dir.parent / "run" / "animas" / f"{self.anima_name}.pid"
+                if pid_path.exists():
+                    pid_path.unlink(missing_ok=True)
+                release_file_lock(self._lock_file)
+                self._lock_file.close()
+            except OSError:
+                logger.debug("Lock file cleanup error", exc_info=True)
+            self._lock_file = None
+
+        # Cancel deferred trigger timer
+        if self._inbox_limiter:
+            self._inbox_limiter.cancel_deferred_timer()
+
+        # Stop inbox watcher
+        if self.inbox_watcher_task:
+            self.inbox_watcher_task.cancel()
+            try:
+                await self.inbox_watcher_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop pending task watcher
+        if self.pending_task_watcher_task:
+            self.shutdown_event.set()
+            if self._pending_executor:
+                self._pending_executor.wake()
+            try:
+                await self.pending_task_watcher_task
+            except asyncio.CancelledError:
+                pass
+
+        from core.tasks.wake import unregister_wake
+
+        unregister_wake(self.anima_name)
+
+        if self._orphan_cleanup_task:
+            self._orphan_cleanup_task.cancel()
+            try:
+                await self._orphan_cleanup_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop scheduler
+        if self._scheduler_mgr:
+            self._scheduler_mgr.shutdown()
+            await self._scheduler_mgr.shutdown_task_runners()
+
+        if getattr(self, "_owner_vector_transport_installed", False):
+            from core.memory.rag.vector_registry import configure_owner_vector_access
+
+            configure_owner_vector_access(None)
+            self._owner_vector_transport_installed = False
+
+        # Stop IPC server
+        if self.ipc_server:
+            await self.ipc_server.stop()
+
+        # These pools are process-global and must remain available throughout
+        # the runner lifetime.  Shut them down only from this terminal cleanup.
+        from core.execution.engines.litellm._litellm_tools import shutdown_tool_executors
+
+        shutdown_tool_executors()
+
+        logger.info("Cleanup completed for %s", self.anima_name)
+
+
+# ── CLI Entry Point ────────────────────────────────────────────────
+
+
+def setup_logging(anima_name: str, log_dir: Path, redaction_enabled: bool = True) -> None:
+    """Setup logging for child process with anima-specific log files."""
+    from core.infra.logging_config import setup_anima_logging
+
+    setup_anima_logging(
+        anima_name=anima_name,
+        log_dir=log_dir,
+        level="INFO",
+        also_to_console=False,  # Child processes log to file only
+        redaction_enabled=redaction_enabled,
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Run an Anima in a subprocess")
+    parser.add_argument("--anima-name", required=True, help="Name of the anima to run")
+    parser.add_argument("--socket-path", required=True, type=Path, help="Path to Unix socket file")
+    parser.add_argument("--animas-dir", required=True, type=Path, help="Path to animas directory")
+    parser.add_argument("--shared-dir", required=True, type=Path, help="Path to shared directory")
+    parser.add_argument("--log-dir", required=True, type=Path, help="Path to log directory")
+    return parser.parse_args()
+
+
+def _install_signal_diagnostics(anima_name: str) -> None:
+    """Install signal handlers that log before exiting.
+
+    Helps diagnose unexpected process termination by recording
+    which signal killed the child process.
+    """
+    import signal as _sig
+
+    def _handler(signum: int, frame: Any) -> None:
+        sig_name = _sig.Signals(signum).name if signum in _sig.Signals._value2member_map_ else str(signum)
+        logger.error(
+            "SIGNAL RECEIVED: %s (%d) in anima=%s — exiting",
+            sig_name,
+            signum,
+            anima_name,
+        )
+        sys.exit(128 + signum)
+
+    signal_names = ("SIGTERM", "SIGINT", "SIGHUP")
+    for name in signal_names:
+        sig = getattr(_sig, name, None)
+        if sig is None:
+            continue
+        _sig.signal(sig, _handler)
+
+
+async def main() -> None:
+    """Main entry point."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("anima")
+    args = parse_args()
+
+    from core.config import load_config
+
+    # Best-effort read of the redaction switch before logging is configured.
+    # Falls back to the secure default (on) if config can't be loaded yet.
+    try:
+        _redaction_enabled = load_config().logging.redaction_enabled
+    except Exception:
+        _redaction_enabled = True
+
+    setup_logging(args.anima_name, args.log_dir, redaction_enabled=_redaction_enabled)
+
+    from core.platform.fd_limits import raise_fd_soft_limit
+    from core.time_utils import configure_timezone
+
+    raise_fd_soft_limit(logger=logger, process_label="anima runner")
+
+    try:
+        cfg = load_config()
+        configure_timezone(cfg.system.timezone)
+    except Exception:
+        configure_timezone("")
+
+    _install_signal_diagnostics(args.anima_name)
+
+    # Load global permissions into this child process. Injection/blocked-pattern
+    # checks (Mode A/B handler and Mode S _check_a1_bash_command) read the
+    # GlobalPermissionsCache singleton, which is per-process; without this load
+    # they silently no-op in anima runners (only server/app.py loaded it before).
+    try:
+        from core.config.global_permissions import GlobalPermissionsCache
+        from core.paths import get_global_permissions_path
+
+        GlobalPermissionsCache.get().load(get_global_permissions_path(), interactive=False)
+    except FileNotFoundError:
+        logger.warning("permissions.global.json not found; global command checks disabled")
+    except Exception:
+        logger.warning("Failed to load global permissions in anima runner", exc_info=True)
+
+    runner = AnimaRunner(
+        anima_name=args.anima_name, socket_path=args.socket_path, animas_dir=args.animas_dir, shared_dir=args.shared_dir
+    )
+
+    await runner.run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

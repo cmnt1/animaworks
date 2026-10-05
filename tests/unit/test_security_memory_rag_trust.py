@@ -8,12 +8,12 @@ from __future__ import annotations
 
 Phase 1: activity_log write protection
 Phase 2: min_trust_seen tracking across execution engines
-Phase 3: knowledge origin propagation + consolidation origin chain
+Phase 3: knowledge origin propagation
 """
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -160,7 +160,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_updates_trust_untrusted(self, tmp_path):
         """Calling web_search should set min_trust_seen to 0 (untrusted)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -179,7 +179,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_stays_trusted(self, tmp_path):
         """Calling search_memory should keep min_trust_seen at 2 (trusted)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -197,7 +197,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_medium_trust(self, tmp_path):
         """Calling read_file should set min_trust_seen to 1 (medium)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -215,7 +215,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_min_trust_seen_takes_minimum(self, tmp_path):
         """After trusted then untrusted, min_trust_seen should be 0."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -249,12 +249,38 @@ class TestMinTrustSeenSDKHook:
     """PreToolUse hook tracks min_trust_seen in session_stats."""
 
     def test_sdk_hook_trust_tracking(self):
-        """Verify _SDK_TOOL_TRUST mappings are consistent."""
-        from core.execution._sanitize import TOOL_TRUST_LEVELS
+        """SDK and MCP tools resolve through the canonical trust table."""
+        from core.trust import resolve_tool_trust
 
-        assert TOOL_TRUST_LEVELS.get("web_search") == "untrusted"
-        assert TOOL_TRUST_LEVELS.get("search_memory") == "trusted"
-        assert TOOL_TRUST_LEVELS.get("read_file") == "medium"
+        assert resolve_tool_trust("WebSearch") == "untrusted"
+        assert resolve_tool_trust("mcp__aw__search_memory") == "trusted"
+        assert resolve_tool_trust("Read") == "medium"
+
+    @pytest.mark.asyncio
+    async def test_sdk_hook_persists_trust_by_runtime_session(self, tmp_path):
+        from core.trust import read_session_trust
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        anima_dir = tmp_path / "animas" / "hook-test"
+        anima_dir.mkdir(parents=True)
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="thread", trigger="chat")
+        stats = {
+            "tool_call_count": 0,
+            "total_result_bytes": 0,
+            "system_prompt_tokens": 0,
+            "user_prompt_tokens": 0,
+            "trigger": "chat",
+            "min_trust_seen": 2,
+        }
+        hook = _build_pre_tool_hook(anima_dir, session_stats=stats)
+
+        with runtime_session_scope(ctx):
+            await hook({"tool_name": "WebSearch", "tool_input": {}}, "tool-use", MagicMock())
+
+        assert stats["min_trust_seen"] == 0
+        assert read_session_trust(anima_dir, ctx.tool_session_id) == 0
+        assert not (anima_dir / "run" / "min_trust_seen").exists()
 
 
 # ── Phase 3: knowledge origin propagation ─────────────────────
@@ -355,16 +381,19 @@ class TestKnowledgeOriginFrontmatter:
         assert not written.startswith("---\norigin:")
 
     def test_mode_s_file_trust_fallback(self, tmp_path):
-        """When _min_trust_seen is 2 (default) but run/min_trust_seen file says 0."""
+        """A session's isolated trust-state file contributes to the write origin."""
+        from core.trust import record_session_trust
+        from core.execution.session.session_context import RuntimeSessionContext
+
         handler = _make_handler(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")
+        handler.bind_runtime_session(ctx)
         handler._min_trust_seen = 2
 
         anima_dir = handler._anima_dir
         knowledge_dir = anima_dir / "knowledge"
         knowledge_dir.mkdir(parents=True, exist_ok=True)
-        run_dir = anima_dir / "run"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "min_trust_seen").write_text("0", encoding="utf-8")
+        record_session_trust(anima_dir, ctx.tool_session_id, 0)
 
         handler.handle(
             "write_memory_file",
@@ -374,139 +403,3 @@ class TestKnowledgeOriginFrontmatter:
         written = (knowledge_dir / "from-sdk.md").read_text(encoding="utf-8")
         assert written.startswith("---")
         assert "origin: external_web" in written
-
-
-# ── Phase 3: consolidation origin chain ───────────────────────
-
-
-class TestConsolidationOriginChain:
-    """ConsolidationEngine respects origin during RAG index updates."""
-
-    def test_has_external_origin_detects_external_web(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "external.md").write_text(
-            "---\norigin: external_web\n---\n\n# External Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["external.md"]) is True
-
-    def test_has_external_origin_detects_mixed(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "mixed.md").write_text(
-            "---\norigin: mixed\n---\n\n# Mixed Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["mixed.md"]) is True
-
-    def test_has_external_origin_clean_files_return_false(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "clean.md").write_text(
-            "---\nconfidence: 0.8\n---\n\n# Clean Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["clean.md"]) is False
-
-    def test_has_external_origin_no_frontmatter_returns_false(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "legacy.md").write_text(
-            "# Legacy knowledge without frontmatter",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["legacy.md"]) is False
-
-    def test_has_external_origin_nonexistent_file(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        assert engine._has_external_origin_in_files(["nonexistent.md"]) is False
-
-    def test_update_rag_index_downgrades_with_external_source(self, tmp_path):
-        """When source_files contain external origins, origin is downgraded."""
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-
-        (knowledge_dir / "source_ext.md").write_text(
-            "---\norigin: external_web\n---\n\nExternal source data",
-            encoding="utf-8",
-        )
-        (knowledge_dir / "output.md").write_text(
-            "---\nconfidence: 0.8\n---\n\nConsolidated output",
-            encoding="utf-8",
-        )
-
-        mock_indexer = MagicMock()
-        mock_store = MagicMock()
-
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
-        ):
-            engine._update_rag_index(
-                ["output.md"],
-                origin="consolidation",
-                source_files=["source_ext.md"],
-            )
-
-        if mock_indexer.index_file.called:
-            call_kwargs = mock_indexer.index_file.call_args
-            assert call_kwargs[1].get("origin") == "consolidation_external"
-
-    def test_update_rag_index_keeps_consolidation_without_external(self, tmp_path):
-        """When no external sources, origin stays 'consolidation'."""
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-
-        (knowledge_dir / "clean_src.md").write_text(
-            "---\nconfidence: 0.9\n---\n\nClean source",
-            encoding="utf-8",
-        )
-        (knowledge_dir / "output2.md").write_text(
-            "Consolidated output",
-            encoding="utf-8",
-        )
-
-        mock_indexer = MagicMock()
-        mock_store = MagicMock()
-
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
-        ):
-            engine._update_rag_index(
-                ["output2.md"],
-                origin="consolidation",
-                source_files=["clean_src.md"],
-            )
-
-        if mock_indexer.index_file.called:
-            call_kwargs = mock_indexer.index_file.call_args
-            assert call_kwargs[1].get("origin") == "consolidation"
-
-    def test_consolidation_external_is_in_external_origins(self):
-        from core.memory.consolidation import ConsolidationEngine
-
-        assert "consolidation_external" in ConsolidationEngine._EXTERNAL_ORIGINS
-        assert "external_web" in ConsolidationEngine._EXTERNAL_ORIGINS
-        assert "mixed" in ConsolidationEngine._EXTERNAL_ORIGINS

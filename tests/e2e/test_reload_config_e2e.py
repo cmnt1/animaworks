@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -26,9 +25,7 @@ def _write_status_json(anima_dir: Path, **overrides) -> None:
     if status_path.exists():
         data = json.loads(status_path.read_text(encoding="utf-8"))
     data.update(overrides)
-    status_path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    status_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # ── E2E Tests ────────────────────────────────────────────────
@@ -47,7 +44,7 @@ class TestReloadConfigE2E:
         )
         shared_dir = data_dir / "shared"
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir=anima_dir, shared_dir=shared_dir)
         assert anima.model_config.model == "claude-sonnet-4-6"
@@ -55,6 +52,7 @@ class TestReloadConfigE2E:
         _write_status_json(anima_dir, model="claude-opus-4-6")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         result = anima.reload_config()
@@ -74,7 +72,7 @@ class TestReloadConfigE2E:
         )
         shared_dir = data_dir / "shared"
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir=anima_dir, shared_dir=shared_dir)
         original_max_tokens = anima.model_config.max_tokens
@@ -82,6 +80,7 @@ class TestReloadConfigE2E:
         _write_status_json(anima_dir, max_tokens=32768)
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         result = anima.reload_config()
@@ -99,11 +98,12 @@ class TestReloadConfigE2E:
         )
         shared_dir = data_dir / "shared"
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir=anima_dir, shared_dir=shared_dir)
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         result = anima.reload_config()
@@ -120,7 +120,7 @@ class TestReloadConfigE2E:
         )
         shared_dir = data_dir / "shared"
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir=anima_dir, shared_dir=shared_dir)
         assert anima.model_config.thinking is None
@@ -128,6 +128,7 @@ class TestReloadConfigE2E:
         _write_status_json(anima_dir, thinking=True)
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         result = anima.reload_config()

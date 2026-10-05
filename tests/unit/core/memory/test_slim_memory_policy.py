@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,8 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.config.schemas import ConsolidationConfig, PrimingConfig, RAGConfig
-from core.memory.consolidation import ConsolidationEngine
+from core.config.schemas import (
+    CompactBackgroundRecallConfig,
+    ConsolidationConfig,
+    PrimingConfig,
+    RAGConfig,
+)
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming.engine import PrimingEngine
 from core.memory.priming.policy import resolve_priming_policy
 
@@ -24,7 +28,6 @@ def _mock_channels(engine: PrimingEngine) -> dict[str, AsyncMock]:
         "_channel_e_pending_tasks",
         "_collect_recent_outbound",
         "_channel_f_episodes",
-        "_channel_g_graph_context",
         "_collect_pending_human_notifications",
     ):
         channels[name] = AsyncMock(return_value=("", "") if name == "_channel_c_related_knowledge" else "")
@@ -34,24 +37,103 @@ def _mock_channels(engine: PrimingEngine) -> dict[str, AsyncMock]:
 
 @pytest.mark.parametrize("channel,intent", [("heartbeat", ""), ("cron", ""), ("inbox", "report")])
 @pytest.mark.asyncio
-async def test_compact_simple_event_never_starts_general_search(tmp_path: Path, channel: str, intent: str):
+async def test_compact_background_event_runs_bounded_recall_without_activity_search(
+    tmp_path: Path, channel: str, intent: str
+):
     engine = PrimingEngine(tmp_path)
     channels = _mock_channels(engine)
     channels["_channel_e_pending_tasks"].return_value = "Deadline: tomorrow; approval required"
     channels["_collect_pending_human_notifications"].return_value = "Human decision pending " * 500
-    result = await engine.prime_memories(
-        "Routine result", channel=channel, intent=intent, profile="compact", max_tokens=200
-    )
-    for name in (
-        "_channel_b_recent_activity",
-        "_channel_c_related_knowledge",
-        "_channel_f_episodes",
-        "_channel_g_graph_context",
-    ):
-        channels[name].assert_not_called()
+    config = SimpleNamespace(priming=PrimingConfig())
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("Routine result", channel=channel, intent=intent, max_tokens=200)
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", ["Routine", "result"], channel=channel)
+    channels["_channel_c_related_knowledge"].assert_awaited_once()
+    channels["_channel_f_episodes"].assert_awaited_once()
     channels["_channel_c0_important_knowledge"].assert_awaited_once_with([], trigger=channel, resident_only=True)
     assert "approval required" in result.pending_tasks
     assert result.pending_human_notifications == "Human decision pending " * 500
+
+
+@pytest.mark.asyncio
+async def test_compact_background_recall_skips_empty_message_and_can_be_disabled(tmp_path: Path):
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    config = SimpleNamespace(priming=PrimingConfig())
+    with patch("core.config.models.load_config", return_value=config):
+        await engine.prime_memories("  \n", channel="heartbeat")
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
+    channels["_channel_c_related_knowledge"].assert_not_called()
+    channels["_channel_f_episodes"].assert_not_called()
+
+    config.priming.compact_background_recall_enabled = False
+    with patch("core.config.models.load_config", return_value=config):
+        await engine.prime_memories("heartbeat task", channel="heartbeat")
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
+    channels["_channel_c_related_knowledge"].assert_not_called()
+    channels["_channel_f_episodes"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_compact_background_recall_respects_item_limits_and_trust_split(tmp_path: Path):
+    from core.memory.priming.items import ItemizedMemory, MemoryItem
+
+    settings = CompactBackgroundRecallConfig(
+        related_knowledge_max_items=2,
+        related_knowledge_max_tokens=500,
+        episodes_max_items=1,
+        episodes_max_tokens=500,
+    )
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall=settings))
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    trusted_items = [
+        MemoryItem(source="related_knowledge", key=f"k{i}", text=f"trusted {i}", rank=10 - i) for i in range(3)
+    ]
+    untrusted_items = [
+        MemoryItem(source="related_knowledge_untrusted", key=f"u{i}", text=f"untrusted {i}", rank=1 - i)
+        for i in range(2)
+    ]
+    episode_items = [MemoryItem(source="episodes", key=f"e{i}", text=f"episode {i}", rank=10 - i) for i in range(3)]
+    channels["_channel_c_related_knowledge"].return_value = (
+        ItemizedMemory("", trusted_items),
+        ItemizedMemory("", untrusted_items),
+    )
+    channels["_channel_f_episodes"].return_value = ItemizedMemory("", episode_items)
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("routine", channel="heartbeat")
+
+    assert result.related_knowledge.count("trusted ") == 2
+    assert result.related_knowledge_untrusted == ""
+    assert result.episodes == "episode 0"
+
+
+@pytest.mark.asyncio
+async def test_compact_background_recall_respects_token_budgets(tmp_path: Path):
+    from core.memory.priming.items import ItemizedMemory, MemoryItem
+
+    settings = CompactBackgroundRecallConfig(
+        related_knowledge_max_items=3,
+        related_knowledge_max_tokens=5,
+        episodes_max_items=2,
+        episodes_max_tokens=5,
+    )
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall=settings))
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    too_large = "memory detail " * 100
+    channels["_channel_c_related_knowledge"].return_value = (
+        ItemizedMemory(too_large, [MemoryItem(source="related_knowledge", key="large", text=too_large)]),
+        ItemizedMemory("", []),
+    )
+    channels["_channel_f_episodes"].return_value = ItemizedMemory(
+        too_large, [MemoryItem(source="episodes", key="large", text=too_large)]
+    )
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("cron task", channel="cron")
+
+    assert result.related_knowledge == ""
+    assert result.episodes == ""
 
 
 @pytest.mark.asyncio
@@ -59,7 +141,7 @@ async def test_compact_question_keeps_trusted_and_untrusted_separate(tmp_path: P
     engine = PrimingEngine(tmp_path)
     channels = _mock_channels(engine)
     channels["_channel_c_related_knowledge"].return_value = ("trusted pointer", "external pointer")
-    result = await engine.prime_memories("Customer policy?", channel="chat", profile="compact")
+    result = await engine.prime_memories("Customer policy?", channel="chat")
     channels["_channel_c_related_knowledge"].assert_awaited_once()
     assert "trusted pointer" in result.related_knowledge
     assert result.related_knowledge_untrusted == "external pointer"
@@ -75,34 +157,102 @@ async def test_compact_never_truncates_an_itemized_memory_pointer(tmp_path: Path
     long_pointer = "details " * 1000 + ' read_memory_file(path="knowledge/complete-path.md")'
     item = MemoryItem(source="related_knowledge", key="long", text=long_pointer)
     channels["_channel_c_related_knowledge"].return_value = (ItemizedMemory(long_pointer, [item]), "")
-    result = await engine.prime_memories("policy?", channel="chat", profile="compact", max_tokens=200)
+    result = await engine.prime_memories("policy?", channel="chat", max_tokens=200)
     assert not result.related_knowledge.strip()
 
 
 @pytest.mark.asyncio
 async def test_compact_cap_applies_to_proportional_heartbeat_budget(tmp_path: Path):
-    engine = PrimingEngine(tmp_path, context_window=1_000_000)
+    engine = PrimingEngine(tmp_path)
     engine._prime_compact = AsyncMock()
-    await engine.prime_memories("", channel="heartbeat", profile="compact", max_tokens=1200)
+    await engine.prime_memories("", channel="heartbeat", max_tokens=1200)
     assert engine._prime_compact.call_args.args[4] == 1200
 
 
-def test_per_anima_profile_overrides_global_without_model_assumptions(tmp_path: Path):
-    config = SimpleNamespace(priming=PrimingConfig(profile="compact", max_tokens=1500))
-    (tmp_path / "status.json").write_text(json.dumps({"model": "any/future-engine", "priming_profile": "full"}))
+def test_priming_policy_uses_global_token_budget_only():
+    config = SimpleNamespace(priming=PrimingConfig(max_tokens=1500))
     with patch("core.config.load_config", return_value=config):
-        policy = resolve_priming_policy(tmp_path)
-    assert (policy.profile, policy.max_tokens) == ("full", 1500)
+        policy = resolve_priming_policy()
+    assert policy.max_tokens == 1500
+    assert not hasattr(policy, "profile")
+
+
+def test_compact_background_recall_defaults_are_bounded():
+    config = PrimingConfig()
+    limits = config.compact_background_recall
+
+    assert config.compact_background_recall_enabled is True
+    assert limits.related_knowledge_max_items == 3
+    assert limits.related_knowledge_max_tokens == 180
+    assert limits.episodes_max_items == 2
+    assert limits.episodes_max_tokens == 400
+    assert limits.recent_activity_max_items == 5
+    assert limits.recent_activity_max_tokens == 300
+
+
+@pytest.mark.asyncio
+async def test_compact_recent_activity_is_newest_first_and_bounded(tmp_path: Path):
+    from core.memory.priming.items import ItemizedMemory, MemoryItem
+    from core.text.tokens import estimate_tokens
+
+    settings = CompactBackgroundRecallConfig(
+        recent_activity_max_items=5,
+        recent_activity_max_tokens=300,
+    )
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall=settings))
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    entries = tuple(
+        MemoryItem(
+            source="recent_activity",
+            key=f"entry-{index}",
+            text=f"activity {index}",
+            updated=f"2026-09-28T10:{index:02}:00+09:00",
+            rank=float(index),
+        )
+        for index in range(8)
+    )
+    channels["_channel_b_recent_activity"].return_value = ItemizedMemory("", entries)
+
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("", channel="heartbeat")
+
+    lines = result.recent_activity.splitlines()
+    assert len(lines) == 5
+    assert lines[0] == "activity 7"
+    assert lines[-1] == "activity 3"
+    assert "activity 2" not in result.recent_activity
+    assert estimate_tokens(result.recent_activity) <= 300
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
+
+
+@pytest.mark.asyncio
+async def test_compact_recent_activity_zero_disables_it_and_chat_is_unchanged(tmp_path: Path):
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    settings = CompactBackgroundRecallConfig(recent_activity_max_items=0)
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall=settings))
+
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("routine", channel="heartbeat")
+    assert not result.recent_activity
+    channels["_channel_b_recent_activity"].assert_not_called()
+
+    chat_engine = PrimingEngine(tmp_path / "chat")
+    chat_channels = _mock_channels(chat_engine)
+    with patch("core.config.models.load_config", return_value=config):
+        await chat_engine.prime_memories("hello", channel="chat")
+    chat_channels["_channel_b_recent_activity"].assert_not_called()
 
 
 def test_defaults_keep_storage_but_reenable_automatic_mutation():
     config = ConsolidationConfig()
     assert config.daily_enabled and config.indexing_enabled
-    assert not config.knowledge_mutation_enabled
+    assert not hasattr(config, "knowledge_mutation_enabled")
     assert not config.weekly_enabled
     assert config.knowledge_self_correction_enabled
     assert config.weekly_distillation_enabled and config.skill_autolearn_enabled
-    assert RAGConfig().enabled and RAGConfig().repair_enabled and RAGConfig().vector_worker_enabled
+    assert RAGConfig().enabled and RAGConfig().repair_enabled
     assert RAGConfig().rerank_enabled and RAGConfig().facts_extraction_enabled
 
 
@@ -121,17 +271,9 @@ def test_episode_checkpoint_processes_only_new_inputs_and_preserves_source(tmp_p
     assert raw.read_text() == "original evidence"
 
 
-def test_incremental_phase_b_carryover_keeps_earlier_unfinished_input(tmp_path: Path):
-    engine = ConsolidationEngine(tmp_path, "fixture")
-    day = date(2026, 9, 7)
-    for summary in ("first episode", "late episode", "late episode"):
-        engine.record_phase_b_carryover(summary, target_date=day, reason="pending", incremental=True)
-    assert engine.load_phase_b_carryover()[0]["episodes_summary"] == "first episode\n\nlate episode"
-
-
 @pytest.mark.asyncio
 async def test_daily_default_finishes_after_episode_without_tool_loop(tmp_path: Path):
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
     from core.config.models import AnimaWorksConfig
 
     anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
@@ -159,34 +301,36 @@ def test_curator_proposal_cannot_change_access_or_remove_vectors(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
-    from core._anima_lifecycle import LifecycleMixin
-    from core.config.models import AnimaWorksConfig
+    from core.anima.lifecycle import LifecycleMixin
+    from core.config.models import AnimaWorksConfig, ConsolidationConfig
+    from core.schemas import ModelConfig
 
-    anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
+    anima = SimpleNamespace(name="fixture", anima_dir=tmp_path, memory=MagicMock())
+    anima.memory.read_model_config.return_value = ModelConfig(model="chat-model")
     engine = ConsolidationEngine(tmp_path, "fixture")
     engine.collect_activity_chunks = MagicMock(return_value=["new activity"])
+
+    async def fake_one_shot(_prompt: str, **kwargs) -> str:
+        if kwargs.get("structured_output"):
+            return '{"entities": []}'
+        return "## 12:00 — Work\nEvidence"
+
     with (
-        patch("core.config.load_config", return_value=AnimaWorksConfig()),
         patch(
-            "core.memory._llm_utils.one_shot_completion",
+            "core.config.load_config",
+            return_value=AnimaWorksConfig(
+                consolidation=ConsolidationConfig(episode_summary_backfill_days=1),
+            ),
+        ),
+        patch(
+            "core.llm.oneshot.one_shot_completion",
             new_callable=AsyncMock,
-            return_value="## 12:00 — Work\nEvidence",
+            side_effect=fake_one_shot,
         ) as llm,
     ):
         first = await LifecycleMixin._run_daily_consolidation(anima, engine)
         second = await LifecycleMixin._run_daily_consolidation(anima, engine)
     assert first.action == "completed"
     assert second.action == "skipped"
-    assert llm.await_count == 1
-
-
-def test_explicit_graph_disable_skips_indexer_creation(tmp_path: Path):
-    from core.memory.rag_search import RAGMemorySearch
-
-    search = RAGMemorySearch(tmp_path, tmp_path / "common_knowledge", tmp_path / "common_skills")
-    with (
-        patch.object(search, "_load_rag_pipeline_settings", return_value={"enable_spreading_activation": False}),
-        patch.object(search, "_get_indexer") as indexer,
-    ):
-        assert search._graph_episodes_search("query", 10, tmp_path / "knowledge") == []
-    indexer.assert_not_called()
+    generation_calls = [call for call in llm.await_args_list if not call.kwargs.get("structured_output")]
+    assert len(generation_calls) == 1

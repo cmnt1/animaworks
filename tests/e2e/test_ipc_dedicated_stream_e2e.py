@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.e2e]
 
@@ -43,6 +43,7 @@ async def test_e2e_stream_with_interleaved_pings() -> None:
                 return IPCResponse(id=request.id, result={"status": "ok"})
 
             if request.method == "stream_test":
+
                 async def _stream() -> AsyncIterator[IPCResponse]:
                     for i in range(5):
                         yield IPCResponse(
@@ -57,6 +58,7 @@ async def test_e2e_stream_with_interleaved_pings() -> None:
                         done=True,
                         result={"response": "complete"},
                     )
+
                 return _stream()
 
             return IPCResponse(
@@ -92,22 +94,17 @@ async def test_e2e_stream_with_interleaved_pings() -> None:
             await asyncio.gather(_do_stream(), _do_pings())
 
             # Verify streaming: 5 chunks + 1 done = 6 responses
-            assert len(stream_results) == 6, (
-                f"Expected 6 stream responses (5 chunks + done), got {len(stream_results)}"
-            )
+            assert len(stream_results) == 6, f"Expected 6 stream responses (5 chunks + done), got {len(stream_results)}"
             assert stream_results[-1].done is True
             assert stream_results[-1].result == {"response": "complete"}
 
             # Verify pings: all 3 should succeed
-            assert len(ping_results) == 3, (
-                f"Expected 3 ping responses, got {len(ping_results)}"
-            )
+            assert len(ping_results) == 3, f"Expected 3 ping responses, got {len(ping_results)}"
             for i, resp in enumerate(ping_results):
                 assert resp.error is None, f"Ping {i} returned error: {resp.error}"
                 assert resp.result == {"status": "ok"}
 
         finally:
-            await client.close()
             await server.stop()
 
 
@@ -138,6 +135,7 @@ async def test_e2e_heartbeat_relay_over_dedicated_connection() -> None:
 
             async def _stream() -> AsyncIterator[IPCResponse]:
                 import json
+
                 for item in relay_sequence:
                     yield IPCResponse(
                         id=request.id,
@@ -151,6 +149,7 @@ async def test_e2e_heartbeat_relay_over_dedicated_connection() -> None:
                     done=True,
                     result={"response": "heartbeat complete"},
                 )
+
             return _stream()
 
         server = IPCServer(socket_path, handler)
@@ -166,17 +165,15 @@ async def test_e2e_heartbeat_relay_over_dedicated_connection() -> None:
                 collected.append(resp)
 
             # 4 chunk responses + 1 done response = 5 total
-            assert len(collected) == 5, (
-                f"Expected 5 responses (4 relay chunks + done), got {len(collected)}"
-            )
+            assert len(collected) == 5, f"Expected 5 responses (4 relay chunks + done), got {len(collected)}"
 
             # Verify chunks are in correct order
             import json
+
             for i, expected in enumerate(relay_sequence):
                 chunk_data = json.loads(collected[i].chunk)
                 assert chunk_data["type"] == expected["type"], (
-                    f"Chunk {i}: expected type={expected['type']}, "
-                    f"got type={chunk_data['type']}"
+                    f"Chunk {i}: expected type={expected['type']}, got type={chunk_data['type']}"
                 )
 
             # Verify done
@@ -184,7 +181,6 @@ async def test_e2e_heartbeat_relay_over_dedicated_connection() -> None:
             assert collected[-1].result == {"response": "heartbeat complete"}
 
         finally:
-            await client.close()
             await server.stop()
 
 
@@ -215,6 +211,7 @@ async def test_e2e_stale_response_isolation() -> None:
                 return IPCResponse(id=request.id, result={"status": "slow_ok"})
 
             if request.method == "stream_test":
+
                 async def _stream() -> AsyncIterator[IPCResponse]:
                     for i in range(3):
                         yield IPCResponse(
@@ -228,6 +225,7 @@ async def test_e2e_stale_response_isolation() -> None:
                         done=True,
                         result={"response": "stream done"},
                     )
+
                 return _stream()
 
             return IPCResponse(
@@ -245,9 +243,7 @@ async def test_e2e_stale_response_isolation() -> None:
             # Step 1: Send slow_ping (takes 0.2s, opens its own connection).
             # We do NOT await it yet — launch it as a task.
             slow_ping_req = IPCRequest(id="slow_ping_001", method="slow_ping")
-            ping_task = asyncio.create_task(
-                client.send_request(slow_ping_req, timeout=5.0)
-            )
+            ping_task = asyncio.create_task(client.send_request(slow_ping_req, timeout=5.0))
 
             # Step 2: Give the request time to reach the server, then
             # immediately start streaming on a dedicated connection.
@@ -262,28 +258,22 @@ async def test_e2e_stale_response_isolation() -> None:
             ping_resp = await ping_task
 
             # Verify stream: 3 chunks + 1 done = 4 responses
-            assert len(stream_results) == 4, (
-                f"Expected 4 stream responses (3 chunks + done), got {len(stream_results)}"
-            )
+            assert len(stream_results) == 4, f"Expected 4 stream responses (3 chunks + done), got {len(stream_results)}"
 
             # All stream response IDs must match the stream request ID
             for i, resp in enumerate(stream_results):
                 assert resp.id == "stream_002", (
-                    f"Stream response {i} has id={resp.id}, "
-                    f"expected 'stream_002' — stale response leaked!"
+                    f"Stream response {i} has id={resp.id}, expected 'stream_002' — stale response leaked!"
                 )
 
             assert stream_results[-1].done is True
 
             # Verify slow ping also succeeded (on its own connection)
-            assert ping_resp.error is None, (
-                f"Slow ping returned error: {ping_resp.error}"
-            )
+            assert ping_resp.error is None, f"Slow ping returned error: {ping_resp.error}"
             assert ping_resp.result == {"status": "slow_ok"}
             assert ping_resp.id == "slow_ping_001"
 
         finally:
-            await client.close()
             await server.stop()
 
 
@@ -305,6 +295,7 @@ async def test_e2e_multiple_sequential_streams() -> None:
 
         async def handler(request: IPCRequest) -> IPCResponse | AsyncIterator[IPCResponse]:
             if request.method == "stream_test":
+
                 async def _stream() -> AsyncIterator[IPCResponse]:
                     yield IPCResponse(
                         id=request.id,
@@ -317,6 +308,7 @@ async def test_e2e_multiple_sequential_streams() -> None:
                         done=True,
                         result={"response": "ok"},
                     )
+
                 return _stream()
 
             return IPCResponse(
@@ -352,17 +344,13 @@ async def test_e2e_multiple_sequential_streams() -> None:
                     results.append(resp)
 
                 # Each stream: 1 chunk + 1 done = 2 responses
-                assert len(results) == 2, (
-                    f"Stream {seq}: expected 2 responses, got {len(results)}"
-                )
+                assert len(results) == 2, f"Stream {seq}: expected 2 responses, got {len(results)}"
                 assert results[0].chunk is not None
                 assert results[-1].done is True
 
                 # Verify response IDs match
                 for resp in results:
-                    assert resp.id == f"seq_{seq}", (
-                        f"Stream {seq}: response id={resp.id}, expected 'seq_{seq}'"
-                    )
+                    assert resp.id == f"seq_{seq}", f"Stream {seq}: response id={resp.id}, expected 'seq_{seq}'"
 
             # Allow server to process connection closes
             await asyncio.sleep(0.1)
@@ -375,5 +363,4 @@ async def test_e2e_multiple_sequential_streams() -> None:
             )
 
         finally:
-            await client.close()
             await server.stop()

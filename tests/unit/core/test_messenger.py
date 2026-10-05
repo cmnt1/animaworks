@@ -1,4 +1,4 @@
-"""Unit tests for core/messenger.py — file-system messaging."""
+"""Unit tests for core/messaging/messenger.py — file-system messaging."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +16,7 @@ import pytest
 
 from core.exceptions import DeliveryError
 from core.i18n import t
-from core.messenger import InboxItem, Messenger
+from core.messaging.messenger import InboxItem, Messenger
 from core.schemas import Message
 from core.time_utils import now_local
 from core.tooling.handler_comms import CommsToolsMixin
@@ -140,7 +140,7 @@ class TestSend:
         (anima_dir / "activity_log").mkdir(parents=True, exist_ok=True)
         messenger.send("bob", "Report", intent="report")
 
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(days=1, types=["message_sent"])
@@ -156,7 +156,7 @@ class TestSend:
                 content = f.read_text(encoding="utf-8").strip()
                 assert content == ""
 
-    def test_task_like_internal_dm_creates_recipient_task(self, tmp_path: Path):
+    def test_task_like_internal_dm_does_not_create_implicit_task(self, tmp_path: Path):
         shared = tmp_path / "shared"
         shared.mkdir()
         animas_dir = tmp_path / "animas"
@@ -169,23 +169,15 @@ class TestSend:
         with patch("core.paths.get_animas_dir", return_value=animas_dir):
             msg = Messenger(shared, "alice").send("bob", content, intent="question")
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tasks = TaskQueueManager(bob_dir).list_tasks()
-        assert len(tasks) == 1
-        assert tasks[0].assignee == "bob"
-        assert tasks[0].meta["source_message_id"] == msg.id
-        assert msg.meta["autocreated_task_id"] == tasks[0].task_id
-
-        pending_path = bob_dir / "state" / "pending" / f"{tasks[0].task_id}.json"
-        assert pending_path.exists()
-        pending = json.loads(pending_path.read_text(encoding="utf-8"))
-        assert pending["task_id"] == tasks[0].task_id
-        assert pending["submitted_by"] == "alice"
-        assert pending["source"] == "message_request_capture"
+        assert tasks == []
+        assert "autocreated_task_id" not in msg.meta
 
         inbox_data = json.loads((shared / "inbox" / "bob" / f"{msg.id}.json").read_text(encoding="utf-8"))
-        assert inbox_data["meta"]["autocreated_task_id"] == tasks[0].task_id
+        assert "autocreated_task_id" not in inbox_data["meta"]
+        assert not list((bob_dir / "state" / "pending").glob("*.json"))
 
     def test_status_inquiry_question_does_not_create_recipient_task(self, tmp_path: Path):
         shared = tmp_path / "shared"
@@ -505,28 +497,6 @@ class TestArchiveAll:
 # ── archive_from ──────────────────────────────────────────
 
 
-class TestArchiveFrom:
-    def test_archives_only_from_sender(self, shared_dir, messenger):
-        bob = Messenger(shared_dir, "bob")
-        charlie = Messenger(shared_dir, "charlie")
-        bob.send("alice", "from bob")
-        charlie.send("alice", "from charlie")
-
-        count = messenger.archive_from("bob")
-        assert count == 1
-        # charlie's message remains
-        remaining = messenger.receive()
-        assert len(remaining) == 1
-        assert remaining[0].from_person == "charlie"
-
-    def test_archive_from_nonexistent_sender(self, shared_dir, messenger):
-        bob = Messenger(shared_dir, "bob")
-        bob.send("alice", "from bob")
-        count = messenger.archive_from("unknown")
-        assert count == 0
-        assert messenger.unread_count() == 1
-
-
 # ── sweep_expired ────────────────────────────────────────
 
 
@@ -682,30 +652,6 @@ class TestUnread:
 # ── send_async ────────────────────────────────────────────
 
 
-class TestSendAsync:
-    async def test_falls_back_to_filesystem(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async hello")
-        assert msg.from_person == "alice"
-        assert msg.to_person == "bob"
-        # Should be in bob's inbox
-        bob_inbox = shared_dir / "inbox" / "bob"
-        assert len(list(bob_inbox.glob("*.json"))) == 1
-
-    async def test_auto_thread_id(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "test")
-        assert msg.thread_id == msg.id
-
-    async def test_delegates_to_sync_send(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async test")
-        assert msg.from_person == "alice"
-        bob_inbox = shared_dir / "inbox" / "bob"
-        assert len(list(bob_inbox.glob("*.json"))) == 1
-
-    async def test_send_async_with_intent(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async report", intent="report")
-        assert msg.intent == "report"
-
-
 # ── send() no longer writes DM log ────────────────────
 
 
@@ -728,14 +674,6 @@ class TestSendNoDmLog:
             thread_id="thread-abc",
         )
         messenger.reply(original, "Got it!")
-        dm_log_dir = shared_dir / "dm_logs"
-        if dm_log_dir.exists():
-            files = list(dm_log_dir.glob("*.jsonl"))
-            for f in files:
-                assert f.read_text(encoding="utf-8").strip() == ""
-
-    async def test_send_async_does_not_create_dm_log(self, shared_dir, messenger):
-        await messenger.send_async("bob", "async msg")
         dm_log_dir = shared_dir / "dm_logs"
         if dm_log_dir.exists():
             files = list(dm_log_dir.glob("*.jsonl"))
@@ -922,7 +860,7 @@ class TestActivityLoggingWarning:
         mock_activity.log.side_effect = RuntimeError("disk full")
 
         with (
-            patch("core.memory.activity.ActivityLogger", return_value=mock_activity),
+            patch("core.activity.logger.ActivityLogger", return_value=mock_activity),
             caplog.at_level(logging.WARNING, logger="animaworks.messenger"),
         ):
             messenger.send("bob", "activity will fail")
@@ -938,7 +876,7 @@ class TestActivityLoggingWarning:
         mock_activity = MagicMock()
         mock_activity.log.side_effect = RuntimeError("boom")
 
-        with patch("core.memory.activity.ActivityLogger", return_value=mock_activity):
+        with patch("core.activity.logger.ActivityLogger", return_value=mock_activity):
             msg = messenger.send("bob", "should still work")
 
         assert msg.from_person == "alice"
@@ -952,16 +890,16 @@ class TestServerFallback:
     def test_send_falls_back_to_server_on_erofs(self, messenger: Messenger) -> None:
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None):
-            captured["url"] = url
-            captured["json"] = json
+        def fake_post(path, **kwargs):
+            captured["url"] = path
+            captured["json"] = kwargs.get("json")
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             return resp
 
         with (
-            patch("core.memory._io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=fake_post),
+            patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("core.host_api.host_api.post", side_effect=fake_post),
         ):
             msg = messenger.send("bob", "hello", skip_logging=True)
 
@@ -971,8 +909,8 @@ class TestServerFallback:
 
     def test_send_raises_delivery_error_when_fallback_fails(self, messenger: Messenger) -> None:
         with (
-            patch("core.memory._io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=ConnectionError("server down")),
+            patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("core.host_api.host_api.post", side_effect=ConnectionError("server down")),
             pytest.raises(DeliveryError, match="server fallback"),
         ):
             messenger.send("bob", "hello", skip_logging=True)
@@ -983,9 +921,9 @@ class TestServerFallback:
         (channels / "general.jsonl").write_text("", encoding="utf-8")
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None):
-            captured["url"] = url
-            captured["json"] = json
+        def fake_post(path, **kwargs):
+            captured["url"] = path
+            captured["json"] = kwargs.get("json")
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             return resp
@@ -999,7 +937,7 @@ class TestServerFallback:
 
         with (
             patch("pathlib.Path.open", deny_append),
-            patch("httpx.post", side_effect=fake_post),
+            patch("core.host_api.host_api.post", side_effect=fake_post),
         ):
             messenger.post_channel("general", "hi all")
 

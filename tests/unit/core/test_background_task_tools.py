@@ -1,4 +1,5 @@
 """Tests for check_background_task / list_background_tasks handler methods."""
+
 from __future__ import annotations
 
 import json
@@ -7,9 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.background import BackgroundTaskManager
+from core.tasks.background import BackgroundTaskManager
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -37,7 +37,9 @@ def background_manager(anima_dir: Path) -> BackgroundTaskManager:
 
 @pytest.fixture
 def handler_with_bg(
-    anima_dir: Path, memory: MagicMock, background_manager: BackgroundTaskManager,
+    anima_dir: Path,
+    memory: MagicMock,
+    background_manager: BackgroundTaskManager,
 ) -> ToolHandler:
     return ToolHandler(
         anima_dir=anima_dir,
@@ -85,7 +87,8 @@ class TestCheckBackgroundTask:
         handler_with_bg._external.dispatch.return_value = "result"
 
         submit_result = handler_with_bg.handle(
-            "generate_character_assets", {"prompt": "cat"},
+            "generate_character_assets",
+            {"prompt": "cat"},
         )
         task_id = json.loads(submit_result)["task_id"]
 
@@ -136,14 +139,16 @@ class TestListBackgroundTasks:
         handler_with_bg.handle("generate_character_assets", {"prompt": "cat"})
 
         result = handler_with_bg.handle(
-            "list_background_tasks", {"status": "running"},
+            "list_background_tasks",
+            {"status": "running"},
         )
         parsed = json.loads(result)
         assert all(t["status"] == "running" for t in parsed)
 
     def test_invalid_status_returns_error(self, handler_with_bg: ToolHandler):
         result = handler_with_bg.handle(
-            "list_background_tasks", {"status": "invalid_status"},
+            "list_background_tasks",
+            {"status": "invalid_status"},
         )
         assert "Error" in result
         assert "invalid_status" in result

@@ -5,9 +5,9 @@ import json
 import threading
 from pathlib import Path
 
-from core.supervisor import _mgr_health
-from core.supervisor._mgr_health import HealthMixin
-from core.supervisor.memory_probe import sample_process_memory
+from server.supervisor import _mgr_health
+from server.supervisor._mgr_health import HealthMixin
+from core.runtime.memory_probe import sample_process_memory
 
 
 def test_memory_probe_rotates_bounded_jsonl(tmp_path: Path, monkeypatch) -> None:

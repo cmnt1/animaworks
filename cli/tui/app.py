@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import logging
 import time
 from pathlib import Path
 
@@ -43,9 +43,33 @@ from cli.tui.widgets import (
     format_input_summary,
 )
 from cli.tui.widgets.response_status import ResponseStatus
+from core.platform.env import get_env
+
+logger = logging.getLogger(__name__)
 from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, strip_html_comments
+
+# How often the open thread is re-read so turns made elsewhere (the web
+# UI, cron, heartbeat, call_human and the replies to it) show up live —
+# the same cadence the web chat polls at.
+_HISTORY_POLL_SECONDS = 5.0
+# Turns this client drew itself, waiting for their stored copy to arrive.
+_MAX_LOCAL_ECHOES = 20
+
+
+def _echo_fingerprint(text: str) -> str:
+    """Whitespace-free prefix of a message, for matching a live turn to its stored copy."""
+    return "".join(strip_html_comments(text or "").split())[:80]
+
+
+def _history_key(msg: dict) -> tuple[str, str, str, str]:
+    return (
+        str(msg.get("ts") or ""),
+        str(msg.get("role") or ""),
+        str(msg.get("type") or ""),
+        _echo_fingerprint(str(msg.get("content") or "")),
+    )
 
 
 def _system_label(msg: dict) -> str:
@@ -279,6 +303,14 @@ class AnimaChatApp(App):
         # Session save throttling.
         self._session_save_pending = False
 
+        # Live history polling: the newest stored turn already on screen,
+        # and the turns drawn live here whose stored copy is still to come.
+        self._history_ready = False
+        self._history_poll_in_flight = False
+        self._seen_ts: str = ""
+        self._seen_keys: set[tuple[str, str, str, str]] = set()
+        self._local_echoes: list[tuple[str, str]] = []
+
     # ── Lifecycle ──────────────────────────────────────────
     def compose(self) -> ComposeResult:
         with Horizontal(id="body"):
@@ -296,7 +328,7 @@ class AnimaChatApp(App):
         try:
             self._bindings.apply_keymap(app_keymap(self._keymap))
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         self.body = self.query_one("#body", Horizontal)
         self.sidebar = self.query_one("#sidebar", Sidebar)
@@ -318,6 +350,7 @@ class AnimaChatApp(App):
         self.call_after_refresh(self.focus_input)
 
         self.run_worker(self._bootstrap(), group="init", exit_on_error=False)
+        self.set_interval(_HISTORY_POLL_SECONDS, self._schedule_history_poll)
 
     def _apply_theme(self) -> None:
         """Use the terminal's own colours instead of a painted theme.
@@ -327,7 +360,7 @@ class AnimaChatApp(App):
         the UI inherits whatever the user's terminal is set to. Override
         with ``ANIMAWORKS_TUI_THEME`` (any built-in Textual theme name).
         """
-        wanted = os.environ.get("ANIMAWORKS_TUI_THEME") or "ansi-light"
+        wanted = get_env("ANIMAWORKS_TUI_THEME") or "ansi-light"
         try:
             self.theme = wanted
         except Exception:
@@ -442,10 +475,85 @@ class AnimaChatApp(App):
         self._history_loading = False
 
     async def render_history(self, history: dict) -> None:
+        """Render the newest page of a thread; later turns arrive by polling."""
+        self._seen_ts = ""
+        self._seen_keys = set()
+        self._local_echoes = []
         for session in history.get("sessions", []):
             for msg in session.get("messages", []):
+                self._mark_seen(msg)
                 await self._render_history_msg(msg, prepend=False)
         self.current = None
+        self._history_ready = True
+
+    # ── Live history polling ─────────────────────────────
+    def _mark_seen(self, msg: dict) -> None:
+        ts = str(msg.get("ts") or "")
+        if ts > self._seen_ts:
+            self._seen_ts = ts
+            self._seen_keys = set()
+        if ts == self._seen_ts:
+            self._seen_keys.add(_history_key(msg))
+
+    def _remember_local_echo(self, role: str, text: str) -> None:
+        fingerprint = _echo_fingerprint(text)
+        if not fingerprint:
+            return
+        self._local_echoes.append((role, fingerprint))
+        del self._local_echoes[:-_MAX_LOCAL_ECHOES]
+
+    def _consume_local_echo(self, msg: dict) -> bool:
+        """True when *msg* is the stored copy of a turn already drawn live."""
+        role = str(msg.get("role") or "")
+        fingerprint = _echo_fingerprint(str(msg.get("content") or ""))
+        if not fingerprint:
+            return False
+        for i, (echo_role, echo) in enumerate(self._local_echoes):
+            if echo_role != role:
+                continue
+            if fingerprint.startswith(echo) or echo.startswith(fingerprint):
+                del self._local_echoes[i]
+                return True
+        return False
+
+    def unseen_history_messages(self, history: dict) -> list[dict]:
+        """Messages newer than what is on screen, minus this client's own live turns."""
+        fresh: list[dict] = []
+        for session in history.get("sessions", []):
+            for msg in session.get("messages", []):
+                ts = str(msg.get("ts") or "")
+                if ts < self._seen_ts:
+                    continue
+                if ts == self._seen_ts and _history_key(msg) in self._seen_keys:
+                    continue
+                self._mark_seen(msg)
+                if self._consume_local_echo(msg):
+                    continue
+                fresh.append(msg)
+        return fresh
+
+    def _schedule_history_poll(self) -> None:
+        if not self._history_ready or self._history_poll_in_flight or self.busy:
+            return
+        self._history_poll_in_flight = True
+        self.run_worker(self.poll_history(), group="history-poll", exit_on_error=False)
+
+    async def poll_history(self) -> None:
+        """Append turns made since the last look: other sessions, cron, call_human."""
+        anima, thread = self.anima_name, self.thread_id
+        try:
+            try:
+                history = await self.client.get_history(anima, thread_id=thread, limit=50)
+            except AnimaWorksClientError:
+                return
+            # A switch, a reload or our own response started meanwhile: this
+            # page belongs to a view that is no longer on screen.
+            if anima != self.anima_name or thread != self.thread_id or self.busy or not self._history_ready:
+                return
+            for msg in self.unseen_history_messages(history or {}):
+                await self._render_history_msg(msg, prepend=False)
+        finally:
+            self._history_poll_in_flight = False
 
     def _history_widget(self, msg: dict) -> Widget | None:
         """Build the transcript row for one stored message, if it has one."""
@@ -453,8 +561,14 @@ class AnimaChatApp(App):
         if not content:
             return None
         role = msg.get("role")
+        if msg.get("type") == "human_notify":
+            # call_human is addressed to the person reading this: not
+            # background traffic, so it is not drawn faintly.
+            return SystemNote(_system_label(msg), str(content), muted=False)
         if role == "human":
-            return HumanTurn("You", str(content))
+            via = str(msg.get("via") or "").strip()
+            label = f"You (via {via})" if msg.get("type") == "human_reply" and via else "You"
+            return HumanTurn(label, str(content))
         if role == "assistant":
             block = self.transcript.new_assistant(self.anima_name)
             block.set_final(str(content))
@@ -533,6 +647,7 @@ class AnimaChatApp(App):
         self.run_worker(self.load_older_history(), group="history", exit_on_error=False)
 
     async def reload_history(self, limit: int = 50) -> None:
+        self._history_ready = False
         self._clear_history_cursor()
         history = await self._get_history()
         if history is None:
@@ -615,6 +730,7 @@ class AnimaChatApp(App):
         text = (f"**{subject}**\n{body}" if subject else body).replace("**", "")
         block = self.transcript.new_assistant(self.anima_name)
         block.set_final(text)
+        self._remember_local_echo("assistant", body)
         self.run_worker(self.transcript.mount_assistant(block), group="ui", exit_on_error=False)
 
     def _thread_interaction_card(self, data: dict) -> None:
@@ -831,6 +947,7 @@ class AnimaChatApp(App):
         self.response_status.start()
         self.status_bar.set_state(status="thinking", right_hint="responding…")
         await self.transcript.add_human("You", text)
+        self._remember_local_echo("human", text)
         self.current = self.transcript.new_assistant(self.anima_name)
         await self.transcript.mount_assistant(self.current)
         self.tool_cards = {}
@@ -926,7 +1043,7 @@ class AnimaChatApp(App):
         try:
             save_session(self.session, base_dir=self.session_dir)
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     async def handle_sse(self, sse: SseEvent) -> None:
         name = sse.event
@@ -979,6 +1096,7 @@ class AnimaChatApp(App):
             self.response_status.stop()
             if self.current is not None:
                 self.current.set_final(summary)
+            self._remember_local_echo("assistant", summary)
             self.busy = False
             self.session.in_flight = False
             self._schedule_session_save(force=True)
@@ -1372,6 +1490,7 @@ class AnimaChatApp(App):
     async def _render_final(self, active: dict) -> None:
         self.current = self.transcript.new_assistant(self.anima_name)
         self.current.set_final(active.get("full_text") or "")
+        self._remember_local_echo("assistant", active.get("full_text") or "")
         await self.transcript.mount_assistant(self.current)
 
     # ── Command implementations (called by commands.py) ─

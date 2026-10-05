@@ -276,7 +276,7 @@ def _get_client_credentials() -> tuple[str, str] | None:
     abconfig Cnct_Env.py → env var).  Returns ``None`` when either value
     is missing.
     """
-    from core.tools._base import resolve_env_style_credential
+    from core.credentials import resolve_env_style_credential
 
     cid = resolve_env_style_credential("ANTIGRAVITY_OAUTH_CLIENT_ID")
     csecret = resolve_env_style_credential("ANTIGRAVITY_OAUTH_CLIENT_SECRET")

@@ -20,9 +20,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.memory.conversation import ConversationMemory, _MAX_DISPLAY_TURNS
+from core.memory.conversation.memory import _MAX_DISPLAY_TURNS, ConversationMemory
 from core.schemas import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,7 +126,7 @@ class TestConversationTurnLimitE2E:
                 return_value=200_000,
             ),
             patch(
-                "core.memory.conversation_compression._call_compression_llm",
+                "core.memory.conversation.compression._call_compression_llm",
                 new_callable=AsyncMock,
                 return_value="Summary of older conversation turns.",
             ),

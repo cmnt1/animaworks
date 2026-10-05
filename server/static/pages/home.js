@@ -193,25 +193,17 @@ async function _loadAll() {
 
 /**
  * Build chip descriptors for the attention summary row (pure).
- * @param {object|null|undefined} summary - TaskBoard summary payload
+ * @param {object|null|undefined} summary - TaskBoard summary payload with pending and in_progress counts
  * @param {number} [extCount=0] - External resource open/in_progress count
  * @param {(key: string, params?: object) => string} [translate]
  * @returns {Array<{ key: string, label: string, count: number, href: string, emphasis: boolean }>}
  */
 export function attentionSummaryChips(summary, extCount = 0, translate = t) {
   const s = summary && typeof summary === "object" ? summary : {};
-  const blocked = Number(s.blocked) || 0;
   const pending = Number(s.pending) || 0;
   const inProgress = Number(s.in_progress) || 0;
   const ext = Number(extCount) || 0;
   return [
-    {
-      key: "blocked",
-      label: translate("home.attention_blocked", { count: blocked }),
-      count: blocked,
-      href: "#/task-board",
-      emphasis: blocked > 0,
-    },
     {
       key: "pending",
       label: translate("home.attention_pending", { count: pending }),
@@ -762,7 +754,7 @@ function _renderUsageError(provider, data, msg) {
 }
 
 async function _runUsageRelogin(provider) {
-  const path = provider === "claude" ? `${basePath}/api/usage/claude/relogin` : `${basePath}/api/usage/openai/relogin`;
+  const path = provider === "claude" ? "/api/usage/claude/relogin" : "/api/usage/openai/relogin";
   try {
     // Explicit user action: allow the Claude endpoint to spawn the interactive
     // CMD /login window. Automatic callers (governor / auto-refresh) omit this
@@ -1370,22 +1362,43 @@ async function _loadUsage(forceRefresh = false) {
     const url = forceRefresh ? "/api/usage?skip_cache=true" : "/api/usage";
     const data = await api(url);
 
-    // A rate_limited Claude usage is a usage-endpoint 429, not an expired token,
-    // so we no longer auto-relogin/retry here (a fresh token can't clear a 429,
-    // and re-hitting the endpoint only extends the server's backoff). The card
-    // shows either the last-good fallback (marked stale) or a self-clearing
-    // rate-limit notice.
-    const staleProviders = new Set(
-      Array.isArray(data.snapshot_used) ? data.snapshot_used : [],
-    );
-    const snapshotAt = data.snapshot_cached_at ?? null;
+    // Auto-refresh: if Claude returns rate_limited, try relogin (token refresh)
+    // then retry once before showing the error
+    if (data.claude?.error === "rate_limited") {
+      try {
+        let reloginData;
+        try {
+          reloginData = await api("/api/usage/claude/relogin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (err) {
+          if (!err.payload) throw err;
+          reloginData = err.payload;
+        }
+        if (reloginData.success) {
+          // Token refreshed — retry usage fetch (skip_cache)
+          const retry = await api("/api/usage?skip_cache=true");
+          if (retry.claude && !retry.claude.error) {
+            data.claude = retry.claude;
+          } else if (retry.claude?.error === "rate_limited") {
+            // Still rate-limited after refresh — show relogin button
+            data.claude = {
+              ...retry.claude,
+              _show_relogin: true,
+              _relogin_message: reloginData.message,
+            };
+          }
+        } else {
+          // Refresh failed — show relogin button
+          data.claude._show_relogin = true;
+        }
+      } catch { /* ignore — will render original error */ }
+    }
 
-    if (data.claude) _renderClaudeUsage(data.claude, { stale: staleProviders.has("claude"), snapshotAt });
-    if (data.openai) _renderOpenaiUsage(data.openai, { stale: staleProviders.has("openai") });
-    if (data.nanogpt) _renderNanogptUsage(data.nanogpt, { stale: staleProviders.has("nanogpt") });
-    if (data.jev) _renderJevUsage(data.jev);
-    _renderAuthAlerts(data.auth_alerts);
-    _renderGovernor(data.governor);
+    if (data.claude) _renderClaudeUsage(data.claude);
+    if (data.openai) _renderOpenaiUsage(data.openai);
+    if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
     _updateUsageLastUpdated(Date.now(), serverFetchedAt);
   } catch (err) {

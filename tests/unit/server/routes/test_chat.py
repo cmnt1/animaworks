@@ -44,7 +44,10 @@ def _make_test_app(animas: dict | None = None, supervisor: MagicMock | None = No
                 )
                 return {"response": result, "replied_to": []}
             if method == "greet":
-                return await p.process_greet()
+                return await p.process_greet(
+                    mode=params.get("mode", "visit"),
+                    user_name=params.get("user_name", ""),
+                )
             raise ValueError(f"Unknown method: {method}")
 
         async def _send_request_stream(anima_name, method, params, timeout=120.0):
@@ -53,7 +56,7 @@ def _make_test_app(animas: dict | None = None, supervisor: MagicMock | None = No
             p = animas[anima_name]
             import json as _json
 
-            from core.supervisor.ipc import IPCResponse
+            from core.runtime.ipc import IPCResponse
 
             async for chunk in p.process_message_stream(
                 params.get("message", ""),
@@ -283,7 +286,7 @@ class TestChatStream:
         captured_kwargs = {}
 
         async def _stream(*args, **kwargs):
-            from core.supervisor.ipc import IPCResponse
+            from core.runtime.ipc import IPCResponse
 
             captured_kwargs.update(kwargs)
             yield IPCResponse(
@@ -438,9 +441,43 @@ class TestGreet:
         supervisor.send_request.assert_awaited_once_with(
             anima_name="alice",
             method="greet",
-            params={},
-            timeout=60.0,
+            params={"mode": "visit", "user_name": "", "user_id": ""},
+            timeout=120.0,
         )
+
+    async def test_greet_first_meeting_passes_mode(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "はじめまして！",
+                "emotion": "smile",
+                "cached": False,
+            }
+        )
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/greet",
+                json={"mode": "first_meeting"},
+            )
+
+        assert resp.status_code == 200
+        assert supervisor.send_request.await_args.kwargs["params"]["mode"] == "first_meeting"
+
+    async def test_greet_rejects_unknown_mode(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock()
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/greet",
+                json={"mode": "bogus"},
+            )
+
+        assert resp.status_code == 422
+        supervisor.send_request.assert_not_awaited()
 
 
 # ── POST /animas/{name}/chat/compact ────────────────────

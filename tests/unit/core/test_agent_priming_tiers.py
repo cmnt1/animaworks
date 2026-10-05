@@ -34,15 +34,15 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -88,7 +88,7 @@ class TestPrimingTierMinimal:
                 prompt_tier=TIER_MINIMAL,
             )
             assert notifications == "approval pending"
-            assert mock_pe.return_value.prime_memories.call_args.kwargs["profile"] == "compact"
+            assert "profile" not in mock_pe.return_value.prime_memories.call_args.kwargs
             assert mock_pe.return_value.prime_memories.call_args.kwargs["include_related"] is False
 
 
@@ -121,7 +121,7 @@ class TestPrimingTierMicro:
                 prompt_tier=TIER_MICRO,
             )
             assert notifications == "approval pending"
-            assert mock_pe.return_value.prime_memories.call_args.kwargs["profile"] == "compact"
+            assert "profile" not in mock_pe.return_value.prime_memories.call_args.kwargs
             assert mock_pe.return_value.prime_memories.call_args.kwargs["include_related"] is False
 
 

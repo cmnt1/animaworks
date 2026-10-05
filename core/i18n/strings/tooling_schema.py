@@ -78,6 +78,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "通知の優先度（デフォルト: normal）",
         "en": "Notification priority (default: normal)",
     },
+    "schema.call_human.sha": {
+        "ja": "確認キー（8桁）。初回の呼び出しで返されるので、そのセッションでは以降これを付ける",
+        "en": "Confirmation key (8 hex chars). Returned by the first call; include it on later calls in the same session",
+    },
     "schema.call_human.subject": {
         "ja": "通知の件名（簡潔に）",
         "en": "Notification subject (keep it brief)",
@@ -412,10 +416,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.restart_subordinate.desc": {
         "ja": (
-            "配下のAnimaプロセスを再起動する（配下であれば操作可能）。\nモデル変更（set_subordinate_model）後に呼び出すことで新モデルを即時反映できる。\nReconciliation ループが 30 秒以内にプロセスを再起動する。"
+            "配下のAnimaプロセスを再起動する（配下であれば操作可能）。\nモデル変更は root が稼働中プロセスへ reload_config を送るため通常は再起動不要。\nReconciliation ループが 30 秒以内にプロセスを再起動する。"
         ),
         "en": (
-            "Restart a descendant Anima process (any descendant can be targeted).\nCall this after set_subordinate_model to apply the new model immediately.\nThe reconciliation loop will restart the process within 30 seconds."
+            "Restart a descendant Anima process (any descendant can be targeted).\nRoot sends reload_config after model changes, so a restart is normally unnecessary.\nThe reconciliation loop will restart the process within 30 seconds."
         ),
     },
     "schema.restart_subordinate.name": {
@@ -432,10 +436,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.set_subordinate_background_model.desc": {
         "ja": (
-            "配下のAnimaのバックグラウンドモデル（heartbeat/cron用）を変更する（配下であれば操作可能）。\n変更は即時 status.json に保存される。反映には restart_subordinate を併用すること。\n\nバックグラウンドモデル未設定時はメインモデル（model）がそのまま使用される。\nクリアするには model に空文字 '' を指定する。"
+            "配下のAnimaのバックグラウンドモデル（heartbeat/cron用）を変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\nバックグラウンドモデル未設定時はメインモデル（model）がそのまま使用される。\nクリアするには model に空文字 '' を指定する。"
         ),
         "en": (
-            "Change a descendant's background model (for heartbeat/cron). Any descendant can be targeted.\nChanges are saved to status.json immediately. Use restart_subordinate to apply.\n\nWhen no background model is set, the main model is used.\nPass an empty string '' to clear the background model."
+            "Change a descendant's background model (for heartbeat/cron). Any descendant can be targeted.\nChanges are saved to status.json immediately and root asks running processes to reload it. Stopped Animas use it on next start.\n\nWhen no background model is set, the main model is used.\nPass an empty string '' to clear the background model."
         ),
     },
     "schema.set_subordinate_background_model.model": {
@@ -452,10 +456,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.set_subordinate_model.desc": {
         "ja": (
-            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 config.json に保存されるが、実行中プロセスへの反映には restart_subordinate を併用すること。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-4-6            最高性能・推奨\n  claude-sonnet-4-6          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode B / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
+            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-4-6            最高性能・推奨\n  claude-sonnet-4-6          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
         ),
         "en": (
-            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to config.json immediately, but require restart_subordinate to take effect on a running process.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-4-6            Highest performance, recommended\n  claude-sonnet-4-6          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode B / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
+            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to status.json immediately and root asks running processes to reload them. Stopped Animas use the new model on next start.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-4-6            Highest performance, recommended\n  claude-sonnet-4-6          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
         ),
     },
     "schema.set_subordinate_model.model": {

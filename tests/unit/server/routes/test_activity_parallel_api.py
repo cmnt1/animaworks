@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 from server.routes.system import create_system_router
 

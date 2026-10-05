@@ -1212,6 +1212,9 @@ class UsageGovernor:
 
     async def start(self) -> None:
         ensure_policy_file(self._data_dir)
+        supervisor = getattr(self._app.state, "supervisor", None)
+        if supervisor is not None:
+            supervisor._governor_suspended = set(self._state.suspended_animas)
         if self._state.suspended_animas:
             logger.info(
                 "Governor restoring state: %d animas suspended",
@@ -1641,6 +1644,10 @@ class UsageGovernor:
             )
             currently_suspended = currently_suspended.intersection(known_names)
 
+        # Publish before awaiting stop/start so recovery cannot undo a pause.
+        # This is transient runtime policy; status.json remains user-owned.
+        supervisor._governor_suspended = set(target_suspended)
+
         # Resume animas that are no longer in the suspend list
         to_resume = currently_suspended - target_suspended
         for name in to_resume:
@@ -1688,7 +1695,7 @@ class UsageGovernor:
                     sup_enabled = sup_data.get("enabled", False)
 
                 if sup_enabled:
-                    from core.messenger import Messenger
+                    from core.messaging.messenger import Messenger
                     from core.paths import get_shared_dir
 
                     messenger = Messenger(get_shared_dir(), "system")

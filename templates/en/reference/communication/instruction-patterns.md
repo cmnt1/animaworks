@@ -1,366 +1,364 @@
-# Instruction Patterns
+# Instruction Patterns Collection
 
-> **Required**: Check the mandatory fields in `communication/message-quality-protocol.md` before delegating tasks.
+> **Required**: Before delegating instructions, check the required items in `communication/message-quality-protocol.md`.
 
-A collection of patterns for giving clear, actionable instructions to subordinates and teammates.
-Vague instructions cause rework and confusion. Follow this guide to give instructions that others can act on without hesitation.
+A collection of patterns for giving clear, actionable instructions to subordinates and team members.
+Vague instructions cause rework and confusion. Follow this guide to give instructions that allow the other party to act without hesitation.
 
-## Tool Selection
+## Tool Selection Guide
 
-| Tool | Use Case | Notes |
-|------|----------|-------|
-| `delegate_task` | Task delegation to direct subordinates | Adds to task queue + sends DM. Progress trackable via `task_tracker`. Direct subordinates only |
-| `send_message` | One-on-one requests, reports, questions | `intent` required: one of `report` / `question`. Use delegate_task for task delegation to subordinates. User aliases are delivered to external channels (Slack, Chatwork, etc.) |
-| `post_channel` | Organization-wide sharing (announcements, resolution reports) | Acknowledgments, thanks, FYI use Board. `@name` for mentions (triggers DM notification to mentioned party). See `board-guide.md` for details |
-| `manage_channel` | Channel ACL management | Create channels, add/remove members, view info. Use for restricted channel operations. See `board-guide.md` for details |
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `delegate_task` | Task delegation to direct subordinates | Adds to task queue + sends DM. Progress can be tracked via `task_tracker`. Only usable with direct subordinates |
+| `send_message` | One-on-one requests, reports, questions | `intent` required: either `report` or `question`. Use `delegate_task` for task delegation to subordinates. Messages to human aliases are delivered to external channels (e.g., Slack/Chatwork) |
+| `post_channel` | Team-wide sharing (announcements, resolution reports) | Use Board for acknowledgments, thanks, and FYI. Mentions possible via `@名前` (sends DM notification to mentioned parties). See `board-guide.md` for details |
+| `manage_channel` | Channel ACL management | Create channels, add/remove members, check information. Used for restricted channel operations. See `board-guide.md` for details |
 
 **send_message constraints**:
-- `intent` is required. Only `report` / `question` are allowed. Use delegate_task for task delegation to subordinates. Use Board (`post_channel`) for acknowledgments, thanks, and FYI
-- Maximum N recipients per run, 1 message per recipient. N is role-based default (general=2, ops=2, writer=3, researcher=3, engineer=5, manager=10). Overridable via `max_recipients_per_run` in `status.json`. Use Board for N+ recipients
-- Optional: `thread_id` (thread ID), `reply_to` (reply-to message ID) to maintain conversation threads
+- `intent` is required. Only `report` / `question` are allowed. Use Board (`post_channel`) for acknowledgments, thanks, and FYI. Use `delegate_task` for task delegation to subordinates
+- Only one DM can be sent to the same recipient per run. No limit on the number of recipients
+- Optional: `thread_id` (thread ID), `reply_to` (reply-to message ID) can maintain conversation threads
 
 **post_channel constraints**:
-- Must be a member of the channel (ACL). Non-members cannot post to restricted channels
-- One post per channel per run
-- Cooldown required for reposting to the same channel (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds; 0 to disable)
-- DM and Board share the same outbound budget (`max_outbound_per_hour` / `max_outbound_per_day`). Posts are blocked when hourly or daily limits are reached
+- Must be a channel member (ACL). For restricted channels, non-members cannot post
+- Only one post per channel per run
+- No cooldown for reposting between runs, and no shared send budget for DM / Board
 
-## Five Elements of a Clear Instruction
+## The 5 Elements of Clear Instructions
 
-When giving instructions, include these five elements (MUST). Minimize confirmation and rework on the recipient's side.
+When giving instructions, include the following 5 elements (MUST). This minimizes back-and-forth confirmation and rework.
 
 | Element | Description | MUST/SHOULD |
-|---------|-------------|-------------|
-| Purpose (why) | Reason and context for this work | MUST |
-| Expected outcome (what) | What should exist when complete | MUST |
-| Deadline (when) | Completion deadline | MUST (provide a rough target even when not urgent) |
-| Constraints (how) | Approach to use, what to avoid | SHOULD |
-| When to report | On completion / progress / when issues arise | MUST |
+|------|------|-------------|
+| Purpose (why) | The reason and background for this work | MUST |
+| Expected outcome (what) | What will be produced upon completion | MUST |
+| Deadline (by when) | The deadline for completing the work | MUST (provide an estimate even if not urgent) |
+| Constraints and conditions (how) | Methods to use, things to avoid | SHOULD |
+| Reporting timing (when to report) | On completion / progress updates / when problems occur | MUST |
 
-## Good vs Bad Instructions
+## Good Instructions vs. Bad Instructions
 
 ### Example 1: Data Aggregation Request
 
-**Bad:**
+**Bad instruction:**
 ```
 send_message(
     to="alice",
-    content="Please aggregate the sales data.",
+    content="売上データを集計しておいてください。",
     intent="question"
 )
 ```
-Problems: Which data, which period, output format, and deadline are unclear.
+Issues: It is unclear what data, what period, what output format, and by when. If this is for a subordinate, use `delegate_task`.
 
-**Good:**
+**Good instruction:** (Use `delegate_task` for subordinates. Use `intent="question"` for colleagues and non-subordinates)
 ```
 send_message(
     to="alice",
-    content="""Please do the monthly sales aggregation.
+    content="""売上データの月次集計をお願いします。
 
-Purpose: For the management meeting (2/20)
-Target: January 2026 sales data (/shared/data/sales_202601.csv)
-Deliverable: Department and product category summary table (Markdown format)
-Output location: /shared/reports/sales_summary_202601.md
-Deadline: 2/18 (Tue) 17:00
-Report: Please reply with a result summary when done.""",
+目的: 経営会議（2/20）の資料として使用
+対象: 2026年1月の売上データ（/shared/data/sales_202601.csv）
+成果物: 部門別・製品カテゴリ別の集計表（Markdown形式）
+出力先: /shared/reports/sales_summary_202601.md
+期限: 2/18（火）17:00まで
+報告: 完了時に結果サマリーを返答してください。""",
     intent="question"
 )
 ```
 
-### Example 2: Investigation Request
+### Example 2: Research Task Request
 
-**Bad:**
+**Bad instruction:**
 ```
 send_message(
     to="bob",
-    content="Look into the API error.",
+    content="APIのエラーについて調べておいて。",
     intent="question"
 )
 ```
-Problems: Which API, which error, depth of investigation, and report format are unclear.
+Issues: It is unclear which API, which error, the depth of research, and the report format. If this is for a subordinate, use `delegate_task`.
 
-**Good:**
+**Good instruction:**
 ```
 send_message(
     to="bob",
-    content="""Please investigate the GitHub API rate limit error (HTTP 403).
+    content="""GitHub API のレート制限エラー (HTTP 403) の調査をお願いします。
 
-Context: Intermittent since around 3pm yesterday; auto-deploy is failing
-Investigate:
-1. Error frequency and pattern (log: /var/log/deploy/github-api.log)
-2. Current rate limit configuration and usage
-3. Mitigation options (retry strategy, token distribution, etc.)
+背景: 昨日15時頃から断続的に発生しており、自動デプロイが失敗している
+調査してほしいこと:
+1. エラー発生の頻度とパターン（ログ: /var/log/deploy/github-api.log）
+2. 現在のレート制限の設定と使用状況
+3. 回避策の提案（リトライ戦略、トークン分散など）
 
-Deadline: Today
-Report: Summarize findings and recommended actions in your reply.
-Report immediately if you discover something critical.""",
+期限: 本日中
+報告: 調査結果と推奨対策をまとめて返答してください。
+途中で重大な発見があれば即座に報告してください。""",
     intent="question"
 )
 ```
 
 ### Example 3: Review Request
 
-**Bad:**
+**Bad instruction:**
 ```
 send_message(
     to="carol",
-    content="Please take a look at the code.",
+    content="コード見ておいて。",
     intent="question"
 )
 ```
 
-**Good:** (If carol is a direct subordinate, use `delegate_task` instead. For peers/non-subordinates, use send_message with intent="question"):
+**Good instruction:**
 ```
 send_message(
     to="carol",
-    content="""Please review the authentication module code.
+    content="""認証モジュールのコードレビューをお願いします。
 
-Target file: ~/project/auth/token_manager.py (new)
-Check:
-- Security concerns (token storage, invalidation handling)
-- Error handling coverage
-- Consistency with existing auth_handler.py
+対象ファイル: ~/project/auth/token_manager.py（新規追加）
+確認観点:
+- セキュリティ上の懸念がないか（トークンの保存・失効処理）
+- エラーハンドリングの網羅性
+- 既存の auth_handler.py との整合性
 
-Deadline: Tomorrow morning (2/16)
-Report: Reply with "LGTM" if no issues; if changes needed, reply with specific locations and reasons.""",
+期限: 明日（2/16）午前中
+報告: 問題なければ「LGTM」、修正点があれば具体的な箇所と理由を返答してください。""",
     intent="question"
 )
 ```
 
 ## Task Delegation Patterns
 
-### Pattern 1: One-Off Task (Delegation to Direct Subordinate)
+### Pattern 1: One-off Task (Delegation to a Subordinate)
 
-For a one-time task delegated to a **direct subordinate**, use `delegate_task`. The task is added to the queue and progress can be tracked with `task_tracker`.
+To delegate a one-time task to a **direct subordinate**, use `delegate_task`. It is added to the task queue and progress can be tracked via `task_tracker`.
 
-Required parameters: `name` (delegatee), `instruction` (instruction content), `deadline` (relative format `30m`/`2h`/`1d` or ISO8601). Optional: `summary` (one-line summary).
+Required parameters: `name` (delegatee), `instruction` (instruction content). Optional: `summary` (one-line summary), `workspace`, `acceptance_criteria`, `model`. If there is a deadline, include it in the `instruction` body.
 
 ```
 delegate_task(
     name="alice",
-    instruction="""Please update the API spec (/shared/docs/api-spec.md) with v2.1 changes.
+    instruction="""API仕様書（/shared/docs/api-spec.md）にv2.1の変更点を反映してください。
 
-Changes:
-- Add pagination parameters to /api/users endpoint
-- Add total_count field to response
-- See /shared/docs/changelog-v2.1.md for details
+変更内容:
+- /api/users エンドポイントにページネーションパラメータ追加
+- レスポンスに total_count フィールド追加
+- 変更の詳細: /shared/docs/changelog-v2.1.md を参照
 
-Please reply when done.""",
-    deadline="2d",
-    summary="API spec v2.1 update"
+完了したら返答をお願いします。""",
+    summary="API仕様書 v2.1 反映"
 )
 ```
 
-### Pattern 1b: One-Off Task (Request to Peer / Non-Subordinate)
+### Pattern 1b: One-off Task (Request to a Colleague or Non-subordinate)
 
-For requests to someone who is not a descendant, use `send_message` with `intent="question"`.
+For requests to someone who is not a subordinate, specify `intent="question"` in `send_message`.
 
 ```
 send_message(
     to="alice",
-    content="""[Request] Document update
+    content="""【依頼】ドキュメント更新
 
-Please update the API spec (/shared/docs/api-spec.md) with v2.1 changes.
+API仕様書（/shared/docs/api-spec.md）にv2.1の変更点を反映してください。
 
-Changes:
-- Add pagination parameters to /api/users endpoint
-- Add total_count field to response
-- See /shared/docs/changelog-v2.1.md for details
+変更内容:
+- /api/users エンドポイントにページネーションパラメータ追加
+- レスポンスに total_count フィールド追加
+- 変更の詳細: /shared/docs/changelog-v2.1.md を参照
 
-Deadline: 2/16 15:00
-Please reply when done.""",
+期限: 2/16 15:00
+完了したら返答をお願いします。""",
     intent="question"
 )
 ```
 
-### Pattern 2: Recurring Task (Delegation of Regular Work)
+### Pattern 2: Ongoing Task (Delegation of Recurring Work)
 
-Pattern for instructing recurring tasks that should be added to Heartbeat or cron. Recurring tasks are not suitable for `delegate_task`; use `send_message` with `intent="question"`.
+A pattern for instructing recurring tasks to be built into heartbeats or cron. Ongoing tasks are not covered by `delegate_task`, so specify `intent="question"` in `send_message`.
 
 ```
 send_message(
     to="bob",
-    content="""[Recurring Request] Daily log monitoring
+    content="""【継続依頼】日次のログ監視
 
-From now on, please check the application log for anomalies every morning.
+今後、毎日午前中にアプリケーションログの異常チェックを行ってください。
 
-Target: /var/log/app/error.log
-Check:
-- Count of ERROR/CRITICAL logs in the past 24 hours
-- Whether any new error patterns have appeared
+対象: /var/log/app/error.log
+確認内容:
+- 過去24時間のERROR/CRITICALレベルのログ件数
+- 新規パターンのエラーが出ていないか
 
-Reporting rules:
-- No anomalies → no report needed
-- 10+ ERROR or new pattern → report to me immediately
-- Weekly summary every Friday
+報告ルール:
+- 異常なし → 報告不要
+- ERROR 10件以上 or 新規パターン → 即座に私に報告
+- 毎週金曜に1週間のサマリーを報告
 
-Please add this to your Heartbeat checklist.""",
+この内容をあなたのハートビートチェックリストに追加してください。""",
     intent="question"
 )
 ```
 
-### Pattern 3: Phased Task (with Milestones)
+### Pattern 3: Phased Task (With Milestones)
 
-Pattern for delegating a large task broken into phases. Use `delegate_task` for direct subordinates; for peers/non-subordinates use `send_message` with `intent="question"`.
+A pattern for delegating a large task in phases. Use `delegate_task` for subordinates. For colleagues and non-subordinates, use `intent="question"`.
 
 ```
 send_message(
     to="carol",
-    content="""[Request] New feature design and implementation (3 phases)
+    content="""【依頼】新機能の設計と実装（3段階）
 
-Please add the user notification feature.
+ユーザー通知機能の追加をお願いします。
 
-Phase 1 (by 2/17): Design
-- Define notification types (email/Slack/in-app) and priority
-- Design data model
-→ Reply with design proposal. Proceed to Phase 2 after my approval.
+Phase 1（2/17まで）: 設計
+- 通知の種類（メール/Slack/アプリ内）と優先度の定義
+- データモデルの設計案
+→ 設計案を返答してください。私が承認後にPhase 2に進んでください。
 
-Phase 2 (by 2/20): Implementation
-- Implement based on approved design
-- Include test code
-→ Reply when done.
+Phase 2（2/20まで）: 実装
+- 承認された設計に基づいて実装
+- テストコード含む
+→ 完了したら返答してください。
 
-Phase 3 (by 2/21): Documentation
-- Create API spec and user guide
+Phase 3（2/21まで）: ドキュメント
+- API仕様書と利用ガイドの作成
 
-Please reply at the end of each phase.
-Consult me if unsure about direction between phases.""",
+各Phase完了時に返答をお願いします。
+Phase間で方針に迷う場合は相談してください。""",
     intent="question"
 )
 ```
 
-## Follow-Up (Progress Check) Patterns
+## Follow-up (Progress Check) Patterns
 
-### Pre-Deadline Check
+### Check Before the Deadline
 
-Progress checks are questions; use `intent="question"`.
+Progress checks are questions, so specify `intent="question"`.
 
 ```
 send_message(
     to="alice",
-    content="""Checking on the sales aggregation progress.
-Deadline is tomorrow (2/18) 17:00 — how is it going?
-Let me know if there are any blockers.""",
+    content="""売上データ集計の進捗を確認します。
+期限は明日（2/18）17:00ですが、順調に進んでいますか？
+ブロッカーがあれば教えてください。""",
     intent="question"
 )
 ```
 
-### Post-Deadline Follow-Up
+### Follow-up After a Missed Deadline
 
 ```
 send_message(
     to="bob",
-    content="""Following up on the log monitoring investigation.
-Deadline was today — what's the status?
-Let me know if you're stuck; we can extend the deadline if needed.""",
+    content="""ログ監視の調査結果について確認です。
+本日中が期限でしたが、状況はいかがですか？
+困っている点があれば教えてください。必要に応じて期限を延長します。""",
     intent="question"
 )
 ```
 
-### Feedback After Deliverable
+### Feedback After Receiving Deliverables
 
-Revision requests: use `intent="question"`. For direct subordinates, consider `delegate_task` if it is a formal task.
+Correction requests are delegations, so use `delegate_task` for subordinates. For colleagues and non-subordinates, specify `intent="question"`.
 
 ```
 send_message(
     to="carol",
-    content="""I've reviewed the design. Overall good direction.
+    content="""設計案を確認しました。全体的に良い方向です。
 
-Requested changes:
-1. Add exponential backoff to the notification retry logic
-2. Include i18n for notification templates in the design
+修正をお願いしたい点:
+1. 通知の再送ロジックに指数バックオフを追加してください
+2. 通知テンプレートのi18n対応を設計に含めてください
 
-Please send a revised version by 2/18.""",
+上記を反映した修正版を2/18までにお願いします。""",
     intent="question"
 )
 ```
 
-## Escalation Criteria
+## Escalation Decision Criteria
 
-When to handle yourself vs escalate to your supervisor.
+Criteria for deciding whether to handle something yourself or escalate to your supervisor.
 
-### Handle Yourself (No Escalation)
+### Situations to Handle Yourself (No Escalation Needed)
 
-- Work is clearly defined and within your authority
-- Minor error with known recovery procedure
-- Subordinate question you can answer with your knowledge
-- Priorities are clear and no ambiguity in judgment
+- Work with clear procedures that can be completed within your own permission
+- Minor errors with known recovery procedures
+- Questions from subordinates that you can answer with your own knowledge
+- Work with clear priorities and no ambiguity in decision-making
 
-### Escalate
+### Situations That Require Escalation
 
-- MUST: Decision exceeds your authority (e.g. external API integration policy change)
-- MUST: Incident affects multiple departments
-- MUST: Deadline will clearly be missed
-- SHOULD: Unexpected situation with multiple valid options and unclear judgment
-- SHOULD: Subordinate escalated and you cannot resolve it
+- MUST: When a decision beyond your permission is needed (e.g., changing external API integration policy)
+- MUST: When an incident affecting multiple departments occurs
+- MUST: When it becomes certain that the deadline will be missed
+- SHOULD: When there are multiple correct answers in an unexpected situation and you are uncertain
+- SHOULD: When a subordinate's escalation cannot be resolved by you either
 
-### How to Escalate
+### How to Communicate Escalation
 
-Escalation is a report and request for decision to your supervisor; use `intent="report"`. Consider `call_human` for emergencies.
+Escalation is a report and decision request to your supervisor, so specify `intent="report"`. In urgent cases, consider `call_human` as well.
 
-If your supervisor is an Anima, specify the Anima name in `to`. To send to a human administrator, specify the alias name configured in `external_messaging.user_aliases` in `config.json` as `to`; it will be delivered to external channels (Slack, Chatwork, etc.).
+If the supervisor is an Anima, specify the Anima name in `to`. To send to a human administrator, specify the alias name configured in `external_messaging.user_aliases` of `config.json` in `to`, and it will be automatically delivered to external channels such as Slack/Chatwork.
 
 ```
 send_message(
     to="manager",
-    content="""[Escalation] Deploy pipeline incident
+    content="""【エスカレーション】デプロイパイプラインの障害
 
-Status: Auto-deploy stopped for 12 hours due to GitHub API rate limit
-Impact: Cannot deploy v2.1 planned for today
-Attempted: Longer retry interval, caching (neither effective)
-Decision needed: Whether to issue another GitHub token or switch to manual deploy
+状況: GitHub API のレート制限により自動デプロイが12時間停止中
+影響: 本日リリース予定の機能（v2.1）がデプロイできない
+試した対策: リトライ間隔の延長、キャッシュの活用（いずれも効果なし）
+判断が必要な点: 別のGitHubトークンを発行するか、手動デプロイに切り替えるか
 
-Please advise.""",
+ご判断をお願いします。""",
     intent="report"
 )
 ```
 
 ## Instruction Templates
 
-When using these templates with `send_message`, specify `intent` appropriately (request=question, report=report, question=question). Use delegate_task for task delegation to direct subordinates.
+When using the following templates with `send_message`, specify `intent` appropriately (request=question, report=report, question=question. Use `delegate_task` for task delegation to subordinates).
 
-### Generic Task Request Template
-
-```
-[Request] {task_name}
-
-{Background and purpose (1–2 lines)}
-
-Work:
-- {specific work 1}
-- {specific work 2}
-
-Deliverable: {what and where to output}
-Deadline: {date/time}
-Report: {on completion / progress / when issues arise}
-```
-
-### Investigation Request Template
+### General Task Request Template
 
 ```
-[Investigation Request] {topic}
+【依頼】{タスク名}
 
-Background: {why this investigation is needed}
+{背景・目的（1-2行）}
 
-Investigate:
-1. {item 1}
-2. {item 2}
-3. {item 3}
+作業内容:
+- {具体的な作業1}
+- {具体的な作業2}
 
-Deadline: {date/time}
-Report: Summarize findings and recommended actions in your reply.
+成果物: {何をどこに出力するか}
+期限: {日時}
+報告: {完了時/途中経過/問題発生時のどれか}
+```
+
+### Research Request Template
+
+```
+【調査依頼】{調査テーマ}
+
+背景: {なぜこの調査が必要か}
+
+調査してほしいこと:
+1. {調査項目1}
+2. {調査項目2}
+3. {調査項目3}
+
+期限: {日時}
+報告: 調査結果と推奨アクションをまとめて返答してください。
 ```
 
 ### Review Request Template
 
 ```
-[Review Request] {subject}
+【レビュー依頼】{対象の名前}
 
-Target: {file path or resource}
-Check:
-- {point 1}
-- {point 2}
+対象: {ファイルパスまたはリソース}
+確認観点:
+- {観点1}
+- {観点2}
 
-Deadline: {date/time}
-Report: Reply with "LGTM" if no issues; if changes needed, reply with specific items and reasons.
+期限: {日時}
+報告: 問題なければ「LGTM」、修正点があれば具体的に返答してください。
 ```

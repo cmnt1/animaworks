@@ -1,202 +1,195 @@
-# Scheduled execution: configuration and operations
+# Scheduled Execution Configuration and Operations
 
-Guide to configuring and operating Heartbeat (periodic patrol) and Cron (scheduled tasks).
-Refer to this when you want to change periodic behavior or add new scheduled tasks.
+A guide to configuring and operating Heartbeat (periodic patrol) and Cron (scheduled tasks).
+Refer to this when changing scheduled execution behavior or adding new scheduled tasks.
 
 ## What is Heartbeat
 
-Heartbeat is the mechanism by which a Digital Anima starts automatically at intervals to observe and plan.
-It automates the same behavior as a human periodically checking their inbox and reviewing work in progress.
+Heartbeat is a mechanism where Digital Anima automatically starts periodically to check the situation and make plans.
+It automates the same behavior as a human periodically checking their inbox and reviewing ongoing work.
 
-### Important: Heartbeat is only "observe and plan"
+### Important: Heartbeat is for "checking and planning" only
 
-Heartbeat checks for meaningful changes and chooses necessary next actions. It does not require a ritual reflection report.
+Heartbeat checks for meaningful changes and determines the necessary next action. No ceremonial retrospective reports are needed.
 
-- MUST: Keep Heartbeat focused on observation and decisions
-- MUST NOT: Run long-running execution tasks during Heartbeat (coding, heavy tool use, etc.)
-- MUST: When execution is needed, delegate with `delegate_task` if you have subordinates, or submit work with `submit_tasks`
+- MUST: Heartbeat is limited to situation checks and decision-making
+- MUST NOT: Do not run long-duration tasks (coding, extensive tool calls, etc.) within Heartbeat
+- MUST: If you find a task that needs execution, delegate it to a subordinate via `delegate_task`, or submit it as a task via `submit_tasks`
 
-Submitted tasks are executed by **TaskExec**, independently of periodic Heartbeat.
-TaskExec claims durable eligible tasks from the canonical TaskStore, with wakeups and recovery managed by the host; it does not watch legacy LLM JSON files.
+Submitted tasks are executed by the **TaskExec path**, independently of the periodic Heartbeat.
+TaskExec retrieves executable persistent tasks from the authoritative TaskStore. Wake-up notifications and recovery are managed by the host; legacy LLM JSON files are not monitored.
 
-### Heartbeat and chat run in parallel
+### Heartbeat and Conversation Concurrency
 
-Heartbeat and human chat are managed with **separate locks**, so they can run at the same time.
-Even while Heartbeat is running, messages from humans can be answered immediately.
+Heartbeat and human conversations are managed under **separate locks**, so they can run simultaneously.
+Even while Heartbeat is running, immediate responses to human messages are possible.
 
-### Submitting tasks with submit_tasks
+### Submitting tasks via submit_tasks
 
-When Heartbeat finds work that should be executed, submit tasks using the `submit_tasks` tool:
+When a task to be executed is discovered in the heartbeat, submit the task using the `submit_tasks` tool:
 
 ```
 submit_tasks(batch_id="hb-20260301-api-test", tasks=[
-  {"task_id": "api-test", "title": "Run API tests",
-   "description": "Run Slack API connectivity tests and summarize results for all endpoints in a report. Report to aoi when done."}
+  {"task_id": "api-test", "title": "APIテスト実施",
+   "description": "Slack API接続テストを実施し、全エンドポイントの結果をレポートにまとめる。完了後 aoi に報告する。"}
 ])
 ```
 
-`submit_tasks` validates and atomically stores the task and its complete execution input in one canonical TaskStore.
-The host owns execution claims and attempt history. `in_progress` is read-only for agents; declare `done`, `pending`, or `cancelled` with `update_task`. An interrupted pending task is resumed deliberately using the same ID and `resume: true`, not by creating a replacement task.
+After validation, `submit_tasks` saves the task and its complete execution input in bulk to a single authoritative TaskStore.
+The host manages execution rights and attempt history. `in_progress` is for viewing; the agent declares `done` / `pending` / `cancelled` via `update_task`. To resume an interrupted pending task, explicitly specify `resume: true` with the same ID; do not replace it with a different task.
 
-**Long-running CLI tools** (`animaworks-tool submit …`) are written on a separate path to `state/background_tasks/pending/` and are executed in the background by `BackgroundTaskManager` (`core/background.py`). See `operations/background-tasks.md` for details.
+**Long-running CLI tools** (`animaworks-tool submit …`) are registered in the TaskStore as `task_type="command"`, and the PendingTaskExecutor retrieves attempts and runs them in the background. Check completion results via `state/background_tasks/{task_id}.json` and notifications. See `operations/background-tasks.md` for details.
 
-**Note**: Never write task storage directly. Legacy `state/task_queue.jsonl` and `state/pending/` are preserved only as migration/export evidence, not live submission paths.
+**Note**: Do not edit the storage location directly. The old `state/task_queue.jsonl` and `state/pending/` are kept as audit trails for migration and export; do not use them as active submission targets.
 
-Use `submit_tasks` even for a single task (one item in the `tasks` array).
-Multiple independent tasks run in parallel with `parallel: true`; when there are dependencies, set `depends_on`.
+Even for a single task, use `submit_tasks` (one item in the tasks array).
+Run multiple independent tasks in parallel with `parallel: true`; if there are dependencies, specify `depends_on`.
 See task-management for details.
 
 ### Heartbeat trigger types
 
-There are two kinds of Heartbeat triggers:
+There are two types of heartbeat triggers:
 
 | Trigger | Description |
-|---------|-------------|
-| Scheduled Heartbeat | APScheduler starts runs on the interval from `config.json` `heartbeat.interval_minutes` |
-| Message trigger | Starts immediately when unread messages arrive in the Inbox (handled as the Inbox path) |
+|---------|------|
+| Scheduled heartbeat | Started periodically by APScheduler according to `heartbeat.interval_minutes` in `config.json` |
+| Message trigger | Started immediately when an unread message arrives in the Inbox (processed as an Inbox pass) |
 
-Message triggers include these safeguards:
+The message trigger is activated by a change notification for the Inbox JSON file. As a safeguard against missed notifications, unread messages are rechecked every 45 seconds.
+Only one Inbox process runs at a time; messages that arrive during execution are batched into the next single pass. On a Provider error, wait for the recovery time in `rate_guard` and leave unread messages.
+There is no startup filter based on received intent, nor message-originated cooldown or cascade suppression. The behavior rule of not replying to messages that only acknowledge or thank is instructed in the Inbox prompt.
 
-- **Cooldown**: Does not restart within a fixed time after the previous message-triggered run completes (`config.json` `heartbeat.msg_heartbeat_cooldown_s`, default 300 seconds)
-- **Cascade detection**: If round-trips between two parties exceed a threshold within a window, it is treated as a loop and throttled (`heartbeat.cascade_window_s` default 30 minutes, `heartbeat.cascade_threshold` default 3)
-- **Intent filter**: Immediate Heartbeat only when there is a message whose `intent` is in `heartbeat.actionable_intents` (default `report`, `question`). Otherwise (e.g. light ack-style messages), wait until the scheduled Heartbeat
-- **Round-trip depth limit**: `heartbeat.depth_window_s` (default 600 seconds) and `heartbeat.max_depth` (default 6) limit excessive short-term back-and-forth for the same pair
+## heartbeat.md Configuration
 
-## heartbeat.md configuration
+`heartbeat.md` is each Anima's configuration file, defining activity hours and check items.
+The Heartbeat execution interval can be set via `heartbeat.interval_minutes` in `config.json` (1–1440 minutes, default 30). It cannot be changed via `heartbeat.md`.
+Each Anima is assigned a name-based offset of 0–9 minutes to distribute simultaneous startups.
+File path: `~/.animaworks/animas/{name}/heartbeat.md`
 
-`heartbeat.md` is each Anima's configuration file; it defines active hours and checklist items.
-The Heartbeat interval can be set in `config.json` `heartbeat.interval_minutes` (1–1440 minutes, default 30). It cannot be changed in `heartbeat.md`.
-Each Anima gets a name-based 0–9 minute offset to stagger simultaneous startups.
-Path: `~/.animaworks/animas/{name}/heartbeat.md`
+When a supervisor edits `heartbeat.md` of a subordinate Anima, use `read_memory_file` / `write_memory_file` rather than direct file operations, and specify it with a relative path such as `../{anima_name}/heartbeat.md`.
 
 ### Format
 
 ```markdown
 # Heartbeat: {name}
 
-## Active hours
-24 hours (server-configured timezone)
+## 活動時間
+24時間（サーバー設定タイムゾーン）
 
-## Checklist
-- Any unread messages in the Inbox?
-- Any blockers on in-progress tasks?
-- Any new files placed in my workspace?
-- If nothing applies, do nothing (HEARTBEAT_OK)
+## チェックリスト
+- Inboxに未読メッセージがあるか
+- 進行中タスクにブロッカーが発生していないか
+- 自分の作業領域に新しいファイルが置かれていないか
+- 何もなければ何もしない（HEARTBEAT_OK）
 
-## Notification rules
-- Notify stakeholders only when you judge it urgent
-- Do not repeat the same notification within 24 hours
+## 通知ルール
+- 緊急と判断した場合のみ関係者に通知
+- 同じ内容の通知は24時間以内に繰り返さない
 ```
 
-### Configuration fields
+### Configuration Fields
 
-**Interval**:
+**Execution interval**:
+- Set via `heartbeat.interval_minutes` in `config.json` (1–1440 minutes, default 30). Cannot be changed via `heartbeat.md`
 
-- Set in `config.json` `heartbeat.interval_minutes` (1–1440 minutes, default 30). Cannot be changed in `heartbeat.md`
-
-**Active hours** (SHOULD):
-
-- Write in `HH:MM - HH:MM` form (e.g. `9:00 - 22:00`)
-- Heartbeat does not run outside this window
-- Default when unset: 24 hours (all day)
-- Timezone: configurable via `config.json` `system.timezone`. When unset, the system timezone is auto-detected
+**Activity hours** (SHOULD):
+- Write in `HH:MM - HH:MM` format (e.g., `9:00 - 22:00`)
+- Heartbeat does not start outside these hours
+- Default when unset: 24 hours (all time slots)
+- Timezone can be set via `system.timezone` in `config.json`. When unset, the system timezone is auto-detected
 
 **Checklist** (MUST):
+- Items the agent checks at Heartbeat startup
+- Written as a bullet list (starting with `- `)
+- The checklist content is passed directly to the agent's prompt
+- Customizable: items may be added or changed to match the Anima's role
 
-- Items the agent checks when Heartbeat runs
-- Use a bullet list (lines starting with `- `)
-- Checklist content is passed as-is into the agent prompt
-- Customizable: you may add or change items to match the Anima's role
+### Checklist Customization Examples
 
-### Custom checklist examples
-
-Default (shared by all Anima):
-
+Default (common to all Anima):
 ```markdown
-## Checklist
-- Any unread messages in the Inbox?
-- Any blockers on in-progress tasks?
-- If nothing applies, do nothing (HEARTBEAT_OK)
+## チェックリスト
+- Inboxに未読メッセージがあるか
+- 進行中タスクにブロッカーがないか
+- 何もなければ何もしない（HEARTBEAT_OK）
 ```
 
-Example for a developer:
-
+Example for development:
 ```markdown
-## Checklist
-- Any unread messages in the Inbox?
-- Any blockers on in-progress tasks?
-- Any new Issues or PRs on monitored GitHub repositories?
-- Any CI/CD failure alerts?
-- If nothing applies, do nothing (HEARTBEAT_OK)
+## チェックリスト
+- Inboxに未読メッセージがあるか
+- 進行中タスクにブロッカーが発生していないか
+- 監視対象のGitHubリポジトリに新しいIssueやPRがないか
+- CI/CDの失敗アラートがないか
+- 何もなければ何もしない（HEARTBEAT_OK）
 ```
 
-Example for a communications role:
-
+Example for communications:
 ```markdown
-## Checklist
-- Any unread messages in the Inbox?
-- Any unread Slack mentions?
-- Any emails awaiting reply?
-- Any blockers on in-progress tasks?
-- If nothing applies, do nothing (HEARTBEAT_OK)
+## チェックリスト
+- Inboxに未読メッセージがあるか
+- Slackの未読メンションがないか
+- 返信待ちのメールがないか
+- 進行中タスクにブロッカーがないか
+- 何もなければ何もしない（HEARTBEAT_OK）
 ```
 
-### Execution model (cost optimization)
+### Execution Model (Cost Optimization)
 
-When `background_model` is set, Heartbeat / Inbox / Cron run on that model instead of the main model.
-Chat (human conversation) and TaskExec (actual work) keep using the main model.
+If `background_model` is configured, Heartbeat / Inbox / Cron run on that model instead of the main model.
+Chat (conversations with humans) and TaskExec (actual work) keep the main model.
 
-Setup: `animaworks anima set-background-model {name} claude-sonnet-4-6`
-See the "Background model" section in `reference/operations/model-guide.md` for details.
+Configuration method: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
+See the "Background Model" section of `reference/operations/model-guide.md` for details.
 
-### Heartbeat internals
+### Heartbeat internal behavior
 
-- **Crash recovery**: If the previous Heartbeat failed, error information is saved to `state/recovery_note.md`. It is injected into the prompt on the next startup and the file is removed after recovery.
-- **Reflection logging**: If Heartbeat output contains a `[REFLECTION]...[/REFLECTION]` block, it is recorded in activity_log as `heartbeat_reflection` and included in later Heartbeat context.
-- **Subordinate check**: Anima with subordinates get automatic instructions to check subordinate status injected into Heartbeat and Cron prompts.
-- **Session time limits** (`heartbeat` in `config.json`): After `soft_timeout_seconds` (default 300 s), a wrap-up reminder is injected; `hard_timeout_seconds` (default 600 s) forces the session to end. Setting `max_turns` overrides per-anima `max_turns` as a Heartbeat-specific turn cap.
-- **Idle auto-compaction**: `heartbeat.idle_compaction_minutes` (default 10 minutes)—after this much idle time following end of stream, idle auto-compaction runs (execution-engine setting).
-- **Board post spacing**: `heartbeat.channel_post_cooldown_s` (default 300 seconds, 0 = unlimited)—throttles repeated `post_channel` from the same Anima.
+- **Crash recovery**: If the previous heartbeat failed, error information is saved in `state/recovery_note.md`. It is injected into the prompt at the next startup, and the file is deleted after recovery.
+- **Reflection record**: If the heartbeat output contains a `[REFLECTION]...[/REFLECTION]` block, it is recorded as `heartbeat_reflection` in the activity_log and included in subsequent heartbeat contexts.
+- **Subordinate check**: For Anima instances with subordinates, a subordinate status check instruction is automatically injected into the heartbeat and Cron prompts.
+- **Session time limit** (`heartbeat` in `config.json`): After `soft_timeout_seconds` (default 300 seconds) elapses, a wrap-up reminder is injected; the session is forcibly terminated after `hard_timeout_seconds` (default 600 seconds).
+- **Idle auto-compaction**: `heartbeat.idle_compaction_minutes` (default 10 minutes) — idle auto-compaction runs after this time has elapsed since stream end (execution engine setting).
+- **Board posts**: Limited to once per channel within the same run. There is no restriction on the interval between posts across runs.
 
-### How scheduled Heartbeat is scheduled
+### Periodic Heartbeat Scheduling Method
 
-When the **effective** interval (after Activity Level and a **minimum 5-minute** rounding) is **60 minutes or less and divides 60 evenly**, jobs are registered on distributed minute slots via APScheduler's `CronTrigger` (combined with the name-based 0–9 minute offset).
+When the effective interval (after Activity Level application, rounded down to 5 minutes) is **60 minutes or less and divides 60 evenly**, it is registered in minute slots via APScheduler's `CronTrigger` (combined with the name-based 0–9 minute offset).
 
-Otherwise (e.g. effective 61 minutes, or 43 minutes so 60 is not evenly divided), firing uses **1-minute polling** (`_heartbeat_check`) based on elapsed time since the last run. This avoids issues inherited from older `IntervalTrigger` behavior.
+Otherwise (e.g., effective 61 minutes, or an interval like 43 minutes that does not divide 60 evenly), it fires via **1-minute polling** (`_heartbeat_check`) based on elapsed time since the last run. This is an implementation to avoid issues from the legacy `IntervalTrigger`.
 
-### Background tools and DM logs (`core/background.py`)
+### Background Tools and DM Logs (core/tasks/background.py）
 
-`core/background.py` does not own Heartbeat/Cron scheduling itself; it handles **background execution of long-running tool calls** (including JSON state persistence) and **rotation of legacy shared DM logs** (`shared/dm_logs/`). For operational details and the CLI path, also see `operations/background-tasks.md`.
+`core/tasks/background.py` is not the Heartbeat/Cron schedule itself, but handles **background execution of long-running tool calls** (including JSON state persistence) and **rotation of legacy shared DM logs (`shared/dm_logs/`)**. See `operations/background-tasks.md` for operational details and CLI paths.
 
 #### BackgroundTaskManager
 
-- **Storage**: `state/background_tasks/{task_id}.json`. `task_id` is the first 12 characters of a UUID (hexadecimal). Each file records `task_id`, `anima_name`, `tool_name`, `tool_args`, `status`, `created_at`, `completed_at`, `result`, `error`.
-- **States (`TaskStatus`)**: `pending` / `running` / `completed` / `failed`. For `submit` / `submit_async`, JSON is written as `running` immediately after enqueue and updated to `completed` / `failed` on completion or exception.
-- **Execution API**: `submit(tool_name, tool_args, execute_fn)` runs a synchronous callable in a thread pool via `asyncio`'s `run_in_executor`. `submit_async` awaits an async callable directly. Provides `get_task` (memory first, otherwise disk), `list_tasks` (merges JSON on disk, newest by creation time first), and `active_count` (in-memory `running` count).
-- **Completion callback**: Async functions passed to `on_complete` run after the task is saved. Exceptions inside the callback still preserve task results and are only logged (typically combined with writes to `state/background_notifications/`, **read and removed on the next Heartbeat** and merged into conversation context).
-- **Eligibility `is_eligible(tool_name)`**: If the map contains a key, the tool is background-eligible. Keys accept: (1) **schema name** (e.g. `generate_3d_model`)—e.g. Mode A external tool dispatch; (2) **`tool:subcommand`** (e.g. `image_gen:pipeline`)—entries with `background_eligible: true` in each tool module's `EXECUTION_PROFILE` are registered in this form via `get_eligible_tools_from_profiles()` (e.g. Mode S `submit` path).
-- **Building the eligible map `from_profiles()`**: Merges three layers with dict `update`; **later wins**: (1) `_DEFAULT_ELIGIBLE_TOOLS` (code defaults) (2) argument `profiles` (aggregated `EXECUTION_PROFILE`) (3) argument `config_eligible` (usually `name → seconds` expanded from `config.json` `background_task.eligible_tools` `threshold_s`). Values are expected seconds (integer) for profile integration.
-- **Code defaults `_DEFAULT_ELIGIBLE_TOOLS` (seconds)**: `generate_character_assets` 30; `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` each 30; `generate_3d_model` / `generate_rigged_model` / `generate_animations` each 30; `local_llm` 60; `run_command` 60.
-- **Cleanup `cleanup_old_tasks(max_age_hours=24)`**: Deletes JSON where `status` is `completed` / `failed` and `completed_at` is **older than the given hours (default 24)**. Also removes files stuck in `running` with `created_at` **more than 48 hours** ago as crash orphans. Return value is the number of deletions.
-- **`result_retention_hours`**: Present on `config.json` `background_task.result_retention_hours`, but **`BackgroundTaskManager.cleanup_old_tasks` does not read it** (default remains method argument `max_age_hours=24`). Callers are expected to pass `max_age_hours` when operational retention should differ.
+- **Storage location**: `state/background_tasks/{task_id}.json`. `task_id` is the first 12 characters of the UUID (hexadecimal). Each file records `task_id`, `anima_name`, `tool_name`, `tool_args`, `status`, `created_at`, `completed_at`, `result`, and `error`.
+- **Status (`TaskStatus`)**: `pending` / `running` / `completed` / `failed`. For `submit` / `submit_async`, JSON is written with `running` immediately after submission, and updated to `completed` / `failed` upon completion or exception.
+- **Execution API**: `submit(tool_name, tool_args, execute_fn)` runs synchronous callables in a thread pool via `asyncio`’s `run_in_executor`. `submit_async` directly awaits asynchronous callables. It provides `get_task` (memory first, disk if unavailable), `list_tasks` (also merges JSON on disk, sorted by creation time, newest first), and `active_count` (the number of `running` in memory).
+- **Completion callback**: The asynchronous function passed to `on_complete` is called after the task is saved. Even if an exception occurs in the callback, the task result is retained and only logged (typically combined with writing to `state/background_notifications/`, through which it is read and deleted on the **next heartbeat** and incorporated into the conversation context).
+- **Candidate determination `is_eligible(tool_name)`**: If a key exists in the map, it is considered a background task candidate. The key accepts both of the following: (1) **schema name** (e.g., `generate_3d_model`)—such as external tool dispatch in Mode A. (2) **`ツール名:サブコマンド`** (e.g., `image_gen:pipeline`)—in `EXECUTION_PROFILE` of each tool module, entries for `background_eligible: true` are registered in this format by `get_eligible_tools_from_profiles()` (such as the `submit` path in Mode S).
+- **Building the candidate tool map `from_profiles()`**: Merge the following three layers using dict `update`, with **later entries taking precedence**: (1) `_DEFAULT_ELIGIBLE_TOOLS` (code defaults) (2) argument `profiles` (`EXECUTION_PROFILE` aggregation) (3) argument `config_eligible` (usually `config.json`’s `background_task.eligible_tools`, from which `threshold_s` is expanded into `名前 → 秒`). Values are expected seconds (integers) for profile integration.
+- **Code defaults `_DEFAULT_ELIGIBLE_TOOLS` (seconds)**: `generate_character_assets` 30, `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 30 each, `generate_3d_model` / `generate_rigged_model` / `generate_animations` 30 each, `local_llm` 60, `run_command` 60.
+- **Cleanup `cleanup_old_tasks(max_age_hours=24)`**: `status` deletes JSON files in `completed` / `failed` whose `completed_at` is **older than the duration specified by the argument (24 hours by default)**. In addition, files that remain `running` for **more than 48 hours** since `created_at` are deleted as crash orphans. The return value is the number of deleted files.
+- **Retention period**: The retention period for completed tasks in `cleanup_old_tasks` is specified by the argument `max_age_hours` (24 hours by default). There is no corresponding `config.json` configuration key.
 
-#### rotate_dm_logs (system Cron)
+#### rotate_dm_logs (System Cron)
 
-- **When it runs**: System cron in the lifecycle (`core/lifecycle/system_crons.py`, etc.), **daily at 04:30** (server-configured timezone). A job with the same ID is also registered from `core/supervisor/_mgr_scheduler.py`.
-- **Scope**: `shared/dm_logs/*.jsonl` (skips filenames containing `.archive.`).
-- **Behavior**: Using local current time from `core.time_utils`, parses each line's JSON `ts` (ISO), appends entries **older than the default 7 days** to `{stem}.{YYYYMMDD}.archive.jsonl`, then removes them from the live file. Lines where `ts` cannot be parsed **remain in the live file** (data loss prevention).
-- **Other server scheduled jobs**: Besides per-Anima `cron.md`, the lifecycle registers system cron for memory maintenance, RAG, etc. (e.g. daily consolidation 02:00, daily index 04:00). Times use the configured timezone. DM rotation is at 04:30 as above.
+- **Execution timing**: Runs **daily at 04:30** (server-configured timezone) via the lifecycle (e.g., `core/lifecycle/system_crons.py`) system cron. The same job ID is also registered on the `server/supervisor/_mgr_scheduler.py` side.
+- **Target**: `shared/dm_logs/*.jsonl` (entries whose filenames contain `.archive.` are skipped).
+- **Behavior**: Based on the local current time of `core.time_utils`, parse the `ts` (ISO format) in each line of JSON, append entries older than the **default 7 days** to `{stem}.{YYYYMMDD}.archive.jsonl` as an archive, then remove them from the current file. Lines where `ts` parsing fails are **kept in the current file** (to prevent data loss).
+- **Other server scheduled jobs**: In addition to the per-Anima `cron.md`, the lifecycle registers system cron jobs for memory maintenance, RAG, etc. (e.g., daily consolidation at 02:00, daily indexing at 04:00). Times are based on the configured timezone. DM rotation runs at 04:30 as described above.
 
 ### Heartbeat configuration hot reload
 
-When `heartbeat.md` is updated on disk, `_check_schedule_freshness()` detects the change on the next Heartbeat run and SchedulerManager reloads the schedule automatically.
+When heartbeat.md is updated on the file system, `_check_schedule_freshness()` detects the change at the next heartbeat execution, and SchedulerManager automatically reloads the schedule.
 No server restart is required (MAY skip restart). APScheduler jobs are re-registered.
 
-## Per-Anima Heartbeat interval
+## Per-anima Heartbeat interval configuration
 
-### Setting in status.json
+### Configuration at status.json
 
-You can set an individual Heartbeat interval per Anima with `heartbeat_interval_minutes` in each Anima's `status.json`.
+The root administrator can configure Anima-specific `heartbeat_interval_minutes` at root CLI/API. Values are stored in root-owned `status.json` and are not edited from the Anima process.
 
 ```json
 {
@@ -204,48 +197,46 @@ You can set an individual Heartbeat interval per Anima with `heartbeat_interval_
 }
 ```
 
-- Allowed range: 1–1440 minutes (one day)
-- When unset: falls back to `config.json` `heartbeat.interval_minutes` (default 30 minutes)
-- An Anima can self-adjust by updating `status.json` with `write_memory_file`
+- Configurable range: 1–1440 minutes (1 day)
+- If not set: falls back to `heartbeat.interval_minutes` of `config.json` (default 30 minutes)
+- `status.json` is root-owned. Administrators can set individual overrides via `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>` while the server is stopped. During server startup, the CLI applies them through the root API. The Anima process does not edit this file.
 
 ### Recommended guidelines
 
 | Situation | Recommended interval | Reason |
-|-----------|---------------------|--------|
-| Active development project | 15–30 min | Frequent situational awareness |
-| Normal operations | 30–60 min | Default. Balanced frequency |
-| Low load / standby | 60–120 min | Cost saving; longer interval when there is little work |
-| Long dormancy / inactive | 120–1440 min | Minimal patrol for awareness |
+|------|----------|------|
+| During an active development project | 15 to 30 minutes | Frequent status awareness needed |
+| Normal operations | 30 to 60 minutes | Default. Balanced frequency |
+| Low load / standby state | 60 to 120 minutes | Cost savings. Longer if there are no tasks |
+| Long-term dormancy / inactive | 120 to 1440 minutes | Minimal polling for status awareness |
 
 ### Relationship with Activity Level
 
-When a global Activity Level (10%–400%) is set, the effective interval is:
+When a global Activity Level (10% to 400%) is set, the effective interval is calculated with the following formula:
 
 ```
-effective_interval = base_interval / (Activity Level / 100)
+実効間隔 = ベース間隔 / (Activity Level / 100)
 ```
 
-Example: base 30 min, Activity Level 50% → effective 60 min  
-Example: base 30 min, Activity Level 200% → effective 15 min
+Example: base 30 minutes, Activity Level 50% → effective 60 minutes
+Example: base 30 minutes, Activity Level 200% → effective 15 minutes
 
-- Minimum effective interval is 5 minutes (never below 5, however much you boost)
-- At Activity Level 100% or below, `max_turns` also scales down proportionally (floor 3 turns)
-- Above 100% Activity Level, `max_turns` is unchanged (only the interval shortens)
+- The lower limit of the effective interval is 5 minutes (no matter how much it is boosted, it will not go below 5 minutes)
 
-### Activity schedule (time-of-day auto-switch / night mode)
+### Activity Schedule (automatic switching by time period / night mode)
 
-A mechanism that switches Activity Level automatically by time of day.
-Use it to reduce cost at night or on weekends, or to be active only during business hours.
+A mechanism that automatically switches the Activity Level according to the time period.
+Use this when you want to reduce costs at night or on holidays, or when you want the system to operate actively only during business hours.
 
-#### How it works
+#### Mechanism
 
-- Configure time-range entries in `config.json` `activity_schedule`
-- Every minute, the current time is checked and Activity Level is set to the level for the matching range
-- When Activity Level changes, all Anima Heartbeats are rescheduled immediately
+- Set time period entries in `activity_schedule` of `config.json`
+- The current time is checked every minute, and the Activity Level is automatically changed to the level of the matching time period
+- When the Activity Level changes, the heartbeats of all Anima are immediately rescheduled
 
 #### Configuration format
 
-Each entry has three fields: `start`, `end`, and `level` (Activity Level %):
+Each entry has three fields: `start` (start time), `end` (end time), and `level` (Activity Level %):
 
 ```json
 {
@@ -256,228 +247,224 @@ Each entry has three fields: `start`, `end`, and `level` (Activity Level %):
 }
 ```
 
-- Times use `HH:MM` (24-hour)
-- **Midnight wrap**: You can use `start` > `end`, e.g. `"22:00"`–`"06:00"`, to cover overnight
-- `level` is in the range 10–400
+- Times use `HH:MM` format (24-hour notation)
+- **Cross-midnight support**: specifications where start > end, such as `"22:00"` to `"06:00"`, are possible (covers late-night hours)
+- `level` must be in the range 10 to 400
 - Up to 24 entries
-- Empty array `[]` disables schedule mode (back to a fixed Activity Level)
+- An empty array `[]` disables schedule mode (returns to a fixed Activity Level)
 
-#### How to configure
+#### Configuration Method
 
-- **Settings UI**: Night mode checkbox plus time ranges and levels
-- **API**: `PUT /api/settings/activity-schedule` with the JSON above
-- **Direct config edit**: Edit `activity_schedule` in `config.json`, then restart the server
+- **Settings UI**: Night mode checkbox + time range and level settings
+- **API**: Send the above JSON to `PUT /api/settings/activity-schedule`
+- **Root configuration API**: Use the Settings UI, or send the above JSON to `PUT /api/settings/activity-schedule`. Do not edit `config.json` directly from the Anima process.
 
-#### Caveats
+#### Notes
 
-- If you change Activity Level manually, the schedule entry for the current time range is updated in sync
-- The schedule applies as soon as the server starts (level matching the time at startup)
-- If no range matches the current time, the last configured Activity Level is kept
+- If you manually change the Activity Level, the schedule entry corresponding to the current time period is also updated in conjunction
+- The schedule is applied immediately at server startup (the level is set according to the time at startup)
+- If no time period matches, the last set Activity Level is maintained
 
-## What is Cron
+## What are Cron tasks
 
-Cron means "tasks that run automatically at fixed times". Heartbeat is "periodic patrol"; Cron is "scheduled work".
+Cron tasks are "tasks that run automatically at scheduled times." While heartbeats are "periodic patrols," Cron tasks are "scheduled operations."
 
 Examples:
+- Create a work plan every morning at 9:00
+- Do a weekly review every Friday at 17:00
+- Run a backup script every day at 2:00
 
-- Every morning at 9:00: plan the day
-- Every Friday at 17:00: weekly reflection
-- Every day at 2:00: run a backup script
+## Configuration of cron.md
 
-## cron.md configuration
+Cron tasks are defined in `cron.md` in Markdown + YAML format.
+File path: `~/.animaworks/animas/{name}/cron.md`
 
-Cron tasks are defined in Markdown + YAML in `cron.md`.
-Path: `~/.animaworks/animas/{name}/cron.md`
+When a supervisor edits the `cron.md` of a subordinate Anima, use `read_memory_file` / `write_memory_file` rather than direct file operations, and specify with a relative path such as `../{anima_name}/cron.md`.
 
 ### Basic format
 
-Each task starts with a `## Task name` heading; the body begins with a `schedule:` directive for the standard 5-field cron expression.
+Each task starts with a heading of `## タスク名`, and the standard 5-field cron expression is written at the beginning of the body with the `schedule:` directive.
 
 ```markdown
 # Cron: {name}
 
-## Morning work plan
+## 毎朝の業務計画
 schedule: 0 9 * * *
 type: llm
-Review yesterday's progress from long-term memory and plan today's tasks.
-Prioritize against vision and goals.
-Write results to state/current_state.md.
+長期記憶から昨日の進捗を確認し、今日のタスクを計画する。
+理念と目標に照らして優先順位を判断する。
+結果は state/current_state.md に書き出す。
 
-## Weekly reflection
+## 週次振り返り
 schedule: 0 17 * * 5
 type: llm
-Reread this week's episodes/, extract patterns, and merge into knowledge/.
+今週のepisodes/を読み返し、パターンを抽出してknowledge/に統合する。
 ```
 
-The legacy format (`## Task name (Daily 9:00 JST)` with the schedule in parentheses) can be converted to the new format with `animaworks migrate-cron`.
+The old format (a format that writes the schedule in parentheses, such as `## タスク名（毎日 9:00 JST）`) is automatically converted to the new format at server startup or with `animaworks migrate`.
 
 ### CronTask schema
 
-Each task is parsed internally into the following `CronTask` model:
+Each task is internally parsed into the following `CronTask` model:
 
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `name` | str | (required) | Task name. Taken from the `##` heading |
-| `schedule` | str | (required) | Standard 5-field cron expression. From the `schedule:` directive |
-| `type` | str | `"llm"` | Task kind: `"llm"` or `"command"` |
-| `description` | str | `""` | LLM instructions (for `type: llm`) |
-| `command` | str \| None | `None` | Bash command for command type |
-| `tool` | str \| None | `None` | Internal tool name for command type |
-| `args` | dict \| None | `None` | Tool arguments (YAML) |
-| `skip_pattern` | str \| None | `None` | Command type: skip follow-up LLM when stdout matches this regex |
-| `trigger_heartbeat` | bool | `True` | Command type: if `False`, skip follow-up cron LLM after command output |
+|-----------|------|-----------|------|
+| `name` | str | (required) | Task name. Extracted from the `##` heading |
+| `schedule` | str | (required) | Standard 5-field cron expression. Extracted from the `schedule:` directive |
+| `type` | str | `"llm"` | Task type: `"llm"` or `"command"` |
+| `description` | str | `""` | Instruction text for LLM type (used with type: llm) |
+| `command` | str \| None | `None` | Bash command for Command type |
+| `tool` | str \| None | `None` | Internal tool name for Command type |
+| `args` | dict \| None | `None` | Tool arguments (YAML format) |
+| `skip_pattern` | str \| None | `None` | Command type: if stdout matches this regular expression, skip the follow-up LLM |
+| `trigger_heartbeat` | bool | `True` | Command type: if `False`, skip the follow-up cron LLM after command output |
 
 ## LLM-type Cron tasks
 
-`type: llm` tasks are run by the agent (LLM) with judgment and reasoning.
-Text in `description` is passed to the agent as the prompt.
+`type: llm` are tasks executed by an agent (LLM) with judgment and reasoning.
+The instructions written in the description are passed to the agent as a prompt.
 
-### Characteristics
+### Features
 
-- The agent uses tools, searches memory, and decides
-- Output is unstructured (varies by task)
-- Model API calls are required (cost)
+- The agent uses tools, searches memory, and makes judgments
+- Results are unstructured (different output for each task)
+- Execution requires a model API call (cost is incurred)
 
-### Example
+### Example description
 
 ```markdown
-## Morning work plan
+## 毎朝の業務計画
 schedule: 0 9 * * *
 type: llm
-Reread yesterday's episodes/ and plan today's tasks.
-Prioritize against vision and goals.
-Write results to state/current_state.md.
-Also check the canonical task list (`list_tasks`) for pending tasks and revise priorities if needed.
+昨日の episodes/ を読み返し、今日のタスクを計画する。
+優先順位は理念と目標に照らして判断する。
+結果は state/current_state.md に書き出す。
+正本タスク一覧（`list_tasks`） の未着手タスクも確認し、必要なら優先度を見直す。
 ```
 
-The description (body after the `type:` line) SHOULD include:
-
-- What to check (inputs)
-- How to decide (criteria)
-- What to produce (artifacts)
+The description (the body after the `type:` line) should (SHOULD) include:
+- What to check (input)
+- How to judge (criteria)
+- What to output (deliverable)
 
 ## Command-type Cron tasks
 
-`type: command` runs a fixed command or tool without going through the agent.
-Suited to deterministic work (backups, sending notifications, etc.).
+`type: command` are tasks that execute fixed commands or tools without agent judgment.
+Suitable for deterministic processing (backup, notification sending, etc.).
 
 ### Bash command type
 
 ```markdown
-## Run backup
+## バックアップ実行
 schedule: 0 2 * * *
 type: command
 command: /usr/local/bin/backup.sh
 ```
 
-Put one line of bash after `command:`.
-The command runs through a shell.
+Write the bash command on a single line in `command:`.
+The command is executed via the shell.
 
 ### Internal tool type
 
 ```markdown
-## Slack morning greeting
+## Slack朝の挨拶
 schedule: 0 9 * * 1-5
 type: command
 tool: slack_send
 args:
   channel: "#general"
-  message: "Good morning! Thanks in advance for today."
+  message: "おはようございます！本日もよろしくお願いします。"
 ```
 
-Put the internal tool name after `tool:` and arguments in YAML under `args:`.
-`args` is parsed as a YAML indented block (2-space indent).
+Write the internal tool name in `tool:` and the arguments in YAML format in `args:`.
+args is parsed as a YAML indentation block (2-space indent).
 
-### Follow-up control for command type
+### Follow-up control for Command type
 
-For command-type tasks, when the command exits successfully and has stdout, that output is passed to the LLM for follow-up analysis (heartbeat-equivalent context).
+For Command-type tasks, if the command completes successfully and there is stdout, the output is passed to the LLM for follow-up analysis (executed with a heartbeat-equivalent context).
 
-- **`trigger_heartbeat: false`** — Skip follow-up LLM when output analysis is unnecessary
-- **`skip_pattern: <regex>`** — Skip follow-up when stdout matches this regex
+- **`trigger_heartbeat: false`** — skip the follow-up LLM (when output analysis is not needed)
+- **`skip_pattern: <正規表現>`** — skip the follow-up if stdout matches this regular expression
 
 ```markdown
-## Fetch logs (no output analysis)
+## ログ取得（出力分析不要）
 schedule: 0 8 * * *
 type: command
 trigger_heartbeat: false
 command: /usr/local/bin/fetch-logs.sh
 
-## Health check (skip analysis when "OK")
+## 監視チェック（"OK" のときは分析不要）
 schedule: */15 * * * *
 type: command
 skip_pattern: ^OK$
 command: /usr/local/bin/health-check.sh
 ```
 
-### Choosing LLM vs command type
+### Choosing between LLM type and Command type
 
-| Aspect | LLM type | Command type |
-|--------|----------|----------------|
-| Needs judgment? | Yes | No |
+| Perspective | LLM type | Command type |
+|------|--------|-----------|
+| Judgment needed | Yes | No |
 | API cost | Yes | No |
 | Output predictability | Unstructured | Deterministic |
-| Good for | Planning, reflection, writing | Backup, notifications, data fetch |
-| On error | Agent can recover autonomously | Logged only |
+| Suitable tasks | Planning, reflection, writing | Backup, notification sending, data retrieval |
+| Error handling | Agent handles autonomously | Logged only |
 
-When unsure:
+Guidelines when in doubt:
+- "Just doing the same thing every time" → Command type (SHOULD)
+- "Judgment changes depending on the situation" → LLM type (SHOULD)
+- "Command execution + interpretation of results" → LLM type with command execution instructed in the description
 
-- "Same thing every time" → command type (SHOULD)
-- "Judgment changes with context" → LLM type (SHOULD)
-- "Run command + interpret result" → LLM type and instruct command execution in `description`
+## Schedule notation
 
-## Schedule syntax
-
-The `schedule:` directive in `cron.md` must use the **standard 5-field cron expression**.
+Write a **standard 5-field cron expression** in the `schedule:` directive of cron.md.
 
 ### Standard cron expression (required)
 
 ```
-minute hour day-of-month month day-of-week
+分 時 日 月 曜日
 ```
 
 Examples:
+- `0 9 * * *` — every day at 9:00
+- `0 9 * * 1-5` — weekdays at 9:00
+- `*/30 9-17 * * *` — every 30 minutes from 9:00 to 17:00
+- `0 2 1 * *` — 1st of every month at 2:00
+- `0 17 * * 5` — every Friday at 17:00
 
-- `0 9 * * *` — Daily 9:00
-- `0 9 * * 1-5` — Weekdays 9:00
-- `*/30 9-17 * * *` — Every 30 minutes between 9:00 and 17:00
-- `0 2 1 * *` — 2:00 on the 1st of each month
-- `0 17 * * 5` — Every Friday 17:00
+The time zone can be set with `system.timezone` of `config.json`. If not set, the system time zone is automatically detected.
 
-Timezone: configurable via `config.json` `system.timezone`. When unset, the system timezone is auto-detected.
+### Migration from Japanese schedules
 
-### Migrating from Japanese schedule text
+cron.md written in the old format (`## タスク名（毎日 9:00 JST）`) is automatically converted to a standard cron expression at server startup or with `animaworks migrate`. Conversion table:
 
-Legacy `cron.md` in the old format (`## Task name (Daily 9:00 JST)`) can be converted to standard cron with `animaworks migrate-cron`. Mapping:
+| Japanese notation | Example cron expression |
+|-----------|----------|
+| `毎日 HH:MM` | `0 9 * * *` |
+| `平日 HH:MM` | `0 9 * * 1-5` |
+| `毎週{曜日} HH:MM` | `0 17 * * 5` (Friday) |
+| `毎月N日 HH:MM` | `0 9 1 * *` |
+| `X分毎` | `*/5 * * * *` |
+| `X時間毎` | `0 */2 * * *` |
 
-| Japanese-style text | Cron example |
-|---------------------|--------------|
-| `Daily HH:MM` | `0 9 * * *` |
-| `Weekdays HH:MM` | `0 9 * * 1-5` |
-| `Every {weekday} HH:MM` | `0 17 * * 5` (Friday) |
-| `Monthly Nth HH:MM` | `0 9 1 * *` |
-| `Every X minutes` | `*/5 * * * *` |
-| `Every X hours` | `0 */2 * * *` |
+`隔週`, `毎月最終日`, and `第N曜日` cannot be automatically converted. Write the cron expression manually.
 
-`Biweekly`, last day of month, and Nth weekday of month are not auto-converted. Write the cron expression by hand.
+## How to check cron_logs
 
-## How to check cron logs
+The execution results of Cron tasks are recorded in the server log.
+They are also broadcast as `anima.cron` events via WebSocket.
 
-Cron run results are written to server logs.
-They are also broadcast over WebSocket as `anima.cron` events.
+How to check logs:
+- Server log: INFO level of the `animaworks.lifecycle` logger
+- Web UI: displayed in the dashboard activity feed
+- For episodes/: LLM-type tasks, the agent itself writes logs to episodes/ (SHOULD)
 
-How to check:
-
-- Server logs: `animaworks.lifecycle` logger at INFO
-- Web UI: dashboard activity feed
-- episodes/: For LLM tasks, the agent SHOULD write logs under episodes/
-
-LLM task results are stored as `CycleResult` with:
-
+The results of LLM-type tasks are recorded as `CycleResult` and include the following information:
 - `trigger`: `"cron"`
-- `action`: Short summary of agent behavior
-- `summary`: Result summary text
-- `duration_ms`: Runtime in milliseconds
-- `context_usage_ratio`: Context usage ratio
+- `action`: summary of agent actions
+- `summary`: summary text of the result
+- `duration_ms`: execution time (milliseconds)
+- `context_usage_ratio`: context usage rate
 
 ## Common Cron configuration examples
 
@@ -486,82 +473,81 @@ LLM task results are stored as `CycleResult` with:
 ```markdown
 # Cron: {name}
 
-## Morning work plan
+## 毎朝の業務計画
 schedule: 0 9 * * *
 type: llm
-Review yesterday's actions from episodes/ and pending tasks in the canonical task list (`list_tasks`).
-Set today's priorities and update state/current_state.md.
+episodes/ から昨日の行動を確認し、正本タスク一覧（`list_tasks`） の未着手タスクを見直す。
+今日の優先タスクを決め、state/current_state.md を更新する。
 
-## Weekly reflection
+## 週次振り返り
 schedule: 0 17 * * 5
 type: llm
-Reread this week's episodes/, extract patterns and lessons.
-Write important findings to knowledge/.
-If the same work repeats, consider capturing it in procedures/.
+今週の episodes/ を読み返し、パターンや教訓を抽出する。
+重要な知見は knowledge/ に書き出す。
+繰り返し行った作業があれば procedures/ に手順化を検討する。
 ```
 
 ### External integration tasks
 
 ```markdown
-## Slack daily wrap-up
+## Slack日報送信
 schedule: 0 18 * * 1-5
 type: command
 tool: slack_send
 args:
   channel: "#daily-report"
-  message: "Finished today's work. Details at tomorrow's standup."
+  message: "本日の業務完了しました。詳細は明日の朝礼で共有します。"
 
-## GitHub Issue check
+## GitHub Issue 確認
 schedule: 0 10 * * 1-5
 type: llm
-Check new Issues and PRs in repos you own.
-Report important ones to your supervisor.
+担当リポジトリの新しい Issue と PR を確認する。
+重要なものがあれば supervisor に報告する。
 ```
 
 ### Memory maintenance
 
 ```markdown
-## Knowledge inventory
+## 知識の棚卸し
 schedule: 0 10 1 * *
 type: llm
-Review all files under knowledge/, tidy outdated or conflicting content.
-Consider archiving low-importance knowledge.
+knowledge/ の全ファイルを確認し、古い情報や矛盾する記載を整理する。
+重要度の低い知識はアーカイブを検討する。
 
-## Procedure refresh check
+## 手順書の更新確認
 schedule: 0 10 * * 1
 type: llm
-Review procedures/ and check they still match real operations.
-Update procedures when they change.
+procedures/ の手順書を確認し、実際の運用と乖離がないか見直す。
+変更があれば手順書を更新する。
 ```
 
-### Commenting out
+### Comments
 
 Wrap tasks you do not want to run in HTML comments:
 
 ```markdown
 <!--
-## Temporarily paused task
+## 一時停止中のタスク
 schedule: 0 15 * * *
 type: llm
-This task is paused for now.
+このタスクは一時的に停止中。
 -->
 ```
 
-`## ` headings inside comments are ignored by the parser.
+The `## ` heading inside the comment is ignored by the parser.
 
-## Cron configuration hot reload
+## Hot Reload of Cron Configuration
 
-When `cron.md` is updated, the schedule reloads automatically, like `heartbeat.md`.
-If an Anima edits `cron.md` itself, changes apply immediately (self-modify pattern).
+When cron.md is updated, the schedule is automatically reloaded, just like heartbeat.md.
+If Anima itself rewrites cron.md, the change is reflected immediately (self-modify pattern).
+Supervisors can edit the `cron.md` / `heartbeat.md` of their subordinates using the write memory tool. Change requests for `injection.md` from authorized supervisors are also forwarded to root and authorized. For changes to `status.json`, use the corresponding supervisor tool or root CLI/API. Do not write directly to root-owned files via Read / Write / Edit / apply_patch / `Path.write_text` / shell redirection, etc.
 
-On reload:
+Behavior on reload:
+1. Delete all existing cron jobs for the relevant Anima
+2. Parse the updated cron.md and register new jobs
+3. `Schedule reloaded for '{name}'` is output to the log
 
-1. Remove all existing cron jobs for that Anima
-2. Re-parse updated `cron.md` and register new jobs
-3. Log `Schedule reloaded for '{name}'`
-
-If you edit `cron.md` yourself:
-
-- Put the `schedule:` directive immediately after the heading (`## Task name`) (MUST)
-- Use the standard 5-field cron expression (MUST)
-- Put the `type` line right after `schedule` (SHOULD)
+Notes when updating cron.md yourself:
+- Place the `schedule:` directive immediately after the heading (`## タスク名`) (MUST)
+- Write the schedule as a standard 5-field cron expression (MUST)
+- Place the type line immediately after the schedule (SHOULD)

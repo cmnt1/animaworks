@@ -1,4 +1,5 @@
 // ── Activity Feed / Anima State Controller ────
+import { nowTimeStr } from "../../shared/html-utils.js";
 export function createActivityController(ctx) {
   const $root = ctx.$root;
   const { state, deps } = ctx;
@@ -12,7 +13,7 @@ export function createActivityController(ctx) {
     if (empty) empty.remove();
 
     const icon = getIcon(type);
-    const ts = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const ts = nowTimeStr();
 
     const entry = document.createElement("div");
     entry.className = "activity-entry";

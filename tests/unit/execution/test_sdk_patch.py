@@ -8,7 +8,7 @@ from types import ModuleType
 import anyio
 import pytest
 
-from core.execution import _sdk_patch
+from core.execution.engines.claude import _sdk_patch
 
 
 class _FakeLock:

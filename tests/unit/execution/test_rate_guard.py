@@ -2,7 +2,7 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.execution.rate_guard — file-backed fail-open guard."""
+"""Unit tests for core.llm.guard.rate_guard — file-backed fail-open guard."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ import threading
 import time
 from pathlib import Path
 
-import core.execution.rate_guard as rate_guard
+import core.llm.guard.rate_guard as rate_guard
 from core.config.schemas import LlmRateGuardConfig
-from core.execution.rate_guard import LlmRateGuard, _load_guard_config
+from core.llm.guard.rate_guard import LlmRateGuard, _load_guard_config
 
 
 def _guard(tmp_path: Path, **cfg_overrides) -> LlmRateGuard:
@@ -277,24 +277,27 @@ class TestConcurrency:
 
 
 class TestLockFailOpen:
-    def test_report_block_without_fcntl_still_writes(self, tmp_path: Path, monkeypatch) -> None:
-        monkeypatch.setattr(rate_guard, "fcntl", None)
+    def test_lock_acquire_failure_falls_open(self, tmp_path: Path, monkeypatch) -> None:
+        def fail_acquire(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise OSError("file locking unavailable")
+
+        monkeypatch.setattr("core.platform.locks.acquire_file_lock", fail_acquire)
         guard = _guard(tmp_path)
+        # Must still record the block despite the lock failure.
         guard.report_block("anthropic", 60, "rate_limit")
         assert guard.blocked_remaining("anthropic") > 0
 
-    def test_flock_acquire_failure_falls_open(self, tmp_path: Path, monkeypatch) -> None:
-        class _StubFcntl:
-            LOCK_EX = 2
-            LOCK_UN = 8
-
-            @staticmethod
-            def flock(fd, op):  # noqa: ANN001
-                raise OSError("flock unavailable")
-
-        monkeypatch.setattr(rate_guard, "fcntl", _StubFcntl)
+    def test_lock_file_open_failure_falls_open(self, tmp_path: Path, monkeypatch) -> None:
         guard = _guard(tmp_path)
-        # Must still record the block despite the lock failure.
+        lock_path = guard._resolve_lock_path()
+        real_open = Path.open
+
+        def fail_lock_open(path: Path, *args, **kwargs):  # noqa: ANN002, ANN003
+            if path == lock_path:
+                raise OSError("lock file unavailable")
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", fail_lock_open)
         guard.report_block("anthropic", 60, "rate_limit")
         assert guard.blocked_remaining("anthropic") > 0
 

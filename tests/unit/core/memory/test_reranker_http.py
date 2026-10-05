@@ -68,8 +68,8 @@ class TestRerankerHTTP:
         monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
 
         with (
-            patch("core.gpu.is_component_degraded") as mock_degraded,
-            patch("core.gpu.resolve_device") as mock_resolve,
+            patch("core.infra.gpu.is_component_degraded") as mock_degraded,
+            patch("core.infra.gpu.resolve_device") as mock_resolve,
         ):
             from core.memory.retrieval.reranker import CrossEncoderReranker
 
@@ -100,11 +100,11 @@ class TestRerankerHTTP:
             )
 
         assert [r["content"] for r in result] == ["high", "low"]
-        mock_post.assert_called_once_with(
-            "http://127.0.0.1:18500/api/internal/rerank",
-            json={"query": "query", "documents": ["low", "high"]},
-            timeout=180.0,
-        )
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args.args == ("http://127.0.0.1:18500/api/internal/rerank",)
+        assert call_args.kwargs["json"] == {"query": "query", "documents": ["low", "high"]}
+        assert call_args.kwargs["timeout"] == 180.0
 
     def test_http_mode_does_not_import_sentence_transformers(self, monkeypatch):
         """With RERANK_URL set, sentence_transformers must not enter sys.modules."""
@@ -233,24 +233,3 @@ class TestRerankerHTTP:
 
         assert result == []
         mock_post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_async_rerank_uses_http(self, monkeypatch):
-        """Async path also respects ANIMAWORKS_RERANK_URL."""
-        monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"scores": [0.3, 0.7]}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client.post", return_value=mock_response):
-            from core.memory.retrieval.reranker import CrossEncoderReranker
-
-            reranker = CrossEncoderReranker()
-            result = await reranker.rerank(
-                "q",
-                [{"fact": "a"}, {"fact": "b"}],
-                top_k=2,
-            )
-
-        assert [r["fact"] for r in result] == ["b", "a"]

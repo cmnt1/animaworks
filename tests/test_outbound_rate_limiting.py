@@ -1,6 +1,4 @@
-"""Unit tests for outbound rate limiting — per-run guard, cross-run guard,
-messenger last_post_by, cascade_limiter file-based, and priming outbound section.
-"""
+"""Unit tests for per-run Board behavior and priming outbound sections."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,14 +8,14 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_jst
-from core.tooling.handler import ToolHandler, active_session_type
+from core.tooling.handler import ToolHandler
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -33,7 +31,7 @@ def _make_handler(
     channels_dir = shared_dir / "channels"
     channels_dir.mkdir(exist_ok=True)
     # Pre-create common board channels (post_channel no longer auto-creates)
-    for name in ("general", "ops", "team"):
+    for name in ("general", "ops"):
         path = channels_dir / f"{name}.jsonl"
         if not path.exists():
             path.write_text("", encoding="utf-8")
@@ -72,15 +70,15 @@ class TestPostChannelPerRunGuard:
         assert "Error" in result2
         assert "投稿済み" in result2
 
-    def test_post_channel_per_run_allows_different_non_ops_channels(self, tmp_path: Path) -> None:
+    def test_post_channel_per_run_allows_different_channels(self, tmp_path: Path) -> None:
         """異なるチャネルへの投稿は許可される。"""
         handler, _, _ = _make_handler(tmp_path)
 
         result1 = handler.handle("post_channel", {"channel": "general", "text": "Hello"})
         assert "Posted to #general" in result1
 
-        result2 = handler.handle("post_channel", {"channel": "team", "text": "Status OK"})
-        assert "Posted to #team" in result2
+        result2 = handler.handle("post_channel", {"channel": "ops", "text": "Status OK"})
+        assert "Posted to #ops" in result2
 
     def test_reset_posted_channels_clears_tracking(self, tmp_path: Path) -> None:
         """reset_posted_channels後は再投稿可能になる。"""
@@ -91,222 +89,8 @@ class TestPostChannelPerRunGuard:
 
         handler.reset_posted_channels()
 
-        # Cross-run guard could block, so mock load_config to set cooldown=0
-        with patch("core.config.models.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 0
-            result2 = handler.handle("post_channel", {"channel": "general", "text": "After reset"})
+        result2 = handler.handle("post_channel", {"channel": "general", "text": "After reset"})
         assert "Posted to #general" in result2
-
-
-class TestHeartbeatOkPostSuppression:
-    """Heartbeat の異常なし投稿を Board/Discord に流さない。"""
-
-    def test_heartbeat_ok_summary_is_not_posted(self, tmp_path: Path) -> None:
-        handler, _, shared_dir = _make_handler(tmp_path)
-        token = active_session_type.set("heartbeat")
-        try:
-            result = handler.handle(
-                "post_channel",
-                {
-                    "channel": "general",
-                    "text": "【Heartbeat】HEARTBEAT_OK - Inbox: 0件 - アクティブタスク: 0件",
-                },
-            )
-        finally:
-            active_session_type.reset(token)
-
-        assert "Skipped routine HEARTBEAT_OK" in result
-        assert (shared_dir / "channels" / "general.jsonl").read_text(encoding="utf-8") == ""
-
-    def test_heartbeat_report_with_blocker_is_still_posted(self, tmp_path: Path) -> None:
-        handler, _, _ = _make_handler(tmp_path)
-        token = active_session_type.set("heartbeat")
-        try:
-            result = handler.handle(
-                "post_channel",
-                {
-                    "channel": "general",
-                    "text": "【Heartbeat】blocked: provider error detected",
-                },
-            )
-        finally:
-            active_session_type.reset(token)
-
-        assert "Posted to #general" in result
-
-
-# ── post_channel cross-run guard ────────────────────────────
-
-
-class TestPostChannelCrossRunGuard:
-    """post_channel cross-run ファイルベース cooldown のユニットテスト。"""
-
-    def test_post_channel_cross_run_blocks_within_cooldown(self, tmp_path: Path) -> None:
-        """cooldown期間内で別runからの投稿がブロックされる。"""
-        handler1, messenger, shared_dir = _make_handler(tmp_path)
-
-        # First run: post to general
-        with patch("core.config.models.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 300
-            result1 = handler1.handle("post_channel", {"channel": "general", "text": "First run"})
-        assert "Posted to #general" in result1
-
-        # Simulate a second run: new handler instance
-        handler2, _, _ = _make_handler(tmp_path, "alice")
-
-        with patch("core.config.models.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 300
-            result2 = handler2.handle("post_channel", {"channel": "general", "text": "Second run"})
-        assert "Error" in result2
-        assert "クールダウン" in result2
-
-    def test_post_channel_cross_run_allows_after_cooldown(self, tmp_path: Path) -> None:
-        """cooldown経過後は投稿が許可される。"""
-        handler1, messenger, shared_dir = _make_handler(tmp_path)
-
-        # First run: post to general
-        with patch("core.config.models.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 300
-            handler1.handle("post_channel", {"channel": "general", "text": "First run"})
-
-        # Simulate time passing by rewriting the channel file with an old timestamp
-        channel_file = shared_dir / "channels" / "general.jsonl"
-        old_ts = (now_jst() - timedelta(seconds=600)).isoformat()
-        channel_file.write_text(
-            json.dumps({"ts": old_ts, "from": "alice", "text": "First run", "source": "anima"}, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-        # Second run: new handler
-        handler2, _, _ = _make_handler(tmp_path, "alice")
-
-        with patch("core.config.models.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 300
-            result2 = handler2.handle("post_channel", {"channel": "general", "text": "Second run"})
-        assert "Posted to #general" in result2
-
-
-# ── messenger last_post_by ──────────────────────────────────
-
-
-class TestLastPostBy:
-    """Messenger.last_post_by のユニットテスト。"""
-
-    def test_last_post_by_returns_most_recent(self, tmp_path: Path) -> None:
-        """最新の自分の投稿を正しく返す。"""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        (shared_dir / "inbox").mkdir()
-        (shared_dir / "channels").mkdir()
-
-        messenger = Messenger(shared_dir, "alice")
-        (shared_dir / "channels" / "general.jsonl").write_text("", encoding="utf-8")
-        messenger.post_channel("general", "First post")
-        messenger.post_channel("general", "Second post")
-
-        last = messenger.last_post_by("alice", "general")
-        assert last is not None
-        assert last["text"] == "Second post"
-        assert last["from"] == "alice"
-
-    def test_last_post_by_returns_none_when_no_posts(self, tmp_path: Path) -> None:
-        """投稿がない場合はNoneを返す。"""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        (shared_dir / "inbox").mkdir()
-        (shared_dir / "channels").mkdir()
-
-        messenger = Messenger(shared_dir, "alice")
-
-        result = messenger.last_post_by("alice", "general")
-        assert result is None
-
-
-# ── cascade_limiter file-based ──────────────────────────────
-
-
-class TestCascadeLimiterFileBased:
-    """cascade_limiter ファイルベース化のユニットテスト。"""
-
-    def test_depth_limiter_blocks_on_exceeded(self, tmp_path: Path) -> None:
-        """depth超過でFalseを返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.depth_window_s = 600
-            mock_cfg.return_value.heartbeat.max_depth = 3
-
-            from core.cascade_limiter import ConversationDepthLimiter
-
-            limiter = ConversationDepthLimiter(window_s=600, max_depth=3)
-
-        # Create anima dir with activity log entries exceeding depth
-        anima_dir = tmp_path / "animas" / "alice"
-        (anima_dir / "activity_log").mkdir(parents=True)
-
-        today = now_jst().strftime("%Y-%m-%d")
-        log_file = anima_dir / "activity_log" / f"{today}.jsonl"
-
-        # Write 4 entries (exceeds max_depth=3)
-        entries = []
-        for i in range(4):
-            ts = (now_jst() - timedelta(seconds=60 * (4 - i))).isoformat()
-            entry = {"ts": ts, "type": "dm_sent", "content": f"msg {i}", "to": "bob"}
-            entries.append(json.dumps(entry, ensure_ascii=False))
-        log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
-
-        result = limiter.check_depth("alice", "bob", anima_dir)
-        assert result is False
-
-    def test_depth_limiter_allows_under_limit(self, tmp_path: Path) -> None:
-        """limit内でTrueを返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.depth_window_s = 600
-            mock_cfg.return_value.heartbeat.max_depth = 6
-
-            from core.cascade_limiter import ConversationDepthLimiter
-
-            limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-
-        anima_dir = tmp_path / "animas" / "alice"
-        (anima_dir / "activity_log").mkdir(parents=True)
-
-        today = now_jst().strftime("%Y-%m-%d")
-        log_file = anima_dir / "activity_log" / f"{today}.jsonl"
-
-        # Write 2 entries (under max_depth=6)
-        entries = []
-        for i in range(2):
-            ts = (now_jst() - timedelta(seconds=60 * (2 - i))).isoformat()
-            entry = {"ts": ts, "type": "dm_sent", "content": f"msg {i}", "to": "bob"}
-            entries.append(json.dumps(entry, ensure_ascii=False))
-        log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
-
-        result = limiter.check_depth("alice", "bob", anima_dir)
-        assert result is True
-
-    def test_depth_limiter_fail_open_on_missing_log(self, tmp_path: Path) -> None:
-        """アクティビティログがない場合はTrue（fail-open）を返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.depth_window_s = 600
-            mock_cfg.return_value.heartbeat.max_depth = 3
-
-            from core.cascade_limiter import ConversationDepthLimiter
-
-            limiter = ConversationDepthLimiter(window_s=600, max_depth=3)
-
-        # anima_dir exists but has no activity_log
-        anima_dir = tmp_path / "animas" / "alice"
-        anima_dir.mkdir(parents=True)
-
-        result = limiter.check_depth("alice", "bob", anima_dir)
-        assert result is True
 
 
 # ── Priming outbound section (via PrimingEngine) ────────────
@@ -331,7 +115,10 @@ class TestCollectRecentOutbound:
         ts2 = (now_jst() - timedelta(minutes=15)).isoformat()
 
         entries = [
-            json.dumps({"ts": ts1, "type": "channel_post", "content": "Hello general", "channel": "general"}, ensure_ascii=False),
+            json.dumps(
+                {"ts": ts1, "type": "channel_post", "content": "Hello general", "channel": "general"},
+                ensure_ascii=False,
+            ),
             json.dumps({"ts": ts2, "type": "message_sent", "content": "Hi bob", "to": "bob"}, ensure_ascii=False),
         ]
         log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")

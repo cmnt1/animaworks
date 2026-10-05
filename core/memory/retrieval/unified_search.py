@@ -7,20 +7,19 @@ from __future__ import annotations
 """Unified Legacy memory retrieval orchestration.
 
 This module keeps Legacy retrieval policy in one place while reusing the
-existing RAG search helpers for vector, graph, keyword, and activity sources.
+existing RAG search helpers for vector, keyword, and activity sources.
 """
 
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date, datetime, time
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 try:
-    from core.memory.bm25 import search_activity_log
+    from core.memory.retrieval.bm25 import search_activity_log
 except ImportError:
     search_activity_log = None  # type: ignore[assignment,misc]
 
@@ -82,38 +81,6 @@ TRIGGER_POLICIES: dict[str, TriggerPolicy] = {
 }
 
 
-def _explicit_time_range(*, time_start: str | None, time_end: str | None) -> Any | None:
-    """Convert schema ISO bounds into the same inclusive range used by query extraction."""
-    if not time_start and not time_end:
-        return None
-
-    from core.memory.retrieval.time_expr import TimeRange
-
-    start = _parse_time_bound(time_start, end_of_day=False)
-    end = _parse_time_bound(time_end, end_of_day=True)
-    if start is None and end is None:
-        return None
-    if start is not None and end is not None and start > end:
-        start, end = end, start
-    return TimeRange(start=start, end=end)
-
-
-def _parse_time_bound(value: str | None, *, end_of_day: bool) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed_date = date.fromisoformat(text)
-    except ValueError:
-        normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
-        try:
-            parsed = datetime.fromisoformat(normalized)
-        except ValueError:
-            return None
-        return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
-    return datetime.combine(parsed_date, time.max if end_of_day else time.min)
-
-
 class UnifiedMemorySearch:
     """Legacy-only retrieval orchestrator shared by tools, backend, and priming."""
 
@@ -172,8 +139,6 @@ class UnifiedMemorySearch:
         time_end: str | None = None,
         scope_override: tuple[str, ...] | None = None,
         pipeline_settings: dict[str, object] | None = None,
-        temporal_boost: Any | None = None,
-        entity_boost: Any | None = None,
         reference_time: Any | None = None,
         skip_bm25_validation: bool = False,
         _access_batch: Any | None = None,
@@ -204,26 +169,12 @@ class UnifiedMemorySearch:
         coerced_reference_time = coerce_reference_time(reference_time)
         expanded = expand_query(query, reference_time=coerced_reference_time)
         # Sparse (BM25/keyword) query carries expanded ISO dates and lowercased
-        # tokens; dense (vector/graph) query keeps natural text plus quoted
+        # tokens; dense vector query keeps natural text plus quoted
         # phrases only. See F19.
         search_query = expanded.search_text or query
         dense_query = expanded.dense_text or query
         time_hint_start = time_start or expanded.time_hint_start
         time_hint_end = time_end or expanded.time_hint_end
-        if entity_boost is None:
-            entity_boost = rag._build_entity_boost_config(dense_query, settings)
-        if temporal_boost is None:
-            temporal_boost = self._build_temporal_boost_config(
-                query,
-                settings,
-                time_start=time_start,
-                time_end=time_end,
-                reference_time=coerced_reference_time,
-            )
-        access_boost = None
-        access_boost_builder = getattr(rag, "_build_access_boost_config", None)
-        if callable(access_boost_builder):
-            access_boost = access_boost_builder(settings)
 
         try:
             indexer = rag._get_indexer()
@@ -258,9 +209,7 @@ class UnifiedMemorySearch:
             sparse_query=search_query,
             scopes=scopes,
             pool_k=pool_k,
-            entity_boost=entity_boost,
             embedding=embedding,
-            indexer=indexer,
             access_batch=access_batch,
             skip_bm25_validation=skip_bm25_validation,
             time_start=time_start,
@@ -325,7 +274,6 @@ class UnifiedMemorySearch:
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
             items = self._soft_source_collapse(items)[offset : offset + limit]
-            items = self._soft_source_collapse(items)[:limit]
             logger.info(
                 "Unified search complete: scope=%s mode=keyword-only elapsed=%.3fs results=%d",
                 scope,
@@ -348,9 +296,6 @@ class UnifiedMemorySearch:
             rerank_enabled=rerank_enabled,
             confidence_threshold=float(settings.get("confidence_threshold", 0.35)),
             rrf_confidence_threshold=float(settings.get("rrf_confidence_threshold", 0.02)),
-            temporal_boost=temporal_boost,
-            entity_boost=entity_boost,
-            access_boost=access_boost,
         )
         logger.info(
             "Unified search pipeline: scope=%s elapsed=%.3fs rerank_enabled=%s",
@@ -381,7 +326,6 @@ class UnifiedMemorySearch:
         if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
         items = self._soft_source_collapse(items)[offset : offset + limit]
-        items = self._soft_source_collapse(items)[:limit]
         logger.info(
             "Unified search complete: scope=%s mode=hybrid elapsed=%.3fs results=%d",
             scope,
@@ -389,45 +333,6 @@ class UnifiedMemorySearch:
             len(items),
         )
         return items
-
-    @staticmethod
-    def _build_temporal_boost_config(
-        query: str,
-        settings: dict[str, object],
-        *,
-        time_start: str | None,
-        time_end: str | None,
-        reference_time: datetime | None,
-    ) -> Any | None:
-        """Build automatic temporal ranking config from explicit or query time intent."""
-        if not bool(settings.get("temporal_boost_enabled", True)):
-            return None
-
-        from core.memory.retrieval.temporal import TemporalBoostConfig
-        from core.memory.retrieval.time_expr import TimeRange, extract_time_range
-
-        now = reference_time or datetime.now()
-        if now.tzinfo is not None:
-            now = now.replace(tzinfo=None)
-
-        explicit = _explicit_time_range(time_start=time_start, time_end=time_end)
-        resolved = explicit or extract_time_range(query, now=now)
-        if resolved is None:
-            return None
-        return TemporalBoostConfig(
-            enabled=True,
-            boost=float(settings.get("temporal_boost", 0.05) or 0.0),
-            max_boost=float(settings.get("temporal_boost_max", 0.10) or 0.0),
-            category=None,
-            time_range=TimeRange(
-                start=resolved.start,
-                end=resolved.end,
-                recency=resolved.recency,
-            ),
-            recency=resolved.recency,
-            half_life_days=float(settings.get("temporal_half_life_days", 7.0) or 7.0),
-            now=now,
-        )
 
     @staticmethod
     def _rerank_was_applied(items: list[dict[str, Any]]) -> bool:
@@ -447,8 +352,6 @@ class UnifiedMemorySearch:
         time_end: str | None = None,
         scope_override: tuple[str, ...] | None = None,
         pipeline_settings: dict[str, object] | None = None,
-        temporal_boost: Any | None = None,
-        entity_boost: Any | None = None,
         reference_time: Any | None = None,
         rerank_after_merge: bool = False,
         skip_bm25_validation: bool = False,
@@ -477,8 +380,6 @@ class UnifiedMemorySearch:
             "time_end": time_end,
             "scope_override": scope_override,
             "pipeline_settings": merged_pipeline_settings,
-            "temporal_boost": temporal_boost,
-            "entity_boost": entity_boost,
             "reference_time": reference_time,
             "skip_bm25_validation": skip_bm25_validation,
         }
@@ -607,7 +508,7 @@ class UnifiedMemorySearch:
 
     def _ensure_rag_search(self) -> Any:
         if self._rag_search is None:
-            from core.memory.rag_search import RAGMemorySearch
+            from core.memory.retrieval.rag_search import RAGMemorySearch
 
             self._rag_search = RAGMemorySearch(
                 self._anima_dir,
@@ -649,16 +550,14 @@ class UnifiedMemorySearch:
         sparse_query: str,
         scopes: tuple[str, ...],
         pool_k: int,
-        entity_boost: Any | None,
         embedding: list[float] | None,
-        indexer: Any | None,
         access_batch: Any,
         skip_bm25_validation: bool,
         time_start: str | None,
         time_end: str | None,
     ) -> list[list[dict[str, Any]]]:
-        # Vector and graph retrieval use the dense query; BM25-backed
-        # activity_log and keyword fallbacks use the sparse query. See F19.
+        # Vector retrieval uses the dense query; BM25-backed activity_log and
+        # keyword fallbacks use the sparse query. See F19.
         ranked_lists: list[list[dict[str, Any]]] = []
         vector_scopes = [scope for scope in scopes if scope != "activity_log"]
         remaining_vector_scopes = vector_scopes
@@ -669,7 +568,6 @@ class UnifiedMemorySearch:
                 dense_query,
                 first_scope,
                 pool_k,
-                entity_boost=entity_boost,
                 embedding=embedding,
                 access_batch=access_batch,
             )
@@ -677,48 +575,7 @@ class UnifiedMemorySearch:
                 ranked_lists.append(first_hits)
             remaining_vector_scopes = vector_scopes[1:]
 
-        vector_groups: list[tuple[list[str], bool]] = []
-        graph_enabled = bool(rag._load_rag_pipeline_settings().get("enable_spreading_activation", True))
-        grouped: set[str] = set()
-        for scope in remaining_vector_scopes:
-            if scope in grouped:
-                continue
-            group = [scope]
-            if scope == "knowledge" and "common_knowledge" in remaining_vector_scopes:
-                group.append("common_knowledge")
-            grouped.update(group)
-            vector_groups.append((group, graph_enabled and "episodes" in group))
-        if graph_enabled and "episodes" in scopes and "episodes" not in remaining_vector_scopes:
-            vector_groups.append(([], True))
-
-        def _run_vector_group(group: list[str], include_graph: bool):
-            hits = {
-                scope: self._vector_hits(
-                    rag,
-                    dense_query,
-                    scope,
-                    pool_k,
-                    entity_boost=entity_boost,
-                    embedding=embedding,
-                    access_batch=access_batch,
-                )
-                for scope in group
-            }
-            graph_hits = (
-                self._graph_hits(
-                    rag,
-                    dense_query,
-                    pool_k,
-                    embedding=embedding,
-                    indexer=indexer,
-                    access_batch=access_batch,
-                )
-                if include_graph
-                else []
-            )
-            return hits, graph_hits
-
-        with ThreadPoolExecutor(max_workers=len(vector_groups) + 2) as pool:
+        with ThreadPoolExecutor(max_workers=max(1, len(remaining_vector_scopes)) + 2) as pool:
             activity_future = (
                 pool.submit(
                     search_activity_log,
@@ -738,24 +595,24 @@ class UnifiedMemorySearch:
                 sparse_query,
                 vector_scopes,
                 pool_k,
-                entity_boost=entity_boost,
                 skip_bm25_validation=skip_bm25_validation,
             )
-            vector_futures = [pool.submit(_run_vector_group, *group) for group in vector_groups]
-            vector_hits: dict[str, list[dict[str, Any]]] = {}
-            graph_hits: list[dict[str, Any]] = []
-            for future in vector_futures:
-                group_hits, group_graph_hits = future.result()
-                vector_hits.update(group_hits)
-                if group_graph_hits:
-                    graph_hits = group_graph_hits
+            vector_futures = {
+                scope: pool.submit(
+                    self._vector_hits,
+                    rag,
+                    dense_query,
+                    scope,
+                    pool_k,
+                    embedding=embedding,
+                    access_batch=access_batch,
+                )
+                for scope in remaining_vector_scopes
+            }
             for vector_scope in remaining_vector_scopes:
-                hits = vector_hits.get(vector_scope, [])
+                hits = vector_futures[vector_scope].result()
                 if hits:
                     ranked_lists.append(hits)
-
-            if graph_hits:
-                ranked_lists.append(graph_hits)
 
             if activity_future is not None:
                 try:
@@ -777,7 +634,6 @@ class UnifiedMemorySearch:
         scope: str,
         pool_k: int,
         *,
-        entity_boost: Any | None,
         embedding: list[float] | None,
         access_batch: Any,
     ) -> list[dict[str, Any]]:
@@ -788,35 +644,11 @@ class UnifiedMemorySearch:
                 offset=0,
                 knowledge_dir=self._anima_dir / "knowledge",
                 result_limit=pool_k,
-                entity_boost=entity_boost,
                 embedding=embedding,
                 access_batch=access_batch,
             )
         except Exception:
             logger.debug("Unified vector search failed for scope=%s", scope, exc_info=True)
-            return []
-
-    def _graph_hits(
-        self,
-        rag: Any,
-        query: str,
-        pool_k: int,
-        *,
-        embedding: list[float] | None,
-        indexer: Any | None,
-        access_batch: Any,
-    ) -> list[dict[str, Any]]:
-        try:
-            return rag._graph_episodes_search(
-                query,
-                pool_k,
-                self._anima_dir / "knowledge",
-                embedding=embedding,
-                indexer=indexer,
-                access_batch=access_batch,
-            )
-        except Exception:
-            logger.debug("Unified graph episode search failed", exc_info=True)
             return []
 
     def _keyword_hits(
@@ -826,7 +658,6 @@ class UnifiedMemorySearch:
         scopes: list[str],
         pool_k: int,
         *,
-        entity_boost: Any | None,
         skip_bm25_validation: bool,
     ) -> list[dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
@@ -836,7 +667,6 @@ class UnifiedMemorySearch:
                 query,
                 scope,
                 pool_k,
-                entity_boost=entity_boost,
                 skip_bm25_validation=skip_bm25_validation,
                 merged=merged,
             )
@@ -849,7 +679,6 @@ class UnifiedMemorySearch:
         scope: str,
         pool_k: int,
         *,
-        entity_boost: Any | None,
         skip_bm25_validation: bool,
         merged: dict[str, dict[str, Any]],
     ) -> None:
@@ -863,7 +692,6 @@ class UnifiedMemorySearch:
                 procedures_dir=self._anima_dir / "procedures",
                 common_knowledge_dir=self._common_knowledge_dir,
                 result_limit=pool_k,
-                entity_boost=entity_boost,
                 skip_bm25_validation=skip_bm25_validation,
             )
         except Exception:

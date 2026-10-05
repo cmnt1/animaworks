@@ -1,27 +1,13 @@
 // ── API Client ──────────────────────
-// Thin fetch wrapper for all REST endpoints.
+// Thin API client for all workspace REST endpoints.
 
-import { createLogger } from "../../shared/logger.js";
+import { api } from "../../modules/api.js";
 import { basePath } from "/shared/base-path.js";
 
-const logger = createLogger("ws-api");
 const BASE = basePath;
 
-async function request(path, opts = {}) {
-  try {
-    const res = await fetch(`${BASE}${path}`, opts);
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      logger.error("API request failed", { url: path, status: res.status, detail: text.slice(0, 200) });
-      throw new Error(`API ${res.status}: ${text}`);
-    }
-    return res.json();
-  } catch (err) {
-    if (err.message && !err.message.startsWith("API ")) {
-      logger.error("Network error", { url: path, error: err.message });
-    }
-    throw err;
-  }
+function request(path, opts = {}) {
+  return api(path, opts);
 }
 
 function post(path, body) {
@@ -64,17 +50,6 @@ export function sendChat(name, message, userName) {
   return post(`/api/animas/${encodeURIComponent(name)}/chat`, {
     message,
     from_person: userName || "human",
-  });
-}
-
-/**
- * Start SSE chat stream. Returns the raw Response for manual reading.
- */
-export function sendChatStream(name, message, userName) {
-  return fetch(`${BASE}/api/animas/${encodeURIComponent(name)}/chat/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, from_person: userName || "human" }),
   });
 }
 
@@ -131,7 +106,7 @@ export function fetchSystemStatus() {
   return request("/api/system/status");
 }
 
-export function fetchAvailableModels() {
+function fetchAvailableModels() {
   return request("/api/system/available-models");
 }
 
@@ -139,11 +114,11 @@ export function fetchSharedUsers() {
   return request("/api/shared/users");
 }
 
-export function reloadSystem() {
+function reloadSystem() {
   return post("/api/system/reload", {});
 }
 
-export function triggerHeartbeat(name) {
+function triggerHeartbeat(name) {
   return post(`/api/animas/${encodeURIComponent(name)}/trigger`, {});
 }
 
@@ -169,7 +144,7 @@ export function assetUrl(name, filename) {
   return `${BASE}/api/animas/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
 }
 
-export function fetchAssets(name) {
+function fetchAssets(name) {
   return request(`/api/animas/${encodeURIComponent(name)}/assets`);
 }
 
@@ -184,7 +159,14 @@ export function fetchAssetMetadata(name) {
 export async function probeAsset(name, filename) {
   const url = assetUrl(name, filename);
   try {
-    const res = await fetch(url, { method: "HEAD" });
+    const res = await api(url, {
+      method: "HEAD",
+      cache: "default",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     return res.ok ? url : null;
   } catch {
     return null;

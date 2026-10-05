@@ -96,14 +96,31 @@ class TestChannelETaskResults:
         engine = PrimingEngine(anima_dir)
         result = await engine._channel_e_pending_tasks()
 
-        # The preview should be truncated — "x" * 300 becomes "x" * 150
+        # The preview is a single-line 80-character summary.
         assert "完了済みバックグラウンドタスク" in result
         assert "longresult" in result
+        assert "x" * 80 in result
+        assert "x" * 81 not in result
+
+    @pytest.mark.asyncio
+    async def test_overflow_summary_does_not_list_filenames(self, anima_dir: Path):
+        overflow_dir = anima_dir / "state" / "overflow_inbox"
+        overflow_dir.mkdir(parents=True)
+        for index in range(8):
+            (overflow_dir / f"private-message-{index}.md").write_text("message", encoding="utf-8")
+
+        result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+        assert "未処理メッセージ 8件" in result
+        assert "state/overflow_inbox/" in result
+        assert "read_memory_file" in result
+        assert "archive_memory_file" in result
+        assert "private-message-" not in result
 
     @pytest.mark.asyncio
     async def test_task_results_coexist_with_queue(self, anima_dir: Path):
         """Task results should appear alongside pending queue entries."""
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(anima_dir)
         manager.add_task(

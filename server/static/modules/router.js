@@ -113,7 +113,7 @@ export function initRouter(containerId) {
  * Programmatically navigate to a hash route.
  * @param {string} hash - Target hash (e.g. "#/chat")
  */
-export function navigateTo(hash) {
+function navigateTo(hash) {
   window.location.hash = hash;
 }
 

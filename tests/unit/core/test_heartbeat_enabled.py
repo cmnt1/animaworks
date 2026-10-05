@@ -35,7 +35,7 @@ def test_heartbeat_enabled_defaults_are_backward_compatible() -> None:
 
 
 def test_heartbeat_enabled_is_preserved_by_bootstrap_repair() -> None:
-    from core.bootstrap_state import PRESERVED_STATUS_KEYS
+    from core.anima.bootstrap_state import PRESERVED_STATUS_KEYS
 
     assert "heartbeat_enabled" in PRESERVED_STATUS_KEYS
 
@@ -78,21 +78,21 @@ def test_heartbeat_enabled_propagates_to_runtime_model_config(tmp_path) -> None:
     config_path.exists.return_value = True
 
     with (
-        patch("core.config.get_config_path", return_value=config_path),
-        patch("core.config.load_config", return_value=AnimaWorksConfig()),
-        patch("core.config.resolve_anima_config", return_value=(resolved, credential)),
-        patch("core.config.resolve_execution_mode", return_value="A"),
+        patch("core.config.models.get_config_path", return_value=config_path),
+        patch("core.config.models.load_config", return_value=AnimaWorksConfig()),
+        patch("core.config.models.resolve_anima_config", return_value=(resolved, credential)),
+        patch("core.config.models.resolve_execution_mode", return_value="A"),
     ):
         model_config = ConfigReader(tmp_path).read_model_config()
 
     assert model_config.heartbeat_enabled is False
 
 
-# ── Supervisor-mode scheduler (core/supervisor/scheduler_manager.py) ─────────
+# ── Supervisor-mode scheduler (core/runtime/scheduler_manager.py) ─────────
 
 
 def _supervisor_mgr(tmp_path, *, heartbeat_enabled: bool):
-    from core.supervisor.scheduler_manager import SchedulerManager
+    from core.runtime.scheduler_manager import SchedulerManager
 
     anima = MagicMock()
     anima.memory.read_model_config.return_value = ModelConfig(heartbeat_enabled=heartbeat_enabled)
@@ -106,7 +106,7 @@ def test_supervisor_heartbeat_disable_skips_periodic_job(tmp_path) -> None:
     mgr, _ = _supervisor_mgr(tmp_path, heartbeat_enabled=False)
 
     with patch(
-        "core.supervisor.scheduler_manager.load_config",
+        "core.runtime.scheduler_manager.load_config",
         return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30), activity_level=100),
     ):
         mgr._setup_heartbeat()
@@ -118,7 +118,7 @@ def test_supervisor_heartbeat_enabled_registers_periodic_job(tmp_path) -> None:
     mgr, _ = _supervisor_mgr(tmp_path, heartbeat_enabled=True)
 
     with patch(
-        "core.supervisor.scheduler_manager.load_config",
+        "core.runtime.scheduler_manager.load_config",
         return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30), activity_level=100),
     ):
         mgr._setup_heartbeat()
@@ -130,7 +130,7 @@ def test_supervisor_heartbeat_disable_removes_existing_periodic_job(tmp_path) ->
     mgr, anima = _supervisor_mgr(tmp_path, heartbeat_enabled=True)
 
     with patch(
-        "core.supervisor.scheduler_manager.load_config",
+        "core.runtime.scheduler_manager.load_config",
         return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30), activity_level=100),
     ):
         mgr._setup_heartbeat()

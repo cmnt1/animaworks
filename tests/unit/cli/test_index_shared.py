@@ -7,21 +7,27 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from cli.commands.index_cmd import (
     _check_model_change,
-    _index_shared_collections,
     _is_anima_enabled,
     _save_global_index_meta,
     index_command,
     setup_index_command,
 )
 from core.memory.rag.indexer import IndexDirectoryResult
-from core.memory.rag.shared_meta import shared_index_meta_path, write_shared_hash
+
+
+@pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Use real runtime path accessors for each test's temporary root."""
+
 
 # ── _is_anima_enabled ─────────────────────────────────────
 
@@ -49,7 +55,7 @@ class TestIsAnimaEnabled:
 
 class TestGlobalIndexMeta:
     def test_save_global_index_meta_records_e5_prefix(self, tmp_path: Path) -> None:
-        with patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True):
+        with patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True):
             _save_global_index_meta(tmp_path, "test-embedding-model")
 
         data = json.loads((tmp_path / "index_meta.json").read_text(encoding="utf-8"))
@@ -66,8 +72,8 @@ class TestGlobalIndexMeta:
         )
 
         with (
-            patch("core.memory.rag.singleton.get_embedding_model_name", return_value="test-embedding-model"),
-            patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
+            patch("core.memory.rag.embedding.get_embedding_model_name", return_value="test-embedding-model"),
+            patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True),
             pytest.raises(SystemExit),
         ):
             _check_model_change(tmp_path, full=False)
@@ -93,241 +99,73 @@ class TestSetupSharedFlag:
         assert args.shared is False
 
 
-# ── _index_shared_collections ─────────────────────────────
+@pytest.fixture(autouse=True)
+def _temporary_vector_access(monkeypatch):
+    @contextmanager
+    def open_access(*_args, **_kwargs):
+        store = MagicMock()
+        store.delete_collection.return_value = True
+        yield SimpleNamespace(
+            mode="owner",
+            store=store,
+            repair=MagicMock(return_value={"ok": True, "status": "success"}),
+        )
+
+    monkeypatch.setattr("core.memory.rag.cli_access.open_vector_access", open_access)
 
 
-_PATCH_STORE = "core.memory.rag.store.ChromaVectorStore"
-_PATCH_INDEXER = "core.memory.rag.MemoryIndexer"
-_PATCH_VDBDIR = "core.paths.get_anima_vectordb_dir"
+def test_index_command_opens_each_anima_once_for_personal_and_shared_indexing(tmp_path: Path) -> None:
+    from contextlib import contextmanager
+
+    anima_dir = tmp_path / "animas" / "alice"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "note.md").write_text("# Personal", encoding="utf-8")
+    common_dir = tmp_path / "common_knowledge"
+    common_dir.mkdir()
+    (common_dir / "reference.md").write_text("# Shared", encoding="utf-8")
+    args = argparse.Namespace(anima=None, full=False, shared=False, dry_run=False)
+    access = SimpleNamespace(store=MagicMock())
+    indexer = MagicMock()
+    indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
+
+    @contextmanager
+    def open_access(*_args, **_kwargs):
+        yield access
+
+    with (
+        patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
+        patch("core.memory.rag.MemoryIndexer", return_value=indexer),
+        patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True),
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index", return_value=MagicMock(documents=1)),
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=open_access) as open_vector,
+        patch("core.config.models.read_anima_company_checked", return_value=(True, None)),
+        patch("core.org.company_resources.get_company_resources_for_company", return_value=None),
+        patch("core.memory.rag.shared_meta.reset_shared_for_company_change", return_value=True),
+        patch("core.memory.rag.shared_meta.read_shared_hash", return_value=""),
+        patch("core.memory.rag.shared_meta.write_shared_hash"),
+    ):
+        index_command(args)
+
+    open_vector.assert_called_once_with("alice", anima_dir, purpose="index")
+    assert indexer.index_directory.call_count == 2
 
 
-class TestIndexSharedCollections:
-    @pytest.fixture
-    def base_dir(self, tmp_path: Path, data_dir: Path) -> Path:
-        """Set up a minimal base directory with common_knowledge."""
-        d = tmp_path / "data"
-        d.mkdir(exist_ok=True)
-        ck = d / "common_knowledge"
-        ck.mkdir(exist_ok=True)
-        (ck / "ref.md").write_text("# Reference")
-        return d
+def test_index_command_does_not_index_shared_user_store(tmp_path: Path) -> None:
+    (tmp_path / "animas" / "alice").mkdir(parents=True)
+    (tmp_path / "shared" / "users" / "user-1").mkdir(parents=True)
+    args = argparse.Namespace(anima=None, full=False, shared=False, dry_run=True)
+    shared_store = MagicMock()
 
-    @pytest.fixture
-    def anima_dirs(self, base_dir: Path) -> list[Path]:
-        animas = base_dir / "animas"
-        alice = animas / "alice"
-        alice.mkdir(parents=True, exist_ok=True)
-        bob = animas / "bob"
-        bob.mkdir(parents=True, exist_ok=True)
-        for directory in (alice, bob):
-            (directory / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
-        return [alice, bob]
+    with (
+        patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
+        patch("cli.commands.index_cmd._index_anima", return_value=0),
+        patch("cli.commands.index_cmd._setup_server_delegation", return_value=True) as delegation,
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=shared_store) as get_store,
+    ):
+        index_command(args)
 
-    def test_dry_run_does_not_write_meta(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        tmp_path: Path,
-    ) -> None:
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER), patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
-            _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=True,
-            )
-        for d in anima_dirs:
-            assert not (d / "index_meta.json").exists()
-            assert not shared_index_meta_path(d).exists()
-
-    def test_indexes_into_each_anima_db(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        tmp_path: Path,
-    ) -> None:
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
-            mock_indexer = MagicMock()
-            mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
-            MockIdx.return_value = mock_indexer
-
-            total = _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-
-        assert total == 3 * len(anima_dirs)
-        for d in anima_dirs:
-            meta_path = shared_index_meta_path(d)
-            assert meta_path.exists()
-            data = json.loads(meta_path.read_text(encoding="utf-8"))
-            assert "shared_common_knowledge_hash" in data
-            assert not (d / "index_meta.json").exists()
-
-    def test_does_not_write_hash_when_indexing_failed(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        tmp_path: Path,
-    ) -> None:
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
-            MockIdx.return_value.index_directory.return_value = IndexDirectoryResult(
-                files_failed=1,
-                failed_sources=("ref.md",),
-            )
-            total = _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-
-        assert total == 0
-        assert all(not shared_index_meta_path(directory).exists() for directory in anima_dirs)
-
-    @pytest.mark.parametrize("status", [None, "{invalid", "[]"])
-    def test_unreadable_company_skips_delete_and_hash_updates(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        status: str | None,
-    ) -> None:
-        anima_dir = anima_dirs[0]
-        status_path = anima_dir / "status.json"
-        status_path.unlink()
-        if status is not None:
-            status_path.write_text(status, encoding="utf-8")
-        write_shared_hash(anima_dir, "shared_company_name", "old")
-        meta_path = shared_index_meta_path(anima_dir)
-        before = meta_path.read_text(encoding="utf-8")
-        vector_store = MagicMock()
-
-        with (
-            patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
-            patch(_PATCH_INDEXER) as indexer,
-        ):
-            _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
-
-        vector_store.delete_collection.assert_not_called()
-        indexer.assert_not_called()
-        assert meta_path.read_text(encoding="utf-8") == before
-
-    def test_company_read_oserror_skips_delete_and_hash_updates(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-    ) -> None:
-        anima_dir = anima_dirs[0]
-        write_shared_hash(anima_dir, "shared_company_name", "old")
-        meta_path = shared_index_meta_path(anima_dir)
-        before = meta_path.read_text(encoding="utf-8")
-        vector_store = MagicMock()
-
-        with (
-            patch.object(Path, "read_text", side_effect=PermissionError("denied")),
-            patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
-            patch(_PATCH_INDEXER) as indexer,
-        ):
-            _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
-
-        vector_store.delete_collection.assert_not_called()
-        indexer.assert_not_called()
-        assert meta_path.read_text(encoding="utf-8") == before
-
-    def test_skips_repair_locked_anima(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-    ) -> None:
-        """Shared indexing must not write into an anima under RAG repair."""
-        with (
-            patch("core.memory.rag.repair.is_repair_locked", side_effect=lambda name: name == "alice"),
-            patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
-            patch(_PATCH_INDEXER) as MockIdx,
-        ):
-            mock_indexer = MagicMock()
-            mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
-            MockIdx.return_value = mock_indexer
-
-            total = _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-
-        assert total == 3
-        mock_get_vs.assert_called_once_with("bob")
-
-    def test_skips_when_no_shared_dirs(self, tmp_path: Path) -> None:
-        """Returns 0 when common_knowledge/ and common_skills/ don't exist."""
-        base = tmp_path / "empty"
-        base.mkdir()
-        total = _index_shared_collections([], base, full=False, dry_run=False)
-        assert total == 0
-
-    def test_hash_skip_on_second_call(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        tmp_path: Path,
-    ) -> None:
-        """Second call with unchanged files skips indexing."""
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
-            mock_indexer = MagicMock()
-            mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
-            MockIdx.return_value = mock_indexer
-
-            _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-            MockIdx.reset_mock()
-
-            _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-            MockIdx.assert_not_called()
-
-    def test_full_flag_forces_reindex(
-        self,
-        anima_dirs: list[Path],
-        base_dir: Path,
-        tmp_path: Path,
-    ) -> None:
-        """--full ignores stored hash and re-indexes."""
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
-            mock_indexer = MagicMock()
-            mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
-            MockIdx.return_value = mock_indexer
-
-            _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=False,
-                dry_run=False,
-            )
-            MockIdx.reset_mock()
-            mock_indexer.reset_mock()
-            mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
-            MockIdx.return_value = mock_indexer
-
-            total = _index_shared_collections(
-                anima_dirs,
-                base_dir,
-                full=True,
-                dry_run=False,
-            )
-            assert total == 2 * len(anima_dirs)
+    delegation.assert_not_called()
+    get_store.assert_not_called()
 
 
 def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path) -> None:
@@ -340,11 +178,10 @@ def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path)
     args = argparse.Namespace(anima="alice", full=False, shared=False, dry_run=False)
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_vs,
         patch("core.memory.rag.MemoryIndexer") as mock_indexer,
     ):
         index_command(args)
@@ -353,22 +190,30 @@ def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path)
     mock_indexer.assert_not_called()
 
 
-def test_index_command_rejects_phase3_anima(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_index_command_indexes_phase3_anima_through_access(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "alice"
-    anima_dir.mkdir(parents=True)
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "note.md").write_text("# Note", encoding="utf-8")
     (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
     args = argparse.Namespace(anima="alice", full=False, shared=False, dry_run=False)
+    mock_indexer = MagicMock()
+    mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
-        patch("cli.commands.index_cmd._setup_server_delegation", return_value=True),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
-        patch("core.memory.rag.singleton.get_vector_store") as get_vector_store,
+        patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
+        patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True),
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index", return_value=MagicMock(documents=1)),
+        patch("core.memory.rag.cli_access.open_vector_access") as open_access,
     ):
+        from contextlib import nullcontext
+
+        access = SimpleNamespace(mode="owner", store=MagicMock(), repair=MagicMock())
+        open_access.return_value = nullcontext(access)
         index_command(args)
 
-    get_vector_store.assert_not_called()
-    assert "Cannot index phase3 anima alice" in caplog.text
+    open_access.assert_called_once_with("alice", anima_dir, purpose="index")
+    mock_indexer.index_directory.assert_called_once_with(anima_dir / "knowledge", "knowledge", force=False)
 
 
 def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:
@@ -382,14 +227,12 @@ def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
-        patch("cli.commands.index_cmd._setup_offline_vector_worker_if_needed", return_value=None),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
@@ -408,17 +251,14 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
     (anima_dir / "facts" / "2026-07-15.jsonl").write_text('{"text":"fact"}\n', encoding="utf-8")
     args = argparse.Namespace(anima="alice", full=True, shared=False, dry_run=False)
     mock_store = MagicMock()
-    mock_store.list_collections_checked.return_value = []
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
-        patch("cli.commands.index_cmd._setup_offline_vector_worker_if_needed", return_value=None),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
@@ -433,24 +273,29 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
     )
 
 
-def test_index_command_full_skips_when_collection_list_unavailable(tmp_path: Path) -> None:
+def test_index_command_full_uses_atomic_repair_before_indexing(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "alice"
     (anima_dir / "knowledge").mkdir(parents=True)
     (anima_dir / "knowledge" / "note.md").write_text("# Note", encoding="utf-8")
     args = argparse.Namespace(anima="alice", full=True, shared=False, dry_run=False)
     mock_store = MagicMock()
-    mock_store.list_collections_checked.return_value = None
+    access = SimpleNamespace(
+        mode="owner",
+        store=mock_store,
+        repair=MagicMock(return_value={"ok": True, "status": "success"}),
+    )
+    access_context = MagicMock()
+    access_context.__enter__.return_value = access
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
-        patch("cli.commands.index_cmd._setup_offline_vector_worker_if_needed", return_value=None),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.memory.rag.cli_access.open_vector_access", return_value=access_context),
     ):
         index_command(args)
 
-    mock_store.delete_collection.assert_not_called()
-    mock_indexer_cls.assert_not_called()
+    access.repair.assert_called_once_with(include_shared=True)
+    mock_indexer_cls.assert_called_once()

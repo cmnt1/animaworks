@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.memory.task_queue import TaskQueueManager
 from core.paths import get_animas_dir, get_shared_dir
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import get_app_timezone, now_local
 
 _SAFE_ANIMA_RE = re.compile(r"^[A-Za-z0-9_-]+$")

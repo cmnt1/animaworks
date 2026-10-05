@@ -76,9 +76,12 @@ class TestCollectPendingHumanNotifications:
         )
         engine = PrimingEngine(anima_dir)
         result = await engine._collect_pending_human_notifications(channel="chat")
-        assert "## Pending Human Notifications" in result
+        from core.i18n import t
+
+        assert t("priming.pending_human_notifications_header") in result
         assert "192.168.1.100" in result
-        assert "slack" in result
+        assert "slack" not in result
+        assert all(len(line) < 120 for line in result.splitlines() if line.startswith("["))
 
     @pytest.mark.asyncio
     async def test_heartbeat_channel_returns_notifications(self, anima_dir: Path):
@@ -99,7 +102,7 @@ class TestCollectPendingHumanNotifications:
         assert "Server is ready." in result
 
     @pytest.mark.asyncio
-    async def test_message_channel_returns_notifications(self, anima_dir: Path):
+    async def test_normalized_message_session_uses_chat_channel(self, anima_dir: Path):
         ts = now_iso()
         _write_activity(
             anima_dir,
@@ -113,7 +116,7 @@ class TestCollectPendingHumanNotifications:
             ],
         )
         engine = PrimingEngine(anima_dir)
-        result = await engine._collect_pending_human_notifications(channel="message:owner")
+        result = await engine._collect_pending_human_notifications(channel="chat")
         assert "Notification body" in result
 
     @pytest.mark.asyncio
@@ -131,7 +134,7 @@ class TestCollectPendingHumanNotifications:
             ],
         )
         engine = PrimingEngine(anima_dir)
-        result = await engine._collect_pending_human_notifications(channel="cron:daily")
+        result = await engine._collect_pending_human_notifications(channel="cron")
         assert result == ""
 
     @pytest.mark.asyncio
@@ -149,13 +152,13 @@ class TestCollectPendingHumanNotifications:
             ],
         )
         engine = PrimingEngine(anima_dir)
-        result = await engine._collect_pending_human_notifications(channel="inbox:someone")
+        result = await engine._collect_pending_human_notifications(channel="inbox")
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_task_channel_returns_empty(self, anima_dir: Path):
         engine = PrimingEngine(anima_dir)
-        result = await engine._collect_pending_human_notifications(channel="task:abc")
+        result = await engine._collect_pending_human_notifications(channel="task")
         assert result == ""
 
     @pytest.mark.asyncio
@@ -166,7 +169,7 @@ class TestCollectPendingHumanNotifications:
 
     @pytest.mark.asyncio
     async def test_budget_truncation(self, anima_dir: Path):
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         ts = now_iso()
         entries = []
@@ -211,6 +214,27 @@ class TestCollectPendingHumanNotifications:
         first_idx = result.index("First notification")
         second_idx = result.index("Second notification")
         assert first_idx < second_idx
+
+    @pytest.mark.asyncio
+    async def test_notification_is_one_line_and_limited_to_80_chars(self, anima_dir: Path):
+        ts = now_iso()
+        _write_activity(
+            anima_dir,
+            [
+                {
+                    "ts": ts,
+                    "type": "human_notify",
+                    "content": "x" * 120,
+                    "meta": {"subject": "subject"},
+                    "via": "slack",
+                },
+            ],
+        )
+        result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
+        notification_lines = [line for line in result.splitlines() if line.startswith("[")]
+        assert notification_lines == [f"[{ts[:16]}] subject"]
+        assert "x" * 81 not in result
+        assert "slack" not in result
 
     @pytest.mark.asyncio
     async def test_uses_summary_when_content_empty(self, anima_dir: Path):
@@ -269,5 +293,5 @@ class TestPrimeMemoriesIntegration:
             ],
         )
         engine = PrimingEngine(anima_dir)
-        result = await engine.prime_memories("hello", channel="cron:daily")
+        result = await engine.prime_memories("hello", channel="cron")
         assert result.pending_human_notifications == ""

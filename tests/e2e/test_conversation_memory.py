@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import json
 
-
-from core.memory.conversation import ConversationMemory, ConversationTurn
+from core.memory.conversation.memory import ConversationMemory, ConversationTurn
 from core.schemas import ModelConfig
 from tests.helpers.mocks import (
     make_litellm_response,
@@ -88,9 +87,7 @@ class TestConversationMemory:
         assert conv_mem.needs_compression()
 
         # Mock the compression LLM call
-        with patch_anthropic_compression(
-            summary_text="Summary of 20 conversation turns about various topics."
-        ):
+        with patch_anthropic_compression(summary_text="Summary of 20 conversation turns about various topics."):
             compressed = await conv_mem.compress_if_needed()
 
         assert compressed is True

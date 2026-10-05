@@ -21,14 +21,11 @@ def _make_mock_memory(anima_dir: Path, tmp_path: Path) -> MagicMock:
     memory.read_permissions.return_value = ""
     memory.read_specialty_prompt.return_value = ""
     memory.read_current_state.return_value = ""
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     memory.load_recent_heartbeat_summary.return_value = ""
-    memory.list_procedure_metas.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
     return memory

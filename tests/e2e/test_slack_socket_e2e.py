@@ -6,6 +6,7 @@
 Tests the handler logic end-to-end using real filesystem and Messenger
 (no mocks on message routing), with only the Slack SDK objects mocked.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,7 @@ def _make_socket_manager(data_dir, anima_mapping, monkeypatch):
     Returns (manager, captured_handlers) where captured_handlers maps
     event type → handler function for direct invocation.
     """
-    from server.slack_socket import SlackSocketModeManager
+    from server.gateways.slack_socket import SlackSocketModeManager
 
     # Patch config to enable socket mode with mapping
     config = AnimaWorksConfig.model_validate(
@@ -45,31 +46,26 @@ def _make_socket_manager(data_dir, anima_mapping, monkeypatch):
 
     # Patch get_credential to return test tokens
     monkeypatch.setattr(
-        "server.slack_socket.get_credential",
+        "server.gateways.slack_socket.get_credential",
         lambda name, tool, **kw: "xoxb-test" if "bot" in (kw.get("env_var") or "").lower() else "xapp-test",
     )
 
     # Capture event handler registrations instead of connecting to Slack
     captured_handlers: dict[str, list] = {}
     mock_async_app = MagicMock()
-    mock_async_app.client.auth_test = AsyncMock(return_value={"user_id": "U_TEST_BOT"})
 
     def _capture_event(event_type):
         def decorator(func):
             captured_handlers.setdefault(event_type, []).append(func)
             return func
+
         return decorator
 
     mock_async_app.event = _capture_event
 
+    monkeypatch.setattr("server.gateways.slack_socket.AsyncApp", lambda **kw: mock_async_app)
     monkeypatch.setattr(
-        SlackSocketModeManager,
-        "_discover_per_anima_bots",
-        staticmethod(lambda: []),
-    )
-    monkeypatch.setattr("server.slack_socket.AsyncApp", lambda **kw: mock_async_app)
-    monkeypatch.setattr(
-        "server.slack_socket.AsyncSocketModeHandler",
+        "server.gateways.slack_socket.AsyncSocketModeHandler",
         lambda app, token: AsyncMock(),
     )
 
@@ -201,9 +197,7 @@ class TestSlackSocketModeE2E:
         files = list(inbox.glob("*.json"))
         assert len(files) == 0
 
-    async def test_multiple_messages_to_different_animas(
-        self, data_dir, make_anima, monkeypatch
-    ):
+    async def test_multiple_messages_to_different_animas(self, data_dir, make_anima, monkeypatch):
         """Messages to different channels route to the correct animas."""
         make_anima("sakura")
         make_anima("kotoha")
@@ -247,14 +241,13 @@ class TestSlackSocketModeE2E:
         assert "For kotoha" in kotoha_msg.content
         assert kotoha_msg.to_person == "kotoha"
 
-    async def test_messages_readable_via_messenger_receive(
-        self, data_dir, make_anima, monkeypatch
-    ):
+    async def test_messages_readable_via_messenger_receive(self, data_dir, make_anima, monkeypatch):
         """Socket Mode messages can be read back via Messenger.receive()."""
         make_anima("sakura")
         # Messenger.receive() filters messages when from_person not in config.animas.
         # Slack messages have from_person='slack:U_R'. Clear animas so filter is skipped.
         from core.config.models import invalidate_cache, load_config, save_config
+
         cfg = load_config()
         cfg.animas.clear()
         save_config(cfg, data_dir / "config.json")
@@ -273,7 +266,7 @@ class TestSlackSocketModeE2E:
             say=AsyncMock(),
         )
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(data_dir / "shared", "sakura")
         messages = messenger.receive()
@@ -301,22 +294,23 @@ class TestSocketModeConfigE2E:
         save_config(config, data_dir / "config.json")
 
         from core.config.models import invalidate_cache
+
         invalidate_cache()
 
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         original_connect = AsyncMock()
 
         monkeypatch.setattr(
-            "server.slack_socket.get_credential",
+            "server.gateways.slack_socket.get_credential",
             lambda name, tool, **kw: "token",
         )
         monkeypatch.setattr(
-            "server.slack_socket.AsyncApp",
+            "server.gateways.slack_socket.AsyncApp",
             lambda **kw: MagicMock(),
         )
         monkeypatch.setattr(
-            "server.slack_socket.AsyncSocketModeHandler",
+            "server.gateways.slack_socket.AsyncSocketModeHandler",
             lambda app, token: original_connect,
         )
 
@@ -340,6 +334,7 @@ class TestSocketModeConfigE2E:
         save_config(config, data_dir / "config.json")
 
         from core.config.models import invalidate_cache
+
         invalidate_cache()
 
         raw = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))

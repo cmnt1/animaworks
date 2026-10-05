@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 
 @pytest.fixture
@@ -47,12 +47,13 @@ class TestStartAnimaEnabledGuard:
 
     @pytest.mark.asyncio
     async def test_start_anima_refuses_disabled(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ) -> None:
         """Disabled anima: no ProcessHandle spawn, processes stays empty."""
         _write_status(supervisor.animas_dir, "test-anima", enabled=False)
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             MockHandle.return_value = mock_handle
 
@@ -64,12 +65,13 @@ class TestStartAnimaEnabledGuard:
 
     @pytest.mark.asyncio
     async def test_start_anima_starts_when_enabled(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ) -> None:
         """Enabled anima: process is spawned as before."""
         _write_status(supervisor.animas_dir, "test-anima", enabled=True)
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -85,10 +87,11 @@ class TestStartAnimaEnabledGuard:
 
     @pytest.mark.asyncio
     async def test_start_anima_starts_when_no_status_file(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ) -> None:
         """Missing status.json is treated as enabled (backward compatible)."""
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -106,26 +109,35 @@ class TestHealthRespawnEnabledGuard:
     """Health failure / respawn must not re-spawn disabled animas."""
 
     @pytest.mark.asyncio
-    async def test_respawn_transaction_does_not_spawn_disabled(
-        self, supervisor: ProcessSupervisor,
+    async def test_handle_process_failure_forgets_disabled(
+        self,
+        supervisor: ProcessSupervisor,
     ) -> None:
-        """_respawn_anima_transaction does not install a process when disabled."""
-        _write_status(supervisor.animas_dir, "test-anima", enabled=False)
-        supervisor.restart_policy.max_retries = 1
+        """A disabled anima is stopped and its restart record forgotten."""
+        name = "test-anima"
+        _write_status(supervisor.animas_dir, name, enabled=False)
+        supervisor._restart_ctl.record_failure(name, "e1")
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
-            mock_handle = AsyncMock()
-            MockHandle.return_value = mock_handle
+        old_handle = MagicMock()
+        old_handle.state = ProcessState.FAILED
+        supervisor.processes[name] = old_handle
 
-            result = await supervisor._respawn_anima_transaction("test-anima")
+        async def mock_stop(anima_name: str) -> None:
+            supervisor.processes.pop(anima_name, None)
 
-            assert result is None
-            MockHandle.assert_not_called()
-            assert "test-anima" not in supervisor.processes
+        supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+        supervisor._ensure_restart_worker = MagicMock()
+
+        await supervisor._handle_process_failure(name, old_handle)
+
+        supervisor._ensure_restart_worker.assert_not_called()
+        assert supervisor._restart_ctl.get(name) is None
+        assert name not in supervisor.processes
 
     @pytest.mark.asyncio
     async def test_handle_process_failure_does_not_spawn_disabled(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ) -> None:
         """_handle_process_failure does not re-spawn a disabled anima."""
         name = "test-anima"
@@ -140,11 +152,9 @@ class TestHealthRespawnEnabledGuard:
             supervisor.processes.pop(anima_name, None)
 
         supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+        supervisor._ensure_restart_worker = MagicMock()
 
-        with (
-            patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock),
-            patch("core.supervisor.manager.ProcessHandle") as MockHandle,
-        ):
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             MockHandle.return_value = mock_handle
 

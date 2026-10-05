@@ -16,17 +16,8 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _fake_openai_codex_sdk(fake_openai_codex_sdk, monkeypatch):
-    # These tests exercise the SDK, including on Windows where background
-    # execution normally prefers CLI exec. Never read real login credentials.
-    monkeypatch.setattr("core.execution.codex_sdk._should_prefer_cli_exec", lambda trigger: False)
-    monkeypatch.setattr("core.execution.codex_sdk._should_cli_exec_fallback", lambda error: False)
-    monkeypatch.setattr("core.execution.codex_sdk.CodexSDKExecutor._propagate_auth", lambda self, **kwargs: None)
-
-    def reject_cli(self):
-        raise AssertionError("SDK E2E tests must not launch the real Codex CLI")
-
-    monkeypatch.setattr("core.execution.codex_sdk.CodexSDKExecutor._build_cli_exec_command", reject_cli)
+def _fake_openai_codex_sdk(fake_openai_codex_sdk):
+    pass
 
 
 def _mock_codex(start_thread):
@@ -63,7 +54,7 @@ class TestExecutorCreation:
         mock_executor_instance = MagicMock()
         mock_executor_cls.return_value = mock_executor_instance
 
-        with patch("core.agent.AgentCore._create_executor") as mock_create:
+        with patch("core.agent.agent_core.AgentCore._create_executor") as mock_create:
             mock_create.return_value = mock_executor_instance
             agent._executor = agent._create_executor()
 
@@ -79,7 +70,7 @@ class TestExecutorCreation:
         with (
             patch.dict("sys.modules", {"openai_codex": None}),
             patch(
-                "core.execution.codex_sdk.CodexSDKExecutor",
+                "core.execution.engines.codex.executor.CodexSDKExecutor",
                 side_effect=ImportError("No module named 'openai_codex'"),
             ),
             pytest.raises(ExecutorUnavailableError),
@@ -107,9 +98,8 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with (
-            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        with patch(
+            "core.execution.engines.codex.executor.CodexSDKExecutor._create_codex_client", return_value=mock_codex
         ):
             result = await agent.run_cycle(
                 prompt="Hello from test",
@@ -133,9 +123,8 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with (
-            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        with patch(
+            "core.execution.engines.codex.executor.CodexSDKExecutor._create_codex_client", return_value=mock_codex
         ):
             result = await agent.run_cycle(
                 prompt="Heartbeat check",
@@ -159,9 +148,8 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with (
-            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        with patch(
+            "core.execution.engines.codex.executor.CodexSDKExecutor._create_codex_client", return_value=mock_codex
         ):
             result = await agent.run_cycle(
                 prompt="Run daily report",
@@ -185,9 +173,8 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with (
-            patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.CodexSDKExecutor._uses_codex_login_auth", return_value=False),
+        with patch(
+            "core.execution.engines.codex.executor.CodexSDKExecutor._create_codex_client", return_value=mock_codex
         ):
             result = await agent.run_cycle(
                 prompt="Execute pending task",

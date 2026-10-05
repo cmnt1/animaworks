@@ -11,6 +11,7 @@ from fastapi import Request
 from core.execution._tool_summary import summarize_tool_args
 from core.execution.base import resolve_streamed_leaked_thinking
 from core.i18n import t
+from core.platform.tasks import spawn
 from server.events import emit, emit_notification
 from server.routes.chat_emotion import extract_emotion
 
@@ -37,8 +38,6 @@ def _handle_chunk(
     Returns:
         Tuple of (sse_frame_or_None, accumulated_response_text).
     """
-    import asyncio
-
     event_type = chunk.get("type", "unknown")
 
     if event_type == "text_delta":
@@ -67,23 +66,25 @@ def _handle_chunk(
 
     if event_type == "bootstrap_start":
         if request and anima_name:
-            asyncio.ensure_future(
+            spawn(
                 emit(
                     request,
                     "anima.bootstrap",
                     {"name": anima_name, "status": "started"},
-                )
+                ),
+                name=f"bootstrap-start-event-{anima_name}",
             )
         return _format_sse("bootstrap", {"status": "started"}), ""
 
     if event_type == "bootstrap_complete":
         if request and anima_name:
-            asyncio.ensure_future(
+            spawn(
                 emit(
                     request,
                     "anima.bootstrap",
                     {"name": anima_name, "status": "completed"},
-                )
+                ),
+                name=f"bootstrap-complete-event-{anima_name}",
             )
         return _format_sse("bootstrap", {"status": "completed"}), ""
 
@@ -145,7 +146,7 @@ def _handle_chunk(
         # Broadcast notification to all WebSocket clients (with queue support)
         if request:
             notif_data = chunk.get("data", {})
-            asyncio.ensure_future(emit_notification(request, notif_data))
+            spawn(emit_notification(request, notif_data), name="notification-sent-event")
         return None, ""
 
     if event_type == "meeting_redirect":

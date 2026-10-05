@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 # Model names (must match KNOWN_MODELS in core/config/model_mode.py)
 CLAUDE_MODEL_MAIN = "claude-sonnet-4-6"
@@ -121,32 +122,38 @@ def _deep_merge(base: dict, patch: dict) -> None:
 
 def _apply_overlay(data_dir: Path, overlay_path: Path) -> None:
     """Deep-merge config_overlay.json into config.json (entrypoint step 3)."""
+    from core.config.io import update_config
+    from core.config.schemas import AnimaWorksConfig
+
     cfg_path = data_dir / "config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     ovl = json.loads(overlay_path.read_text(encoding="utf-8"))
-    _deep_merge(cfg, ovl)
-    cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def apply_overlay(config: AnimaWorksConfig) -> AnimaWorksConfig:
+        merged = config.model_dump(mode="json")
+        _deep_merge(merged, ovl)
+        return AnimaWorksConfig.model_validate(merged)
+
+    update_config(apply_overlay, cfg_path)
 
 
 def _inject_credentials(auth: dict) -> None:
     """Write detected credentials + mode_s_auth into config.json (entrypoint step 11)."""
-    from core.config import CredentialConfig, invalidate_cache, load_config, save_config
+    from core.config import CredentialConfig, update_config
 
-    config = load_config()
-    config.credentials = {}
-    for name, data in auth["credentials"].items():
-        config.credentials[name] = CredentialConfig(
-            type=data["type"],
-            api_key=data.get("api_key", ""),
-        )
-    if auth.get("mode_s_auth"):
-        config.anima_defaults.mode_s_auth = auth["mode_s_auth"]
-    if auth.get("family") == "codex":
-        # Overlay defaults target claude; align defaults for codex family.
-        config.anima_defaults.model = CODEX_MODEL_MAIN
-        config.anima_defaults.background_model = CODEX_MODEL_BACKGROUND
-    save_config(config)
-    invalidate_cache()
+    def inject_credentials(config):
+        config.credentials = {
+            name: CredentialConfig(type=data["type"], api_key=data.get("api_key", ""))
+            for name, data in auth["credentials"].items()
+        }
+        if auth.get("mode_s_auth"):
+            config.anima_defaults.mode_s_auth = auth["mode_s_auth"]
+        if auth.get("family") == "codex":
+            # Overlay defaults target claude; align defaults for codex family.
+            config.anima_defaults.model = CODEX_MODEL_MAIN
+            config.anima_defaults.background_model = CODEX_MODEL_BACKGROUND
+        return config
+
+    update_config(inject_credentials)
 
 
 # ── Initialization (entrypoint steps 1-10) ───────────────────
@@ -158,18 +165,16 @@ def _override_models(data_dir: Path, family: str) -> None:
         main_model, bg_model = CODEX_MODEL_MAIN, CODEX_MODEL_BACKGROUND
     else:
         main_model, bg_model = CLAUDE_MODEL_MAIN, CLAUDE_MODEL_BACKGROUND
+    from core.anima.settings_store import update_status
+
     for status_path in (data_dir / "animas").glob("*/status.json"):
-        with open(status_path, encoding="utf-8") as fh:
-            status = json.load(fh)
-        role = status.get("role", "general")
-        if role in _MAIN_ROLES:
-            status["model"] = main_model
+
+        def apply_demo_models(status: dict[str, Any]) -> None:
+            role = status.get("role", "general")
+            status["model"] = main_model if role in _MAIN_ROLES else bg_model
             status["background_model"] = bg_model
-        else:
-            status["model"] = bg_model
-            status["background_model"] = bg_model
-        with open(status_path, "w", encoding="utf-8") as fh:
-            json.dump(status, fh, indent=2, ensure_ascii=False)
+
+        update_status(status_path.parent, apply_demo_models)
     print("  Demo model override applied.")
 
 
@@ -247,10 +252,9 @@ def _copy_examples(examples: Path, data_dir: Path, repo_root: Path) -> None:
 
 def initialize_demo(data_dir: Path, preset_dir: Path, repo_root: Path, auth: dict) -> None:
     """Run first-run initialization (port of entrypoint steps 1-10)."""
-    from cli.commands.init_cmd import _register_anima_in_config
-    from core.anima_factory import create_from_md
-    from core.config import invalidate_cache
-    from core.init import ensure_runtime_dir, merge_templates
+    from core.anima.factory import create_from_md
+    from core.config import invalidate_cache, register_anima_in_config
+    from core.infra.runtime_init import ensure_runtime_dir, merge_templates
 
     # 1. Initialize infrastructure (no default anima)
     ensure_runtime_dir(skip_animas=True)
@@ -290,7 +294,7 @@ def initialize_demo(data_dir: Path, preset_dir: Path, repo_root: Path, auth: dic
                 supervisor = lines[1].strip()
         print(f"Creating anima: {name}")
         anima_dir = create_from_md(animas_dir, md_file, supervisor=supervisor, role=role)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
 
     # 4a. Override models for cost
     _override_models(data_dir, auth["family"])
@@ -328,6 +332,17 @@ def cmd_demo(args: argparse.Namespace) -> None:
     from core.config import invalidate_cache
 
     invalidate_cache()
+
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
+
+    running_pid = read_server_pid(data_dir)
+    if running_pid is not None and is_process_alive(running_pid):
+        print(
+            f"Error: AnimaWorks server is already running (pid={running_pid}); stop it before starting demo mode.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     repo_root = _resolve_repo_root()
     preset_dir = _resolve_preset_dir(repo_root, args.preset)

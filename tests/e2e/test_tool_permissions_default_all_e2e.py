@@ -7,10 +7,8 @@ Verifies that a real DigitalAnima / AgentCore instance populates the tool
 registry correctly under the new default-all permission model, using
 isolated filesystem fixtures.
 """
+
 from __future__ import annotations
-
-
-
 
 # ── Permissions fixtures ──────────────────────────────────
 
@@ -66,7 +64,8 @@ class TestToolPermissionsDefaultAllE2E:
     def test_all_yes_populates_all_tools(self, make_agent_core) -> None:
         """``- all: yes`` enables all core tool modules."""
         agent = make_agent_core("test-agent", permissions=PERMISSIONS_ALL_YES)
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
+
         assert sorted(agent._tool_registry) == sorted(TOOL_MODULES.keys())
 
     def test_all_yes_with_deny_excludes_tools(self, make_agent_core) -> None:
@@ -86,13 +85,15 @@ class TestToolPermissionsDefaultAllE2E:
     def test_no_section_returns_all(self, make_agent_core) -> None:
         """No 外部ツール section -> all tools enabled."""
         agent = make_agent_core("test-agent", permissions=PERMISSIONS_NO_SECTION)
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
+
         assert sorted(agent._tool_registry) == sorted(TOOL_MODULES.keys())
 
     def test_empty_permissions_returns_all(self, make_agent_core) -> None:
         """Empty permissions file -> all tools enabled."""
         agent = make_agent_core("test-agent", permissions=PERMISSIONS_EMPTY)
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
+
         assert sorted(agent._tool_registry) == sorted(TOOL_MODULES.keys())
 
 
@@ -102,7 +103,8 @@ class TestToolPermissionsDigitalAnimaE2E:
     def test_digital_anima_default_all(self, make_digital_anima) -> None:
         """DigitalAnima with no 外部ツール section gets all tools."""
         anima = make_digital_anima("test-anima", permissions=PERMISSIONS_NO_SECTION)
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
+
         assert sorted(anima.agent._tool_registry) == sorted(TOOL_MODULES.keys())
 
     def test_digital_anima_deny_list(self, make_digital_anima) -> None:

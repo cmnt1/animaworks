@@ -12,22 +12,22 @@ and connection isolation between concurrent requests.
 from __future__ import annotations
 
 import asyncio
-import pytest
 from collections.abc import AsyncIterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from core.exceptions import IPCConnectionError
-from core.supervisor.ipc import (
+from core.runtime.ipc import (
     IPCClient,
     IPCRequest,
     IPCResponse,
     IPCServer,
 )
-from core.supervisor.process_handle import ProcessHandle
-from core.supervisor.transport import resolve_client_endpoint
-
+from server.supervisor.process_handle import ProcessHandle
+from core.runtime.transport import resolve_client_endpoint
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -135,7 +135,6 @@ async def test_stream_uses_dedicated_connection():
             # Connection 2: the dedicated connection from send_request_stream()
             assert connection_count == 2
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -198,7 +197,6 @@ async def test_stream_dedicated_connection_closes_on_completion():
             # The dedicated connection writer should be closing or closed
             assert dedicated_writer.is_closing()
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -227,7 +225,7 @@ async def test_stream_dedicated_connection_closes_on_cancel():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+    with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
         stream_gen = client.send_request_stream(IPCRequest(id="cancel_001", method="slow_stream"), timeout=5.0)
         async for response in stream_gen:
             assert response.chunk == "first"
@@ -266,7 +264,7 @@ async def test_stream_dedicated_connection_closes_on_timeout():
         coro.close()
         raise TimeoutError()
 
-    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+    with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with patch.object(asyncio, "wait_for", side_effect=mock_wait_for):
             with pytest.raises(asyncio.TimeoutError):
                 async for _ in client.send_request_stream(
@@ -309,7 +307,6 @@ async def test_send_request_id_validation():
             assert response.result == {"echo": True}
             assert response.error is None
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -350,7 +347,6 @@ async def test_send_request_id_mismatch_raises():
             with pytest.raises(IPCConnectionError, match="IPC protocol error"):
                 await client.send_request(request, timeout=5.0)
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -382,7 +378,7 @@ async def test_stream_id_mismatch_raises():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+    with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with pytest.raises(IPCConnectionError, match="IPC protocol error: response ID mismatch"):
             async for _ in client.send_request_stream(
                 IPCRequest(id="req_correct_id", method="stream_test"),
@@ -420,7 +416,7 @@ async def test_stream_non_streaming_response_with_wrong_id():
     async def mock_open_unix(*args, **kwargs):
         return mock_reader, mock_writer
 
-    with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+    with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
         with pytest.raises(IPCConnectionError, match="IPC protocol error"):
             async for _ in client.send_request_stream(
                 IPCRequest(id="req_fresh_001", method="process_message"),
@@ -485,7 +481,6 @@ async def test_fresh_connection_after_id_mismatch():
             assert response.id == "req_second"
             assert response.result == {"correct": True}
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -597,7 +592,6 @@ async def test_concurrent_ping_and_stream():
             assert len(ping_results) == 3
             assert all(ping_results)
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -713,7 +707,6 @@ async def test_concurrent_unary_requests_no_interference():
                 assert response.result["echo_id"] == expected_id
                 assert response.error is None
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -755,7 +748,7 @@ async def test_send_request_opens_connection_per_call():
                     limit=limit,
                 )
 
-            with patch("core.supervisor.ipc.open_ipc_connection", side_effect=counting_open):
+            with patch("core.runtime.ipc.open_ipc_connection", side_effect=counting_open):
                 for i in range(3):
                     req = IPCRequest(id=f"seq_{i:03d}", method="test", params={})
                     resp = await client.send_request(req, timeout=5.0)
@@ -765,7 +758,6 @@ async def test_send_request_opens_connection_per_call():
             # Each send_request should have opened its own connection
             assert open_call_count == 3, f"Expected 3 connection opens, got {open_call_count}"
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -847,7 +839,6 @@ async def test_connect_only_tests_connectivity():
             # The connection should already be closed (connect() closes it)
             assert server_writers[0].is_closing(), "connect() should close the connection after verifying connectivity"
 
-            await client.close()
 
         finally:
             await server.stop()

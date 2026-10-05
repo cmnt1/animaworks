@@ -1,4 +1,4 @@
-"""Unit tests for shared-index change detection in core/memory/rag_search.py."""
+"""Unit tests for shared-index change detection in core/memory/retrieval/rag_search.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -31,7 +31,7 @@ from core.memory.rag.shared_meta import (
     write_shared_hashes,
 )
 from core.memory.rag.store import CollectionExistence
-from core.memory.rag_search import (
+from core.memory.retrieval.rag_search import (
     RAGMemorySearch,
     _compute_dir_hash,
 )
@@ -42,6 +42,7 @@ def _reset_process_shared_check_registry():
     reset_shared_check_registry()
     yield
     reset_shared_check_registry()
+
 
 # ── _compute_dir_hash ─────────────────────────────────────
 
@@ -687,8 +688,8 @@ class TestSharedCheckRegistry:
         second = RAGMemorySearch(rag._anima_dir, common_knowledge_dir, rag._common_skills_dir)
         vector_store = MagicMock()
         vector_store._base_url = "http://vector.example/api"
-        rag._indexer = SimpleNamespace(embedding_model=None)
-        second._indexer = SimpleNamespace(embedding_model=None)
+        rag._indexer = SimpleNamespace()
+        second._indexer = SimpleNamespace()
         started = Event()
         release = Event()
 
@@ -733,7 +734,7 @@ class TestSharedCheckRegistry:
         vector_store._base_url = "http://vector.example/api"
         vector_store.collection_exists.return_value = CollectionExistence.EXISTS
         vector_store.delete_collection.return_value = True
-        rag._indexer = SimpleNamespace(embedding_model=None)
+        rag._indexer = SimpleNamespace()
 
         with (
             patch.object(rag, "_shared_check_timing", return_value=(30.0, 2.0, 8.0)),

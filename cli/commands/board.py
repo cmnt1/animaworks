@@ -7,25 +7,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
-import time
 
+from cli._gateway import gateway_request
 from core.i18n import t
 
 logger = logging.getLogger("animaworks")
-
-
-def _is_human_alias(name: str) -> bool:
-    """Return True when *name* is a configured human alias."""
-    try:
-        from core.config.models import load_config
-
-        return name in load_config().external_messaging.user_aliases
-    except Exception:
-        logger.debug("Could not resolve human aliases for board CLI", exc_info=True)
-        return False
 
 
 # ── Board Read ────────────────────────────────────────────
@@ -33,8 +21,8 @@ def _is_human_alias(name: str) -> bool:
 
 def cmd_board_read(args: argparse.Namespace) -> None:
     """Read recent messages from a shared channel."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
@@ -43,7 +31,6 @@ def cmd_board_read(args: argparse.Namespace) -> None:
         args.channel,
         limit=args.limit,
         human_only=args.human_only,
-        source="human",
     )
     if not messages:
         print(f"No messages in #{args.channel}")
@@ -57,38 +44,27 @@ def cmd_board_read(args: argparse.Namespace) -> None:
 def cmd_board_post(args: argparse.Namespace) -> None:
     """Post a message to a shared channel."""
     from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
     messenger = Messenger(get_shared_dir(), args.from_anima)
-    post_kwargs = {}
-    if _is_human_alias(args.from_anima):
-        post_kwargs = {"source": "human", "from_name": args.from_anima}
     try:
-        posted = messenger.post_channel(args.channel, args.text, **post_kwargs)
+        messenger.post_channel(args.channel, args.text)
     except ChannelNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except ChannelAccessDeniedError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    if posted is False:
-        print(f"Post denied or failed for #{args.channel}")
-        return
     print(f"Posted to #{args.channel}")
 
     # Mention fanout
     _fanout_board_mentions(messenger, args.from_anima, args.channel, args.text)
 
     # Notify running server (silent failure)
-    _notify_server_board_posted(
-        args.from_anima,
-        args.channel,
-        args.text,
-        source=post_kwargs.get("source", "anima"),
-    )
+    _notify_server_board_posted(args.from_anima, args.channel, args.text)
 
 
 # ── Board DM History ──────────────────────────────────────
@@ -96,8 +72,8 @@ def cmd_board_post(args: argparse.Namespace) -> None:
 
 def cmd_board_dm_history(args: argparse.Namespace) -> None:
     """Read DM history with a specific peer."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
@@ -180,40 +156,37 @@ def _notify_server_board_posted(
     from_anima: str,
     channel: str,
     text: str,
-    *,
-    source: str = "anima",
 ) -> None:
     """Notify the running server about a CLI board post.
 
     Fails silently if the server is not running.
     """
-    from cli.commands.server import _is_process_alive, _read_pid
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
-    pid = _read_pid()
-    if pid is None or not _is_process_alive(pid):
+    pid = read_server_pid()
+    if pid is None or not is_process_alive(pid):
         return
 
-    server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500")
-    import httpx
+    try:
+        from core.internal_api import internal_api_headers
 
-    payload = {
-        "from_person": from_anima,
-        "to_person": f"#channel:{channel}",
-        "content": text[:200],
-        "source": source,
-    }
-    for attempt in range(5):
-        try:
-            resp = httpx.post(
-                f"{server_url}/api/internal/message-sent",
-                json=payload,
-                timeout=5.0,
-            )
-            if resp.status_code == 200:
-                logger.debug("Server notified of CLI board post: %s -> #%s", from_anima, channel)
-                return
+        resp = gateway_request(
+            argparse.Namespace(gateway_url=None),
+            "POST",
+            "/api/internal/message-sent",
+            headers=internal_api_headers(),
+            json={
+                "from_person": from_anima,
+                "to_person": f"#channel:{channel}",
+                "content": text[:200],
+            },
+            timeout=5.0,
+            raw_response=True,
+        )
+        if resp.status_code == 200:
+            logger.debug("Server notified of CLI board post: %s -> #%s", from_anima, channel)
+        else:
             logger.debug("Server notification failed: %s", resp.status_code)
-        except Exception:
-            logger.debug("Could not notify server of CLI board post", exc_info=True)
-        if attempt < 4:
-            time.sleep(1.0)
+    except Exception:
+        logger.debug("Could not notify server of CLI board post", exc_info=True)

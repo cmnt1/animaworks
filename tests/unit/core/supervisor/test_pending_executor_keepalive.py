@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 class _FakeAnima:
@@ -28,7 +28,7 @@ class _FakeAnima:
 
 
 @pytest.mark.asyncio
-async def test_llm_task_runs_keepalive_while_background_lock_is_held(tmp_path: Path) -> None:
+async def test_llm_task_runs_keepalive_without_taking_scheduled_lock(tmp_path: Path) -> None:
     anima = _FakeAnima()
     executor = PendingTaskExecutor(
         anima=anima,  # type: ignore[arg-type]
@@ -46,8 +46,9 @@ async def test_llm_task_runs_keepalive_while_background_lock_is_held(tmp_path: P
 
     await executor._execute_llm_task({"task_id": "task-1", "title": "Task"})
 
-    anima._mark_busy_start.assert_called_once()
+    anima._mark_busy_start.assert_not_called()
     anima._clear_busy_status_sidecar_if_idle.assert_called_once()
+    assert not anima._background_lock.locked()
     assert anima.keepalive_started.is_set()
     assert anima.keepalive_cancelled.is_set()
     assert anima._status_slots["background"] == "idle"

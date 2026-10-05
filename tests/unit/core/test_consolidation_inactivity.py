@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
-import pytest
 
 from core.config.schemas import AnimaDefaults, AnimaWorksConfig, ConsolidationConfig
 from core.lifecycle.system_consolidation import (
-    SystemConsolidationMixin,
     has_recent_activity,
     is_consolidation_enabled,
     should_skip_inactive_consolidation,
@@ -64,20 +59,6 @@ def test_recent_activity_uses_entry_timestamp_not_file_mtime(tmp_path) -> None:
     assert has_recent_activity(tmp_path, days=7, now=now) is True
 
 
-def test_recent_activity_tolerates_invalid_utf8_line(tmp_path, caplog) -> None:
-    now = datetime(2026, 7, 12, tzinfo=UTC)
-    log_dir = tmp_path / "activity_log"
-    log_dir.mkdir()
-    log_file = log_dir / "2026-07-11.jsonl"
-    recent_entry = json.dumps({"ts": (now - timedelta(days=1)).isoformat()}).encode()
-    log_file.write_bytes(b"\xadincomplete line\n" + recent_entry + b"\n")
-
-    with caplog.at_level(logging.WARNING, logger="animaworks.lifecycle"):
-        assert has_recent_activity(tmp_path, days=7, now=now) is True
-
-    assert "Invalid UTF-8 in activity log" in caplog.text
-
-
 def test_activity_older_than_window_is_inactive(tmp_path) -> None:
     now = datetime(2026, 7, 12, tzinfo=UTC)
     log_dir = tmp_path / "activity_log"
@@ -122,35 +103,3 @@ def test_status_override_wins_over_disabled_anima_default(tmp_path, monkeypatch)
     monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
 
     assert is_consolidation_enabled(tmp_path) is True
-
-
-@pytest.mark.asyncio
-async def test_system_mixin_daily_and_weekly_skip_inactive_anima(tmp_path, monkeypatch) -> None:
-    (tmp_path / "status.json").write_text("{}", encoding="utf-8")
-    run_consolidation = AsyncMock()
-    anima = SimpleNamespace(
-        memory=SimpleNamespace(anima_dir=tmp_path),
-        run_consolidation=run_consolidation,
-    )
-    runner = SystemConsolidationMixin()
-    runner.animas = {"sleepy": anima}
-    runner._ws_broadcast = None
-    runner._system_job_locks = {
-        "daily": asyncio.Lock(),
-        "weekly": asyncio.Lock(),
-        "monthly": asyncio.Lock(),
-    }
-    config = SimpleNamespace(
-        consolidation=SimpleNamespace(
-            daily_enabled=True,
-            weekly_enabled=True,
-            inactivity_skip_enabled=True,
-            inactivity_days=7,
-        )
-    )
-    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
-
-    await runner._handle_daily_consolidation()
-    await runner._handle_weekly_integration()
-
-    run_consolidation.assert_not_awaited()

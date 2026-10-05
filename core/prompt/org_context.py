@@ -9,14 +9,16 @@ from __future__ import annotations
 
 """Organization context building for prompt injection."""
 
-import re
+import logging
 from pathlib import Path
 from typing import Any
 
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.config.models import read_anima_company
-from core.file_access_policy import find_denied_root, load_denied_roots
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.sections import _load_fallback_strings, _load_section_strings
+
+logger = logging.getLogger(__name__)
 
 # Modes that use MCP-style tool access (built-in + mcp__aw__*).
 _MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
@@ -60,37 +62,14 @@ def _discover_other_animas(anima_dir: Path) -> list[str]:
     return others
 
 
-def _shorten_model_name(model: str | None) -> str | None:
-    """Convert a raw model identifier to a short human-readable label."""
-    if not model or not isinstance(model, str):
-        return None
-    # Strip provider prefix after last "/" (e.g. bedrock/jp.anthropic.claude-... -> jp.anthropic.claude-...)
-    m = model.rsplit("/", 1)[-1]
-    # Strip dot-separated provider namespaces (e.g. jp.anthropic.claude-sonnet-4-6 -> claude-sonnet-4-6)
-    # Only strip segments that look like provider names (all-alpha, no digits)
-    while "." in m:
-        head, _, tail = m.partition(".")
-        if head.isalpha():
-            m = tail
-        else:
-            break
-    low = m.lower()
-    # Claude family
-    if "opus" in low:
-        return "Opus"
-    if "sonnet" in low:
-        return "Sonnet"
-    if "haiku" in low:
-        return "Haiku"
-    # GPT family — extract version number
-    if low.startswith("gpt-"):
-        ver = re.match(r"gpt-([\d.]+)", low)
-        label = f"GPT-{ver.group(1)}" if ver else "GPT"
-        if "mini" in low:
-            label += "m"
-        return label
-    # Fallback: return as-is
-    return m
+def _shorten_speciality(speciality: str) -> str:
+    """Drop the first parenthetical qualifier from an organization role."""
+    for opening, closing in (("（", "）"), ("(", ")")):
+        start = speciality.find(opening)
+        end = speciality.find(closing, start + 1) if start >= 0 else -1
+        if start >= 0 and end >= 0:
+            return (speciality[:start] + speciality[end + 1 :]).strip()
+    return speciality.strip()
 
 
 def _get_live_status(name: str, animas_dir: Path, denied_roots: tuple[Path, ...] = ()) -> str:
@@ -108,7 +87,7 @@ def _get_live_status(name: str, animas_dir: Path, denied_roots: tuple[Path, ...]
                 return "disabled"
             return "stopped"
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
     return "unknown"
 
 
@@ -120,14 +99,10 @@ def _format_anima_entry(
     status: str | None = None,
     animas_dir: Path | None = None,
 ) -> str:
-    """Format an anima name with optional speciality, model, aliases, live status, and path."""
-    short_model = _shorten_model_name(model)
-    parts = []
-    if speciality:
-        parts.append(speciality)
-    if short_model:
-        parts.append(short_model)
-    base = f"{name} ({', '.join(parts)})" if parts else name
+    """Format an anima name with a concise role and optional live status."""
+    del model, animas_dir  # Keep legacy call compatibility without exposing details.
+    short_role = _shorten_speciality(speciality) if speciality else ""
+    base = f"{name} ({short_role})" if short_role else name
     if aliases:
         base = f"{base} [別名: {'/'.join(aliases)}]"
     if status == "running":
@@ -136,8 +111,6 @@ def _format_anima_entry(
         base = f"{base} 【停止中】"
     elif status == "disabled":
         base = f"{base} 【無効】"
-    if animas_dir is not None:
-        base = f"{base} → {animas_dir / name}"
     return base
 
 
@@ -253,7 +226,7 @@ def _scan_all_animas(animas_dir: Path, denied_roots: tuple[Path, ...] = ()) -> d
                 role = data.get("role") or None
                 model = data.get("model") or None
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
         # Fallback to config.animas when status.json omits the field
         if name in config_animas:

@@ -13,7 +13,6 @@ from httpx import ASGITransport, AsyncClient
 
 from server.routes.animas import _read_appearance
 
-
 # ── Helper to build a minimal FastAPI app with animas router ──
 
 
@@ -22,6 +21,7 @@ def _make_test_app(
     anima_names: list[str] | None = None,
 ):
     from fastapi import FastAPI
+
     from server.routes.animas import create_animas_router
 
     app = FastAPI()
@@ -92,6 +92,20 @@ class TestListAnimas:
         assert len(data) == 1
         assert data[0]["name"] == "alice"
         assert data[0]["status"] == "running"
+        assert data[0]["enabled"] is True
+
+    async def test_list_reports_disabled_from_status_json(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/animas")
+        assert resp.json()[0]["enabled"] is False
 
 
 # ── GET /animas/{name} ─────────────────────────────────
@@ -108,7 +122,6 @@ class TestGetAnima:
             mock_mm.read_identity.return_value = "# Identity"
             mock_mm.read_injection.return_value = ""
             mock_mm.read_current_state.return_value = "idle"
-            mock_mm.read_pending.return_value = ""
             mock_mm.list_knowledge_files.return_value = ["topic1.md"]
             mock_mm.list_episode_files.return_value = ["2026-01-01.md"]
             mock_mm.list_procedure_files.return_value = []
@@ -396,6 +409,28 @@ class TestEnableAnima:
         # start_anima NOT called because already running
         supervisor.start_anima.assert_not_awaited()
 
+    async def test_enable_rejects_corrupt_status_without_overwriting(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        status_file = alice_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=[])
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+        supervisor.start_anima = AsyncMock()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/animas/alice/enable")
+
+        assert resp.status_code == 409
+        assert status_file.read_bytes() == original
+        supervisor.start_anima.assert_not_awaited()
+
     async def test_enable_not_found(self):
         """Enable a nonexistent anima returns 404."""
         app = _make_test_app(anima_names=[])
@@ -490,6 +525,28 @@ class TestDisableAnima:
 
         # Always call stop_anima so in-flight start races are covered
         supervisor.stop_anima.assert_awaited_once_with("alice")
+
+    async def test_disable_rejects_corrupt_status_without_overwriting(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        status_file = alice_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        supervisor = app.state.supervisor
+        supervisor.processes = {"alice": MagicMock()}
+        supervisor.stop_anima = AsyncMock()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/animas/alice/disable")
+
+        assert resp.status_code == 409
+        assert status_file.read_bytes() == original
+        supervisor.stop_anima.assert_not_awaited()
 
     async def test_disable_not_found(self):
         """Disable a nonexistent anima returns 404."""
@@ -641,3 +698,154 @@ class TestStartAnimaEndpoint:
         assert "disabled" in detail or "refused" in detail
         assert "alice" not in app.state.anima_names
         supervisor.start_anima.assert_awaited_once_with("alice")
+
+
+class TestDeleteAnima:
+    async def test_running_anima_that_cannot_be_stopped_returns_409_without_deleting(self, tmp_path):
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        (data_dir / "config.json").write_text(
+            json.dumps({"version": 1, "animas": {"alice": {}}}),
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        supervisor = app.state.supervisor
+        handle = MagicMock()
+        handle.process.poll.return_value = None
+        supervisor.processes = {"alice": handle}
+        supervisor.stop_anima = AsyncMock()
+
+        with patch("core.anima.roster.refresh_anima_roster"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.delete("/api/animas/alice")
+
+        assert resp.status_code == 409
+        assert alice_dir.is_dir()
+        assert (alice_dir / "identity.md").is_file()
+        assert not (data_dir / "archive").exists()
+        assert "alice" in app.state.anima_names
+        supervisor.stop_anima.assert_awaited_once_with("alice")
+
+    async def test_success_archives_unregisters_and_reports_supervisor_warning(self, tmp_path):
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir()
+        (bob_dir / "status.json").write_text(json.dumps({"supervisor": "alice"}), encoding="utf-8")
+        config_path = data_dir / "config.json"
+        config_path.write_text(json.dumps({"version": 1, "animas": {"alice": {}}}), encoding="utf-8")
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice", "bob"])
+        supervisor = app.state.supervisor
+        handle = MagicMock()
+        handle.process.poll.return_value = None
+        supervisor.processes = {"alice": handle}
+
+        async def _stop(name: str) -> None:
+            supervisor.processes.pop(name, None)
+
+        supervisor.stop_anima = AsyncMock(side_effect=_stop)
+
+        with patch("core.anima.roster.refresh_anima_roster"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.delete("/api/animas/alice")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "deleted"
+        assert data["archive_path"]
+        assert Path(data["archive_path"]).is_file()
+        assert data["supervisor_warnings"] == ["Anima 'bob' has deleted anima 'alice' as supervisor"]
+        assert not alice_dir.exists()
+        assert app.state.anima_names == ["bob"]
+        assert "alice" not in json.loads(config_path.read_text(encoding="utf-8"))["animas"]
+        supervisor.stop_anima.assert_awaited_once_with("alice")
+
+
+class TestRootOwnedPromptSettings:
+    async def test_background_model_update_reloads_running_anima(self, tmp_path):
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+        app.state.supervisor.processes = {"alice": MagicMock()}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/animas/alice/background-model",
+                json={"model": "claude-haiku-4-5"},
+            )
+
+        assert response.status_code == 200
+        assert json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))["background_model"] == (
+            "claude-haiku-4-5"
+        )
+        app.state.supervisor.send_request.assert_awaited_once_with("alice", "reload_config", {}, timeout=10.0)
+
+    async def test_identity_injection_and_permissions_use_atomic_settings_writers(self, tmp_path):
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Old identity\n", encoding="utf-8")
+        (anima_dir / "injection.md").write_text("Old injection\n", encoding="utf-8")
+        (anima_dir / "permissions.json").write_text("{}\n", encoding="utf-8")
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            identity = await client.put("/api/animas/alice/identity", json={"content": "New identity"})
+            injection = await client.put("/api/animas/alice/injection", json={"content": "New injection"})
+            permissions = await client.put(
+                "/api/animas/alice/permissions",
+                json={"version": 1, "file_roots": ["/tmp/workspace"]},
+            )
+
+        assert identity.status_code == injection.status_code == permissions.status_code == 200
+        assert (anima_dir / "identity.md").read_text(encoding="utf-8") == "New identity"
+        assert (anima_dir / "injection.md").read_text(encoding="utf-8") == "New injection"
+        assert json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))["file_roots"] == [
+            "/tmp/workspace"
+        ]
+
+    async def test_running_server_rename_moves_settings_on_root(self, tmp_path, monkeypatch):
+        from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, save_config
+
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        old_dir = animas_dir / "alice"
+        old_dir.mkdir(parents=True)
+        (old_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (old_dir / "status.json").write_text(json.dumps({"enabled": True, "role": "general"}), encoding="utf-8")
+        (old_dir / "permissions.json").write_text(json.dumps({"version": 1, "file_roots": []}), encoding="utf-8")
+        save_config(AnimaWorksConfig(animas={"alice": AnimaModelConfig(supervisor=None)}), data_dir / "config.json")
+        monkeypatch.setattr("core.paths.get_data_dir", lambda: data_dir)
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        app.state.supervisor.stop_anima = AsyncMock()
+        app.state.supervisor.start_anima = AsyncMock()
+
+        with patch("core.anima.admin.cleanup_rag_collections", return_value=False):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post("/api/animas/alice/rename", json={"new_name": "alicia"})
+
+        assert response.status_code == 200
+        assert response.json()["new_name"] == "alicia"
+        assert not old_dir.exists()
+        assert (animas_dir / "alicia" / "identity.md").is_file()
+        assert "alicia" in load_config(data_dir / "config.json").animas
+        app.state.supervisor.stop_anima.assert_awaited_once_with("alice")
+        app.state.supervisor.start_anima.assert_awaited_once_with("alicia")
+        assert app.state.anima_names == ["alicia"]

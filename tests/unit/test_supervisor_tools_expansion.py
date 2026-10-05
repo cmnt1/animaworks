@@ -409,7 +409,7 @@ class TestDelegateTask:
         assert "委譲しました" in result
         assert "hinata" in result
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         subordinate_tasks = TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()
         own_tasks = TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()
@@ -454,7 +454,7 @@ class TestDelegateTask:
             )
 
         assert "委譲しました" in result
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         assert len(TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()) == 1
 
@@ -511,7 +511,7 @@ class TestDelegateTask:
             )
 
         assert "メッセンジャー未設定" in result
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         assert len(TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()) == 1
 
@@ -549,7 +549,7 @@ class TestDelegateTask:
             result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
 
         assert "maintenance" in result
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         records = [entry.model_dump() for entry in TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()]
         assert len(records) == 1
@@ -748,7 +748,7 @@ def _make_handler_with_hierarchy(tmp_path: Path, *, anima_name: str = "sakura") 
 
 
 class TestDescendantManagementFilePermission:
-    """Grandchild management files (cron.md, heartbeat.md, status.json, injection.md) should be read/write."""
+    """Only cron.md and heartbeat.md remain direct-write management files."""
 
     def test_grandchild_cron_readable(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
@@ -770,15 +770,11 @@ class TestDescendantManagementFilePermission:
         result = handler._check_file_permission(str(animas_dir / "natsume" / "heartbeat.md"), write=True)
         assert result is None
 
-    def test_grandchild_injection_writable(self, tmp_path):
+    def test_grandchild_injection_and_status_are_not_directly_writable(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        result = handler._check_file_permission(str(animas_dir / "natsume" / "injection.md"), write=True)
-        assert result is None
-
-    def test_grandchild_status_json_writable(self, tmp_path):
-        handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        result = handler._check_file_permission(str(animas_dir / "natsume" / "status.json"), write=True)
-        assert result is None
+        for filename in ("injection.md", "status.json"):
+            result = handler._check_file_permission(str(animas_dir / "natsume" / filename), write=True)
+            assert result is not None
 
     def test_grandchild_identity_read_only(self, tmp_path):
         """identity.md must remain read-only even for descendants."""
@@ -793,12 +789,14 @@ class TestDescendantManagementFilePermission:
         result = handler._check_file_permission(str(animas_dir / "natsume"))
         assert result is None
 
-    def test_direct_child_still_has_management_rw(self, tmp_path):
-        """Direct child management files must remain read/write after refactor."""
+    def test_direct_child_management_files_match_root_ownership(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        for fname in ("cron.md", "heartbeat.md", "status.json", "injection.md"):
+        for fname in ("cron.md", "heartbeat.md"):
             result = handler._check_file_permission(str(animas_dir / "hinata" / fname), write=True)
             assert result is None, f"Write to direct child {fname} should be allowed"
+        for fname in ("status.json", "injection.md"):
+            result = handler._check_file_permission(str(animas_dir / "hinata" / fname), write=True)
+            assert result is not None, f"Write to root-owned {fname} should be denied"
 
 
 class TestDescendantOrgToolPermission:
@@ -929,7 +927,7 @@ class TestSdkHooksDescendantManagementFiles:
     """_cache_subordinate_paths should include grandchild management files."""
 
     def test_grandchild_mgmt_files_in_cache(self, tmp_path):
-        from core.execution._sdk_hooks import _cache_subordinate_paths
+        from core.execution.engines.claude._sdk_hooks import _cache_subordinate_paths
 
         animas_dir = tmp_path / "animas"
         sakura_dir = animas_dir / "sakura"
@@ -958,7 +956,7 @@ class TestSdkHooksDescendantManagementFiles:
         assert mgmt_names == {"cron.md", "heartbeat.md", "status.json", "injection.md"}
 
     def test_direct_child_mgmt_files_still_present(self, tmp_path):
-        from core.execution._sdk_hooks import _cache_subordinate_paths
+        from core.execution.engines.claude._sdk_hooks import _cache_subordinate_paths
 
         animas_dir = tmp_path / "animas"
         sakura_dir = animas_dir / "sakura"
@@ -985,31 +983,3 @@ class TestSdkHooksDescendantManagementFiles:
         hinata_dir = (animas_dir / "hinata").resolve()
         mgmt_names = {p.name for p in sub_mgmt_files if p.parent == hinata_dir}
         assert mgmt_names == {"cron.md", "heartbeat.md", "status.json", "injection.md"}
-
-
-# ── build_tool_list integration tests ──────────────────────
-
-
-class TestBuildToolListIntegration:
-    def test_check_permissions_always_included(self):
-        """check_permissions should always be in the tool list."""
-        from core.tooling.schemas import build_tool_list
-
-        tools = build_tool_list()
-        names = {t["name"] for t in tools}
-        assert "check_permissions" in names
-
-    def test_supervisor_tools_include_new_tools(self):
-        """When supervisor tools are enabled, new tools are included."""
-        from core.tooling.schemas import build_tool_list
-
-        tools = build_tool_list(include_supervisor_tools=True)
-        names = {t["name"] for t in tools}
-        for expected in [
-            "org_dashboard",
-            "ping_subordinate",
-            "read_subordinate_state",
-            "delegate_task",
-            "task_tracker",
-        ]:
-            assert expected in names, f"Missing tool: {expected}"

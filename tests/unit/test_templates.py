@@ -3,20 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from core.memory.priming.constants import (
-    _BUDGET_GRAPH_CONTEXT,
-    _BUDGET_GREETING,
-    _BUDGET_HEARTBEAT,
-    _BUDGET_IMPORTANT_KNOWLEDGE,
-    _BUDGET_PENDING_TASKS,
-    _BUDGET_QUESTION,
-    _BUDGET_RECENT_ACTIVITY,
-    _BUDGET_RELATED_EPISODES,
-    _BUDGET_RELATED_KNOWLEDGE,
-    _BUDGET_REQUEST,
-    _BUDGET_SENDER_PROFILE,
-)
-
 TEMPLATES_ROOT = Path(__file__).parent.parent.parent / "templates"
 TEMPLATES_DIR = TEMPLATES_ROOT / "ja" / "prompts"
 LOCALES = ("ja", "en", "ko")
@@ -115,7 +101,7 @@ class TestActionRulesGuideTemplate:
             assert "trigger_tools" in content
             assert "read_memory_file(path=" in content
             assert "0.80" in content
-            assert "fail-open" in content
+            assert "fail-open" in content or "fail open" in content
             assert "slack_post" not in content
             for tool in required_tools:
                 assert f"`{tool}`" in content, f"{locale} action-rules-guide missing {tool}"
@@ -125,93 +111,10 @@ class TestActionRulesGuideTemplate:
     def test_indexes_and_hints_point_to_action_rules_without_skill_creator_duplication(self):
         for locale in LOCALES:
             index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
-            hint = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "common_knowledge_hint.md").read_text(
-                encoding="utf-8"
-            )
+            hint = (TEMPLATES_ROOT / locale / "prompts" / "memory_guide.md").read_text(encoding="utf-8")
             assert "operations/action-rules-guide.md" in index
             assert "operations/action-rules-guide.md" in hint
             assert "common_skills/skill-creator/SKILL.md" not in hint
-
-
-class TestHeartbeatObserveTemplate:
-    def test_heartbeat_prompt_prefers_preobserved_snapshot_with_direct_fallback(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
-            assert "heartbeat_observe_snapshot" in content
-            assert "Current Pre-Observed Heartbeat Snapshot" in content
-            assert "status: ok" in content
-            assert "rtk proxy" in content
-            assert "list_directory" in content
-
-    def test_default_checklist_uses_snapshot_as_task_queue_evidence(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "prompts" / "heartbeat_default_checklist.md").read_text(
-                encoding="utf-8"
-            )
-            assert "heartbeat_observe_snapshot" in content
-            assert "Current Pre-Observed Heartbeat Snapshot" in content
-            assert "status: ok" in content
-            assert "list_tasks()" not in content
-
-    def test_common_knowledge_observe_guide_indexed(self):
-        for locale in LOCALES:
-            guide = (
-                TEMPLATES_ROOT / locale / "common_knowledge" / "operations" / "heartbeat-observe-guide.md"
-            ).read_text(encoding="utf-8")
-            index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
-            assert "heartbeat_observe_snapshot" in guide
-            assert "Current Pre-Observed Heartbeat Snapshot" in guide
-            assert "status: ok" in guide
-            assert "heartbeat-observe-guide.md" in index
-
-
-class TestPrimingChannelsReference:
-    channel_budget_constants = {
-        "A": _BUDGET_SENDER_PROFILE,
-        "B": _BUDGET_RECENT_ACTIVITY,
-        "C": _BUDGET_RELATED_KNOWLEDGE,
-        "C0": _BUDGET_IMPORTANT_KNOWLEDGE,
-        "E": _BUDGET_PENDING_TASKS,
-        "F": _BUDGET_RELATED_EPISODES,
-        "G": _BUDGET_GRAPH_CONTEXT,
-    }
-    message_budget_constants = {
-        "priming.budget_greeting": _BUDGET_GREETING,
-        "priming.budget_question": _BUDGET_QUESTION,
-        "priming.budget_request": _BUDGET_REQUEST,
-        "priming.budget_heartbeat": _BUDGET_HEARTBEAT,
-    }
-
-    def test_channel_overview_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            rows = dict(re.findall(r"^\| (A|B|C|C0|E|F|G): [^|]+ \| (\d+) \|", content, re.MULTILINE))
-            assert rows == {channel: str(budget) for channel, budget in self.channel_budget_constants.items()}, (
-                f"{locale} priming channel overview budget drift"
-            )
-
-    def test_channel_section_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            for channel, expected in self.channel_budget_constants.items():
-                section = content.split(f"## Channel {channel}:", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-                match = re.search(r"\*\*[^*]*(?:Budget|バジェット|버짓)[^*]*\*\*:\s*(\d+)", section)
-                assert match, f"{locale} Channel {channel} missing detailed budget"
-                assert int(match.group(1)) == expected, f"{locale} Channel {channel} detailed budget drift"
-
-    def test_message_type_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            for config_key, expected in self.message_budget_constants.items():
-                match = re.search(rf"^\| [^|]+ \| (\d+) \| `{re.escape(config_key)}` \|", content, re.MULTILINE)
-                assert match, f"{locale} missing {config_key} budget row"
-                assert int(match.group(1)) == expected, f"{locale} {config_key} budget drift"
 
     def test_current_priming_docs_have_no_obsolete_channel_or_skill_tool_references(self):
         paths = list(Path(".").glob("README*.md"))
@@ -282,3 +185,79 @@ class TestUnreadMessagesTemplate:
         path = TEMPLATES_DIR / "unread_messages.md"
         content = path.read_text(encoding="utf-8")
         assert "## 未読メッセージ" in content
+
+    def test_inbox_closing_line_appears_once_for_all_locales(self):
+        """B2: the inbox user_message must contain the closing instruction once."""
+        from core.paths import load_prompt
+
+        for locale in LOCALES:
+            # The outer inbox template wraps the unread-messages block.
+            unread = load_prompt("unread_messages", locale=locale, summary="dummy-summary")
+            prompt = load_prompt("inbox_message", locale=locale, messages=unread)
+            # The consolidated delegate portion should appear exactly once.
+            assert "delegate_task" in prompt
+            assert prompt.count("delegate_task") == 1
+            # No stale duplicate closing uses "直接答え" (removed inbox wording) or
+            # the old unread-messages trailing instruction as a second close.
+            assert prompt.count("thread_id") == 1
+
+    def test_unread_messages_has_no_independent_closing(self):
+        """B2: unread_messages is a pure content block with no second closing."""
+        from core.paths import load_prompt_text
+
+        for locale in LOCALES:
+            content = load_prompt_text("unread_messages", locale=locale)
+            assert "delegate_task" not in content
+            assert "thread_id" not in content
+
+
+class TestRuntimeTemplateAccuracy:
+    def test_ja_templates_have_no_retired_or_invalid_runtime_references(self):
+        forbidden = (
+            "deadline=",
+            "sync_delegated",
+            "OVERDUE",
+            "dynamic_budget",
+            "budget_greeting",
+            "export-sections",
+            "animaworks slack ",
+            "migrate --resync-db",
+            "max_chains",
+            "max_turns",
+            "Max Chains",
+            "Max Turns",
+        )
+        for path in (TEMPLATES_ROOT / "ja").rglob("*.md"):
+            content = path.read_text(encoding="utf-8")
+            for term in forbidden:
+                assert term not in content, f"{path} contains retired reference {term!r}"
+
+    def test_tool_usage_overview_lists_every_exposed_mcp_tool(self):
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
+
+        overview = (TEMPLATES_ROOT / "ja" / "reference" / "operations" / "tool-usage-overview.md").read_text(
+            encoding="utf-8"
+        )
+        missing = sorted(name for name in MCP_TOOL_NAMES if name not in overview)
+        assert not missing, f"MCP tools missing from the reference: {missing}"
+
+    def test_ja_templates_do_not_contain_organization_specific_anima_names(self):
+        ja_root = TEMPLATES_ROOT / "ja"
+        for path in ja_root.rglob("*.md"):
+            if "anima_templates" in path.relative_to(ja_root).parts:
+                continue
+            content = path.read_text(encoding="utf-8")
+            assert not re.search(r"\btaka\b", content), f"{path} contains an organization-specific name"
+
+    def test_delegate_task_required_arguments_match_the_subordinate_guide(self):
+        from core.tooling.policy.schemas.supervisor import _supervisor_tools
+
+        schema = next(tool for tool in _supervisor_tools() if tool["name"] == "delegate_task")
+        required = set(schema["parameters"]["required"])
+        guide = (TEMPLATES_ROOT / "ja" / "common_skills" / "subordinate-management" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        required_line = next(line for line in guide.splitlines() if line.startswith("# 必須:"))
+        required_text = required_line.split("任意:", maxsplit=1)[0]
+        documented = set(re.findall(r"`([a-z_]+)`", required_text))
+        assert documented == required

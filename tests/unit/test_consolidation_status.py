@@ -448,7 +448,7 @@ class TestLockPreventsDoubleExecution:
     @pytest.mark.asyncio
     async def test_lock_prevents_concurrent_run(self, status_dir):
         """Verify that a locked job is skipped rather than blocked."""
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._system_job_locks = {
@@ -486,7 +486,7 @@ class TestLockPreventsDoubleExecution:
 class TestManualRunState:
     @pytest.mark.asyncio
     async def test_monthly_cannot_start_directly(self, status_dir):
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mgr = SchedulerMixin.__new__(SchedulerMixin)
         assert "error" in mgr.start_system_consolidation("monthly")
@@ -496,7 +496,7 @@ class TestManualRunState:
     async def test_catchup_ignores_monthly(self, status_dir):
         from unittest.mock import AsyncMock
 
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._run_daily_consolidation = AsyncMock()
@@ -514,7 +514,7 @@ class TestManualRunState:
     @pytest.mark.asyncio
     async def test_stale_persisted_running_state_does_not_block(self, status_dir):
         from core.lifecycle.system_status import mark_started
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mark_started("daily")
 
@@ -539,7 +539,7 @@ class TestManualRunState:
 
     @pytest.mark.asyncio
     async def test_returns_already_running_when_lock_is_held(self, status_dir):
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._system_job_locks = {
@@ -554,7 +554,7 @@ class TestManualRunState:
 
     @pytest.mark.asyncio
     async def test_start_retains_task_and_rejects_duplicate(self, status_dir):
-        from core.supervisor._mgr_scheduler import SchedulerMixin
+        from server.supervisor._mgr_scheduler import SchedulerMixin
 
         mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._system_job_locks = {

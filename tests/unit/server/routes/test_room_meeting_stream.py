@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 import server.routes.room as room_routes
-from core.supervisor.ipc import IPCResponse
+from core.runtime.ipc import IPCResponse
 from server.room_manager import RoomManager
 from server.routes.room import _build_compact_meeting_context, _meeting_stream
 

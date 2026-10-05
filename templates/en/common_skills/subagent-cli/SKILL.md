@@ -1,92 +1,93 @@
 ---
 name: subagent-cli
 description: >-
-  Runs external AI agent CLIs via Bash in non-interactive mode. Delegates coding with codex exec or cursor-agent.
-  Use when: offloading complex implementation, code review, multi-file edits, or spawning a subagent from Bash.
+  A skill for non-interactively executing external AI agent CLIs in Bash. Provides procedures for delegating coding work via codex exec or cursor-agent.
+  Use when: Use when: delegating complex implementations, code reviews, multi-file batch changes, or launching sub-agents from Bash.
 ---
+
 
 # subagent-cli
 
-Run external AI agent CLIs as subprocesses via Bash to delegate complex coding tasks.
-Use as a "power tool" to extend execution capability while keeping your identity, judgment, and memory.
+Executes external AI agent CLIs as subprocesses via Bash to delegate complex coding tasks.
+Use it as a "power tool" to extend execution capability while maintaining your own identity, judgment, and memory.
 
 ## Relationship with Framework Execution Modes
 
-This skill applies **only when the Bash tool is available**.
+This skill applies only **when the Bash tool is available**.
 
-| Mode | Implementation | Bash | Skill Applicability |
-|------|----------------|------|---------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch available |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Depends on Codex CLI toolset | **codex exec not needed** — Framework runs Codex directly. cursor-agent / claude -p can be invoked via Bash (when Bash is available) |
-| **Mode D** | Cursor Agent (cursor-agent subprocess) | Depends on Cursor CLI toolset | **cursor-agent -p not needed** — Framework runs cursor-agent directly. MCP integration. Tool access similar to Mode S but via the cursor-agent binary. codex exec / claude -p can be invoked via Bash (when Bash is available) |
-| **Mode G** | Gemini CLI (gemini subprocess) | Depends on Gemini CLI toolset | **Manual gemini invocation not needed** — Framework runs it directly. MCP integration, stream-json output. Other CLIs can be invoked via Bash (when Bash is available) |
-| **Mode A/B** | LiteLLM + tool_use / 1-shot | Only when permitted in permissions.json | Applies if Bash is permitted |
+| Mode | Implementation | Bash | Applicability of this skill |
+|--------|------|------|------------------|
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP (send_message, etc.) + Task/Agent are available within the Claude Code subprocess. The cwd during Bash execution is anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Depends on the Codex CLI toolset | **codex exec is not needed** — the framework runs Codex directly. cursor-agent / claude -p can be invoked via Bash (if Bash is available) |
+| **Mode D** | Cursor Agent (cursor-agent subprocess) | Depends on the Cursor CLI toolset | **cursor-agent -p is not needed** — the framework runs cursor-agent directly. MCP integration. Tool access is similar to Mode S, but the actual binary is cursor-agent. codex exec / claude -p can be invoked via Bash (if Bash is available) |
+| **Mode G** | Gemini CLI (gemini subprocess) | Depends on the Gemini CLI toolset | **Manual startup of Gemini CLI is not needed** — the framework runs it directly. MCP integration, stream-json output. Other CLIs can be invoked via Bash (if Bash is available) |
+| **Mode A/B** | LiteLLM + tool_use / 1-shot | Only when permitted by permissions.json | Applies if Bash is permitted |
 
-**Important**: For Mode C (`codex/*`), Mode D (`cursor/*`), and Mode G (`gemini/*`), the framework runs each engine directly. You do not need to call `codex exec` (Mode C), `cursor-agent -p` (Mode D), or the Gemini CLI (Mode G) from Bash yourself. Refer to the relevant sections only when you explicitly want a different CLI (cursor-agent, claude -p, codex exec, etc.).
+**Important**: For Anima in Mode C (`codex/*`), Mode D (`cursor/*`), and Mode G (`gemini/*`), the framework runs each engine directly. In this case, you do not need to invoke `codex exec` (Mode C), `cursor-agent -p` (Mode D), or Gemini CLI (Mode G) yourself via Bash. Only refer to the relevant section of this skill when you explicitly want to use a different CLI (cursor-agent / claude -p / codex exec, etc.).
 
-**Windows exception**: On native Windows, if shell execution becomes `policy blocked`, or `codex exec exited with code 1` keeps recurring, stop retrying local `codex exec`. For shell-required tasks, fall back to another installed CLI (cursor-agent / claude -p) with an explicit working directory.
+**Windows exception**: In a native Windows environment, if shell execution becomes `policy blocked`, or if `codex exec exited with code 1` occurs repeatedly, stop retrying the local `codex exec`. Escalate shell-required tasks to the supervisor (`supervisor`).
 
 ## Tool Selection Priority
 
-**Choose by cost efficiency.**
+**Select in order of cost efficiency.**
 
-| Priority | Tool | Cost | Best For |
-|----------|------|------|----------|
-| 1 | `codex exec` | Lowest (Codex) | Code generation, editing, review |
+| Priority | Tool | Cost | Strengths |
+|--------|--------|--------|----------|
+| 1 | `codex exec` | Cheapest (Codex) | Code generation, editing, review |
 | 2 | `cursor-agent -p` | Low (Cursor) | Code generation, editing, multi-file |
-| 3 | `claude -p` | High (Claude API) | Last resort. Only when the above two fail |
+| 3 | `claude -p` | High (Claude API) | Last resort. Only when the above two do not resolve the issue |
 
-**Rule**: In non-Windows or otherwise healthy shell environments, try `codex exec` first. On native Windows when shell execution is blocked or unstable, skip local `codex exec` and fall back to another installed CLI as the standard path. For other failures or unsuitable tasks, fall back to cursor-agent → claude.
+**Principle**: In non-Windows environments or where shell execution is healthy, try `codex exec` first. In native Windows where shell execution is blocked or unstable, skip `codex exec` and escalate to the supervisor (`supervisor`). For other failures or tasks outside its strengths, fall back in the order cursor-agent → claude.
 
 ## When to Use
 
-- Multi-file code changes
-- Test creation or modification
+- Code changes spanning multiple files
+- Test creation and test fixes
 - Code review
 - Refactoring
-- Bug investigation and implementation
+- Bug fix investigation and implementation
 - New feature implementation
 
-## When NOT to Use
+## When Not to Use
 
-- Small edit in a single file (do it yourself)
-- Memory read/write (use your tools)
+- Small single-file edits (do them directly yourself)
+- Memory read/write (use your own tools)
 - External API calls (use dedicated tools)
-- Search or research only (web_search or Read is enough)
+- Information search or research only (web_search or Read is sufficient)
 
 ---
 
 ## 1. codex exec (Recommended)
 
-**Applicability**: Mode S or Mode A/B (with Bash permission). Not needed in Mode C — the framework runs Codex directly. In Mode D/G, the framework runs those engines; skip this section unless you intentionally use codex as an alternative.
+**Applicability**: Mode S or when Mode A/B（Bash is permitted). In Mode C, the framework executes Codex, so this section is not needed. In Mode D/G, the framework also executes each engine, so no need to refer to this unless you need to use codex as an alternative.
 
 ### Basic Syntax
 
 ```bash
-codex exec --full-auto -C /path/to/workspace "prompt"
+codex exec --full-auto -C /path/to/workspace "プロンプト"
 ```
 
-Specify the project path for working directory `-C`. For the main project, `$ANIMAWORKS_PROJECT_DIR` may be available (set in Mode S Bash execution environment).
+For the working directory `-C`, specify the absolute path of the target project. During Bash execution in Mode S, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables. If developing AnimaWorks itself, `-C "$ANIMAWORKS_PROJECT_DIR"` can be used.
 
-### Key Options
+### Important Options
 
 | Option | Description |
-|--------|-------------|
+|-----------|------|
 | `--full-auto` | Auto-approve + sandbox (workspace-write) |
-| `-C /path` | Working directory (required) |
-| `-m model` | Model (e.g., `o4-mini`, `o3`) |
+| `-C /path` | Working directory specification (**required**) |
+| `-m model` | Model specification (e.g., `o4-mini`, `o3`) |
 | `--sandbox workspace-write` | Workspace write permission (included in full-auto) |
-| `--json` | JSONL output |
-| `-o file` | Write final message to file |
-| `--ephemeral` | Do not save session file |
+| `--json` | Output in JSONL format |
+| `-o file` | Write the final message to a file |
+| `--ephemeral` | Do not save session files |
 
-### Examples
+### Execution Examples
 
 #### Code Generation
 
 ```bash
 codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
-  "Implement Markdown parser in src/utils/parser.py. Do not break existing tests."
+  "src/utils/parser.py にMarkdownパーサーを実装して。既存のテストを壊さないこと。"
 ```
 
 #### Code Review
@@ -100,144 +101,144 @@ codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
 
 ```bash
 codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
-  "Create unit tests for src/utils/parser.py in tests/test_parser.py."
+  "src/utils/parser.py のユニットテストを tests/test_parser.py に作成して。"
 ```
 
-#### Save Result to File
+#### Save Results to a File
 
 ```bash
 codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
   -o /tmp/codex_result.txt \
-  "Analyze this project's architecture and suggest improvements."
+  "このプロジェクトのアーキテクチャを分析して改善案を出して。"
 ```
 
 ---
 
 ## 2. cursor-agent -p (Alternative)
 
-**Applicability**: Mode S or Mode A/B (with Bash permission). Also applies in Mode C/G when Bash is available. In Mode D, the framework runs cursor-agent — manual `cursor-agent -p` is usually unnecessary.
+**Applicability**: Mode S or when Mode A/B（Bash is permitted). Also applicable in Mode C/G if Bash is available. In Mode D, the framework executes cursor-agent, so manual `cursor-agent -p` in this section is generally not needed.
 
 ### Basic Syntax
 
 ```bash
-cursor-agent -p --trust --force --workspace /path/to/workspace "prompt"
+cursor-agent -p --trust --force --workspace /path/to/workspace "プロンプト"
 ```
 
-### Key Options
+### Important Options
 
 | Option | Description |
-|--------|-------------|
-| `-p` / `--print` | Non-interactive mode (required) |
-| `--trust` | Auto-trust workspace |
+|-----------|------|
+| `-p` / `--print` | Non-interactive mode (**required**) |
+| `--trust` | Auto-trust the workspace |
 | `--force` | Auto-approve commands |
-| `--workspace /path` | Working directory (required) |
-| `--model model` | Model (e.g., `sonnet-4`, `gpt-5`) |
+| `--workspace /path` | Working directory specification (**required**) |
+| `--model model` | Model specification (e.g., `sonnet-4`, `gpt-5`) |
 | `--output-format text\|json` | Output format |
-| `--mode plan\|ask` | Read-only mode (for investigation) |
+| `--mode plan\|ask` | Read-only mode (for research) |
 
-### Examples
+### Execution Examples
 
 #### Code Generation
 
 ```bash
 cursor-agent -p --trust --force \
   --workspace /home/user/dev/myproject \
-  "Add POST /users endpoint to src/api/routes.py. Include validation."
+  "src/api/routes.py にPOST /users エンドポイントを追加して。バリデーション付き。"
 ```
 
-#### Read-Only Investigation
+#### Read-Only Research
 
 ```bash
 cursor-agent -p --trust --mode ask \
   --workspace /home/user/dev/myproject \
-  "Are there security issues in this auth flow?"
+  "この認証フローにセキュリティ上の問題はある？"
 ```
 
-#### Save Result to File
+#### Save Results to a File
 
 ```bash
 cursor-agent -p --trust --force \
   --workspace /home/user/dev/myproject \
   --output-format text \
-  "Find modules with low test coverage and improve them" > /tmp/cursor_result.txt
+  "テストカバレッジが低いモジュールを特定して改善して" > /tmp/cursor_result.txt
 ```
 
 ---
 
 ## 3. claude -p (Fallback)
 
-**Applicability**: Mode S or Mode A/B (with Bash permission). Also applies in Mode C/D/G when Bash is available.
+**Applicability**: Mode S or when Mode A/B（Bash is permitted). Also applicable in Mode C/D/G if Bash is available.
 
-Use only when codex/cursor-agent cannot handle the task. API cost is high.
+Use only when codex/cursor-agent cannot handle the task. API costs are high.
 
 ### Basic Syntax
 
 ```bash
-claude -p --dangerously-skip-permissions --output-format text "prompt"
+claude -p --dangerously-skip-permissions --output-format text "プロンプト"
 ```
 
-### Key Options
+### Important Options
 
 | Option | Description |
-|--------|-------------|
-| `-p` / `--print` | Non-interactive mode (required) |
-| `--dangerously-skip-permissions` | Skip permission check |
-| `--model model` | Model (e.g., `sonnet`, `haiku`) |
+|-----------|------|
+| `-p` / `--print` | Non-interactive mode (**required**) |
+| `--dangerously-skip-permissions` | Skip permission checks |
+| `--model model` | Model specification (e.g., `sonnet`, `haiku`) |
 | `--allowedTools "tools"` | Restrict allowed tools (e.g., `"Read Edit Bash(git:*)"`) |
 | `--output-format text\|json` | Output format |
-| `--max-budget-usd N` | Cost cap (USD) |
+| `--max-budget-usd N` | Cost limit (USD) |
 | `--no-session-persistence` | Do not save session |
 
-### Example
+### Execution Example
 
 ```bash
 claude -p --dangerously-skip-permissions --no-session-persistence \
   --model haiku --max-budget-usd 0.5 \
   --output-format text \
-  "Improve error handling in src/core/parser.py"
+  "src/core/parser.py のエラーハンドリングを改善して"
 ```
 
 ---
 
-## Writing Prompts
+## How to Write Prompts
 
-Subagents do not have AnimaWorks context. Write clear, self-contained prompts.
+Sub-agents have no context about AnimaWorks. Write clear, self-contained prompts.
 
 ### Good Prompt
 
 ```
-Implement a Python module with these requirements:
+以下の要件でPythonモジュールを実装して:
 
-File: src/utils/validator.py
+ファイル: src/utils/validator.py
 
-Requirements:
-- Pydantic v2 BaseModel-based validator
-- email, username, password fields
-- Password: 8+ chars, alphanumeric
-- Raise custom exception on validation error
+要件:
+- Pydantic v2のBaseModelを使ったバリデータ
+- email, username, passwordフィールド
+- パスワードは8文字以上、英数字混合
+- バリデーションエラー時にカスタム例外を投げる
 
-Constraints:
-- from __future__ import annotations at top
+制約:
+- from __future__ import annotations を先頭に
 - Google-style docstring
-- Do not break existing tests
+- 既存のテストを壊さないこと
 ```
 
 ### Bad Prompt
 
 ```
-Fix the validation somehow
+いい感じにバリデーションを直して
 ```
 
-→ No context, "somehow" is vague.
+→ No context, and "nice" is unclear.
 
 ---
 
 ## Handling Output
 
-### Capture stdout
+### Capture Standard Output
 
 ```bash
-RESULT=$(codex exec --full-auto --ephemeral -C /path "prompt" 2>/dev/null)
+RESULT=$(codex exec --full-auto --ephemeral -C /path "プロンプト" 2>/dev/null)
 echo "$RESULT"
 ```
 
@@ -245,20 +246,20 @@ echo "$RESULT"
 
 ```bash
 codex exec --full-auto --ephemeral -C /path \
-  -o /tmp/result.txt "prompt"
-# Read result
+  -o /tmp/result.txt "プロンプト"
+# 結果を読む
 cat /tmp/result.txt
 ```
 
-### Success/Failure from Exit Code
+### Determine Success or Failure by Exit Code
 
 ```bash
-codex exec --full-auto --ephemeral -C /path "prompt"
+codex exec --full-auto --ephemeral -C /path "プロンプト"
 if [ $? -eq 0 ]; then
-  echo "Success"
+  echo "成功"
 else
-  echo "Failed — fallback to cursor-agent"
-  cursor-agent -p --trust --force --workspace /path "same prompt"
+  echo "失敗 — cursor-agentにフォールバック"
+  cursor-agent -p --trust --force --workspace /path "同じプロンプト"
 fi
 ```
 
@@ -266,15 +267,15 @@ fi
 
 ## Background Execution (Important)
 
-Subagent runs can take **5–20+ minutes**.
-Foreground execution blocks the session, so **always run in the background**.
+Sub-agent execution can take **5 to 20 minutes or more**.
+Waiting in the foreground blocks the session, so **always run in the background**.
 
 ### Basic Pattern: nohup + Result File
 
 ```bash
 nohup codex exec --full-auto --ephemeral -C /path/to/workspace \
   -o /tmp/codex_result.txt \
-  "prompt" > /tmp/codex_stdout.log 2>&1 &
+  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
 echo "PID: $!"
 ```
 
@@ -283,69 +284,69 @@ For cursor-agent:
 ```bash
 nohup cursor-agent -p --trust --force \
   --workspace /path/to/workspace \
-  "prompt" > /tmp/cursor_result.txt 2>&1 &
+  "プロンプト" > /tmp/cursor_result.txt 2>&1 &
 echo "PID: $!"
 ```
 
 ### Completion Check
 
 ```bash
-# Check if process is still running
-ps -p <PID> > /dev/null 2>&1 && echo "Running" || echo "Done"
+# プロセスがまだ動いているか確認
+ps -p <PID> > /dev/null 2>&1 && echo "実行中" || echo "完了"
 
-# Read result (after completion)
+# 結果を読む（完了後）
 cat /tmp/codex_result.txt
-# or
+# または
 cat /tmp/cursor_result.txt
 ```
 
-### Timeout
+### Execution with Timeout
 
-Use `timeout` to avoid runaway runs:
+Use `timeout` to prevent runaway execution:
 
 ```bash
 nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
   -o /tmp/codex_result.txt \
-  "prompt" > /tmp/codex_stdout.log 2>&1 &
+  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
 ```
 
-- Recommended timeout: **30 min** (`30m`)
-- Small tasks: **10 min** (`10m`)
-- Large refactors: **60 min** (`60m`)
+- Recommended timeout: **30 minutes** (`30m`)
+- Small tasks: **10 minutes** (`10m`)
+- Large refactoring: **60 minutes** (`60m`)
 
 ### Continue Other Work While Running
 
-After background run, you may proceed with other tasks without waiting.
-Periodically check process status; when done, read the result and record in episodes/.
+After starting background execution, you may proceed with other tasks without waiting for completion.
+Periodically check whether the process is still alive, and once complete, read the results and record them in episodes/.
 
 ---
 
 ## Safety Guidelines
 
-1. **Always specify working directory** — Otherwise runs in current directory
-2. **Do not include secrets in prompts** — API keys, passwords, etc.
-3. **codex runs in sandbox with `--full-auto`** — Writes outside workspace are restricted
-4. **Check changes with git diff after execution** — Verify no unintended changes
-5. **Use `--ephemeral`** — Prevents session file accumulation
+1. **Always specify the working directory** — if not specified, execution happens in the current directory
+2. **Do not include sensitive information in prompts** — API keys, passwords, etc.
+3. **codex runs in a sandbox with `--full-auto`** — writes outside the workspace are restricted
+4. **Check changes with git diff after execution** — verify there are no unintended changes
+5. **Use --ephemeral** — prevent unnecessary accumulation of session files
 
 ---
 
 ## Fallback Strategy
 
 ```
-1. Try codex exec
-   ↓ failure or poor quality
-2. Retry with cursor-agent -p
-   ↓ failure or poor quality
-3. Final attempt with claude -p (with --max-budget-usd)
-   ↓ still failure
-4. Try yourself or report to supervisor
+1. codex exec で試行
+   ↓ 失敗 or 品質不足
+2. cursor-agent -p で再試行
+   ↓ 失敗 or 品質不足
+3. claude -p（--max-budget-usd でコスト制限）で最終試行
+   ↓ それでも失敗
+4. 自分で実行を試みるか、上司に報告する
 ```
 
 ## Notes
 
-- Subagents cannot access AnimaWorks memory or tools. They are "coding hands" only
-- Record execution results in your episodes/ and accumulate patterns in knowledge/
-- Runs take 5–20+ minutes. Always run in background and set timeout
-- Work in git-tracked repositories (easier tracking and rollback)
-- In Mode S, `ANIMAWORKS_ANIMA_DIR` and `ANIMAWORKS_PROJECT_DIR` are set as environment variables when Bash runs
+- Subagents cannot access AnimaWorks memory or tools. They are merely "coding hands."
+- Record execution results in your own episodes/ and accumulate learned patterns in knowledge/.
+- Execution takes 5 to 20+ minutes. Always run in the background and set a timeout.
+- Work in a git-managed repository (for easy change tracking and rollback).
+- In Mode S, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables during Bash execution (injected via `core/execution/engines/claude/executor.py`'s `_build_env()`).

@@ -12,21 +12,20 @@ remove entries once upstream converges with us.
 
 ---
 
-## 1. `process_model` default stays `legacy`
+## 1. Adopt the v0.15 runtime through a verified migration
 
-**Where:** `core/config/schemas.py` (`ResolvedProcessModelConfig`),
-`core/config/resolver.py` (`resolve_process_model_config`)
+The 2026-10-05 upstream integration adopts the phase3-only runtime. The former
+legacy-default policy is superseded by the owner's explicit migration decision.
+Do not restore removed legacy process branches. Validate settings and data
+migration on an isolated copy before changing the running fleet.
 
-**Upstream:** defaults to `phase3` (task-runner isolation + root DB ownership)
-so new adopters get the new architecture out of the box (upstream `ab0a973a`).
-
-**Us:** defaults to `legacy`.  We run an existing fleet; syncing upstream must
-never implicitly change a running anima's process topology.  Migration is done
-per anima by writing `process_model` into `status.json` explicitly — `phase2`
-and `phase3` remain fully available that way.
-
-**On conflict:** keep `legacy` as the default; take upstream's changes to the
-`phase2`/`phase3` branches themselves.
+Usage Governor remains a deliberate fork feature. Preserve its configuration,
+policy, state, provider-specific activity controls, API and dashboard. The
+upstream `usage_governor_cleanup_20260927` migration is a non-destructive
+compatibility checkpoint in this fork, including when migrations are forced.
+Governor suspensions are transient supervisor state: automatic recovery and
+reconciliation must respect them without changing an Anima's persisted enabled
+setting. Resume clears the suspension before starting the process.
 
 ---
 
@@ -94,7 +93,7 @@ the psutil probe.  Preserve the three-valued result (`True`/`False`/`None`):
 
 ## 5. `DigitalAnima` import in the runner stays deferred
 
-**Where:** `core/supervisor/runner.py`
+**Where:** `core/runtime/runner.py`
 
 **Upstream:** imports `DigitalAnima` at module level.
 

@@ -9,7 +9,6 @@ version, last_used) — Issue: memory-system-symmetry-and-skill-vector-search.
 
 Tests cover:
 - Knowledge metadata creation via consolidation
-- update_knowledge_metadata helper
 - report_knowledge_outcome handler
 - Knowledge protection in forgetting
 - Knowledge reconsolidation targets
@@ -21,6 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 # ── Fixtures ────────────────────────────────────────────────────
 
 
@@ -31,6 +32,8 @@ def anima_dir(tmp_path: Path) -> Path:
     for sub in ("knowledge", "episodes", "skills", "procedures", "state", "shortterm", "activity_log", "archive"):
         (d / sub).mkdir(parents=True)
     return d
+
+
 def _write_knowledge(
     anima_dir: Path,
     name: str,
@@ -87,39 +90,6 @@ class TestMemoryManagerKnowledgeHelpers:
         assert meta.get("success_count", 0) == 0
         assert meta.get("failure_count", 0) == 0
 
-    def test_update_knowledge_metadata_merges(self, anima_dir: Path) -> None:
-        from core.memory.manager import MemoryManager
-
-        _write_knowledge(
-            anima_dir,
-            "topic.md",
-            "body text",
-            {
-                "confidence": 0.7,
-                "success_count": 0,
-                "failure_count": 0,
-                "version": 1,
-            },
-        )
-        mm = MemoryManager(anima_dir)
-        target = anima_dir / "knowledge" / "topic.md"
-        mm.update_knowledge_metadata(target, {"success_count": 5, "last_used": "now"})
-
-        meta = mm.read_knowledge_metadata(target)
-        assert meta["success_count"] == 5
-        assert meta["last_used"] == "now"
-        assert meta["confidence"] == 0.7  # unchanged
-
-    def test_update_knowledge_metadata_relative_path(self, anima_dir: Path) -> None:
-        from core.memory.manager import MemoryManager
-
-        _write_knowledge(anima_dir, "rel.md", "body", {"confidence": 0.5})
-        mm = MemoryManager(anima_dir)
-        mm.update_knowledge_metadata(Path("rel.md"), {"failure_count": 3})
-
-        meta = mm.read_knowledge_metadata(anima_dir / "knowledge" / "rel.md")
-        assert meta["failure_count"] == 3
-
 
 # ── 2. report_knowledge_outcome handler ────────────────────────
 
@@ -127,7 +97,7 @@ class TestMemoryManagerKnowledgeHelpers:
 class TestReportKnowledgeOutcome:
     def _make_handler(self, anima_dir: Path):
         """Create a minimal ToolHandler for testing."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
         from core.tooling.handler import ToolHandler
 
@@ -225,25 +195,25 @@ class TestReportKnowledgeOutcome:
 
 class TestKnowledgeForgettingProtection:
     def test_success_count_2_is_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": 2}) is True
 
     def test_success_count_1_is_not_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": 1}) is False
 
     def test_important_tag_is_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"importance": "important"}) is True
 
     def test_knowledge_type_routes_to_protection(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert (
@@ -257,7 +227,7 @@ class TestKnowledgeForgettingProtection:
         )
 
     def test_knowledge_no_protection_by_default(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert (
@@ -272,7 +242,7 @@ class TestKnowledgeForgettingProtection:
 
     def test_success_count_string_coercion(self, anima_dir: Path) -> None:
         """ChromaDB may return metadata values as strings."""
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": "3"}) is True
@@ -284,9 +254,9 @@ class TestKnowledgeForgettingProtection:
 class TestKnowledgeReconsolidation:
     @pytest.fixture
     def engine(self, anima_dir: Path):
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
+        from core.memory.maintenance.reconsolidation import ReconsolidationEngine
         from core.memory.manager import MemoryManager
-        from core.memory.reconsolidation import ReconsolidationEngine
 
         mm = MemoryManager(anima_dir)
         al = ActivityLogger(anima_dir)
@@ -333,8 +303,7 @@ class TestKnowledgeReconsolidation:
 
     @pytest.mark.asyncio
     async def test_triggers_below_threshold(self, anima_dir: Path, engine) -> None:
-        # With the relaxed condition (failure_count >= 1 or confidence < 0.6),
-        # a single failure at low confidence is now a target.
+        # A single unprocessed failure is sufficient, independent of confidence.
         _write_knowledge(
             anima_dir,
             "borderline.md",
@@ -364,11 +333,7 @@ class TestKnowledgeReconsolidation:
 
 
 class TestIndexerMetadataExtraction:
-    def test_extracts_failure_tracking_fields(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
+    def test_extracts_failure_tracking_fields(self, tmp_path: Path) -> None:
         """Verify that indexing picks up the new tracking fields in ChromaDB."""
         pytest.importorskip("chromadb")
         pytest.importorskip("sentence_transformers")
@@ -406,18 +371,8 @@ class TestIndexerMetadataExtraction:
             from core.memory.rag.indexer import MemoryIndexer
             from core.memory.rag.store import ChromaVectorStore
 
-            store = ChromaVectorStore(persist_dir=a_dir / "vectordb")
-            indexer = MemoryIndexer(
-                store,
-                "idx_test",
-                a_dir,
-                embedding_model=object(),
-            )
-            monkeypatch.setattr(
-                indexer,
-                "_generate_embeddings",
-                lambda texts: [[0.1] * 384 for _ in texts],
-            )
+            store = ChromaVectorStore(persist_dir=a_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
+            indexer = MemoryIndexer(store, "idx_test", a_dir)
             total = indexer.index_directory(a_dir / "knowledge", "knowledge").chunks_indexed
             assert total > 0
 

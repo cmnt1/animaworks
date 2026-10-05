@@ -26,7 +26,7 @@ from core.config.schemas import (
     LlmRateGuardConfig,
 )
 from core.exceptions import LLMAPIError
-from core.execution.rate_guard import LlmRateGuard
+from core.llm.guard.rate_guard import LlmRateGuard
 from core.schemas import ModelConfig
 from tests.helpers.mocks import make_litellm_response
 
@@ -40,7 +40,7 @@ class _RateLimit429(Exception):
 @pytest.fixture
 def shared_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect the runtime data dir and reset the guard singleton/config cache."""
-    import core.execution.rate_guard as rate_guard
+    import core.llm.guard.rate_guard as rate_guard
     from core.config import invalidate_cache
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
@@ -52,7 +52,7 @@ def shared_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _make_executor(anima_dir: Path):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
     from core.memory import MemoryManager
     from core.tooling.handler import ToolHandler
 
@@ -72,7 +72,6 @@ def _make_executor(anima_dir: Path):
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
     tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
     return LiteLLMExecutor(
@@ -93,7 +92,7 @@ async def test_rate_error_records_block_in_shared_file(shared_data_dir: Path) ->
     mock = AsyncMock(side_effect=_RateLimit429())
 
     with (
-        patch("core.execution.litellm_loop.decorrelated_jitter", return_value=0.0),
+        patch("core.execution.engines.litellm.executor.decorrelated_jitter", return_value=0.0),
         patch("litellm.acompletion", mock),
         pytest.raises(LLMAPIError),
     ):
@@ -112,7 +111,7 @@ async def test_guarded_family_start_continues_not_deferred(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # A peer process has already recorded a block on the API realm.
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     get_rate_guard().report_block("anthropic:api", 300, "rate_limit")
     assert get_rate_guard().blocked_remaining("anthropic:api") > 0
@@ -141,7 +140,7 @@ def test_cross_process_writes_stay_valid(shared_data_dir: Path) -> None:
         from pathlib import Path
         sys.path.insert(0, {str(Path.cwd())!r})
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         family = sys.argv[1]
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=Path({str(guard_path)!r}))
@@ -179,7 +178,7 @@ def test_grok_quota_block_selects_sonnet_fallback(
     shared_data_dir: Path,
 ) -> None:
     from core.config.model_config import resolve_effective_model_config
-    from core.execution.grok_cli import _grok_error_metadata
+    from core.execution.engine_base import engine_error_metadata
 
     primary = ModelConfig(
         model="grok/grok-4.5",
@@ -196,7 +195,12 @@ def test_grok_quota_block_selects_sonnet_fallback(
     message = "API error (status 402 Payment Required): Grok Build usage balance exhausted"
 
     with patch("core.config.io.load_config", return_value=config):
-        metadata = _grok_error_metadata(message, primary.model)
+        metadata = engine_error_metadata(
+            message,
+            mode="X",
+            model=primary.model,
+            always_terminal=True,
+        )
         effective = resolve_effective_model_config(primary)
 
     state = json.loads(_guard_file(shared_data_dir).read_text(encoding="utf-8"))

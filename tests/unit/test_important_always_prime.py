@@ -22,7 +22,7 @@ from core.memory.priming import (
 from core.memory.priming.channel_c import extract_summary
 from core.memory.rag.retriever import MemoryRetriever
 from core.memory.rag.store import ChromaVectorStore, Document, SearchResult
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 # ── ChromaVectorStore.get_by_metadata ────────────────────────────────────────
 
@@ -210,7 +210,9 @@ class TestChannelC0ImportantKnowledge:
             engine = PrimingEngine(temp_anima_dir)
             result = await engine._channel_c0_important_knowledge()
 
-        assert "### [IMPORTANT] Knowledge (summary pointers)" in result
+        from core.i18n import t
+
+        assert t("priming.important_knowledge_header") in result
         assert "My Important Rule" in result
         assert "knowledge/rule-a.md" in result
         assert "📌" in result

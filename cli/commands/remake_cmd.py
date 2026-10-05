@@ -119,7 +119,7 @@ def _run(args: argparse.Namespace) -> None:
     # ── Resolve prompt (style-aware) ──
     prompt = args.prompt
     if prompt is None:
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = _resolve_prompt(target_dir, style=image_style)
         if not prompt:
@@ -208,7 +208,7 @@ def _run(args: argparse.Namespace) -> None:
 
     # ── Run pipeline ──
     from core.config.models import ImageGenConfig, load_config
-    from core.tools.image_gen import ImageGenPipeline
+    from core.integrations.image_gen import ImageGenPipeline
 
     try:
         image_config = load_config().image_gen.model_copy(update={"image_style": image_style})

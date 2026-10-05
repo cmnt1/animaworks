@@ -25,8 +25,9 @@ pytestmark = pytest.mark.skipif(not CHROMADB_AVAILABLE, reason="chromadb not ins
 @pytest.fixture
 def store(tmp_path: Path):
     from core.memory.rag.store import ChromaVectorStore
+    from core.memory.rag.direct_access import OWNER_CAPABILITY
 
-    s = ChromaVectorStore(persist_dir=tmp_path / "vectordb", anima_name="testanima")
+    s = ChromaVectorStore(persist_dir=tmp_path / "vectordb", anima_name="testanima", allow_direct=OWNER_CAPABILITY)
     yield s
     s.close()
 

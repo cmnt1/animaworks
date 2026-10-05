@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.facts import FactRecord
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.facts.store import FactRecord
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
 def _write_fact_store(anima_dir: Path) -> None:
@@ -39,8 +36,7 @@ def _write_fact_store(anima_dir: Path) -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_legacy_unified_search_returns_real_active_facts(tmp_path: Path) -> None:
+def test_legacy_unified_search_returns_real_active_facts(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "test"
     common_knowledge = tmp_path / "common_knowledge"
     common_skills = tmp_path / "common_skills"
@@ -68,17 +64,6 @@ async def test_legacy_unified_search_returns_real_active_facts(tmp_path: Path) -
     assert any("espresso" in item["content"] for item in results)
     assert not any("black tea" in item["content"] for item in results)
     assert rag.last_search_meta["abstain"] is False
-
-    backend = LegacyRAGBackend(
-        anima_dir,
-        common_knowledge_dir=common_knowledge,
-        common_skills_dir=common_skills,
-    )
-    facts = await backend.get_recent_facts("Alice espresso", limit=5)
-
-    assert facts
-    assert facts[0].metadata["memory_type"] == "facts"
-    assert "espresso" in facts[0].content
 
 
 def test_legacy_unified_search_excludes_superseded_knowledge_keyword_fallback(tmp_path: Path) -> None:

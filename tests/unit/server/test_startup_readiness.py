@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core import startup_progress
 from core.auth.models import AuthConfig
+from core.infra import startup_progress
 
 _LOCAL_TRUST_AUTH = AuthConfig(auth_mode="local_trust")
 
@@ -137,7 +137,7 @@ async def test_spawning_workers_can_embed_before_public_readiness(data_dir: Path
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
     with (
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
-        patch("core.memory.rag.singleton.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
     ):
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
@@ -157,7 +157,7 @@ async def test_internal_endpoints_remain_gated_before_worker_startup(data_dir: P
     startup_progress.begin_startup("booting")
     startup_progress.set_phase(phase)
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
     assert resp.status_code == 503
@@ -181,7 +181,7 @@ async def test_spawning_internal_exception_requires_safe_local_request(
     startup_progress.begin_startup("booting")
     startup_progress.set_phase("spawning_animas")
     transport = ASGITransport(app=app, client=(peer, 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url=base_url) as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]}, headers=headers)
     assert resp.status_code == 503
@@ -198,7 +198,7 @@ async def test_spawning_internal_exception_preserves_authentication(data_dir: Pa
     auth = AuthConfig(auth_mode="password", trust_localhost=False)
     with (
         patch("server.app.load_auth", return_value=auth),
-        patch("core.memory.rag.singleton.thread_safe_encode") as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode") as encode,
     ):
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
@@ -220,7 +220,7 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
     indexer = MemoryIndexer.__new__(MemoryIndexer)
     indexer.collection_prefix = "shared"
 
-    def preflight(**_kwargs):
+    def preflight():
         assert app.state.worker_services_ready is False
 
     app.state.startup_preflight_runner = preflight
@@ -239,11 +239,9 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
         assert public.status_code == 503
 
     with (
-        patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
         patch("server.app._startup_animas_background", side_effect=spawn_and_catchup) as spawn,
-        patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
-        patch("core.memory.rag.singleton.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
     ):
         await _run_startup_initialization(app)
     spawn.assert_awaited_once()
@@ -259,7 +257,7 @@ async def test_post_preflight_failure_revokes_worker_service_readiness(data_dir:
 
     app = _make_app(data_dir)
     startup_progress.begin_startup("booting")
-    app.state.startup_preflight_runner = lambda **_kwargs: None
+    app.state.startup_preflight_runner = lambda: None
 
     async def fail_after_preflight(_app, **_kwargs):
         assert app.state.worker_services_ready is True
@@ -268,7 +266,6 @@ async def test_post_preflight_failure_revokes_worker_service_readiness(data_dir:
         raise RuntimeError("worker startup failed")
 
     with (
-        patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
         patch("server.app._startup_animas_background", side_effect=fail_after_preflight),
     ):
         if cancel:
@@ -292,7 +289,7 @@ async def test_failed_phase_cannot_use_a_stale_worker_ready_flag(data_dir: Path)
     startup_progress.begin_startup("booting")
     startup_progress.set_phase("failed")
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             response = await client.post("/api/internal/embed", json={"texts": ["memory"]})
     assert response.status_code == 503
@@ -304,13 +301,11 @@ async def test_startup_initialization_failure_sets_failed_and_server_survives(da
     from server.app import _run_startup_initialization
 
     app = _make_app(data_dir)
-    app.state.vector_worker = None
 
-    def fail_preflight(*, force_all_vectordb: bool = False) -> None:
+    def fail_preflight() -> None:
         raise RuntimeError("preflight exploded")
 
     app.state.startup_preflight_runner = fail_preflight
-    app.state.force_startup_repair_all_vectordb = False
 
     startup_progress.begin_startup("booting")
     await _run_startup_initialization(app)

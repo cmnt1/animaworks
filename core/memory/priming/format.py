@@ -13,10 +13,10 @@ from core.i18n import t
 from core.memory.priming.result import PrimingResult
 
 
-def _wrap(result: PrimingResult, channel: str, source: str, content: str, *, trust: str = "mixed", **kwargs) -> str:
+def _wrap(source: str, content: str, *, trust: str = "mixed", **kwargs) -> str:
     """Wrap one channel's content verbatim in a ``<priming>`` boundary."""
     # Imported lazily to avoid a circular import during module load.
-    from core.execution._sanitize import wrap_priming
+    from core.trust import wrap_priming
 
     if not content:
         return ""
@@ -38,9 +38,19 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         Formatted markdown section, or empty string if no memories primed
     """
     # Imported lazily to avoid a circular import during module load.
-    from core.execution._sanitize import ORIGIN_CONSOLIDATION, ORIGIN_MIXED, wrap_priming
+    from core.trust import ORIGIN_CONSOLIDATION, ORIGIN_MIXED, wrap_priming
 
-    if result.is_empty():
+    content_fields = (
+        result.sender_profile,
+        result.resident_knowledge,
+        result.recent_activity,
+        result.related_knowledge,
+        result.related_knowledge_untrusted,
+        result.pending_tasks,
+        result.recent_outbound,
+        result.episodes,
+    )
+    if result.is_empty() or not any(value.strip() for value in content_fields):
         return ""
 
     parts: list[str] = []
@@ -49,31 +59,29 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
     parts.append(t("priming.section_intro"))
     parts.append("")
 
-    if result.sender_profile:
+    if result.sender_profile.strip():
         parts.append(t("priming.about_sender", sender_name=sender_name))
         parts.append("")
-        parts.append(_wrap(result, "sender_profile", "sender_profile", result.sender_profile, trust="medium"))
+        parts.append(_wrap("sender_profile", result.sender_profile, trust="medium"))
         parts.append("")
 
-    if result.resident_knowledge:
+    if result.resident_knowledge.strip():
         parts.append(wrap_priming("resident_knowledge", result.resident_knowledge, trust="medium"))
         parts.append("")
 
-    if result.recent_activity:
+    if result.recent_activity.strip():
         parts.append(t("priming.recent_activity_header"))
         parts.append("")
-        parts.append(_wrap(result, "recent_activity", "recent_activity", result.recent_activity, trust="untrusted"))
+        parts.append(_wrap("recent_activity", result.recent_activity, trust="untrusted"))
         parts.append("")
 
-    if result.related_knowledge or result.related_knowledge_untrusted:
+    if result.related_knowledge.strip() or result.related_knowledge_untrusted.strip():
         parts.append(t("priming.related_knowledge_header"))
         parts.append("")
-        if result.related_knowledge:
+        if result.related_knowledge.strip():
             medium_kwargs = {"origin": ORIGIN_CONSOLIDATION} if result.related_knowledge_untrusted else {}
             parts.append(
                 _wrap(
-                    result,
-                    "related_knowledge",
                     "related_knowledge",
                     result.related_knowledge,
                     trust="medium",
@@ -81,11 +89,9 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
                 )
             )
             parts.append("")
-        if result.related_knowledge_untrusted:
+        if result.related_knowledge_untrusted.strip():
             parts.append(
                 _wrap(
-                    result,
-                    "related_knowledge_untrusted",
                     "related_knowledge_external",
                     result.related_knowledge_untrusted,
                     trust="untrusted",
@@ -94,24 +100,20 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
             )
             parts.append("")
 
-    if result.episodes:
+    if result.episodes.strip():
         parts.append(t("priming.episodes_header"))
         parts.append("")
-        parts.append(_wrap(result, "episodes", "episodes", result.episodes, trust="medium"))
+        parts.append(_wrap("episodes", result.episodes, trust="medium"))
         parts.append("")
 
-    if result.pending_tasks:
+    if result.pending_tasks.strip():
         parts.append(t("priming.pending_tasks_header"))
         parts.append("")
-        parts.append(_wrap(result, "pending_tasks", "pending_tasks", result.pending_tasks, trust="medium"))
+        parts.append(_wrap("pending_tasks", result.pending_tasks, trust="medium"))
         parts.append("")
 
-    if result.recent_outbound:
-        parts.append(_wrap(result, "recent_outbound", "recent_outbound", result.recent_outbound, trust="trusted"))
-        parts.append("")
-
-    if result.graph_context:
-        parts.append(_wrap(result, "graph_context", "graph_context", result.graph_context, trust="medium"))
+    if result.recent_outbound.strip():
+        parts.append(_wrap("recent_outbound", result.recent_outbound, trust="trusted"))
         parts.append("")
 
     return "\n".join(parts)

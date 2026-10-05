@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _PermissionsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,27 +12,20 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import re
-import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.config.models import PermissionsConfig, load_permissions
-from core.config.schemas import command_deny_matches
-from core.file_access_policy import (
+from core.config.file_access_policy import (
+    FileAccessContext,
+    FileAccessDecision,
     effective_write_roots,
+    evaluate_file_access,
     find_denied_root,
-    find_internal_cache_root,
     resolve_effective_denied_roots,
 )
+from core.config.models import PermissionsConfig, load_permissions
 from core.i18n import t
-from core.tooling.handler_base import (
-    _error_result,
-    _get_blocked_patterns,
-    _get_injection_re,
-    _is_global_permissions_write_blocked,
-    _is_protected_write,
-)
+from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
     from core.memory import MemoryManager
@@ -57,14 +54,14 @@ class PermissionsMixin:
 
     # ── check_permissions handler ────────────────────────────
 
-    def _handle_check_permissions(self, args: dict[str, Any]) -> str:
+    def _handle_check_permissions(self: _PermissionsHost, args: dict[str, Any]) -> str:
         """Return a summary of what tools, external tools, and file access this anima has."""
         internal_tools = sorted(self._dispatch.keys())
 
         external_enabled: list[str] = []
         external_available: list[str] = []
         try:
-            from core.tools import TOOL_MODULES
+            from core.tooling.policy.registry import TOOL_MODULES
 
             all_categories = sorted(TOOL_MODULES.keys())
             for cat in all_categories:
@@ -89,8 +86,6 @@ class PermissionsMixin:
             file_read.append(t("handler.descendant_activity"))
         if self._descendant_state_files:
             file_read.append(t("handler.descendant_state"))
-        if self._descendant_state_dirs:
-            file_read.append(t("handler.descendant_pending"))
         if self._peer_activity_dirs:
             file_read.append(t("handler.peer_activity"))
 
@@ -134,7 +129,7 @@ class PermissionsMixin:
 
     # ── Tool creation permission ─────────────────────────────
 
-    def _check_tool_creation_permission(self, kind: str) -> bool:
+    def _check_tool_creation_permission(self: _PermissionsHost, kind: str) -> bool:
         """Check if tool creation is permitted via permissions config."""
         if self._memory is None:
             return False
@@ -148,11 +143,11 @@ class PermissionsMixin:
 
     # ── Permission helpers ───────────────────────────────────
 
-    def _load_permissions_config(self) -> PermissionsConfig:
+    def _load_permissions_config(self: _PermissionsHost) -> PermissionsConfig:
         """Load PermissionsConfig from permissions.json (with migration fallback)."""
         return load_permissions(self._anima_dir)
 
-    def _resolved_file_deny_roots(self, config: PermissionsConfig | None = None) -> tuple[Path, ...]:
+    def _resolved_file_deny_roots(self: _PermissionsHost, config: PermissionsConfig | None = None) -> tuple[Path, ...]:
         """Return canonical configured and company-derived deny roots."""
         if self._superuser:
             return ()
@@ -160,7 +155,7 @@ class PermissionsMixin:
         return resolve_effective_denied_roots(self._anima_dir, effective_config.file_roots_denied)
 
     def _find_denied_file_root(
-        self,
+        self: _PermissionsHost,
         path: str | Path,
         denied_roots: tuple[Path, ...] | None = None,
     ) -> Path | None:
@@ -171,7 +166,7 @@ class PermissionsMixin:
         return find_denied_root(path, roots)
 
     def _check_file_permission(
-        self,
+        self: _PermissionsHost,
         path: str,
         *,
         write: bool = False,
@@ -184,197 +179,151 @@ class PermissionsMixin:
         Returns ``None`` if allowed, or an error message string if denied.
         """
         if self._superuser:
+            context = FileAccessContext(
+                anima_dir=self._anima_dir,
+                data_dir=self._anima_dir.resolve().parent.parent,
+                superuser=True,
+            )
+        else:
+            effective_config = config or self._load_permissions_config()
+            effective_denied_roots = (
+                denied_roots if denied_roots is not None else self._resolved_file_deny_roots(effective_config)
+            )
+
+            from core.paths import get_data_dir
+
+            data_dir = get_data_dir().resolve()
+            write_roots = effective_write_roots(self._anima_dir, effective_config.file_roots) if write else ()
+            additional_read_dirs: list[Path] = []
+            if not write:
+                from core.paths import (
+                    get_common_knowledge_dir,
+                    get_common_skills_dir,
+                    get_company_dir,
+                    get_reference_dir,
+                    get_shared_dir,
+                )
+
+                for shared_dir in (
+                    get_shared_dir(),
+                    get_common_knowledge_dir(),
+                    get_common_skills_dir(),
+                    get_reference_dir(),
+                    get_company_dir(),
+                ):
+                    if shared_dir.exists():
+                        additional_read_dirs.append(shared_dir.resolve())
+
+                # External skill roots (host ~/.claude/skills etc.) are
+                # read-only and surfaced via external/<engine>/<name>/SKILL.md.
+                try:
+                    from core.config.models import load_config
+
+                    for root in load_config().skills.external_roots:
+                        if not getattr(root, "enabled", True):
+                            continue
+                        root_dir = Path(root.path).expanduser().resolve()
+                        if root_dir.exists():
+                            additional_read_dirs.append(root_dir)
+                except Exception:
+                    logger.debug("external_roots check skipped", exc_info=True)
+
+            context = FileAccessContext(
+                anima_dir=self._anima_dir.resolve(),
+                data_dir=data_dir,
+                denied_roots=effective_denied_roots,
+                file_roots=tuple(effective_config.file_roots),
+                file_roots_readonly=tuple(effective_config.file_roots_readonly),
+                write_roots=tuple(write_roots),
+                restrict_reads_to_roots=True,
+                additional_read_dirs=tuple(additional_read_dirs),
+                subordinate_activity_dirs=tuple(path.resolve() for path in self._subordinate_activity_dirs),
+                descendant_activity_dirs=tuple(path.resolve() for path in self._descendant_activity_dirs),
+                peer_activity_dirs=tuple(path.resolve() for path in self._peer_activity_dirs),
+                subordinate_management_files=tuple(path.resolve() for path in self._subordinate_management_files),
+                subordinate_root_dirs=tuple(path.resolve() for path in self._subordinate_root_dirs),
+                descendant_read_files=tuple(path.resolve() for path in self._descendant_state_files),
+                descendant_read_dirs=tuple(path.resolve() for path in self._descendant_state_dirs),
+                trusted_internal_cache_write=trusted_internal_cache_write,
+            )
+
+        decision = evaluate_file_access(path, context, write=write)
+        return self._file_access_error(path, decision)
+
+    def _file_access_error(self: _PermissionsHost, path: str, decision: FileAccessDecision) -> str | None:
+        """Convert the shared policy decision to ToolHandler's JSON error format."""
+        if decision.allowed:
             return None
-        resolved = Path(path).resolve()
-        effective_config = config or self._load_permissions_config()
-        effective_denied_roots = (
-            denied_roots if denied_roots is not None else self._resolved_file_deny_roots(effective_config)
-        )
 
-        # When explicit file deny is enabled, model-facing tools must not
-        # expose internal copies/caches that can retain content from a denied
-        # source.  Trusted search services may consume these caches, but their
-        # filtered results are returned through separate handlers.
-        if effective_denied_roots and not (write and trusted_internal_cache_write):
-            internal_cache = find_internal_cache_root(path, self._anima_dir)
-            if internal_cache is not None:
-                logger.warning(
-                    "permission_denied anima=%s path=%s reason=internal_cache root=%s",
-                    self._anima_name,
-                    path,
-                    internal_cache,
-                )
-                return _error_result(
-                    "PermissionDenied",
-                    f"Direct access to internal runtime cache is not allowed: '{path}'",
-                    context={"system_denied_root": str(internal_cache)},
-                )
-
-        # Explicit denies are the primary boundary and override every normal
-        # grant below, including own/shared/supervisor paths and file_roots=["/"].
-        denied = self._find_denied_file_root(resolved, effective_denied_roots)
-        if denied is not None:
+        if decision.reason == "internal_cache":
+            logger.warning(
+                "permission_denied anima=%s path=%s reason=internal_cache root=%s",
+                self._anima_name,
+                path,
+                decision.internal_cache_root,
+            )
+            return _error_result(
+                "PermissionDenied",
+                f"Direct access to internal runtime cache is not allowed: '{path}'",
+                context={"system_denied_root": str(decision.internal_cache_root)},
+            )
+        if decision.reason == "denied_root":
             logger.warning(
                 "permission_denied anima=%s path=%s reason=file_root_denied root=%s",
                 self._anima_name,
                 path,
-                denied,
+                decision.denied_root,
             )
             return _error_result(
                 "PermissionDenied",
                 f"'{path}' is under an explicitly denied directory",
-                context={"denied_root": str(denied)},
+                context={"denied_root": str(decision.denied_root)},
             )
-
-        if write:
-            gp_err = _is_global_permissions_write_blocked(resolved)
-            if gp_err:
-                logger.warning(
-                    "permission_denied anima=%s path=%s reason=global_permissions_protected", self._anima_name, path
-                )
-                return gp_err
-            write_roots = effective_write_roots(self._anima_dir, effective_config.file_roots)
-        else:
-            write_roots = ()
-
-        # Own anima_dir
-        if resolved.is_relative_to(self._anima_dir.resolve()):
-            if write:
-                err = _is_protected_write(self._anima_dir, resolved)
-                if err:
-                    logger.warning("permission_denied anima=%s path=%s reason=protected_file", self._anima_name, path)
-                    return err
-            return None
-
-        # Supervisor can read direct subordinate's activity_log (work records)
-        if not write:
-            for sub_activity in self._subordinate_activity_dirs:
-                if resolved.is_relative_to(sub_activity):
-                    return None
-
-        # Supervisor can read any descendant's activity_log
-        if not write:
-            for desc_activity in self._descendant_activity_dirs:
-                if resolved.is_relative_to(desc_activity):
-                    return None
-
-        # Peers (same supervisor) can read each other's activity_log
-        if not write:
-            for peer_activity in self._peer_activity_dirs:
-                if resolved.is_relative_to(peer_activity):
-                    return None
-
-        # Supervisor can read any descendant's state files
-        if not write:
-            for desc_state in self._descendant_state_files:
-                if resolved == desc_state:
-                    return None
-
-        # Supervisor can read any descendant's state/pending/ and state/plans/ directories
-        if not write:
-            for desc_state_dir in self._descendant_state_dirs:
-                if resolved.is_relative_to(desc_state_dir):
-                    return None
-
-        # Supervisor can read/write subordinate's management files
-        for mgmt_file in self._subordinate_management_files:
-            if resolved == mgmt_file:
-                return None
-
-        # Supervisor can list direct subordinate's root directory
-        if not write:
-            for sub_root in self._subordinate_root_dirs:
-                if resolved == sub_root:
-                    return None
-
-        # Framework shared directories — read-only for all Animas
-        if not write:
-            from core.paths import (
-                get_common_knowledge_dir,
-                get_common_skills_dir,
-                get_company_dir,
-                get_reference_dir,
-                get_shared_dir,
+        if decision.reason == "global_permissions":
+            logger.warning(
+                "permission_denied anima=%s path=%s reason=global_permissions_protected",
+                self._anima_name,
+                path,
             )
-
-            for shared_dir in (
-                get_shared_dir(),
-                get_common_knowledge_dir(),
-                get_common_skills_dir(),
-                get_reference_dir(),
-                get_company_dir(),
-            ):
-                if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
-                    return None
-            # External skill roots (host ~/.claude/skills etc.) — read-only,
-            # surfaced via the external/<engine>/<name>/SKILL.md pointer.
-            try:
-                from core.config.models import load_config
-
-                for root in load_config().skills.external_roots:
-                    if not getattr(root, "enabled", True):
-                        continue
-                    rdir = Path(root.path).expanduser().resolve()
-                    if rdir.exists() and resolved.is_relative_to(rdir):
-                        return None
-            except Exception:
-                logger.debug("external_roots check skipped", exc_info=True)
-
-        # Inter-anima boundary: block access to other anima's directories
-        # that were not already allowed by subordinate/descendant/peer rules.
-        animas_root = self._anima_dir.resolve().parent
-        if resolved.is_relative_to(animas_root) and not resolved.is_relative_to(self._anima_dir.resolve()):
+            return _error_result(
+                "PermissionDenied",
+                "permissions.global.json is a protected system file and cannot be modified by the anima itself",
+            )
+        if decision.reason == "protected_file":
+            logger.warning("permission_denied anima=%s path=%s reason=protected_file", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{decision.protected_path}' is a protected file and cannot be modified by the anima itself",
+            )
+        if decision.reason == "protected_directory":
+            logger.warning("permission_denied anima=%s path=%s reason=protected_directory", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{decision.protected_path}/' is a protected directory and cannot be modified by the anima itself",
+            )
+        if decision.reason == "other_anima":
             logger.warning("permission_denied anima=%s path=%s reason=other_anima_dir", self._anima_name, path)
             return _error_result(
                 "PermissionDenied",
                 f"Access to other anima's directory is not allowed: {path}",
             )
-
-        # file_roots == ["/"]: allow all (after protected file check)
-        if effective_config.file_roots == ["/"]:
-            return None
-
-        # Otherwise: check if path is under an effective writable root.
-        allowed_dirs = (
-            list(write_roots)
-            if write
-            else [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
-        )
-        for allowed in allowed_dirs:
-            if resolved.is_relative_to(allowed):
-                return None
-
-        # file_roots == []: only anima_dir + framework shared dirs (already handled above)
-        if not effective_config.file_roots:
+        if decision.reason == "readonly_dir":
+            logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{path}' is in a read-only directory (write not allowed)",
+                context={"readonly_dir": str(decision.readonly_root)},
+            )
+        if decision.reason == "outside_allowed_dirs":
             logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
             return _error_result(
                 "PermissionDenied",
                 f"'{path}' is not under any allowed directory",
-                context={"allowed_dirs": []},
+                context={"allowed_dirs": [str(root) for root in decision.allowed_dirs]},
             )
+        return _error_result("PermissionDenied", f"Access to file is not allowed: {path}")
 
-        # Check file_roots_readonly — read allowed, write denied
-        readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]
-        for readonly in readonly_dirs:
-            if resolved.is_relative_to(readonly):
-                if write:
-                    logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
-                    return _error_result(
-                        "PermissionDenied",
-                        f"'{path}' is in a read-only directory (write not allowed)",
-                        context={"readonly_dir": str(readonly)},
-                    )
-                return None
-
-        all_allowed = allowed_dirs + readonly_dirs
-        logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
-        return _error_result(
-            "PermissionDenied",
-            f"'{path}' is not under any allowed directory",
-            context={"allowed_dirs": [str(d) for d in all_allowed]},
-        )
-
-    def _check_command_permission(self, command: str) -> str | None:
+    def _check_command_permission(self: _PermissionsHost, command: str) -> str | None:
         """Check if the command is allowed by permissions config and security rules.
 
         Returns ``None`` if allowed, or an error message string if denied.
@@ -385,135 +334,55 @@ class PermissionsMixin:
             logger.warning("permission_denied anima=%s command=<empty>", self._anima_name)
             return _error_result("PermissionDenied", "Empty command")
 
-        # Layer 1: Injection vectors — same rollout switch as the SDK path
-        # (sdk_bash_injection.mode: off / log / enforce, default log).
-        from core.config.global_permissions import GlobalPermissionsCache
-        from core.execution._sdk_security import _log_sdk_bash_injection_hit, _matching_injection_pattern
+        # Single shared command-policy decision function (all layers, same order
+        # as Mode S and the Codex hook).  Loader failures are fail-closed.
+        from core.tooling.policy.command_policy import (
+            evaluate_command,
+            load_command_policy_context,
+            record_injection_hit,
+        )
 
-        cache = GlobalPermissionsCache.get()
-        injection_mode = cache.config.sdk_bash_injection.mode if cache.loaded and cache.config else "log"
-        inj_re = _get_injection_re()
-        if inj_re and injection_mode != "off" and inj_re.search(command):
-            pattern_name = _matching_injection_pattern(command, cache.config)
-            _log_sdk_bash_injection_hit(
-                command,
+        try:
+            ctx = load_command_policy_context(
                 self._anima_dir,
-                pattern_name=pattern_name,
+                cwd=self._task_cwd or self._anima_dir,
+                superuser=self._superuser,
+                permissions=self._load_permissions_config(),
+            )
+        except Exception as exc:
+            logger.error("command_policy load failed anima=%s: %s", self._anima_name, exc, exc_info=True)
+            return _error_result(
+                "PermissionDenied",
+                t("tooling.command_policy_check_failed", error=type(exc).__name__),
+            )
+
+        decision = evaluate_command(command, ctx)
+        if decision.injection_hit:
+            record_injection_hit(
+                command,
+                ctx,
+                pattern_name=decision.injection_hit,
                 trigger=getattr(self, "_trigger", ""),
-                mode=injection_mode,
             )
-            if injection_mode == "enforce":
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=injection_pattern",
-                    self._anima_name,
-                    command[:80],
-                )
-                return _error_result(
-                    "PermissionDenied",
-                    f"Command contains injection pattern: {pattern_name}",
-                    suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid embedded newlines.",
-                )
+        if decision.allowed:
+            return None
 
-        # Layer 2: Dangerous command patterns
-        for pattern, reason in _get_blocked_patterns():
-            if pattern.search(command):
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=blocked_pattern(%s)",
-                    self._anima_name,
-                    command[:80],
-                    reason,
-                )
-                return _error_result("PermissionDenied", reason)
-
-        # Layer 2.6: Recursive searches over the runtime data tree — same guard
-        # as the codex PreToolUse hook. Broad grep/find over ~/.animaworks
-        # (activity_log is >1GB per anima) saturates disk IO fleet-wide
-        # (2026-09-01 storm); non-codex engines bypass the hook, so enforce here.
-        from core.tooling.codex_command_hook import check_recursive_search
-
-        search_reason = check_recursive_search(command, self._anima_dir, self._anima_dir.resolve().parent.parent)
-        if search_reason:
-            logger.warning(
-                "permission_denied anima=%s command=%s reason=broad_recursive_search",
-                self._anima_name,
-                command[:80],
+        logger.warning(
+            "permission_denied anima=%s command=%s reason=%s",
+            self._anima_name,
+            command[:80],
+            decision.layer,
+        )
+        if decision.layer == "injection":
+            return _error_result(
+                "PermissionDenied",
+                decision.reason,
+                suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid embedded newlines.",
             )
-            return _error_result("PermissionDenied", search_reason)
-
-        # Layer 2.5: Per-anima denied commands from permissions config
-        config = self._load_permissions_config()
-        denied_items = config.commands.deny
-        if denied_items:
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-            for segment in segments:
-                try:
-                    seg_argv = shlex.split(segment)
-                except ValueError:
-                    continue
-                if not seg_argv:
-                    continue
-                cmd_base = seg_argv[0]
-                for denied in denied_items:
-                    if command_deny_matches(denied, segment, cmd_base):
-                        logger.warning(
-                            "permission_denied anima=%s command=%s reason=denied_list(%s)",
-                            self._anima_name,
-                            command[:80],
-                            denied,
-                        )
-                        return _error_result(
-                            "PermissionDenied",
-                            f"Command '{cmd_base}' is in denied list ('{denied}')",
-                        )
-
-        # Layer 3: If commands.allow_all is False, check commands.allow whitelist
-        if not config.commands.allow_all:
-            allowed = config.commands.allow
-            if not allowed:
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=cmd_not_enabled", self._anima_name, command[:80]
-                )
-                return _error_result("PermissionDenied", "Command execution not enabled in permissions")
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-            for segment in segments:
-                try:
-                    seg_argv = shlex.split(segment)
-                except ValueError as e:
-                    return _error_result("PermissionDenied", f"Invalid command syntax: {e}")
-                if not seg_argv:
-                    continue
-                cmd_base = seg_argv[0]
-                if cmd_base not in allowed:
-                    logger.warning(
-                        "permission_denied anima=%s command=%s reason=not_in_allowed_list cmd=%s",
-                        self._anima_name,
-                        command[:80],
-                        cmd_base,
-                    )
-                    return _error_result(
-                        "PermissionDenied",
-                        f"Command '{cmd_base}' not in allowed list",
-                        context={"allowed_commands": allowed},
-                    )
-        else:
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()] or [command]
-
-        # Layer 5: Path traversal check on all segments
-        for segment in segments:
-            try:
-                seg_argv = shlex.split(segment)
-            except ValueError:
-                continue
-            for arg in seg_argv[1:]:
-                if ".." in arg:
-                    try:
-                        resolved = (self._anima_dir / arg).resolve()
-                        if not resolved.is_relative_to(self._anima_dir.resolve()):
-                            return _error_result(
-                                "PermissionDenied",
-                                "Command argument resolves outside anima directory",
-                            )
-                    except (ValueError, OSError):
-                        pass
-
-        return None
+        if decision.layer == "allowlist":
+            return _error_result(
+                "PermissionDenied",
+                decision.reason,
+                context={"allowed_commands": ctx.permissions.commands.allow},
+            )
+        return _error_result("PermissionDenied", decision.reason)

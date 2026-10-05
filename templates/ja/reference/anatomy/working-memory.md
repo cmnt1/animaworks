@@ -64,7 +64,7 @@ Anima のワーキングメモリ。「今まさに何をしているか」「�
 
 ### ロック制御
 
-`core/anima.py` の `_state_file_lock`（`asyncio.Lock`）が `current_state.md` への並行書き込みを防止する。
+`core/anima/digital_anima.py` の `_state_file_lock`（`asyncio.Lock`）が `current_state.md` への並行書き込みを防止する。
 
 `_is_state_file(path)` は `state/current_state.md` のみに `True` を返す。`write_memory_file` 経由の書き込みでは、このファイルに対してロックが自動取得される。
 
@@ -85,13 +85,6 @@ Anima のワーキングメモリ。「今まさに何をしているか」「�
 3. `state/pending.md` が存在し内容がある → `current_state.md` に `## Migrated from pending.md` として追記後、削除
 4. `state/pending.md` が空 → 削除
 
-### API
-
-| メソッド | 挙動 |
-|---------|------|
-| `read_pending()` | 常に空文字 `""` を返す。非推奨警告をログ出力 |
-| `update_pending()` | 何もしない（no-op）。非推奨警告をログ出力 |
-
 ---
 
 ## 旧タスクファイル
@@ -104,7 +97,7 @@ Anima のワーキングメモリ。「今まさに何をしているか」「�
 
 受理された結果要約は `state/task_results/{task_id}/{attempt_token}.md`（最大2000文字）に保存される。後続にはホストが選んだ受理済み結果を渡す。古いファイルの存在だけで完了と判断しない。原記録を保存し、結果を書いて成功した試行を装わない。
 
-長時間コマンドツールは別経路のまま。`animaworks-tool submit` は `state/background_tasks/pending/` に投入し、BackgroundTaskManager がコマンド状態・通知を管理する。詳細は `operations/background-tasks.md` と `operations/task-management.md`。
+長時間コマンドツールも TaskStore に `task_type="command"` として登録する。PendingTaskExecutor が試行を取得し、BackgroundTaskManager が実行する。試行は TaskStore に記録され、互換性のため `state/background_tasks/{task_id}.json` と完了通知も維持される。詳細は `operations/background-tasks.md` と `operations/task-management.md`。
 
 ## read_subordinate_state
 

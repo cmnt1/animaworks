@@ -20,9 +20,18 @@ def cursor_agent_auth_dir() -> Path:
     return Path(home) / ".cursor-agent"
 
 
+def find_cursor_agent_binary() -> str | None:
+    """Return the path to the first known cursor-agent CLI binary on PATH."""
+    for name in _CURSOR_AGENT_BINARY_NAMES:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
 def is_cursor_agent_available() -> bool:
     """Return True when any known cursor-agent CLI binary is available on PATH."""
-    return any(shutil.which(name) is not None for name in _CURSOR_AGENT_BINARY_NAMES)
+    return find_cursor_agent_binary() is not None
 
 
 def is_cursor_agent_authenticated() -> bool:

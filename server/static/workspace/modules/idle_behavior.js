@@ -372,7 +372,7 @@ export function cancelBehavior(characterName) {
  * @param {string} characterName
  * @param {boolean} enabled
  */
-export function setBehaviorEnabled(characterName, enabled) {
+function setBehaviorEnabled(characterName, enabled) {
   const rec = _records.get(characterName);
   if (!rec) return;
   rec.enabled = enabled;
@@ -385,7 +385,7 @@ export function setBehaviorEnabled(characterName, enabled) {
  * Enable or disable the entire idle behavior system.
  * @param {boolean} enabled
  */
-export function setGlobalEnabled(enabled) {
+function setGlobalEnabled(enabled) {
   _globalEnabled = enabled;
   if (!enabled) {
     for (const name of _records.keys()) {

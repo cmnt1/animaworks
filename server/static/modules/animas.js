@@ -423,7 +423,7 @@ function statusIndicator(emoji, lucideIcon) {
   return emoji;
 }
 
-export function animaStateClass(anima) {
+function animaStateClass(anima) {
   if (anima.status === "bootstrapping" || anima.bootstrapping) {
     return "anima-item--loading";
   }

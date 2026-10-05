@@ -15,10 +15,10 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
+from core.integrations._async_compat import run_sync
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.time_utils import ensure_aware, now_local, today_local
-from core.tools._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -120,7 +120,7 @@ async def channel_b_recent_activity(
     out so that the limited priming budget contains only actionable
     communication events (messages, channel posts, errors, etc.).
     """
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     denied_roots = load_denied_roots(anima_dir)
     activity = ActivityLogger(anima_dir)
@@ -128,7 +128,7 @@ async def channel_b_recent_activity(
         [] if _tree_intersects_deny(anima_dir / "activity_log", denied_roots) else activity.recent(days=2, limit=100)
     )
 
-    is_background = channel in {"heartbeat", "cron", "inbox", "task"} or channel.startswith("cron:")
+    is_background = channel in {"heartbeat", "cron", "inbox", "task"}
 
     if is_background and entries:
         entries = [e for e in entries if e.type not in _HEARTBEAT_NOISE_TYPES]
@@ -214,7 +214,7 @@ def read_shared_channels(
     Returns:
         List of ActivityEntry from shared channels.
     """
-    from core.memory.activity import ActivityEntry
+    from core.activity.logger import ActivityEntry
 
     if not shared_dir:
         return []
@@ -234,7 +234,7 @@ def read_shared_channels(
     result: list[ActivityEntry] = []
 
     try:
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         for unresolved_channel_file in sorted(resolved_channels_dir.glob("*.jsonl")):
             channel_file = _resolved_readable_path(unresolved_channel_file, effective_denied_roots)
@@ -325,32 +325,13 @@ def read_shared_channels(
     return result
 
 
-def prioritize_entries(
-    entries: list,
-    sender_name: str,
-    keywords: list[str],
-) -> list:
-    """Prioritize activity entries for priming.
-
-    Priority order:
-    1. Own actions (message_sent, response_sent, message_received)
-    2. Entries involving the current sender (most relevant)
-    3. Entries matching keywords (topically relevant)
-    4. Most recent entries (temporal relevance, timestamp-based)
-    """
-    ranked = prioritize_entries_with_ranks(entries, sender_name, keywords)
-    top_entries = [entry for _, entry in ranked]
-    top_entries.sort(key=lambda entry: entry.ts)
-    return top_entries
-
-
 def prioritize_entries_with_ranks(
     entries: list,
     sender_name: str,
     keywords: list[str],
 ) -> list[tuple[float, object]]:
     """Return the existing activity priority score with each selected entry."""
-    from core.memory.activity import ActivityEntry
+    from core.activity.logger import ActivityEntry
 
     keywords_lower = {kw.lower() for kw in keywords} if keywords else set()
 

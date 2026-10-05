@@ -324,6 +324,11 @@ def _probe_openai_compatible(config: Any) -> list[DiscoveredModel]:
     for name, cred in credentials.items():
         base = (getattr(cred, "base_url", None) or "").strip().rstrip("/")
         api_key = (getattr(cred, "api_key", None) or "").strip()
+        if name == "nanogpt":
+            from core.config.nanogpt import nanogpt_api_key
+
+            api_key = nanogpt_api_key(api_key)
+            base = base or "https://nano-gpt.com/api/v1"
         if not base or not api_key:
             continue
         if "openai.azure.com" in base or "api.aws" in base:
@@ -331,9 +336,9 @@ def _probe_openai_compatible(config: Any) -> list[DiscoveredModel]:
         for model in _http_get_models(base, api_key):
             newline_models.append(
                 DiscoveredModel(
-                    id=f"a:openai/{model}",
+                    id=f"a:{'nanogpt' if name == 'nanogpt' else 'openai'}/{model}",
                     mode="a",
-                    model=f"openai/{model}",
+                    model=f"{'nanogpt' if name == 'nanogpt' else 'openai'}/{model}",
                     label=model,
                     group=str(name),
                     source="openai-compatible",

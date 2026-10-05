@@ -19,12 +19,15 @@ from collections.abc import AsyncGenerator, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
+from core.execution.events import done_event, stream_events, text_delta_event
 from core.execution.reminder import SystemReminderQueue
-from core.memory.shortterm import ShortTermMemory
+from core.execution.session.session_store import SessionEngine
+from core.execution.session.session_types import is_resumable_trigger, resolve_runtime_session_type
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -42,8 +45,6 @@ _active_interrupt_event: ContextVar[asyncio.Event | None] = ContextVar(
 
 
 # ── Adaptive Thinking helpers ─────────────────────────────────
-
-_ADAPTIVE_MODELS = frozenset({"claude-opus-4-6", "claude-sonnet-4-6"})
 
 _PROVIDER_PREFIX_RE = re.compile(
     r"^(?:anthropic|bedrock|vertex_ai)/"
@@ -65,9 +66,25 @@ def _bare_model_name(model: str) -> str:
     return stripped
 
 
+# Anthropic model ids: claude-<family>-<major>[-<minor>][-<date>]
+_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+
+
 def is_adaptive_model(model: str) -> bool:
-    """Return True if *model* supports Anthropic adaptive thinking (4.6 series)."""
-    return _bare_model_name(model) in _ADAPTIVE_MODELS
+    """Return True if *model* uses Anthropic adaptive thinking + ``effort``.
+
+    Opus/Sonnet 4.6 and every Opus/Sonnet/Fable/Mythos release from 4.7 on.
+    These reject ``budget_tokens`` (4.7+) and are tuned through ``effort``.
+    """
+    m = _CLAUDE_VERSION_RE.match(_bare_model_name(model))
+    if m is None:
+        return False
+    family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
+    if family == "haiku":
+        return False
+    if (major, minor) >= (4, 7):
+        return True
+    return (major, minor) == (4, 6) and family in ("opus", "sonnet")
 
 
 def is_anthropic_claude(model: str) -> bool:
@@ -126,12 +143,27 @@ def supports_streaming_tool_use(model: str) -> bool:
     return not any(tag in bare for tag in _no_streaming_tool_use)
 
 
+def supports_max_effort(model: str) -> bool:
+    """Return True if *model* accepts ``effort="max"``.
+
+    Among Claude models every adaptive model except Sonnet 4.6 does; Kimi on
+    Bedrock only takes ``"high"``.  Any other model receives the configured
+    value unchanged: an operator who wrote ``"max"`` for e.g. ``gpt-6-luna``
+    or DeepSeek meant it.
+    """
+    if is_bedrock_kimi(model):
+        return False
+    bare = _bare_model_name(model)
+    if not bare.startswith("claude-"):
+        return True
+    return is_adaptive_model(model) and not bare.startswith("claude-sonnet-4-6")
+
+
 def resolve_thinking_effort(model: str, effort: str | None) -> str:
-    """Resolve thinking effort, clamping ``"max"`` to ``"high"`` for non-Opus-4.6."""
+    """Resolve thinking effort, clamping ``"max"`` to ``"high"`` where unsupported."""
     resolved = effort or "high"
-    if resolved == "max":
-        if _bare_model_name(model) != "claude-opus-4-6":
-            return "high"
+    if resolved == "max" and not supports_max_effort(model):
+        return "high"
     return resolved
 
 
@@ -568,12 +600,10 @@ class ExecutionResult:
     text: str
     result_message: SessionResultLike | None = field(default=None, repr=False)
     replied_to_from_transcript: set[str] = field(default_factory=set)
-    unconfirmed_sends: list[dict] = field(default_factory=list)
     tool_call_records: list[ToolCallRecord] = field(default_factory=list)
     force_chain: bool = False
     task_compact_requested: bool = False
     usage: TokenUsage | None = None
-    session_rotated: bool = False
     session_rotation_pending: bool = False
     truncated: bool = False
     error: bool = False
@@ -598,10 +628,17 @@ class BaseExecutor(ABC):
     | shortterm        | no*    | no*    | YES          | no      | YES      |
     +------------------+--------+--------+--------------+---------+----------+
 
-    * S and C session chaining is managed externally by AgentCore.
-      A and Fallback handle session chaining inline via
-      handle_session_chaining().
+    * S and C session state is managed externally by AgentCore.
+      A saves threshold-triggered state for resumption on the next message.
     """
+
+    session_engine: ClassVar[SessionEngine | None] = None
+    tracks_sdk_session_state: ClassVar[bool] = False
+    """Whether this engine owns an SDK session state tracked by ContextTracker."""
+    saves_threshold_shortterm: ClassVar[bool] = False
+    """Whether execute() saves threshold handoff state itself."""
+    wants_structured_history: ClassVar[bool] = False
+    """Whether blocking execution consumes structured prior conversation history."""
 
     def __init__(
         self,
@@ -620,6 +657,40 @@ class BaseExecutor(ABC):
         """Set override cwd for TaskExec sessions."""
         self._task_cwd = cwd
 
+    async def aclear_session(self, trigger: str, thread_id: str = "default") -> None:
+        """Asynchronously clear this executor's persisted session."""
+        if self.session_engine is None:
+            return
+        from core.execution.session.engine_session import aclear_engine_session
+
+        await aclear_engine_session(
+            self._anima_dir,
+            self.session_engine,
+            resolve_runtime_session_type(trigger),
+            thread_id,
+        )
+
+    def clear_session(self, trigger: str, thread_id: str = "default") -> None:
+        """Synchronous compatibility adapter for local callers and tests."""
+        if self.session_engine is None:
+            return
+        from core.execution.session.engine_session import clear_engine_session
+
+        clear_engine_session(
+            self._anima_dir,
+            self.session_engine,
+            resolve_runtime_session_type(trigger),
+            thread_id,
+        )
+
+    def is_resumable(self, trigger: str) -> bool:
+        """Return whether this engine can resume the trigger's session."""
+        return self.session_engine is not None and is_resumable_trigger(trigger)
+
+    def prepare_tracker(self, tracker: ContextTracker, system_prompt: str, prompt: str) -> None:
+        """Prepare context accounting for engine-specific prompt/session state."""
+        return None
+
     def _load_hb_soft_timeout(self) -> int:
         """Load heartbeat soft_timeout_seconds from config (cached at init)."""
         try:
@@ -636,8 +707,8 @@ class BaseExecutor(ABC):
         """Whether this executor supports streaming execution.
 
         Returns True by default.  All executors now implement
-        ``execute_streaming()`` — either token-level (S, S Fallback,
-        A non-Ollama) or iteration-level (A Ollama, B).
+        ``execute_streaming()`` — either token-level (S, A non-Ollama) or
+        iteration-level (A Ollama, B).
         """
         return True
 
@@ -686,7 +757,7 @@ class BaseExecutor(ABC):
         import json as _json
         import logging
 
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         ctx = current_runtime_session()
         if ctx is not None:
@@ -735,19 +806,6 @@ class BaseExecutor(ABC):
                 val = extra.get(key) or os.environ.get(key.upper())
                 if val:
                     kwargs[key] = val
-
-    def _resolve_llm_timeout(self) -> int:
-        """Resolve LLM API call timeout in seconds.
-
-        Priority:
-          1. Explicit ``llm_timeout`` in ModelConfig (per-anima setting)
-          2. Automatic: 300s for ``ollama/`` models, 600s for API models
-        """
-        if self._model_config.llm_timeout is not None:
-            return self._model_config.llm_timeout
-        if self._model_config.model.startswith("ollama/"):
-            return 300
-        return 600
 
     def _resolve_num_retries(self) -> int:
         """Resolve LLM API retry count from ``config.server.llm_num_retries``."""
@@ -806,16 +864,17 @@ class BaseExecutor(ABC):
             system_prompt: Assembled system prompt.
             tracker: Context usage tracker for monitoring window consumption.
             shortterm: Short-term memory for inline session chaining
-                (A / Fallback). S chaining is managed by AgentCore.
+                (A). S chaining is managed by AgentCore.
             trigger: Trigger identifier (e.g. "message:sakura", "heartbeat").
             images: Optional list of image dicts with ``data`` (base64) and
-                ``media_type`` keys. Supported by S Fallback and A modes.
+                ``media_type`` keys. Supported by S and A modes.
 
         Returns:
             ExecutionResult with the response text and optional metadata.
         """
         ...
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,
@@ -857,11 +916,10 @@ class BaseExecutor(ABC):
             prior_messages=prior_messages,
             thread_id=thread_id,
         )
-        yield {"type": "text_delta", "text": result.text}
-        yield {
-            "type": "done",
-            "full_text": result.text,
-            "result_message": result.result_message,
-            "tool_call_records": [asdict(r) for r in result.tool_call_records],
-            "truncated": result.truncated,
-        }
+        yield text_delta_event(result.text)
+        yield done_event(
+            result.text,
+            result_message=result.result_message,
+            tool_call_records=[asdict(r) for r in result.tool_call_records],
+            truncated=result.truncated,
+        )

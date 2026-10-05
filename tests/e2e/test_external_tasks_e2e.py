@@ -9,13 +9,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.external_tasks.models import ExternalTask, Snapshot, SourceHealth
-from core.external_tasks.store import ExternalTaskStore
 from core.paths import get_external_tasks_store_path
-
+from core.tasks.external.models import ExternalTask, Snapshot, SourceHealth
+from core.tasks.external.store import ExternalTaskStore
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -99,9 +97,7 @@ def _write_snapshot(snapshot: Snapshot) -> Path:
 
 
 class TestExternalTasksApiE2E:
-    async def test_snapshot_with_three_sources_and_unavailable(
-        self, data_dir: Path
-    ) -> None:
+    async def test_snapshot_with_three_sources_and_unavailable(self, data_dir: Path) -> None:
         """Real store + real app: data count, meta.sources, last_collected_at."""
         base = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
         collected = base.isoformat()
@@ -110,17 +106,13 @@ class TestExternalTasksApiE2E:
             version=1,
             last_collected_at=collected,
             sources={
-                "github": SourceHealth(
-                    status="ok", collected_at=collected, error=None
-                ),
+                "github": SourceHealth(status="ok", collected_at=collected, error=None),
                 "slack": SourceHealth(
                     status="unavailable",
                     collected_at=prev_slack,
                     error="credential_missing",
                 ),
-                "gmail": SourceHealth(
-                    status="ok", collected_at=collected, error=None
-                ),
+                "gmail": SourceHealth(status="ok", collected_at=collected, error=None),
             },
             tasks=[
                 _task(
@@ -195,12 +187,8 @@ class TestExternalTasksApiE2E:
         app = _create_app(data_dir, anima_names=[])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            by_status = await client.get(
-                "/api/external-tasks", params={"status": "open"}
-            )
-            by_source = await client.get(
-                "/api/external-tasks", params={"source_type": "github"}
-            )
+            by_status = await client.get("/api/external-tasks", params={"status": "open"})
+            by_source = await client.get("/api/external-tasks", params={"source_type": "github"})
 
         assert by_status.status_code == 200
         status_ids = {t["id"] for t in by_status.json()["data"]}

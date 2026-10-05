@@ -7,6 +7,76 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Direct upgrades from runtime versions older than 0.14.0 are no longer supported. Upgrade to 0.14 first, then upgrade to the current version.
+
+## [0.15.0] - 2026-09-29
+
+### Upgrade notes
+
+- Startup migrations rewrite `config.json` and each Anima's `status.json`: Mode `B` becomes `A`, `process_model`, `neo4j`/`memory_backend`, Usage Governor, vector-worker and other retired keys are removed, and runtime prompts are resynced from the shipped templates. Back up `~/.animaworks` before upgrading.
+- Neo4j graph memory is removed. Animas that used `memory_backend: neo4j` return to the file-backed memory with Chroma retrieval; `neo4j_edge_types` moves to `fact_edge_types`.
+- Code importing from `core.tools` keeps working through an alias package, and a migration rewrites references in runtime tools and skills. New code should import from `core.integrations`.
+
+### Added
+
+- Background memory review: after a context compaction, at the end of a task and every 10 chat turns, the background model makes up to 3 knowledge or peer-note updates without blocking the conversation. Peer notes live in `animas/{name}/peers/` and are recalled with the sender profile (priming channel A) for both human and Anima senders.
+- Heartbeat, inbox and cron turns recall up to 5 recent actions and a small amount of related knowledge and episodes (configurable per trigger); `search_memory` with `scope=activity_log` searches the full history, including rotated and compressed logs.
+- Skill ledger: every skill change is recorded and can be rolled back; a skill must be read before it is edited, and automatic processing skips human-authored and pinned skills.
+- Task board for Animas: `animaworks-tool task board|show|claim|release|done|cancel|note` with time-limited leases (default 30 minutes, max 4 hours). Owners triage their own tasks, and the delegating Anima is told by DM when a delegated task is closed.
+- Four-column task board UI (Todo, Running, Waiting, Done) over a single TaskStore view. Archiving is an explicit cancel with a reason.
+- Mid-run compaction of long task sessions, opt in per Anima with `task_compaction_tokens` (default `0` = off) and `task_compaction_max` (default `6`), for Mode S and Mode C.
+- Per-caller internal API tokens and per-endpoint authorization (`server.internal_auth.mode`: `off`, `log` or `enforce`; default `log`, which records denials without blocking).
+- `call_human` asks for a per-session confirmation key on the first call, so the Anima checks whether the matter was already handled elsewhere before notifying a human.
+- First-run setup detects Claude Code and Codex CLI logins, recommends subscription providers, and the leader Anima greets the owner first after setup.
+- Gemini API text-to-speech provider (`gemini`) that streams audio in about one-second segments.
+- `scripts/translate.py` generates en/ko (and zh README) translations of changed sections from the Japanese sources; `--check` verifies freshness in CI without calling a model.
+
+### Changed
+
+- System prompts are shorter without dropping rules (about 20–30% fewer characters per request). Business turns (heartbeat, cron, task, inbox) omit identity sections whose heading matches `prompt.identity_business_exclude_headings` (default: appearance and basic profile); the injection size warning appears only during consolidation; tool guides, the memory guide and the common_knowledge/reference hints are merged and deduplicated; permissions list only non-default constraints; empty priming blocks and empty groups are no longer emitted; org context drops model names and absolute paths; the skill catalog merges entries with the same description and shows at most `prompt.skill_catalog_max_items` (default 3); the resolved-issues registry shows only cases resolved by the Anima, its supervisor or its direct reports; an Anima's own tools are shown as a count instead of by name.
+- Per-turn prompts are shorter: the inbox prompt has one closing instruction instead of two, the heartbeat prompt's generic guidance and recent-heartbeat history are compacted, and recent dialogue is included in a heartbeat only when the last turn is within `heartbeat.recent_dialogue_max_age_hours` (default 6).
+- GitHub gateway: notifications from `[bot]` accounts with an empty body or only a "review thread resolved" reply are no longer delivered to Animas (`drop_bot_noise`, default on), and the "decide whom to delegate to" line is no longer appended to each notification.
+- Mode S: the eight skill-management MCP tools (curate, archive, restore, block, unblock, delete, set lifecycle, promote) are advertised only on heartbeat and consolidation triggers (`mcp.trigger_scoped_tools`, default on).
+- Startup migrations resync runtime prompts and common_knowledge and remove runtime copies of the retired prompts.
+- Internal layout reorganized so each package has one concern: `core/` keeps only `paths`, `exceptions`, `schemas` and `time_utils` at the top and groups the rest into `core/agent/`, `core/anima/`, `core/messaging/`, `core/org/` and `core/infra/`; task code moves to `core/tasks/` and token usage to `core/usage/`; `core/memory/` gains `activity/`, `conversation/`, `facts/`, `maintenance/` and a larger `retrieval/`; engine executors move under `core/execution/engines/<engine>/`; Slack/Discord/Zoom/GitHub gateways move to `server/gateways/`; external service tools move from `core/tools/` to `core/integrations/`. `core.tools` stays as an alias package (runtime `common_tools/`, older `animaworks-tool` scripts), and a startup migration rewrites `core.tools` references in runtime tools and skills (originals backed up under `backups/`).
+- Engine middle layer: all engines share L0 stream event types, a `SessionStore`, a `ProcessRunner`, one event-idle `Watchdog`, `ToolEvidence`, and (for the CLI engines) `CLIStreamExecutor`. Cursor (Mode D) now streams. Mode A retries only through the shared classified retry loop (5–15 s jitter) and never retries a request whose stream already started.
+- Timeouts are unified: every engine aborts only after 1200 seconds without an engine event, with no total cap (tool execution counts). The Claude Bash tool limit is 1200 seconds. The supervisor no longer kills busy or long-streaming processes; ping and task-runner keepalive liveness checks stay.
+- Vector store access goes over HTTP for every process that does not own the Chroma DB; a phase3 root calls its own MemoryService in-process. `HttpVectorStore` is the only client, with a pluggable transport, and the single retry on an unavailable owner applies to both paths.
+- The supervisor restarts crashed Animas through one state machine: after the attempt cap an Anima shows `FAILED` while recovery keeps retrying with exponential backoff (up to 30 minutes).
+- Inbox processing runs in its own task-runner lane, and scheduled work and task execution use separate locks.
+- Tool access is decided in one place and fails closed for dispatch, the `animaworks-tool` CLI, submitted tools and web search; the CLI honors per-tool deny rules.
+- Daily consolidation extracts episodes only; knowledge changes happen in the weekly consolidation, which also takes over memory hygiene. RAG index rebuilds run in the 04:00 daily indexing.
+- Startup migrations use one fingerprinted template sync step instead of a resync step per release.
+- The Claude SDK built-in tools no longer include Skill, SendMessage and ListAgents (about 3.2K fewer tokens per request; SendMessage could misroute reports to host sessions).
+
+### Removed
+
+- Prompt templates `builder/common_knowledge_hint.md`, `builder/reference_hint.md`, `builder/human_notification_howto_s.md` and `builder/human_notification_howto_other.md` (their content moved into `memory_guide.md` and `builder/human_notification.md`).
+- `AnthropicFallbackExecutor` (the S Fallback path for prompts above 1.2 MB). Oversized prompts now log a warning and continue with the configured executor.
+- The root-IPC vector path (`ipc_store.py`, `ANIMAWORKS_MEMORY_VIA_ROOT`, the task runner's memory RPC).
+- Config keys `server.busy_hang_threshold` and `server.max_streaming_duration`. A migration removes them and moves the old busy-hang value to the new `server.runner_liveness_timeout`.
+- Unused modules (dead command reaper, duplicate `core/fd_limits.py`, and others) and 29 one-off analysis scripts; the `migrate_*.py` scripts now live in `scripts/migrations/`.
+- Mode B (basic one-shot); unknown or legacy modes resolve to Mode A.
+- Neo4j graph memory, the memory backend abstraction, entity resolution with MinHash, community detection, the `neo4j` extra and the `datasketch` dependency.
+- The `process_model` settings; phase3 is the only process model.
+- The shared vector worker process and its startup preflight and repair.
+- The Usage Governor, its UI bar and usage policy endpoints.
+- Nightly knowledge mutation (consolidation Phase B) and carryover files.
+- CLI commands `create-anima`, `list`, `gateway`, `worker`, `migrate-cron` and `migrate --resync-db` (`animaworks status` stays).
+
+### Fixed
+
+- Daily episode summaries no longer fail on large days or rate limits: prompts are split by size, large pastes are truncated, the Anima's fallback models are tried, and missed days are backfilled.
+- Reconsolidation only revises files whose failure count grew, instead of rewriting knowledge files every night; forgetting warns when a non-empty collection reads back empty instead of reporting zero scanned chunks.
+- Heartbeat recall ran with an empty query and returned nothing; it now falls back to the current state.
+- Background reviews run in the resident worker, so task runners exiting no longer cancel them; first peer notes can be written, and batched inbox senders are handled one by one.
+- A task that ended waiting on a delegate is no longer reported as a failure (`エラー: normal`).
+- Setting `external_messaging.<service>.enabled` to `false` only disables inbound messages again, instead of denying that service's tools.
+- Every board card closes when its task finishes; task submission times use the app timezone.
+- Task results from Codex image generation reach the chat, and failure reasons are shown.
+
 ## [0.14.0] - 2026-09-24
 
 ### Added
@@ -1984,7 +2054,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/xuiltul/animaworks/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/xuiltul/animaworks/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/xuiltul/animaworks/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/xuiltul/animaworks/compare/v0.11.0...v0.12.0

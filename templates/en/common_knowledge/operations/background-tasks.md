@@ -2,73 +2,72 @@
 
 ## Overview
 
-Some external tools (image generation, 3D model generation, local LLM inference, audio transcription, etc.)
-take several minutes to tens of minutes to run. Running them directly keeps the lock held for the entire run,
-which stops message handling and heartbeat.
+Some external tools (image generation, 3D model generation, local LLM inference, speech transcription, etc.)
+can take anywhere from a few minutes to several tens of minutes to complete. If you run these directly, the lock is held for the entire duration,
+and message reception and heartbeat processing come to a halt.
 
-Using `animaworks-tool submit` runs the task in the background so you can
+By using `animaworks-tool submit`, you can run tasks in the background and
 move on to the next task immediately.
 
-At runtime, **BackgroundTaskManager** in `core/background.py` handles tool execution and
-persisting state to `state/background_tasks/{task_id}.json`, while **PendingTaskExecutor**
-inside the Anima child process (`core/supervisor/pending_executor.py`) watches the wait queue written by
-`animaworks-tool submit` and hands tasks off to `BackgroundTaskManager`.
+`animaworks-tool submit` is registered in the TaskStore as `task_type="command"`,
+and the **PendingTaskExecutor** (`core/tasks/pending_executor.py`) inside the Anima child process picks up the attempt.
+The **BackgroundTaskManager** (`core/tasks/background.py`) runs the tool in the background,
+and the attempt is stored in the TaskStore, while the compatibility result JSON is saved to `state/background_tasks/{task_id}.json`.
 
-## When to Use submit
+## When to use submit
 
-### Tools That Must Use submit
+### Tools that must use submit
 
 Subcommands marked with ⚠ in the tool guide (system prompt):
 
 - `image_gen pipeline` / `fullbody` / `bustup` / `icon` / `chibi` / `3d` / `rigging` / `animations`
 - `local_llm generate` / `chat`
 - `transcribe audio` (subcommand name is `audio`)
-- Potentially long-running commands (follow the ⚠ marks in the tool guide)
 
-Tools with `background_eligible: true` in each tool’s `EXECUTION_PROFILE` are registered as background-eligible
-via the profile (e.g. `chatwork sync` / `download`).
-Operational policy should still **prioritize the ⚠ marks**.
+Tools whose `EXECUTION_PROFILE` is `background_eligible: true` are registered as background execution candidates
+via the profile (e.g., `chatwork sync` / `download`, etc.).
+Operational policy should continue to prioritize the **⚠ mark**.
 
-### Tools That Don't Need submit
+### Tools that do not require submit
 
-Tools that finish quickly (tens of seconds or less as a rule of thumb):
+Tools with short execution times (roughly under a few tens of seconds):
 
 - `web_search`, `x_search`
 - `slack`, `chatwork`, `gmail` (normal operations)
 - `github`, `aws_collector`
 
-### How to Decide
+### Decision criteria
 
-- ⚠ present → Always use submit
-- No ⚠ → Run directly (when using `animaworks-tool submit` for a profile-classified “short” tool, a warning may appear on stderr)
+- Has ⚠ mark → must use submit
+- No ⚠ mark → run directly (at `animaworks-tool submit` runtime, a warning may appear on stderr if the profile marks it as "short duration")
 
 ## Usage
 
-### Basic Syntax
+### Basic syntax
 
 ```bash
-animaworks-tool submit <tool_name> <subcommand> [args...]
+animaworks-tool submit <ツール名> <サブコマンド> [引数...]
 ```
 
-### Examples
+### Execution example
 
 ```bash
-# 3D model generation (Meshy API, etc.)
+# 3Dモデル生成（Meshy API 等）
 animaworks-tool submit image_gen 3d assets/avatar_chibi.png
 
-# Character image full pipeline (all steps)
+# キャラクター画像一括生成（全ステップ）
 animaworks-tool submit image_gen pipeline "1girl, black hair, ..." --negative "lowres, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 
-# Local LLM inference (Ollama)
-animaworks-tool submit local_llm generate "Please summarize: ..."
+# ローカルLLM推論（Ollama）
+animaworks-tool submit local_llm generate "要約してください: ..."
 
-# Audio transcription (Whisper, etc.) — subcommand is audio
+# 音声文字起こし（Whisper 等）— サブコマンドは audio
 animaworks-tool submit transcribe audio "/path/to/audio.wav" --language ja
 ```
 
-### Return Value
+### Return value
 
-submit prints JSON to stdout and exits immediately (`task_id` is 12 hex digits):
+submit immediately outputs JSON to stdout and exits (`task_id` is a 12-digit hex):
 
 ```json
 {
@@ -76,130 +75,122 @@ submit prints JSON to stdout and exits immediately (`task_id` is 12 hex digits):
   "status": "submitted",
   "tool": "image_gen",
   "subcommand": "3d",
-  "message": "Background task submitted. You will be notified in inbox when complete. (task_id: a1b2c3d4e5f6)"
+  "message": "バックグラウンドタスクを投入しました。完了時にinboxに通知されます。(task_id: a1b2c3d4e5f6)"
 }
 ```
 
-## Receiving Results
+## Receiving results
 
-1. After submit, **PendingTaskExecutor** ingests descriptors under `state/background_tasks/pending/` and runs them via
-   `BackgroundTaskManager.submit` in the background (outside the Anima conversation lock).
-2. From start through completion, state for the same `task_id` is also stored in **`state/background_tasks/{task_id}.json`**.
-   When `BackgroundTaskManager.submit` / `submit_async` first writes the file, status is **`running` from the outset** (saved to disk right after a 12-digit UUID `task_id` is assigned). On success it becomes `completed`; on exception, `failed`.
-   The data model also has a `pending` enum value, but the manager’s normal submission path does not use it. **Waiting in queue** is separate: it is represented by descriptors under `state/background_tasks/pending/*.json`.
+1. submit registers the input containing the tool name, arguments, and Anima (`task_type="command"`) in the TaskStore. The PendingTaskExecutor picks up the execution attempt and requests execution from the BackgroundTaskManager outside the conversation lock.
+2. The TaskStore records the attempt and result reference. `state/background_tasks/{task_id}.json` records `running` → `completed` / `failed` with the same task_id for compatibility with the legacy query API.
 3. On completion, `_on_background_task_complete` writes a Markdown notification to **`state/background_notifications/{task_id}.md`**.
-4. On the next **heartbeat**, `drain_background_notifications()` reads and removes that `.md` and injects it into context.
-5. If the Web UI WebSocket or human notification via `call_human` is enabled, completion may also surface there at the same time.
+4. At the next **heartbeat**, `drain_background_notifications()` reads and deletes the relevant `.md`, and it is injected into the context.
+5. If the Web UI's WebSocket or `call_human`-family human notifications are enabled, they may also appear there at the same completion timing.
 
-Use **`list_background_tasks`** for a merged list of in-memory and on-disk tasks, and **`check_background_task`** to look up status by `task_id` (both map to `BackgroundTaskManager`’s `list_tasks` / `get_task`).
+Use tool **`list_background_tasks`** to view a merged list of memory and disk, and **`check_background_task`** to view the status specified by `task_id` (both correspond to `BackgroundTaskManager`'s `list_tasks` / `get_task`).
 
-## Handling Failures
+## Handling failures
 
-- If the notification says the run failed:
-  1. Review the error details
-  2. Identify the cause (missing API key, timeout, wrong arguments, etc.)
-  3. Fix and submit again
-  4. If you cannot resolve it, report to your supervisor
+- If the notification says "failure":
+  1. Check the error details
+  2. Identify the cause (API key not set, timeout, argument error, etc.)
+  3. Fix the issue and submit again
+  4. If it cannot be resolved, report to the supervisor
 
-- After a **crash or abnormal exit**, if JSON is left under `processing/`, **PendingTaskExecutor** recovers it when the Anima process starts:
-  - **Command-type** (`animaworks-tool submit`): `state/background_tasks/pending/processing/*.json` → `state/background_tasks/pending/failed/`
-  - **LLM-type** work uses canonical tasks and fenced attempts, not descriptor recovery. Incomplete work remains pending with a durable attention notification; inspect effects before explicitly resuming.
-  Legacy LLM files are migration evidence only. Do not move or regenerate them to restart work.
+- If the process terminates abnormally, check the attempt owner in the TaskStore, and record tasks whose owner has confirmed termination as pending (needs review). Since side effects may have already occurred, do not automatically re-run. Even if the result JSON remains as `running`, do not judge it as complete; confirm the actual status and then explicitly resume.
 
-## Common Mistakes
+## Common mistakes
 
-### Running the tool directly
+### Running directly
 
 ```bash
-# Bad: direct run → may hold the lock for a long time
+# 悪い例: 直接実行 → 長時間ロックされうる
 animaworks-tool image_gen 3d assets/avatar_chibi.png -j
 
-# Good: async via submit
+# 良い例: submit で非同期実行
 animaworks-tool submit image_gen 3d assets/avatar_chibi.png
 ```
 
-If you ran directly, you must wait until the task finishes.
-Always use submit from now on.
+If you ran it directly, you have no choice but to wait until the task completes.
+Always use submit from next time onward.
 
 ### Omitting the transcribe subcommand
 
 ```bash
-# Bad: without the audio subcommand, profile resolution may not match intent
+# 悪い例: audio サブコマンドがないと意図したプロファイル判定にならない
 animaworks-tool submit transcribe "/path/to/audio.wav"
 
-# Good
+# 良い例
 animaworks-tool submit transcribe audio "/path/to/audio.wav"
 ```
 
-### Waiting for results after submit
+### Waiting for results after submitting
 
-Move on to the next task immediately after submit.
-Results are ingested via heartbeat-oriented notification files, so polling or blocking waits are unnecessary.
+Once you submit, move on to the next task immediately.
+Results are picked up via the notification file for heartbeat, so no polling or waiting is needed.
 
-## Technical Mechanism (Reference)
+## Technical details (reference)
 
-### BackgroundTaskManager (`core/background.py`)
+### BackgroundTaskManager (`core/tasks/background.py`)
 
-- **Role**: Runs long-running tool calls as `asyncio` background tasks and `await`s the optional async `on_complete` callback on completion or failure. The constructor `mkdir(parents=True)` for `state/background_tasks/`.
-- **Sync tools**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` runs on a thread pool via `run_in_executor(None, ...)`.
-- **Async tools**: `submit_async` (same signature but `execute_fn` returns `Awaitable[str]`) → `await execute_fn(...)` on the event loop.
-- **Scheduling**: Wrapped with `asyncio.create_task(..., name=f"bg-{task_id}")`. On completion, the matching entry is removed from `_async_tasks`.
-- **Persistence**: After each change, `_save_task` writes `state/background_tasks/{task_id}.json` via `to_dict()` (`ensure_ascii=False`, `indent=2`). Corrupt JSON in `_load_task` is logged and treated as `None`.
-- **Queries**: `get_task` prefers in-memory, else disk. `list_tasks(status=...)` merges on-disk `*.json` with memory and sorts by `created_at` descending. `active_count` is the in-memory count of `RUNNING` tasks.
-- **`on_complete`**: Even if the callback raises, the task’s completed/failed state is preserved; the failure is logged only.
-- **Eligible tool names** (`is_eligible`) merge these **three layers** (later wins). Keys are matched as dictionary keys (you may have both Mode A schema names like `generate_3d_model` and Mode S submit-style `image_gen:3d`):
-  1. In-code default `_DEFAULT_ELIGIBLE_TOOLS` (values are guideline seconds; current keys):
+- **Role**: Runs long-running tool calls as `asyncio` tasks in the background, and invokes `on_complete` (arbitrary asynchronous callbacks) on completion or failure via `await`. In the constructor, `state/background_tasks/` is `mkdir(parents=True)`.
+- **Synchronous tools**: `submit(tool_name, tool_args, execute_fn, task_id=None)` → executes `execute_fn(name, args) -> str | None` on a thread pool via `run_in_executor(None, ...)`. If `task_id` is omitted, it is generated, and for CLI command tasks, the same ID as the TaskStore is passed.
+- **Asynchronous tools**: `submit_async` (with the same signature, where `execute_fn` is `Awaitable[str]`) → runs on the event loop via `await execute_fn(...)`.
+- **Scheduling**: Wrapped with `asyncio.create_task(..., name=f"bg-{task_id}")`. On completion, removes the relevant entry from `_async_tasks`.
+- **Persistence**: After each change, `_save_task` writes `to_dict()` (`ensure_ascii=False`, `indent=2`) to `state/background_tasks/{task_id}.json`. Corrupted JSON is logged as a warning via `_load_task` and then `None`.
+- **Query**: `get_task` prioritizes in-memory, falling back to disk. `list_tasks(status=...)` merges with `*.json` on disk, sorted by `created_at` descending. `active_count` is the count of `RUNNING` in memory.
+- **`on_complete`**: Even if an exception occurs inside a callback, the task's completion/failure status is maintained, and the failure is only recorded in the log.
+- **Eligible tool names** (`is_eligible`) merge the following **3 layers** (later wins). Keys are matched directly as dictionary lookups (both Mode A schema names `generate_3d_model` and Mode S submission `image_gen:3d` are possible):
+  1. In-code defaults `_DEFAULT_ELIGIBLE_TOOLS` (values are approximate seconds; current keys):
      `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations` (30 each), `local_llm` / `run_command` (60 each)
-  2. Via `BackgroundTaskManager.from_profiles`, subcommands with `background_eligible: true` from each module’s `EXECUTION_PROFILE` (`core.tools._base.get_eligible_tools_from_profiles`). Keys are `"{tool_name}:{subcmd}"`; seconds come from `expected_seconds` (default 60 if unset).
-  3. `config.json` `background_task.eligible_tools` — each key’s `threshold_s` overrides the duration in seconds.
-- **Disable**: `background_task.enabled: false` in `config.json` prevents creating `BackgroundTaskManager` at all (in that case, the submit queue may still be picked up but the executor side logs a warning).
-- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` (1) deletes JSON for `completed` / `failed` with `completed_at` older than **24 hours**, and (2) deletes **`running`** files whose `created_at` is older than **48 hours** (orphans from process crashes, etc.). Return value is the number removed. `config.json` `background_task.result_retention_hours` exists in the schema but is **not read by the current `BackgroundTaskManager` implementation**; callers only pass an arbitrary `max_age_hours` to `cleanup_old_tasks`.
+  2. Via `BackgroundTaskManager.from_profiles`, extract subcommands of `background_eligible: true` from each module's `EXECUTION_PROFILE` (`core.integrations._base.get_eligible_tools_from_profiles`). Keys are `"{tool_name}:{subcmd}"`, seconds are `expected_seconds` (default 60 if unset)
+  3. `background_task.eligible_tools` of `config.json` — for each key, overwrite `threshold_s` as the number of seconds
+- **Disabling**: Setting `background_task.enabled: false` via `config.json` prevents `BackgroundTaskManager` itself from being created. submit is still registered in the TaskStore, but the execution attempt returns to pending, and a needs-review notification is generated.
+- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` deletes (1) JSON files where `completed_at` has exceeded the specified time via `completed` / `failed`, and (2) files where `created_at` has been in the `running` state for more than **48 hours** (orphans from process crashes, etc.). The return value is the number of deletions. The retention time is specified by the caller via `max_age_hours`, and there is no corresponding `config.json` configuration key.
 
-### Other API in the same file: `rotate_dm_logs`
+### Other APIs in the same file: `rotate_dm_logs`
 
-Independently of **background tool execution**, `core/background.py` defines `rotate_dm_logs(shared_dir, max_age_days=7)`. For `shared/dm_logs/*.jsonl`, rows whose entry `ts` is older than the threshold are appended to `{stem}.{YYYYMMDD}.archive.jsonl` and removed from the active file. Actual work is `_rotate_dm_logs_sync`, offloaded with `run_in_executor`.
+`core/tasks/background.py` also contains `rotate_dm_logs(shared_dir, max_age_days=7)`, **independent of background tool execution**. Among `shared/dm_logs/*.jsonl`, lines whose entry's `ts` is older than the threshold are appended to `{stem}.{YYYYMMDD}.archive.jsonl` as an archive and removed from the active file. The actual processing is done by `_rotate_dm_logs_sync` (offloaded via `run_in_executor`).
 
 ### Command-type tasks (`animaworks-tool submit`)
 
-1. `animaworks-tool submit` writes a descriptor to `state/background_tasks/pending/{task_id}.json` (`ANIMAWORKS_ANIMA_DIR` required).
-2. PendingTaskExecutor’s watcher polls `pending/` at most every **3 seconds** (or immediately via `wake()`).
-3. `pending/*.json` → renamed to `pending/processing/*.json`, then `execute_pending_task`.
-4. Command-type runs invoke `animaworks-tool … -j` in a **subprocess**. **Wall-clock timeout per run is 1800 seconds (30 minutes)** (`pending_executor._PENDING_TASK_SUBPROCESS_TIMEOUT`). On success, the file under processing is removed; on error, moved to `pending/failed/`.
-5. Actual work is delegated to `BackgroundTaskManager.submit(composite_name, tool_args, execute_fn)`. `composite_name` is `tool:subcommand` (e.g. `image_gen:3d`) and is checked against `is_eligible`.
-6. On completion, `_on_background_task_complete` writes `state/background_notifications/{task_id}.md`, which heartbeat’s `drain_background_notifications()` reads.
+1. `animaworks-tool submit` atomically registers input containing `task_type="command"`, the tool name, arguments, Anima, and `task_id` in the TaskStore (`ANIMAWORKS_ANIMA_DIR` required).
+2. The TaskStore watcher picks up tasks via the existing claim/attempt mechanism. `BackgroundTaskManager` also uses the original `task_id` for the result JSON.
+3. Command-type tasks internally launch `animaworks-tool … -j` as a **subprocess**. **The wall-clock timeout per run is 1800 seconds (30 minutes)** (`pending_executor._PENDING_TASK_SUBPROCESS_TIMEOUT`).
+4. stdout or errors are saved to `state/task_results/{task_id}/{attempt_token}.md`, and the result reference is recorded on the TaskStore attempt. The authoritative source for status, arguments, and attempts is the TaskStore.
+5. The BackgroundTaskManager saves `running` → `completed` / `failed` to `state/background_tasks/{task_id}.json`, and `_on_background_task_complete` writes a notification to `state/background_notifications/{task_id}.md`. The heartbeat picks up the notification.
+
+### Migration of legacy command descriptors
+
+The previous `state/background_tasks/pending/*.json` is no longer monitored by the new runtime. If `animaworks task-store migrate --anima NAME --backup PATH` is executed during shutdown, unprocessed top-level descriptors are validated and imported into the TaskStore. The original files are kept as evidence. `processing/` and `failed/` are not automatically re-run or migrated; they are left with a warning, so the operator checks for side effects and then decides.
 
 ### LLM-type tasks (canonical task store)
 
-1. `submit_tasks` / `delegate_task` atomically publish complete instructions, context, acceptance criteria, constraints, model and dependencies.
-2. The watcher claims a ready task in the same transaction that creates its attempt. It checks dependencies and configured worker capacity; nonparallel tasks serialize only within their own batch.
-3. An attempt ending without a `done` / `cancelled` declaration leaves the task pending, not automatically runnable. Inspect side effects and resume explicitly with `submit_tasks(batch_id="resume", tasks=[{"task_id":"ID","resume":true}])` when appropriate.
-4. Results may be referenced by `state/task_results/{task_id}.md`; durable task state, saved input and attempts remain authoritative. Completion is declared with `update_task`, never inferred from an LLM response or a file's existence.
-5. Durable notifications request attention or report completion without depending on periodic heartbeat. DM contents never reconstruct task input.
+1. `submit_tasks` / `delegate_task` atomically register the complete instruction, context, completion conditions, constraints, model, and dependencies.
+2. The watcher acquires runnable tasks and creates attempts in the same transaction. It checks dependencies and configured worker capacity, and restricts non-parallel constraints to the same batch.
+3. If an attempt finishes without `done` / `cancelled` declarations, it returns to pending but is not automatically re-run. Check for side effects, and if necessary, explicitly resume via `submit_tasks(batch_id="resume", tasks=[{"task_id":"ID","resume":true}])`.
+4. Results may reference `state/task_results/{task_id}.md`, but the canonical store is the authoritative source for status, input, and attempts. Completion is declared via `update_task` and is not inferred from LLM responses or file existence.
+5. Needs-review and completion notifications are persisted and delivered without depending on the periodic heartbeat. Do not reconstruct execution input from DMs.
 
-Do not edit SQLite or legacy task files directly; use task tools. The command-tool pipeline described above remains separate.
+Do not edit SQLite or legacy task files directly; use the task tools. This is a separate mechanism from the command-type pipeline described above.
 
-### File Lifecycle
+### File lifecycle
 
-**Command-type** (wait queue for `animaworks-tool submit`):
-
-```
-state/background_tasks/pending/*.json
-  → pending/processing/*.json
-  → success: deleted | failure: pending/failed/*.json
-```
-
-Also the **task state file** (overall execution):
+**Command-type** (`animaworks-tool submit`):
 
 ```
-state/background_tasks/{task_id}.json   # running → completed / failed
+TaskStore の command 入力 → claim / attempt
+  → 成功: done | 失敗・中断: pending（要確認。自動再実行なし）
+state/task_results/{task_id}/{attempt_token}.md  # attempt output / error
+state/background_tasks/{task_id}.json           # 互換用の running → completed / failed 結果
 ```
 
 **LLM-type** (`submit_tasks` / `delegate_task`):
 
 ```
-saved input → ready pending → claimed attempt (in_progress)
-  → declared done/cancelled, or pending + durable attention notification
-  → explicit resume creates a new attempt using the saved input
+保存済み入力 → 実行可能pending → 取得済み試行（in_progress）
+  → done/cancelled宣言、またはpending + 永続的な要確認通知
+  → 明示resumeで保存済み入力を使う新しい試行
 ```
 
-The command-file recovery described above does not apply to LLM tasks. Old LLM JSONL/descriptor files are migration/export formats, not live execution signals.
+Command-type and LLM-type use different input formats, but both are executed via the TaskStore's claim/attempt mechanism. The legacy LLM JSONL and `state/pending/` descriptors are for migration and export purposes, not a signal to start execution.

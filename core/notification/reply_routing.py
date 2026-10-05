@@ -101,12 +101,6 @@ def save_notification_mapping(
     return True
 
 
-def _server_base_url() -> str:
-    import os
-
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
-
-
 def post_notification_mapping_via_api(
     ts: str,
     channel: str,
@@ -122,11 +116,11 @@ def post_notification_mapping_via_api(
     write ``{data_dir}/run/`` directly, so they delegate the write to the
     server process via ``POST /api/internal/notification-mapping``.
     """
-    import httpx
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{_server_base_url()}/api/internal/notification-mapping",
+        resp = host_api.post(
+            "/api/internal/notification-mapping",
             json={
                 "ts": ts,
                 "channel": channel,
@@ -291,9 +285,9 @@ async def route_thread_reply(
                 user_id = str(event.get("user") or "")
                 actor = user_id
                 try:
-                    from server.slack_socket import _get_cached_user_name
+                    from core.notification.slack_names import get_cached_user_name
 
-                    actor = _get_cached_user_name(user_id) or user_id
+                    actor = get_cached_user_name(user_id) or user_id
                 except Exception:
                     logger.debug(
                         "Failed to resolve Slack display name for text_reply actor",
@@ -343,7 +337,7 @@ async def route_thread_reply(
 
     content = thread_ctx + text if thread_ctx else text
 
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     messenger = Messenger(shared_dir, target)
     messenger.receive_external(
@@ -359,21 +353,21 @@ async def route_thread_reply(
     # Record raw reply on the main-thread conversation view (no thread_ctx).
     # Interactive number replies are logged inside InteractionRouter.resolve.
     try:
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.paths import get_animas_dir
 
         user_id = str(event.get("user") or "")
         from_person = user_id
         try:
-            from server.slack_socket import _get_cached_user_name
+            from core.notification.slack_names import get_cached_user_name
 
-            from_person = _get_cached_user_name(user_id) or user_id
+            from_person = get_cached_user_name(user_id) or user_id
         except Exception:
             logger.debug(
                 "Failed to resolve Slack display name for human_reply log",
                 exc_info=True,
             )
-        ActivityLogger(get_animas_dir() / target).log(
+        await ActivityLogger(get_animas_dir() / target).alog(
             "human_reply",
             content=text,
             from_person=from_person,
@@ -414,7 +408,7 @@ def _fetch_thread_context_for_reply(
     if not token or not thread_ts:
         return ""
     try:
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient(token=token)
         replies = client.thread_replies(channel_id, thread_ts)
@@ -423,15 +417,15 @@ def _fetch_thread_context_for_reply(
         parent = replies[0]
         parent_user = parent.get("user", "unknown")
         parent_text = parent.get("text", "").replace("\n", " ")[:_THREAD_CTX_SUMMARY_LIMIT]
-        from server.slack_socket import _resolve_slack_mentions, _user_name_cache
+        from core.notification.slack_names import cache_user_name, get_cached_user_name, resolve_slack_mentions
 
-        if parent_user not in _user_name_cache:
+        if get_cached_user_name(parent_user) is None:
             try:
-                _user_name_cache[parent_user] = client.resolve_user_name(parent_user)
+                cache_user_name(parent_user, client.resolve_user_name(parent_user))
             except Exception:
                 logger.debug("Failed to resolve display name for user %s, using raw ID", parent_user)
-        parent_display = _user_name_cache.get(parent_user, parent_user)
-        parent_text = _resolve_slack_mentions(parent_text, token)
+        parent_display = get_cached_user_name(parent_user) or parent_user
+        parent_text = resolve_slack_mentions(parent_text, token)
         reply_count = len(replies) - 1
         lines = [
             "[Thread context — this message is a reply in a Slack thread]",
@@ -453,11 +447,11 @@ def sanitize_slack_reply(text: str, max_length: int = _MAX_REPLY_LENGTH) -> str:
     URLs, channels, and HTML entities are converted by clean_slack_markup().
     """
     try:
-        from server.slack_socket import _resolve_slack_mentions
+        from core.notification.slack_names import resolve_slack_mentions
 
-        text = _resolve_slack_mentions(text, "")
+        text = resolve_slack_mentions(text, "")
     except Exception:
-        from core.tools._slack_markdown import clean_slack_markup
+        from core.integrations._slack_markdown import clean_slack_markup
 
         text = clean_slack_markup(text)
     # Bold *text* → text, italic _text_ → text, strike ~text~ → text

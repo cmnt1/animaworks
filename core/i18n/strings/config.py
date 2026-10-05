@@ -10,6 +10,21 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "config.status_heartbeat_override": {
+        "ja": "status.json の {anima}.{field} に保存し、root のハートビートスケジュールに反映します。",
+        "en": "Saves {anima}.{field} to root-owned status.json and updates the root heartbeat schedule.",
+        "ko": "root 소유 status.json의 {anima}.{field}에 저장하고 root 하트비트 스케줄에 반영합니다.",
+    },
+    "config.status_org_setting": {
+        "ja": "root 所有の {anima}.{field} 組織設定を status.json と config.json に反映します。",
+        "en": "Updates root-owned organization field {anima}.{field} in status.json and config.json.",
+        "ko": "root 소유 {anima}.{field} 조직 설정을 status.json과 config.json에 반영합니다.",
+    },
+    "config.status_field_deprecated": {
+        "ja": "Warning: '{path}' は非推奨です。\n  status.json に書き込みます。今後は 'animaworks anima set-model' を使用してください。",
+        "en": "Warning: '{path}' is deprecated.\n  Writes to status.json. Use 'animaworks anima set-model' instead.",
+        "ko": "경고: '{path}' 경로는 더 이상 사용하지 않습니다.\n  status.json에 저장됩니다. 'animaworks anima set-model'을 사용하세요.",
+    },
     "anima.agent_error": {
         "ja": "[ERROR: エージェント実行中にエラーが発生しました]",
         "en": "[ERROR: An error occurred during agent execution]",
@@ -111,8 +126,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Slack DM",
     },
     "scheduler.cron_health_title": {
-        "ja": "⚠️ Cronヘルスチェック警告",
-        "en": "⚠️ Cron Health Check Warning",
+        "ja": "⚠️ cron.md解析警告",
+        "en": "⚠️ cron.md Parse Warning",
     },
     "scheduler.cron_health_no_valid_schedule": {
         "ja": (
@@ -134,19 +149,6 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": ("Lines containing 'schedule:' found in cron.md but not recognized by the parser. Please check format."),
     },
-    "scheduler.cron_health_no_execution": {
-        "ja": (
-            "{job_count}件のcronジョブが登録されていますが、"
-            "直近{hours}時間にcron実行ログがありません。"
-            "低頻度（例: 日次/週次）のcronであれば正常な場合があります。"
-            "想定より頻度が高いはずの場合は、cron.mdとスケジュール設定を確認してください。"
-        ),
-        "en": (
-            "{job_count} cron job(s) registered but no execution logs in the last "
-            "{hours} hours. This can be normal for low-frequency crons (e.g., daily/weekly). "
-            "If the expected frequency is higher, please check cron.md and schedule settings."
-        ),
-    },
     "anima.greeting_error": {
         "ja": "[ERROR: 挨拶生成中にエラーが発生しました]",
         "en": "[ERROR: An error occurred during greeting generation]",
@@ -154,10 +156,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "anima.heartbeat_episode": {
         "ja": ("## {ts} ハートビート活動\n\n{summary}"),
         "en": ("## {ts} Heartbeat activity\n\n{summary}"),
-    },
-    "anima.heartbeat_error": {
-        "ja": "run_heartbeatエラー: {exc}",
-        "en": "run_heartbeat error: {exc}",
     },
     "anima.heartbeat_msgs_processed": {
         "ja": ("\n\n（{count}件のメッセージを処理）"),
@@ -182,10 +180,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "anima.msg_received_episode": {
         "ja": ("## {ts} {from_person}からのメッセージ受信\n\n**送信者**: {from_person}\n**内容**:\n{content}"),
         "en": ("## {ts} Message received from {from_person}\n\n**Sender**: {from_person}\n**Content**:\n{content}"),
-    },
-    "anima.no_activity_log": {
-        "ja": "(アクティビティログなし)",
-        "en": "(No activity log)",
     },
     "anima.no_episodes_today": {
         "ja": "(本日のエピソードはありません)",
@@ -223,16 +217,6 @@ STRINGS: dict[str, dict[str, str]] = {
             "### Error information\n\n- Error type: {exc_type}\n- Error message: {exc_msg}\n- Occurred at: {ts}\n- Unprocessed message count: {count}"
         ),
     },
-    "anima.reflections_header": {
-        "ja": "振り返り（REFLECTION）",
-        "en": "Reflections",
-    },
-    "anima.reflections_intro": {
-        "ja": "エピソード中の [REFLECTION] タグから抽出された意識的な洞察です。優先的に知識化を検討してください。",
-        "en": (
-            "Conscious insights extracted from [REFLECTION] tags in episodes. Prioritize these for knowledge extraction."
-        ),
-    },
     "anima.response_interrupted": {
         "ja": "[応答が中断されました]",
         "en": "[Response was interrupted]",
@@ -257,6 +241,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "[デスクを訪問]",
         "en": "[Desk visit]",
     },
+    "anima.first_meeting_marker": {
+        "ja": "ユーザーがセットアップを終え、初めてあなたのチャットを開きました",
+        "en": "The user finished setup and opened your chat for the first time",
+        "ko": "사용자가 설정을 마치고 처음으로 당신의 채팅을 열었습니다",
+    },
+    "anima.first_meeting_default_user": {
+        "ja": "ユーザー",
+        "en": "the user",
+        "ko": "사용자",
+    },
     "model_config.credential_auto_switch": {
         "ja": "モデルファミリー変更を検出: credential を '{old}' → '{new}' に自動切替しました",
         "en": "Model family change detected: auto-switched credential from '{old}' to '{new}'",
@@ -276,10 +270,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "config.anima_registration": {
         "ja": "Anima登録",
         "en": "Anima registration",
-    },
-    "config.anthropic_api_key": {
-        "ja": "Anthropic APIキー",
-        "en": "Anthropic API key",
     },
     "config.anthropic_auth": {
         "ja": "Anthropic APIキー / サブスクリプション認証",

@@ -3,10 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.prompt.builder import _build_group1, _build_group6
-from core.prompt.messaging import _load_a_reflection
 
 
 def test_group1_uses_file_backed_environment_and_behavior_rules(tmp_path: Path) -> None:
@@ -27,23 +24,9 @@ def test_group1_uses_file_backed_environment_and_behavior_rules(tmp_path: Path) 
     assert contents["behavior_rules"] == "file rules"
 
 
-def test_group6_keeps_emotion_without_redundant_reflection() -> None:
-    with (
-        patch("core.prompt.builder._build_emotion_instruction", return_value="file emotion"),
-        patch("core.prompt.builder._load_a_reflection", return_value="file reflection"),
-    ):
+def test_group6_keeps_emotion_instruction() -> None:
+    with patch("core.prompt.builder._build_emotion_instruction", return_value="file emotion"):
         sections = _build_group6("a", True, False, False, {})
 
     contents = {section.id: section.content for section in sections}
     assert contents["emotion_instruction"] == "file emotion"
-    assert "a_reflection" not in contents
-
-
-@pytest.mark.parametrize(
-    ("locale", "heading"),
-    [("ja", "情報収集の原則"), ("en", "Information Gathering Principles"), ("ko", "정보 수집 원칙")],
-)
-def test_reflection_template_loads_for_every_locale(locale: str, heading: str) -> None:
-    with patch("core.paths._get_locale", return_value=locale):
-        content = _load_a_reflection()
-    assert heading in content

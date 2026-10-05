@@ -16,15 +16,15 @@ description: >-
 
 | モード | 実装 | Bash | このスキルの適用 |
 |--------|------|------|------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Claude Code サブプロセス内で Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 等) + Task/Agent が利用可能。Bash 実行時の cwd は anima_dir |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Claude Code サブプロセス内で Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 等) + Task/Agent が利用可能。Bash 実行時の cwd は anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode D** | Cursor Agent（cursor-agent サブプロセス） | Cursor CLI のツールセットに依存 | **cursor-agent -p は不要** — フレームワークが cursor-agent を直接実行。MCP 統合。Mode S に近いツールアクセスだが実体は cursor-agent バイナリ。codex exec / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode G** | Gemini CLI（gemini サブプロセス） | Gemini CLI のツールセットに依存 | **Gemini CLI の手動起動は不要** — フレームワークが直接実行。MCP 統合、stream-json 出力。他 CLI は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode A/B** | LiteLLM + tool_use / 1ショット | permissions.json で許可時のみ | Bash 許可があれば適用 |
 
 **重要**: Mode C（`codex/*`）、Mode D（`cursor/*`）、Mode G（`gemini/*`）の Anima は、フレームワークが各エンジンを直接実行する。この場合、自分で `codex exec`（Mode C）や `cursor-agent -p`（Mode D）、Gemini CLI（Mode G）を Bash から呼ぶ必要はない。別の CLI（cursor-agent / claude -p / codex exec 等）を明示的に使いたい場合のみ、このスキルの該当セクションを参照する。
 
-**Windows例外**: ネイティブWindows環境で shell 実行が `policy blocked` になった場合、または `codex exec exited with code 1` が繰り返し発生する場合は、ローカル `codex exec` の再試行をやめること。shell 必須タスクは taka へエスカレーションする。
+**Windows例外**: ネイティブWindows環境で shell 実行が `policy blocked` になった場合、または `codex exec exited with code 1` が繰り返し発生する場合は、ローカル `codex exec` の再試行をやめること。shell 必須タスクは上司（`supervisor`）へエスカレーションする。
 
 ## ツール選択の優先順位
 
@@ -36,7 +36,7 @@ description: >-
 | 2 | `cursor-agent -p` | 安い（Cursor） | コード生成・編集・マルチファイル |
 | 3 | `claude -p` | 高い（Claude API） | 最終手段。上2つで解決しない場合のみ |
 
-**原則**: 非Windowsまたは shell 実行が健全な環境では `codex exec` を最初に試す。ネイティブWindowsで shell 実行が blocked / unstable な場合は `codex exec` を飛ばし、taka へエスカレーションする。その他の失敗時や不得意なタスクのみ cursor-agent → claude の順にフォールバック。
+**原則**: 非Windowsまたは shell 実行が健全な環境では `codex exec` を最初に試す。ネイティブWindowsで shell 実行が blocked / unstable な場合は `codex exec` を飛ばし、上司（`supervisor`）へエスカレーションする。その他の失敗時や不得意なタスクのみ cursor-agent → claude の順にフォールバック。
 
 ## 使うべきタイミング
 
@@ -348,4 +348,4 @@ nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
 - 実行結果は自分のepisodes/に記録し、学んだパターンはknowledge/に蓄積すること
 - 実行には5分〜20分以上かかる。必ずバックグラウンドで実行し、timeout を設定すること
 - git管理されたリポジトリで作業すること（変更の追跡・取り消しが容易）
-- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される（`agent_sdk.py` の `_build_env()` で注入）
+- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される（`core/execution/engines/claude/executor.py` の `_build_env()` で注入）

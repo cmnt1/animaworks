@@ -236,8 +236,8 @@ PROJECT_DIR = Path(r"E:\OneDriveBiz\Tools\General\animaworks")
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from core.integrations.property_portal_scraper import result_to_dict, run_scan, write_outputs
 from core.reports.property._listing_runs import MAX_OBSERVATION_GAP_DAYS, Observation, classify_listings, days_cell
-from core.tools.property_portal_scraper import result_to_dict, run_scan, write_outputs
 
 PRODUCT_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_products")
 CATEGORY_DIR = PRODUCT_ROOT / "Property"

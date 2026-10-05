@@ -1,93 +1,138 @@
 # 메시지 전송 완전 가이드
 
-다른 Anima (동료)와 소통하기 위한 포괄적 가이드입니다.
-메시지의 전송, 수신, 스레드 관리의 전 절차를 다룹니다.
+다른 Anima(사원)와 커뮤니케이션하기 위한 종합 가이드.
+메시지 전송·수신·스레드 관리의 모든 절차를 망라한다.
 
-## send_message 도구 — 파라미터 레퍼런스
+## send_message 도구 — 파라미터 참조
 
-메시지 전송에는 `send_message` 도구를 사용합니다 (권장).
+메시지 전송에는 `send_message` 도구를 사용한다(권장).
 
 ### 파라미터 목록
 
 | 파라미터 | 타입 | 필수 | 설명 |
-|----------|------|------|------|
-| `to` | string | MUST | 수신자. Anima 이름 (예: `alice`) 또는 사람 별명 (예: `user`, `taka`). 사람 별명은 외부 channel (Slack/Chatwork) 경유로 전달됨 |
+|-----------|------|------|------|
+| `to` | string | MUST | 수신처. 해결 규칙은 아래 「수신처 `to`의 해결」 참조. Anima 이름·`config.json`의 인간 별칭·`slack:USERID` / `chatwork:ROOMID`·Slack 사용자 ID 단독(`U` + 영숫자 8자 이상) 사용 가능 |
 | `content` | string | MUST | 메시지 본문 |
-| `intent` | string | MUST | 메시지 의도. 허용값: `report` (진행/결과 보고), `question` (질문/응답이 필요한 문의)만 가능. 태스크 위임에는 `delegate_task` 사용. 확인/감사/FYI는 Board (post_channel) 사용 |
-| `reply_to` | string | MAY | 답장 대상 메시지 ID (예: `20260215_093000_123456`) |
-| `thread_id` | string | MAY | 스레드 ID. 기존 스레드에 참여할 때 지정 |
+| `intent` | string | MUST | 메시지 의도. 허용 값: `report`(진행 상황·결과 보고), `question`(질문·답변이 필요한 문의)만. 작업 위임에는 `delegate_task` 도구를 사용할 것. acknowledgment·감사·FYI는 Board(post_channel)를 사용할 것 |
+| `reply_to` | string | MAY | 답장 대상 메시지의 ID(예: `20260215_093000_123456`) |
+| `thread_id` | string | MAY | 스레드 ID. 기존 스레드에 참여하는 경우 지정 |
 
-### DM 제한 (1회 run당)
+### DM의 run 내 규칙
 
-- 최대 **2명**까지 전송 가능
-- 동일 수신자에게 **2번째 전송 불가** (추가 연락은 Board 사용)
-- 3명 이상에게 전달 시 Board (post_channel) 사용
+- 동일 수신처로의 DM은 run 1회당 **1통까지**. 중복 전송을 피하는 규칙이며, 수신처 수의 상한은 없음
+- 동일 수신처에 추가로 공유할 경우 Board를 사용하거나, 내용에 따라 다음 run에서 전송
 
-### 기본 전송 예시
+### 수신처 `to`의 해결(통합 아웃바운드)
+
+`send_message`의 수신처는 `core/outbound.resolve_recipient`에서 다음 **우선순위**에 따라 해결된다(표기 변형에 강한 순서).
+
+- 수신처 문자열의 **앞뒤 공백**은 해결 전에 트림된다.
+
+| 순위 | 조건 | 결과 |
+|------|------|------|
+| 1 | 기존 Anima 디렉터리 이름과 **완전 일치**(대소문자 구분) | 사내 Inbox로 |
+| 2 | `config.json`의 `external_messaging.user_aliases` 키와 **일치**(대소문자 무시) | 외부(Slack 또는 Chatwork)로. `preferred_channel`를 우선하고, 거기에 연락처가 없으면 설정된 다른 쪽으로 폴백 |
+| 3 | `slack:`로 시작(대소문자 구분 안 함. 예: `slack:U0123456789`, `Slack:u06…`) | 콜론 이후를 트림하고, 사용자 ID는 **대문자로 정규화**한 뒤 Slack DM |
+| 4 | `chatwork:`로 시작(프리픽스는 대소문자 구분 안 함) | 콜론 이후를 트림한 룸 ID로 Chatwork 게시(룸 ID의 대소문자는 그대로) |
+| 5 | **Slack 사용자 ID 형식** 단독: 앞부분이 `U`이고, 그 뒤에 영숫자가 **8자 이상**(전체가 정규 표현식 `^U[A-Z0-9]{8,}$`에 일치) | Slack DM(프리픽스 없이 ID만 지정하려는 경우). **너무 짧은 문자열**(예: `U12345`)은 이 단계에서 매치되지 않고, 하위 규칙으로 진행 |
+| 6 | 기존 Anima 이름과 **대소문자 무시하고 일치** | 사내 Inbox로(디스크상의 공식 이름으로 배달) |
+| 7 | 위 어디에도 해당하지 않음 | 수신처 불명(`RecipientNotFoundError`. 낮은 레벨에서는 알려진 Anima 이름·별칭 이름이 메시지에 포함될 수 있음) |
+
+**Anima 이름과 별칭의 충돌**: 어떤 문자열이 `user_aliases`의 키와 같아도, **기존 Anima의 디렉터리 이름과 완전 일치**하면 항상 **1번**이 우선되어 사내 Inbox로 도착한다(별칭은 사용되지 않음).
+
+#### `send_message` 도구가 수신처 해결에 실패했을 때
+
+`resolve_recipient`이 실패해도, 도구 결과에는 예외 전문이 그대로 반환되지 않는다. 세션 종류에 따른 **가이던스**가 반환된다(`core/tooling/handler_comms.py`).
+
+- **인간과의 채팅 중**(`chat`): 해당 수신처에는 `send_message`할 수 없다는 점과, **텍스트로 직접 답변하면 인간 사용자에게 도달**하는 점, `send_message`는 다른 Anima용으로 사용할 점이 표시된다.
+- **채팅 외**(하트비트·cron 등): 인간에게 연락은 **`call_human`**을 사용할 것, `send_message`은 다른 Anima용으로 사용할 것이 표시된다.
+
+따라서 「Known animas: …」 같은 낮은 레벨 문구는 도구 사용자에게 나오지 않는 경우가 많다. 설정·별칭을 고치려면 `config.json`의 `external_messaging`를 확인한다.
+
+#### 인간 별칭과 `preferred_channel`
+
+`external_messaging.user_aliases`의 각 엔트리에는 `slack_user_id` 및/또는 `chatwork_room_id`을 설정한다. `external_messaging.preferred_channel`이 `slack`일 때는, Slack용 ID가 있으면 Slack을 선택한다. Slack ID가 비어 있고 Chatwork만 있으면 Chatwork로 폴백한다(`preferred_channel`이 `chatwork`일 때의 반대도 동일). **어느 ID도 없는** 별칭은 해결 시 오류가 된다.
+
+#### 외부로 도달한 후의 배달(개요)
+
+외부 루트로 해결된 경우, `send_message`은 사내 Messenger를 경유하지 않고 `core/outbound.send_external`에서 API로 전송한다.
+
+- **시도 순서**: 먼저 해결 결과의 `channel`(`slack` 또는 `chatwork`)로 보내고, 예외 시에는 `_build_channel_order`에 따라, 상대방에게 Slack ID와 Chatwork 룸 ID **모두**가 있으면 다른 채널도 순서대로 시도한다.
+- **Slack**: `core/outbound._send_via_slack`이 사용하는 토큰은 Vault／공유 크레덴셜의 **`SLACK_BOT_TOKEN__{送信元Anima名}`**(있으면). 본문은 `md_to_slack_mrkdwn`로 Slack용으로 정형화된다. `core/integrations._anima_icon_url`로 아이콘 URL이 해결되면 `post_message`에 전달된다.
+  - **본문 앞부분의 `[送信者名]` 프리픽스**: **Anima 전용 Bot 토큰이 없는** 경우에만, 본문 앞부분에 `[{送信元Anima名}] `가 붙는다(누구의 문건인지 DM상에서 표시하기 위해). **토큰이 있는** 경우는 프리픽스를 붙이지 않고, `username`(Anima 이름)과 `icon_url`로 발신자를 나타낸다.
+- **Chatwork**: 전송 Anima 자신의 identity 토큰(`CHATWORK_API_TOKEN__<Anima名>`) 경유로 룸에 게시. 발신원 Anima 이름이 있으면 본문 앞부분에 `[送信者名] `을 붙이고, `md_to_chatwork`로 정형화된다.
+
+### 기본 전송 예
 
 ```
-send_message(to="alice", content="리뷰 완료했습니다. 수정 사항은 3건입니다.", intent="report")
+send_message(to="alice", content="レビュー完了しました。修正点は3箇所です。", intent="report")
 ```
 
-### 답장 예시
+### 답장 전송 예
 
-수신 메시지의 `id`와 `thread_id`를 사용하여 답장을 연결합니다:
+수신 메시지의 `id`와 `thread_id`을 사용해 답장을 연결한다:
 
 ```
 send_message(
     to="alice",
-    content="확인했습니다. 15시까지 대응하겠습니다.",
+    content="了解しました。15時までに対応します。",
     intent="report",
     reply_to="20260215_093000_123456",
     thread_id="20260215_090000_000000"
 )
 ```
 
-### intent 사용 구분
+`user_aliases`에 등록한 별칭(예: `user`)으로는, 사내 Anima와 동일하게 `send_message`로 보낼 수 있다(외부 채널로 라우팅된다).
 
-| intent | 용도 | 예시 |
-|--------|------|------|
-| `report` | 진행/결과 보고 | 태스크 완료 보고, 상사에게 상황 보고 |
-| `question` | 응답이 필요한 질문 | 불명확한 점 확인, 판단을 구하는 문의 |
+```
+send_message(to="user", content="対応完了しました。", intent="report")
+```
 
-**참고**: "알겠습니다", "감사합니다" 등의 확인/감사/FYI는 DM으로 보낼 수 없습니다. Board (post_channel)를 사용하세요.
+### intent의 용도 구분
 
-### Board와 DM 사용 구분
+| intent | 용도 | 예 |
+|--------|------|-----|
+| `report` | 진행 상황·결과 보고 | 작업 완료 보고, 상급자에게 상황 보고 |
+| `question` | 답변이 필요한 질문 | 불명확한 점 확인, 판단을 구하는 문의 |
 
-| 용도 | 사용 도구 | 예시 |
-|------|----------|------|
-| 진행/결과 보고 | send_message (intent=report) | 상사에게 태스크 완료 보고 |
-| 태스크 위임 | delegate_task | 직속 부하에게 하나의 영속 태스크를 위임; task_tracker로 진행 확인 |
-| 질문/문의 | send_message (intent=question) | 불명확한 점 확인 |
-| 확인/감사/FYI | post_channel (Board) | "확인했습니다", "공유합니다" |
-| 3명 이상에게 전달 | post_channel (Board) | 팀 전체 공지 |
-| 동일 수신자 2번째 전송 | post_channel (Board) | 추가 정보 공유 |
+**주의**: 「알겠습니다」「감사합니다」 등의 acknowledgment·감사·FYI는 DM으로 보낼 수 없다. Board(post_channel)를 사용할 것.
+
+### Board와 DM의 용도 구분
+
+| 용도 | 사용 도구 | 예 |
+|------|-----------|-----|
+| 진행 상황 보고·결과 보고 | send_message (intent=report) | 상급자에게 작업 완료 보고 |
+| 작업 위임 | delegate_task | 직속 부하에게 하나의 영속 작업을 위임. 진행 상황은 task_tracker로 확인 |
+| 질문·문의 | send_message (intent=question) | 불명확한 점 확인 |
+| 이해·감사·FYI | post_channel(Board) | 「알겠습니다」「공유했습니다」 |
+| 팀 전체에 공유 | post_channel(Board) | 관계자에게 일괄 공지 |
+| 동일 수신처로 2번째 | post_channel(Board) | 추가 정보 공유 |
 
 ## 스레드 관리
 
-### 새 스레드 시작
+### 새 스레드 시작하기
 
-`thread_id`를 생략하면 시스템이 자동으로 메시지 ID를 스레드 ID로 설정합니다.
-새로운 주제를 시작할 때는 `thread_id`를 지정하지 마세요.
-
-```
-send_message(to="bob", content="새 프로젝트 건으로 상담이 있습니다.", intent="question")
-# → thread_id는 자동 생성됨 (메시지 ID와 동일)
-```
-
-### 기존 스레드에 답장
-
-수신 메시지에 답장할 때, MUST: `reply_to`와 `thread_id` 모두 지정하세요.
+`thread_id`을 생략하면, 시스템이 자동으로 메시지 ID를 스레드 ID로 설정한다.
+새 주제를 시작할 경우 `thread_id`를 지정하지 말 것.
 
 ```
-# 수신 메시지:
+send_message(to="bob", content="新しいプロジェクトの件で相談があります。", intent="question")
+# → thread_id は自動生成される（メッセージIDと同じ値）
+```
+
+### 기존 스레드에 답장하기
+
+수신 메시지에 답장할 경우, MUST: `reply_to`와 `thread_id` **모두**를 지정한다.
+
+```
+# 受信メッセージ:
 #   id: "20260215_093000_123456"
 #   thread_id: "20260215_090000_000000"
-#   content: "리뷰 부탁합니다"
+#   content: "レビューお願いします"
 
 send_message(
     to="alice",
-    content="리뷰 완료했습니다.",
+    content="レビュー完了しました。",
     intent="report",
     reply_to="20260215_093000_123456",
     thread_id="20260215_090000_000000"
@@ -96,312 +141,278 @@ send_message(
 
 ### 스레드 관리 규칙
 
-- MUST: 같은 주제의 대화에서는 동일 `thread_id`를 계속 사용
-- MUST: 답장 시 원본 메시지의 `id`를 `reply_to`에 설정
+- MUST: 같은 주제의 대화에서는 같은 `thread_id`을 계속 사용할 것
+- MUST: 답장 시에는 원본 메시지의 `id`을 `reply_to`에 설정할 것
 - SHOULD NOT: 다른 주제를 기존 스레드에 섞지 말 것. 새 주제는 새 스레드로 시작
-- MAY: `thread_id`를 모르는 경우 생략 가능 (새 스레드로 취급됨)
+- MAY: `thread_id`이 불명확하면 생략해도 됨(새 스레드로 취급됨)
 
-## CLI를 통한 메시지 전송
+## CLI로 메시지 전송
 
-도구를 사용할 수 없거나 Bash를 통해 전송하는 경우의 방법입니다.
+도구를 사용할 수 없거나 Bash 경유로 전송하는 경우의 방법.
 
 ### 기본 구문
 
 ```bash
-animaworks send {발신자명} {수신자} "메시지 내용" [--intent report|question] [--reply-to ID] [--thread-id ID]
+animaworks send {送信者名} {宛先} "メッセージ内容" [--intent report|question] [--reply-to ID] [--thread-id ID]
 ```
 
-### 예시
+### 구체적 예
 
 ```bash
-# 기본 전송 (intent는 생략 가능, CLI에서는 빈 값으로도 전송 가능)
-animaworks send bob alice "작업 완료했습니다. 확인 부탁합니다." --intent report
+# 基本送信（intent は省略可、CLI 経由では空でも送信可能）
+animaworks send bob alice "作業完了しました。確認をお願いします。" --intent report
 
-# 스레드 답장
-animaworks send bob alice "확인했습니다" --intent report --reply-to 20260215_093000_123456 --thread-id 20260215_090000_000000
+# スレッド返信
+animaworks send bob alice "了解しました" --intent report --reply-to 20260215_093000_123456 --thread-id 20260215_090000_000000
 ```
 
 ### 주의 사항
 
-- MUST: 메시지 내용을 쌍따옴표로 감쌀 것
-- SHOULD: send_message 도구가 사용 가능한 경우 도구를 우선 사용 (CLI보다 확실)
-- 메시지 내 `"`를 포함할 경우 이스케이프 필요: `\"`
+- MUST: 메시지 내용은 더블쿼트로 감쌀 것
+- SHOULD: send_message 도구를 사용할 수 있으면 도구를 우선할 것(CLI보다 확실)
+- 메시지 안에 `"`을 포함할 경우 이스케이프 필요: `\"`
 
 ## 수신 메시지 확인 방법
 
 ### 자동 배달
 
-메시지를 수신하면 heartbeat이나 대화 시작 시 시스템이 자동으로 미읽 메시지를 알립니다.
-수동 확인은 보통 불필요합니다.
+메시지를 수신하면, 하트비트나 대화 시작 시 시스템이 자동으로 읽지 않은 메시지를 알림한다.
+수동 확인은 보통 불필요.
 
-### 수신 메시지 구조
+### 수신 메시지의 구조
 
-수신 메시지에는 다음 정보가 포함됩니다:
+수신 메시지에는 다음 정보가 포함된다:
 
-| 필드 | 설명 | 예시 |
-|------|------|------|
-| `id` | 메시지 고유 식별자 | `20260215_093000_123456` |
+| 필드 | 설명 | 예 |
+|-----------|------|-----|
+| `id` | 메시지의 고유 식별자 | `20260215_093000_123456` |
 | `thread_id` | 스레드 식별자 | `20260215_090000_000000` |
 | `reply_to` | 답장 대상 메시지 ID | `20260215_085500_789012` |
-| `from_person` | 발신자명 | `alice` |
-| `to_person` | 수신자명 (자신) | `bob` |
-| `type` | 메시지 유형 | `message` (일반), `board_mention` (Board 멘션), `ack` (읽음 확인) |
-| `content` | 메시지 본문 | `리뷰 부탁합니다` |
+| `from_person` | 발신자 이름 | `alice` |
+| `to_person` | 수신자 이름(자신) | `bob` |
+| `type` | 메시지 종류 | `message`(일반), `board_mention`(Board 멘션), `ack`(읽음 알림) |
+| `content` | 메시지 본문 | `レビューお願いします` |
 | `intent` | 발신자의 의도 | `report`, `question` |
-| `timestamp` | 전송 일시 | `2026-02-15T09:30:00` |
+| `timestamp` | 발신 일시 | `2026-02-15T09:30:00` |
 
-### 답장 의무
+### 답장 방침
 
-- MUST: 미읽 메시지를 받으면 발신자에게 답장
-- MUST: 질문과 의뢰에는 반드시 응답
-- SHOULD: "알겠습니다"만이 아닌 다음 액션도 전달
+- MUST: 질문·요청·대응이 필요한 읽지 않은 메시지에는 응답할 것
+- MUST NOT: 단순한 이해·감사·칭찬에 대한 답장을 계속하지 말 것
+- SHOULD: 수령 연락이 필요하면 「알겠습니다」만이 아니라, 다음 액션도 전할 것
 
 ## 외부 플랫폼에서의 메시지 수신
 
-### 서버가 자동 수신
+### 서버가 자동 수신한다
 
-Slack이나 Chatwork 등 외부 플랫폼의 메시지는 **AnimaWorks 서버가 상시 수신하여 대상 Anima의 Inbox에 자동 배달합니다**. Anima가 직접 WebSocket 연결을 유지하거나 API를 폴링할 필요는 없습니다.
+Slack이나 Chatwork 등의 외부 플랫폼에서 온 메시지는, **AnimaWorks 서버가 상시 수신하여 대상 Anima의 Inbox에 자동 배달한다**. Anima 자신이 WebSocket 연결을 유지하거나 API를 폴링할 필요는 없다.
 
-서버는 다음 방식으로 메시지를 수신합니다 (관리자가 설정):
+서버는 다음 방식으로 메시지를 수신한다(관리자가 설정):
 
-- **Socket Mode**: Slack WebSocket 경유 실시간 수신
-- **Webhook**: Slack Events API / Chatwork Webhook 경유 수신
+- **Socket Mode**: Slack WebSocket 경유로 실시간 수신
+- **Webhook**: Slack Events API / Chatwork Webhook 경유로 수신
 
-어떤 방식이든 메시지는 Inbox에 동일한 형식으로 배달됩니다.
+어느 방식이든, 메시지는 Inbox에 같은 형식으로 배달된다.
 
-### 외부 메시지 식별
+### 외부 메시지의 식별
 
-외부 플랫폼에서 온 메시지는 Anima 간 메시지와 다음 점이 다릅니다:
+외부 플랫폼에서 도착한 메시지는 일반 Anima 간 메시지와 다음 점이 다르다:
 
 | 필드 | Anima 간 DM | 외부 메시지 |
-|------|------------|-----------|
+|-----------|------------|--------------|
 | `source` | `"anima"` | `"slack"`, `"chatwork"` 등 |
-| `from_person` | Anima 이름 (예: `alice`) | `"slack:U12345..."` 형식 |
+| `from_person` | Anima 이름(예: `alice`) | `"slack:U12345..."` 형식 |
 
 ### 외부 메시지가 도착하는 경우
 
-1. **사람의 DM**: Slack/Chatwork에서 사람이 Anima에게 메시지를 보낸 경우
-2. **call_human 답장**: `call_human`으로 보낸 알림의 Slack 스레드에 사람이 답장한 경우 (상세: `communication/call-human-guide.md`)
-3. **Channel 멘션**: Slack channel에서 Anima를 대상으로 메시지가 게시된 경우
+1. **인간으로부터의 DM**: Slack/Chatwork 에서 인간이 Anima에게 메시지를 전송한 경우
+2. **call_human에 대한 답장**: `call_human` 에서 보낸 알림의 Slack 스레드에 인간이 답장한 경우 (상세: `communication/call-human-guide.md`)
+3. **채널 경유 멘션**: Slack 채널에서 Anima에게 보내는 메시지가 게시된 경우
 
-### Slack 메시지의 즉시 처리와 지연 처리
+### Slack 메시지의 Inbox 처리
 
-Slack 메시지는 내용에 따라 즉시 처리되거나 정기 heartbeat까지 대기합니다:
+Slack 메시지가 Inbox에 기록되면 파일 변경 알림으로 Inbox 처리가 시작된다. 시작 시 intent 필터는 없으며, 멘션 여부로 처리 시작을 지연시키지 않는다. 파일 알림을 놓친 경우 45초마다 재확인이 이를 보완한다.
 
-| 조건 | 처리 시점 | 이유 |
-|------|----------|------|
-| **@멘션** (Bot이 mention된 경우) | **즉시 처리** | `intent="question"`이 자동 부여, actionable로서 즉시 inbox 처리 실행 |
-| **DM** (Bot에 직접 메시지) | **즉시 처리** | DM은 Bot을 대상으로 하므로 `intent="question"`이 자동 부여 |
-| **멘션 없는 channel 메시지** | **다음 heartbeat에서 처리** | `intent`가 비어 있어 즉시 트리거되지 않고, 정기 순찰 시 미읽으로 처리 |
+| 조건 | Inbox 처리 | 응답 방침 |
+|------|------------|----------|
+| **@멘션 포함** (Bot이 mention된 경우) | 파일 알림으로 시작 | `intent="question"` 이 자동 부여됨. 내용에 따라 대응 |
+| **DM** (Bot에게 직접 메시지) | 파일 알림으로 시작 | `intent="question"` 이 자동 부여됨. 내용에 따라 대응 |
+| **멘션 없는 채널 메시지** | 파일 알림으로 시작 | 자신에게 온 메시지가 아니면 상황 파악에 그치고, 답장이나 액션은 필요 없는 경우가 있음 |
 
-이를 통해 channel 내 일상 대화에서는 Anima가 매번 기동하지 않고, @멘션이나 DM으로 명시적으로 호출한 경우에만 빠르게 반응합니다.
+시작했다고 반드시 답장하는 것은 아니다. 단순한 이해·감사·칭찬에는 답장하지 않고, 추가 질문·요청·새 정보가 있는 경우에만 대응한다.
 
-### 외부 메시지 응답
+### 외부 메시지에 대한 응답
 
-외부 메시지를 받은 경우:
+외부 메시지를 수신하면:
 
-- `call_human` 답장인 경우: 채팅 응답 또는 `call_human`으로 응답
-- 사람의 DM인 경우: 채팅 응답으로 대응 (`send_message`는 Anima 간 메시지용이므로 외부 플랫폼 사용자에게 직접 전달되지 않을 수 있음)
-- 알 수 없는 발신자인 경우: 메시지의 `source`와 `from_person`을 확인하고, 필요하면 상사에게 보고
+- `call_human` 에 대한 답장인 경우: 채팅 응답 또는 `call_human` 로 응답
+- 인간으로부터의 DM인 경우: 채팅(Web UI)으로 답하거나, 등록된 인간 별칭으로 `send_message` 하거나, 상대의 Slack 사용자 ID를 알면 `to="slack:U0123456789"` (또는 ID만, 구현이 허용하는 형식일 때)으로 **`send_message` 에 의한 답장 가능** (위의 "수신처 `to` 의 해결"을 충족할 것)
+- 출처가 불명확한 경우: 메시지의 `source` 와 `from_person` 을 확인하고, 필요에 따라 상급자에게 보고
 
-## 메시지 본문 모범 사례
+## 메시지 본문의 베스트 프랙티스
 
 ### 좋은 메시지 작성법
 
-1. **결론을 먼저 작성**: 상대방이 첫 줄에서 요점을 파악할 수 있게
-2. **구체적으로 작성**: 모호한 표현을 피하고 수치, 기한, 대상을 명시
-3. **액션을 명시**: 상대방에게 무엇을 해주길 원하는지 명확하게
-4. **답장 필요 여부 명시**: 답장이 필요하면 "답장 부탁합니다"라고 작성
+1. **결론을 먼저 쓴다**: 상대가 첫 줄에서 요점을 파악할 수 있게 한다
+2. **구체적으로 쓴다**: 모호한 표현을 피하고, 수치·마감일·대상을 명시한다
+3. **액션을 명시한다**: 상대에게 무엇을 해주길 바라는지 분명히 한다
+4. **답변 필요 여부를 명기한다**: 답변이 필요하면 "답변 부탁드립니다"라고 쓴다
 
 ### 좋은 예와 나쁜 예
 
 **나쁜 예:**
 ```
-데이터 건, 확인 부탁합니다.
+データの件、確認しておいてください。
 ```
 
 **좋은 예:**
 ```
-매출 데이터 (2026년 1월분) 검증 체크를 부탁합니다.
-대상 파일: /shared/data/sales_202601.csv
-확인 관점: 결측값 유무와 금액 필드 이상값
-기한: 오늘 15시까지
-결과를 답장 부탁합니다.
+売上データ（2026年1月分）のバリデーションチェックをお願いします。
+対象ファイル: /shared/data/sales_202601.csv
+確認観点: 欠損値の有無と金額フィールドの異常値
+期限: 本日15時まで
+結果は返答をお願いします。
 ```
 
 ### 긴 내용 전달 방법
 
-- SHOULD: 본문이 500자를 넘으면 내용을 파일에 작성하고, 메시지에는 파일 경로와 요약만 기재
-- MUST: 파일을 참조할 때 상대방이 접근 가능한 경로에 배치
+- SHOULD: 본문이 500자를 초과하는 경우, 내용을 파일로 작성하고 메시지에는 파일 경로와 요약만 기재한다
+- MUST: 파일을 참조하는 경우, 상대가 접근 가능한 경로에 배치할 것
 
 ```
-배포 절차서를 작성했습니다.
-파일: ~/.animaworks/shared/docs/deploy-procedure-v2.md
+デプロイ手順書を作成しました。
+ファイル: ~/.animaworks/shared/docs/deploy-procedure-v2.md
 
-요약: 스테이징 환경 확인 스텝을 3개 추가했습니다 (섹션 4.2 참조).
-리뷰 부탁합니다. 답장 부탁합니다.
+要約: ステージング環境での確認ステップを3つ追加しました（セクション4.2参照）。
+レビューをお願いします。返答をお願いします。
 ```
 
-## 자주 발생하는 문제와 대책
+## 자주 있는 실패와 대책
 
-### intent 지정 오류
+### intent 지정 실수
 
-**증상**: `Error: DM intent must be 'report' or 'question' only`
+**증상**: `Error: DMのintentは 'report', 'question' のみ許可されています` 이라고 표시됨
 
-**원인**: `intent`를 생략했거나, 확인/감사/FYI를 DM으로 보내려 했음
+**원인**: `intent` 을 생략했거나, acknowledgment·감사·FYI를 DM으로 보내려 했음
 
-**대책**: DM에서는 반드시 `intent`에 `report` 또는 `question`을 지정. 태스크 위임은 `delegate_task` 사용. 확인/감사/FYI는 Board (post_channel) 사용
+**대책**: DM에서는 반드시 `intent` 에 `report` 또는 `question` 를 지정한다. 작업 위임에는 `delegate_task` 를 사용한다. 이해·감사·FYI는 Board(post_channel)를 사용한다
 
-### 수신자 이름 오류
+**증상**: `intent='delegation' は廃止されました` 등으로 표시됨
 
-**증상**: 전송해도 상대방에게 도착하지 않음
+**원인**: 기존의 `send_message(..., intent="delegation")` 를 사용하고 있음
 
-**원인**: `to` 파라미터의 Anima 이름이 부정확하거나, 사람 별명이 config.json에 미등록
+**대책**: 작업 위임은 **`delegate_task`** 만 사용한다. `send_message` 의 `intent` 는 `report` / `question` 만
 
-**대책**: Anima 이름은 대소문자를 구분함. 사람에게 전송 시 `config.json`의 `external_messaging.user_aliases`에 별명을 등록. 불확실하면 `search_memory(query="멤버", scope="knowledge")`로 조직 멤버 확인
+### 수신처 이름 오류
+
+**증상**: 수신처 불명 오류가 발생하거나, 의도하지 않은 상대에게 도달함
+
+**원인**: `to` 이 해결 규칙에 맞지 않음 (Anima 이름의 철자, `user_aliases` 미등록, Slack/Chatwork 의 ID 미설정 등)
+
+**대책**:
+
+- 가장 빠르게 전달하고 싶은 Anima 이름은 **디렉터리 이름과 같은 표기**(대문자·소문자 포함)로 지정한다. 다른 표기라도 대문자·소문자만 다른 경우 6번째 규칙으로 사내 배포에 매칭된다
+- **Anima 이름과 동일한 별칭**이 있는 경우, **완전 일치하는 Anima 디렉터리 이름**이 있으면 항상 사내가 우선된다 (의도와 반대라면 Anima 이름의 리네임이나 별칭 이름 변경이 필요)
+- 인간에게는 `external_messaging.user_aliases` 에 별칭과 `slack_user_id` / `chatwork_room_id` 를 설정하고, `preferred_channel` 를 확인한다
+- 알려진 Slack 사용자 ID를 알면 `slack:USERID` 또는 ID 단독(`U` 뒤에 영숫자 **8자 이상**)을 `to` 로 한다. **짧은 ID**(예: `U12345`)는 Slack 형식으로 인정되지 않아 수신처 불명으로 취급될 수 있다
+- 도구가 "채팅에서는 직접 답변", "call_human을 사용하라" 등의 힌트만 반환한 경우, 위의 "`send_message` 도구가 수신처 해결에 실패했을 때"를 참조하고, `config.json` 의 `external_messaging` 와 세션 종류를 확인한다
+- 불명확한 경우 `search_memory(query="メンバー", scope="knowledge")` 등으로 조직 정보를 확인한다
 
 ### 스레드 단절
 
-**증상**: 답장했는데 상대방 측에서 대화 흐름이 보이지 않음
+**증상**: 답장했는데 상대쪽에서 대화 흐름이 보이지 않음
 
-**원인**: `reply_to`나 `thread_id`를 지정하지 않았음
+**원인**: `reply_to` 이나 `thread_id` 을 지정하는 것을 잊음
 
-**대책**: 답장 시 MUST: 원본 메시지의 `id`를 `reply_to`에, `thread_id`를 그대로 `thread_id`에 설정
+**대책**: 답장 시 MUST: 원본 메시지의 `id` 를 `reply_to` 에, `thread_id` 를 그대로 `thread_id` 에 설정한다
 
-### 메시지가 너무 길다
+### 메시지가 너무 김
 
-**증상**: 상대방이 요점을 파악하지 못함
+**증상**: 상대가 요점을 파악하지 못함
 
-**대책**: 결론을 맨 앞에 놓고, 상세 내용은 파일에 분리. 메시지 본문은 요약 + 파일 참조 형식으로
+**대책**: 결론을 맨 앞에 두고, 상세는 파일로 분리한다. 메시지 본문은 요약+파일 참조 형식으로 한다
 
-### 동일 수신자 2번째 전송
+### 동일 수신처로 2회째 전송
 
-**증상**: `Error: Already sent a message to {to} in this run`
+**증상**: `Error: このrunで既に {to} にメッセージを送信済みです` 이라고 표시됨
 
-**원인**: 1회 run에서 같은 수신자에게 2회 이상 send_message를 호출
+**원인**: 1회의 run에서 동일 수신처에 2회 이상 send_message를 호출함
 
-**대책**: 추가 연락은 Board (post_channel)를 사용. 또는 다음 run (heartbeat 등)에서 전송
+**대책**: 추가 연락은 Board(post_channel)를 사용한다. 또는 다음 run(하트비트 등)에서 전송한다
 
-### 3명 이상에게 전송
+### 답장을 잊음
 
-**증상**: `Error: Maximum 2 recipients per run for DMs`
+**증상**: 상대가 대응 상황을 파악하지 못해 다시 문의가 옴
 
-**대책**: 3명 이상에게 전달 시 Board (post_channel) 사용
+**대책**: 대응이 필요한 메시지에 답장한다. 바로 대응할 수 없으면 "확인했습니다. XX시까지 대응하겠습니다"라고 예상을 전한다. 단순한 이해·감사에는 답장하지 않는다
 
-### 답장 누락
+## 전송 규칙
 
-**증상**: 상대방이 대응 상황을 파악하지 못하고 재문의가 옴
+- `send_message` 의 intent는 `report` 또는 `question`. 작업 위임에는 `delegate_task` 를 사용한다.
+- 동일 run에서 같은 수신처로의 DM은 1통까지. 수신처 수의 상한은 없다.
+- 동일 run에서 같은 Board 채널에 게시할 수 있는 것은 1회까지. run을 넘는 cooldown이나 DM / Board 공통의 전송 예산은 없다.
+- 페어별 대화 깊이에 따른 전송 거부는 없다. 내부 Anima 간의 깊이는 진단 목적으로 로그에 기록될 수 있지만, 전송 본문은 폐기되지 않는다.
 
-**대책**: 수신 메시지에는 MUST: 반드시 답장. 즉시 대응할 수 없어도 "확인했습니다. XX시까지 대응하겠습니다"라고 답장
+## 답장 방침
 
-## 전송 제한
+대응이 필요한 메시지에는 답장하고, 수령 연락이 필요하면 다음 행동이나 예상을 덧붙여 한 번만 전한다. 단순한 이해·감사·칭찬에는 답장하지 않고, 응답을 계속하지 않는다.
 
-메시지 전송에는 시스템 전체 레이트 제한이 적용됩니다.
-과도한 전송은 루프와 장애의 원인이 되므로 아래 제한을 이해하고 행동하세요.
+## 대화를 간결하게 하기 위한 권장
 
-### 글로벌 전송 제한 (activity_log 기반)
-
-| 제한 | 기본값 | 대상 |
-|------|--------|------|
-| 시간당 상한 | 30통/시 | DM (message_sent) 카운트 |
-| 일당 상한 | 100통/일 | DM (message_sent) 카운트 |
-
-제한에 도달하면 전송이 오류가 됩니다. `ack`, `error`, `system_alert` 타입 메시지는 제한 대상 외.
-값은 `config.json`의 `heartbeat.max_messages_per_hour` / `heartbeat.max_messages_per_day`로 변경 가능.
-
-### 1회 run당 제한
-
-- **DM**: 최대 2명까지, 동일 수신자에게 1통만
-- **Board**: 동일 channel 게시 1회까지 (쿨다운 포함)
-
-### 캐스케이드 감지 (2자 간 왕복 제한)
-
-같은 상대와 짧은 시간 내 왕복이 너무 많으면 전송이 차단됩니다.
-`config.json`의 `heartbeat.depth_window_s` (시간 윈도우)와 `heartbeat.max_depth` (최대 깊이)로 제어.
-
-### 제한에 도달한 경우 대처
-
-1. 제한은 activity_log의 슬라이딩 윈도우로 계산됨
-2. 시간 제한 도달: 전송 내용을 current_state.md에 기록하고 다음 세션에서 전송
-3. 일 제한 도달: 정말 필요한 메시지만으로 줄이고 다음 날까지 대기
-4. 긴급 연락이 필요한 경우 `call_human` 사용 (레이트 제한 대상 외)
-
-### 전송량 절약 모범 사례
-
-- 여러 보고 사항을 1통의 메시지로 통합
-- 확인/감사/FYI는 Board에 게시 (DM 할당량 절약)
-- 정기적인 정보 공유는 Board channel 게시로 통합
-
-## 1라운드 규칙
-
-DM (`send_message`)의 주고받기는 **1주제 1왕복**을 원칙으로 합니다.
-
-### 규칙
-
-- MUST: 1개 주제에 대해 전송과 답장의 1왕복으로 완결
-- MUST: 3왕복 이상의 주고받기가 필요해지면 Board channel로 이동
-- SHOULD: 첫 메시지에 필요한 정보를 모두 포함하여 추가 질문이 필요 없는 형태로
-
-### 1라운드 규칙이 필요한 이유
-
-- DM 왕복이 늘면 레이트 제한에 빨리 도달
-- 2자 간 메시지 루프는 **캐스케이드 감지**로 억제됨 (설정 가능한 시간 윈도우 내에서 최대 깊이를 넘으면 전송 차단)
-- Board 게시는 다른 멤버도 참조할 수 있어 정보 중복 방지
-
-### 예외
-
-- 긴급 차단 요소 보고는 횟수 제한 대상 외
+- 하나의 주제에 필요한 정보를 모아, 추가 확인이 필요 없는 형태로 전한다.
+- 여러 보고 사항은 가능하면 한 통으로 모으고, 전체 공유에는 Board를 사용한다.
+- 이야기를 계속해야 할 때는 내용에 따라 DM / Board를 선택한다. 왕복 횟수에 따른 시스템상의 거부는 없다.
 
 ## 커뮤니케이션 경로 규칙
 
-메시지 수신자는 조직 구조에 따릅니다:
+메시지의 수신처는 조직 구조에 따른다:
 
-| 상황 | 수신자 | 예시 |
-|------|--------|------|
-| 중요 진행/문제 보고 | 상사 | `send_message(to="manager", content="태스크A 완료", intent="report")` |
-| 태스크 지시/위임 | 부하 | `delegate_task(name="worker", instruction="보고서 작성 부탁합니다", deadline="1d")` |
-| 동료와의 연계 | 동료 (같은 상사) | `send_message(to="peer", content="리뷰 부탁합니다", intent="question")` |
-| 다른 부서에 연락 | 자신의 상사를 경유 | `send_message(to="manager", content="개발팀 X님에게 확인 부탁드릴 건이...", intent="question")` |
+| 상황 | 수신처 | 예 |
+|------|------|-----|
+| 중요한 진행 상황·문제 보고 | 상급자 | `send_message(to="manager", content="タスクA完了", intent="report")` |
+| 작업 지시·위임 | 부하 | `delegate_task(name="worker", instruction="レポート作成をお願い")` |
+| 동료와의 협력 | 동료(같은 상급자) | `send_message(to="peer", content="レビューお願い", intent="question")` |
+| 타 부서로의 연락 | 자신의 상급자 경유 | `send_message(to="manager", content="開発部のXさんに確認してほしい件が...", intent="question")` |
 
-- MUST: 다른 부서 멤버에게 직접 연락하지 말 것. 자신의 상사 또는 상대의 상사를 경유
-- MAY: 동료 (같은 상사를 둔 멤버)와는 직접 소통 가능
+- MUST: 타 부서 구성원에게 직접 연락하지 말 것. 자신의 상급자 또는 상대의 상급자를 경유한다
+- MAY: 동료(같은 상급자를 가진 구성원)와는 직접 소통해도 된다
 
-## 차단 요소 보고 (MUST)
+## 블로커 보고 (MUST)
 
-태스크 실행 중 다음 상황이 발생하면, 즉시 의뢰자에게 `send_message`로 보고하세요.
-"대기" 상태로 방치하면 안 됩니다.
+작업 실행 중 다음 상황이 발생한 경우, 즉시 의뢰자에게 `send_message` 로 보고할 것.
+"대기" 상태로 방치해서는 안 된다.
 
-- 파일/디렉토리를 찾을 수 없음
-- 권한 부족으로 접근 불가
+- 파일/디렉터리를 찾을 수 없음
+- 권한 부족으로 접근할 수 없음
 - 전제 조건이 충족되지 않음
 - 기술적 문제로 작업이 중단됨
 - 지시 내용이 불명확하여 판단할 수 없음
 
-보고 대상: 의뢰자 (send_message)
-중대 차단 요소 (30분 이상 지연 예상): 사람에게도 `call_human`으로 통지
+보고처: 의뢰자 (send_message)
+중대 블로커(30분 이상의 지연이 예상되는 경우): 인간에게도 `call_human` 로 알림
 
-### 차단 요소 보고 예시
+### 블로커 보고의 예
 
 ```
 send_message(
     to="manager",
-    content="""[차단 요소 보고] 데이터 집계 태스크
+    content="""【ブロッカー報告】データ集計タスク
 
-상황: 지정된 파일 /shared/data/sales_202601.csv가 존재하지 않습니다.
-영향: 집계 작업을 시작할 수 없습니다.
-필요한 조치: 파일 경로 확인 또는 파일 배치를 부탁합니다.""",
+状況: 指定されたファイル /shared/data/sales_202601.csv が存在しません。
+影響: 集計作業を開始できません。
+必要なアクション: ファイルパスの確認、またはファイルの配置をお願いします。""",
     intent="report"
 )
 ```
 
-## 의뢰 메시지 필수 요소 (MUST)
+## 요청 메시지의 필수 요소 (MUST)
 
-다른 Anima에게 태스크를 의뢰할 때 다음 5가지 요소를 반드시 포함하세요:
+다른 Anima에게 작업을 요청할 때, 다음 5가지 요소를 반드시 포함할 것:
 
-1. **목적** (왜 이 작업이 필요한지)
+1. **목적** (왜 이 작업이 필요한가)
 2. **대상** (파일 경로, 리소스)
-3. **기대 성과** (무엇이 완료된 상태인지)
-4. **기한**
+3. **기대 성과** (무엇이 완료되면 완료인가)
+4. **마감일**
 5. **완료 보고 필요 여부**
 
-이들이 부족한 메시지는 수신자가 확인을 위해 답장해야 하여 비효율적인 왕복이 발생합니다.
+이것들이 부족한 메시지는 수신측이 확인을 위해 답장해야 하므로, 비효율적인 왕복이 발생한다.

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from tests.helpers.filesystem import create_test_data_dir
 
 
@@ -19,6 +19,7 @@ def shared_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     d = create_test_data_dir(tmp_path)
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(d))
     from core.config import invalidate_cache
+
     invalidate_cache()
     shared = d / "shared"
     shared.mkdir(parents=True, exist_ok=True)

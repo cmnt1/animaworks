@@ -8,11 +8,9 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Tests for procedural memory auto-distillation (LLM-based classification).
+"""Tests for weekly activity-pattern distillation and procedure management.
 
 Covers:
-  - LLM-based classification (knowledge/procedures/skip)
-  - Classification output parsing
   - Procedure saving with frontmatter
   - Weekly pattern detection (activity_log-based)
   - Activity clustering (text-based fallback and vector-based)
@@ -37,8 +35,13 @@ def anima_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create an isolated anima directory with required subdirectories."""
     d = tmp_path / "animas" / "test-anima"
     for sub in (
-        "episodes", "knowledge", "procedures", "skills", "state",
-        "shortterm", "activity_log",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "skills",
+        "state",
+        "shortterm",
+        "activity_log",
     ):
         (d / sub).mkdir(parents=True)
 
@@ -55,297 +58,9 @@ def anima_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def distiller(anima_dir: Path):
     """Create a ProceduralDistiller instance."""
-    from core.memory.distillation import ProceduralDistiller
+    from core.memory.maintenance.distillation import ProceduralDistiller
 
     return ProceduralDistiller(anima_dir=anima_dir, anima_name="test-anima")
-
-
-@pytest.fixture(autouse=True)
-def _disable_vector_clustering():
-    """Force the deterministic text-based clustering fallback.
-
-    ``_cluster_activities`` tries ``generate_embeddings`` first, which
-    loads the real embedding model. On CI that triggers HuggingFace
-    HTTP 429 retries and exceeds the 30s pytest timeout (the production
-    ``except`` only catches *raised* exceptions, not the hang). Making
-    the embedding call raise exercises the text fallback that these
-    tests actually assert on. No test in this module relies on real
-    vector clustering.
-    """
-    with patch(
-        "core.memory.rag.singleton.generate_embeddings",
-        side_effect=RuntimeError("embeddings unavailable"),
-    ):
-        yield
-
-
-# ── LLM Classification ─────────────────────────────────────────
-
-
-class TestClassifyAndDistill:
-    """Test the LLM-based classify_and_distill() method."""
-
-    @pytest.mark.asyncio
-    async def test_classify_extracts_knowledge_and_procedures(
-        self, distiller,
-    ) -> None:
-        """LLM classification should extract both knowledge and procedure items."""
-        llm_response = (
-            "## knowledge抽出\n"
-            "- ファイル名: knowledge/api-patterns.md\n"
-            "  内容: # APIパターン\n\nREST APIでは常にべき等性を考慮する。\n\n"
-            "## procedure抽出\n"
-            "- ファイル名: procedures/deploy-production.md\n"
-            "  description: 本番環境デプロイ手順\n"
-            "  tags: deploy, ops\n"
-            "  内容: # 本番デプロイ\n\n1. テスト実行\n2. ビルド\n3. デプロイ"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "## 09:00 — デプロイ\n手順に従ってデプロイした。",
-                model="test-model",
-            )
-
-        assert len(result["knowledge_items"]) == 1
-        assert result["knowledge_items"][0]["filename"] == "knowledge/api-patterns.md"
-        assert "APIパターン" in result["knowledge_items"][0]["content"]
-
-        assert len(result["procedure_items"]) == 1
-        assert result["procedure_items"][0]["filename"] == "procedures/deploy-production.md"
-        assert result["procedure_items"][0]["description"] == "本番環境デプロイ手順"
-        assert "deploy" in result["procedure_items"][0]["tags"]
-
-    @pytest.mark.asyncio
-    async def test_classify_empty_input(self, distiller) -> None:
-        """Empty input should return empty results without calling LLM."""
-        result = await distiller.classify_and_distill("")
-        assert result["knowledge_items"] == []
-        assert result["procedure_items"] == []
-        assert result["raw_response"] == ""
-
-    @pytest.mark.asyncio
-    async def test_classify_skip_only(self, distiller) -> None:
-        """When LLM returns only skip content, both lists should be empty."""
-        llm_response = (
-            "## knowledge抽出\n(なし)\n\n"
-            "## procedure抽出\n(なし)"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "今日はいい天気でした。",
-                model="test-model",
-            )
-
-        assert result["knowledge_items"] == []
-        assert result["procedure_items"] == []
-
-    @pytest.mark.asyncio
-    async def test_classify_llm_error_returns_empty(self, distiller) -> None:
-        """LLM call failure should return empty results without raising."""
-        with patch(
-            "litellm.acompletion",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("API down"),
-        ):
-            result = await distiller.classify_and_distill(
-                "手順に従ってコマンドを操作した。",
-                model="test-model",
-            )
-
-        assert result["knowledge_items"] == []
-        assert result["procedure_items"] == []
-
-    @pytest.mark.asyncio
-    async def test_classify_unparseable_format_returns_empty(
-        self, distiller,
-    ) -> None:
-        """Completely unexpected LLM output should yield empty results."""
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = (
-                "I don't understand the format. Here is some random text."
-            )
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "テスト入力",
-                model="test-model",
-            )
-
-        assert result["knowledge_items"] == []
-        assert result["procedure_items"] == []
-
-    @pytest.mark.asyncio
-    async def test_classify_with_code_fence(self, distiller) -> None:
-        """LLM output wrapped in code fences should be handled."""
-        llm_response = (
-            "```markdown\n"
-            "## knowledge抽出\n"
-            "- ファイル名: knowledge/test.md\n"
-            "  内容: # テスト\n\nテスト知識です。\n\n"
-            "## procedure抽出\n(なし)\n"
-            "```"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "テストエピソード",
-                model="test-model",
-            )
-
-        assert len(result["knowledge_items"]) == 1
-        assert result["procedure_items"] == []
-
-    @pytest.mark.asyncio
-    async def test_classify_multiple_items(self, distiller) -> None:
-        """Multiple knowledge and procedure items should all be extracted."""
-        llm_response = (
-            "## knowledge抽出\n"
-            "- ファイル名: knowledge/patterns.md\n"
-            "  内容: # パターン\n\nパターン1の記録\n"
-            "- ファイル名: knowledge/tools.md\n"
-            "  内容: # ツール知識\n\nツールAの使い方\n\n"
-            "## procedure抽出\n"
-            "- ファイル名: procedures/deploy.md\n"
-            "  description: デプロイ手順\n"
-            "  tags: deploy\n"
-            "  内容: # デプロイ\n\n1. ステップ1\n"
-            "- ファイル名: procedures/backup.md\n"
-            "  description: バックアップ手順\n"
-            "  tags: backup, ops\n"
-            "  内容: # バックアップ\n\n1. DBダンプ"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "作業エピソード",
-                model="test-model",
-            )
-
-        assert len(result["knowledge_items"]) == 2
-        assert len(result["procedure_items"]) == 2
-        assert result["procedure_items"][1]["tags"] == ["backup", "ops"]
-
-
-# ── Knowledge vs Procedures Routing ──────────────────────────
-
-
-class TestKnowledgeVsProceduresRouting:
-    """Test that classification correctly routes to knowledge vs procedures."""
-
-    @pytest.mark.asyncio
-    async def test_knowledge_only_episode(self, distiller) -> None:
-        """An episode with only facts/lessons should yield knowledge, no procedures."""
-        llm_response = (
-            "## knowledge抽出\n"
-            "- ファイル名: knowledge/team-structure.md\n"
-            "  内容: # チーム構成\n\nAさんがリーダー、Bさんがバックエンド担当。\n\n"
-            "## procedure抽出\n(なし)"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "チーム構成の確認を行った。",
-                model="test-model",
-            )
-
-        assert len(result["knowledge_items"]) == 1
-        assert result["procedure_items"] == []
-
-    @pytest.mark.asyncio
-    async def test_procedures_only_episode(self, distiller) -> None:
-        """An episode with only steps should yield procedures, no knowledge."""
-        llm_response = (
-            "## knowledge抽出\n(なし)\n\n"
-            "## procedure抽出\n"
-            "- ファイル名: procedures/db-migration.md\n"
-            "  description: DB移行手順\n"
-            "  tags: db, migration\n"
-            "  内容: # DB移行\n\n1. バックアップ\n2. マイグレーション実行\n3. 確認"
-        )
-
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_resp = MagicMock()
-            mock_resp.choices = [MagicMock()]
-            mock_resp.choices[0].message.content = llm_response
-            mock_llm.return_value = mock_resp
-
-            result = await distiller.classify_and_distill(
-                "DB移行を手順に従って実施した。",
-                model="test-model",
-            )
-
-        assert result["knowledge_items"] == []
-        assert len(result["procedure_items"]) == 1
-
-    def test_get_knowledge_items(self, distiller) -> None:
-        """get_knowledge_items should extract from classification result."""
-        classification = {
-            "knowledge_items": [
-                {"filename": "knowledge/x.md", "content": "test"},
-            ],
-            "procedure_items": [],
-        }
-        items = distiller.get_knowledge_items(classification)
-        assert len(items) == 1
-        assert items[0]["filename"] == "knowledge/x.md"
-
-
-# ── Parsing Helpers ──────────────────────────────────────────
-
-
-class TestParseKnowledgeItems:
-    """Test _parse_knowledge_items() output parsing."""
-
-    def test_parses_knowledge_section(self, distiller) -> None:
-        text = (
-            "## knowledge抽出\n"
-            "- ファイル名: knowledge/test.md\n"
-            "  内容: テスト知識の内容です。\n\n"
-            "## procedure抽出\n(なし)"
-        )
-        items = distiller._parse_knowledge_items(text)
-        assert len(items) == 1
-        assert items[0]["filename"] == "knowledge/test.md"
-        assert "テスト知識" in items[0]["content"]
-
-    def test_no_knowledge_section(self, distiller) -> None:
-        text = "Some random text without expected sections."
-        items = distiller._parse_knowledge_items(text)
-        assert items == []
-
-    def test_knowledge_none_marker(self, distiller) -> None:
-        text = "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)"
-        items = distiller._parse_knowledge_items(text)
-        assert items == []
 
 
 class TestParseProcedureItems:
@@ -382,10 +97,12 @@ class TestParseProcedures:
     """Test the JSON parser for LLM procedure output (weekly distill)."""
 
     def test_valid_json_array(self, distiller) -> None:
-        text = json.dumps([
-            {"title": "a", "content": "# A"},
-            {"title": "b", "content": "# B"},
-        ])
+        text = json.dumps(
+            [
+                {"title": "a", "content": "# A"},
+                {"title": "b", "content": "# B"},
+            ]
+        )
         result = distiller._parse_procedures(text)
         assert len(result) == 2
 
@@ -404,10 +121,12 @@ class TestParseProcedures:
         assert result == []
 
     def test_filters_incomplete_items(self, distiller) -> None:
-        text = json.dumps([
-            {"title": "ok", "content": "# OK"},
-            {"title": "missing_content"},
-        ])
+        text = json.dumps(
+            [
+                {"title": "ok", "content": "# OK"},
+                {"title": "missing_content"},
+            ]
+        )
         result = distiller._parse_procedures(text)
         assert len(result) == 1
 
@@ -495,7 +214,9 @@ class TestRAGDuplicateCheck:
     """Test RAG-based duplicate detection in save_procedure()."""
 
     def test_save_procedure_skips_rag_duplicate(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """When RAG finds a high-similarity match, save_procedure returns None."""
         item = {
@@ -504,7 +225,8 @@ class TestRAGDuplicateCheck:
         }
 
         with patch.object(
-            distiller, "_check_rag_duplicate",
+            distiller,
+            "_check_rag_duplicate",
             return_value="procedures/existing_deploy.md",
         ):
             result = distiller.save_procedure(item)
@@ -514,7 +236,9 @@ class TestRAGDuplicateCheck:
         assert not (anima_dir / "procedures" / "deploy_app.md").exists()
 
     def test_save_procedure_allows_unique(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """When RAG finds no duplicate, save_procedure writes the file."""
         item = {
@@ -530,7 +254,9 @@ class TestRAGDuplicateCheck:
         assert result.name == "unique_proc.md"
 
     def test_save_procedure_rag_failure_proceeds(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """When RAG raises an exception, save_procedure proceeds with saving."""
         item = {
@@ -547,7 +273,7 @@ class TestRAGDuplicateCheck:
 
     def test_check_rag_duplicate_handles_exception(self, distiller) -> None:
         """_check_rag_duplicate returns None when RAG is unavailable."""
-        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
 
         def fail_on_rag(name, *args, **kwargs):
             if "core.memory.rag" in name:
@@ -560,7 +286,8 @@ class TestRAGDuplicateCheck:
         assert result is None
 
     def test_check_rag_duplicate_searches_procedures_and_skills(
-        self, distiller,
+        self,
+        distiller,
     ) -> None:
         """Both procedures and skills collections should be searched."""
         mock_retriever = MagicMock()
@@ -574,7 +301,7 @@ class TestRAGDuplicateCheck:
         high_result.metadata = {"source_file": "skills/existing_skill.md"}
 
         mock_retriever.search.side_effect = [
-            [low_result],   # procedures search
+            [low_result],  # procedures search
             [high_result],  # skills search
         ]
 
@@ -591,20 +318,20 @@ class TestRAGDuplicateCheck:
 
         import sys
 
-        with patch.dict(sys.modules, {
-            "core.memory.rag": rag_module,
-            "core.memory.rag.retriever": retriever_module,
-            "core.memory.rag.singleton": singleton_module,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "core.memory.rag": rag_module,
+                "core.memory.rag.retriever": retriever_module,
+                "core.memory.rag.vector_registry": singleton_module,
+            },
+        ):
             result = distiller._check_rag_duplicate("some procedure content")
 
         assert result == "skills/existing_skill.md"
         # Verify both collections were searched
         assert mock_retriever.search.call_count == 2
-        types_searched = [
-            c.kwargs["memory_type"]
-            for c in mock_retriever.search.call_args_list
-        ]
+        types_searched = [c.kwargs["memory_type"] for c in mock_retriever.search.call_args_list]
         assert "procedures" in types_searched
         assert "skills" in types_searched
 
@@ -654,7 +381,9 @@ class TestWeeklyPatternDistill:
 
     @pytest.mark.asyncio
     async def test_weekly_distill_from_activity_log(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """Should detect patterns from activity log and create procedures."""
         # Create activity log entries with repeated tool_use
@@ -663,26 +392,33 @@ class TestWeeklyPatternDistill:
 
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "ts": f"{today}T09:{i:02d}:00",
-                "type": "tool_use",
-                "tool": "github",
-                "summary": "PRレビューを実施",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": f"{today}T09:{i:02d}:00",
+                        "type": "tool_use",
+                        "tool": "github",
+                        "summary": "PRレビューを実施",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         (activity_dir / f"{today}.jsonl").write_text(
             "\n".join(entries) + "\n",
             encoding="utf-8",
         )
 
-        llm_response = json.dumps([
-            {
-                "title": "pr_review",
-                "description": "PRレビュー手順",
-                "tags": ["github", "review"],
-                "content": "# PRレビュー\n\n1. diffを確認\n2. コメント",
-            },
-        ])
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "pr_review",
+                    "description": "PRレビュー手順",
+                    "tags": ["github", "review"],
+                    "content": "# PRレビュー\n\n1. diffを確認\n2. コメント",
+                },
+            ]
+        )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_resp = MagicMock()
@@ -691,7 +427,9 @@ class TestWeeklyPatternDistill:
             mock_llm.return_value = mock_resp
 
             with patch.object(
-                distiller, "_check_rag_duplicate", return_value=None,
+                distiller,
+                "_check_rag_duplicate",
+                return_value=None,
             ):
                 result = await distiller.weekly_pattern_distill(
                     model="test-model",
@@ -711,7 +449,9 @@ class TestWeeklyPatternDistill:
 
     @pytest.mark.asyncio
     async def test_weekly_distill_no_relevant_events(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """Activity entries of irrelevant types should be filtered out."""
         activity_dir = anima_dir / "activity_log"
@@ -720,11 +460,16 @@ class TestWeeklyPatternDistill:
         # Only dm_sent/dm_received — not relevant for pattern detection
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "ts": f"{today}T09:{i:02d}:00",
-                "type": "dm_sent",
-                "summary": "メッセージを送信",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": f"{today}T09:{i:02d}:00",
+                        "type": "dm_sent",
+                        "summary": "メッセージを送信",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         (activity_dir / f"{today}.jsonl").write_text(
             "\n".join(entries) + "\n",
@@ -736,7 +481,9 @@ class TestWeeklyPatternDistill:
 
     @pytest.mark.asyncio
     async def test_weekly_distill_no_clusters(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """Too few entries per group should yield no clusters."""
         activity_dir = anima_dir / "activity_log"
@@ -744,18 +491,24 @@ class TestWeeklyPatternDistill:
 
         # Only 2 tool_use (below min_cluster_size=3)
         entries = [
-            json.dumps({
-                "ts": f"{today}T09:00:00",
-                "type": "tool_use",
-                "tool": "unique_tool_a",
-                "summary": "Something unique A",
-            }, ensure_ascii=False),
-            json.dumps({
-                "ts": f"{today}T10:00:00",
-                "type": "tool_use",
-                "tool": "unique_tool_b",
-                "summary": "Something unique B",
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "ts": f"{today}T09:00:00",
+                    "type": "tool_use",
+                    "tool": "unique_tool_a",
+                    "summary": "Something unique A",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "tool_use",
+                    "tool": "unique_tool_b",
+                    "summary": "Something unique B",
+                },
+                ensure_ascii=False,
+            ),
         ]
 
         (activity_dir / f"{today}.jsonl").write_text(
@@ -768,7 +521,9 @@ class TestWeeklyPatternDistill:
 
     @pytest.mark.asyncio
     async def test_weekly_distill_llm_error(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """LLM error during weekly distill should return zero results."""
         activity_dir = anima_dir / "activity_log"
@@ -776,12 +531,17 @@ class TestWeeklyPatternDistill:
 
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "ts": f"{today}T09:{i:02d}:00",
-                "type": "tool_use",
-                "tool": "github",
-                "summary": "PRレビュー",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": f"{today}T09:{i:02d}:00",
+                        "type": "tool_use",
+                        "tool": "github",
+                        "summary": "PRレビュー",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         (activity_dir / f"{today}.jsonl").write_text(
             "\n".join(entries) + "\n",
@@ -807,25 +567,21 @@ class TestClusterActivities:
 
     def test_groups_by_type_and_tool(self, distiller) -> None:
         """Entries with same type+tool should cluster together."""
-        entries = [
-            {"type": "tool_use", "tool": "github", "summary": f"PR #{i}"}
-            for i in range(5)
-        ]
+        entries = [{"type": "tool_use", "tool": "github", "summary": f"PR #{i}"} for i in range(5)]
 
         clusters = distiller._cluster_activities(entries, min_cluster_size=3)
         assert len(clusters) == 1
         assert len(clusters[0]) == 5
 
     @patch(
-        "core.memory.distillation.ProceduralDistiller._cluster_activities_vector",
+        "core.memory.maintenance.distillation.ProceduralDistiller._cluster_activities_vector",
         side_effect=ImportError("RAG unavailable in test"),
     )
     def test_different_tools_separate_clusters(self, _mock_vector, distiller) -> None:
         """Different tools should produce separate clusters (text-based fallback)."""
-        entries = (
-            [{"type": "tool_use", "tool": "github", "summary": f"gh{i}"} for i in range(4)]
-            + [{"type": "tool_use", "tool": "slack", "summary": f"sl{i}"} for i in range(4)]
-        )
+        entries = [{"type": "tool_use", "tool": "github", "summary": f"gh{i}"} for i in range(4)] + [
+            {"type": "tool_use", "tool": "slack", "summary": f"sl{i}"} for i in range(4)
+        ]
 
         clusters = distiller._cluster_activities(entries, min_cluster_size=3)
         assert len(clusters) == 2
@@ -918,38 +674,6 @@ class TestLoadActivityEntries:
         assert len(result) == 2
 
 
-# ── Section Splitting ─────────────────────────────────────────
-
-
-class TestSplitIntoSections:
-    """Test the Markdown section splitter (utility method)."""
-
-    def test_split_by_h2_headers(self, distiller) -> None:
-        text = (
-            "## Section A\nContent A\n\n"
-            "## Section B\nContent B"
-        )
-        sections = distiller._split_into_sections(text)
-        assert len(sections) == 2
-        assert sections[0].startswith("## Section A")
-        assert sections[1].startswith("## Section B")
-
-    def test_no_headers(self, distiller) -> None:
-        text = "Just plain text without headers."
-        sections = distiller._split_into_sections(text)
-        assert len(sections) == 1
-        assert sections[0] == text
-
-    def test_empty_text(self, distiller) -> None:
-        sections = distiller._split_into_sections("")
-        assert sections == []
-
-    def test_strips_blank_sections(self, distiller) -> None:
-        text = "\n\n## Header\nContent\n\n\n"
-        sections = distiller._split_into_sections(text)
-        assert len(sections) == 1
-
-
 # ── Weekly Pattern Filter: issue_resolved ────────────────────
 
 
@@ -958,7 +682,9 @@ class TestWeeklyPatternFilterIncludesResolved:
 
     @pytest.mark.asyncio
     async def test_issue_resolved_passes_filter(
-        self, distiller, anima_dir: Path,
+        self,
+        distiller,
+        anima_dir: Path,
     ) -> None:
         """issue_resolved events should pass the relevant type filter."""
         activity_dir = anima_dir / "activity_log"
@@ -967,26 +693,33 @@ class TestWeeklyPatternFilterIncludesResolved:
         # Write issue_resolved events to activity log
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "ts": f"{today}T09:{i:02d}:00",
-                "type": "issue_resolved",
-                "summary": f"問題解決 #{i}",
-                "content": f"サーバー障害対応手順 #{i}",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": f"{today}T09:{i:02d}:00",
+                        "type": "issue_resolved",
+                        "summary": f"問題解決 #{i}",
+                        "content": f"サーバー障害対応手順 #{i}",
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         (activity_dir / f"{today}.jsonl").write_text(
             "\n".join(entries) + "\n",
             encoding="utf-8",
         )
 
-        llm_response = json.dumps([
-            {
-                "title": "server_recovery",
-                "description": "サーバー障害復旧手順",
-                "tags": ["ops", "recovery"],
-                "content": "# サーバー復旧\n\n1. 状態確認\n2. サービス再起動",
-            },
-        ])
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "server_recovery",
+                    "description": "サーバー障害復旧手順",
+                    "tags": ["ops", "recovery"],
+                    "content": "# サーバー復旧\n\n1. 状態確認\n2. サービス再起動",
+                },
+            ]
+        )
 
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_resp = MagicMock()
@@ -995,7 +728,9 @@ class TestWeeklyPatternFilterIncludesResolved:
             mock_llm.return_value = mock_resp
 
             with patch.object(
-                distiller, "_check_rag_duplicate", return_value=None,
+                distiller,
+                "_check_rag_duplicate",
+                return_value=None,
             ):
                 result = await distiller.weekly_pattern_distill(
                     model="test-model",
@@ -1010,8 +745,11 @@ class TestWeeklyPatternFilterIncludesResolved:
         # "tool_use", "response_sent", "cron_executed", "memory_write",
         # "issue_resolved"
         relevant_types = {
-            "tool_use", "response_sent", "cron_executed",
-            "memory_write", "issue_resolved",
+            "tool_use",
+            "response_sent",
+            "cron_executed",
+            "memory_write",
+            "issue_resolved",
         }
         # Verify issue_resolved is in the accepted set
         assert "issue_resolved" in relevant_types
@@ -1022,10 +760,7 @@ class TestWeeklyPatternFilterIncludesResolved:
             {"type": "dm_sent", "summary": "excluded"},
             {"type": "tool_use", "tool": "github", "summary": "included"},
         ]
-        relevant = [
-            e for e in entries
-            if e.get("type") in relevant_types
-        ]
+        relevant = [e for e in entries if e.get("type") in relevant_types]
         # issue_resolved and tool_use should pass; dm_sent should not
         assert len(relevant) == 2
         types_in_result = {e["type"] for e in relevant}

@@ -13,12 +13,40 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.tools import _chatwork_cache
+from core.integrations import _chatwork_cache, _slack_cache
 
 
 @pytest.fixture
 def client() -> SimpleNamespace:
     return SimpleNamespace(api_token="token-abc", me=lambda: {"account_id": 4242})
+
+
+def test_chatwork_cache_dir_reads_environment_each_time(tmp_path: Path, monkeypatch) -> None:
+    first = tmp_path / "first-cache"
+    second = tmp_path / "second-cache"
+    monkeypatch.setenv("ANIMAWORKS_CHATWORK_CACHE_DIR", str(first))
+    assert _chatwork_cache.get_cache_dir() == first
+    monkeypatch.setenv("ANIMAWORKS_CHATWORK_CACHE_DIR", str(second))
+    assert _chatwork_cache.get_cache_dir() == second
+
+
+def test_slack_cache_dir_reads_environment_each_time(tmp_path: Path, monkeypatch) -> None:
+    first = tmp_path / "first-slack-cache"
+    second = tmp_path / "second-slack-cache"
+    monkeypatch.setenv("ANIMAWORKS_SLACK_CACHE_DIR", str(first))
+    assert _slack_cache.get_cache_dir() == first
+    monkeypatch.setenv("ANIMAWORKS_SLACK_CACHE_DIR", str(second))
+    assert _slack_cache.get_cache_dir() == second
+
+
+def test_default_cache_dirs_follow_current_data_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_CHATWORK_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_SLACK_CACHE_DIR", raising=False)
+    data_dir = tmp_path / "isolated-data"
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+
+    assert _chatwork_cache.get_cache_dir() == data_dir / "cache" / "chatwork"
+    assert _slack_cache.get_cache_dir() == data_dir / "cache" / "slack"
 
 
 def test_resolve_cache_db_path_registers_identity(tmp_path: Path, monkeypatch, client) -> None:

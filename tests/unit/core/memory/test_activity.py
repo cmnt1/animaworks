@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/activity.py — ASCII labels, pointer, and pagination."""
+"""Unit tests for core/activity/logger.py — ASCII labels, pointer, and pagination."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger, ActivityPage
+from core.activity.logger import ActivityEntry, ActivityLogger, ActivityPage
 from core.time_utils import now_jst
 
 
@@ -25,6 +26,34 @@ def anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def activity_logger(anima_dir: Path) -> ActivityLogger:
     return ActivityLogger(anima_dir)
+
+
+# ── Async logging ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_alog_runs_log_in_a_worker_thread(
+    activity_logger: ActivityLogger,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop_thread = threading.get_ident()
+    calls: list[tuple[int, tuple[object, ...], dict[str, object]]] = []
+    expected = ActivityEntry(ts="2026-02-18T10:00:00", type="heartbeat_end")
+
+    def fake_log(*args: object, **kwargs: object) -> ActivityEntry:
+        calls.append((threading.get_ident(), args, kwargs))
+        return expected
+
+    monkeypatch.setattr(activity_logger, "log", fake_log)
+
+    result = await activity_logger.alog("heartbeat_end", summary="done", safe=True)
+
+    assert result is expected
+    assert len(calls) == 1
+    worker_thread, args, kwargs = calls[0]
+    assert worker_thread != loop_thread
+    assert args == ("heartbeat_end",)
+    assert kwargs == {"summary": "done", "safe": True}
 
 
 # ── ASCII label mapping ──────────────────────────────────
@@ -54,19 +83,14 @@ class TestFormatEntryUsesAsciiLabels:
         list(_TYPE_TO_LABEL.items()),
         ids=list(_TYPE_TO_LABEL.keys()),
     )
-    def test_format_entry_uses_ascii_labels(
-        self, event_type: str, expected_label: str
-    ) -> None:
+    def test_format_entry_uses_ascii_labels(self, event_type: str, expected_label: str) -> None:
         entry = ActivityEntry(
             ts="2026-02-18T10:00:00",
             type=event_type,
             content="test content",
         )
         line = ActivityLogger._format_entry(entry)
-        assert expected_label in line, (
-            f"Expected label '{expected_label}' for type '{event_type}', "
-            f"got line: {line}"
-        )
+        assert expected_label in line, f"Expected label '{expected_label}' for type '{event_type}', got line: {line}"
 
 
 # ── Truncation + pointer ─────────────────────────────────
@@ -118,9 +142,7 @@ class TestTruncationPointer:
 
 
 class TestLineNumbers:
-    def test_line_number_assigned_by_recent(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_line_number_assigned_by_recent(self, activity_logger: ActivityLogger) -> None:
         """recent() must assign sequential _line_number to each entry."""
         activity_logger.log("message_received", content="first")
         activity_logger.log("response_sent", content="second")
@@ -165,9 +187,7 @@ class TestLineNumbers:
 
 
 class TestFormatForPrimingBasics:
-    def test_format_basic_single_entries(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_format_basic_single_entries(self, activity_logger: ActivityLogger) -> None:
         """Single-entry groups should render with ASCII labels."""
         entries = [
             ActivityEntry(
@@ -186,9 +206,7 @@ class TestFormatForPrimingBasics:
         assert "MSG<" in result
         assert "RESP>" in result
 
-    def test_format_budget_truncation(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_format_budget_truncation(self, activity_logger: ActivityLogger) -> None:
         """A small budget must limit the output, dropping oldest entries."""
         entries = []
         for i in range(50):
@@ -236,7 +254,12 @@ class TestRecentPage:
         anima_dir = tmp_path / "test-anima"
         now = now_jst()
         entries = [
-            {"ts": (now - timedelta(seconds=10 - i)).isoformat(), "type": "tool_use", "summary": f"Entry {i}", "content": ""}
+            {
+                "ts": (now - timedelta(seconds=10 - i)).isoformat(),
+                "type": "tool_use",
+                "summary": f"Entry {i}",
+                "content": "",
+            }
             for i in range(10)
         ]
         _write_activity(anima_dir, entries)
@@ -256,7 +279,12 @@ class TestRecentPage:
         anima_dir = tmp_path / "test-anima"
         now = now_jst()
         entries = [
-            {"ts": (now - timedelta(seconds=10 - i)).isoformat(), "type": "tool_use", "summary": f"Entry {i}", "content": ""}
+            {
+                "ts": (now - timedelta(seconds=10 - i)).isoformat(),
+                "type": "tool_use",
+                "summary": f"Entry {i}",
+                "content": "",
+            }
             for i in range(10)
         ]
         _write_activity(anima_dir, entries)
@@ -275,7 +303,12 @@ class TestRecentPage:
         now = now_jst()
         entries = [
             # Recent entry (30 min ago)
-            {"ts": (now - timedelta(minutes=30)).isoformat(), "type": "heartbeat_start", "summary": "Recent", "content": ""},
+            {
+                "ts": (now - timedelta(minutes=30)).isoformat(),
+                "type": "heartbeat_start",
+                "summary": "Recent",
+                "content": "",
+            },
             # Old entry (3 hours ago)
             {"ts": (now - timedelta(hours=3)).isoformat(), "type": "heartbeat_start", "summary": "Old", "content": ""},
         ]
@@ -327,7 +360,14 @@ class TestRecentPage:
         now = now_jst()
         entries = [
             {"ts": now.isoformat(), "type": "dm_sent", "summary": "msg1", "content": "", "from": "alice", "to": "bob"},
-            {"ts": now.isoformat(), "type": "dm_sent", "summary": "msg2", "content": "", "from": "charlie", "to": "dave"},
+            {
+                "ts": now.isoformat(),
+                "type": "dm_sent",
+                "summary": "msg2",
+                "content": "",
+                "from": "charlie",
+                "to": "dave",
+            },
         ]
         _write_activity(anima_dir, entries)
 
@@ -342,7 +382,12 @@ class TestRecentPage:
         anima_dir = tmp_path / "test-anima"
         now = now_jst()
         entries = [
-            {"ts": (now - timedelta(seconds=10)).isoformat(), "type": "heartbeat_start", "summary": "Old", "content": ""},
+            {
+                "ts": (now - timedelta(seconds=10)).isoformat(),
+                "type": "heartbeat_start",
+                "summary": "Old",
+                "content": "",
+            },
             {"ts": now.isoformat(), "type": "heartbeat_start", "summary": "New", "content": ""},
         ]
         _write_activity(anima_dir, entries)
@@ -492,39 +537,39 @@ class TestLoadEntries:
 
 
 class TestTimeDiff:
-    """Tests for _time_diff() — mixed naive/aware timestamp handling."""
+    """Tests for time_diff() — mixed naive/aware timestamp handling."""
 
     def test_both_aware(self) -> None:
         """Two aware timestamps compute correct diff."""
-        from core.memory.activity import _time_diff
+        from core.activity.models import time_diff
 
         t1 = "2026-02-20T10:00:00+09:00"
         t2 = "2026-02-20T10:00:10+09:00"
-        assert _time_diff(t1, t2) == pytest.approx(10.0)
+        assert time_diff(t1, t2) == pytest.approx(10.0)
 
     def test_both_naive(self) -> None:
         """Two naive timestamps compute correct diff (tagged as JST)."""
-        from core.memory.activity import _time_diff
+        from core.activity.models import time_diff
 
         t1 = "2026-02-20T10:00:00"
         t2 = "2026-02-20T10:00:05"
-        assert _time_diff(t1, t2) == pytest.approx(5.0)
+        assert time_diff(t1, t2) == pytest.approx(5.0)
 
     def test_mixed_naive_and_aware(self) -> None:
         """Mixed naive + aware timestamps must not raise TypeError."""
-        from core.memory.activity import _time_diff
+        from core.activity.models import time_diff
 
         naive = "2026-02-20T10:00:00"
         aware = "2026-02-20T10:00:30+09:00"
         # Should not raise; naive is tagged as JST by ensure_aware
-        result = _time_diff(naive, aware)
+        result = time_diff(naive, aware)
         assert result == pytest.approx(30.0)
 
     def test_invalid_returns_inf(self) -> None:
         """Invalid timestamps return infinity."""
-        from core.memory.activity import _time_diff
+        from core.activity.models import time_diff
 
-        assert _time_diff("not-a-date", "2026-02-20T10:00:00") == float("inf")
+        assert time_diff("not-a-date", "2026-02-20T10:00:00") == float("inf")
 
 
 class TestConversationImages:

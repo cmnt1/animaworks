@@ -128,7 +128,7 @@ export function openVoicePopup(animaName, opts = {}) {
   _startSession(animaName);
 }
 
-export function closeVoicePopup() {
+function closeVoicePopup() {
   if (!_session || _session.closed) return;
   _session.closed = true;
 
@@ -155,7 +155,7 @@ export function closeVoicePopup() {
   onClose?.();
 }
 
-export function isVoicePopupOpen() {
+function isVoicePopupOpen() {
   return Boolean(_session && !_session.closed);
 }
 

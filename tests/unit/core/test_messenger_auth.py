@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.messenger import InboxItem, Messenger
+from core.messaging.messenger import InboxItem, Messenger
 from core.schemas import Message
 
 
@@ -184,7 +184,7 @@ class TestInboxPermissions:
         assert mode == 0o700
 
     def test_ensure_runtime_only_dirs_sets_inbox_chmod_700(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()

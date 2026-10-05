@@ -4,13 +4,14 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for praise-loop prevention changes.
+"""Unit tests for praise-loop prevention behavior.
 
-Tests cover two code changes:
-1. Messenger.send() — board_mention no longer exempt from depth limiter
-2. ToolHandler._handle_post_channel() — _suppress_board_fanout flag
+Acknowledgements and thanks should not elicit another reply, while the
+one-message-per-recipient run guard remains as a final safety net.
 """
 
+import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -18,147 +19,84 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.tooling.handler import ToolHandler
 
 
-# ── Test 1: board_mention is no longer exempt from depth check ────
+# ── Test 1: praise-loop safeguards ──────────────────────────────
 
 
 @pytest.mark.unit
-class TestBoardMentionDepthCheck:
-    """Verify that board_mention goes through the depth limiter,
-    while ack/error/system_alert remain exempt."""
+class TestPraiseLoopPrevention:
+    def test_inbox_prompt_says_not_to_reply_to_acknowledgements(self) -> None:
+        prompt = (Path(__file__).resolve().parents[2] / "templates/ja/prompts/inbox_message.md").read_text(
+            encoding="utf-8"
+        )
+        assert "単なる了解・感謝・称賛には返信せず" in prompt
 
-    @pytest.fixture
-    def shared_dir(self, tmp_path: Path) -> Path:
-        """Create a shared directory with inbox structure."""
-        d = tmp_path / "shared"
-        d.mkdir()
-        return d
+    def test_depth_observation_never_discards_a_message(self, tmp_path: Path, caplog) -> None:
+        from core.activity.logger import ActivityLogger
+        from core.messaging.messenger import Messenger
 
-    @pytest.fixture
-    def animas_dir(self, tmp_path: Path) -> Path:
-        """Create animas directory with a target Anima."""
-        d = tmp_path / "animas"
-        d.mkdir()
-        (d / "target-anima").mkdir()
-        return d
+        shared_dir = tmp_path / "shared"
+        sender_dir = tmp_path / "animas" / "alice"
+        (tmp_path / "animas" / "bob").mkdir(parents=True)
+        (sender_dir / "activity_log").mkdir(parents=True)
+        activity = ActivityLogger(sender_dir)
+        for _ in range(6):
+            activity.log("message_sent", content="Earlier update", to_person="bob", meta={"from_type": "anima"})
 
-    @pytest.fixture
-    def messenger(self, shared_dir: Path) -> Messenger:
-        from core.messenger import Messenger
+        messenger = Messenger(shared_dir, "alice")
+        with caplog.at_level(logging.INFO, logger="animaworks.messenger"):
+            message = messenger.send("bob", "Thanks for the update", msg_type="board_mention")
 
-        return Messenger(shared_dir=shared_dir, anima_name="sender-anima")
+        assert message.type == "board_mention"
+        inbox_files = list((shared_dir / "inbox" / "bob").glob("*.json"))
+        assert len(inbox_files) == 1
+        assert json.loads(inbox_files[0].read_text(encoding="utf-8"))["content"] == "Thanks for the update"
+        assert "MESSAGE DEPTH OBSERVED" in caplog.text
 
-    def test_board_mention_calls_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """board_mention should NOT be exempt — depth_limiter.check_depth must be called."""
-        mock_limiter = MagicMock()
-        mock_limiter.check_global_outbound.return_value = True  # pass before depth check
-        mock_limiter.check_depth.return_value = True
+    def test_second_dm_to_same_recipient_in_one_run_is_rejected(self, tmp_path: Path) -> None:
+        from core.config.models import AnimaModelConfig, AnimaWorksConfig
+        from core.memory import MemoryManager
+        from core.messaging.messenger import Messenger
+        from core.tooling.handler import ToolHandler
 
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
-        ):
-            messenger.send(to="target-anima", content="Great job!", msg_type="board_mention")
-
-        mock_limiter.check_depth.assert_called_once_with(
-            "sender-anima",
-            "target-anima",
-            animas_dir / "sender-anima",
+        animas_dir = tmp_path / "animas"
+        sender_dir = animas_dir / "alice"
+        target_dir = animas_dir / "bob"
+        for anima_dir in (sender_dir, target_dir):
+            anima_dir.mkdir(parents=True)
+            (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        (sender_dir / "permissions.json").write_text(
+            '{"version":1,"file_roots":["/"],"commands":{"allow_all":true,"allow":[],"deny":[]},'
+            '"external_tools":{"allow_all":true},"tool_creation":{"personal":true,"shared":false}}',
+            encoding="utf-8",
+        )
+        shared_dir = tmp_path / "shared"
+        memory = MagicMock(spec=MemoryManager)
+        memory.read_permissions.return_value = ""
+        config = AnimaWorksConfig(
+            animas={"alice": AnimaModelConfig(), "bob": AnimaModelConfig()},
         )
 
-    def test_board_mention_blocked_when_depth_exceeded(self, messenger: Messenger, animas_dir: Path) -> None:
-        """board_mention should be blocked when depth limiter returns False."""
-        mock_limiter = MagicMock()
-        mock_limiter.check_global_outbound.return_value = True  # pass before depth check
-        mock_limiter.check_depth.return_value = False
-
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.config.models.load_config", return_value=config),
         ):
-            result = messenger.send(
-                to="target-anima",
-                content="Great job!",
-                msg_type="board_mention",
+            handler = ToolHandler(
+                anima_dir=sender_dir,
+                memory=memory,
+                messenger=Messenger(shared_dir, "alice"),
+                tool_registry=[],
             )
+            first = handler.handle("send_message", {"to": "bob", "content": "Thanks!", "intent": "report"})
+            second = handler.handle("send_message", {"to": "bob", "content": "You're welcome!", "intent": "report"})
 
-        assert result.type == "error"
-        assert result.from_person == "system"
-        assert "ConversationDepthExceeded" in result.content
-
-    def test_ack_exempt_from_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """msg_type='ack' should bypass the depth limiter entirely."""
-        mock_limiter = MagicMock()
-
-        # Ensure inbox exists for target
-        inbox = messenger.shared_dir / "inbox" / "target-anima"
-        inbox.mkdir(parents=True, exist_ok=True)
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
-        ):
-            result = messenger.send(to="target-anima", content="ok", msg_type="ack")
-
-        mock_limiter.check_depth.assert_not_called()
-        assert result.type == "ack"
-
-    def test_error_exempt_from_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """msg_type='error' should bypass the depth limiter entirely."""
-        mock_limiter = MagicMock()
-
-        inbox = messenger.shared_dir / "inbox" / "target-anima"
-        inbox.mkdir(parents=True, exist_ok=True)
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
-        ):
-            result = messenger.send(to="target-anima", content="err", msg_type="error")
-
-        mock_limiter.check_depth.assert_not_called()
-        assert result.type == "error"
-
-    def test_system_alert_exempt_from_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """msg_type='system_alert' should bypass the depth limiter entirely."""
-        mock_limiter = MagicMock()
-
-        inbox = messenger.shared_dir / "inbox" / "target-anima"
-        inbox.mkdir(parents=True, exist_ok=True)
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
-        ):
-            result = messenger.send(
-                to="target-anima",
-                content="alert",
-                msg_type="system_alert",
-            )
-
-        mock_limiter.check_depth.assert_not_called()
-        assert result.type == "system_alert"
-
-    def test_regular_message_calls_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """Regular 'message' type should also go through the depth limiter."""
-        mock_limiter = MagicMock()
-        mock_limiter.check_global_outbound.return_value = True  # pass before depth check
-        mock_limiter.check_depth.return_value = True
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
-        ):
-            messenger.send(to="target-anima", content="hello", msg_type="message")
-
-        mock_limiter.check_depth.assert_called_once_with(
-            "sender-anima",
-            "target-anima",
-            animas_dir / "sender-anima",
-        )
+        assert "Message sent to bob" in first
+        assert "Error" in second
+        inbox_files = list((shared_dir / "inbox" / "bob").glob("*.json"))
+        assert len(inbox_files) == 1
 
 
 # ── Test 2: _suppress_board_fanout flag in handler ────────────────
@@ -171,7 +109,7 @@ class TestSuppressBoardFanout:
     @pytest.fixture(autouse=True)
     def _bypass_acl(self):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     @pytest.fixture

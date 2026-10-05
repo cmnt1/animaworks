@@ -6,16 +6,17 @@ description: >-
 tags: [workspace, directory, project, management]
 ---
 
+
 # Workspace Management
 
 Skill for managing project directories (workspaces) where Animas perform work.
 
 ## Concept
 
-An Anima normally lives in its "home" (~/.animaworks/animas/{name}/).
-When working on a project, it "goes to the workplace" (workspace) to do the job.
+Anima is usually at “its own home” (~/.animaworks/animas/{name}/）).
+When working on a project, it goes to the “workplace” (workspace) to work.
 
-Workspaces are stored in a shared registry (config.json `workspaces` section) and referenced by alias#hash.
+Workspaces are registered in the organization-shared registry (the workspaces section of config.json) and referenced as alias#hash.
 
 ## Aliases and Hashes
 
@@ -26,9 +27,9 @@ Workspaces are stored in a shared registry (config.json `workspaces` section) an
 
 ## Operations
 
-### Register
+### Registration
 
-A top-level Anima with an explicit human instruction uses `grant_workspace_access`:
+A top-level Anima that has received explicit instruction from a human uses `grant_workspace_access`:
 
 ```json
 {
@@ -38,14 +39,14 @@ A top-level Anima with an explicit human instruction uses `grant_workspace_acces
 }
 ```
 
-This tool updates the shared workspace registry, adds the path to the target Anima's `permissions.json.file_roots`, and optionally updates `status.json.default_workspace`.
+This tool requests the root host to update the organization-shared registry and the root-owned `permissions.json` / `status.json`. Do not write configuration files directly from the Anima process.
 
-**Note**: Registration fails if the directory does not exist.
-**Note**: `read_memory_file(path="config.json")` reads the Anima-local `config.json`. Do not use it for the shared workspace registry.
+**Note**: An error occurs if the directory does not exist.
+**Note**: `read_memory_file(path="config.json")` reads the `config.json` in its own Anima directory. It is not used for registering in the organization-shared registry.
 
 ### List
 
-Use `core.workspace.list_workspaces()` to inspect the shared registry. Do not use `read_memory_file(path="config.json")`.
+Use `core.org.workspace.list_workspaces()` to inspect the shared registry. Do not use `read_memory_file(path="config.json")`.
 
 ### Remove
 

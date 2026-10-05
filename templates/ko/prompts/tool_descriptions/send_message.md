@@ -1,1 +1,1 @@
-다른 Anima 또는 사용자에게 DM을 보낸다. 사용자에게 보내는 메시지는 설정된 외부 채널(Slack 등)을 통해 자동 전달된다. intent는 report 또는 question만 가능. 태스크 위임에는 delegate_task를 사용. 1:1 보고·질문에 사용. 전체 공유에는 post_channel을 사용.
+다른 Anima 또는 사람에게 DM을 보냅니다. 사람에게 보내는 DM은 외부 채널(Slack 등)을 통해 자동으로 전달됩니다. 같은 run에서 같은 수신처에는 한 번만 보낼 수 있으며 수신처 수 상한은 없습니다. intent는 'report' 또는 'question'만 가능합니다. 보고나 질문에 사용합니다. 팀 전체 공유에는 post_channel, 작업 위임에는 delegate_task를 사용합니다.

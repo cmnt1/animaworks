@@ -25,6 +25,7 @@ from core.prompt.builder import build_voice_front_prompt
 from core.voice.front import READ_MEMORY_TOOL, VoiceFrontLane, extract_emotion
 from core.voice.session import VoiceSession, read_memory_snippets
 from core.voice.tts_base import TTSConfig
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ def _make_voice_session(
     voice_config = VoiceConfig(stt_refine_enabled=False)
     sess = VoiceSession(
         "test",
-        ws,
+        MockVoiceTransport(ws),
         stt,
         tts,
         TTSConfig(provider="voicevox"),
@@ -120,7 +121,7 @@ class TestBuildVoiceFrontPrompt:
 
     def test_reads_specialty_prompt_file(self, tmp_path: Path) -> None:
         # Regression: the real anima file is ``specialty_prompt.md`` (no "i") —
-        # see core/anima_factory.py and core/memory/manager.py.
+        # see core/anima/factory.py and core/memory/manager.py.
         (tmp_path / "specialty_prompt.md").write_text("実務の専門性: 図書館管理", encoding="utf-8")
         prompt = build_voice_front_prompt(tmp_path, anima_name="taro")
         assert "実務の専門性: 図書館管理" in prompt
@@ -404,7 +405,7 @@ class TestVoiceSessionFrontRouting:
         await sess.handle_speech_end()
         # Front lane handled the turn → legacy path must NOT run.
         supervisor.send_request_stream.assert_not_called()
-        sended = [c.args for c in sess._ws.send_json.call_args_list]
+        sended = [c.args for c in sess._transport.websocket.send_json.call_args_list]
         texts = [a[0]["text"] for a in sended if a[0].get("type") == "response_text"]
         assert any("こんにちは！" in t for t in texts)
         # emotion parsed from the front output
@@ -446,12 +447,39 @@ class TestVoiceSessionFrontRouting:
         )
         sess._front_lane = _front_lane_stub(healthy=True)
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             sess._audio_buffer.extend(_audio_frames())
             await sess.handle_speech_end()
         roles = [c.args[0] for c in mock_conv.append_turn.call_args_list]
         assert roles == ["human", "assistant"]
         mock_conv.save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_front_persists_running_anima_conversation_over_supervisor_ipc(self) -> None:
+        from types import SimpleNamespace
+
+        session = _make_voice_session(front_model="openai/qwen3.6-35b-a3b", front_api_base="http://x:8000/v1")
+        handle = MagicMock()
+        handle.state = SimpleNamespace(value="running")
+        handle.is_alive.return_value = True
+        supervisor = MagicMock()
+        supervisor.processes = {"test": handle}
+        supervisor.send_request = AsyncMock(return_value={"status": "saved"})
+        session._supervisor = supervisor
+
+        await session._record_front_conversation("hello", "hi", "alice")
+
+        supervisor.send_request.assert_awaited_once_with(
+            "test",
+            "append_conversation_turns",
+            {
+                "thread_id": "default",
+                "turns": [
+                    {"role": "alice", "content": "hello"},
+                    {"role": "assistant", "content": "hi"},
+                ],
+            },
+        )
 
 
 def test_read_memory_page_rotates_material(tmp_path) -> None:
@@ -486,3 +514,5 @@ def test_reasoning_model_flags_and_api_version() -> None:
     assert lane._reasoning_model
     assert lane._api_version == "2025-04-01-preview"
     assert not VoiceFrontLane(model="openai/qwen3.6-35b-a3b", api_base="http://x", system_prompt="s")._reasoning_model
+    assert VoiceFrontLane(model="azure/gpt-6-luna", api_base="https://x", system_prompt="s")._reasoning_model
+    assert not VoiceFrontLane(model="azure/gpt-4.1", api_base="https://x", system_prompt="s")._reasoning_model

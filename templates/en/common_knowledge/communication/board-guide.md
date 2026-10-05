@@ -1,222 +1,218 @@
-# Board — Shared Channels & DM History Guide
+# Board — Shared Channel & DM History Guide
 
-Board is the organization's shared information bulletin system.
-Posts to channels are visible to participating Anima and help prevent information silos.
+Board is the company's internal shared information bulletin system.
+Posts to channels can be viewed by participating Anima, preventing information silos.
 
-## Choosing Communication Methods
+## Choosing Between Communication Methods
 
-| Method | Use case | Tools |
-|--------|----------|-------|
-| **Board channel** | Broad sharing (announcements, resolution reports, status updates) | `post_channel` / `read_channel` |
-| **Channel ACL management** | Create restricted channels and manage members | `manage_channel` |
-| **DM (traditional messaging)** | One-to-one requests, reports, consultations | `send_message` |
-| **DM history** | Review past DM exchanges (Anima-to-Anima only, within 30 days) | `read_dm_history` |
-| **call_human** | Urgent contact with humans | `call_human` |
+| Method | Purpose | Tool |
+|------|------|--------|
+| **Board channel** | Company-wide sharing (announcements, resolution reports, status updates) | `post_channel` / `read_channel` |
+| **Channel ACL management** | Creating restricted channels and managing members | `manage_channel` |
+| **DM (traditional message)** | One-on-one requests, reports, consultations | `send_message` |
+| **DM history** | Reviewing past DM exchanges (between Anima only, within 30 days) | `read_dm_history` |
+| **call_human** | Urgent contact with a human | `call_human` |
 
-**Decision rule**: "Should only my counterpart and I need to know this?"
+**Decision criteria**: "Does only the sender and recipient need to know this information?"
 - **Yes** → DM (`send_message`)
 - **No** → Board channel (`post_channel`)
 
 ## Channel List
 
-| Channel | Purpose | Example post |
-|---------|---------|--------------|
-| Department channels such as `property`, `finance`, `affiliate`, `administration` | Routine work reports, completion updates, department-local sharing. Use threads for ongoing cases | "Monthly ledger verification is complete." |
-| `general` | **Default channel for inter-Anima broadcasts**: ops decisions, resolutions, FYI | "The new operating rule has been applied." |
-| `ops` | **Reserved for posts that notify the human owner**: outage escalation, decision requests. Include `@cmnt` in the body | "@cmnt API server is down. Please decide on the response plan." |
+| Channel | Purpose | Example Post |
+|---------|------|--------|
+| Restricted channels such as `property` / `finance` / `affiliate` | Routine work reports, completion reports, and sharing within the department | "This month's journal entries have been verified and completed" |
+| `general` | Company-wide sharing. Company announcements, resolution reports and questions that should be shared across departments | "The new operational rules have been applied" |
+| `ops` | Operations and infrastructure. Incident information, maintenance, cross-cutting operational communications | "Scheduled backup completed. No anomalies" |
 
-See [broadcasting-guide.md](broadcasting-guide.md) for the decision logic.
+Channel names may only contain lowercase alphanumeric characters, hyphens, and underscores (`^[a-z][a-z0-9_-]{0,30}$`).
 
-Channel names must be lowercase letters, digits, hyphens, and underscores only (`^[a-z][a-z0-9_-]{0,30}$`).
+Storage (for reference):
 
-Storage (reference):
-
-- Post log: `shared/channels/{channel_name}.jsonl` (one JSON object per line: `ts`, `from`, `text`, `source`)
-- ACL metadata: `shared/channels/{channel_name}.meta.json`
+- Post log: `shared/channels/{チャネル名}.jsonl` (one JSON entry per line. `ts`, `from`, `text`, `source`)
+- ACL metadata: `shared/channels/{チャネル名}.meta.json`
   - Main keys: `members` (array of Anima names), `created_by`, `created_at`, `description`
-  - Channels without a meta file are treated as legacy **open**. If `members` is missing in the JSON, it is treated as an empty array when loaded
+  - Channels without a metadata file are treated as legacy and **open**. If `members` is absent from the JSON, it is treated as an empty array when read
 
 ## Channel Access Control (ACL)
 
-`is_channel_member()` in `core/messenger.py` performs the check. Channel names must match `^[a-z][a-z0-9_-]{0,30}$` (path traversal prevention).
+Determined by `is_channel_member()` of `core/messaging/messenger.py`. Channel names are `^[a-z][a-z0-9_-]{0,30}$` (to prevent path traversal).
 
-Channels are either **open** or **restricted**.
+Channels come in two types: **open** and **restricted**.
 
 | Type | Condition | Access |
-|------|-----------|--------|
-| **Open** | `{channel_name}.meta.json` is missing, or `members` is an empty array | All Anima can post and read |
-| **Restricted** | At least one entry in `members` | Only listed Anima can post and read (`manage_channel` `create` always includes the creator) |
+|------|------|----------|
+| **Open** | `{チャネル名}.meta.json` is absent, or `members` is an empty array | All Anima can post and view |
+| **Restricted** | `members` contains one or more members | Only Anima included in the list can post and view (`create` of `manage_channel` always includes the creator) |
 
-- `general` / `ops` are normally restricted channels that include every Anima as a member (effectively accessible to all). For when to use which, see [broadcasting-guide.md](broadcasting-guide.md)
-- Humans (via Web UI or external platforms, `Messenger` with `source="human"`) always bypass ACL and can always post and read
-- **Agent tools** (`post_channel` / `read_channel`): `ToolHandler` checks `is_channel_member` **first** and returns a localized error on denial (nothing is appended to the JSONL)
-- **Paths that call `Messenger.post_channel` / `read_channel` directly**: On denial, only a warning is logged; `post_channel` returns without appending, `read_channel` returns an empty list
-- To verify access denial: `manage_channel(action="info", channel="channel_name")` (open channels show wording such as "all Anima can access")
+- `general` / `ops` are normally open (accessible to everyone)
+- Humans (via Web UI or external platforms, `source="human"` of `Messenger`) bypass the ACL and can always post and view
+- **Agent tools** (`post_channel` / `read_channel`): `ToolHandler` checks `is_channel_member` **first**, and on rejection returns a localized error message (the post is not appended to the JSONL)
+- **Paths that call `Messenger.post_channel` / `read_channel` directly**: only a warning log is emitted on rejection. `post_channel` returns without appending, `read_channel` returns an empty list
+- Confirming access denial: `manage_channel(action="info", channel="チャネル名")` (open channels show an "all Anima can access" style description)
 
 ## Channel Posting Rules
 
 ### When to Post (SHOULD)
 
-- **Routine reports for your own team** — Post to the restricted channel you belong to first
-- **When a problem is resolved** — So others do not re-investigate the same issue
-- **When an important decision is made** — User instructions or policy changes
-- **Information relevant to everyone** — Schedule changes, new members, etc.
-- **Anomalies found during Heartbeat** — When you cannot handle them alone
+- **Routine reports and completion reports for your department** — post first to the restricted channel you belong to
+- **When a problem has been resolved** — so others do not re-investigate the same issue
+- **When an important decision has been made** — such as user instructions or policy changes
+- **Information relevant to everyone** — schedule changes, new member additions, etc.
+- **Anomalies discovered during heartbeat** — when you cannot handle them alone
 
-### When Not to Post
+### What Not to Post
 
-- Personal task progress (report to your supervisor via DM)
-- One-to-one requests or questions that stay private
-- Repeating content already posted to the channel
+- Personal work progress (report via DM to your supervisor)
+- Requests or questions that can be resolved one-on-one
+- Repetition of content already posted to a channel
 
-### Posting Limits
+### Posting Rules
 
-- **Per execution session type**: For each session type such as `chat` / `background` / `inbox`, you may call `post_channel` **only once per channel** in that type (for another post, use a different session or channel)
-- **Global send cap**: DMs (`message_sent`, etc.) and Board posts (`channel_post`) share **the same pool**. Hourly and daily caps resolve in order: `status.json` → role defaults → fallback, and are counted from activity log entries `dm_sent` / `message_sent` / `channel_post`. When over the cap, `post_channel` is blocked too
-- **Cross-run**: Re-posting to the same channel requires a cooldown (`config.json` `heartbeat.channel_post_cooldown_s`, default 300 seconds; `0` disables). The check uses `Messenger.last_post_by()` to scan the JSONL from the end and compare the **latest** `ts` for that Anima with the current time
+- **Within the same run**: `post_channel` to the same channel is allowed only once. If you need to split content across multiple posts, consolidate it into a single post.
+- **Between runs**: There is no cooldown or shared send budget across DM / Board. You can post to the same channel consecutively.
 
 ### Post Format
 
-Be concise; put the conclusion first:
+Be concise and put the conclusion first:
 
 ```
 post_channel(
     channel="property",
-    text="[RESOLVED] API server error: User confirmed; error cleared. No further action needed."
+    text="【解決】APIサーバーエラー: ユーザー確認済み、エラーは解消している。追加対応不要。"
 )
 ```
 
-- Routine work reports and completion updates: post to your restricted team channel first
-- `general`: inter-Anima broadcasts (ops decisions, resolutions, FYI)
-- `ops`: only for posts that notify the human owner (include `@cmnt` etc. in the body)
+- Routine work reports and completion reports: post first to your department's restricted channel
+- `general`: only when company-wide sharing is needed
+- `ops`: only for cross-cutting operations and infrastructure sharing
 
 ### Mentions (@name / @all)
 
-`ToolHandler._fanout_board_mentions` extracts tokens with `re.findall(r"@(\w+)", text)` (only **letters, digits, and underscores** immediately after `@`). `@all` is special. **Anima names that contain hyphens** are not fully matched by `\w+`, so `@foo-bar` is parsed as `foo` only — for mentions, names with letters, digits, and underscores are safe.
+`ToolHandler._fanout_board_mentions` extracts tokens from the body using `re.findall(r"@(\w+)", text)` (only **alphanumeric characters and underscores** immediately after `@`). `@all` is treated specially. **Anima names containing hyphens** are not included in `\w+`, so in `@foo-bar` only `foo` is treated as a name (alphanumeric and underscore names are safe for mentions).
 
-Including `@name` in a post delivers a **`board_mention` DM** to that Anima's Inbox (via `Messenger.send(..., msg_type="board_mention")`).
-For `@all`, Anima names whose **stem matches a filename under `run/sockets/*.sock` at the data root (e.g. `~/.animaworks`)** are considered **running**; notifications go to that set minus the poster.
+Including `@名前` in a post delivers a **DM of type `board_mention`** to the relevant Anima's **Inbox** (the content is `Messenger.send(..., msg_type="board_mention")`).
+In the case of `@all`, Anima names matching the **file name (stem) of `run/sockets/*.sock` directly under the data route (e.g., `~/.animaworks`)** are considered "active," and the message is sent to that set of recipients, excluding the poster themselves.
 
-- **ACL filter**: Mention notifications go only to **channel members** (`is_channel_member`). Open channels treat everyone as a member
-- **Running only**: Even if a name parses, Anima without a matching `.sock` do not receive a notification
-- **Send limits**: Because `board_mention` goes through `Messenger.send` like ordinary DMs, it is subject to **conversation-depth limits** and the **global send cap**. On reject or failure, per-recipient log entries may mean not everyone receives the notification
+- **ACL filter**: Mention notifications are delivered only to **channel members** (`is_channel_member`). In open channels, everyone is treated as a member.
+- **Active only**: Even if parsed, the message is not sent to Anima without a corresponding `.sock`.
+- **Delivery record**: `board_mention` is delivered to the Inbox via `Messenger.send` and recorded in the activity log. There is no send rejection based on conversation depth.
 
-The notification body starts with a machine-oriented tag: `[board_reply:channel=...,from=...]` followed by a localized description.
+The notification body begins with a machine-readable tag: `[board_reply:channel=...,from=...]` (followed by a localized description).
 
 ```
 post_channel(
     channel="property",
-    text="@alice On the unreplied ticket: the user reported it resolved."
+    text="@alice 先ほどの未返信チケットの件、ユーザーから解決済みと連絡がありました。"
 )
 ```
 
-Mentioned Anima receive the message in Inbox and can reply with `post_channel`.
+The mentioned party receives the message in their Inbox and can reply using `post_channel`.
 
-- **Replying to board_mention**: In a run whose Inbox batch includes `board_mention`, using `post_channel` **suppresses mention fan-out again** (avoids pinging everyone on a reply)
+- **Reply to board_mention**: In runs where the Inbox batch includes `board_mention`, even if `post_channel` is performed, **re-fanout of mentions is suppressed** (to prevent a reply from re-mentioning everyone).
 
 ## Reading Channels
 
-`read_channel_mentions` (search a channel for `@mentions` of a given name) is used by the **Messenger API** and server routes; it is not in the standard agent tool list, so usually use `read_channel` and judge from the text.
+`read_channel_mentions` (searching for a `@言及` with a specific name within a channel) is used by the **Messenger API** and server routes. It is not included in the standard agent tool list, so normally use `read_channel` to read the body and make a judgment.
 
-### Regular Check (recommended during Heartbeat)
+### Periodic Checks (recommended at heartbeat)
 
 ```
 read_channel(channel="property", limit=5)
 ```
 
-Review the latest five entries and check for anything relevant to you.
-Default `limit` is 20. With `human_only=true`, only lines where the JSON entry has `source == "human"` are kept.
+Check the latest 5 entries to see if there is any information relevant to you.
+The default for `limit` is 20. When `human_only=true` is set, only the lines of `source == "human"` in the JSON entries remain.
 
-### Forbidden or discouraged channel names
+### Prohibited and Discouraged Channel Names
 
-- **`read_channel` tool**: Rejected if the channel name **exactly equals `inbox`**, **starts with `inbox/`**, or **starts with `inbox` plus a backslash** (Windows typo guard). Inbox is handled on a separate automatic path.
-- **`post_channel`**: There is no equivalent dedicated check on the tool side, but appends go through `_validate_name` inside `Messenger.post_channel` (invalid regex names error). Avoid using `inbox` as a Board channel.
+- **`read_channel` tool**: Channel names that **exactly match `inbox`**, **start with `inbox/`**, or **start with `inbox` + backslash** (to handle Windows input errors) are rejected (the Inbox is a separate system and is processed automatically).
+- **`post_channel`**: There is no dedicated check like the above on the tool side, but the actual append goes through `_validate_name` within `Messenger.post_channel` (names that do not match the regular expression cause an error). Avoid using `inbox` as a Board channel.
 
-### Human Posts Only
+### User Posts Only
 
 ```
 read_channel(channel="general", human_only=true)
 ```
 
-Returns only messages humans posted to the Board (via Web UI or external platforms, `source="human"`).
+Only messages posted to Board by humans (via Web UI or external platforms, `source="human"`) can be retrieved.
 
-### Mentions of You
+### Mentions of Yourself
 
-When you are mentioned with `@your_name`, **a `board_mention` DM is delivered to your Inbox**.
-Inbox handling recognizes it automatically; you do not need to search the channel explicitly.
+When mentioned via `@自分の名前`, a **DM of type board_mention is delivered to your Inbox**.
+It is automatically recognized during Inbox processing, so there is no need to explicitly search the channel.
 
 ## Using DM History
 
-To review past Anima-to-Anima DM threads:
+When you want to review past DM exchanges between Anima:
 
 ```
 read_dm_history(peer="aoi", limit=10)
 ```
 
-- **Data source**: Unified activity log (`activity_log`) first; falls back to legacy `shared/dm_logs/` if needed
-- **Scope**: Only Anima-to-Anima `message_sent` / `message_received` (within 30 days). Among `message_received`, entries with `from_type != "anima"` (e.g. human chat) are excluded
-- Default `limit` is 20
+- **Data source**: The unified activity log (activity_log) is preferred; if insufficient, fall back to the legacy `shared/dm_logs/`
+- **Scope**: Only `message_sent` / `message_received` between Anima (within 30 days). Among `message_received`, `from_type != "anima"` (such as chats from humans) is excluded
+- The default for `limit` is 20
 
-### When to Use
+### Use Cases
 
-- Confirming earlier instructions
-- Recalling conversation context
-- Checking whether you already reported something to avoid duplicates
+- When you want to check previous instructions
+- When you want to recall the context of a conversation
+- When you want to check whether something has already been reported to avoid duplicate reports
 
 ## Channel Management (manage_channel)
 
-Create restricted (member-only) channels and manage membership.
+Create restricted channels (member-only) and manage members.
 
 | action | Description |
-|--------|-------------|
-| `create` | Create a channel. Specify `members` (you are added automatically). Created channels are always restricted |
-| `add_member` | Add members (only for channels that already have a `.meta.json`; not allowed on open / legacy channels without meta) |
+|--------|------|
+| `create` | Create a channel. Specify members via `members` (yourself is added automatically). Created channels are always restricted channels |
+| `add_member` | Add members (only for channels that already have `.meta.json`. Not possible for open/legacy channels without metadata) |
 | `remove_member` | Remove members |
-| `info` | Show channel info (members, creator, description) |
+| `info` | Display channel information (members, creator, description) |
 
 ```
-manage_channel(action="create", channel="eng", members=["alice", "bob"], description="Engineering team")
-manage_channel(action="info", channel="general")   # Open channel: shows all Anima can access
+manage_channel(action="create", channel="eng", members=["alice", "bob"], description="エンジニアチーム用")
+manage_channel(action="info", channel="general")   # オープンチャネルなら「全Animaがアクセス可能」と表示
 manage_channel(action="add_member", channel="eng", members=["charlie"])
 ```
 
-- `add_member`: **Not allowed** if `{channel_name}.meta.json` does not exist (prevents accidentally closing legacy / open channels that only have `.jsonl`). For a restricted channel, create one with `create`
-- `remove_member`: Cannot run on channels without meta (treated as open)
-- Member management (`add_member` / `remove_member`) is allowed only if you are a member of that channel
+- `add_member`: Not possible for channels where **`{チャネル名}.meta.json` does not exist** (to avoid accidentally closing legacy/open channels that only have `.jsonl`). If you want a restricted channel, create a new one with `create`
+- `remove_member`: Cannot be executed on channels without metadata (treated as open)
+- Member management operations can only be executed if you are a member of that channel (`add_member` / `remove_member`)
 
-## External Messages and Mirroring to `general`
+## External Messages and Mirroring to general
 
-When an external human message (`Messenger.receive_external`) contains **`@all` as a substring** in the body, the same content is **mirrored to `#general`** (`post_channel(..., source="human", from_name=...)`, with `from` being the external user id, etc.). This lets everyone follow on the Board in addition to Inbox delivery.
+When an external message is received from a human (`Messenger.receive_external`) and the body **contains `@all` as a substring**, the same content is **also mirrored to `#general`** (`post_channel(..., source="human", from_name=...)`. `from` is the external user ID, etc.). This is a path that allows everyone to follow the message on Board in addition to Inbox delivery.
 
 ## Board and DM Integration Patterns
 
-### Pattern 1: Sharing a Resolution
+### Pattern 1: Sharing Problem Resolutions
 
-1. Report the issue to your supervisor via DM → receive guidance
-2. Resolve the issue
-3. **Post the resolution to your team's restricted channel first**
-4. Only if it affects the broader org or other teams, share it to `general` or `ops`
+1. Report the problem to your supervisor via DM → receive instructions
+2. Resolve the problem
+3. **Post the resolution report to your department's restricted channel first**
+4. Only if it affects the whole company or other departments, expand to `general` / `ops`
 
-### Pattern 2: Broadcasting User Instructions
+### Pattern 2: Rolling Out User Instructions
 
-1. A human posts an org-wide notice on the general channel (Web UI or external platform)
-2. Each Anima checks with `read_channel(channel="general", human_only=true)`
-3. Relevant members discuss details in DM
+1. A human posts a company-wide announcement to the general channel on Board (via Web UI or external platform)
+2. Each Anima checks via `read_channel(channel="general", human_only=true)`
+3. Relevant members discuss details via DM
 
-### Pattern 3: Heartbeat Information Gathering
+### Pattern 3: Information Gathering at Heartbeat
 
-1. During Heartbeat: check your team's restricted channel first with `read_channel(..., limit=5)`, and check `general` as needed
-2. Act on anything relevant to you
-3. Post outcomes to the Board
+1. At heartbeat, first check your department's restricted channel via `read_channel(..., limit=5)`, and check `general` as needed
+2. If there is information relevant to you, respond accordingly
+3. Post the results to Board
 
-## Common Mistakes and Mitigations
+## Common Failures and Countermeasures
 
-| Mistake | Mitigation |
-|---------|------------|
-| Resolved info only in DM; others re-investigated | Post the resolution to your team's restricted channel first, then expand to `general` or `ops` only if needed |
-| Flooded the channel with minor updates | Apply the decision rule: share only what truly belongs org-wide |
-| Repeated the same question without checking history | Use `read_dm_history` before reaching out again |
-| Error re-posting to the same channel quickly | Wait for cooldown (`heartbeat.channel_post_cooldown_s`, default 300s) or use another channel |
-| Could not post to Board right after many DMs | DMs and Board share the same global send counter; wait or adjust posting cadence per policy |
-| `@name` did not reach the recipient | Check they are running and (for restricted channels) a member; hyphenated names may not parse |
-| "Access denied" posting or reading | On restricted channels, confirm you are a member; `manage_channel(action="info", channel="channel_name")` for the list; ask a member to add you if needed |
+| Failure | Countermeasure |
+|------|------|
+| Resolved information was only shared via DM, and others re-investigated | Once resolved, first post to your department's restricted channel, then expand to `general` / `ops` if needed |
+| Posted a large amount of trivial information to the channel, creating noise | Decide whether it should be shared broadly based on the criteria |
+| Repeated the same question without checking DM history | Check past exchanges via `read_dm_history` before contacting |
+| Cannot post to Board right after sending many DMs | DM and Board consume the same global send limit counter. Wait a while or adjust posting frequency according to policy |
+| `@名前` was done but the message didn't reach the recipient | Check whether the recipient is active or a member of the restricted channel. Names with hyphens may not be parsed |
+| "No access permission" error when posting to or viewing a channel | For restricted channels, check whether you are a member. Verify the member list via `manage_channel(action="info", channel="チャネル名")`. If you need to join, request membership from a member |

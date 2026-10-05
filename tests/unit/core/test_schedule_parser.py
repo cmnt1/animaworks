@@ -1,4 +1,4 @@
-"""Unit tests for core.schedule_parser with standard cron expression format."""
+"""Unit tests for core.runtime.schedule_parser with standard cron expression format."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +8,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from core.schedule_parser import (
+import pytest
+from apscheduler.triggers.cron import CronTrigger
+
+from core.runtime.schedule_parser import (
+    _posix_dow_to_apsched,
     parse_cron_md,
     parse_heartbeat_config,
     parse_schedule,
@@ -325,6 +329,7 @@ class TestParseSchedule:
         """Standard daily 9am cron expression."""
         trigger = parse_schedule("0 9 * * *")
         assert trigger is not None
+        assert isinstance(trigger, CronTrigger)
 
     def test_every_5_minutes(self):
         """Every 5 minutes cron expression."""
@@ -833,6 +838,119 @@ Do something.
         assert len(tasks) == 1
         assert tasks[0].schedule == "0 10 * * 1,4"
         assert tasks[0].type == "llm"
+
+
+class TestAdditionalHeartbeatConfigFormats:
+    def test_active_hours_with_jst_suffix_and_spacing(self):
+        content = """# Heartbeat
+## 活動時間
+8:00 - 23:00（JST）
+"""
+        start, end = parse_heartbeat_config(content)
+        assert start == 8
+        assert end == 23
+
+    def test_standard_active_hours_without_heading_marker(self):
+        start, end = parse_heartbeat_config("活動時間\n9:00 - 22:00")
+        assert start == 9
+        assert end == 22
+
+    def test_invalid_hours_inside_active_hours_section_are_ignored(self):
+        content = """# Heartbeat
+## 活動時間
+43:1-2
+"""
+        start, end = parse_heartbeat_config(content)
+        assert start is None
+        assert end is None
+
+    def test_english_active_hours_heading(self):
+        content = """# Heartbeat
+## Active Hours
+9:00 - 22:00 (server timezone)
+"""
+        start, end = parse_heartbeat_config(content)
+        assert start == 9
+        assert end == 22
+
+    def test_empty_heartbeat_content(self):
+        start, end = parse_heartbeat_config("")
+        assert start is None
+        assert end is None
+
+
+class TestAdditionalScheduleParserCases:
+    def test_quiet_parse_suppresses_display_poll_warnings(self, caplog):
+        content = "## Notes\nNo schedule\n## Code\nschedule: 0 9 * * *\ntype: llm\n```sh\necho ok\n```"
+        tasks = parse_cron_md(content, warn=False)
+        assert parse_schedule(tasks[0].schedule, warn=False) is None
+        assert parse_schedule(tasks[1].schedule, warn=False) is not None
+        assert caplog.records == []
+
+    def test_sunday_start_range_does_not_raise(self):
+        """POSIX 0-4 must convert without creating an invalid range."""
+        trigger = parse_schedule("30 17 * * 0-4")
+        assert trigger is not None
+        assert isinstance(trigger, CronTrigger)
+
+
+class TestPosixDowToApsched:
+    def test_wildcard_passthrough(self):
+        assert _posix_dow_to_apsched("*") == "*"
+
+    def test_single_value(self):
+        """POSIX 4 (Thu) → ISO 3."""
+        assert _posix_dow_to_apsched("4") == "3"
+
+    def test_single_value_monday(self):
+        """POSIX 1 (Mon) → ISO 0."""
+        assert _posix_dow_to_apsched("1") == "0"
+
+    def test_single_value_sunday_posix0(self):
+        """POSIX 0 (Sun) → ISO 6."""
+        assert _posix_dow_to_apsched("0") == "6"
+
+    def test_single_value_sunday_posix7(self):
+        """POSIX 7 (Sun alias) → ISO 6."""
+        assert _posix_dow_to_apsched("7") == "6"
+
+    def test_comma_separated(self):
+        """POSIX '1,4' (Mon,Thu) → ISO '0,3'."""
+        assert _posix_dow_to_apsched("1,4") == "0,3"
+
+    def test_normal_range_no_wrap(self):
+        """POSIX '1-5' (Mon–Fri) → ISO '0-4'."""
+        assert _posix_dow_to_apsched("1-5") == "0-4"
+
+    def test_sunday_start_range(self):
+        """POSIX '0-4' (Sun–Thu) → ISO '6,0-3'."""
+        assert _posix_dow_to_apsched("0-4") == "6,0-3"
+
+    def test_full_week_range(self):
+        result = _posix_dow_to_apsched("0-6")
+        trigger = parse_schedule(f"0 9 * * {result}")
+        assert trigger is not None
+
+    def test_range_ending_at_sunday(self):
+        """POSIX '5-7' (Fri–Sun) → ISO '4-6'."""
+        assert _posix_dow_to_apsched("5-7") == "4-6"
+
+    def test_step_normal_range(self):
+        """POSIX '1-5/2' (Mon,Wed,Fri) → ISO individual values."""
+        assert _posix_dow_to_apsched("1-5/2") == "0,2,4"
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            "30 17 * * 0-4",
+            "0 9 * * 0",
+            "0 9 * * 0-6",
+            "0 9 * * 5-7",
+        ],
+    )
+    def test_parse_schedule_accepts_sunday_ranges(self, expr: str):
+        trigger = parse_schedule(expr)
+        assert trigger is not None, f"parse_schedule({expr!r}) returned None"
 
     def test_quoted_schedule_with_inline_comment(self):
         """Quoted schedule with inline comment: both quotes and comment stripped."""

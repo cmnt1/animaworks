@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.bm25 import rebuild_longterm_bm25_index, search_longterm_memory_bm25
+from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index, search_longterm_memory_bm25
 
 
 @pytest.mark.e2e

@@ -1,4 +1,4 @@
-"""Unit tests for core/org_sync.py — org structure synchronization."""
+"""Unit tests for core/org/org_sync.py — org structure synchronization."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,17 +11,16 @@ from pathlib import Path
 import pytest
 
 from core.config.models import (
-    AnimaWorksConfig,
     AnimaModelConfig,
+    AnimaWorksConfig,
     invalidate_cache,
     load_config,
     save_config,
 )
-from core.org_sync import (
+from core.org.org_sync import (
     _detect_circular_references,
     sync_org_structure,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -64,7 +63,8 @@ def _make_anima(
     (anima_dir / "identity.md").write_text(identity_content, encoding="utf-8")
     if status_json is not None:
         (anima_dir / "status.json").write_text(
-            json.dumps(status_json, ensure_ascii=False), encoding="utf-8",
+            json.dumps(status_json, ensure_ascii=False),
+            encoding="utf-8",
         )
     return anima_dir
 
@@ -144,7 +144,9 @@ class TestSyncOrgStructure:
         assert result == {}
 
     def test_adds_new_anima_to_config(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Anima on disk but not in config gets added."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -158,7 +160,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor == "bob"
 
     def test_fills_none_supervisor(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Config entry with supervisor=None gets filled from identity.md."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -177,7 +181,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor == "bob"
 
     def test_updates_existing_supervisor_from_disk(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Config entry is updated when disk supervisor differs."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -195,7 +201,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor == "bob"  # Updated from disk
 
     def test_no_change_when_already_matched(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """No config write when config already matches disk."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -215,7 +223,9 @@ class TestSyncOrgStructure:
         assert mtime_before == mtime_after
 
     def test_multiple_animas(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Multiple animas are all discovered and synced."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -232,7 +242,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["charlie"].supervisor == "alice"
 
     def test_fallback_to_status_json(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Falls back to status.json when identity.md has no supervisor."""
         _make_anima(
@@ -250,7 +262,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor == "bob"
 
     def test_identity_takes_priority_over_status(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """status.json supervisor is checked first by read_anima_supervisor."""
         # Note: read_anima_supervisor checks status.json first, then identity.md.
@@ -268,7 +282,9 @@ class TestSyncOrgStructure:
         assert result["alice"] == "bob"
 
     def test_circular_reference_skipped(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Animas involved in circular references are not synced."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -286,7 +302,9 @@ class TestSyncOrgStructure:
         assert "charlie" in cfg.animas
 
     def test_skips_non_anima_directories(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Directories without identity.md are skipped."""
         (animas_dir / "not-an-anima").mkdir()
@@ -298,7 +316,9 @@ class TestSyncOrgStructure:
         assert "alice" in result
 
     def test_skips_files_in_animas_dir(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Regular files in animas_dir are ignored."""
         (animas_dir / "README.md").write_text("ignore me", encoding="utf-8")
@@ -310,7 +330,9 @@ class TestSyncOrgStructure:
         assert "alice" in result
 
     def test_fullwidth_paren_name_resolution(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Japanese name with full-width parens is resolved to English."""
         _make_anima(
@@ -327,7 +349,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["hinata"].supervisor == "kotoha"
 
     def test_halfwidth_paren_name_resolution(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Japanese name with half-width parens is resolved to English."""
         _make_anima(
@@ -341,7 +365,9 @@ class TestSyncOrgStructure:
         assert result["hinata"] == "kotoha"
 
     def test_anima_with_no_supervisor_added_as_none(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Anima without supervisor info gets added with supervisor=None."""
         _make_anima(
@@ -359,7 +385,9 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor is None
 
     def test_preserves_existing_anima_config_fields(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Syncing supervisor preserves other AnimaModelConfig fields."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -381,7 +409,10 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].speciality == "testing"
 
     def test_mismatch_logs_warning(
-        self, animas_dir: Path, config_path: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        animas_dir: Path,
+        config_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Mismatched supervisors are synced from disk and logged."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -403,7 +434,10 @@ class TestSyncOrgStructure:
         assert cfg.animas["alice"].supervisor == "bob"
 
     def test_circular_reference_logs_warning(
-        self, animas_dir: Path, config_path: Path, caplog: pytest.LogCaptureFixture,
+        self,
+        animas_dir: Path,
+        config_path: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Circular references are logged as warnings."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -415,7 +449,9 @@ class TestSyncOrgStructure:
         assert "circular" in caplog.text.lower()
 
     def test_nashi_values_produce_none_supervisor(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Various 'none' values in identity.md produce supervisor=None."""
         _make_anima(animas_dir, "a", "| 上司 | なし |\n")
@@ -429,7 +465,9 @@ class TestSyncOrgStructure:
         assert result["c"] is None
 
     def test_realistic_identity_md(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Supervisor extracted from a realistic multi-section identity.md."""
         identity = (
@@ -451,7 +489,9 @@ class TestSyncOrgStructure:
         assert result["hinata"] == "rin"
 
     def test_return_value_includes_all_animas(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Return value includes every discovered anima, not just changed ones."""
         _make_anima(animas_dir, "alice", "| 上司 | bob |\n")
@@ -470,7 +510,9 @@ class TestSyncOrgStructure:
         assert "bob" in result
 
     def test_prunes_config_entry_with_no_directory(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Config entries with no corresponding directory on disk are pruned."""
         _make_anima(animas_dir, "alice")
@@ -488,7 +530,9 @@ class TestSyncOrgStructure:
         assert "alice" in updated.animas
 
     def test_prune_does_not_remove_existing_dir_without_identity(
-        self, animas_dir: Path, config_path: Path,
+        self,
+        animas_dir: Path,
+        config_path: Path,
     ) -> None:
         """Config entries for directories that exist (even orphans) are NOT pruned."""
         _make_anima(animas_dir, "alice")

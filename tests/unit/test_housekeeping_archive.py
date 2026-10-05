@@ -4,7 +4,7 @@ import os
 import time
 from pathlib import Path
 
-from core.memory.housekeeping import _rotate_archive_superseded, _rotate_daemon_log
+from core.memory.maintenance.housekeeping import _rotate_archive_superseded, _rotate_daemon_log
 
 
 def _stat_with_times(path: Path, *, mtime: float, ctime: float) -> os.stat_result:

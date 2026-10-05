@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.reconsolidation import ReconsolidationEngine
+from core.memory.maintenance.reconsolidation import ReconsolidationEngine
 from core.time_utils import now_jst
 
 # ── Fixtures ────────────────────────────────────────────────
@@ -50,7 +50,7 @@ def memory_manager(anima_dir: Path):
 @pytest.fixture
 def activity_logger(anima_dir: Path):
     """Create an ActivityLogger for the test anima."""
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     return ActivityLogger(anima_dir)
 
@@ -195,20 +195,32 @@ class TestFindReconsolidationTargets:
         assert len(targets) == 1
 
     @pytest.mark.asyncio
-    async def test_boundary_confidence_0_59_triggered(
+    async def test_max_files_prioritizes_higher_failure_count(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
     ) -> None:
-        """Procedure with confidence=0.59 should trigger."""
+        _write_procedure(anima_dir, "a-low.md", failure_count=1, confidence=0.2)
+        high = _write_procedure(anima_dir, "z-high.md", failure_count=5, confidence=0.9)
+
+        targets = await engine.find_reconsolidation_targets(max_files=1)
+        assert targets == [high]
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_without_new_failures_is_not_a_target(
+        self,
+        engine: ReconsolidationEngine,
+        anima_dir: Path,
+    ) -> None:
+        """Confidence alone does not trigger reconsolidation."""
         _write_procedure(
             anima_dir,
             "just-below.md",
-            failure_count=2,
+            failure_count=0,
             confidence=0.59,
         )
         targets = await engine.find_reconsolidation_targets()
-        assert len(targets) == 1
+        assert targets == []
 
     @pytest.mark.asyncio
     async def test_no_trigger_when_high_confidence_and_no_failures(
@@ -227,20 +239,32 @@ class TestFindReconsolidationTargets:
         assert targets == []
 
     @pytest.mark.asyncio
-    async def test_low_confidence_triggers_without_failures(
+    async def test_reconsolidated_procedure_is_skipped_until_failure_count_increases(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Procedure with failure_count=0 but confidence below 0.6 triggers."""
-        _write_procedure(
+        proc_path = _write_procedure(
             anima_dir,
-            "low-conf-no-fail.md",
-            failure_count=0,
+            "reconsolidated.md",
+            failure_count=3,
             confidence=0.2,
         )
-        targets = await engine.find_reconsolidation_targets()
-        assert len(targets) == 1
+        monkeypatch.setattr(engine, "_revise_procedure", AsyncMock(return_value="Revised procedure"))
+
+        assert await engine.find_reconsolidation_targets() == [proc_path]
+        result = await engine.apply_reconsolidation([proc_path], "test-model")
+        assert result["updated"] == 1
+        meta = engine.memory_manager.read_procedure_metadata(proc_path)
+        assert meta["failure_count"] == 3
+        assert meta["reconsolidated_failure_count"] == 3
+        assert meta["confidence"] == 0.2
+        assert await engine.find_reconsolidation_targets() == []
+
+        meta["failure_count"] += 1
+        engine.memory_manager.write_procedure_with_meta(proc_path, "Updated after another failure", meta)
+        assert await engine.find_reconsolidation_targets() == [proc_path]
 
     @pytest.mark.asyncio
     async def test_defaults_for_missing_metadata(
@@ -359,9 +383,10 @@ class TestApplyReconsolidation:
 
         meta = engine.memory_manager.read_procedure_metadata(proc_path)
         assert meta["version"] == 4
-        assert meta["failure_count"] == 0
+        assert meta["failure_count"] == 4
+        assert meta["reconsolidated_failure_count"] == 4
         assert meta["success_count"] == 0
-        assert meta["confidence"] == 0.5
+        assert meta["confidence"] == 0.2
         assert meta["previous_version"] == "v3"
         assert "reconsolidated_at" in meta
 
@@ -701,7 +726,7 @@ class TestCreateProceduresFromResolved:
         """No issue_resolved events should return zeros."""
         # ActivityLogger.recent() returns empty list
         with patch(
-            "core.memory.activity.ActivityLogger.recent",
+            "core.activity.logger.ActivityLogger.recent",
             return_value=[],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -749,11 +774,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(
@@ -797,7 +822,7 @@ class TestCreateProceduresFromResolved:
         fake_entry = FakeEntry()
 
         with patch(
-            "core.memory.activity.ActivityLogger.recent",
+            "core.activity.logger.ActivityLogger.recent",
             return_value=[fake_entry],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -831,11 +856,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value="procedures/existing.md",
             ),
         ):
@@ -869,11 +894,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(
@@ -925,11 +950,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(
@@ -996,6 +1021,31 @@ def _write_procedure_target(path: Path, *, failure_count: int = 3, confidence: f
     fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True).rstrip()
     path.write_text(f"---\n{fm}\n---\n\n# Proc\n\n1. Step\n", encoding="utf-8")
     return path
+
+
+class TestKnowledgeReconsolidationCheckpoint:
+    @pytest.mark.asyncio
+    async def test_reconsolidated_knowledge_is_skipped_until_failure_count_increases(
+        self,
+        anima_dir: Path,
+        engine: ReconsolidationEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        path = _write_knowledge_target(anima_dir / "knowledge" / "bad.md", failure_count=3, confidence=0.3)
+        monkeypatch.setattr(engine, "_revise_knowledge", AsyncMock(return_value="Revised knowledge"))
+
+        assert await engine.find_knowledge_reconsolidation_targets() == [path]
+        result = await engine.reconsolidate_knowledge("test-model")
+        assert result["updated"] == 1
+        meta = engine.memory_manager.read_knowledge_metadata(path)
+        assert meta["failure_count"] == 3
+        assert meta["reconsolidated_failure_count"] == 3
+        assert meta["confidence"] == 0.3
+        assert await engine.find_knowledge_reconsolidation_targets() == []
+
+        meta["failure_count"] += 1
+        engine.memory_manager.write_knowledge_with_meta(path, "Updated after another failure", meta)
+        assert await engine.find_knowledge_reconsolidation_targets() == [path]
 
 
 class TestRecursiveScanExcludesArchive:

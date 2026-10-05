@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from core.prompt.builder import build_system_prompt
 from core.schemas import SkillMeta
-from core.tooling.schemas import build_tool_list
+from core.tooling.policy.schemas import build_unified_tool_list
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -27,14 +27,11 @@ def _make_mock_memory(anima_dir: Path, tmp_path: Path) -> MagicMock:
     memory.read_permissions.return_value = ""
     memory.read_specialty_prompt.return_value = ""
     memory.read_current_state.return_value = ""
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     memory.load_recent_heartbeat_summary.return_value = ""
-    memory.list_procedure_metas.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
     return memory
@@ -196,12 +193,11 @@ class TestSkillCatalogE2E:
         assert "match=high" in prompt
         assert "common_skills/image-gen-tool/SKILL.md" not in prompt
 
-    def test_create_skill_in_build_tool_list(self, tmp_path: Path) -> None:
-        """build_tool_list with include_create_skill=True adds skill creation tools."""
-        tools = build_tool_list(include_create_skill=True)
+    def test_create_skill_in_build_unified_tool_list(self, tmp_path: Path) -> None:
+        """build_unified_tool_list adds skill creation tools."""
+        tools = build_unified_tool_list()
         names = {x["name"] for x in tools}
         assert "create_skill" in names
-        assert "promote_procedure_to_skill" in names
         assert "skill" not in names
         create = next(x for x in tools if x["name"] == "create_skill")
         assert create["name"] == "create_skill"
@@ -268,16 +264,8 @@ class TestSkillCatalogE2E:
             path=tmp_path / "skills" / "cron-management.md",
             is_common=False,
         )
-        procedure_meta = SkillMeta(
-            name="deploy-procedure",
-            description="本番デプロイの手順書",
-            path=tmp_path / "procedures" / "deploy-procedure.md",
-            is_common=False,
-        )
-
         memory = _make_mock_memory(anima_dir, tmp_path)
         memory.list_skill_metas.return_value = [skill_meta]
-        memory.list_procedure_metas.return_value = [procedure_meta]
 
         with (
             patch("core.prompt.builder.load_prompt", side_effect=_fake_load_prompt),

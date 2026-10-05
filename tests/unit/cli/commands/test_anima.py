@@ -11,19 +11,52 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── cmd_create_anima ────────────────────────────────────
 
 
 class TestCmdCreateAnima:
-    @patch("cli.commands.init_cmd._register_anima_in_config")
-    @patch("core.anima_factory.create_from_md")
+    def test_running_server_owns_anima_creation(self, tmp_path, capsys):
+        from cli.commands.anima import cmd_create_anima
+
+        data_dir = tmp_path / "runtime"
+        data_dir.mkdir()
+        source = tmp_path / "sheet.md"
+        source.write_text("# Character: alice\n", encoding="utf-8")
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"status": "ok", "anima_dir": str(data_dir / "animas" / "alice")}
+        args = argparse.Namespace(from_md=str(source), template=None, name="alice", supervisor="boss", role="engineer")
+
+        with (
+            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.platform.pid.is_server_running", return_value=True),
+            patch("core.anima.factory.create_from_md") as local_create,
+            patch("core.internal_api.host_api.post", return_value=response) as host_post,
+        ):
+            cmd_create_anima(args)
+
+        local_create.assert_not_called()
+        payload = host_post.call_args.kwargs["json"]
+        assert payload["creation_type"] == "character_sheet"
+        assert payload["character_sheet_content"] == "# Character: alice\n"
+        assert payload["name"] == "alice"
+        assert payload["supervisor"] == "boss"
+        assert payload["role"] == "engineer"
+        assert "Created anima 'alice'" in capsys.readouterr().out
+
+    @patch("core.config.register_anima_in_config")
+    @patch("core.anima.factory.create_from_md")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_create_from_md(
-        self, mock_ensure, mock_data_dir, mock_animas_dir,
-        mock_create_md, mock_register, tmp_path, capsys,
+        self,
+        mock_ensure,
+        mock_data_dir,
+        mock_animas_dir,
+        mock_create_md,
+        mock_register,
+        tmp_path,
+        capsys,
     ):
         from cli.commands.anima import cmd_create_anima
 
@@ -42,22 +75,26 @@ class TestCmdCreateAnima:
         md_file = tmp_path / "alice.md"
         md_file.write_text("# Alice", encoding="utf-8")
 
-        args = argparse.Namespace(
-            from_md=str(md_file), template=None, name="alice"
-        )
+        args = argparse.Namespace(from_md=str(md_file), template=None, name="alice")
         cmd_create_anima(args)
 
         captured = capsys.readouterr()
         assert "alice" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
-    @patch("core.anima_factory.create_from_template")
+    @patch("core.config.register_anima_in_config")
+    @patch("core.anima.factory.create_from_template")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_create_from_template(
-        self, mock_ensure, mock_data_dir, mock_animas_dir,
-        mock_create_tpl, mock_register, tmp_path, capsys,
+        self,
+        mock_ensure,
+        mock_data_dir,
+        mock_animas_dir,
+        mock_create_tpl,
+        mock_register,
+        tmp_path,
+        capsys,
     ):
         from cli.commands.anima import cmd_create_anima
 
@@ -73,23 +110,28 @@ class TestCmdCreateAnima:
         anima_dir.mkdir()
         mock_create_tpl.return_value = anima_dir
 
-        args = argparse.Namespace(
-            from_md=None, template="basic", name="alice"
-        )
+        args = argparse.Namespace(from_md=None, template="basic", name="alice")
         cmd_create_anima(args)
 
         captured = capsys.readouterr()
         assert "alice" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
-    @patch("core.anima_factory.validate_anima_name", return_value=None)
-    @patch("core.anima_factory.create_blank")
+    @patch("core.config.register_anima_in_config")
+    @patch("core.anima.factory.validate_anima_name", return_value=None)
+    @patch("core.anima.factory.create_blank")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_create_blank(
-        self, mock_ensure, mock_data_dir, mock_animas_dir,
-        mock_create, mock_validate, mock_register, tmp_path, capsys,
+        self,
+        mock_ensure,
+        mock_data_dir,
+        mock_animas_dir,
+        mock_create,
+        mock_validate,
+        mock_register,
+        tmp_path,
+        capsys,
     ):
         from cli.commands.anima import cmd_create_anima
 
@@ -105,9 +147,7 @@ class TestCmdCreateAnima:
         anima_dir.mkdir()
         mock_create.return_value = anima_dir
 
-        args = argparse.Namespace(
-            from_md=None, template=None, name="bob"
-        )
+        args = argparse.Namespace(from_md=None, template=None, name="bob")
         cmd_create_anima(args)
 
         captured = capsys.readouterr()
@@ -115,10 +155,8 @@ class TestCmdCreateAnima:
 
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
-    @patch("core.init.ensure_runtime_dir")
-    def test_create_blank_no_name(
-        self, mock_ensure, mock_data_dir, mock_animas_dir, tmp_path
-    ):
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
+    def test_create_blank_no_name(self, mock_ensure, mock_data_dir, mock_animas_dir, tmp_path):
         from cli.commands.anima import cmd_create_anima
 
         data_dir = tmp_path / ".animaworks"
@@ -128,19 +166,15 @@ class TestCmdCreateAnima:
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = animas_dir
 
-        args = argparse.Namespace(
-            from_md=None, template=None, name=None
-        )
+        args = argparse.Namespace(from_md=None, template=None, name=None)
         with pytest.raises(SystemExit):
             cmd_create_anima(args)
 
-    @patch("core.anima_factory.validate_anima_name", return_value="Invalid name")
+    @patch("core.anima.factory.validate_anima_name", return_value="Invalid name")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
-    @patch("core.init.ensure_runtime_dir")
-    def test_create_blank_invalid_name(
-        self, mock_ensure, mock_data_dir, mock_animas_dir, mock_validate, tmp_path
-    ):
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
+    def test_create_blank_invalid_name(self, mock_ensure, mock_data_dir, mock_animas_dir, mock_validate, tmp_path):
         from cli.commands.anima import cmd_create_anima
 
         data_dir = tmp_path / ".animaworks"
@@ -150,9 +184,7 @@ class TestCmdCreateAnima:
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = animas_dir
 
-        args = argparse.Namespace(
-            from_md=None, template=None, name="INVALID"
-        )
+        args = argparse.Namespace(from_md=None, template=None, name="INVALID")
         with pytest.raises(SystemExit):
             cmd_create_anima(args)
 
@@ -161,13 +193,18 @@ class TestCmdCreateAnima:
 
 
 class TestCmdChat:
-    @patch("core.anima.DigitalAnima")
+    @patch("core.anima.digital_anima.DigitalAnima")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_chat_local(
-        self, mock_ensure, mock_animas_dir, mock_shared, mock_dp_cls,
-        tmp_path, capsys,
+        self,
+        mock_ensure,
+        mock_animas_dir,
+        mock_shared,
+        mock_dp_cls,
+        tmp_path,
+        capsys,
     ):
         from cli.commands.anima import cmd_chat
 
@@ -182,8 +219,11 @@ class TestCmdChat:
         mock_dp_cls.return_value = mock_anima
 
         args = argparse.Namespace(
-            local=True, anima="alice", message="Hi",
-            from_person="human", gateway_url=None,
+            local=True,
+            anima="alice",
+            message="Hi",
+            from_person="human",
+            gateway_url=None,
         )
         cmd_chat(args)
 
@@ -191,10 +231,8 @@ class TestCmdChat:
         assert "Hello!" in captured.out
 
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
-    def test_chat_local_anima_not_found(
-        self, mock_ensure, mock_animas_dir, tmp_path
-    ):
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
+    def test_chat_local_anima_not_found(self, mock_ensure, mock_animas_dir, tmp_path):
         from cli.commands.anima import cmd_chat
 
         animas_dir = tmp_path / "animas"
@@ -202,8 +240,11 @@ class TestCmdChat:
         mock_animas_dir.return_value = animas_dir
 
         args = argparse.Namespace(
-            local=True, anima="nobody", message="Hi",
-            from_person="human", gateway_url=None,
+            local=True,
+            anima="nobody",
+            message="Hi",
+            from_person="human",
+            gateway_url=None,
         )
         with pytest.raises(SystemExit):
             cmd_chat(args)
@@ -217,8 +258,11 @@ class TestCmdChat:
         mock_request.return_value = mock_resp
 
         args = argparse.Namespace(
-            local=False, anima="alice", message="Hi",
-            from_person="human", gateway_url="http://localhost:18500",
+            local=False,
+            anima="alice",
+            message="Hi",
+            from_person="human",
+            gateway_url="http://localhost:18500",
         )
         cmd_chat(args)
 
@@ -230,8 +274,11 @@ class TestCmdChat:
         from cli.commands.anima import cmd_chat
 
         args = argparse.Namespace(
-            local=False, anima="alice", message="Hi",
-            from_person="human", gateway_url="http://localhost:18500",
+            local=False,
+            anima="alice",
+            message="Hi",
+            from_person="human",
+            gateway_url="http://localhost:18500",
         )
         with pytest.raises(SystemExit):
             cmd_chat(args)
@@ -240,9 +287,13 @@ class TestCmdChat:
         from cli.commands.anima import cmd_chat
 
         args = argparse.Namespace(
-            local=False, anima="sora", message=None,
-            from_person="human", gateway_url=None,
-            thread_id="default", no_tui=False,
+            local=False,
+            anima="sora",
+            message=None,
+            from_person="human",
+            gateway_url=None,
+            thread_id="default",
+            no_tui=False,
         )
         not_tty = MagicMock()
         not_tty.isatty.return_value = False
@@ -261,13 +312,18 @@ class TestCmdChat:
 
 
 class TestCmdHeartbeat:
-    @patch("core.anima.DigitalAnima")
+    @patch("core.anima.digital_anima.DigitalAnima")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_heartbeat_local(
-        self, mock_ensure, mock_animas_dir, mock_shared, mock_dp_cls,
-        tmp_path, capsys,
+        self,
+        mock_ensure,
+        mock_animas_dir,
+        mock_shared,
+        mock_dp_cls,
+        tmp_path,
+        capsys,
     ):
         from cli.commands.anima import cmd_heartbeat
 
@@ -285,7 +341,9 @@ class TestCmdHeartbeat:
         mock_dp_cls.return_value = mock_anima
 
         args = argparse.Namespace(
-            local=True, anima="alice", gateway_url=None,
+            local=True,
+            anima="alice",
+            gateway_url=None,
         )
         cmd_heartbeat(args)
 
@@ -293,7 +351,7 @@ class TestCmdHeartbeat:
         assert "skip" in captured.out
 
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_heartbeat_local_not_found(self, mock_ensure, mock_animas_dir, tmp_path):
         from cli.commands.anima import cmd_heartbeat
 
@@ -302,7 +360,9 @@ class TestCmdHeartbeat:
         mock_animas_dir.return_value = animas_dir
 
         args = argparse.Namespace(
-            local=True, anima="nobody", gateway_url=None,
+            local=True,
+            anima="nobody",
+            gateway_url=None,
         )
         with pytest.raises(SystemExit):
             cmd_heartbeat(args)
@@ -316,7 +376,9 @@ class TestCmdHeartbeat:
         mock_request.return_value = mock_resp
 
         args = argparse.Namespace(
-            local=False, anima="alice", gateway_url="http://localhost:18500",
+            local=False,
+            anima="alice",
+            gateway_url="http://localhost:18500",
         )
         cmd_heartbeat(args)
 
@@ -328,7 +390,9 @@ class TestCmdHeartbeat:
         from cli.commands.anima import cmd_heartbeat
 
         args = argparse.Namespace(
-            local=False, anima="alice", gateway_url="http://localhost:18500",
+            local=False,
+            anima="alice",
+            gateway_url="http://localhost:18500",
         )
         with pytest.raises(SystemExit):
             cmd_heartbeat(args)

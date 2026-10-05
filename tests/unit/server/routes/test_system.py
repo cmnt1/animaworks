@@ -58,13 +58,10 @@ def _make_test_app(
     return app
 
 
-class TestAnimaMergeRuntimeRefs:
+class TestRuntimeRefs:
     async def test_rewrites_all_live_caches(self):
         app = _make_test_app()
         app.state.supervisor._bootstrap_retry_counts = {"source": 3, "target": 1}
-        governor = MagicMock()
-        governor.state.suspended_animas = ["source", "target"]
-        app.state.usage_governor = governor
         webhook_manager = MagicMock()
         webhook_manager.rewrite_anima_reference.return_value = 2
         room_manager = MagicMock()
@@ -73,23 +70,20 @@ class TestAnimaMergeRuntimeRefs:
         app.state.discord_gateway_manager = MagicMock()
         app.state.github_gateway_manager = MagicMock()
         reload_manager = MagicMock()
-        reload_manager.reload_all = AsyncMock(
-            return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}}
-        )
+        reload_manager.reload_all = AsyncMock(return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}})
         app.state.reload_manager = reload_manager
 
         transport = ASGITransport(app=app)
-        with patch("core.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
+        with patch("core.messaging.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    "/api/system/anima-merge/rewrite-runtime-refs",
+                    "/api/system/rewrite-runtime-refs",
                     json={"source": "source", "target": "target"},
                 )
 
         assert response.status_code == 200
         assert response.json() == {
             "discord_mappings_updated": 2,
-            "usage_state_updated": True,
             "bootstrap_retry_removed": True,
             "rooms_reloaded": 2,
             "discord_gateway_reloaded": True,
@@ -97,8 +91,6 @@ class TestAnimaMergeRuntimeRefs:
             "config_reloaded": True,
         }
         webhook_manager.rewrite_anima_reference.assert_called_once_with("source", "target")
-        assert governor.state.suspended_animas == ["target"]
-        governor.state.save.assert_called_once_with()
         assert app.state.supervisor._bootstrap_retry_counts == {"target": 1}
         app.state.supervisor._save_bootstrap_retries.assert_called_once_with()
         room_manager.load_all_rooms.assert_called_once_with()
@@ -158,37 +150,7 @@ class TestSystemStatus:
         assert data["animas"] == 1
         assert "processes" in data
         assert data["scheduler_running"] is False
-        assert data["vector_worker"]["status"] == "missing"
-
-    async def test_status_includes_vector_worker_circuit_breakers(self, tmp_path):
-        animas_dir = tmp_path / "animas"
-        animas_dir.mkdir()
-        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
-        app.state.supervisor.get_all_status.return_value = {
-            "alice": {"status": "running", "pid": 1234},
-        }
-        app.state.vector_worker = MagicMock(
-            enabled=True,
-            status=AsyncMock(
-                return_value={
-                    "status": "ok",
-                    "write_circuit_breakers": [
-                        {
-                            "owner": "shared",
-                            "collection": "shared_common_knowledge",
-                            "open": True,
-                        }
-                    ],
-                }
-            ),
-        )
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/status")
-
-        data = resp.json()
-        assert data["vector_worker"]["status"] == "ok"
-        assert data["vector_worker"]["write_circuit_breakers"][0]["collection"] == "shared_common_knowledge"
+        assert "vector_worker" not in data
 
     async def test_status_includes_gpu_section(self, tmp_path):
         animas_dir = tmp_path / "animas"
@@ -1170,9 +1132,12 @@ class TestActivityScheduleAPI:
 
         with (
             patch("core.config.models.load_config", return_value=mock_config),
-            patch("core.config.models.save_config") as save_mock,
             patch(
-                "core.supervisor.scheduler_manager.SchedulerManager.resolve_scheduled_level",
+                "core.config.io.update_config",
+                side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
+            ) as update_mock,
+            patch(
+                "server.supervisor.activity_schedule.resolve_scheduled_level",
                 return_value=100,
             ),
         ):
@@ -1200,7 +1165,7 @@ class TestActivityScheduleAPI:
         assert data["activity_schedule"][1]["start"] == "22:00"
         assert data["activity_schedule"][1]["end"] == "08:00"
         assert data["activity_schedule"][1]["level"] == 30
-        save_mock.assert_called_once()
+        update_mock.assert_called_once()
 
     async def test_put_activity_schedule_empty_list(self):
         """PUT /api/settings/activity-schedule with empty list clears the schedule."""
@@ -1210,7 +1175,10 @@ class TestActivityScheduleAPI:
 
         with (
             patch("core.config.models.load_config", return_value=mock_config),
-            patch("core.config.models.save_config") as save_mock,
+            patch(
+                "core.config.io.update_config",
+                side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
+            ) as update_mock,
         ):
             app = _make_test_app()
             transport = ASGITransport(app=app)
@@ -1224,7 +1192,7 @@ class TestActivityScheduleAPI:
         data = resp.json()
         assert data["ok"] is True
         assert data["activity_schedule"] == []
-        save_mock.assert_called_once()
+        update_mock.assert_called_once()
 
     async def test_put_activity_schedule_invalid_entry_missing_fields(self):
         """PUT /api/settings/activity-schedule with missing fields returns 400."""

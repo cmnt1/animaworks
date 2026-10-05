@@ -10,15 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import streaming_journal
-from core.supervisor import task_runner
-from core.supervisor import task_runner_supervisor as trs
-from core.supervisor.ipc_v2 import (
+from core.memory.conversation import streaming_journal
+from core.runtime import task_runner
+from core.runtime import task_runner_supervisor as trs
+from core.runtime.ipc_v2 import (
     IPCV2BackpressureTimeout,
     IPCV2ConnectionState,
     IPCV2Identity,
 )
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 
 def _supervisor(tmp_path: Path) -> TaskRunnerSupervisor:
@@ -37,6 +37,28 @@ def _identity(job_id: str = "job-h") -> IPCV2Identity:
         lane="task",
         display_lane="background",
     )
+
+
+def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase3 task children get the vector and embed URLs so they use HTTP."""
+    supervisor = _supervisor(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://vector.test/internal/vector")
+    monkeypatch.setenv("ANIMAWORKS_INTERNAL_AUTH", "rin.per-anima-token")
+    monkeypatch.setenv("ANIMAWORKS_PROCESS_ROLE", "anima")
+    env = supervisor._build_child_environment(
+        {
+            "ANIMAWORKS_EMBED_URL": "http://embed.test",
+            "ANIMAWORKS_VECTOR_URL": "http://vector.test/internal/vector",
+            "ANIMAWORKS_RERANK_URL": "http://rerank.test/internal/rerank",
+        },
+        attempt=1,
+        display_lane="background",
+    )
+    assert env["ANIMAWORKS_VECTOR_URL"] == "http://vector.test/internal/vector"
+    assert env["ANIMAWORKS_EMBED_URL"] == "http://embed.test"
+    assert env["ANIMAWORKS_RERANK_URL"] == "http://rerank.test/internal/rerank"
+    assert env["ANIMAWORKS_INTERNAL_AUTH"] == "rin.per-anima-token"
+    assert env["ANIMAWORKS_PROCESS_ROLE"] == "anima"
 
 
 # ── Task 1: received result is kept even when the child exits nonzero ───
@@ -71,7 +93,11 @@ async def _spawn_with_nonzero_exit(
             attempt=1,
             display_lane="background",
             on_spawned=None,
-            url_env={"ANIMAWORKS_EMBED_URL": "http://localhost:0"},
+            url_env={
+                "ANIMAWORKS_EMBED_URL": "http://localhost:0",
+                "ANIMAWORKS_VECTOR_URL": "http://localhost:0/vector",
+                "ANIMAWORKS_RERANK_URL": "http://localhost:0/rerank",
+            },
         )
     )
     while not supervisor.jobs:

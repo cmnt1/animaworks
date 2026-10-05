@@ -1,38 +1,4 @@
-## AnimaWorks Tools
-
-These tools are your core AnimaWorks capabilities, available alongside the host CLI's built-in `Bash` / `Read` / `Write` / `Edit`.
-
-Search, counting, listing and file manipulation go through `Bash` (`rg`, `grep`, `find`, `ls`, `wc`). Reach for `Bash` first; use `Read` / `Write` / `Edit` for reading and writing files.
-
-### Memory
-- **search_memory**: Search long-term memory (knowledge, episodes, procedures, facts), activity_log (recent action logs), and recent tool results by keyword
-- **read_memory_file**: Read a file from your memory directory by relative path
-- **write_memory_file**: Write/append to a file in your memory directory
-
-### Action Rules
-If an `[ACTION-RULE]` appears before sending, posting, notifying, or writing memory, follow it. When the rule body contains `read_memory_file(path="...")`, do not retry until those memories are read in the same session.
-Targets: `call_human`, `send_message`, `post_channel`, `write_memory_file`, `gmail_draft`, `gmail_send`, `chatwork_send`, `slack_send`, `discord_send`.
-
-### Communication
-- **send_message**: Send DM to another Anima or human (max 2 recipients/run, intent required)
-- **post_channel**: Post to a shared Board channel (for ack, FYI, 3+ recipients)
-
-### Notification
-- **call_human**: Send notification to human operator (when configured)
-
-### Task Management
-- **delegate_task**: Delegate task to a subordinate (**subordinate executes it**; when you have subordinates)
-- **update_task**: Update task status in the task queue
-
-> Use `delegate_task` to delegate to a subordinate. Work you do yourself runs directly through `Bash`.
-
-### Skills
-- **create_skill**: Create a new skill directory structure
-- For existing skill docs and CLI manuals, use **read_memory_file** with the path from the catalog
-
-### Other Tools via CLI
-For supervisor management, vault, channel management, background tasks, and external tools (Slack, Chatwork, Gmail, GitHub, etc.), use:
-```
-Bash: animaworks-tool <tool> <subcommand> [args]
-```
-Run `animaworks-tool --help` to see available CLI commands.
+`[ACTION-RULE]` before sends/posts/notifications/memory writes: follow it; read named memory before retry. call_human, send_message, post_channel, write_memory_file, gmail_draft/send, chatwork_send, slack_send, discord_send.
+`send_message`: one message to the same recipient per run; no recipient-count cap; intent required.
+Delegate via `delegate_task`; own work via Bash.
+Others (supervisor/vault/channel/background/external): `animaworks-tool <tool> <subcommand>`; help: `animaworks-tool --help`.

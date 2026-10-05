@@ -40,7 +40,7 @@ def test_cost_json_includes_monthly_budget_fields_for_every_anima(tmp_path, caps
 
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
-        patch("core.memory.token_budget.read_token_budget_status", side_effect=budget_status),
+        patch("core.usage.token_budget.read_token_budget_status", side_effect=budget_status),
     ):
         cmd_cost(_args(json_output=True))
 
@@ -65,7 +65,7 @@ def test_cost_text_displays_unlimited_budget_as_dash(tmp_path, capsys) -> None:
 
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
-        patch("core.memory.token_budget.read_token_budget_status", return_value=status),
+        patch("core.usage.token_budget.read_token_budget_status", return_value=status),
     ):
         cmd_cost(_args(anima="alice"))
 

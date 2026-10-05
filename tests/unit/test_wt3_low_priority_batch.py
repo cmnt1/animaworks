@@ -2,7 +2,7 @@
 
 Covers:
 - Fix 8:  Board mention fanout targets running Animas only
-- Fix 10: A2 streaming comment updates (agent.py + litellm_loop.py)
+- Fix 10: A2 streaming comment updates (agent.py + LiteLLM executor)
 - Fix 11: CLAUDE.md Mode B session chaining exclusion note
 - Fix N4: ProcessHandle streaming lock
 - Fix N5: Forgetting relaxed thresholds
@@ -18,11 +18,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from core.time_utils import now_jst
+from core.tooling.handler import ToolHandler
 
 # ══════════════════════════════════════════════════════════════════════
 # Fix 8: Board Mention Fanout — running Animas only
@@ -31,7 +33,6 @@ import pytest
 
 def _make_handler(tmp_path: Path, anima_name: str = "alice") -> ToolHandler:
     """Create a ToolHandler with minimal mocked dependencies."""
-    from core.tooling.handler import ToolHandler
 
     anima_dir = tmp_path / "animas" / anima_name
     anima_dir.mkdir(parents=True)
@@ -60,9 +61,9 @@ class TestFanoutAllExcludesStoppedAnimas:
     """Fix 8: @all fanout only targets running Animas (socket present)."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_fanout_all_excludes_stopped_animas(self, tmp_path):
@@ -83,8 +84,7 @@ class TestFanoutAllExcludesStoppedAnimas:
         (sockets_dir / "carol.sock").touch()
         # dave has no socket — stopped
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hello @all !")
+        handler._fanout_board_mentions("general", "Hello @all !")
 
         messenger = handler._messenger
         # Should have called send() for bob and carol (sorted order)
@@ -102,8 +102,7 @@ class TestFanoutAllExcludesStoppedAnimas:
         (sockets_dir / "alice.sock").touch()
         (sockets_dir / "bob.sock").touch()
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hey @all")
+        handler._fanout_board_mentions("general", "Hey @all")
 
         messenger = handler._messenger
         assert messenger.send.call_count == 1
@@ -129,9 +128,9 @@ class TestFanoutNamedExcludesStoppedAnimas:
     """Fix 8: Named @mention only reaches running targets."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_fanout_named_excludes_stopped_animas(self, tmp_path):
@@ -146,8 +145,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
         (sockets_dir / "bob.sock").touch()
         # dave has no socket — stopped
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("ops", "Hey @bob @dave check this")
+        handler._fanout_board_mentions("ops", "Hey @bob @dave check this")
 
         messenger = handler._messenger
         assert messenger.send.call_count == 1
@@ -162,8 +160,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
         sockets_dir.mkdir(parents=True)
         # No sockets at all
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hey @dave @eve")
+        handler._fanout_board_mentions("general", "Hey @dave @eve")
 
         messenger = handler._messenger
         messenger.send.assert_not_called()
@@ -172,30 +169,6 @@ class TestFanoutNamedExcludesStoppedAnimas:
 # ══════════════════════════════════════════════════════════════════════
 # Fix 10: A2 Streaming Comments
 # ══════════════════════════════════════════════════════════════════════
-
-
-class TestStreamingCommentUpdated:
-    """Fix 10: agent.py streaming section comment updated."""
-
-    def test_streaming_comment_updated(self):
-        """agent.py should reference 'S / A / all modes', not just 'A1 Agent SDK'."""
-        agent_path = Path(__file__).resolve().parents[2] / "core" / "agent.py"
-        content = agent_path.read_text(encoding="utf-8")
-        assert "S / A / all modes" in content, "agent.py streaming section comment should say 'S / A / all modes'"
-
-
-class TestLitellmCommentUpdated:
-    """Fix 10: litellm_loop.py session chaining comment updated."""
-
-    def test_litellm_comment_updated(self):
-        """litellm_loop.py should say 'handled by AgentCore', not 'NOT handled'."""
-        litellm_path = Path(__file__).resolve().parents[2] / "core" / "execution" / "litellm_loop.py"
-        content = litellm_path.read_text(encoding="utf-8")
-        assert "handled by AgentCore" in content, (
-            "litellm_loop.py should say session chaining is 'handled by AgentCore'"
-        )
-        # Verify old incorrect comment is gone
-        assert "NOT handled" not in content, "litellm_loop.py should NOT contain 'NOT handled' anymore"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -228,7 +201,7 @@ class TestClaudeMdModeBExclusion:
 @pytest.fixture
 def process_handle(tmp_path: Path):
     """Create a ProcessHandle with mock paths."""
-    from core.supervisor.process_handle import ProcessHandle
+    from server.supervisor.process_handle import ProcessHandle
 
     socket_path = tmp_path / "test.sock"
     return ProcessHandle(
@@ -272,13 +245,13 @@ class TestForgettingThresholds:
 
     def test_forgetting_days_threshold_is_90(self):
         """FORGETTING_LOW_ACTIVATION_DAYS should be 90."""
-        from core.memory.forgetting import FORGETTING_LOW_ACTIVATION_DAYS
+        from core.memory.maintenance.forgetting import FORGETTING_LOW_ACTIVATION_DAYS
 
         assert FORGETTING_LOW_ACTIVATION_DAYS == 90
 
     def test_forgetting_max_access_count_is_2(self):
         """FORGETTING_MAX_ACCESS_COUNT should be 2 (relaxed from previous stricter value)."""
-        from core.memory.forgetting import FORGETTING_MAX_ACCESS_COUNT
+        from core.memory.maintenance.forgetting import FORGETTING_MAX_ACCESS_COUNT
 
         assert FORGETTING_MAX_ACCESS_COUNT == 2
 
@@ -290,7 +263,7 @@ class TestForgettingThresholds:
         access_count=1 that has been in low activation for >90 days
         should be eligible.
         """
-        from core.memory.forgetting import (
+        from core.memory.maintenance.forgetting import (
             FORGETTING_LOW_ACTIVATION_DAYS,
             FORGETTING_MAX_ACCESS_COUNT,
         )
@@ -309,7 +282,7 @@ class TestForgettingThresholds:
 
     def test_access_count_3_not_eligible(self):
         """Chunks with access_count=3 should NOT be eligible (above threshold)."""
-        from core.memory.forgetting import (
+        from core.memory.maintenance.forgetting import (
             FORGETTING_LOW_ACTIVATION_DAYS,
             FORGETTING_MAX_ACCESS_COUNT,
         )
@@ -361,7 +334,7 @@ class TestExtractKeywordsTruncatesLongInput:
 
     def test_extract_keywords_truncates_long_input(self, tmp_path):
         """Messages > 5000 chars should be truncated before keyword extraction."""
-        from core.memory.priming import PrimingEngine, _MAX_KEYWORD_INPUT_LEN
+        from core.memory.priming import _MAX_KEYWORD_INPUT_LEN, PrimingEngine
 
         # Create minimal PrimingEngine
         anima_dir = tmp_path / "test-anima"
@@ -425,7 +398,7 @@ class TestJournalOpenRecoversOrphan:
         """If an orphaned journal exists when open() is called,
         it should be recovered before creating the new one.
         """
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         # Create an orphaned journal (simulate previous crash)
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
@@ -445,7 +418,7 @@ class TestJournalOpenRecoversOrphan:
         # Now open a new journal — should trigger recovery first
         journal = StreamingJournal(journal_anima_dir)
 
-        with patch.object(StreamingJournal, "recover", wraps=StreamingJournal.recover) as mock_recover:
+        with patch.object(StreamingJournal, "recover", wraps=StreamingJournal.recover):
             journal.open(trigger="chat", from_person="user", session_id="new-sess")
 
         # The orphan was present before open() — recovery path was taken.
@@ -458,7 +431,7 @@ class TestJournalOpenRecoversOrphan:
 
     def test_journal_open_orphan_content_recovered(self, journal_anima_dir):
         """Orphan journal content should be recoverable before overwrite."""
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         # Write an orphan with some text
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
@@ -484,7 +457,7 @@ class TestJournalOpenRecoversOrphan:
 
     def test_journal_open_no_orphan_normal(self, journal_anima_dir):
         """Opening without existing journal should work normally (no recovery)."""
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
         assert not journal_path.exists()

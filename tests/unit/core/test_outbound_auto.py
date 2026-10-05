@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.outbound_auto import prepare_auto_response_text
+from core.messaging.outbound_auto import prepare_auto_response_text
 
 
 def test_prepare_auto_response_text_suppresses_repeated_operational_loop() -> None:

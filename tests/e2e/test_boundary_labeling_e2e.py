@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.execution._sanitize import wrap_tool_result
+from core.trust import wrap_tool_result
 from core.memory.priming import PrimingResult, format_priming_section
 from core.prompt.builder import build_system_prompt
 
@@ -28,18 +28,13 @@ def _make_mock_memory(tmp_path: Path) -> MagicMock:
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
     memory.read_current_state.return_value = ""
-    memory.read_pending.return_value = ""
     memory.read_resolutions.return_value = []
-    memory.read_model_config.return_value = MagicMock(
-        model="claude-sonnet-4-20250514", supervisor=None, max_chains=3
-    )
+    memory.read_model_config.return_value = MagicMock(model="claude-sonnet-4-20250514", supervisor=None)
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     memory.common_skills_dir = tmp_path / "common_skills"
     return memory
 

@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from core.exceptions import TaskPersistenceError
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 
@@ -74,8 +74,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=error),
-            patch("httpx.post", return_value=response) as post,
-            patch("core.tooling.handler_delegation._record_taskboard_delegation") as board,
+            patch("core.host_api.host_api.post", return_value=response) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert not result.strip().startswith("{")
@@ -85,11 +84,10 @@ class TestDelegateTaskErofsFallback:
         assert sent["sub_task_id"] in result
         assert sent["tracking_task_id"] in result
         assert not any(key.startswith("persist_") for key in sent)
-        board.assert_not_called()
         assert TaskQueueManager(target).list_tasks() == []
 
     def test_alias_write_denied_rolls_back_subordinate_before_proxy(self, tmp_path):
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         handler = _make_handler(tmp_path)
         target = _setup_target(tmp_path)
@@ -98,7 +96,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskStore, "alias", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", return_value=response) as post,
+            patch("core.host_api.host_api.post", return_value=response) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result
@@ -117,7 +115,7 @@ class TestDelegateTaskErofsFallback:
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=OSError(30, "Read-only file system")),
             patch(
-                "httpx.post",
+                "core.host_api.host_api.post",
                 side_effect=httpx.ConnectError("down") if failure == "transport" else None,
                 return_value=response,
             ) as post,
@@ -138,7 +136,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=[httpx.ReadTimeout("response lost"), response]) as post,
+            patch("core.host_api.host_api.post", side_effect=[httpx.ReadTimeout("response lost"), response]) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result
@@ -151,7 +149,7 @@ class TestDelegateTaskErofsFallback:
         with (
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-            patch("httpx.post") as post,
+            patch("core.host_api.host_api.post") as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result
@@ -161,7 +159,7 @@ class TestDelegateTaskErofsFallback:
 
     def test_mcp_env_includes_server_url(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Codex MCP env must inject ANIMAWORKS_SERVER_URL (contract for EROFS fallback)."""
-        from core.execution.codex_sdk import CodexSDKExecutor
+        from core.execution.engines.codex.executor import CodexSDKExecutor
         from core.schemas import ModelConfig
 
         anima_dir = tmp_path / "animas" / "rin"

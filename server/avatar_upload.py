@@ -42,13 +42,13 @@ def _get_xserver_config() -> dict | None:
 
     if not all((host, user, password)):
         try:
-            from core.tools._base import get_credential
+            from core.credentials import get_credential
 
             host = host or get_credential("xserver_ftp", "xserver", "ftp_host", "XSERVER_FTP_HOST")
             user = user or get_credential("xserver_ftp", "xserver", "ftp_user", "XSERVER_FTP_USER")
             password = password or get_credential("xserver_ftp", "xserver", "ftp_pass", "XSERVER_FTP_PASS")
         except Exception:
-            pass
+            logger.debug("Avatar credential lookup failed", exc_info=True)
 
     # Fallback: abconfig secrets_local.XSERVER dict
     if not all((host, user, password)):
@@ -65,7 +65,7 @@ def _get_xserver_config() -> dict | None:
             user = user or xserver.get("ftp_user", "")
             password = password or xserver.get("ftp_pass", "")
         except Exception:
-            pass
+            logger.debug("Legacy avatar credential lookup failed", exc_info=True)
 
     if not all((host, user, password)):
         logger.debug("XSERVER FTP credentials not found in env/config/abconfig")

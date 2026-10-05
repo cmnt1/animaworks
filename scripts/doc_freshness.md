@@ -18,9 +18,9 @@ python3 scripts/doc_freshness.py
 === Stale Documents: 42/52 ===
 
 [HIGH] templates/ja/reference/operations/task-management.md
-       Reason: core/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
+       Reason: core/tasks/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
 [MED ] templates/ja/common_skills/cron-management/SKILL.md
-       Reason: core/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
+       Reason: core/runtime/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
 ```
 
 深刻度は差分日数で判定: **HIGH**(7日+) / **MED**(3-7日) / **LOW**(1-3日)
@@ -65,7 +65,7 @@ python3 scripts/doc_freshness.py --fix
 # モデル指定
 python3 scripts/doc_freshness.py --fix --model composer-2
 
-# en翻訳をスキップ（jaだけ更新）
+# en/ko は翻訳パイプラインで生成するため、このコマンドではjaだけ更新
 python3 scripts/doc_freshness.py --fix --skip-en
 
 # カテゴリ絞り込みと組み合わせ
@@ -75,7 +75,7 @@ python3 scripts/doc_freshness.py --fix --dry-run --category common_skills
 `--fix` の動作:
 
 1. staleなjaドキュメントごとに `cursor-agent -p --trust --force --workspace ...` で関連コードを調査・更新
-2. 更新されたjaの内容を元に、対応するenドキュメントを翻訳更新
+2. en/ko はこのコマンドでは更新せず、`scripts/translate.py` でja正本から生成（`--skip-en` が既定）
 3. タイムアウト（デフォルト30分）超過時はスキップして次のファイルに進行
 
 ## フラグ一覧
@@ -89,7 +89,7 @@ python3 scripts/doc_freshness.py --fix --dry-run --category common_skills
 | `--file PATH` | 特定ファイルだけ処理 |
 | `--category CAT` | カテゴリで絞り込み |
 | `--since YYYY-MM-DD` | ドキュメント更新日を手動指定 |
-| `--skip-en` | en翻訳をスキップ |
+| `--skip-en` | 互換用フラグ（en/ko は常に `scripts/translate.py` で生成） |
 | `--timeout SEC` | ファイルごとのタイムアウト秒数（デフォルト: `1800`=30分） |
 | `--json` | JSON形式で出力 |
 

@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("animaworks.context_tracker")
 
@@ -212,6 +212,7 @@ class ContextTracker:
     # measurement of the session; 0 until then.
     _last_tokens: int = field(default=0, init=False, repr=False)
     _high_water_warned: bool = field(default=False, init=False, repr=False)
+    _pending_session_measurement: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._high_water_warned = self.session_last_ratio >= 0.60
@@ -333,21 +334,13 @@ class ContextTracker:
             )
 
         if persist and self.anima_dir is not None and self.session_type:
-            try:
-                from core.execution._sdk_session import record_session_measurement
-
-                record_session_measurement(
-                    self.anima_dir,
-                    self.session_type,
-                    self.thread_id,
-                    tokens=tokens,
-                    ratio=self._last_ratio,
-                    model=self.model,
-                    session_id=self.session_id or None,
-                    baseline_tokens=self.baseline_tokens,
-                )
-            except Exception:
-                logger.debug("Failed to persist context measurement", exc_info=True)
+            self._pending_session_measurement = {
+                "tokens": tokens,
+                "ratio": self._last_ratio,
+                "model": self.model,
+                "session_id": self.session_id or None,
+                "baseline_tokens": self.baseline_tokens,
+            }
 
         fill = self._fill_ratio(tokens)
         fill_hit = fill >= self.threshold
@@ -372,22 +365,6 @@ class ContextTracker:
         return True
 
     # ── Transcript-based estimation (Agent SDK) ────────────
-
-    def estimate_from_transcript(self, transcript_path: str) -> float:
-        """Estimate context usage ratio from transcript file size.
-
-        Returns the estimated ratio (0.0-1.0+).
-        """
-        if not transcript_path:
-            return self._last_ratio
-        try:
-            file_size = os.path.getsize(transcript_path)
-        except OSError:
-            return self._last_ratio
-
-        estimated_tokens = file_size // CHARS_PER_TOKEN
-        self._record(estimated_tokens, source="transcript estimate")
-        return self._last_ratio
 
     # ── Unified usage update ────────────────────────────────
 
@@ -437,7 +414,7 @@ class ContextTracker:
     # ── Legacy convenience methods (delegate to update()) ─
 
     def update_from_usage(self, usage: dict) -> bool:
-        """Update from per-request API usage (Mode A / Fallback).
+        """Update from per-request API usage (Mode A).
 
         Uses ``input_tokens`` alone as the fullness measure because output
         tokens from prior turns are already included in the next request's
@@ -482,6 +459,24 @@ class ContextTracker:
         )
         return self.update({"input_tokens": actual_input}, include_output_in_ratio=False)
 
+    async def persist_session_measurement(self) -> None:
+        """Persist the latest synchronous tracker measurement asynchronously."""
+        if self._pending_session_measurement is None or self.anima_dir is None or not self.session_type:
+            return
+        measurement = self._pending_session_measurement
+        self._pending_session_measurement = None
+        try:
+            from core.execution.engines.claude._sdk_session import arecord_session_measurement
+
+            await arecord_session_measurement(
+                self.anima_dir,
+                self.session_type,
+                self.thread_id,
+                **measurement,
+            )
+        except Exception:
+            logger.debug("Failed to persist context measurement", exc_info=True)
+
     def reset(self) -> None:
         """Reset tracker for a new session."""
         self._last_ratio = 0.0
@@ -491,3 +486,4 @@ class ContextTracker:
         self.baseline_tokens = 0
         self._last_tokens = 0
         self._high_water_warned = False
+        self._pending_session_measurement = None

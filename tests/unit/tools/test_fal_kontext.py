@@ -1,4 +1,4 @@
-"""Unit tests for FluxKontextClient (fal-ai/flux-pro/kontext) in core/tools/image/fal.py."""
+"""Unit tests for FluxKontextClient (fal-ai/flux-pro/kontext) in core/integrations/image/fal.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.image.constants import FAL_KONTEXT_SUBMIT_URL
-from core.tools.image.fal import FluxKontextClient
+from core.integrations._base import ToolConfigError
+from core.integrations.image.constants import FAL_KONTEXT_SUBMIT_URL
+from core.integrations.image.fal import FluxKontextClient
 
 
 class TestFluxKontextClientInit:
@@ -80,12 +80,12 @@ class TestFluxKontextSubmitPayload:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image.fal.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image.fal.httpx.post", return_value=submit_resp) as mock_post,
             patch(
-                "core.tools.image.fal.httpx.get",
+                "core.integrations.image.fal.httpx.get",
                 side_effect=[status_resp, result_resp, image_resp],
             ),
-            patch("core.tools.image.fal.time.sleep"),
+            patch("core.integrations.image.fal.time.sleep"),
         ):
             client.generate_from_reference(
                 reference_image=ref,
@@ -116,12 +116,12 @@ class TestFluxKontextSubmitPayload:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image.fal.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image.fal.httpx.post", return_value=submit_resp) as mock_post,
             patch(
-                "core.tools.image.fal.httpx.get",
+                "core.integrations.image.fal.httpx.get",
                 side_effect=[status_resp, result_resp, image_resp],
             ),
-            patch("core.tools.image.fal.time.sleep"),
+            patch("core.integrations.image.fal.time.sleep"),
         ):
             client.generate_from_reference(ref, prompt="x", seed=None)
 

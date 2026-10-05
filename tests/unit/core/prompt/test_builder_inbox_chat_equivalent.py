@@ -63,7 +63,6 @@ def _mock_memory(tmp_path: Path, *, specialty: str = "", current_state: str = ""
     memory.read_identity.return_value = "# Identity\nI am test."
     memory.read_injection.return_value = ""
     memory.read_current_state.return_value = current_state
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
     memory.read_specialty_prompt.return_value = specialty
@@ -73,8 +72,6 @@ def _mock_memory(tmp_path: Path, *, specialty: str = "", current_state: str = ""
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     memory.read_resolutions.return_value = []
     return memory
 
@@ -144,22 +141,6 @@ class TestInboxPromptIsolation:
                 context_window=200_000,
             )
         assert '<section name="emotion_instruction">' not in result.system_prompt
-
-    def test_inbox_does_not_inject_redundant_a_reflection(self, tmp_path):
-        memory = _mock_memory(tmp_path)
-
-        reflection_text = "## A-mode reflection\nReflect on past actions."
-
-        with ExitStack() as stack:
-            _apply_patches(stack, tmp_path)
-            stack.enter_context(patch("core.prompt.builder._load_a_reflection", return_value=reflection_text))
-            result = build_system_prompt(
-                memory,
-                execution_mode="a",
-                trigger="inbox:alice",
-                context_window=200_000,
-            )
-        assert "Reflect on past actions" not in result.system_prompt
 
     def test_chat_still_works_identically(self, tmp_path):
         """Regression: chat trigger should still include all sections."""

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.platform.process import is_process_alive
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,7 @@ def _load_profiles() -> dict[str, dict]:
 def _save_profiles(profiles: dict[str, dict]) -> None:
     """Save profiles atomically via tmp file + rename."""
     data = {"version": 1, "profiles": profiles}
-    tmp = _PROFILES_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(_PROFILES_FILE)
+    atomic_write_json(_PROFILES_FILE, data, trailing_newline=False)
 
 
 def _next_available_port(profiles: dict[str, dict]) -> int:

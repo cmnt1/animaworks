@@ -70,66 +70,6 @@ STRINGS: dict[str, dict[str, str]] = {
             "Read the following character sheet and extract visual appearance into a photorealistic image generation prompt:\n\n{character_text}"
         ),
     },
-    "audit.org_timeline_footer": {
-        "ja": (
-            "─── 統計: 全{count}名 | 活動{total}件 | ツール{tools} | HB{hb} | 応答{resp} | DM{dm} | エラー{err} ───"
-        ),
-        "en": (
-            "─── Stats: {count} animas | {total} events | Tools {tools} | HB {hb} | Responses {resp} | DM {dm} | Errors {err} ───"
-        ),
-    },
-    "audit.org_timeline_no_activity": {
-        "ja": "(この期間の活動ログはありません)",
-        "en": "(No activity log for this period)",
-    },
-    "audit.org_timeline_thinned_notice": {
-        "ja": "(HB/Cron {hb_original}件中{hb_kept}件を表示 — 等間隔サンプリング | コマンドCron {cmd_cron}件省略)",
-        "en": ("(Showing {hb_kept} of {hb_original} HB/Cron — evenly sampled | {cmd_cron} command crons omitted)"),
-    },
-    "audit.org_timeline_title": {
-        "ja": "═══ 組織タイムライン ({date}) — {count}名 ═══",
-        "en": "═══ Org Timeline ({date}) — {count} animas ═══",
-    },
-    "audit.org_timeline_tool_header": {
-        "ja": "■ ツール使用サマリー",
-        "en": "■ Tool Usage Summary",
-    },
-    "audit.org_timeline_tool_line": {
-        "ja": "{name} (全{total}回): ",
-        "en": "{name} ({total} total): ",
-    },
-    "audit.timeline_label_cron_executed": {
-        "ja": "Cron",
-        "en": "Cron",
-    },
-    "audit.timeline_label_error": {
-        "ja": "エラー",
-        "en": "Error",
-    },
-    "audit.timeline_label_heartbeat_end": {
-        "ja": "HB",
-        "en": "HB",
-    },
-    "audit.timeline_label_heartbeat_reflection": {
-        "ja": "振り返り",
-        "en": "Reflection",
-    },
-    "audit.timeline_label_issue_resolved": {
-        "ja": "解決",
-        "en": "Resolved",
-    },
-    "audit.timeline_label_message_sent": {
-        "ja": "DM",
-        "en": "DM",
-    },
-    "audit.timeline_label_response_sent": {
-        "ja": "応答",
-        "en": "Response",
-    },
-    "audit.timeline_label_task_exec_end": {
-        "ja": "タスク完了",
-        "en": "Task done",
-    },
     "builder.c_response_requirement": {
         "ja": (
             "## 応答要件\nあなたはユーザーとの対話において、**必ずテキストで応答**してください。\nツール呼び出しを行った場合でも、その結果の要約やユーザーへの返答を\nテキストメッセージとして出力してください。\n挨拶・質問・雑談などの会話メッセージには、ツール呼び出しの前後に\n自然なテキスト応答を必ず含めてください。"
@@ -145,6 +85,21 @@ STRINGS: dict[str, dict[str, str]] = {
     "builder.default_workspace_unresolved": {
         "ja": "あなたのデフォルトワークスペース: (未解決: {alias})",
         "en": "Your default workspace: (unresolved: {alias})",
+    },
+    "builder.external_tools": {
+        "ja": "外部ツール（`animaworks-tool <name>` 経由）: {categories}",
+        "en": "External tools (via `animaworks-tool <name>`): {categories}",
+        "ko": "외부 도구 (`animaworks-tool <name>` 경유): {categories}",
+    },
+    "builder.external_tools.personal_count": {
+        "ja": "個人ツール: {count}件（一覧は `animaworks-tool --help`）",
+        "en": "Personal tools: {count} (list with `animaworks-tool --help`)",
+        "ko": "개인 도구: {count}개 (목록은 `animaworks-tool --help`)",
+    },
+    "builder.external_tools.direct": {
+        "ja": "ツール一覧に専用の外部ツールがあれば、そのツール名で直接呼び出す。",
+        "en": "If a dedicated external tool is visible in your tool list, call it directly by name.",
+        "ko": "도구 목록에 전용 외부 도구가 있으면 해당 도구 이름으로 직접 호출하세요.",
     },
     "builder.heartbeat_tool_fallback": {
         "ja": (
@@ -188,13 +143,29 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "(이전 버전. {latest} 에 통합)",
     },
     "builder.skill_catalog_instruction": {
-        "ja": "ここに出るスキルは候補です。使う前に表示パスを `read_memory_file` で読み、全文の手順・制約を確認すること。新規スキル作成時は `common_skills/skill-creator/SKILL.md` を読むこと。`external/...` はホスト側スキル。SKILL.md 内の相対パス（scripts/ 等）は実体ディレクトリ基準で、`read_memory_file` の結果冒頭に実体ディレクトリが表示される。",
-        "en": "Skills shown here are candidates. Before using one, read the shown path with `read_memory_file` and verify the full instructions and constraints. Before authoring a new skill, read `common_skills/skill-creator/SKILL.md`. `external/...` are host-side skills. Relative paths inside their SKILL.md (e.g. scripts/) are relative to the real directory, which is shown at the top of the `read_memory_file` result.",
-        "ko": "여기에 표시되는 스킬은 후보입니다. 사용하기 전에 표시된 경로를 `read_memory_file`로 읽고 전체 절차와 제약을 확인하세요. 새 스킬을 작성할 때는 `common_skills/skill-creator/SKILL.md`를 읽으세요. `external/...`은 호스트측 스킬입니다. SKILL.md 내부의 상대 경로(scripts/ 등)는 실제 디렉토리 기준이며, `read_memory_file` 결과 맨 앞에 실제 디렉토리가 표시됩니다.",
+        "ja": "使う前に表示パスを `read_memory_file` で読み、手順・制約を確認する。\n新規作成時は `common_skills/skill-creator/SKILL.md` を読む。`external/...` はホスト側スキル。",
+        "en": "Before use, read the shown path with `read_memory_file` and verify its instructions and constraints.\nBefore creating a skill, read `common_skills/skill-creator/SKILL.md`; `external/...` are host-side skills.",
+        "ko": "사용 전에 표시된 경로를 `read_memory_file`로 읽고 절차와 제약을 확인하세요.\n새 스킬 작성 전 `common_skills/skill-creator/SKILL.md`를 읽으세요. `external/...`은 호스트측 스킬입니다.",
     },
-    "builder.procedure_label": {
-        "ja": "手順",
-        "en": "procedure",
+    "builder.board_channels_none": {
+        "ja": "（なし）",
+        "en": "(none)",
+        "ko": "(없음)",
+    },
+    "builder.board_channels_more": {
+        "ja": "、ほか{count}件",
+        "en": ", and {count} more",
+        "ko": " 외 {count}개",
+    },
+    "builder.board_guidance_with_team": {
+        "ja": "- 所属チームの限定チャネル（報告先）: {team_channels}（通常の作業報告・完了報告を優先）\n- 現在アクセスできるBoardチャネル: {visible_channels}\n- `general` は全体共有のみ、`ops` は部門横断の運用・インフラ共有のみ。",
+        "en": "- Restricted team channel(s) (reporting destination): {team_channels} (prioritize for routine work/completion reports)\n- Accessible Board channels: {visible_channels}\n- Use `general` only for org-wide sharing and `ops` only for cross-team operations/infrastructure.",
+        "ko": "- 소속 팀 제한 채널(보고처): {team_channels} (일반 업무/완료 보고 우선)\n- 현재 접근 가능한 Board 채널: {visible_channels}\n- `general`은 전체 공유용으로만, `ops`는 팀 간 운영/인프라 공유용으로만 사용합니다.",
+    },
+    "builder.board_guidance_without_team": {
+        "ja": "- 所属チームの限定チャネル（報告先）: なし\n- 現在アクセスできるBoardチャネル: {visible_channels}\n- 最も関連性の高い共有チャネルを使う（`general` は全体共有のみ、`ops` は部門横断の運用・インフラ共有のみ）。",
+        "en": "- Restricted team channel (reporting destination): none\n- Accessible Board channels: {visible_channels}\n- Use the most relevant shared channel (`general` only for org-wide sharing; `ops` only for cross-team operations/infrastructure).",
+        "ko": "- 소속 팀 제한 채널(보고처): 없음\n- 현재 접근 가능한 Board 채널: {visible_channels}\n- 가장 관련성 높은 공유 채널을 사용합니다 (`general`은 전체 공유용으로만, `ops`는 팀 간 운영/인프라 공유용으로만 사용).",
     },
     "cli.disable_help": {
         "ja": "Disable (休養) an anima",
@@ -215,14 +186,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "cli.permissions_file_path": {
         "ja": "ファイル: {path}",
         "en": "File: {path}",
-    },
-    "cli.migrate_cron_done": {
-        "ja": "Migrated {count} anima(s) to standard cron format.",
-        "en": "Migrated {count} anima(s) to standard cron format.",
-    },
-    "cli.migrate_cron_skipped": {
-        "ja": "No migration needed — all cron.md files are already in standard format.",
-        "en": "No migration needed — all cron.md files are already in standard format.",
     },
     "cli.profile_add_hint": {
         "ja": "'animaworks profile add <name>' で作成してください",
@@ -303,14 +266,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "cli.profile_stopping": {
         "ja": "'{name}' を停止中 (pid={pid})...",
         "en": "Stopping '{name}' (pid={pid})...",
-    },
-    "cli.set_outbound_limit_cleared": {
-        "ja": "{name} のアウトバウンド制限をクリアしました（ロールデフォルトにフォールバック）",
-        "en": "Cleared outbound limits for {name} (falling back to role defaults)",
-    },
-    "cli.set_outbound_limit_success": {
-        "ja": "{name} のアウトバウンド制限を更新しました: {details}",
-        "en": "Updated outbound limits for {name}: {details}",
     },
     "migrate.migration_note": {
         "ja": "<!-- MIGRATION NOTE: could not auto-convert '{schedule}' to cron expression -->",
@@ -420,14 +375,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "アクティビティレベル",
         "en": "Activity Level",
     },
-    "settings.activity_level.updated": {
-        "ja": "アクティビティレベルを {level}% に変更しました",
-        "en": "Activity level changed to {level}%",
-    },
-    "skill.desc_line3": {
-        "ja": "該当するスキルがある場合に使用すること。",
-        "en": "Use when a matching skill is available.",
-    },
     "skill.label_common": {
         "ja": "共通",
         "en": "common",
@@ -435,10 +382,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "skill.label_procedure": {
         "ja": "手順",
         "en": "procedure",
-    },
-    "skill.truncated": {
-        "ja": "(以降省略)",
-        "en": "(truncated)",
     },
     "skill_creator.created": {
         "ja": ("スキル '{skill_name}' を作成しました: {skill_dir}\n作成ファイル: {files_str}"),
@@ -468,16 +411,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "⏱️ {minutes}分経過",
         "en": "⏱️ {minutes}m elapsed",
     },
-    "task_queue.sync_done": {
-        "ja": "{orig} (→{target}: 完了)",
-        "en": "{orig} (→{target}: done)",
-        "ko": "{orig} (→{target}: 완료)",
-    },
-    "task_queue.sync_cancelled": {
-        "ja": "{orig} (→{target}: 部下タスクがキャンセルされた)",
-        "en": "{orig} (→{target}: subordinate task was cancelled)",
-        "ko": "{orig} (→{target}: 부하 태스크가 취소됨)",
-    },
     "task_queue.delegated_unknown": {
         "ja": "不明",
         "en": "unknown",
@@ -485,14 +418,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "task_queue.delegated_archived": {
         "ja": "アーカイブ済",
         "en": "archived",
-    },
-    "voice.mode_suffix": {
-        "ja": (
-            "\n\n[voice-mode: 音声会話です。話し言葉で200文字以内で簡潔に回答してください。Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください]"
-        ),
-        "en": (
-            "\n\n[voice-mode: This is a voice conversation. Reply concisely in spoken language, 200 characters or fewer. Do not use Markdown formatting (headings, bold, lists, code blocks, etc.)]"
-        ),
     },
     "voice.stt_failed": {
         "ja": "音声認識に失敗しました",

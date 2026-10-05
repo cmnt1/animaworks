@@ -13,7 +13,6 @@ values.
 """
 
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger("animaworks.config.env_slots")
@@ -72,31 +71,6 @@ def ensure_slack_env_slots(anima_name: str) -> bool:
         bot_key,
     )
     return True
-
-
-def check_missing_slack_tokens() -> list[str]:
-    """Return Anima names whose Slack bot tokens are not set.
-
-    Checks registered animas in config against environment variables,
-    vault, and shared credentials.  Returns names where no usable
-    ``SLACK_BOT_TOKEN__{name}`` value was found.
-    """
-    try:
-        from core.config.models import load_config
-
-        config = load_config()
-    except Exception:
-        return []
-
-    from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
-
-    missing: list[str] = []
-    for anima_name in sorted(config.animas):
-        key = f"SLACK_BOT_TOKEN__{anima_name}"
-        token = _lookup_vault_credential(key) or _lookup_shared_credentials(key) or os.environ.get(key)
-        if not token:
-            missing.append(anima_name)
-    return missing
 
 
 def ensure_all_anima_slots() -> int:

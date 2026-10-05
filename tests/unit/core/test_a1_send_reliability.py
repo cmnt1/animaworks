@@ -9,9 +9,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from core.execution.agent_sdk import AgentSDKExecutor
+from core.execution.engines.claude.executor import AgentSDKExecutor
 from core.schemas import ModelConfig
 
 # ── _build_env() ─────────────────────────────────────────
@@ -24,7 +22,6 @@ class TestBuildEnvPathAndProjectDir:
         mc = ModelConfig(model="claude-sonnet-4-6")
         return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
 
-    @pytest.mark.skipif(os.name == "nt", reason="PATH separator is ';' on Windows; test assumes POSIX ':' separator")
     def test_anima_dir_in_path(self, tmp_path: Path) -> None:
         """PATH should start with anima_dir so tools are discoverable."""
         anima_dir = tmp_path / "animas" / "alice"
@@ -34,28 +31,25 @@ class TestBuildEnvPathAndProjectDir:
         env = executor._build_env()
 
         assert "PATH" in env
-        path_entries = env["PATH"].split(":")
-        assert str(anima_dir) == path_entries[0], (
-            "anima_dir must be the first entry in PATH"
-        )
+        path_entries = env["PATH"].split(os.pathsep)
+        assert str(anima_dir) == path_entries[0], "anima_dir must be the first entry in PATH"
 
-    @pytest.mark.skipif(os.name == "nt", reason="PATH separator is ';' on Windows; test uses POSIX paths")
     def test_system_path_preserved(self, tmp_path: Path) -> None:
         """System PATH entries should be preserved after anima_dir."""
         anima_dir = tmp_path / "animas" / "bob"
         anima_dir.mkdir(parents=True)
 
-        original_path = "/usr/local/bin:/usr/bin:/bin"
+        original_path = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin"])
         with patch.dict(os.environ, {"PATH": original_path}):
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        path_entries = env["PATH"].split(":")
+        path_entries = env["PATH"].split(os.pathsep)
         # anima_dir must be first
         assert path_entries[0] == str(anima_dir)
         # all original system PATH entries must be present (order may vary due to
         # _build_sdk_path_env prepending launcher_dir and venv_bin)
-        for entry in original_path.split(":"):
+        for entry in original_path.split(os.pathsep):
             assert entry in path_entries, f"{entry!r} missing from PATH"
 
     def test_project_dir_set(self, tmp_path: Path) -> None:
@@ -81,7 +75,6 @@ class TestBuildEnvPathAndProjectDir:
 
         assert env["ANIMAWORKS_ANIMA_DIR"] == str(anima_dir)
 
-    @pytest.mark.skipif(os.name == "nt", reason="POSIX fallback paths /usr/bin:/bin not applicable on Windows")
     def test_fallback_path_when_no_env(self, tmp_path: Path) -> None:
         """When PATH is not in os.environ, fall back to /usr/bin:/bin."""
         anima_dir = tmp_path / "animas" / "eve"
@@ -92,7 +85,7 @@ class TestBuildEnvPathAndProjectDir:
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        path_entries = env["PATH"].split(":")
+        path_entries = env["PATH"].split(os.pathsep)
         # anima_dir must be first; fallback entries /usr/bin and /bin must be present
         assert path_entries[0] == str(anima_dir)
         for entry in ("/usr/bin", "/bin"):
@@ -148,7 +141,7 @@ class TestBuildMcpEnv:
         anima_dir = tmp_path / "animas" / "dave"
         anima_dir.mkdir(parents=True)
 
-        original_path = "/usr/local/bin:/usr/bin:/bin"
+        original_path = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin"])
         with patch.dict(os.environ, {"PATH": original_path}):
             executor = self._make_executor(anima_dir)
             env = executor._build_mcp_env()

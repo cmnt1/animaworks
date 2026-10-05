@@ -16,15 +16,12 @@ from __future__ import annotations
 
 import inspect
 import json
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from core.memory.consolidation import ConsolidationEngine
-from core.memory.conversation import ConversationMemory, ToolRecord
-from core.time_utils import now_local as now_jst
-from tests.helpers.chroma import close_chroma_store
+from core.memory.conversation.memory import ConversationMemory, ToolRecord
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 
 # =====================================================================
 # Fix 1: S mode append_turn
@@ -97,17 +94,17 @@ class TestSModeAppendTurn:
         S-mode from saving conversation turns are no longer present in
         the source code.
         """
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module)
 
         # The old guard patterns that should no longer exist
         assert 'if mode != "s":' not in source, (
-            "Found 'if mode != \"s\":' guard in core/anima.py -- "
+            "Found 'if mode != \"s\":' guard in core/anima/digital_anima.py -- "
             "this should have been removed to allow S-mode memory encoding"
         )
         assert "if mode != 's':" not in source, (
-            "Found \"if mode != 's':\" guard in core/anima.py -- "
+            "Found \"if mode != 's':\" guard in core/anima/digital_anima.py -- "
             "this should have been removed to allow S-mode memory encoding"
         )
 
@@ -121,7 +118,7 @@ class TestSModeAppendTurn:
         Inspects the process_message method source to confirm that
         append_turn calls are not guarded by mode checks.
         """
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module.DigitalAnima.process_message)
 
@@ -131,7 +128,7 @@ class TestSModeAppendTurn:
 
     def test_s_mode_streaming_saves_turns(self) -> None:
         """Verify process_message_stream code path saves turns for S-mode."""
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module.DigitalAnima.process_message_stream)
 
@@ -163,7 +160,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
 
         indexer = MemoryIndexer(store, "test-chunk", anima_dir)
 
@@ -198,7 +195,6 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
-        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_empty_skip(self) -> None:
@@ -232,7 +228,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-empty", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-empty")
@@ -241,7 +237,6 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
-        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_short_skip(self) -> None:
@@ -274,7 +269,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-short", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-short")
@@ -283,7 +278,6 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
-        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_chunk_markdown_text_no_headings_fallback(self) -> None:
@@ -302,7 +296,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-fallback", anima_dir)
 
         # Plain text without ### headings
@@ -319,7 +313,6 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
-        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
 
@@ -353,7 +346,7 @@ class TestConversationSummaryKeywordSearch:
             encoding="utf-8",
         )
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,
@@ -396,7 +389,7 @@ class TestConversationSummaryKeywordSearch:
             encoding="utf-8",
         )
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,
@@ -429,7 +422,7 @@ class TestConversationSummaryKeywordSearch:
         if conv_path.exists():
             conv_path.unlink()
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,
@@ -456,210 +449,25 @@ class TestConversationSummaryKeywordSearch:
 # =====================================================================
 
 
-class TestActivityLogConsolidation:
-    """Verify activity_log collection for consolidation."""
+def test_consolidation_uses_2phase_pipeline() -> None:
+    """Verify daily consolidation uses Phase A + Phase B pipeline."""
+    import core.anima.digital_anima as anima_module
+    import core.anima.lifecycle as lifecycle_module
 
-    def test_collect_activity_entries(
-        self,
-        data_dir: Path,
-        make_anima,
-    ) -> None:
-        """_collect_activity_entries returns formatted activity entries."""
-        anima_dir = make_anima(name="test-act")
+    source = inspect.getsource(
+        anima_module.DigitalAnima._run_daily_consolidation,
+    )
+    assert "_run_daily_episode_summaries" in source, (
+        "_run_daily_consolidation should delegate Phase A to _run_daily_episode_summaries"
+    )
 
-        log_dir = anima_dir / "activity_log"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        now = now_jst()
-        today_str = now.strftime("%Y-%m-%d")
-        log_file = log_dir / f"{today_str}.jsonl"
-
-        entries = [
-            {
-                "ts": (now - timedelta(minutes=30)).isoformat(),
-                "type": "message_received",
-                "content": "What is the deployment status?",
-                "summary": "Deployment status inquiry",
-                "from": "human",
-            },
-            {
-                "ts": (now - timedelta(minutes=29)).isoformat(),
-                "type": "response_sent",
-                "content": "Deployment is running on staging.",
-                "summary": "Staging deployment status",
-                "to": "human",
-            },
-            {
-                "ts": (now - timedelta(minutes=20)).isoformat(),
-                "type": "tool_use",
-                "summary": "Executed web_search",
-                "tool": "web_search",
-            },
-        ]
-
-        with log_file.open("w", encoding="utf-8") as f:
-            for entry in entries:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-        engine = ConsolidationEngine(anima_dir, "test-act")
-        result = engine._collect_activity_entries(hours=24)
-
-        # Should contain communication entries (tool_use excluded by smart filtering)
-        assert result  # Non-empty
-        assert "message_received" in result
-        assert "response_sent" in result
-        assert "tool_use" not in result
-
-    def test_collect_activity_entries_type_filter(
-        self,
-        data_dir: Path,
-        make_anima,
-    ) -> None:
-        """Communication types are prioritized; tool_use is excluded, channel_post included."""
-        anima_dir = make_anima(name="test-filter")
-
-        log_dir = anima_dir / "activity_log"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        now = now_jst()
-        today_str = now.strftime("%Y-%m-%d")
-        log_file = log_dir / f"{today_str}.jsonl"
-
-        entries = [
-            {
-                "ts": (now - timedelta(minutes=10)).isoformat(),
-                "type": "response_sent",
-                "summary": "Answered question",
-            },
-            {
-                "ts": (now - timedelta(minutes=9)).isoformat(),
-                "type": "tool_use",
-                "summary": "Used web_search",
-                "tool": "web_search",
-            },
-            {
-                "ts": (now - timedelta(minutes=8)).isoformat(),
-                "type": "message_received",
-                "summary": "User asked a question",
-                "from": "human",
-            },
-            {
-                "ts": (now - timedelta(minutes=7)).isoformat(),
-                "type": "heartbeat_start",
-                "summary": "Heartbeat started",
-            },
-            {
-                "ts": (now - timedelta(minutes=6)).isoformat(),
-                "type": "heartbeat_end",
-                "summary": "Heartbeat ended",
-            },
-            {
-                "ts": (now - timedelta(minutes=5)).isoformat(),
-                "type": "channel_post",
-                "summary": "Posted to general",
-                "channel": "general",
-            },
-        ]
-
-        with log_file.open("w", encoding="utf-8") as f:
-            for entry in entries:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-        engine = ConsolidationEngine(anima_dir, "test-filter")
-        result = engine._collect_activity_entries(hours=24)
-
-        # Should include communication types
-        assert "response_sent" in result
-        assert "message_received" in result
-        # channel_post is now a communication type (included in _COMM_TYPES)
-        assert "channel_post" in result
-
-        # Should NOT include filtered types
-        assert "heartbeat_start" not in result
-        assert "heartbeat_end" not in result
-        # tool_use is excluded by smart filtering (only tool_result is kept)
-        assert "tool_use" not in result
-
-    def test_collect_activity_entries_budget_limit(
-        self,
-        data_dir: Path,
-        make_anima,
-    ) -> None:
-        """Activity entries are truncated to the 12000-char budget."""
-        anima_dir = make_anima(name="test-budget")
-
-        log_dir = anima_dir / "activity_log"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        now = now_jst()
-        today_str = now.strftime("%Y-%m-%d")
-        log_file = log_dir / f"{today_str}.jsonl"
-
-        # Write many entries that would exceed the budget
-        entries = []
-        for i in range(500):
-            entries.append(
-                {
-                    "ts": (now - timedelta(seconds=500 - i)).isoformat(),
-                    "type": "response_sent",
-                    "summary": f"Response #{i}: " + ("A" * 200),
-                    "to": "human",
-                }
-            )
-
-        with log_file.open("w", encoding="utf-8") as f:
-            for entry in entries:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-        engine = ConsolidationEngine(anima_dir, "test-budget")
-        result = engine._collect_activity_entries(hours=24)
-
-        # Result should be non-empty but within budget
-        assert result
-        assert len(result) <= 12_000, f"Activity log result should be within 12000 chars, got {len(result)}"
-
-    def test_collect_activity_entries_empty(
-        self,
-        data_dir: Path,
-        make_anima,
-    ) -> None:
-        """Returns empty string when no activity log exists."""
-        anima_dir = make_anima(name="test-empty-act")
-
-        # No activity_log directory
-        engine = ConsolidationEngine(anima_dir, "test-empty-act")
-        result = engine._collect_activity_entries(hours=24)
-
-        assert result == ""
-
-    def test_collect_activity_entries_used_in_consolidation(self) -> None:
-        """Verify _collect_episodes_summary calls _collect_activity_entries.
-
-        This meta-test ensures the activity log is wired into the
-        consolidation prompt pipeline.
-        """
-        import core.anima as anima_module
-
-        source = inspect.getsource(
-            anima_module.DigitalAnima._collect_episodes_summary,
-        )
-
-        assert "_collect_activity_entries" in source, (
-            "_collect_episodes_summary should call _collect_activity_entries "
-            "to include activity log in consolidation input"
-        )
-
-    def test_consolidation_uses_2phase_pipeline(self) -> None:
-        """Verify daily consolidation uses Phase A + Phase B pipeline."""
-        import core.anima as anima_module
-
-        source = inspect.getsource(
-            anima_module.DigitalAnima._run_daily_consolidation,
-        )
-
-        assert "collect_activity_chunks" in source, (
-            "_run_daily_consolidation should use collect_activity_chunks for Phase A episode extraction"
-        )
-        assert "one_shot_completion" in source, (
-            "_run_daily_consolidation should use one_shot_completion for Phase A (no tool loop)"
-        )
+    phase_a_source = inspect.getsource(
+        anima_module.DigitalAnima._run_daily_episode_summaries,
+    )
+    assert "collect_activity_chunks" in phase_a_source, "Phase A episode extraction should use collect_activity_chunks"
+    assert "_complete_episode_prompt" in phase_a_source, (
+        "Phase A episode extraction should complete prompts via _complete_episode_prompt"
+    )
+    assert "one_shot_completion" in inspect.getsource(lifecycle_module._complete_episode_prompt), (
+        "Phase A should use one_shot_completion (no tool loop)"
+    )

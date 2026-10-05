@@ -2,68 +2,67 @@
 
 ## Overview
 
-`call_human` sends notifications to human administrators. **It is not one-way** — when a human replies in the Slack thread, the reply is automatically delivered to the sending Anima's Inbox.
+`call_human` is a tool for sending notifications to human administrators. It is **not one-way** — when a human replies in a Slack thread, that reply is automatically delivered to the sending Anima's Inbox.
 
 ## Sending
 
 ```
 call_human(
-    subject="Subject line",
-    body="Body (include situation, what you tried, and what you need)",
+    subject="件名",
+    body="本文（状況・試したこと・依頼内容を含める）",
     priority="normal"  # "normal" | "high" | "urgent"
 )
 ```
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `subject` | MUST | Subject line (concise) |
-| `body` | MUST | Body (include situation, attempts, and request) |
+| `subject` | MUST | Subject (keep it concise) |
+| `body` | MUST | Body (include situation, what was tried, and the request) |
 | `priority` | MAY | `normal` (default), `high`, `urgent` |
 
-### When to Use
+### Use when:
 
-- High-urgency issues (data loss risk, security, service outage)
-- Decisions beyond your authority
-- Top-level Anima escalation when no supervisor exists
+- Issues with "high" urgency (risk of data loss, security, service shutdown)
+- Decisions are needed that go beyond your own scope of judgment
+- Escalation needed at the top-level Anima when there is no supervisor
 
-See `troubleshooting/escalation-flowchart.md` for detailed criteria.
+See `troubleshooting/escalation-flowchart.md` for detailed decision criteria.
 
-### Rate Limits
+### Usage
 
-- `call_human` is **exempt** from DM rate limits (30/h, 100/day)
-- Can be sent without concern for limits even during emergencies
+- `call_human` is a separate human notification route from `send_message`. Use when: actual emergency response is required.
 
 ## Receiving Replies
 
 ### How It Works
 
-1. `call_human` posts a message to Slack
-2. The human replies in the message **thread**
+1. When you send a notification with `call_human`, a message is posted to Slack
+2. A human replies in the **thread** of that message
 3. The reply is automatically routed to the sending Anima's Inbox
-4. The reply is processed in the next Inbox cycle (typically detected within 2 seconds)
+4. The reply is processed in the next Inbox processing cycle (typically detected within 2 seconds)
 
-### Reply Message Attributes
+### Characteristics of Reply Messages
 
-Received replies have these attributes:
+Received reply messages have the following attributes:
 
 - `source`: `"slack"` (reply via Slack)
 - `from_person`: `"slack:U..."` format (Slack user ID)
-- Processed like any other Inbox message
+- Processed the same way as regular Inbox messages
 
-### Waiting for a Reply
+### When Waiting for a Reply
 
 If you need to wait for a reply after sending `call_human`:
 
-1. Record the waiting state in `state/current_state.md`
-2. The reply will arrive automatically in the next Inbox processing cycle
-3. Even if no immediate reply comes, it will be delivered when the human responds
+1. Record the waiting status in `state/current_state.md`
+2. The reply will arrive automatically in the next Inbox processing
+3. Even if there is no immediate reply, it will be delivered automatically once the human responds
 
 ### Responding to a Reply
 
-Once you receive a reply, you can respond as with any Inbox message. Note that since the sender is a Slack user, use chat response or another `call_human` rather than `send_message`.
+Once you receive a reply, you can respond to it the same way as a regular Inbox message. However, since the reply target is a Slack user, respond with a chat response or a further `call_human` instead of `send_message`.
 
 ## Notes
 
-- Reply routing only works for notifications sent via **Bot Token mode** (`chat.postMessage`). Webhook mode notifications cannot receive replies (this is an admin configuration issue, not something Animas control)
-- Reply mappings are retained for **7 days**. Replies to threads older than 7 days will not be delivered
-- If no human reply arrives, you can send another `call_human` as a follow-up
+- Reply routing is only supported for notifications sent in **Bot Token mode** (`chat.postMessage`). In Webhook mode, replies will not arrive (this is an administrator configuration issue, not something controlled by Anima)
+- Reply mapping is retained for **7 days**. Replies to threads older than 7 days will not arrive
+- Even if there is no reply from a human, you can follow up with another `call_human` as needed

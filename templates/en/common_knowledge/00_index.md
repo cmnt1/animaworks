@@ -1,248 +1,240 @@
-# Common Knowledge — Index & Quick Guide
+# Common Knowledge — Table of Contents & Quick Guide
 
-Index of reference documents shared by all AnimaWorks Anima.
-When you are stuck or unsure of a procedure, use this file to identify the relevant document,
-then read it with `read_memory_file(path="common_knowledge/...")`.
+Table of contents for the reference documentation shared by all Anima in AnimaWorks.
+When you are stuck or unsure of a procedure, use this file to locate the relevant document, and refer to `read_memory_file(path="common_knowledge/...")` for details.
 
-> 💡 Detailed technical references (file specifications, model configuration, authentication setup, etc.) have been moved to `reference/`.
-> Index: `reference/00_index.md`
+> 💡 Detailed technical references (configuration file specifications, model configuration, authentication configuration, etc.) have been moved to `reference/`.
+> Table of contents: `reference/00_index.md`
 
 ---
 
 ## ⭐ Start Here
 
-If you are new to AnimaWorks or want to organize the big picture, read this one file first.
-It covers the essentials of Heartbeat / Cron / team design / memory / cost optimization in a single page.
+If you are new to AnimaWorks or want to organize the big picture, read the following single file first.
+The key points of Heartbeat / Cron / team design / memory / cost optimization are consolidated into one page.
 
 | File | Content |
-|------|---------|
-| **`anatomy/essentials.md`** | **AnimaWorks Essential Guide** — Overview of execution paths, Heartbeat vs Cron, team design, task routing, memory system, and cost optimization in one page |
+|---------|------|
+| **`anatomy/essentials.md`** | **AnimaWorks Essential Guide** — Overview of the big picture, 5 execution paths, Heartbeat vs Cron, team design, how to flow tasks, memory system, and cost optimization in one page |
 
-After reading, use the index below to find details on each topic.
+After reading, follow the table of contents below for details on each topic.
 
 ---
 
-## Quick Guide — When You Are Stuck
+## Quick Guide for When You Are Stuck
 
 ### Communication
 
-| Problem | Reference |
-|---------|-----------|
-| Don't know how to send messages | `reference/communication/messaging-guide.md` |
-| Don't know how to use Board (shared channels) | `communication/board-guide.md` |
-| Unsure which channel to broadcast to (#ops / #general / department / thread) | `communication/broadcasting-guide.md` |
-| Don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
-| Want to check required fields for delegation/reports/escalation | `communication/message-quality-protocol.md` |
-| Message sending was limited | `communication/sending-limits.md` |
-| Don't know how to notify humans | `communication/call-human-guide.md` |
-| Don't know how to configure Slack bot tokens | `reference/communication/slack-bot-token-guide.md` (→ reference) |
+| Issue | Reference |
+|---------|--------|
+| I don't know how to send a message | `reference/communication/messaging-guide.md` |
+| I don't know how to use Board (shared channel) | `communication/board-guide.md` |
+| I don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
+| I want to check the required items for delegation, completion reports, and escalation | `communication/message-quality-protocol.md` |
+| I want to check the behavior of Inbox startup and message sending | `communication/sending-limits.md` |
+| I don't know how to notify humans | `communication/call-human-guide.md` |
+| I don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` ※Technical reference |
 
 ### Organization & Hierarchy
 
-| Problem | Reference |
-|---------|-----------|
-| Don't know the org structure or who to contact | `reference/organization/structure.md` (→ reference) |
-| Want to check roles and responsibilities | `reference/organization/roles.md` |
-| Don't know communication rules across hierarchy | `organization/hierarchy-rules.md` |
+| Issue | Reference |
+|---------|--------|
+| I don't know the organizational structure or who to contact | `reference/organization/structure.md` ※ Technical reference |
+| I want to check roles and areas of responsibility | `reference/organization/roles.md` |
+| I don't know the communication rules between hierarchy levels | `organization/hierarchy-rules.md` |
 
 ### Tasks & Operations
 
-| Problem | Reference |
-|---------|-----------|
-| Don't know how to manage tasks | `reference/operations/task-management.md` |
-| Want to use the task board (human-facing dashboard) | `operations/task-board-guide.md` |
-| Don't know how to configure Heartbeat or cron | `reference/operations/heartbeat-cron-guide.md` |
-| Want to confirm Heartbeat observation path / policy-block avoidance | `operations/heartbeat-observe-guide.md` |
-| Want pre-action checks before sending, posting, or memory writes | `operations/action-rules-guide.md` |
-| Don't know how to run long-running tools | `operations/background-tasks.md` |
-| Don't know how to register or use workspaces | `operations/workspace-guide.md` |
-| Want to create a new skill or check skill metadata | `common_skills/skill-creator/SKILL.md` |
-| Want to change project settings | `reference/operations/project-setup.md` (→ reference) |
+| Issue | Reference |
+|---------|--------|
+| I don't know how to manage tasks | `reference/operations/task-management.md` |
+| I want to use the task board (dashboard for humans) | `operations/task-board-guide.md` |
+| I don't know how to configure heartbeat or cron | `reference/operations/heartbeat-cron-guide.md` |
+| I want to add confirmation rules before sending, posting, or writing to memory | `operations/action-rules-guide.md` |
+| I don't know how to run long-running tools | `operations/background-tasks.md` |
+| I don't know how to register or use a workspace | `operations/workspace-guide.md` |
+| I want to check how to create new skills and their metadata | `common_skills/skill-creator/SKILL.md` |
+| I want to change project configuration | `reference/operations/project-setup.md` ※ Technical reference |
 
-### Tools, Models & Technical
+### Tools, Models & Technology
 
-| Problem | Reference |
-|---------|-----------|
-| Don't know how to use or call tools | `reference/operations/tool-usage-overview.md` |
-| Don't know how to choose or change models | `reference/operations/model-guide.md` (→ reference) |
-| Want to change Mode S authentication method | `reference/operations/mode-s-auth-guide.md` (→ reference) |
-| Don't know how to set up or use voice chat | `reference/operations/voice-chat-guide.md` (→ reference) |
+| Issue | Reference |
+|---------|--------|
+| I don't know how to use or call tools | `reference/operations/tool-usage-overview.md` |
+| I don't know how to choose or change models | `reference/operations/model-guide.md` ※ Technical reference |
+| I want to change the Mode S authentication method | `reference/operations/mode-s-auth-guide.md` ※ Technical reference |
+| I don't know how to configure or use voice chat | `reference/operations/voice-chat-guide.md` ※ Technical reference |
 
 ### Understanding Yourself
 
-| Problem | Reference |
-|---------|-----------|
-| Want to know what an Anima is | `anatomy/what-is-anima.md` |
-| Want to understand your configuration files | `reference/anatomy/anima-anatomy.md` (→ reference) |
-| Want to understand how memory works | `reference/anatomy/memory-system.md` |
+| Issue | Reference |
+|---------|--------|
+| I want to know what an Anima is | `anatomy/what-is-anima.md` |
+| I want to know the role of my configuration file | `reference/anatomy/anima-anatomy.md` ※ Technical reference |
+| I want to know the mechanism and types of memory | `reference/anatomy/memory-system.md` |
 
 ### Troubleshooting
 
-| Problem | Reference |
-|---------|-----------|
-| Tools or commands don't work / getting errors | `reference/troubleshooting/common-issues.md` |
-| Task is blocked / unsure what to do | `reference/troubleshooting/escalation-flowchart.md` |
-| Gmail tool credential setup not working | `reference/troubleshooting/gmail-credential-setup.md` (→ reference) |
+| Issue | Reference |
+|---------|--------|
+| Tools or commands don't work / errors occur | `reference/troubleshooting/common-issues.md` |
+| A task is blocked / I'm unsure how to decide | `reference/troubleshooting/escalation-flowchart.md` |
+| Gmail tool authentication configuration isn't working | `reference/troubleshooting/gmail-credential-setup.md` ※ Technical reference |
 
 ### Security
 
-| Problem | Reference |
-|---------|-----------|
-| Concerned about external data reliability | `security/prompt-injection-awareness.md` |
+| Issue | Reference |
+|---------|--------|
+| I'm concerned about the reliability of external data | `security/prompt-injection-awareness.md` |
 
 ### Use Cases
 
-| Problem | Reference |
-|---------|-----------|
-| Want to know what AnimaWorks can do | `reference/usecases/usecase-overview.md` |
+| Issue | Reference |
+|---------|--------|
+| I want to know what can be done with AnimaWorks | `reference/usecases/usecase-overview.md` |
 
-**None of the above?** → Search with `search_memory(query="keyword", scope="common_knowledge")`
+**If not covered above** → Search using `search_memory(query="キーワード", scope="common_knowledge")`
 
 ---
 
-## Document Listing
+## Document List
 
-### anatomy/ — Anima Anatomy & Components
+### anatomy/ — Anima Components
 
-| File | Description |
-|------|-------------|
-| ⭐ `essentials.md` | **Essential Guide** — Overview of AnimaWorks in one page (execution paths, Heartbeat vs Cron, team design, memory, cost optimization) |
+| File | Overview |
+|---------|------|
+| ⭐ `essentials.md` | **Essential Guide** — Overview of the entire AnimaWorks picture in one page (execution paths, Heartbeat vs Cron, team design, memory, cost optimization) |
 | `what-is-anima.md` | What is an Anima (concept, design philosophy, lifecycle, execution paths) |
-| `anima-anatomy.md` | → Moved to `reference/anatomy/anima-anatomy.md`. Complete file reference |
-| `memory-system.md` | Memory system guide (memory types, Priming, Consolidation, Forgetting, tool usage) |
+| `anima-anatomy.md` | → Moved to `reference/anatomy/anima-anatomy.md`. Complete configuration file guide |
+| `memory-system.md` | Memory system guide (memory types, Priming, Consolidation, Forgetting, tool selection) |
 
 ### organization/ — Organization & Structure
 
-| File | Description |
-|------|-------------|
-| `structure.md` | → Moved to `reference/organization/structure.md`. How org structure works |
-| `roles.md` | Roles and responsibilities (top-level / mid-level / worker Anima duties) |
-| `hierarchy-rules.md` | Rules across hierarchy (communication paths, supervisor tools, emergency exceptions) |
+| File | Overview |
+|---------|------|
+| `structure.md` | → Moved to `reference/organization/structure.md`. How the organizational structure works |
+| `roles.md` | Roles and areas of responsibility (top-level / middle management / execution Anima responsibilities) |
+| `hierarchy-rules.md` | Rules between hierarchy levels (communication paths, supervisor tool, exceptions in emergencies) |
 
 ### communication/ — Communication
 
 | File | Description |
-|------|-------------|
-| `messaging-guide.md` | Full guide to messaging (send_message params, thread management, one-round rule) |
-| `board-guide.md` | Board (shared channels) guide (post_channel / read_channel usage, posting rules) |
-| `broadcasting-guide.md` | Broadcast channel selection (#ops = owner notification only, inter-Anima default = #general, departments use domain channels + threads) |
-| `instruction-patterns.md` | Instruction patterns (clear instructions, delegation patterns, progress checks) |
-| `reporting-guide.md` | How to report and escalate (timing, format, urgent vs routine) |
-| `message-quality-protocol.md` | Message quality protocol (delegation 4 fields, completion 3 fields, escalation 4 fields) |
-| `sending-limits.md` | Sending limits in detail (3-layer rate limit, 30/h and 100/day caps, cascade detection) |
-| `call-human-guide.md` | Human notification guide (call_human usage, receiving replies, notification channels) |
-| `slack-bot-token-guide.md` | → Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration |
+|---------|------|
+| `messaging-guide.md` | Guide for sending and receiving messages (send_message parameters, thread management, reply policy) |
+| `board-guide.md` | Board (shared channel) guide (how to use post_channel / read_channel, posting rules) |
+| `instruction-patterns.md` | Patterns for giving instructions (how to write clear instructions, delegation patterns, progress checks) |
+| `reporting-guide.md` | Reporting and escalation methods (report timing, format, urgent vs. periodic) |
+| `message-quality-protocol.md` | Message quality protocol (mandatory checks: 4 items for delegation, 3 items for completion reports, 4 items for escalation) |
+| `sending-limits.md` | Inbox file wake, message aggregation, duplicate prevention within runs, loop avoidance |
+| `call-human-guide.md` | Guide for notifying humans (how to use call_human, receiving replies, notification channel configuration) |
+| `slack-bot-token-guide.md` | → Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration guide |
 
 ### operations/ — Operations & Task Management
 
-| File | Description |
-|------|-------------|
-| `project-setup.md` | → Moved to `reference/operations/project-setup.md`. Project configuration |
-| `task-management.md` | Task management (current_state.md usage and task queue, state transitions, priorities) |
-| `task-board-guide.md` | Task board (human-facing dashboard) — structure and operational guidelines |
-| `heartbeat-cron-guide.md` | Scheduling and running Heartbeat and cron (how Heartbeat works, cron definitions, self-updates) |
-| `action-rules-guide.md` | Action rules (`[ACTION-RULE]`, `trigger_tools`, pre-send checks, required `read_memory_file`) |
-| `tool-usage-overview.md` | Tool usage overview (S/C/D/G/A/B mode tool sets, internal/external tools, how to call them) |
-| `background-tasks.md` | Background task guide (using submit, when to use it, how to get results) |
-| `workspace-guide.md` | Workspace guide (concept, registration, tool usage, troubleshooting) |
-| `model-guide.md` | → Moved to `reference/operations/model-guide.md`. Model selection and configuration |
-| `mode-s-auth-guide.md` | → Moved to `reference/operations/mode-s-auth-guide.md`. Mode S authentication guide |
+| File | Overview |
+|---------|------|
+| `project-setup.md` | → Moved to `reference/operations/project-setup.md`. Project configuration method |
+| `task-management.md` | Task management (how to use current_state.md, task queue, status transitions, priorities) |
+| `task-board-guide.md` | Task board (dashboard for humans) mechanism and operation method |
+| `heartbeat-cron-guide.md` | Scheduled execution configuration and operation (heartbeat mechanism, cron task definitions, self-updates) |
+| `action-rules-guide.md` | Action rules (`[ACTION-RULE]`, `trigger_tools`, pre-send confirmation, required `read_memory_file`) |
+| `tool-usage-overview.md` | Overview of tool usage (tool system by S/C/D/G/A/B mode, internal/external tools, calling methods) |
+| `background-tasks.md` | Background task execution guide (how to use submit, decision criteria, how to receive results) |
+| `workspace-guide.md` | Workspace guide (concept, registration, use in tools, troubleshooting) |
+| `model-guide.md` | → Moved to `reference/operations/model-guide.md`. Model selection and configuration guide |
+| `mode-s-auth-guide.md` | → Moved to `reference/operations/mode-s-auth-guide.md`. Mode S authentication mode configuration guide |
 | `voice-chat-guide.md` | → Moved to `reference/operations/voice-chat-guide.md`. Voice chat guide |
 
 ### security/ — Security
 
-| File | Description |
-|------|-------------|
-| `prompt-injection-awareness.md` | Prompt injection defense (trust levels, boundary tags, handling untrusted data) |
+| File | Overview |
+|---------|------|
+| `prompt-injection-awareness.md` | Prompt injection defense guide (trust levels, boundary tags, rules for handling untrusted data) |
 
 ### troubleshooting/ — Troubleshooting
 
-| File | Description |
-|------|-------------|
-| `common-issues.md` | Common problems and fixes (undelivered messages, rate limits, permissions, tools, context) |
-| `escalation-flowchart.md` | Decision flowchart when stuck (problem types, urgency, who to escalate to) |
-| `gmail-credential-setup.md` | → Moved to `reference/troubleshooting/gmail-credential-setup.md`. Gmail tool credential setup guide |
+| File | Overview |
+|---------|------|
+| `common-issues.md` | Common problems and solutions (undelivered messages, send restrictions, permissions, tools, context) |
+| `escalation-flowchart.md` | Decision flowchart for when you are stuck (problem classification, urgency assessment, escalation destination) |
+| `gmail-credential-setup.md` | → Moved to `reference/troubleshooting/gmail-credential-setup.md`. Gmail Tool authentication configuration guide |
 
 ### usecases/ — Use Case Guides
 
-| File | Description |
-|------|-------------|
-| `usecase-overview.md` | Use case guide overview (what AnimaWorks can do, getting started, full topic list) |
-| `usecase-communication.md` | Communication automation (chat/email monitoring, escalation, scheduled notifications) |
-| `usecase-development.md` | Software development support (code review, CI/CD monitoring, issue implementation) |
-| `usecase-monitoring.md` | Infrastructure & service monitoring (uptime checks, resources, SSL, log analysis) |
-| `usecase-secretary.md` | Secretary & admin support (scheduling, coordination, daily reports, reminders) |
-| `usecase-research.md` | Research & analysis (web search, competitor analysis, market research, reports) |
-| `usecase-knowledge.md` | Knowledge management & documentation (procedures, FAQ building, lessons learned) |
-| `usecase-customer-support.md` | Customer support (first response, FAQ auto-reply, escalation management) |
-
----
+| File | Overview |
+|---------|------|
+| `usecase-overview.md` | Use case guide overview (what you can do with AnimaWorks, how to get started, full theme list) |
+| `usecase-communication.md` | Communication automation (chat, email monitoring, escalation, regular contact) |
+| `usecase-development.md` | Software development support (code review, CI/CD monitoring, Issue implementation, bug investigation) |
+| `usecase-monitoring.md` | Infrastructure and service monitoring (liveness monitoring, resource monitoring, SSL certificates, log analysis) |
+| `usecase-secretary.md` | Secretary and administrative support (schedule management, contact coordination, daily report creation, reminders) |
+| `usecase-research.md` | Research and analysis (web search, competitive analysis, market research, report creation) |
+| `usecase-knowledge.md` | Knowledge management and documentation (procedure manual creation, FAQ building, accumulating lessons learned) |
+| `usecase-customer-support.md` | Customer support (first response, FAQ auto-replies, escalation management) |
 
 ## Keyword Index
 
-| Keywords | Reference |
-|----------|-----------|
-| basics, intro, overview, essential, getting started | `anatomy/essentials.md` |
-| message, send_message, reply, thread, inbox | `reference/communication/messaging-guide.md` |
-| Board, channel, post_channel, read_channel | `communication/board-guide.md` |
-| broadcast, broadcasting, org-wide sharing, #ops, #general, department channel, thread, escalation | `communication/broadcasting-guide.md` |
-| DM history, read_dm_history, past conversation | `communication/board-guide.md` |
-| instruction, delegation, task request | `reference/communication/instruction-patterns.md` |
-| report, daily report, summary, escalation | `reference/communication/reporting-guide.md` |
-| quality protocol, required fields, verification evidence, completion criteria, delegation check | `communication/message-quality-protocol.md` |
-| rate limit, sending limit, 30/hour, 100/day, one-round rule | `communication/sending-limits.md` |
-| call_human, human notification, notify human | `communication/call-human-guide.md` |
-| Slack, bot token, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
-| organization, supervisor, subordinate, peer | `reference/organization/structure.md` |
-| role, responsibility, speciality, specialty | `reference/organization/roles.md` |
-| hierarchy, communication path, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
-| delegate_task, task delegation, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
-| sync_delegated, delegation sync, auto-sync | `reference/operations/task-management.md`, `operations/task-delegation-guide.md` |
-| task, current_state, pending, progress, priority | `reference/operations/task-management.md` |
-| task queue, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
-| task board, dashboard, human-facing | `operations/task-board-guide.md` |
-| config, status.json, SSoT, reload, settings | `reference/operations/project-setup.md` |
-| Heartbeat, heartbeat, periodic check | `reference/operations/heartbeat-cron-guide.md` |
-| cron, schedule, scheduled task | `reference/operations/heartbeat-cron-guide.md` |
-| tool, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
-| execution mode, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
-| background, submit, long-running tool | `operations/background-tasks.md` |
-| workspace, working_directory, project directory | `operations/workspace-guide.md` |
-| model, models.json, credential, set-model, context window | `reference/operations/model-guide.md` |
-| background_model, background model, cost optimization | `reference/operations/model-guide.md` |
-| Mode S, authentication, API direct, Bedrock, Vertex AI, Max plan | `reference/operations/mode-s-auth-guide.md` |
-| voice, STT, TTS, VOICEVOX, ElevenLabs | `reference/operations/voice-chat-guide.md` |
+| Keyword | Reference |
+|---------|-----------|
+| Basics, Introduction, Overview, Essentials, Getting Started, Summary | `anatomy/essentials.md` |
+| Message, send_message, Send, Reply, Thread, Inbox | `reference/communication/messaging-guide.md` |
+| Board, Channel, post_channel, read_channel | `communication/board-guide.md` |
+| DM History, read_dm_history, Past Conversations | `communication/board-guide.md` |
+| Instructions, Delegation, Task Requests, Delegation | `reference/communication/instruction-patterns.md` |
+| Reports, Daily Reports, Summaries, Completion Reports, Escalation | `reference/communication/reporting-guide.md` |
+| Quality Protocol, Required Items, Validation Evidence, Completion Conditions, Delegation Check | `communication/message-quality-protocol.md` |
+| Inbox Wake, Message Aggregation, Duplicate Send Prevention, Reply to Acknowledgment, Conversation Loops | `communication/sending-limits.md` |
+| call_human, Human Notification, Contact Human, Notification Channel | `communication/call-human-guide.md` |
+| Slack, Bot Token, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
+| Organization, Supervisor, Superior, Subordinate, Colleague | `reference/organization/structure.md` |
+| Role, Responsibility, Speciality, Expertise | `reference/organization/roles.md` |
+| Hierarchy, Communication Path, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
+| delegate_task, Task Delegation, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
+| Task, current_state, pending, Progress, Priority | `reference/operations/task-management.md` |
+| Task Queue, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
+| Task Board, Dashboard, For Humans | `operations/task-board-guide.md` |
+| Configuration, config, status.json, SSoT, reload | `reference/operations/project-setup.md` |
+| Heartbeat, heartbeat, Periodic Check | `reference/operations/heartbeat-cron-guide.md` |
+| Cron, Schedule, Scheduled Tasks | `reference/operations/heartbeat-cron-guide.md` |
+| Tools, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
+| Execution Modes, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
+| Background, submit, Long-running Tools | `operations/background-tasks.md` |
+| Workspace, workspace, Working Directory, working_directory | `operations/workspace-guide.md` |
+| Model, models.json, credential, set-model, Context Window | `reference/operations/model-guide.md` |
+| background_model, Background Model, Cost Optimization | `reference/operations/model-guide.md` |
+| Mode S, Authentication, Direct API, Bedrock, Vertex AI, Max plan | `reference/operations/mode-s-auth-guide.md` |
+| Voice, voice, STT, TTS, VOICEVOX, ElevenLabs | `reference/operations/voice-chat-guide.md` |
 | WebSocket, /ws/voice, barge-in, VAD, PTT | `reference/operations/voice-chat-guide.md` |
-| Anima, self, anatomy, composition, lifecycle | `anatomy/what-is-anima.md` |
-| identity, injection, personality, guidelines, immutable, mutable | `reference/anatomy/anima-anatomy.md` |
+| Anima, Self, Structure, Design, Lifecycle | `anatomy/what-is-anima.md` |
+| Identity, Injection, Personality, Behavioral Guidelines, Immutable, Mutable | `reference/anatomy/anima-anatomy.md` |
 | permissions.json, bootstrap, heartbeat.md, cron.md | `reference/anatomy/anima-anatomy.md` |
-| memory, episodes, knowledge, procedures, skills | `reference/anatomy/memory-system.md` |
-| Priming, RAG, Consolidation, Forgetting | `reference/anatomy/memory-system.md` |
-| consolidation, 2-phase, multipass, error trace | `reference/anatomy/memory-system.md` |
-| search_memory, write_memory_file, memory search | `reference/anatomy/memory-system.md` |
-| skills, skill search, common_skills, search_memory scope="skills" | `reference/anatomy/memory-system.md`, `reference/operations/tool-usage-overview.md` |
-| activity_log, BM25, RRF, recent log search | `reference/anatomy/memory-system.md`, `reference/troubleshooting/common-issues.md` |
-| prompt injection, trust, untrusted, boundary tag | `security/prompt-injection-awareness.md` |
-| error, problem, not working, permission, blocked command | `reference/troubleshooting/common-issues.md` |
-| flowchart, decision, unsure, urgent, security | `reference/troubleshooting/escalation-flowchart.md` |
+| Memory, memory, episodes, knowledge, procedures | `reference/anatomy/memory-system.md` |
+| Priming, RAG, Consolidation, Forgetting, Forgetting | `reference/anatomy/memory-system.md` |
+| Consolidation, 2-phase, multipass, Error Trace | `reference/anatomy/memory-system.md` |
+| search_memory, write_memory_file, Memory Search | `reference/anatomy/memory-system.md` |
+| Skills, Skill Search, common_skills, search_memory scope="skills" | `reference/anatomy/memory-system.md`, `reference/operations/tool-usage-overview.md` |
+| activity_log, BM25, RRF, Recent Log Search | `reference/anatomy/memory-system.md`, `reference/troubleshooting/common-issues.md` |
+| Prompt Injection, trust, untrusted, Boundary Tags | `security/prompt-injection-awareness.md` |
+| Errors, Problems, Not Working, Permissions, Blocked Commands | `reference/troubleshooting/common-issues.md` |
+| Flowchart, Decision, Confusion, Urgency, Security | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail, token.json, OAuth, pickle | `reference/troubleshooting/gmail-credential-setup.md` |
-| tier, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
-| use case, examples, what can it do | `reference/usecases/usecase-overview.md` |
+| Tiers, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
+| Use Cases, Examples, What Can Be Done | `reference/usecases/usecase-overview.md` |
 
 ---
 
 ## How to Use
 
 ```
-# Search by keyword
-search_memory(query="message sending", scope="common_knowledge")
+# キーワードで検索
+search_memory(query="メッセージ 送信", scope="common_knowledge")
 
-# Specify path directly
+# パスを直接指定
 read_memory_file(path="reference/communication/messaging-guide.md")
 
-# Read a technical reference
+# 技術リファレンスを参照
 read_memory_file(path="reference/anatomy/anima-anatomy.md")
 
-# Reference this file
+# このファイル自体を参照
 read_memory_file(path="common_knowledge/00_index.md")
 ```

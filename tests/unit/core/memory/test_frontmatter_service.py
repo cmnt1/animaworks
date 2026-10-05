@@ -10,8 +10,6 @@ from pathlib import Path
 import pytest
 
 from core.memory.frontmatter import FrontmatterService
-from core.schemas import SkillMeta
-
 
 # ── Fixtures ─────────────────────────────────────────────
 
@@ -51,7 +49,10 @@ def svc(anima_dir: Path, knowledge_dir: Path, procedures_dir: Path) -> Frontmatt
 
 class TestWriteKnowledgeWithMeta:
     def test_writes_correct_yaml_frontmatter_and_body(
-        self, svc: FrontmatterService, knowledge_dir: Path, monkeypatch,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
+        monkeypatch,
     ) -> None:
         """write_knowledge_with_meta writes YAML frontmatter delimiters + body."""
         target = knowledge_dir / "topic.md"
@@ -76,7 +77,9 @@ class TestWriteKnowledgeWithMeta:
 
 class TestReadKnowledgeContent:
     def test_strips_frontmatter_returns_body(
-        self, svc: FrontmatterService, knowledge_dir: Path,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
     ) -> None:
         """read_knowledge_content strips frontmatter and returns the body."""
         target = knowledge_dir / "topic.md"
@@ -90,7 +93,9 @@ class TestReadKnowledgeContent:
         assert "source: test" not in result
 
     def test_returns_full_text_when_no_frontmatter(
-        self, svc: FrontmatterService, knowledge_dir: Path,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
     ) -> None:
         """read_knowledge_content returns full text when no frontmatter exists."""
         target = knowledge_dir / "plain.md"
@@ -102,7 +107,9 @@ class TestReadKnowledgeContent:
 
 class TestReadKnowledgeMetadata:
     def test_parses_yaml_frontmatter(
-        self, svc: FrontmatterService, knowledge_dir: Path,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
     ) -> None:
         """read_knowledge_metadata parses YAML frontmatter into a dict."""
         target = knowledge_dir / "topic.md"
@@ -116,7 +123,9 @@ class TestReadKnowledgeMetadata:
         assert meta["version"] == 2
 
     def test_legacy_migration_superseded_at_to_valid_until(
-        self, svc: FrontmatterService, knowledge_dir: Path,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
     ) -> None:
         """read_knowledge_metadata renames superseded_at to valid_until."""
         target = knowledge_dir / "legacy.md"
@@ -131,7 +140,9 @@ class TestReadKnowledgeMetadata:
         assert "superseded_at" not in meta
 
     def test_returns_empty_dict_when_no_frontmatter(
-        self, svc: FrontmatterService, knowledge_dir: Path,
+        self,
+        svc: FrontmatterService,
+        knowledge_dir: Path,
     ) -> None:
         """read_knowledge_metadata returns empty dict when no frontmatter."""
         target = knowledge_dir / "no_meta.md"
@@ -141,43 +152,14 @@ class TestReadKnowledgeMetadata:
         assert meta == {}
 
 
-class TestUpdateKnowledgeMetadata:
-    def test_merges_updates_into_existing_metadata(
-        self, svc: FrontmatterService, knowledge_dir: Path, monkeypatch,
-    ) -> None:
-        """update_knowledge_metadata merges new keys into existing metadata."""
-        target = knowledge_dir / "topic.md"
-
-        # monkeypatch atomic_write_text so write_knowledge_with_meta works
-        def _simple_write(path: Path, content: str, encoding: str = "utf-8") -> None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding=encoding)
-
-        monkeypatch.setattr("core.memory.frontmatter.atomic_write_text", _simple_write)
-
-        # Seed the file with initial metadata
-        target.write_text(
-            "---\nsource: original\nversion: 1\n---\n\nBody content",
-            encoding="utf-8",
-        )
-
-        svc.update_knowledge_metadata(target, {"version": 2, "reviewed": True})
-
-        meta = svc.read_knowledge_metadata(target)
-        assert meta["source"] == "original"  # preserved
-        assert meta["version"] == 2          # updated
-        assert meta["reviewed"] is True      # added
-
-        body = svc.read_knowledge_content(target)
-        assert body == "Body content"
-
-
 # ── Procedure frontmatter ────────────────────────────────
 
 
 class TestWriteProcedureWithMeta:
     def test_writes_correct_format(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """write_procedure_with_meta writes YAML frontmatter + body."""
         target = procedures_dir / "deploy.md"
@@ -193,7 +175,9 @@ class TestWriteProcedureWithMeta:
 
 class TestReadProcedureContent:
     def test_strips_frontmatter(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """read_procedure_content strips frontmatter and returns body."""
         target = procedures_dir / "deploy.md"
@@ -207,7 +191,9 @@ class TestReadProcedureContent:
         assert "description:" not in result
 
     def test_returns_empty_for_missing_file(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """read_procedure_content returns empty string for missing file."""
         result = svc.read_procedure_content(procedures_dir / "nonexistent.md")
@@ -216,7 +202,9 @@ class TestReadProcedureContent:
 
 class TestReadProcedureMetadata:
     def test_parses_yaml(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """read_procedure_metadata parses YAML frontmatter into a dict."""
         target = procedures_dir / "deploy.md"
@@ -230,41 +218,21 @@ class TestReadProcedureMetadata:
         assert meta["confidence"] == 0.9
 
     def test_returns_empty_dict_for_missing_file(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """read_procedure_metadata returns empty dict for missing file."""
         meta = svc.read_procedure_metadata(procedures_dir / "nonexistent.md")
         assert meta == {}
 
 
-class TestListProcedureMetas:
-    def test_returns_skill_meta_list(
-        self, svc: FrontmatterService, procedures_dir: Path,
-    ) -> None:
-        """list_procedure_metas returns SkillMeta list via extract function."""
-        (procedures_dir / "alpha.md").write_text("alpha", encoding="utf-8")
-        (procedures_dir / "beta.md").write_text("beta", encoding="utf-8")
-
-        def fake_extract(f: Path, is_common: bool) -> SkillMeta:
-            return SkillMeta(
-                name=f.stem,
-                description=f"desc of {f.stem}",
-                path=f,
-                is_common=is_common,
-            )
-
-        result = svc.list_procedure_metas(fake_extract)
-        assert len(result) == 2
-        names = [m.name for m in result]
-        assert "alpha" in names
-        assert "beta" in names
-        assert all(isinstance(m, SkillMeta) for m in result)
-        assert all(m.is_common is False for m in result)
-
-
 class TestEnsureProcedureFrontmatter:
     def test_adds_frontmatter_to_bare_files(
-        self, svc: FrontmatterService, anima_dir: Path, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        anima_dir: Path,
+        procedures_dir: Path,
     ) -> None:
         """ensure_procedure_frontmatter adds YAML frontmatter to bare files."""
         bare = procedures_dir / "my_procedure.md"
@@ -280,7 +248,9 @@ class TestEnsureProcedureFrontmatter:
         assert "Bare procedure content" in text
 
     def test_description_from_heading(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """ensure_procedure_frontmatter extracts description from first heading."""
         f = procedures_dir / "deploy_app.md"
@@ -293,7 +263,9 @@ class TestEnsureProcedureFrontmatter:
         assert "description: Deploy Application" in text
 
     def test_idempotent_per_file(
-        self, svc: FrontmatterService, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        procedures_dir: Path,
     ) -> None:
         """ensure_procedure_frontmatter is idempotent per-file (checks frontmatter existence)."""
         bare = procedures_dir / "task.md"
@@ -308,7 +280,10 @@ class TestEnsureProcedureFrontmatter:
         assert count2 == 0
 
     def test_skips_files_with_existing_frontmatter(
-        self, svc: FrontmatterService, anima_dir: Path, procedures_dir: Path,
+        self,
+        svc: FrontmatterService,
+        anima_dir: Path,
+        procedures_dir: Path,
     ) -> None:
         """ensure_procedure_frontmatter skips files that already have frontmatter."""
         already_migrated = procedures_dir / "existing.md"

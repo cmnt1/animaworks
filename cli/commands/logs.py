@@ -7,37 +7,33 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 
 def cmd_logs(args: argparse.Namespace) -> None:
-    """View anima logs."""
+    """View anima logs (tail -f style)."""
     from core.paths import get_data_dir
 
     log_dir = get_data_dir() / "logs"
-    follow = bool(getattr(args, "follow", False))
 
     if args.all:
         # Show all logs (server + all animas)
-        _tail_all_logs(log_dir, lines=args.lines, follow=follow)
+        _tail_all_logs(log_dir)
     else:
         # Show specific anima log
         if not args.anima:
             print("Error: --anima is required (or use --all)")
             sys.exit(1)
 
-        _tail_anima_log(log_dir=log_dir, anima_name=args.anima, lines=args.lines, date=args.date, follow=follow)
+        _tail_anima_log(log_dir=log_dir, anima_name=args.anima, lines=args.lines, date=args.date)
 
 
-def _tail_anima_log(
-    log_dir: Path,
-    anima_name: str,
-    lines: int = 50,
-    date: str | None = None,
-    follow: bool = False,
-) -> None:
+def _tail_anima_log(log_dir: Path, anima_name: str, lines: int = 50, date: str | None = None) -> None:
     """Tail a specific anima's log file."""
     anima_log_dir = log_dir / "animas" / anima_name
 
@@ -70,12 +66,13 @@ def _tail_anima_log(
                 print(f"Error: No log files found in {anima_log_dir}")
                 sys.exit(1)
             log_file = log_files[0]
+        follow = True
 
     if not log_file.exists():
         print(f"Error: Log file not found: {log_file}")
         sys.exit(1)
 
-    print(f"{'Tailing' if follow else 'Showing'} log: {log_file}")
+    print(f"Tailing log: {log_file}")
     print("-" * 60)
 
     # Show last N lines
@@ -166,51 +163,50 @@ def _show_last_lines(log_file: Path, n: int, prefix: str = "") -> None:
 
 def _follow_file(log_file: Path) -> None:
     """Follow a single log file (like tail -f)."""
-    position = log_file.stat().st_size
+    with open(log_file, encoding="utf-8", errors="replace") as f:
+        # Seek to end
+        f.seek(0, 2)
 
-    while True:
-        try:
-            current_size = log_file.stat().st_size
-            if current_size < position:
-                position = 0
-            if current_size > position:
-                with open(log_file, encoding="utf-8", errors="replace") as f:
-                    f.seek(position)
-                    for line in f:
-                        print(line.rstrip())
-                    position = f.tell()
-        except OSError:
-            pass
-        time.sleep(0.2)
+        while True:
+            line = f.readline()
+            if line:
+                print(line.rstrip())
+            else:
+                time.sleep(0.1)
 
 
 def _follow_multiple_files(log_files: dict[str, Path]) -> None:
     """Follow multiple log files simultaneously."""
-    positions: dict[str, int] = {}
-    for prefix, log_file in list(log_files.items()):
+    file_handles = {}
+
+    # Open all files and seek to end
+    for prefix, log_file in log_files.items():
         try:
-            positions[prefix] = log_file.stat().st_size
+            f = open(log_file, encoding="utf-8", errors="replace")  # noqa: SIM115
+            f.seek(0, 2)  # Seek to end
+            file_handles[prefix] = f
         except Exception as e:
             print(f"Error opening {log_file}: {e}")
 
-    while True:
-        any_output = False
+    try:
+        while True:
+            any_output = False
 
-        for prefix, log_file in log_files.items():
+            for prefix, f in file_handles.items():
+                try:
+                    line = f.readline()
+                    if line:
+                        print(f"{prefix} {line.rstrip()}")
+                        any_output = True
+                except Exception:
+                    logger.debug("Could not print a log line", exc_info=True)
+
+            if not any_output:
+                time.sleep(0.1)
+    finally:
+        # Close all files
+        for f in file_handles.values():
             try:
-                position = positions.get(prefix, 0)
-                current_size = log_file.stat().st_size
-                if current_size < position:
-                    position = 0
-                if current_size > position:
-                    with open(log_file, encoding="utf-8", errors="replace") as f:
-                        f.seek(position)
-                        for line in f:
-                            print(f"{prefix} {line.rstrip()}")
-                            any_output = True
-                        positions[prefix] = f.tell()
+                f.close()
             except Exception:
-                pass
-
-        if not any_output:
-            time.sleep(0.2)
+                logger.debug("Could not close a log file handle", exc_info=True)

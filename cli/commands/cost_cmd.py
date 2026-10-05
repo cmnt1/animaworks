@@ -17,8 +17,8 @@ from core.i18n import t
 
 def cmd_cost(args: argparse.Namespace) -> None:
     """Show token usage and estimated cost."""
-    from core.memory.token_usage import TokenUsageLogger
     from core.paths import get_data_dir
+    from core.usage.token_usage import TokenUsageLogger
 
     data_dir = get_data_dir()
     animas_dir = data_dir / "animas"
@@ -83,7 +83,7 @@ def cmd_cost(args: argparse.Namespace) -> None:
 
 
 def _show_anima_cost(name: str, anima_dir: Path, days: int, json_output: bool) -> None:
-    from core.memory.token_usage import TokenUsageLogger
+    from core.usage.token_usage import TokenUsageLogger
 
     logger = TokenUsageLogger(anima_dir)
     summary = logger.summarize(days)
@@ -158,8 +158,8 @@ def _show_anima_cost(name: str, anima_dir: Path, days: int, json_output: bool) -
 
 def _read_budget_fields(anima_dir: Path, *, now: datetime | None = None) -> dict[str, object]:
     """Return JSON-ready current-month budget fields for one Anima."""
-    from core.memory.token_budget import read_token_budget_status
     from core.time_utils import now_local
+    from core.usage.token_budget import read_token_budget_status
 
     current = now or now_local()
     status = read_token_budget_status(anima_dir, now=current)

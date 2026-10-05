@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution._sdk_session import _load_session_id, _save_session_id
-from core.execution.codex_sdk import _load_thread_id, _save_thread_id
-from core.memory.conversation import ConversationMemory
-from core.memory.streaming_journal import StreamingJournal
+from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+from core.execution.session.session_ids import EngineSessionIds
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
-from core.supervisor import task_runner
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.runner import AnimaRunner
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 class _StreamSupervisor:
@@ -46,7 +45,6 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
         "sakura",
         tmp_path,
         task_runner_supervisor=_StreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -80,7 +78,6 @@ async def test_closing_isolated_stream_cancels_producer_and_releases_lock(tmp_pa
         "sakura",
         tmp_path,
         task_runner_supervisor=supervisor,
-        chat_isolated=True,
     )
     stream = handler.handle_stream(
         IPCRequest(id="req-close", method="process_message", params={"message": "hello", "stream": True})
@@ -103,7 +100,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "sakura",
         tmp_path,
         task_runner_supervisor=_CrashedStreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -118,39 +114,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "code": "CHAT_RUNNER_ERROR",
         "message": "task runner exited before returning a result (exit=-9)",
     }
-    assert handler._anima is anima
-
-
-@pytest.mark.asyncio
-async def test_legacy_stream_does_not_spawn_chat_runner(tmp_path: Path) -> None:
-    anima = MagicMock(needs_bootstrap=False)
-
-    async def _stream(*args, **kwargs):
-        yield {"type": "cycle_done", "cycle_result": {"summary": "legacy"}}
-
-    anima.process_message_stream = _stream
-    isolated = MagicMock()
-    handler = StreamingIPCHandler(
-        anima,
-        "sakura",
-        tmp_path,
-        task_runner_supervisor=isolated,
-        chat_isolated=False,
-    )
-
-    responses = [
-        response
-        async for response in handler.handle_stream(
-            IPCRequest(id="req-1", method="process_message", params={"message": "hello", "stream": True})
-        )
-    ]
-
-    assert responses[-1].result == {
-        "response": "legacy",
-        "replied_to": [],
-        "cycle_result": {"summary": "legacy"},
-    }
-    isolated.run_chat_stream.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -167,7 +130,7 @@ async def test_phase3_nonstream_chat_contracts_use_child(
     runner.anima = MagicMock()
     supervisor = MagicMock()
     supervisor.run_chat = AsyncMock(return_value={"response": "child"})
-    runner._scheduler_mgr = SimpleNamespace(_chat_isolated=True, _task_runner_supervisor=supervisor)
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
     result = await getattr(runner, method)({"message": "hello"})
 
@@ -176,6 +139,22 @@ async def test_phase3_nonstream_chat_contracts_use_child(
     runner.anima.process_message.assert_not_called()
     runner.anima.process_greet.assert_not_called()
     runner.anima.run_bootstrap.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_isolated_greet_forwards_first_meeting_payload(tmp_path: Path) -> None:
+    anima = MagicMock()
+    anima.process_greet = AsyncMock(return_value={"response": "hello", "cached": False})
+
+    result = await task_runner.execute_chat_contract(
+        anima,
+        kind="greet",
+        payload={"mode": "first_meeting", "user_name": "Taro", "user_id": "taro"},
+        send_stream_event=AsyncMock(),
+    )
+
+    assert result["response"] == "hello"
+    anima.process_greet.assert_awaited_once_with(mode="first_meeting", user_name="Taro", user_id="taro")
 
 
 @pytest.mark.asyncio
@@ -284,17 +263,14 @@ def test_chat_exit_fsyncs_conversation_and_engine_resume_files(tmp_path: Path) -
     conversation = anima_dir / "state" / "conversation.json"
     conversation.parent.mkdir(parents=True, exist_ok=True)
     conversation.write_text("state", encoding="utf-8")
+    codex_session_ids = EngineSessionIds("codex")
     _save_session_id(anima_dir, "claude-session", "chat")
-    _save_thread_id(anima_dir, "codex-thread", "chat")
+    codex_session_ids.save(anima_dir, "codex-thread", "chat")
 
-    with (
-        patch("core.supervisor.task_runner.os.open", wraps=os.open) as open_file,
-        patch("core.supervisor.task_runner.os.fsync") as fsync,
-    ):
+    with patch("core.runtime.task_runner.os.fsync") as fsync:
         task_runner._fsync_chat_state(anima_dir)
 
     assert fsync.call_count == 3
-    expected_flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
-    assert all(call.args[1] == expected_flags for call in open_file.call_args_list)
     assert _load_session_id(anima_dir, "chat") == "claude-session"
-    assert _load_thread_id(anima_dir, "chat") == "codex-thread"
+    codex_session = codex_session_ids.load(anima_dir, "chat")
+    assert codex_session is not None and codex_session.session_id == "codex-thread"

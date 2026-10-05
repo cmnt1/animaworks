@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from core.company import CompanyError, ExportResult, export_company, split_companies
+from core.org.company import CompanyError, ExportResult, export_company, split_companies
 
 pytestmark = pytest.mark.skipif(
     os.name == "nt",
@@ -187,8 +187,9 @@ def test_export_company_collects_transfer_bundle_and_handles_symlinks(tmp_path: 
     readme = (output_dir / "README.md").read_text(encoding="utf-8")
     assert "PROVIDER_API_KEY" in readme
     assert "vault" in readme.lower()
-    assert "Neo4j" in readme
-    assert "group_id" in readme
+    assert "Neo4j" not in readme
+    assert "group_id" not in readme
+    assert "## Vectordb rebuild" in readme
     assert f"animaworks index --anima {PRIMARY_MEMBER}" in readme
     assert f"animaworks index --anima {PRIMARY_HELPER}" in readme
     assert "systemd" in readme

@@ -81,14 +81,11 @@ def _make_mock_memory(
     memory.read_bootstrap.return_value = bootstrap
     memory.read_company_vision.return_value = vision
     memory.read_current_state.return_value = "status: idle"
-    memory.read_pending.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 
@@ -108,9 +105,6 @@ class TestBuildSystemPromptTiers:
         memory = _make_mock_memory(tmp_path, data_dir, **memory_kwargs)
 
         def _load_prompt_section(name: str, *args: object, **kwargs: object) -> str:
-            if name == "builder/light_tier_org":
-                anima_name = kwargs.get("anima_name", "test-anima")
-                return f"あなたは{anima_name}です。"
             return "section"
 
         with (
@@ -188,7 +182,7 @@ class TestTierPromptSizes:
     """Verify that smaller tiers produce smaller or equal prompts."""
 
     def _build_size(self, tmp_path: Path, data_dir: Path, context_window: int, suffix: str = "") -> int:
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         sub = tmp_path / f"sz{suffix}"
         sub.mkdir(exist_ok=True)
@@ -270,10 +264,11 @@ class TestMicroTierSectionExclusion:
         result = self._build(tmp_path, data_dir, 8_193)
         assert "[behavior_rules content]" in result
 
-    def test_micro_group5_header_only(self, tmp_path, data_dir):
-        """MICRO should include Group 5 header but skip org_context and messaging."""
+    def test_micro_omits_empty_group5(self, tmp_path, data_dir):
+        """MICRO skips org_context and messaging, so the empty group is omitted."""
         result = self._build(tmp_path, data_dir, 4_000)
-        assert "Organization" in result or "5." in result
+        assert "<group_5" not in result
+        assert "</group_5>" not in result
 
 
 class TestMeetingPromptProfile:

@@ -105,11 +105,6 @@ class VaultManager:
     # ── Properties ───────────────────────────────────────────────
 
     @property
-    def is_encryption_available(self) -> bool:
-        """Return True if PyNaCl is installed and usable."""
-        return _HAS_NACL
-
-    @property
     def has_key(self) -> bool:
         """Return True if a vault key file exists on disk."""
         return self._key_path.is_file()
@@ -248,65 +243,6 @@ class VaultManager:
             return False
 
     # ── Config credentials encrypt / decrypt ─────────────────────
-
-    def encrypt_config_credentials(
-        self,
-        credentials: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Encrypt all sensitive fields in a config credentials dict.
-
-        Accepts either raw dicts or CredentialConfig instances.  Non-sensitive
-        fields (``type``, ``base_url``) are preserved in cleartext.
-
-        Returns:
-            A new dict with encrypted ``api_key`` and ``keys`` values.
-        """
-        result: dict[str, Any] = {}
-        for name, cred in credentials.items():
-            if hasattr(cred, "model_dump"):
-                cred = cred.model_dump(mode="json")
-
-            entry: dict[str, Any] = {
-                "type": cred.get("type", "api_key"),
-                "base_url": cred.get("base_url"),
-            }
-            api_key = cred.get("api_key", "")
-            entry["api_key"] = self.encrypt(api_key) if api_key else ""
-
-            encrypted_keys: dict[str, str] = {}
-            for k, v in cred.get("keys", {}).items():
-                encrypted_keys[k] = self.encrypt(v) if v else ""
-            entry["keys"] = encrypted_keys
-
-            result[name] = entry
-        return result
-
-    def decrypt_config_credentials(
-        self,
-        encrypted: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Decrypt all sensitive fields from an encrypted credentials dict.
-
-        Returns:
-            A new dict with plaintext ``api_key`` and ``keys`` values,
-            suitable for constructing ``CredentialConfig`` instances.
-        """
-        result: dict[str, Any] = {}
-        for name, entry in encrypted.items():
-            api_key = entry.get("api_key", "")
-            decrypted_key = self.decrypt(api_key) if api_key else ""
-
-            decrypted_keys: dict[str, str] = {}
-            for k, v in entry.get("keys", {}).items():
-                decrypted_keys[k] = self.decrypt(v) if v else ""
-
-            result[name] = {
-                "type": entry.get("type", "api_key"),
-                "api_key": decrypted_key,
-                "keys": decrypted_keys,
-                "base_url": entry.get("base_url"),
-            }
-        return result
 
     # ── vault.json CRUD ──────────────────────────────────────────
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -135,50 +134,7 @@ async def test_channel_f_filters_denied_unified_episode_hit(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_channel_f_filters_denied_neo4j_episode_hit(tmp_path: Path) -> None:
-    anima_dir, _denied = _anima_with_deny(tmp_path, "episodes/private")
-
-    class FakeNeo4jBackend:
-        def __init__(self) -> None:
-            self.recorded: list[object] = []
-
-        async def retrieve(self, *args, **kwargs):
-            return [
-                SimpleNamespace(
-                    source="episode:private",
-                    content="DENIED NEO4J CANARY",
-                    score=0.99,
-                    metadata={"source_file": "episodes/private/secret.md"},
-                ),
-                SimpleNamespace(
-                    source="episode:public",
-                    content="# Public graph episode",
-                    score=0.8,
-                    metadata={"source_file": "episodes/public.md"},
-                ),
-            ]
-
-        async def record_access(self, memories):
-            self.recorded = memories
-
-    backend = FakeNeo4jBackend()
-    with patch("core.memory.backend.neo4j_graph.Neo4jGraphBackend", FakeNeo4jBackend):
-        result = await channel_f_episodes(
-            anima_dir,
-            anima_dir / "episodes",
-            lambda: None,
-            ["test"],
-            get_memory_backend=lambda: backend,
-        )
-
-    assert "episodes/public.md" in result
-    assert "episodes/private" not in result
-    assert "DENIED NEO4J CANARY" not in result
-    assert [memory.source for memory in backend.recorded] == ["episode:public"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privilege on Windows")
+@pytest.mark.skipif(__import__("os").name == "nt", reason="Windows symlink privilege required")
 async def test_current_state_symlink_into_denied_root_is_not_read_for_priming(tmp_path: Path) -> None:
     anima_dir, denied = _anima_with_deny(tmp_path, "private")
     secret = denied / "secret.txt"
@@ -198,8 +154,7 @@ async def test_current_state_symlink_into_denied_root_is_not_read_for_priming(tm
         patch.object(engine, "_collect_recent_outbound", new=AsyncMock(return_value="")),
         patch.object(engine, "_channel_f_episodes", new=AsyncMock(return_value="")),
         patch.object(engine, "_collect_pending_human_notifications", new=AsyncMock(return_value="")),
-        patch.object(engine, "_channel_g_graph_context", new=AsyncMock(return_value="")),
     ):
         await engine.prime_memories(message="", sender_name="human")
 
-    engine._extract_keywords.assert_called_once_with("")
+    engine._extract_keywords.assert_not_called()

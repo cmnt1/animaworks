@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.i18n import t
-from core.memory.rag import repair_rebuild, repair_snapshot
 from core.memory.rag.indexer import MemoryIndexer
-from core.supervisor.memory_service import MemoryService
+from core.memory.rag.repair import rebuild as repair_rebuild
+from core.runtime.memory_service import MemoryService
 from core.time_utils import ensure_aware
 
 
@@ -36,9 +36,8 @@ def sources(data_dir: Path, monkeypatch):
     live = anima / "vectordb"
     live.mkdir()
     (live / "old.marker").write_text("old database")
-    monkeypatch.setattr(MemoryIndexer, "_init_embedding_model", lambda self: None)
     monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings", lambda texts, **kwargs: [[0.1, 0.2] for _ in texts]
+        "core.memory.rag.embedding.generate_embeddings", lambda texts, **kwargs: [[0.1, 0.2] for _ in texts]
     )
     return anima
 
@@ -82,13 +81,13 @@ def test_staging_build_keeps_inputs_metadata_and_live_db_unchanged(sources):
     assert set(metadata) == {"knowledge/note.md"}
     assert hashes["shared_common_knowledge_hash"]
     assert hashes["shared_company_knowledge_hash"]
-    repair_snapshot.validate_rebuild_sources(staging, sources)
+    repair_rebuild.validate_rebuild_sources(staging, sources)
 
 
 def test_snapshot_indexer_preserves_ids_timestamps_and_absolute_exclusions(sources):
     original = sources / "knowledge" / "note.md"
     stat = original.stat()
-    with repair_snapshot.snapshot_inputs(sources, include_shared=True) as snapshot:
+    with repair_rebuild.snapshot_inputs(sources, include_shared=True) as snapshot:
         store = MagicMock()
         store.create_collection.return_value = True
         store.upsert.return_value = True
@@ -116,7 +115,7 @@ def test_failed_build_does_not_restore_over_a_concurrent_source_writer(sources, 
         changed.write_text("Concurrent writer's new source survives failed repair.")
         return [[0.1, 0.2] for _ in texts]
 
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", encode)
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", encode)
     with pytest.raises(RuntimeError, match=re.escape(t("rag.rebuild_input_changed"))):
         _build(sources)
     assert changed.read_text() == "Concurrent writer's new source survives failed repair."
@@ -156,9 +155,8 @@ async def test_source_change_after_build_aborts_before_owner_closes_live_db(sour
         await service.close()
 
 
-@pytest.mark.parametrize("owner", ["phase3", "legacy"])
-async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(sources, monkeypatch, owner):
-    from core.memory.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
+async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(sources, monkeypatch):
+    from core.memory.retrieval.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
 
     for path in (
         longterm_bm25_index_path(sources),
@@ -167,7 +165,7 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
     ):
         path.write_text("old-" + path.name)
     before = _source_bytes(sources)
-    publish = repair_snapshot.publish_rebuild_metadata
+    publish = repair_rebuild.publish_rebuild_metadata
 
     def fail_after_publish(anima_dir):
         publish(anima_dir)
@@ -175,26 +173,18 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
         (anima_dir / "shared_index_meta.json").write_text('{"shared_common_knowledge_hash":"new"}')
         raise OSError("injected metadata publication failure")
 
-    monkeypatch.setattr(repair_snapshot, "publish_rebuild_metadata", fail_after_publish)
-    if owner == "legacy":
-        monkeypatch.setattr(repair_rebuild, "_has_active_repair_fence", lambda *args, **kwargs: True)
-        monkeypatch.setattr(repair_rebuild, "reset_worker_vector_store", lambda *args: True)
-        monkeypatch.setattr(repair_rebuild, "verify_worker_vector_store", lambda *args, **kwargs: True)
-        monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda *args: None)
+    monkeypatch.setattr(repair_rebuild, "publish_rebuild_metadata", fail_after_publish)
+    staging, chunks, hashes = _build(sources)
+    reopened = MagicMock()
+    reopened.verify_rebuilt_data.return_value = {"chunks": chunks}
+    service = MemoryService("alice", sources, opener=MagicMock(side_effect=[MagicMock(), reopened, MagicMock()]))
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
+    await service.start()
+    try:
         with pytest.raises(OSError, match="publication failure"):
-            repair_rebuild.atomic_rebuild_vectordb("alice", include_shared=True, anima_dir=sources)
-    else:
-        staging, chunks, hashes = _build(sources)
-        reopened = MagicMock()
-        reopened.verify_rebuilt_data.return_value = {"chunks": chunks}
-        service = MemoryService("alice", sources, opener=MagicMock(side_effect=[MagicMock(), reopened, MagicMock()]))
-        service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
-        await service.start()
-        try:
-            with pytest.raises(OSError, match="publication failure"):
-                await service.repair(include_shared=True)
-        finally:
-            await service.close()
+            await service.repair(include_shared=True)
+    finally:
+        await service.close()
     assert _source_bytes(sources) == before
     assert (sources / "vectordb" / "old.marker").exists()
     assert list((sources / "archive").glob("vectordb-rebuild-failed-*/.rebuild/index_meta.json"))
@@ -215,7 +205,7 @@ def test_snapshot_rejects_symlink_inputs(sources, tmp_path):
 
 def test_normal_indexer_never_builds_a_snapshot(sources, monkeypatch):
     snapshot = MagicMock(side_effect=AssertionError("normal indexing must not snapshot"))
-    monkeypatch.setattr(repair_snapshot, "snapshot_inputs", snapshot)
+    monkeypatch.setattr(repair_rebuild, "snapshot_inputs", snapshot)
     store = MagicMock()
     store.get_by_metadata.return_value = []
     indexer = MemoryIndexer(store, "alice", sources)
@@ -224,7 +214,7 @@ def test_normal_indexer_never_builds_a_snapshot(sources, monkeypatch):
 
 
 def test_source_mutation_during_copy_aborts_without_metadata_writes(sources, monkeypatch):
-    copy = repair_snapshot.shutil.copy2
+    copy = repair_rebuild.shutil.copy2
     original = sources / "knowledge" / "note.md"
     metadata = (sources / "index_meta.json").read_bytes()
 
@@ -234,7 +224,7 @@ def test_source_mutation_during_copy_aborts_without_metadata_writes(sources, mon
             original.write_text("A concurrent user's edit must survive.")
         return result
 
-    monkeypatch.setattr(repair_snapshot.shutil, "copy2", racing_copy)
+    monkeypatch.setattr(repair_rebuild.shutil, "copy2", racing_copy)
     with pytest.raises(RuntimeError, match=re.escape(t("rag.rebuild_input_changed"))):
         _build(sources)
     assert original.read_text() == "A concurrent user's edit must survive."
@@ -287,9 +277,8 @@ async def test_incomplete_rollback_retains_metadata_backup_for_recovery(sources,
         await service.close()
 
 
-@pytest.mark.parametrize("owner", ["legacy", "phase3"])
 @pytest.mark.parametrize("failed_move", ["retire_original", "install_staging"])
-async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatch, owner, failed_move):
+async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatch, failed_move):
     import shutil
 
     before = _source_bytes(sources)
@@ -310,29 +299,19 @@ async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatc
         return move(source, destination, *args, **kwargs)
 
     monkeypatch.setattr(shutil, "move", fail_selected_move)
-    if owner == "legacy":
-        monkeypatch.setattr(repair_rebuild, "_has_active_repair_fence", lambda *args, **kwargs: True)
-        monkeypatch.setattr(repair_rebuild, "reset_worker_vector_store", lambda *args: True)
-        monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda *args: None)
-        verify = MagicMock(return_value=True)
-        monkeypatch.setattr(repair_rebuild, "verify_worker_vector_store", verify)
+    staging, chunks, hashes = _build(sources)
+    original, reopened = MagicMock(), MagicMock()
+    service = MemoryService("alice", sources, opener=MagicMock(side_effect=[original, reopened]))
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
+    await service.start()
+    try:
         with pytest.raises(PermissionError, match="rename denied"):
-            repair_rebuild.atomic_rebuild_vectordb("alice", include_shared=True, anima_dir=sources)
-        verify.assert_not_called()
-    else:
-        staging, chunks, hashes = _build(sources)
-        original, reopened = MagicMock(), MagicMock()
-        service = MemoryService("alice", sources, opener=MagicMock(side_effect=[original, reopened]))
-        service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
-        await service.start()
-        try:
-            with pytest.raises(PermissionError, match="rename denied"):
-                await service.repair(include_shared=True)
-            original.close.assert_called_once()
-            assert service._store is reopened
-            reopened.verify_rebuilt_data.assert_not_called()
-        finally:
-            await service.close()
+            await service.repair(include_shared=True)
+        original.close.assert_called_once()
+        assert service._store is reopened
+        reopened.verify_rebuilt_data.assert_not_called()
+    finally:
+        await service.close()
     assert len(rejected) == 1
     assert (live / "old.marker").read_text() == "old database"
     assert _source_bytes(sources) == before

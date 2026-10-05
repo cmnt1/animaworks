@@ -16,22 +16,10 @@ from core.paths import TEMPLATES_DIR
 
 
 @pytest.fixture(autouse=True)
-def _reset_vector_error_reset_cooldown() -> None:
-    """Clear the process-wide vector-store error-reset cooldown between tests."""
-    from core.memory.rag import singleton
-
-    with singleton._error_reset_lock:
-        singleton._last_error_reset_monotonic = None
-    yield
-    with singleton._error_reset_lock:
-        singleton._last_error_reset_monotonic = None
-
-
-@pytest.fixture(autouse=True)
 def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
     """Point the process-wide LLM rate guard at a per-test temp file."""
     from core.config.schemas import LlmRateGuardConfig
-    from core.execution import rate_guard
+    from core.llm.guard import rate_guard
 
     rate_guard._shared_guard = rate_guard.LlmRateGuard(
         config=LlmRateGuardConfig(),
@@ -48,7 +36,7 @@ def _reset_config_caches_for_unit_tests(
 ) -> None:
     """Isolate runtime config and event exporters from the developer machine."""
     from core.config import invalidate_cache, invalidate_vault_cache
-    from core.event_export import reset_event_exporters
+    from core.infra.event_export import reset_event_exporters
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "_runtime"))
     reset_event_exporters()
@@ -61,14 +49,11 @@ def _reset_config_caches_for_unit_tests(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_nanogpt_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never read the developer's real nanoGPT key in unit tests."""
-    from core.config import nanogpt
+def _disable_unsolicited_background_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent unrelated unit tests from launching background LLM calls."""
+    from core.memory.maintenance import background_review
 
-    monkeypatch.setattr(nanogpt, "_DEFAULT_ABCONFIG_DIR", tmp_path / "_abconfig")
-    monkeypatch.delenv(nanogpt.NANOGPT_SECRETS_PATH_ENV, raising=False)
-    monkeypatch.delenv("ANIMAWORKS_ABCONFIG_PATH", raising=False)
-    monkeypatch.delenv("NANOGPT_API_KEY", raising=False)
+    monkeypatch.setattr(background_review, "_review_config", lambda _anima_dir: None)
 
 
 @pytest.fixture(autouse=True)
@@ -109,30 +94,50 @@ def _global_permissions_for_unit_tests(tmp_path: Path) -> None:
     GlobalPermissionsCache.reset()
 
 
-# ── Default-topology shim ─────────────────────────────────────────────
-# Production default topology is ``phase3`` (missing status.json resolves to
-# root DB ownership).  Legacy-path tests use ad-hoc anima dirs without a
-# status.json; resolve those to ``legacy`` so pre-existing fixtures keep
-# exercising the legacy worker/in-process paths.  Tests that write an explicit
-# status.json keep the real resolver behaviour.
+# ── Temporary root-ownership shim (remove with the old RAG branches in R07) ──
+import json as _json_topology
+
 import pytest as _pytest_topology
 
 import core.config.resolver as _resolver_module
-from core.config.resolver import resolve_process_model_config as _real_resolve_pm
-from core.config.schemas import (
-    ResolvedProcessModelConfig as _RPMC,
-    TaskProcessIsolationConfig as _TPIC,
-)
+
+
+@pytest.fixture(autouse=True)
+def _bypass_internal_api_auth_for_existing_route_tests(monkeypatch):
+    """Existing internal-route tests call the router without an auth header.
+
+    R04-1 turned every ``/api/internal/*`` route into a dependency on
+    ``require_internal_caller`` (enforce by default).  To keep those tests'
+    expectations unchanged we make the dependency a pass-through (returns
+    None) here.  The real enforcement behaviour is exercised directly in
+    ``tests/unit/server/test_internal_auth.py`` using the unpatched
+    function.
+    """
+    # The dependency name is resolved to this module attribute by
+    # create_internal_router() at router-build time.  A zero-argument
+    # pass-through keeps FastAPI from treating any parameter as a query
+    # dependency.
+    import server.internal_auth as _internal_auth
+
+    def _noop_internal_caller() -> None:
+        return None
+
+    monkeypatch.setattr(_internal_auth, "require_internal_caller", _noop_internal_caller)
 
 
 @_pytest_topology.fixture(autouse=True)
 def _legacy_topology_for_fixtureless_animas(monkeypatch):
     from pathlib import Path as _Path
 
-    def _resolve(anima_dir):
-        if (_Path(anima_dir) / "status.json").is_file():
-            return _real_resolve_pm(anima_dir)
-        return _RPMC(process_model="legacy", task_process_isolation=_TPIC())
+    def _is_root_memory_owner(anima_dir):
+        status_path = _Path(anima_dir) / "status.json"
+        if not status_path.is_file():
+            return False
+        try:
+            status = _json_topology.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, _json_topology.JSONDecodeError):
+            return False
+        return isinstance(status, dict) and status.get("process_model", "phase3") == "phase3"
 
-    monkeypatch.setattr(_resolver_module, "resolve_process_model_config", _resolve)
+    monkeypatch.setattr(_resolver_module, "is_root_memory_owner", _is_root_memory_owner)
     yield

@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.exceptions import IPCConnectionError
-from core.supervisor.ipc import IPCResponse
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCResponse
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 @pytest.fixture

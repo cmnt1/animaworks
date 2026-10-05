@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -340,7 +341,7 @@ class RoomManager:
             text: Message text.
             meta: Optional machine-readable metadata for non-standard entries.
         """
-        from core.meeting_room_store import append_room_message
+        from core.messaging.meeting_room_store import append_room_message
 
         if self.get_room(room_id) is None:
             raise ValueError(t("room_manager.room_not_found", room_id=room_id))
@@ -365,7 +366,7 @@ class RoomManager:
         redirect_id: str = "",
     ) -> None:
         """Append a meeting-local redirect to the room's conversation history."""
-        from core.meeting_room_store import append_meeting_redirect
+        from core.messaging.meeting_room_store import append_meeting_redirect
 
         if self.get_room(room_id) is None:
             raise ValueError(t("room_manager.room_not_found", room_id=room_id))
@@ -446,7 +447,7 @@ class RoomManager:
 
     async def _call_summary_llm(self, entries: list[dict]) -> str:
         """Summarize conversation entries using the consolidation LLM."""
-        from core.memory._llm_utils import one_shot_completion
+        from core.llm.oneshot import one_shot_completion
 
         formatted = self._format_entries(entries)
         system = (
@@ -499,7 +500,7 @@ class RoomManager:
             return
         path = self._data_dir / f"{room_id}.json"
         data = room.to_dict()
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, indent=2, ensure_ascii=False, trailing_newline=False)
 
     def load_room(self, room_id: str) -> MeetingRoom | None:
         """Load room from disk."""
@@ -615,7 +616,7 @@ class RoomManager:
         Returns a list of {"assignee", "text"} draft entries (not persisted).
         Assignees are constrained to room participants. Returns [] on failure.
         """
-        from core.memory._llm_utils import one_shot_completion
+        from core.llm.oneshot import one_shot_completion
 
         room = self.get_room(room_id)
         if room is None:
@@ -693,7 +694,7 @@ class RoomManager:
 
         Returns the number of items delivered.
         """
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         room = self.get_room(room_id)
         if room is None:

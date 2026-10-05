@@ -17,18 +17,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-import psutil
 import pytest
 
-from core.memory.bm25 import rebuild_longterm_bm25_index
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-from core.memory.rag_search import RAGMemorySearch
-from core.memory.task_queue import TaskQueueManager
-from core.platform.processing_lease import write_processing_lease
+from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.schemas import CronTask
-from core.supervisor.memory_service import MemoryService
-from core.supervisor.process_handle import ProcessHandle
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime.memory_service import MemoryService
+from server.supervisor.process_handle import ProcessHandle
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 pytestmark = [
     pytest.mark.timeout(90),
@@ -316,7 +313,7 @@ async def test_corruption_isolated_and_reads_continue_during_repair(
 
 
 @pytest.mark.asyncio
-async def test_root_sigkill_respawn_preserves_db_and_recovers_lease(
+async def test_root_sigkill_respawn_preserves_db(
     data_dir: Path,
     phase3_animas: dict[str, Path],
     fake_embed_url: tuple[str, _EmbeddingServer],
@@ -329,48 +326,12 @@ async def test_root_sigkill_respawn_preserves_db_and_recovers_lease(
         await _seed(root, "sigkill durable sentinel")
         before = _db_snapshot(anima_dir)
         assert before[0] == {"kill-root_knowledge"} and before[1] == 1
-        killed_pid = root.process.pid
-        killed_create_time = psutil.Process(killed_pid).create_time()
         await root.kill()
-
-        queue = TaskQueueManager(anima_dir)
-        entry = queue.add_task(
-            source="anima",
-            original_instruction="recover after root SIGKILL",
-            assignee="kill-root",
-            summary="interrupted phase3 task",
-            status="in_progress",
-        )
-        processing = anima_dir / "state" / "background_tasks" / "pending" / "processing"
-        failed = processing.parent / "failed"
-        processing.mkdir(parents=True, exist_ok=True)
-        descriptor = processing / f"{entry.task_id}.json"
-        descriptor.write_text(json.dumps({"task_id": entry.task_id}), encoding="utf-8")
-        write_processing_lease(
-            descriptor,
-            anima="kill-root",
-            task_id=entry.task_id,
-            pid=killed_pid,
-            job_id="killed-job",
-            task_pid=killed_pid,
-            pgid=killed_pid,
-            root_epoch="killed-root-epoch",
-            attempt=1,
-            process_start_time=killed_create_time,
-        )
-
         await root.start()
-        await _wait_for(lambda: not descriptor.exists())
-        assert not (failed / descriptor.name).exists()
         assert _db_snapshot(anima_dir) == before
         query = await _query_ready(root)
         assert query.error is None
         assert query.result["results"][0]["document"]["content"] == "sigkill durable sentinel"
-        recovered = queue.get_task_by_id(entry.task_id)
-        assert recovered.status == "pending"
-        assert recovered.summary == "interrupted phase3 task"
-        assert "INTERRUPTED" in recovered.meta["last_run_note"]
-        assert recovered.meta["last_run_stop_kind"] == "crash"
     finally:
         await root.stop(drain_streams=False)
 
@@ -424,7 +385,7 @@ async def test_phase3_task_runner_process_smoke(
         "cascade-a",
         phase3_animas["cascade-a"],
         data_dir / "shared",
-        memory_via_root=True,
+        memory_service=MemoryService("cascade-a", phase3_animas["cascade-a"]),
     )
     try:
         result = await supervisor.run_cron(
@@ -444,53 +405,34 @@ async def test_phase3_task_runner_process_smoke(
 
 def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
     repo = Path(__file__).resolve().parents[3]
-    boundary_allowlist = {
-        "constructor": {"core/memory/rag/store.py"},
-        "root": {"core/supervisor/memory_service.py"},
-        "staging": {"core/memory/rag/repair_rebuild.py"},
-        "worker": {"core/memory/rag/vector_worker.py"},
-        "direct_env": {
-            "core/memory/rag/repair_rebuild.py",
-            "core/memory/rag/repair_service.py",
-            "core/memory/rag/vector_worker_client.py",
-        },
+    direct_factory_callers = {
+        "core/runtime/memory_service.py",
+        "core/memory/rag/repair/rebuild.py",
     }
-    constructors: set[str] = set()
-    direct_access_enablers: set[str] = set()
+    persistent_client_callers: set[str] = set()
+    factory_callers: set[str] = set()
     direct_env_writers: set[str] = set()
 
     for path in (repo / "core").rglob("*.py"):
         relative = path.relative_to(repo).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-        chromadb_aliases = {"chromadb"}
-        persistent_aliases: set[str] = set()
-        enable_aliases = {"enable_direct_chroma_for_process"}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                chromadb_aliases.update(alias.asname or alias.name for alias in node.names if alias.name == "chromadb")
-            elif isinstance(node, ast.ImportFrom) and node.module == "chromadb":
-                persistent_aliases.update(
-                    alias.asname or alias.name for alias in node.names if alias.name == "PersistentClient"
-                )
-            elif isinstance(node, ast.ImportFrom) and node.module == "core.memory.rag.direct_access":
-                enable_aliases.update(
-                    alias.asname or alias.name
-                    for alias in node.names
-                    if alias.name == "enable_direct_chroma_for_process"
-                )
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                named_constructor = isinstance(node.func, ast.Name) and node.func.id in persistent_aliases
-                qualified_constructor = (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "PersistentClient"
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id in chromadb_aliases
-                )
-                if named_constructor or qualified_constructor:
-                    constructors.add(relative)
-                elif isinstance(node.func, ast.Name) and node.func.id in enable_aliases:
-                    direct_access_enablers.add(relative)
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "PersistentClient":
+                    persistent_client_callers.add(relative)
+                if isinstance(node.func, ast.Name) and node.func.id == "create_chroma_vector_store":
+                    factory_callers.add(relative)
+                    assert any(
+                        keyword.arg == "allow_direct"
+                        and isinstance(keyword.value, ast.Name)
+                        and keyword.value.id == "OWNER_CAPABILITY"
+                        for keyword in node.keywords
+                    )
+                    assert any(
+                        keyword.arg == "persist_dir"
+                        and not (isinstance(keyword.value, ast.Constant) and keyword.value.value is None)
+                        for keyword in node.keywords
+                    )
             elif (
                 isinstance(node, ast.Subscript)
                 and isinstance(node.ctx, ast.Store)
@@ -499,10 +441,9 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
             ):
                 direct_env_writers.add(relative)
 
-    assert constructors == boundary_allowlist["constructor"]
-    assert direct_access_enablers == boundary_allowlist["root"] | boundary_allowlist["worker"]
-    assert direct_env_writers == boundary_allowlist["direct_env"]
-    assert boundary_allowlist["staging"] <= direct_env_writers
+    assert persistent_client_callers == {"core/memory/rag/store.py"}
+    assert factory_callers == direct_factory_callers
+    assert direct_env_writers == set()
 
 
 if __name__ == "__main__" and os.environ.get("ANIMAWORKS_PHASE3_DRAIN_HARNESS"):

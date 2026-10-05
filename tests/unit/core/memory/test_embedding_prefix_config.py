@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.memory.rag.singleton import generate_embeddings, thread_safe_encode
+from core.memory.rag.embedding import generate_embeddings, thread_safe_encode
 
 
 def _rag_config(*, enabled: bool) -> SimpleNamespace:
@@ -21,7 +21,7 @@ def test_thread_safe_encode_applies_configured_e5_prefixes() -> None:
     model.encode.side_effect = [[[1.0]], [[2.0]]]
 
     with (
-        patch("core.memory.rag.singleton.get_embedding_model", return_value=model),
+        patch("core.memory.rag.embedding.get_embedding_model", return_value=model),
         patch("core.config.load_config", return_value=_rag_config(enabled=True)),
     ):
         assert thread_safe_encode(["hello"], purpose="query") == [[1.0]]
@@ -36,7 +36,7 @@ def test_thread_safe_encode_preserves_legacy_no_prefix_default() -> None:
     model.encode.return_value = [[1.0]]
 
     with (
-        patch("core.memory.rag.singleton.get_embedding_model", return_value=model),
+        patch("core.memory.rag.embedding.get_embedding_model", return_value=model),
         patch("core.config.load_config", return_value=_rag_config(enabled=False)),
     ):
         assert thread_safe_encode(["hello"], purpose="query") == [[1.0]]

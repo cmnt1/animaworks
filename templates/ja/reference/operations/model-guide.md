@@ -7,7 +7,7 @@ AnimaWorks のモデル設定に関する包括ガイド。
 
 ## 実行モード
 
-AnimaWorks はモデル名から実行モードを自動判定する。7種類の実行モードがある:
+AnimaWorks はモデル名から実行モードを自動判定する。6種類の実行モードがある:
 
 | モード | 名称 | 概要 | 対象モデル例 |
 |--------|------|------|-------------|
@@ -17,7 +17,6 @@ AnimaWorks はモデル名から実行モードを自動判定する。7種類�
 | **G** | Gemini CLI | Gemini CLI 経由。MCP 統合 | `gemini/*` |
 | **X** | Grok Build | Grok Build CLI ラッパー（ACP stdio）経由 | `grok/*` |
 | **A** | Autonomous | LiteLLM + tool_useループ | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `ollama/qwen3:14b` |
-| **B** | Basic | 1ショット実行。フレームワークが記憶I/Oを代行 | `ollama/gemma3:4b`, `ollama/deepseek-r1*` |
 
 ### モード判定の優先順位
 
@@ -25,7 +24,7 @@ AnimaWorks はモデル名から実行モードを自動判定する。7種類�
 2. `~/.animaworks/models.json`（ユーザー編集可）
 3. `config.json` `model_modes`（非推奨）
 4. コードデフォルトのパターンマッチ
-5. 不明 → Mode B（安全側）
+5. 不明 → Mode A
 
 Mode X の利用前に `grok` CLI をインストールし、`grok login` で認証する必要がある。
 
@@ -371,14 +370,14 @@ animaworks anima restart {名前}
 
 `animaworks anima set-role` でロールを変更すると、デフォルトモデルも変更される:
 
-| ロール | デフォルトモデル | background_model | max_turns | max_chains |
-|--------|---------------|-----------------|-----------|------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 | 10 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 | 3 |
-| writer | claude-sonnet-4-6 | — | 80 | 5 |
-| researcher | claude-sonnet-4-6 | — | 30 | 2 |
-| ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| ロール | デフォルトモデル | background_model | context_threshold | conversation_history_threshold |
+|--------|---------------|-----------------|-------------------|----------------------------------|
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
+| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
+| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
+| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
 Opus 系ロール（engineer, manager）は `background_model` として Sonnet が自動設定される。
 Sonnet 以下のロールは既にコスト効率が良いため、`background_model` は未設定。
@@ -389,7 +388,7 @@ Sonnet 以下のロールは既にコスト効率が良いため、`background_m
 
 ### モデルを変更したのに反映されない
 
-`set-model` は `status.json` を更新するだけ。サーバー起動中は `anima restart {名前}` または `anima reload {名前}` が必要。
+`set-model` は root API 経由で root 所有の `status.json` を更新し、起動中の Anima のモデル設定を reload する。停止中の Anima は次回起動時に新設定を読む。Anima プロセスからこのファイルを直接編集しない。
 
 ### models.json を編集したのに反映されない
 

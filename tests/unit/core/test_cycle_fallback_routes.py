@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
 from core.execution.fallback_activity import preflight_fallback_config, runtime_fallback_config
 from core.schemas import CycleResult, ModelConfig
 

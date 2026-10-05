@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.memory.rag.retriever import (
     WEIGHT_FREQUENCY,
     AccessBatch,
@@ -417,15 +418,13 @@ class TestIndexerMetadata:
         test_file = knowledge_dir / "test.md"
         test_file.write_text("# Test\n\nSome content here.", encoding="utf-8")
 
-        # Create indexer with a mock vector store and mock embedding model
+        # Create indexer with a mock vector store
         mock_store = MagicMock()
-        mock_embedding_model = MagicMock()
 
         indexer = MemoryIndexer(
             vector_store=mock_store,
             anima_name="test_anima",
             anima_dir=anima_dir,
-            embedding_model=mock_embedding_model,
         )
 
         metadata = indexer._extract_metadata(
@@ -477,7 +476,7 @@ class TestUpdateMetadataOnVectorStore:
         vectordb_dir = tmp_path / "vectordb"
         vectordb_dir.mkdir()
 
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         store.create_collection("test_col")
 
         # Upsert a document

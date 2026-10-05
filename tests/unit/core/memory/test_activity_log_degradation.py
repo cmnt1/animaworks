@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 from core.memory.priming.channel_b import read_shared_channels
 from core.time_utils import now_jst
 
@@ -316,7 +316,7 @@ class TestChannelBRecentActivity:
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
         with (
-            patch("core.memory.activity.ActivityLogger.recent") as mock_recent,
+            patch("core.activity.logger.ActivityLogger.recent") as mock_recent,
             patch("core.memory.priming.channel_b.read_shared_channels", return_value=[]),
             patch("core.memory.priming.channel_b.fallback_episodes_and_channels", return_value="fallback"),
         ):
@@ -338,7 +338,7 @@ class TestMessengerSendActivityLog:
 
     def test_send_creates_dm_sent_entry(self, tmp_path: Path):
         """Verify that send() creates a message_sent entry in activity_log/{date}.jsonl."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         # Setup directory structure: shared/inbox/sender/ and animas/sender/activity_log/
         shared = tmp_path / "shared"
@@ -379,7 +379,7 @@ class TestMessengerSendDmLogs:
 
     def test_send_appends_to_dm_logs(self, tmp_path: Path):
         """Verify that send() does NOT write to shared/dm_logs/ (dm_logs abolished)."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -406,11 +406,11 @@ class TestFanoutBoardMentionsStoppedAnimas:
     """Tests for ToolHandler._fanout_board_mentions() including stopped Animas."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         from unittest.mock import patch
 
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_mentions_sent_to_stopped_animas(self, tmp_path: Path):
@@ -418,7 +418,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         from core.tooling.handler import ToolHandler
 
         # Setup directories
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -450,11 +450,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        # Patch get_data_dir to return our temp directory.
-        # get_data_dir is imported locally inside _fanout_board_mentions,
-        # so we patch it at the source module level.
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("general", "Hey @all check this out")
+        handler._fanout_board_mentions("general", "Hey @all check this out")
 
         # Verify both running and stopped animas received mentions
         sent_targets = set()
@@ -472,7 +468,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         """Verify @all mentions only reach running Animas (Fix 8)."""
         from core.tooling.handler import ToolHandler
 
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -502,8 +498,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("general", "Hey @all check this out")
+        handler._fanout_board_mentions("general", "Hey @all check this out")
 
         sent_targets = set()
         for call in mock_messenger.send.call_args_list:
@@ -519,7 +514,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         """Verify named @mentions do NOT reach stopped Animas (Fix 8: running only)."""
         from core.tooling.handler import ToolHandler
 
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -542,8 +537,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("ops", "Hey @stopped_target please review")
+        handler._fanout_board_mentions("ops", "Hey @stopped_target please review")
 
         sent_targets = set()
         for call in mock_messenger.send.call_args_list:
@@ -564,7 +558,7 @@ class TestAnimaDmReceiveLimit:
         """Verify the source code uses [:50] for DM recording, not [:10]."""
         import inspect
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         # After decomposition, inbox message processing moved to
         # _process_inbox_messages (called from run_heartbeat).
@@ -649,7 +643,7 @@ class TestReadDmHistoryTypeFilter:
 
     def test_only_requests_dm_types(self, tmp_path: Path):
         """Verify read_dm_history queries message_sent and message_received types."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -658,7 +652,7 @@ class TestReadDmHistoryTypeFilter:
 
         messenger = Messenger(shared, "alice")
 
-        with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
+        with patch("core.activity.logger.ActivityLogger.recent") as mock_recent:
             mock_recent.return_value = []
             messenger.read_dm_history("bob", limit=20)
 
@@ -673,7 +667,7 @@ class TestReadDmHistoryTypeFilter:
 
     def test_read_dm_history_days_30(self, tmp_path: Path):
         """Verify read_dm_history uses days=30 for broader history."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -682,7 +676,7 @@ class TestReadDmHistoryTypeFilter:
 
         messenger = Messenger(shared, "alice")
 
-        with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
+        with patch("core.activity.logger.ActivityLogger.recent") as mock_recent:
             mock_recent.return_value = []
             messenger.read_dm_history("bob", limit=20)
 
@@ -849,7 +843,7 @@ class TestMessengerSendIntegration:
 
     def test_send_writes_both_activity_and_dm_logs(self, tmp_path: Path):
         """Verify send() writes only to activity log (dm_logs abolished)."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -874,7 +868,7 @@ class TestMessengerSendIntegration:
 
     def test_send_does_not_fail_if_anima_dir_missing(self, tmp_path: Path):
         """Verify send() succeeds even if animas/ directory doesn't exist."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -888,7 +882,7 @@ class TestMessengerSendIntegration:
 
     def test_send_inbox_file_created(self, tmp_path: Path):
         """Verify send() creates the inbox JSON file for the recipient."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -909,7 +903,7 @@ class TestFormatGroupContentTrim:
 
     def test_format_group_passes_content_trim(self, anima_dir: Path):
         """Verify _format_group propagates content_trim to single entries."""
-        from core.memory.activity import EntryGroup
+        from core.activity.logger import EntryGroup
 
         long_content = "D" * 500
         entry = ActivityEntry(

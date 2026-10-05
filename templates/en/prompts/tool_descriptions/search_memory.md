@@ -1,7 +1,1 @@
-Search long-term memory (knowledge, episodes, procedures), activity_log (recent action logs), and recent tool results by keyword.
-Use actively in these situations:
-- Before executing commands or changing settings, check related procedures and past lessons
-- Before reporting or making decisions, verify with existing knowledge
-- When facing unknown or ambiguous topics, reference past experience
-- When Priming memory alone lacks specific procedures or values
-Not needed for simple responses that can be clearly determined from context.
+Long-term memory (knowledge, episodes, procedures), activity_log, and keyword search of recent tool results. The activity_log performs a full-text search across the entire period, including rotated entries, in reverse chronological order, and can be filtered by time_range (the RAG search target period remains the last 3 days). Before executing commands or changing configuration, check procedures and lessons learned; before reporting or making decisions, support with existing knowledge; for unknown topics, refer to past experiences. Not needed for simple responses that can be clearly determined from context. Use when:

@@ -982,7 +982,7 @@ function _bindEditableCard({ id, name, field }) {
     saveBtn.textContent = t("animas.saving");
     status.textContent = "";
     try {
-      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/${field}`, {
+      await api(`/api/animas/${encodeURIComponent(name)}/${field}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: editor.value }),
@@ -1093,7 +1093,7 @@ function _bindAliasesCard(name, initialAliases) {
     saveBtn.textContent = t("animas.saving");
     status.textContent = "";
     try {
-      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/aliases`, {
+      await api(`/api/animas/${encodeURIComponent(name)}/aliases`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aliases }),
@@ -1181,7 +1181,7 @@ function _bindDiscordChannelsCard(animaName, discordChannels) {
 
     try {
       const promises = Object.entries(updates).map(([chId, members]) =>
-        fetch(`${basePath}/api/discord/channel-members/${encodeURIComponent(chId)}`, {
+        api(`/api/discord/channel-members/${encodeURIComponent(chId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ members }),
@@ -1474,7 +1474,7 @@ function _bindPermissionsCard(name, perm, availableTools) {
     status.textContent = "";
 
     try {
-      await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/permissions`, {
+      await api(`/api/animas/${encodeURIComponent(name)}/permissions`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
@@ -1780,7 +1780,7 @@ async function _renderOverviewTab(content, name) {
       status.textContent = "";
 
       try {
-        await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/model`, {
+        await api(`/api/animas/${encodeURIComponent(name)}/model`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model, credential }),
@@ -1831,7 +1831,7 @@ async function _renderOverviewTab(content, name) {
       btn.disabled = true;
       btn.textContent = t("animas.running");
       try {
-        await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
+        await api(`/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
         btn.textContent = t("animas.success");
         setTimeout(() => { btn.textContent = t("animas.heartbeat_trigger"); btn.disabled = false; }, 2000);
       } catch {

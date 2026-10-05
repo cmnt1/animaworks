@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/shortterm.py — ShortTermMemory."""
+"""Unit tests for core/memory/conversation/shortterm.py — ShortTermMemory."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.shortterm import (
+from core.memory.conversation.shortterm import (
     _MAX_RESPONSE_CHARS,
     SessionState,
     ShortTermMemory,
@@ -234,7 +234,7 @@ class TestArchiveExisting:
         """
         from datetime import datetime
 
-        from core.memory import shortterm as stm_module
+        from core.platform import state_writer as stm_module
 
         fixed = datetime(2026, 5, 6, 10, 32, 30, 123456, tzinfo=UTC)
         monkeypatch.setattr(stm_module, "now_local", lambda: fixed)
@@ -262,7 +262,7 @@ class TestArchiveExisting:
         """
         from datetime import datetime
 
-        from core.memory import shortterm as stm_module
+        from core.platform import state_writer as stm_module
 
         fixed = datetime(2026, 5, 6, 10, 32, 30, 123456, tzinfo=UTC)
         monkeypatch.setattr(stm_module, "now_local", lambda: fixed)

@@ -15,8 +15,8 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock
 
-from core.execution.agent_sdk import StreamDisconnectedError
-from core.memory.shortterm import ShortTermMemory
+from core.execution.engines.claude.executor import StreamDisconnectedError
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.builder import BuildResult
 from tests.helpers.mocks import (
     MockResultMessage,
@@ -85,14 +85,13 @@ def _make_streaming_executor(
             self.execute_streaming = execute_streaming
             self.call_count_getter = lambda: call_count
 
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
+
     return _MockExecutor()
 
 
-def _make_always_failing_executor(
-    *,
-    message: str = "Persistent disconnect",
-    category: str | None = None,
-):
+def _make_always_failing_executor():
     """Build a mock executor that always raises StreamDisconnectedError."""
 
     async def execute_streaming(
@@ -102,9 +101,8 @@ def _make_always_failing_executor(
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         raise StreamDisconnectedError(
-            message,
+            "Persistent disconnect",
             partial_text="partial output",
-            category=category,
         )
         # Make this a generator
         yield  # pragma: no cover
@@ -114,6 +112,9 @@ def _make_always_failing_executor(
 
         def __init__(self) -> None:
             self.execute_streaming = execute_streaming
+
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
 
     return _MockExecutor()
 
@@ -159,8 +160,12 @@ class TestStreamRetryFullFlow:
 
         # Mock prompt building to avoid filesystem reads
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
+        )
+        monkeypatch.setattr(
+            "core.prompt.builder.inject_shortterm",
+            lambda sp, st: sp,
         )
 
         # Collect all streamed events
@@ -226,8 +231,12 @@ class TestStreamRetryMaxExceeded:
         )
 
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
+        )
+        monkeypatch.setattr(
+            "core.prompt.builder.inject_shortterm",
+            lambda sp, st: sp,
         )
 
         events: list[dict[str, Any]] = []
@@ -254,48 +263,6 @@ class TestStreamRetryMaxExceeded:
 
         # cycle_done should still be yielded (with whatever was accumulated)
         assert "cycle_done" in event_types, "cycle_done should be yielded even after retry exhaustion"
-
-    async def test_rate_limit_is_deferred_without_retry_exhaustion(self, make_agent_core, monkeypatch, tmp_path):
-        """Provider rate limits should activate cooldown instead of burning retries."""
-        monkeypatch.setenv("ANIMAWORKS_PROVIDER_COOLDOWN_FILE", str(tmp_path / "provider_cooldowns.json"))
-        with patch_agent_sdk_streaming():
-            agent = make_agent_core(
-                name="retry-rate-limit",
-                model="claude-sonnet-4-6",
-            )
-            agent._sdk_available = True
-
-        agent._executor = _make_always_failing_executor(
-            message="Antigravity provider rate limit (HTTP 429/RATE_LIMIT_EXCEEDED)",
-            category="rate_limit",
-        )
-
-        monkeypatch.setattr(agent, "_run_priming", AsyncMock(return_value=("", "")))
-        monkeypatch.setattr(
-            agent,
-            "_load_stream_retry_config",
-            lambda: {
-                "checkpoint_enabled": True,
-                "retry_max": 2,
-                "retry_delay_s": 0.01,
-            },
-        )
-        monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
-            lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
-        )
-
-        events: list[dict[str, Any]] = []
-        async for chunk in agent.run_cycle_streaming("Test prompt", trigger="test"):
-            events.append(chunk)
-
-        error_events = [e for e in events if e["type"] == "error"]
-        assert len(error_events) == 1
-        error_msg = error_events[0]["message"]
-        assert error_msg.startswith("RATE_LIMIT_DEFERRED:")
-        assert "provider" in error_msg
-        assert "stream" not in error_msg.lower()
-        assert not [e for e in events if e["type"] == "retry_start"]
 
 
 class TestCheckpointClearedOnSuccess:
@@ -325,8 +292,12 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
+        )
+        monkeypatch.setattr(
+            "core.prompt.builder.inject_shortterm",
+            lambda sp, st: sp,
         )
 
         # Consume all events
@@ -386,6 +357,9 @@ class TestCheckpointClearedOnSuccess:
             supports_streaming = True
             execute_streaming = staticmethod(execute_streaming_with_tool)
 
+            def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+                """Match BaseExecutor's engine preparation hook."""
+
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-tool",
@@ -406,8 +380,12 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
+        )
+        monkeypatch.setattr(
+            "core.prompt.builder.inject_shortterm",
+            lambda sp, st: sp,
         )
 
         events: list[dict[str, Any]] = []

@@ -622,7 +622,7 @@ class TestExtractActionItems:
                 '{"assignee": "ritsu", "task": ""}]'
             )
 
-        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        monkeypatch.setattr("core.llm.oneshot.one_shot_completion", fake_llm)
         items = await room_manager.extract_action_items(sample_room.room_id)
         assert items == [{"assignee": "rin", "text": "資料作成"}]
 
@@ -633,7 +633,7 @@ class TestExtractActionItems:
         async def fake_llm(*args, **kwargs):
             return '```json\n[{"assignee": "ritsu", "task": "実装する"}]\n```'
 
-        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        monkeypatch.setattr("core.llm.oneshot.one_shot_completion", fake_llm)
         items = await room_manager.extract_action_items(sample_room.room_id)
         assert items == [{"assignee": "ritsu", "text": "実装する"}]
 
@@ -646,7 +646,7 @@ class TestExtractActionItems:
         async def fake_llm(*args, **kwargs):
             return None
 
-        monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+        monkeypatch.setattr("core.llm.oneshot.one_shot_completion", fake_llm)
         assert await room_manager.extract_action_items(sample_room.room_id) == []
 
 

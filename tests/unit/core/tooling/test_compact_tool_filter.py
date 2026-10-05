@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from core.tooling.schemas import (
-    _COMPACT_COMM_TOOLS,
-    build_unified_tool_list,
-)
+from core.tooling.policy.schemas import build_unified_tool_list
+from core.tooling.policy.surface import COMPACT_TOOL_NAMES
 
 
 def _tool_names(tools: list[dict]) -> set[str]:
@@ -17,12 +15,12 @@ class TestCompactToolFilter:
 
     def test_compact_returns_expected_count(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
-        assert len(tools) == len(_COMPACT_COMM_TOOLS)
+        assert len(tools) == len(COMPACT_TOOL_NAMES)
 
     def test_compact_tool_names_match(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
         names = _tool_names(tools)
-        assert names == _COMPACT_COMM_TOOLS
+        assert names == COMPACT_TOOL_NAMES
 
     def test_compact_includes_all_expected(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
@@ -89,4 +87,4 @@ class TestCompactToolFilter:
         names = _tool_names(tools)
         assert "delegate_task" not in names
         assert "ping_subordinate" not in names
-        assert len(names) == len(_COMPACT_COMM_TOOLS)
+        assert len(names) == len(COMPACT_TOOL_NAMES)

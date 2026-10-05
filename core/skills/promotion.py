@@ -18,8 +18,8 @@ from typing import Any
 
 import yaml
 
-from core.memory._io import atomic_write_text
 from core.memory.frontmatter import parse_frontmatter
+from core.platform.atomic_io import atomic_write_text
 from core.skills.guard import SkillScanner
 from core.skills.models import SkillScanVerdict, SkillUsageEventType
 from core.skills.promotion_approval import (
@@ -236,15 +236,42 @@ class ProcedureToSkillConverter:
 
         quarantine_skill_dir.mkdir(parents=True, exist_ok=False)
         skill_md = quarantine_skill_dir / "SKILL.md"
-        self._write_skill_file(skill_md, meta, body)
+        self._write_skill_file(
+            skill_md,
+            meta,
+            body,
+            actor="promotion",
+            automatic=True,
+            reason="create quarantine promotion draft",
+        )
 
         scan_result = self._scanner.scan_skill(quarantine_skill_dir, source="anima")
         meta["security"] = scan_security_metadata(scan_result)
         meta["risk"]["requires_human_approval"] = runtime_approval_required(meta["risk"], scan_result)
-        self._write_skill_file(skill_md, meta, body)
+        self._write_skill_file(
+            skill_md,
+            meta,
+            body,
+            actor="promotion",
+            automatic=True,
+            reason="persist promotion scan metadata",
+        )
 
         if scan_result.verdict == SkillScanVerdict.dangerous or scan_result.size_violations:
+            from core.skills.ledger import capture_skill_document, record_skill_change
+
+            capture = capture_skill_document(skill_md, self._anima_dir)
             shutil.rmtree(quarantine_skill_dir, ignore_errors=True)
+            record_skill_change(
+                skill_md,
+                capture,
+                anima_dir=self._anima_dir,
+                after_text=None,
+                after_exists=False,
+                actor="promotion",
+                route="promotion.remove_blocked_draft",
+                reason="scanner rejected draft",
+            )
             self._append_audit(
                 {
                     "event_type": "promotion_draft_blocked",
@@ -315,7 +342,13 @@ class ProcedureToSkillConverter:
             raise FileNotFoundError(f"Quarantine skill not found: {skill_md}")
         meta, body = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
         meta["approval_callback_id"] = callback_id
-        self._write_skill_file(skill_md, meta, body)
+        self._write_skill_file(
+            skill_md,
+            meta,
+            body,
+            actor="promotion",
+            reason="register human approval request",
+        )
 
     def approve_skill(
         self,
@@ -364,9 +397,40 @@ class ProcedureToSkillConverter:
         meta.setdefault("risk", {})
         meta["risk"]["requires_human_approval"] = runtime_approval_required(meta["risk"], scan)
 
-        self._write_skill_file(quarantine_skill_md, meta, body)
+        self._write_skill_file(
+            quarantine_skill_md,
+            meta,
+            body,
+            actor=approved_by,
+            reason="human approved promotion",
+        )
         active_skill_dir.parent.mkdir(parents=True, exist_ok=True)
+        from core.skills.ledger import capture_skill_document, record_skill_change
+
+        active_capture = capture_skill_document(active_skill_dir / "SKILL.md", self._anima_dir)
+        quarantine_capture = capture_skill_document(quarantine_skill_md, self._anima_dir)
+        approved_text = quarantine_skill_md.read_text(encoding="utf-8")
         shutil.move(str(quarantine_skill_dir), str(active_skill_dir))
+        record_skill_change(
+            active_skill_dir / "SKILL.md",
+            active_capture,
+            anima_dir=self._anima_dir,
+            after_text=approved_text,
+            after_exists=True,
+            actor=approved_by,
+            route="promotion.approve_move_in",
+            reason="move approved skill into active catalog",
+        )
+        record_skill_change(
+            quarantine_skill_md,
+            quarantine_capture,
+            anima_dir=self._anima_dir,
+            after_text=None,
+            after_exists=False,
+            actor=approved_by,
+            route="promotion.approve_move_out",
+            reason="move approved skill into active catalog",
+        )
 
         source_meta = meta.get("source")
         source_origin = source_meta.get("origin") if isinstance(source_meta, dict) else None
@@ -498,14 +562,40 @@ class ProcedureToSkillConverter:
             body += "\n\n## Verification\n\n- Confirm the task result and report the skill outcome."
         return body.rstrip() + "\n"
 
-    def _write_skill_file(self, path: Path, metadata: dict[str, Any], body: str) -> None:
+    def _write_skill_file(
+        self,
+        path: Path,
+        metadata: dict[str, Any],
+        body: str,
+        *,
+        actor: str = "promotion",
+        automatic: bool = False,
+        reason: str | None = None,
+    ) -> bool:
+        from core.skills.ledger import automatic_skill_edit_allowed, capture_skill_document, record_skill_change
+
+        if automatic and path.exists() and not automatic_skill_edit_allowed(path):
+            return False
+        capture = capture_skill_document(path, self._anima_dir)
         frontmatter = yaml.dump(
             metadata,
             allow_unicode=True,
             default_flow_style=False,
             sort_keys=False,
         ).strip()
-        atomic_write_text(path, f"---\n{frontmatter}\n---\n\n{body.rstrip()}\n")
+        after = f"---\n{frontmatter}\n---\n\n{body.rstrip()}\n"
+        atomic_write_text(path, after)
+        record_skill_change(
+            path,
+            capture,
+            anima_dir=self._anima_dir,
+            after_text=after,
+            after_exists=True,
+            actor=actor,
+            route="promotion.write_skill_file",
+            reason=reason,
+        )
+        return True
 
     def _append_audit(self, event: dict[str, Any]) -> None:
         event = {"ts": now_iso(), **event}

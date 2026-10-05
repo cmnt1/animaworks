@@ -18,7 +18,7 @@ import json
 import pytest
 
 from core.memory import MemoryManager
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 
@@ -105,7 +105,7 @@ class TestCliTaskAdd:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         import cli.commands.task_cmd as task_cmd
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         original_submit = TaskStore.submit
 
@@ -207,7 +207,7 @@ class TestListTasksExecutability:
 
     def test_mark_executability_queries_canonical_input_ids_once(self, tmp_path, monkeypatch):
         """One canonical input lookup serves the whole listing, without file scans."""
-        import core.memory.task_queue as tq
+        import core.tasks.queue as tq
 
         anima_dir = tmp_path / "aoi"
         (anima_dir / "state" / "pending").mkdir(parents=True)
@@ -235,15 +235,17 @@ class TestListTasksExecutability:
         handler = _make_handler(anima_dir)
         manager = TaskQueueManager(anima_dir)
 
-        delegated = manager.add_delegated_task(
-            original_instruction="handed off",
-            assignee="rin",
-            summary="delegated",
+        rin_dir = anima_dir.parent / "rin"
+        (rin_dir / "state").mkdir(parents=True)
+        child = TaskQueueManager(rin_dir).submit(
+            {"task_id": "delegated-child", "title": "delegated", "description": "handed off"}
         )
+        manager.store.alias(anima_dir.name, "delegated-tracking", rin_dir.name, child.task_id)
+        delegated_id = "delegated-tracking"
 
         data = json.loads(handler.handle("list_tasks", {}))
         by_id = {item["task_id"]: item for item in data}
-        item = by_id[delegated.task_id]
+        item = by_id[delegated_id]
         assert "executable" not in item
         assert "executable_note" not in item
 
@@ -269,7 +271,7 @@ class TestSubmitTasksInvariant:
             assert stored[field] == task[field]
 
     def test_batch_failure_never_leaves_partial_work_or_compensating_cancel(self, tmp_path, monkeypatch):
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         anima_dir = tmp_path / "aoi"
         handler = _make_handler(anima_dir)

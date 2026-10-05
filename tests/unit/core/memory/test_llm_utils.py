@@ -2,7 +2,7 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core/memory/_llm_utils.py."""
+"""Unit tests for the one-shot LLM utilities in core.llm.oneshot."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import core.memory._llm_utils as llm_utils
+import core.llm.oneshot as llm_utils
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -248,9 +248,9 @@ class TestOneShotCompletion:
     """Tests for one_shot_completion() and its fallback behavior."""
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_litellm_success(
         self,
         mock_try_litellm: MagicMock,
@@ -268,9 +268,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_litellm_fails_sdk_success(
         self,
         mock_try_litellm: MagicMock,
@@ -289,9 +289,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_both_fail_returns_none(
         self,
         mock_try_litellm: MagicMock,
@@ -310,7 +310,7 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.litellm", create=True)
+    @patch("core.llm.oneshot.litellm", create=True)
     async def test_system_prompt_passed_to_litellm(
         self,
         mock_litellm: MagicMock,
@@ -321,7 +321,7 @@ class TestOneShotCompletion:
         mock_resp.choices[0].message.content = "ok"
         mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
 
-        with patch("core.memory._llm_utils.litellm", mock_litellm):
+        with patch("core.llm.oneshot.litellm", mock_litellm):
             # Import litellm inside _try_litellm; patch at module level
             pass
         # Patch where litellm is used - it's imported inside _try_litellm
@@ -342,9 +342,9 @@ class TestOneShotCompletion:
         assert messages[1] == {"role": "user", "content": "user prompt"}
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_default_model_from_config(
         self,
         mock_try_litellm: MagicMock,
@@ -363,8 +363,8 @@ class TestOneShotCompletion:
         assert call_kwargs["model"] == "anthropic/claude-sonnet-4-6"
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_explicit_credential_forwarded_to_kwargs_resolver(
         self,
         mock_try_litellm: MagicMock,
@@ -388,9 +388,9 @@ class TestOneShotCompletion:
         mock_get_kwargs.assert_called_once_with("openai/deepseek-v4-flash", credential="vllm-lb")
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_consolidation_llm_kwargs")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_non_anthropic_model_skips_sdk(
         self,
         mock_try_litellm: MagicMock,
@@ -408,9 +408,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_codex_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_codex_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_codex_model_routes_directly_to_codex_sdk(
         self,
         mock_try_litellm: MagicMock,
@@ -428,70 +428,81 @@ class TestOneShotCompletion:
         mock_try_codex_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_codex_cache_schema_error_aborts_before_stdout_timeout(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        class _FakeStdin:
-            def write(self, _data: bytes) -> None:
-                return None
-
-            async def drain(self) -> None:
-                return None
-
-            def close(self) -> None:
-                return None
-
-        class _BlockedStdout:
-            async def readline(self) -> bytes:
-                await asyncio.Event().wait()
-                return b""
-
-        class _CacheErrorStderr:
-            def __init__(self) -> None:
-                self.calls = 0
-
-            async def read(self, _size: int) -> bytes:
-                self.calls += 1
-                if self.calls == 1:
-                    return b"failed to load models cache: unknown variant `max`"
-                return b""
-
-        class _FakeProcess:
-            def __init__(self) -> None:
-                self.stdin = _FakeStdin()
-                self.stdout = _BlockedStdout()
-                self.stderr = _CacheErrorStderr()
-                self.returncode = None
-                self.killed = False
-
-            def kill(self) -> None:
-                self.killed = True
-                self.returncode = -9
-
-            async def wait(self) -> int:
-                return self.returncode or 0
-
-        proc = _FakeProcess()
-        monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
-        monkeypatch.setattr("core.platform.codex.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr("core.platform.codex.default_home_dir", lambda: "/tmp")
-        monkeypatch.setattr("core.execution.codex_sdk._default_path_env", lambda: "")
-        monkeypatch.setattr("core.execution.codex_sdk._resolve_codex_model", lambda model: model)
-
-        result = await asyncio.wait_for(
-            llm_utils._try_codex_sdk(
-                "prompt",
-                system_prompt="system",
-                model="codex/test",
-                max_tokens=128,
-                llm_kwargs={},
-            ),
-            timeout=0.5,
-        )
+    async def test_codex_sdk_one_shot_patches_reasoning_effort_enum(self) -> None:
+        """The shared codex config may echo effort=max; the SDK enum must accept it."""
+        with (
+            patch("core.platform.codex.patch_reasoning_effort_enum") as mock_patch,
+            patch("openai_codex.AsyncCodex", side_effect=RuntimeError("stop")),
+        ):
+            result = await llm_utils._try_codex_sdk(
+                "Hi", system_prompt="", model="codex/gpt-6-luna", max_tokens=10, llm_kwargs={}
+            )
 
         assert result is None
-        assert proc.killed is True
+        mock_patch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_memory_kwargs_temperature_and_timeout_are_forwarded(self) -> None:
+        memory_kwargs = {
+            "model": "openai/custom-model",
+            "api_base": "http://gateway.test/v1",
+            "timeout": 99,
+        }
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 0
+        extra = {"api_base": "http://gateway.test/v1"}
+
+        response = MagicMock()
+        response.choices[0].message.content = "completion"
+        with (
+            patch.object(llm_utils, "get_memory_llm_kwargs_for_model", return_value=memory_kwargs) as resolver,
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=response) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion(
+                "prompt",
+                model="custom-model",
+                credential="gateway-credential",
+                max_tokens=10,
+                temperature=0.0,
+                timeout=5,
+                llm_extra=extra,
+            )
+
+        assert result == "completion"
+        resolver.assert_called_once_with("custom-model", extra, credential="gateway-credential")
+        kwargs = litellm_call.call_args.kwargs
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["timeout"] == 5
+        assert kwargs["api_base"] == "http://gateway.test/v1"
+        assert kwargs["max_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_rate_guard_block_returns_none_without_litellm_attempt(self) -> None:
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 30
+
+        with (
+            patch.object(llm_utils, "get_llm_kwargs_for_model", return_value={"model": "openai/test-model"}),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
+            patch.object(llm_utils, "_try_litellm", new_callable=AsyncMock) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion("prompt", model="openai/test-model")
+
+        assert result is None
+        litellm_call.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sync_helper_requires_no_running_loop_and_runs_in_thread(self) -> None:
+        with pytest.raises(RuntimeError, match="active event loop"):
+            llm_utils.one_shot_completion_sync("prompt")
+
+        mock_one_shot = AsyncMock(return_value="thread completion")
+        with patch.object(llm_utils, "one_shot_completion", mock_one_shot):
+            result = await asyncio.to_thread(llm_utils.one_shot_completion_sync, "prompt")
+
+        assert result == "thread completion"
+        mock_one_shot.assert_awaited_once()
 
 
 class TestIsAnthropicModel:
@@ -519,50 +530,3 @@ class TestStripProviderPrefix:
         assert llm_utils._strip_provider_prefix("anthropic/claude-sonnet-4-6") == "claude-sonnet-4-6"
         assert llm_utils._strip_provider_prefix("bedrock/jp.anthropic.claude-sonnet-4-6") == "claude-sonnet-4-6"
         assert llm_utils._strip_provider_prefix("vertex_ai/claude-sonnet-4-6") == "claude-sonnet-4-6"
-
-
-class TestNanogptNormalization:
-    """nanogpt/ models must be rewritten to openai/ for LiteLLM routing.
-
-    LiteLLM has no "nanogpt" provider; without the rewrite every memory
-    extraction call fails with BadRequestError("LLM Provider NOT provided").
-    """
-
-    def test_normalize_litellm_model(self) -> None:
-        assert llm_utils._normalize_litellm_model("nanogpt/qwen/qwen3-coder") == "openai/qwen/qwen3-coder"
-        assert llm_utils._normalize_litellm_model("codex/gpt-5.4-mini") == "codex/gpt-5.4-mini"
-        assert llm_utils._normalize_litellm_model("anthropic/claude-sonnet-4-6") == "anthropic/claude-sonnet-4-6"
-        assert llm_utils._normalize_litellm_model("") == ""
-
-    def test_get_llm_kwargs_rewrites_nanogpt_with_credential(self) -> None:
-        """Provider-prefix resolution keeps the nanogpt credential, model is rewritten."""
-        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
-        cfg = _make_config(credentials={"nanogpt": cred})
-        with patch("core.config.load_config", return_value=cfg):
-            result = llm_utils.get_llm_kwargs_for_model("nanogpt/qwen/qwen3-coder")
-        assert result["model"] == "openai/qwen/qwen3-coder"
-        assert result["api_key"] == "ng-key"
-        assert result["api_base"] == "https://nano-gpt.example/v1"
-
-    def test_memory_kwargs_rewrites_nanogpt_with_explicit_credential(self) -> None:
-        """status.json-style explicit credential='nanogpt' also gets the rewrite."""
-        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
-        cfg = _make_config(credentials={"nanogpt": cred})
-        with patch("core.config.load_config", return_value=cfg):
-            result = llm_utils.get_memory_llm_kwargs_for_model("nanogpt/zai-org/glm-4.7", credential="nanogpt")
-        assert result["model"] == "openai/zai-org/glm-4.7"
-        assert result["api_key"] == "ng-key"
-        assert result["api_base"] == "https://nano-gpt.example/v1"
-
-    def test_model_config_path_rewrites_nanogpt(self) -> None:
-        """get_llm_kwargs_for_model_config keeps the rewrite after the model override."""
-        cred = _make_cred(api_key="ng-key", base_url="https://nano-gpt.example/v1")
-        cfg = _make_config(credentials={"nanogpt": cred})
-        model_config = MagicMock()
-        model_config.model = "nanogpt/google/gemma-4-31b-it"
-        model_config.api_key = None
-        model_config.api_key_env = ""
-        model_config.api_base_url = None
-        with patch("core.config.load_config", return_value=cfg):
-            result = llm_utils.get_llm_kwargs_for_model_config(model_config)
-        assert result["model"] == "openai/google/gemma-4-31b-it"

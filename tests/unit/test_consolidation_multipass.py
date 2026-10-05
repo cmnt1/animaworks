@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 
 
 @dataclass
@@ -240,22 +240,12 @@ class TestMergeTimelineParts:
         assert ConsolidationEngine.merge_timeline_parts([]) == ""
 
 
-class TestCommTypes:
-    """Tests for ConsolidationEngine._COMM_TYPES."""
-
-    def test_message_sent_included(self) -> None:
-        assert "message_sent" in ConsolidationEngine._COMM_TYPES
-
-    def test_human_notify_included(self) -> None:
-        assert "human_notify" in ConsolidationEngine._COMM_TYPES
-
-
 class TestCollectActivityChunks:
     """Tests for ConsolidationEngine.collect_activity_chunks."""
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
-    @patch("core.memory.consolidation.now_local")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.activity.logger.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_respects_exclusions_and_formats(
         self,
         mock_now_local: MagicMock,
@@ -291,9 +281,9 @@ class TestCollectActivityChunks:
         assert "read_memory_file" not in text
         assert "skip" not in text
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
-    @patch("core.memory.consolidation.now_local")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.activity.logger.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_empty_returns_empty(
         self,
         mock_now_local: MagicMock,
@@ -310,8 +300,8 @@ class TestCollectActivityChunks:
         engine = ConsolidationEngine(tmp_path / "anima", "t")
         assert engine.collect_activity_chunks(hours=24, model="m") == []
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.activity.logger.ActivityLogger")
     def test_collect_uses_fixed_date_window(
         self,
         mock_logger_cls: MagicMock,
@@ -383,7 +373,7 @@ class TestDailyEpisodeWriteHelpers:
         episode_path.write_text(original, encoding="utf-8")
 
         with patch(
-            "core.memory.consolidation.now_local",
+            "core.memory.maintenance.consolidation.now_local",
             return_value=datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo")),
         ):
             written = engine.write_consolidated_episode(
@@ -412,65 +402,3 @@ class TestDailyEpisodeWriteHelpers:
             "## 09:00-10:00 Work\n\n- event\n"
         )
         assert not (anima_dir / "archive" / "episodes").exists()
-
-
-class TestPhaseBCarryover:
-    """Tests for Phase B timeout carry-over state."""
-
-    def test_record_phase_b_carryover_caps_to_three_days(self, tmp_path: Path) -> None:
-        engine = ConsolidationEngine(tmp_path / "animas" / "ritsu", "ritsu")
-
-        for day in range(1, 5):
-            engine.record_phase_b_carryover(
-                f"episode source {day}",
-                target_date=date(2026, 6, day),
-                reason="phase_b_pending",
-            )
-
-        items = engine.load_phase_b_carryover()
-
-        assert [item["date"] for item in items] == ["2026-06-02", "2026-06-03", "2026-06-04"]
-        assert all("episode source 1" not in item["episodes_summary"] for item in items)
-
-    def test_format_phase_b_carryover(self, tmp_path: Path) -> None:
-        engine = ConsolidationEngine(tmp_path / "animas" / "ritsu", "ritsu")
-        items = engine.record_phase_b_carryover(
-            "## 14:00\nImportant source",
-            target_date=date(2026, 6, 9),
-            reason="phase_b_pending",
-        )
-
-        formatted = engine.format_phase_b_carryover(items)
-
-        assert "Carry-over from 2026-06-09" in formatted
-        assert "Important source" in formatted
-
-    def test_load_phase_b_carryover_accepts_legacy_list_state(self, tmp_path: Path) -> None:
-        engine = ConsolidationEngine(tmp_path / "animas" / "ritsu", "ritsu")
-        path = engine.phase_b_carryover_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            '[{"date":"2026-06-09","reason":"phase_b_pending","episodes_summary":"legacy source"}]\n',
-            encoding="utf-8",
-        )
-
-        items = engine.load_phase_b_carryover()
-
-        assert len(items) == 1
-        assert items[0]["date"] == "2026-06-09"
-        assert items[0]["episodes_summary"] == "legacy source"
-
-    def test_clear_phase_b_carryover(self, tmp_path: Path) -> None:
-        engine = ConsolidationEngine(tmp_path / "animas" / "ritsu", "ritsu")
-        engine.record_phase_b_carryover(
-            "episode source",
-            target_date=date(2026, 6, 9),
-            reason="phase_b_pending",
-        )
-
-        assert engine.phase_b_carryover_path().exists()
-
-        engine.clear_phase_b_carryover()
-
-        assert engine.load_phase_b_carryover() == []
-        assert not engine.phase_b_carryover_path().exists()

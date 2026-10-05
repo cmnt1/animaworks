@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.tooling.handler import ToolHandler
 
 
@@ -64,10 +64,10 @@ def anima(tmp_path: Path) -> DigitalAnima:
         mock_agent._tool_handler = MagicMock()
         return mock_agent
 
-    with patch("core.anima.AgentCore") as mock_agent_cls:
+    with patch("core.anima.digital_anima.AgentCore") as mock_agent_cls:
         mock_agent_cls.side_effect = [_mock_agent(), _mock_agent(), _mock_agent()]
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 
@@ -121,16 +121,13 @@ class TestLockSeparation:
         """Public callback setters should propagate to every lane agent."""
         on_message = MagicMock()
         on_schedule = MagicMock()
-        wake = MagicMock()
 
         anima.set_on_message_sent(on_message)
         anima.set_on_schedule_changed(on_schedule)
-        anima._set_pending_executor_wake(wake)
 
         for agent in anima._iter_lane_agents():
             agent.set_on_message_sent.assert_called_with(on_message)
             agent.set_on_schedule_changed.assert_called_with(on_schedule)
-            agent._tool_handler.set_pending_executor_wake.assert_called_with(wake)
 
     def test_reload_config_updates_all_lane_agents(self, anima: DigitalAnima) -> None:
         """Config reload should not leave background/inbox agents stale."""
@@ -290,10 +287,10 @@ class TestConcurrentLockAcquisition:
 
     def test_agent_entrypoints_use_session_lock(self) -> None:
         """Chat/background/inbox entrypoints should guard AgentCore mutable state."""
-        from core._anima_inbox import InboxMixin
-        from core._anima_lifecycle import LifecycleMixin
-        from core._anima_messaging import MessagingMixin
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.anima.inbox import InboxMixin
+        from core.anima.lifecycle import LifecycleMixin
+        from core.anima.messaging import MessagingMixin
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         def guarded(obj, *helpers) -> bool:
             sources = [inspect.getsource(obj)]
@@ -303,7 +300,7 @@ class TestConcurrentLockAcquisition:
             combined = "\n".join(sources)
             return "_agent_session_lock" in combined or "_agent_session_context" in combined
 
-        assert guarded(MessagingMixin.process_message)
+        assert guarded(MessagingMixin.process_message, MessagingMixin.process_message_stream)
         assert guarded(MessagingMixin.process_message_stream)
         # run_heartbeat routes the agent cycle through _run_heartbeat_agent_session
         assert guarded(
@@ -326,18 +323,18 @@ class TestSessionFilesSeparation:
     """Verify session ID files are correctly separated by session type."""
 
     def test_session_file_chat(self) -> None:
-        from core.execution.agent_sdk import _session_file
+        from core.execution.engines.claude._sdk_session import _session_file
 
         assert _session_file("chat") == "current_session_chat.json"
 
     def test_session_file_heartbeat(self) -> None:
-        from core.execution.agent_sdk import _session_file
+        from core.execution.engines.claude._sdk_session import _session_file
 
         assert _session_file("heartbeat") == "current_session_heartbeat.json"
 
     def test_load_save_independent(self, tmp_path: Path) -> None:
         """Chat and heartbeat session IDs should not interfere."""
-        from core.execution.agent_sdk import _load_session_id, _save_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
 
         anima_dir = tmp_path / "test-anima"
         (anima_dir / "state").mkdir(parents=True)
@@ -357,7 +354,7 @@ class TestStreamingJournalSeparation:
     """Verify streaming journals use separate files per session type."""
 
     def test_journal_file_names(self, tmp_path: Path) -> None:
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         anima_dir = tmp_path / "test-anima"
         (anima_dir / "shortterm").mkdir(parents=True)
@@ -378,7 +375,7 @@ class TestShortTermMemorySeparation:
     """Verify ShortTermMemory uses separate directories per session type."""
 
     def test_separate_directories(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir()

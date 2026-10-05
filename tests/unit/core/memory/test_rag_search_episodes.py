@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
 @pytest.fixture
@@ -101,7 +101,8 @@ class TestSearchMemoryTextEpisodesKeyword:
     ) -> None:
         """scope='episodes' keyword fallback only returns episode files."""
         (knowledge_dir / "python.md").write_text(
-            "Python keyword", encoding="utf-8",
+            "Python keyword",
+            encoding="utf-8",
         )
         (episodes_dir / "2026-03-01.md").write_text(
             "Deployed service with keyword fix",
@@ -165,7 +166,8 @@ class TestSearchMemoryTextEpisodesVector:
         rag._indexer_initialized = True
 
         (episodes_dir / "2026-03-01.md").write_text(
-            "No match here", encoding="utf-8",
+            "No match here",
+            encoding="utf-8",
         )
 
         with patch.object(

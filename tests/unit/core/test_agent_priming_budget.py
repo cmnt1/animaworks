@@ -23,15 +23,15 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -91,7 +91,7 @@ class TestFitPromptBudgetShrink:
         large_prompt = "x" * 100_000
         with (
             patch.object(agent, "memory") as mock_memory,
-            patch("core._agent_priming.build_system_prompt") as mock_build,
+            patch("core.agent.priming.build_system_prompt") as mock_build,
         ):
             mock_build.return_value = MagicMock(system_prompt="small result")
             mock_memory.anima_dir = tmp_path
@@ -115,7 +115,7 @@ class TestFitPromptBudgetShrink:
             "REQUIRES_HUMAN_APPROVAL</priming>\n"
             '<priming source="pending_tasks" trust="trusted">DO_NOT_DUPLICATE_TASK</priming>'
         )
-        with patch("core._agent_priming.build_system_prompt") as build:
+        with patch("core.agent.priming.build_system_prompt") as build:
             build.return_value = MagicMock(system_prompt="REQUIRED_AUTHORITY " * 20_000)
             with pytest.raises(ExecutionError):
                 agent._fit_prompt_to_context_window(

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from core.memory.dedup import _NON_CRITICAL_LIMIT, MessageDeduplicator
+from core.anima.inbox_overflow import _NON_CRITICAL_LIMIT, MessageDeduplicator
 
 
 @dataclass

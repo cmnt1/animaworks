@@ -14,7 +14,7 @@ and bugfix: pending procedures persistence + streaming retry BuildResult extract
 from pathlib import Path
 from unittest.mock import patch
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     _ERROR_PATTERN,
     _RESOLVED_PATTERN,
     ConversationTurn,

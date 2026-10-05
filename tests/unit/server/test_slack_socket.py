@@ -1,4 +1,4 @@
-"""Unit tests for server/slack_socket.py — SlackSocketModeManager."""
+"""Unit tests for server/gateways/slack_socket.py — SlackSocketModeManager."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -15,11 +15,11 @@ import pytest
 class TestSlackSocketModeManagerStart:
     """Tests for SlackSocketModeManager.start()."""
 
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_start_disabled_when_not_enabled(self, mock_config, mock_cred):
         """Does nothing when slack.enabled is False."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=False, mode="socket")
         mock_config.return_value = MagicMock(
@@ -32,11 +32,11 @@ class TestSlackSocketModeManagerStart:
         mock_cred.assert_not_called()
         assert not mgr.is_connected
 
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_start_disabled_when_mode_is_webhook(self, mock_config, mock_cred):
         """Does nothing when slack.mode is 'webhook'."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="webhook")
         mock_config.return_value = MagicMock(
@@ -49,13 +49,13 @@ class TestSlackSocketModeManagerStart:
         mock_cred.assert_not_called()
         assert not mgr.is_connected
 
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_start_connects_when_enabled(self, mock_config, mock_cred, mock_app_cls, mock_handler_cls):
         """Connects when slack is enabled with socket mode."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "sakura"})
         mock_config.return_value = MagicMock(
@@ -81,18 +81,18 @@ class TestSlackSocketModeManagerStop:
 
     async def test_stop_when_not_started(self):
         """stop() is a no-op when handler is None."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mgr = SlackSocketModeManager()
         await mgr.stop()  # Should not raise
 
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_stop_closes_handler(self, mock_config, mock_cred, mock_app_cls, mock_handler_cls):
         """stop() calls close_async on the handler."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={})
         mock_config.return_value = MagicMock(
@@ -114,12 +114,12 @@ class TestSlackSocketModeManagerHandlers:
     """Tests for message handler registration and routing."""
 
     @patch("core.notification.reply_routing.route_thread_reply", return_value=False)
-    @patch("server.slack_socket._load_alias_user_ids", return_value=set())
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda text, token: text)
-    @patch("server.slack_socket._route_to_board")
-    @patch("server.slack_socket.load_config")
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket._load_alias_user_ids", return_value=set())
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda text, token: text)
+    @patch("server.gateways.slack_socket._route_to_board")
+    @patch("server.gateways.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
     async def test_default_anima_does_not_steal_other_bot_mentions(
         self,
         mock_messenger_cls,
@@ -132,7 +132,7 @@ class TestSlackSocketModeManagerHandlers:
         tmp_path,
     ):
         """Default anima should not receive channel messages mentioning another bot."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_data_dir.return_value = tmp_path
         slack_cfg = MagicMock(default_anima="sakura")
@@ -175,13 +175,13 @@ class TestSlackSocketModeManagerHandlers:
         mock_route_to_board.assert_not_called()
 
     @patch("core.notification.reply_routing.route_thread_reply", return_value=False)
-    @patch("server.slack_socket._load_alias_user_ids", return_value=set())
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda text, token: text)
-    @patch("server.slack_socket._route_to_board")
-    @patch("server.slack_socket.get_credential", return_value="xoxb-fake")
-    @patch("server.slack_socket.load_config")
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket._load_alias_user_ids", return_value=set())
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda text, token: text)
+    @patch("server.gateways.slack_socket._route_to_board")
+    @patch("server.gateways.slack_socket.get_credential", return_value="xoxb-fake")
+    @patch("server.gateways.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
     async def test_shared_handler_skips_per_anima_mentions(
         self,
         mock_messenger_cls,
@@ -195,7 +195,7 @@ class TestSlackSocketModeManagerHandlers:
         tmp_path,
     ):
         """Shared default route should not consume messages for a per-Anima bot mention."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_data_dir.return_value = tmp_path
         slack_cfg = MagicMock(anima_mapping={}, default_anima="sakura")
@@ -236,12 +236,12 @@ class TestSlackSocketModeManagerHandlers:
         mock_messenger_cls.assert_not_called()
         mock_route_to_board.assert_not_called()
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_message_handler_routes_to_anima(
         self,
         mock_config,
@@ -253,7 +253,7 @@ class TestSlackSocketModeManagerHandlers:
         tmp_path,
     ):
         """Message events with mapped channels are routed to the correct anima inbox."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         anima_mapping = {"C_TEST_CHAN": "sakura"}
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping=anima_mapping)
@@ -306,12 +306,12 @@ class TestSlackSocketModeManagerHandlers:
         assert call_kwargs["external_channel_id"] == "C_TEST_CHAN"
         assert call_kwargs["intent"] == "observe"
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_message_handler_ignores_unmapped_channel(
         self,
         mock_config,
@@ -323,7 +323,7 @@ class TestSlackSocketModeManagerHandlers:
         tmp_path,
     ):
         """Messages from unmapped channels are ignored when no default_anima."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C_KNOWN": "sakura"}, default_anima="")
         slack_cfg.resolve_anima.return_value = None  # C_UNKNOWN is unmapped
@@ -364,12 +364,12 @@ class TestSlackSocketModeManagerHandlers:
         # Messenger should not be instantiated
         mock_messenger_cls.assert_not_called()
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_message_handler_ignores_subtype_events(
         self,
         mock_config,
@@ -381,7 +381,7 @@ class TestSlackSocketModeManagerHandlers:
         tmp_path,
     ):
         """Message events with subtypes (edits, bot messages) are ignored."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C_CHAN": "sakura"})
         mock_config.return_value = MagicMock(
@@ -425,12 +425,12 @@ class TestSlackSocketModeManagerHandlers:
 class TestUnhandledEventSuppression:
     """Tests for Bolt 404 suppression via error handler."""
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_error_handler_registered_on_shared_app(
         self,
         mock_config,
@@ -442,7 +442,7 @@ class TestUnhandledEventSuppression:
         tmp_path,
     ):
         """Error handler is registered on the shared AsyncApp."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={})
         mock_config.return_value = MagicMock(
@@ -464,12 +464,12 @@ class TestUnhandledEventSuppression:
 
         assert len(captured_error_handler) == 1
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_raise_error_for_unhandled_request_flag(
         self,
         mock_config,
@@ -481,7 +481,7 @@ class TestUnhandledEventSuppression:
         tmp_path,
     ):
         """AsyncApp is created with raise_error_for_unhandled_request=True."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={})
         mock_config.return_value = MagicMock(
@@ -503,7 +503,7 @@ class TestUnhandledEventSuppression:
 
     async def test_error_handler_returns_200_for_unhandled(self):
         """BoltUnhandledRequestError is caught and returns 200."""
-        from server.slack_socket import BoltResponse, BoltUnhandledRequestError, SlackSocketModeManager
+        from server.gateways.slack_socket import BoltResponse, BoltUnhandledRequestError, SlackSocketModeManager
 
         app = MagicMock()
         captured_handler = []
@@ -525,7 +525,7 @@ class TestUnhandledEventSuppression:
 
     async def test_error_handler_re_raises_other_errors(self):
         """Non-BoltUnhandledRequestError errors are re-raised."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         app = MagicMock()
         captured_handler = []
@@ -537,12 +537,12 @@ class TestUnhandledEventSuppression:
         with pytest.raises(ValueError, match="something broke"):
             await handler(error=ValueError("something broke"), body={})
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_message_handler_still_works_with_error_handler(
         self,
         mock_config,
@@ -554,7 +554,7 @@ class TestUnhandledEventSuppression:
         tmp_path,
     ):
         """Normal message events are still routed correctly."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         anima_mapping = {"C_TEST": "sakura"}
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping=anima_mapping)
@@ -604,27 +604,27 @@ class TestBuildSlackAnnotation:
     """Tests for _build_slack_annotation with channel name and external addressees."""
 
     def test_dm_annotation(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation("D_DIRECT", False)
         assert "[slack:DM]" in result
 
     def test_channel_with_mention_includes_channel_name(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation("C_TEST", True, channel_name="general")
         assert "#general" in result
         assert "メンションされています" in result or "mentioned" in result
 
     def test_channel_no_mention_includes_channel_name(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation("C_TEST", False, channel_name="aiシュライバーの作成")
         assert "#aiシュライバーの作成" in result
         assert "メンションはありません" in result or "no direct mention" in result
 
     def test_external_addressees_warning(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation(
             "C_TEST",
@@ -636,7 +636,7 @@ class TestBuildSlackAnnotation:
         assert "宛先注意" in result or "Addressee notice" in result
 
     def test_external_addressees_not_shown_when_mentioned(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation(
             "C_TEST",
@@ -648,7 +648,7 @@ class TestBuildSlackAnnotation:
         assert "Addressee notice" not in result
 
     def test_no_channel_name_still_works(self):
-        from server.slack_socket import _build_slack_annotation
+        from server.gateways.slack_socket import _build_slack_annotation
 
         result = _build_slack_annotation("C_TEST", False)
         assert "[slack:channel" in result
@@ -659,13 +659,13 @@ class TestDetectExternalAddressees:
     """Tests for _detect_external_addressees."""
 
     def test_no_mentions_returns_empty(self):
-        from server.slack_socket import _detect_external_addressees
+        from server.gateways.slack_socket import _detect_external_addressees
 
         result = _detect_external_addressees("hello world", {"bot": "U_BOT"}, set())
         assert result == []
 
     def test_bot_mention_excluded(self):
-        from server.slack_socket import _detect_external_addressees
+        from server.gateways.slack_socket import _detect_external_addressees
 
         result = _detect_external_addressees(
             "<@U_BOT> hello",
@@ -675,7 +675,7 @@ class TestDetectExternalAddressees:
         assert result == []
 
     def test_alias_mention_excluded(self):
-        from server.slack_socket import _detect_external_addressees
+        from server.gateways.slack_socket import _detect_external_addressees
 
         result = _detect_external_addressees(
             "<@U_ALIAS> hello",
@@ -685,9 +685,10 @@ class TestDetectExternalAddressees:
         assert result == []
 
     def test_external_mention_detected(self):
-        from server.slack_socket import _cache_user_name, _detect_external_addressees
+        from core.notification.slack_names import cache_user_name
+        from server.gateways.slack_socket import _detect_external_addressees
 
-        _cache_user_name("UEXTERNAL1", "External Person")
+        cache_user_name("UEXTERNAL1", "External Person")
         result = _detect_external_addressees(
             "<@UEXTERNAL1> please review",
             {"bot": "UBOT123"},
@@ -697,7 +698,7 @@ class TestDetectExternalAddressees:
         assert "External Person" in result[0]
 
     def test_uncached_external_returns_uid_without_token(self):
-        from server.slack_socket import _detect_external_addressees
+        from server.gateways.slack_socket import _detect_external_addressees
 
         result = _detect_external_addressees(
             "<@UUNKNOWN1> hi",

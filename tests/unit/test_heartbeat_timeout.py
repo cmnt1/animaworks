@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from core._anima_heartbeat import HeartbeatMixin
+from core.anima.heartbeat import HeartbeatMixin
 from core.config.models import HeartbeatConfig
 
 # ── HeartbeatConfig validation ────────────────────────────────
@@ -180,7 +180,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_injects_warning_on_expired(self, tmp_path, session_stats_expired):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,
@@ -204,7 +204,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_no_warning_before_timeout(self, tmp_path, session_stats_not_expired):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,
@@ -219,7 +219,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_no_warning_for_chat_trigger(self, tmp_path, session_stats_chat_trigger):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,
@@ -267,6 +267,7 @@ class TestHardTimeoutRecoveryNote:
         anima.model_config = model_config
         anima.memory = MagicMock()
         anima._activity = MagicMock()
+        anima._activity.alog = AsyncMock()
         anima._agent_for_lane = MagicMock(return_value=agent)
         anima._resolve_background_config = MagicMock(return_value=None)
         anima._enforce_state_size_limit = MagicMock()
@@ -293,15 +294,17 @@ class TestHardTimeoutRecoveryNote:
 
         with (
             patch("core.config.models.load_config", return_value=config),
-            patch("core._anima_heartbeat.StreamingJournal"),
-            patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
-            patch("core._anima_heartbeat.asyncio.wait_for", new=recording_wait_for),
-            patch("core._anima_heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_task_queue,
+            patch("core.anima.heartbeat.StreamingJournal"),
+            patch("core.anima.heartbeat.ConversationMemory") as mock_conversation,
+            patch("core.anima.heartbeat.asyncio.wait_for", new=recording_wait_for),
+            patch(
+                "core.anima.heartbeat.time",
+                SimpleNamespace(monotonic=elapsed_past_hard_timeout),
+            ),
+            patch("core.tasks.queue.TaskQueueManager") as mock_task_queue,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             mock_conversation.return_value.finalize_if_session_ended = AsyncMock()
-            mock_task_queue.return_value.sync_delegated.return_value = 0
             mock_task_queue.return_value.compact.return_value = 0
 
             await anima._execute_heartbeat_cycle(
@@ -313,6 +316,48 @@ class TestHardTimeoutRecoveryNote:
         assert stream_closed.is_set()
         assert wait_for_timeouts == [10]
         assert (state_dir / "recovery_note.md").exists()
+
+    @pytest.mark.asyncio
+    async def test_slow_activity_log_does_not_block_heartbeat_failure(self, tmp_path, monkeypatch):
+        from core.activity.logger import ActivityLogger
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        anima = HeartbeatMixin()
+        anima.name = "alice"
+        anima.anima_dir = tmp_path
+        anima._activity = ActivityLogger(tmp_path)
+
+        def slow_log(*_args: object, **_kwargs: object) -> None:
+            time.sleep(0.2)
+
+        monkeypatch.setattr(anima._activity, "log", slow_log)
+        loop = asyncio.get_running_loop()
+        previous_debug = loop.get_debug()
+        previous_slow_callback_duration = loop.slow_callback_duration
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.05
+        ticker_running = True
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while ticker_running:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        ticker_task = asyncio.create_task(ticker())
+        try:
+            await asyncio.sleep(0)
+            with patch("core.anima.heartbeat.StreamingJournal.has_orphan", return_value=False):
+                await anima._handle_heartbeat_failure(RuntimeError("slow disk"), [], unread_count=0)
+        finally:
+            ticker_running = False
+            await ticker_task
+            loop.slow_callback_duration = previous_slow_callback_duration
+            loop.set_debug(previous_debug)
+
+        assert ticks >= 10
 
     def test_recovery_note_written(self, tmp_path):
         from core.i18n import t
@@ -348,7 +393,7 @@ class TestFinalizeAlwaysRuns:
     """run_heartbeat() must finalize conversation turns even when the cycle dies."""
 
     def _make_anima(self, tmp_path, cycle):
-        from core._anima_lifecycle import LifecycleMixin
+        from core.anima.lifecycle import LifecycleMixin
 
         anima = LifecycleMixin()
         anima.name = "alice"
@@ -367,6 +412,7 @@ class TestFinalizeAlwaysRuns:
         anima._status_slots = {}
         anima._task_slots = {}
         anima._activity = MagicMock()
+        anima._activity.alog = AsyncMock()
         anima._build_heartbeat_prompt = AsyncMock(return_value=["hb"])
         anima._build_prior_messages = MagicMock(return_value=None)
         anima.messenger = SimpleNamespace(has_unread=lambda: False, unread_count=lambda: 0)
@@ -381,7 +427,7 @@ class TestFinalizeAlwaysRuns:
         finalize = AsyncMock()
         with (
             patch("core.config.models.load_config", return_value=config),
-            patch("core.memory.conversation.ConversationMemory") as conv,
+            patch("core.memory.conversation.memory.ConversationMemory") as conv,
             patch("core.tooling.handler.active_session_type", SimpleNamespace(reset=MagicMock())),
         ):
             conv.return_value.finalize_if_session_ended = finalize

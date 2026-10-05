@@ -8,19 +8,17 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 
 @pytest.fixture
-def attention_env(tmp_path: Path) -> tuple[Path, TaskBoardStore]:
+def anima_env(tmp_path: Path) -> Path:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     for subdir in ["episodes", "knowledge", "skills", "state"]:
         (anima_dir / subdir).mkdir(parents=True, exist_ok=True)
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    return anima_dir, store
+    return anima_dir
 
 
 def _append_task_entry(
@@ -29,7 +27,6 @@ def _append_task_entry(
     task_id: str,
     summary: str,
     updated_at: str,
-    deadline: str | None = None,
     source: str = "human",
 ) -> None:
     queue_path = anima_dir / "state" / "task_queue.jsonl"
@@ -41,24 +38,21 @@ def _append_task_entry(
         "assignee": anima_dir.name,
         "status": "pending",
         "summary": summary,
-        "deadline": deadline,
         "relay_chain": [],
         "updated_at": updated_at,
         "meta": {},
     }
     with queue_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    from core.taskboard.tasks import TaskStore, task_database_path
+    from core.tasks.board.tasks import TaskStore, task_database_path
 
     TaskStore(task_database_path(anima_dir)).import_legacy(anima_dir)
 
 
 @pytest.mark.asyncio
-async def test_channel_e_surfaces_all_projected_tasks(
-    attention_env: tuple[Path, TaskBoardStore],
-) -> None:
-    """All projected tasks appear in Channel E; visibility metadata does not filter."""
-    anima_dir, store = attention_env
+async def test_channel_e_surfaces_all_ledger_tasks(anima_env: Path) -> None:
+    """All pending canonical tasks appear in Channel E."""
+    anima_dir = anima_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
         source="human",
@@ -69,51 +63,60 @@ async def test_channel_e_surfaces_all_projected_tasks(
     )
     queue.add_task(
         source="human",
-        original_instruction="archived work",
+        original_instruction="other work",
         assignee="sakura",
-        summary="archived work",
-        task_id="hidden1234",
+        summary="other work",
+        task_id="other1234",
     )
-    store.upsert_metadata(anima_name="sakura", task_id="hidden1234", visibility="archived")
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "visible work" in result
-    assert "archived work" in result
+    assert "other work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_surfaces_snoozed_tasks(
-    attention_env: tuple[Path, TaskBoardStore],
-) -> None:
-    """Snoozed tasks still appear in Channel E; visibility metadata does not filter."""
-    anima_dir, store = attention_env
+async def test_channel_e_surfaces_pending_tasks(anima_env: Path) -> None:
+    """Pending tasks always appear regardless of any (now-removed) visibility."""
+    anima_dir = anima_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
         source="human",
-        original_instruction="snoozed work",
+        original_instruction="pending work",
         assignee="sakura",
-        summary="snoozed work",
-        task_id="snoozed1234",
-    )
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id="snoozed1234",
-        visibility="snoozed",
-        snoozed_until=(now_local() + timedelta(hours=2)).isoformat(),
+        summary="pending work",
+        task_id="pending1234",
     )
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
-    assert "snoozed work" in result
+    assert "pending work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_task_results_freshness_only(
-    attention_env: tuple[Path, TaskBoardStore],
-) -> None:
-    """Channel E task_results gate is purely freshness-based; visibility metadata does not filter."""
-    anima_dir, store = attention_env
+async def test_channel_e_does_not_emit_ledger_missing_ids(anima_env: Path) -> None:
+    """Regression (S17): an ID absent from the ledger must never surface."""
+    anima_dir = anima_env
+    queue = TaskQueueManager(anima_dir)
+    queue.add_task(
+        source="human",
+        original_instruction="will disappear",
+        assignee="sakura",
+        summary="will disappear",
+        task_id="ghost1234",
+    )
+    with queue.store.transaction() as db:
+        db.execute("DELETE FROM tasks WHERE anima='sakura' AND task_id='ghost1234'")
+
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+
+    assert "will disappear" not in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_task_results_freshness_only(anima_env: Path) -> None:
+    """Channel E task_results gate is purely freshness-based."""
+    anima_dir = anima_env
     results_dir = anima_dir / "state" / "task_results"
     results_dir.mkdir(parents=True)
     (results_dir / "hidden1234.md").write_text("hidden result", encoding="utf-8")
@@ -122,7 +125,6 @@ async def test_channel_e_task_results_freshness_only(
     old_file.write_text("old orphan result", encoding="utf-8")
     old = (now_local() - timedelta(hours=25)).timestamp()
     os.utime(old_file, (old, old))
-    store.upsert_metadata(anima_name="sakura", task_id="hidden1234", visibility="tombstoned")
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
@@ -131,17 +133,10 @@ async def test_channel_e_task_results_freshness_only(
     assert "old orphan result" not in result
 
 
-# ── "failed"-specific board behavior was retired along with the "failed"
-# status itself (see A1 task-model teardown plan). What used to be
-# test_channel_e_surfaces_recent_failed_tasks and
-# test_channel_e_hides_explicitly_archived_failed_tasks tested a review
-# workflow that no longer exists at the queue level.
-
-
 @pytest.mark.asyncio
-async def test_channel_e_preserves_legacy_prompt_signals(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_preserves_legacy_prompt_signals(anima_env: Path) -> None:
     """STALE and auto-taskexec markers still surface (OVERDUE/deadline were retired)."""
-    anima_dir, _store = attention_env
+    anima_dir = anima_env
     now = now_local()
     _append_task_entry(
         anima_dir,
@@ -175,21 +170,11 @@ async def test_channel_e_preserves_delegated_status_section(tmp_path: Path) -> N
     for directory in [anima_dir, subordinate_dir]:
         for subdir in ["episodes", "knowledge", "skills", "state"]:
             (directory / subdir).mkdir(parents=True, exist_ok=True)
-    TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
 
-    subordinate_task = TaskQueueManager(subordinate_dir).add_task(
-        source="human",
-        original_instruction="subordinate work",
-        assignee="hinata",
-        summary="subordinate work",
-        task_id="child1234",
+    subordinate_task = TaskQueueManager(subordinate_dir).submit(
+        {"task_id": "child1234", "title": "subordinate work", "description": "subordinate work"}
     )
-    TaskQueueManager(anima_dir).add_delegated_task(
-        original_instruction="delegated board work",
-        assignee="sakura",
-        summary="delegated board work",
-        meta={"delegated_to": "hinata", "delegated_task_id": subordinate_task.task_id},
-    )
+    TaskQueueManager(anima_dir).store.alias("sakura", "delegated1234", "hinata", subordinate_task.task_id)
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
@@ -204,8 +189,6 @@ async def test_channel_e_reads_sqlite_without_jsonl_projection(tmp_path: Path) -
     anima_dir = data_dir / "animas" / "sakura"
     for subdir in ["episodes", "knowledge", "skills", "state"]:
         (anima_dir / subdir).mkdir(parents=True, exist_ok=True)
-    shared_dir = data_dir / "shared"
-    shared_dir.mkdir()
 
     queue = TaskQueueManager(anima_dir)
     queue.add_task(

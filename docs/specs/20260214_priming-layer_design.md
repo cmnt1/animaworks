@@ -859,7 +859,7 @@ ConsolidationEngine.weekly_integrate(anima)
 - `animaworks index` コマンド追加
 
 *日次固定化（NREM睡眠アナログ）:*
-- `core/memory/consolidation.py` を新規作成（ConsolidationEngine）
+- `core/memory/maintenance/consolidation.py` を新規作成（ConsolidationEngine）
 - `daily_consolidate()`: 深夜cron → episodes/ → knowledge/ 変換
 - LifecycleManager にシステムcronとして登録（毎日02:00 JST）
 - 固定化用LLMプロンプトの設計・チューニング

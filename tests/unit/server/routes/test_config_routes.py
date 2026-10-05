@@ -1,4 +1,4 @@
-"""Unit tests for server/routes/config_routes.py — Config & init-status endpoints."""
+"""Unit tests for server/routes/config_routes.py config endpoints."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -6,10 +6,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 from core.config.models import AnimaWorksConfig, CredentialConfig
@@ -27,32 +25,6 @@ def _make_test_app():
     router = create_config_router()
     app.include_router(router, prefix="/api")
     return app
-
-
-class TestAbconfigCredentials:
-    def test_loads_cnct_env_credentials(self, tmp_path):
-        from server.routes import config_routes
-
-        cnct_env = tmp_path / "Cnct_Env.py"
-        cnct_env.write_text(
-            "openai_key = 'sk-local'\nopenai_id = 'org-local'\nopencode_api = 'sk-oc'\n",
-            encoding="utf-8",
-        )
-
-        with patch.object(config_routes, "ABCONFIG_ENV_FILE", cnct_env):
-            assert config_routes._load_abconfig_credentials() == {
-                "openai_id": "org-local",
-                "openai_key": "sk-local",
-                "opencode_api": "sk-oc",
-            }
-
-    def test_missing_cnct_env_returns_empty(self, tmp_path):
-        from server.routes import config_routes
-
-        cnct_env = tmp_path / "Cnct_Env.py"
-
-        with patch.object(config_routes, "ABCONFIG_ENV_FILE", cnct_env):
-            assert config_routes._load_abconfig_credentials() == {}
 
 
 # ── _mask_secrets ───────────────────────────────────────────
@@ -124,7 +96,7 @@ class TestMaskSecrets:
 
 class TestGetConfig:
     async def test_404_when_config_missing(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -133,9 +105,8 @@ class TestGetConfig:
         assert resp.json()["detail"] == "Config file not found"
 
     async def test_returns_masked_config(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        config_dir = tmp_path / ".animaworks"
-        config_dir.mkdir()
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        config_dir = tmp_path
         config = {
             "model": "claude-sonnet-4-6",
             "providers": {"anthropic": {"api_key": "sk-ant-1234567890"}},
@@ -154,10 +125,8 @@ class TestGetConfig:
         assert "..." in data["providers"]["anthropic"]["api_key"]
 
     async def test_500_on_invalid_json(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        config_dir = tmp_path / ".animaworks"
-        config_dir.mkdir()
-        (config_dir / "config.json").write_text("not valid json {{{", encoding="utf-8")
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        (tmp_path / "config.json").write_text("not valid json {{{", encoding="utf-8")
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
@@ -201,12 +170,14 @@ class TestAnthropicAuthSettings:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        def _save_config(updated):
-            saved["config"] = updated
+        def _update_config(fn, *args, **kwargs):
+            fn(config)
+            saved["config"] = config
+            return config
 
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch("server.routes.config_routes.update_config", side_effect=_update_config),
             patch("server.routes.config_routes.is_claude_code_available", return_value=False),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -270,12 +241,14 @@ class TestOpenAIAuthSettings:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        def _save_config(updated):
-            saved["config"] = updated
+        def _update_config(fn, *args, **kwargs):
+            fn(config)
+            saved["config"] = config
+            return config
 
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch("server.routes.config_routes.update_config", side_effect=_update_config),
             patch("server.routes.config_routes.is_codex_cli_available", return_value=True),
             patch("server.routes.config_routes.is_codex_login_available", return_value=False),
         ):
@@ -341,230 +314,14 @@ class TestOpenAIAuthSettings:
         models = data["models"]
         ids = {item["id"] for item in models}
 
-        assert "codex/gpt-5.6-sol" in ids
-        assert "codex/gpt-5.6-terra" in ids
-        assert "codex/gpt-5.6-luna" in ids
-        assert "codex/gpt-5.5" in ids
-        assert "codex/gpt-5.4" in ids
-        assert "codex/gpt-5.4-mini" in ids
-        assert "codex/gpt-5.3-codex" in ids
-        assert "openai-codex/gpt-5.3-codex" not in ids
-
-    async def test_current_models_survive_stale_cache_and_validate(self):
-        from core.config.model_catalog import available_model_id_set
-
-        config = AnimaWorksConfig(
-            credentials={
-                "anthropic": CredentialConfig(api_key="sk-test"),
-                "openai": CredentialConfig(type="codex_login"),
-                "google": CredentialConfig(api_key="google-test"),
-                "opencode-go": CredentialConfig(api_key="go-test"),
-            }
-        )
-        cached = {
-            "claude_code": ["claude-opus-4-8"],
-            "codex": ["codex/gpt-5.4"],
-            "google": ["google/gemini-2.5-flash"],
-        }
-        expected = {
-            "claude-opus-5-5": ("S", "Anthropic", "claude-opus-5-5"),
-            "claude-fable-5-1": ("S", "Anthropic", "claude-fable-5-1"),
-            "anthropic/claude-opus-5-5": ("A", "Anthropic", "claude-opus-5-5"),
-            "codex/gpt-6-astra": ("C", "OpenAI", "gpt-6-astra"),
-            "codex/gpt-6-sol": ("C", "OpenAI", "gpt-6-sol"),
-            "codex/gpt-6-luna": ("C", "OpenAI", "gpt-6-luna"),
-            "google/gemini-3.8-flash": ("A", "Google", "gemini-3.8-flash"),
-            "google/gemini-3.7-flash": ("A", "Google", "gemini-3.7-flash"),
-            "opencode-go/glm-5.1": ("A", "OpenCode Go", "glm-5.1"),
-        }
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes._cached_provider_models", side_effect=lambda p: cached.get(p, [])),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("core.config.nanogpt.nanogpt_api_key", return_value=""),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
-            patch("server.routes.config_routes.is_grok_authenticated", return_value=False),
-            patch("core.config.model_catalog.is_codex_login_available", return_value=False),
-            patch("core.config.model_catalog.is_grok_authenticated", return_value=False),
-        ):
-            async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
-                response = await client.get("/api/system/available-models")
-            allowed = available_model_id_set(config)
-
-        assert response.status_code == 200
-        models = response.json()["models"]
-        by_id = {item["id"]: item for item in models}
-        assert len(by_id) == len(models)
-        for model_id, (route, provider, name) in expected.items():
-            assert by_id[model_id]["route"] == route
-            assert by_id[model_id]["provider"] == provider
-            assert by_id[model_id]["model_name"] == name
-            assert model_id in allowed
-
-    async def test_available_models_include_known_anthropic_models_with_stale_cache(self):
-        config = AnimaWorksConfig(
-            credentials={
-                "anthropic": CredentialConfig(type="claude_code_login"),
-            }
-        )
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch(
-                "server.routes.config_routes._models_for_provider",
-                return_value=["claude-opus-4-8"],
-            ),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/available-models")
-
-        assert resp.status_code == 200
-        models = resp.json()["models"]
-        opus_5 = next(item for item in models if item["id"] == "claude-opus-5")
-        assert opus_5["label"] == "S: Anthropic/claude-opus-5"
-        assert opus_5["credential"] == "anthropic"
-
-    async def test_refresh_available_models_uses_codex_subscription_catalog(self, tmp_path):
-        config = AnimaWorksConfig(
-            credentials={
-                "openai": CredentialConfig(type="codex_login"),
-            }
-        )
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
-            patch(
-                "server.routes.config_routes._list_codex_subscription_models",
-                return_value=["codex/gpt-5.6-sol", "codex/gpt-5.6-terra"],
-            ),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/available-models/refresh",
-                    json={"providers": ["codex"]},
-                )
-
-        assert resp.status_code == 200
-        result = resp.json()["providers"][0]
-        assert result["status"] == "ok"
-        assert result["source"] == "subscription"
-        assert result["dynamic"] is True
-        ids = {item["id"] for item in resp.json()["models"]}
-        assert "codex/gpt-5.6-sol" in ids
-        assert "codex/gpt-5.6-terra" in ids
-        assert "codex/gpt-5.6-luna" in ids
-        cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
-        assert cache["providers"]["codex"]["models"] == ["codex/gpt-5.6-sol", "codex/gpt-5.6-terra"]
-
-    async def test_refresh_available_models_updates_codex_cache(self, tmp_path):
-        config = AnimaWorksConfig(
-            credentials={
-                "openai": CredentialConfig(type="api_key", api_key="sk-test"),
-            }
-        )
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
-            patch("server.routes.config_routes._list_openai_models", return_value=["codex/gpt-5.6"]),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
-            patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/available-models/refresh",
-                    json={"providers": ["codex"]},
-                )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        ids = {item["id"] for item in data["models"]}
-        assert data["providers"][0]["status"] == "ok"
-        assert data["providers"][0]["source"] == "api"
-        assert data["providers"][0]["dynamic"] is True
-        assert "codex/gpt-5.6" in ids
-        assert "codex/gpt-5.6-sol" in ids
-        assert "codex/gpt-5.5" in ids
-
-        cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
-        assert "codex/gpt-5.6" in cache["providers"]["codex"]["models"]
-
-    async def test_refresh_available_models_reports_non_dynamic_fallback(self, tmp_path):
-        config = AnimaWorksConfig(
-            credentials={
-                "openai": CredentialConfig(type="codex_login"),
-            }
-        )
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
-            patch(
-                "server.routes.config_routes._list_codex_subscription_models",
-                side_effect=RuntimeError("subscription model listing unavailable"),
-            ),
-            patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/available-models/refresh",
-                    json={"providers": ["codex"]},
-                )
-
-        assert resp.status_code == 200
-        result = resp.json()["providers"][0]
-        assert result["status"] == "fallback"
-        assert result["source"] == "known"
-        assert result["dynamic"] is False
-
-    async def test_refresh_available_models_uses_abconfig_openai_key(self, tmp_path):
-        config = AnimaWorksConfig(
-            credentials={
-                "openai": CredentialConfig(type="codex_login"),
-            }
-        )
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
-            patch(
-                "server.routes.config_routes._load_abconfig_credentials",
-                return_value={"openai_key": "sk-abconfig", "openai_id": "org-test"},
-            ),
-            patch("server.routes.config_routes._list_openai_models", return_value=["codex/gpt-5.7"]) as list_models,
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/available-models/refresh",
-                    json={"providers": ["codex"]},
-                )
-
-        assert resp.status_code == 200
-        result = resp.json()["providers"][0]
-        assert result["status"] == "ok"
-        assert result["source"] == "api"
-        assert result["dynamic"] is True
-        list_models.assert_called_once_with("sk-abconfig", organization="org-test")
+        assert "c:codex/gpt-5.4" in ids
+        assert "c:codex/gpt-5.4-mini" in ids
+        assert "c:codex/gpt-5.3-codex" in ids
+        # New response contract
+        assert data["groups"] == ["Codex"]
+        assert "generated_at" in data
+        assert all(item["mode"] == "c" for item in models)
+        assert all(item["credential"] == "codex" for item in models)
 
     async def test_available_models_include_grok_build_models(self):
         config = AnimaWorksConfig()
@@ -585,9 +342,7 @@ class TestOpenAIAuthSettings:
         ]
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
-            patch("server.routes.config_routes.is_grok_authenticated", return_value=True),
+            patch("server.routes.config_routes.discover_models", return_value=stub),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/system/available-models")
@@ -596,344 +351,88 @@ class TestOpenAIAuthSettings:
         models = resp.json()["models"]
         grok_models = {item["id"]: item for item in models if item["group"] == "Grok"}
 
-        assert set(grok_models) == {"grok/grok-4.5", "grok/grok-composer-2.5-fast"}
-        assert all(item["provider"] == "Grok" for item in grok_models.values())
-        assert grok_models["grok/grok-4.5"]["label"] == "C: Grok/grok-4.5"
+        assert set(grok_models) == {"x:grok/grok-4.5", "x:grok/grok-composer-2.5-fast"}
+        assert all(item["label"] == item["model"].removeprefix("grok/") for item in grok_models.values())
 
 
-class TestLocalLLMSettings:
-    async def test_get_local_llm_returns_runtime_state(self):
-        config = AnimaWorksConfig()
-        config.anima_defaults.model = "ollama/qwen2.5-coder:14b"
-        config.anima_defaults.credential = "ollama"
-        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch(
-                "server.routes.config_routes._list_ollama_models",
-                return_value=[
-                    "ollama/qwen2.5-coder:14b",
-                    "ollama/deepseek-r1:8b",
-                    "ollama/glm4:9b",
-                ],
-            ),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/settings/local-llm")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["reachable"] is True
-        assert data["configured"] is True
-        assert data["default_model"] == "ollama/qwen2.5-coder:14b"
-        assert data["role_presets"]["engineer"] == "coding"
-
-    async def test_put_local_llm_sets_ollama_as_default(self):
-        config = AnimaWorksConfig()
-        saved = {}
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        def _save_config(updated):
-            saved["config"] = updated
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.save_config", side_effect=_save_config),
-            patch(
-                "server.routes.config_routes._list_ollama_models",
-                return_value=[
-                    "ollama/qwen2.5-coder:14b",
-                    "ollama/deepseek-r1:8b",
-                    "ollama/glm4:9b",
-                ],
-            ),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.put(
-                    "/api/settings/local-llm",
-                    json={
-                        "base_url": "http://127.0.0.1:11434/v1",
-                        "default_model": "qwen2.5-coder:14b",
-                        "presets": {
-                            "coding": "ollama/qwen2.5-coder:14b",
-                            "reasoning": "deepseek-r1:8b",
-                            "general": "glm4:9b",
-                        },
-                    },
-                )
-
-        assert resp.status_code == 200
-        saved_config = saved["config"]
-        assert saved_config.local_llm.base_url == "http://127.0.0.1:11434"
-        assert saved_config.credentials["ollama"].type == "ollama"
-        assert saved_config.anima_defaults.credential == "ollama"
-        assert saved_config.anima_defaults.model == "ollama/qwen2.5-coder:14b"
-
-    async def test_apply_local_llm_role_presets_updates_existing_animas(self, tmp_path):
-        config = AnimaWorksConfig()
-        config.credentials["ollama"] = CredentialConfig(type="ollama", base_url="http://127.0.0.1:11434")
-        config.anima_defaults.credential = "ollama"
-        config.local_llm.auto_apply_presets = True
-        animas_dir = tmp_path / "animas"
-        engineer_dir = animas_dir / "alice"
-        engineer_dir.mkdir(parents=True)
-        (engineer_dir / "status.json").write_text(
-            json.dumps({"role": "engineer", "enabled": True}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-
-        with (
-            patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.get_animas_dir", return_value=animas_dir),
-        ):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post("/api/settings/local-llm/apply-role-presets")
-
-        assert resp.status_code == 200
-        assert resp.json()["count"] == 1
-        status = json.loads((engineer_dir / "status.json").read_text(encoding="utf-8"))
-        assert status["model"] == "ollama/qwen2.5-coder:14b"
-        assert status["credential"] == "ollama"
-
-
-# ── GET /system/init-status ─────────────────────────────────
-
-
-class TestInitStatus:
-    @pytest.fixture(autouse=True)
-    def _isolated_config(self, monkeypatch):
-        monkeypatch.setattr("server.routes.config_routes.load_config", lambda: AnimaWorksConfig())
-
-    async def test_nothing_initialized(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.setattr("server.routes.config_routes.is_claude_code_available", lambda: False)
-        # Remove API keys from environment
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
+class TestRemovedLocalLLMRoutes:
+    async def test_local_llm_routes_return_404(self):
         app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        assert resp.status_code == 200
-        data = resp.json()
-        # Backward-compatible fields
-        assert data["config_exists"] is False
-        assert data["animas_count"] == 0
-        assert data["initialized"] is False
-        assert data["api_keys"]["anthropic"] is False
-        assert data["api_keys"]["openai"] is False
-        assert data["api_keys"]["google"] is False
-        # New checks array
-        assert "checks" in data
-        checks = data["checks"]
-        assert isinstance(checks, list)
-        assert len(checks) >= 1
-        labels = {c["label"] for c in checks}
-        assert "設定ファイル" in labels
-        assert "Anima登録" in labels
-        assert "初期化完了" in labels
-        # All checks should be not-ok when nothing is initialized
-        config_check = next(c for c in checks if c["label"] == "設定ファイル")
-        assert config_check["ok"] is False
-        init_check = next(c for c in checks if c["label"] == "初期化完了")
-        assert init_check["ok"] is False
+            responses = [
+                await client.get("/api/settings/local-llm"),
+                await client.put("/api/settings/local-llm", json={}),
+                await client.post("/api/settings/local-llm/apply-role-presets"),
+            ]
+        assert [response.status_code for response in responses] == [404, 404, 404]
 
-    async def test_with_config_and_animas(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
-        base_dir = tmp_path / ".animaworks"
-        base_dir.mkdir()
-        (base_dir / "config.json").write_text("{}", encoding="utf-8")
+# ── Removed init-status endpoint ────────────────────────────
 
-        # Create an anima with identity.md
-        animas_dir = base_dir / "animas"
-        animas_dir.mkdir()
-        alice_dir = animas_dir / "alice"
-        alice_dir.mkdir()
-        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
-        # Also create shared dir
-        shared_dir = base_dir / "shared"
-        shared_dir.mkdir()
-
+class TestRemovedInitStatus:
+    async def test_init_status_returns_404(self):
         app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        # Backward-compatible fields
-        assert data["config_exists"] is True
-        assert data["animas_count"] == 1
-        assert data["initialized"] is True
-        assert data["shared_dir_exists"] is True
-        # New checks array
-        checks = data["checks"]
-        config_check = next(c for c in checks if c["label"] == "設定ファイル")
-        assert config_check["ok"] is True
-        anima_check = next(c for c in checks if c["label"] == "Anima登録")
-        assert anima_check["ok"] is True
-        assert anima_check["detail"] == "1名"
-        shared_check = next(c for c in checks if c["label"] == "共有ディレクトリ")
-        assert shared_check["ok"] is True
-        init_check = next(c for c in checks if c["label"] == "初期化完了")
-        assert init_check["ok"] is True
+            response = await client.get("/api/system/init-status")
+        assert response.status_code == 404
 
-    async def test_api_key_detection(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
+class TestRootOwnedConfigWrites:
+    async def test_config_value_route_updates_config_through_root(self, tmp_path, monkeypatch):
+        from core.config.io import get_config_path, invalidate_cache
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
         app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        # Backward-compatible fields
-        assert data["api_keys"]["anthropic"] is True
-        assert data["api_keys"]["openai"] is True
-        assert data["api_keys"]["google"] is False
-        # New checks array - API key checks
-        checks = data["checks"]
-        anthropic_check = next(c for c in checks if c["label"] == "Anthropic APIキー / サブスクリプション認証")
-        assert anthropic_check["ok"] is True
-        openai_check = next(c for c in checks if c["label"] == "OpenAI APIキー / Codex Login")
-        assert openai_check["ok"] is True
-        google_check = next(c for c in checks if c["label"] == "Google APIキー")
-        assert google_check["ok"] is False
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "system.timezone", "value": "Asia/Tokyo"},
+            )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert json.loads(get_config_path().read_text(encoding="utf-8"))["system"]["timezone"] == "Asia/Tokyo"
 
-    async def test_codex_login_counts_as_openai_auth(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: True)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    async def test_per_anima_heartbeat_interval_routes_reload_to_root_scheduler(self, tmp_path, monkeypatch):
+        from core.config.io import invalidate_cache
+        from core.paths import get_animas_dir
 
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
+        anima_dir = get_animas_dir() / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
         app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
+        app.state.supervisor = MagicMock()
+        app.state.supervisor.processes = {"alice": MagicMock()}
+        app.state.supervisor.send_request = AsyncMock(return_value={})
 
-        assert data["api_keys"]["openai"] is True
-        assert data["api_keys"]["codex_login"] is True
-        openai_check = next(c for c in data["checks"] if c["label"] == "OpenAI APIキー / Codex Login")
-        assert openai_check["ok"] is True
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "animas.alice.heartbeat_interval_minutes", "value": 60},
+            )
 
-    async def test_animas_without_identity_not_counted(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        assert response.status_code == 200
+        assert json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))["heartbeat_interval_minutes"] == 60
+        app.state.supervisor.send_request.assert_awaited_once_with("alice", "reschedule_heartbeat", {}, timeout=10.0)
 
-        base_dir = tmp_path / ".animaworks"
-        base_dir.mkdir()
-        (base_dir / "config.json").write_text("{}", encoding="utf-8")
+    async def test_legacy_model_config_value_uses_status_store(self, tmp_path, monkeypatch):
+        from core.config.io import invalidate_cache
+        from core.paths import get_animas_dir
 
-        animas_dir = base_dir / "animas"
-        animas_dir.mkdir()
-        # Directory without identity.md should not be counted
-        (animas_dir / "incomplete").mkdir()
-
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
         app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        assert data["animas_count"] == 0
-        assert data["initialized"] is False
-        # checks array should reflect zero animas
-        checks = data["checks"]
-        anima_check = next(c for c in checks if c["label"] == "Anima登録")
-        assert anima_check["ok"] is False
-        assert anima_check["detail"] == "0名"
-
-    async def test_checks_array_has_all_expected_labels(self, tmp_path, monkeypatch):
-        """Verify that the checks array contains all expected labels."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        checks = data["checks"]
-        expected_labels = {
-            "設定ファイル",
-            "Anima登録",
-            "共有ディレクトリ",
-            "Anthropic APIキー / サブスクリプション認証",
-            "OpenAI APIキー / Codex Login",
-            "Google APIキー",
-            "初期化完了",
-        }
-        actual_labels = {c["label"] for c in checks}
-        assert expected_labels == actual_labels
-
-    async def test_checks_items_have_ok_field(self, tmp_path, monkeypatch):
-        """Every check item must have at least 'label' and 'ok' fields."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        for check in data["checks"]:
-            assert "label" in check, f"Missing 'label' in check: {check}"
-            assert "ok" in check, f"Missing 'ok' in check: {check}"
-            assert isinstance(check["ok"], bool), f"'ok' should be bool: {check}"
-
-    async def test_animas_detail_with_multiple(self, tmp_path, monkeypatch):
-        """Anima check detail should show correct count with multiple animas."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        base_dir = tmp_path / ".animaworks"
-        base_dir.mkdir()
-        (base_dir / "config.json").write_text("{}", encoding="utf-8")
-
-        animas_dir = base_dir / "animas"
-        animas_dir.mkdir()
-        for name in ("alice", "bob", "charlie"):
-            d = animas_dir / name
-            d.mkdir()
-            (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
-
-        app = _make_test_app()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-        data = resp.json()
-        assert data["animas_count"] == 3
-        checks = data["checks"]
-        anima_check = next(c for c in checks if c["label"] == "Anima登録")
-        assert anima_check["detail"] == "3名"
-        assert anima_check["ok"] is True
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "animas.alice.model", "value": "claude-sonnet-4-6"},
+            )
+        assert response.status_code == 200
+        status = json.loads((get_animas_dir() / "alice" / "status.json").read_text(encoding="utf-8"))
+        assert status["model"] == "claude-sonnet-4-6"

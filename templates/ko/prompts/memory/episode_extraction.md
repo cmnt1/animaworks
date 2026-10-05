@@ -29,9 +29,9 @@ Use the following Markdown format. Separate sections by time period using `## HH
 ## Rules
 
 1. **Group by time period**: Cluster related activities into 30-minute to 2-hour blocks
-2. **Preserve specific information**: Keep key details from email bodies, command outputs, file changes, and message contents that could serve as future knowledge references
+2. **Be concise and use bullets**: Keep only facts useful for later reference; do not copy email bodies or tool output. For each tool execution, record only what was done, whether it succeeded, and the conclusion
 3. **Eliminate redundant repetition**: Deduplicate repeated `current_state.md` dumps or duplicate REFLECTION blocks — keep only one instance
-4. **Tool execution results**: Record result summaries for successes and error details for failures
+4. **Tool execution results**: State what was done, success/failure, and the conclusion without copying output. Summarize periodic checks with no changes in one line
 5. **Communication content**: Record the key points of sent/received messages (who, to whom, about what)
 6. **No speculation**: Record only facts from the activity log. Do not add inferences or interpretations
 7. **Use existing content for deduplication**: If existing episode content is provided, absorb overlapping details into the timeline and avoid repeating the same facts twice

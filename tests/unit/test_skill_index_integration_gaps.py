@@ -138,17 +138,12 @@ class TestCatalogUsesSkillIndex:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
-        memory.list_procedure_metas.return_value = []
-        memory.list_shared_users.return_value = []
 
         with patch("core.paths.get_common_skills_dir", return_value=common_skills_dir):
             result = build_system_prompt(memory)

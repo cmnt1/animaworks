@@ -71,8 +71,8 @@ alice宛: キャッシュ戦略について判断をお願いしたいです。
 | `audit_subordinate` | 全配下（再帰） | 活動タイムラインまたは統計サマリーを生成。`name` 省略で全配下を一括監査（統合タイムライン） | `name`（任意）, `mode`（任意: `"report"`/`"summary"`, デフォルト `"report"`）, `hours`（任意: 1〜168, デフォルト 24）, `direct_only`（任意: boolean）, `since`（任意: `"HH:MM"` 当日の開始時刻、指定時はhoursより優先） |
 | `disable_subordinate` | 全配下（再帰） | 配下を休止（status.json enabled=false、約30秒でプロセス停止） | `name`（必須）, `reason`（任意） |
 | `enable_subordinate` | 全配下（再帰） | 休止した配下を再開 | `name`（必須） |
-| `set_subordinate_model` | 全配下（再帰） | 配下のモデルを変更（status.json 更新。反映には `restart_subordinate` が必要） | `name`, `model`（必須）, `reason`（任意） |
-| `set_subordinate_background_model` | 全配下（再帰） | 配下のバックグラウンドモデル（Heartbeat/Cron用。Inboxはメイン）を変更。空文字でクリア。反映には `restart_subordinate` が必要 | `name`, `model`（必須）, `credential`, `reason`（任意） |
+| `set_subordinate_model` | 全配下（再帰） | root に status.json の更新を依頼し、起動中のメインモデルを reload | `name`, `model`（必須）, `reason`（任意） |
+| `set_subordinate_background_model` | 全配下（再帰） | root に Heartbeat/Cron 用のバックグラウンドモデル更新を依頼。次回のバックグラウンドタスクから適用し、空文字でクリア | `name`, `model`（必須）, `credential`, `reason`（任意） |
 | `restart_subordinate` | 全配下（再帰） | 配下プロセスを再起動（restart_requested フラグ、約30秒で再起動） | `name`（必須）, `reason`（任意） |
 
 `check_permissions` は全 Anima が利用可能（自分の権限一覧を確認）。

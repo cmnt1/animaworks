@@ -33,7 +33,7 @@ class TestInternalCompanyBoundary:
         app = _make_test_app()
         transport = ASGITransport(app=app)
         with (
-            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
+            patch("core.org.company.get_company_display_name", return_value="Beta Corporation"),
             patch(
                 "core.config.models.read_anima_company_checked",
                 side_effect=[(True, "alpha"), (True, "beta")],
@@ -200,7 +200,7 @@ class TestInternalMessageSent:
             )
         assert resp.status_code == 200
 
-    @patch("core.outbound_auto.BoardDiscordSync")
+    @patch("core.messaging.outbound_auto.BoardDiscordSync")
     async def test_channel_message_sent_syncs_to_discord(self, mock_sync_cls):
         app = _make_test_app()
         transport = ASGITransport(app=app)
@@ -227,7 +227,7 @@ class TestInternalMessageSent:
             source="human",
         )
 
-    @patch("core.outbound_auto.BoardDiscordSync")
+    @patch("core.messaging.outbound_auto.BoardDiscordSync")
     async def test_channel_message_sent_respects_external_sync_disable(self, mock_sync_cls):
         app = _make_test_app()
         app.state.disable_external_sync = True
@@ -285,7 +285,7 @@ class TestInternalAnimaCreate:
         transport = ASGITransport(app=app)
         animas_dir = Path(data_dir) / "animas"
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/internal/anima/create",
@@ -312,7 +312,7 @@ class TestInternalAnimaCreate:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 first = await client.post(
                     "/api/internal/anima/create",

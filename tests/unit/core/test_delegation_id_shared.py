@@ -13,9 +13,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import TaskEntry
-from core.taskboard.tasks import TaskStore
+from core.tasks.board.tasks import TaskStore
 from core.time_utils import now_iso
 from core.tooling.handler_delegation import DelegationMixin
 
@@ -67,7 +67,7 @@ def test_delegation_shares_single_id_across_both_sides(monkeypatch, tmp_path: Pa
             "boss": SimpleNamespace(supervisor=None, aliases=[]),
             "worker": SimpleNamespace(supervisor="boss", aliases=[]),
         },
-        heartbeat=SimpleNamespace(depth_window_s=600, max_depth=6),
+        heartbeat=SimpleNamespace(delegation_dm_enabled=True),
     )
     with (
         patch("core.config.models.load_config", return_value=config),
@@ -78,7 +78,7 @@ def test_delegation_shares_single_id_across_both_sides(monkeypatch, tmp_path: Pa
             {"name": "worker", "instruction": "Prepare the incident summary", "summary": "Incident summary"}
         )
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     # 受け側の tasks 行
     worker_view = TaskQueueManager(worker_dir).store.read("worker")

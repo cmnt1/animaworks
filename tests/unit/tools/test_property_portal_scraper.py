@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import httpx
 
-from core.tools.property_portal_scraper import (
+from core.integrations.property_portal_scraper import (
     PortalConfig,
     extract_listings,
     parse_price_jpy,

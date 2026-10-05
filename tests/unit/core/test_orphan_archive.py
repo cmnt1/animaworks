@@ -9,12 +9,12 @@ Covers:
 - detect_orphan_animas integration with archive flow
 - Backward compatibility with existing trivial orphan auto-removal
 """
+
 from __future__ import annotations
 
 import os
 import time
 from unittest.mock import patch
-
 
 
 class TestArchiveAndRemoveOrphan:
@@ -27,15 +27,11 @@ class TestArchiveAndRemoveOrphan:
         orphan_dir = data_dir / "animas" / "bob"
         orphan_dir.mkdir()
         (orphan_dir / "episodes").mkdir()
-        (orphan_dir / "episodes" / "2026-02-25.jsonl").write_text(
-            '{"ts":"2026-02-25T10:00:00"}\n', encoding="utf-8"
-        )
+        (orphan_dir / "episodes" / "2026-02-25.jsonl").write_text('{"ts":"2026-02-25T10:00:00"}\n', encoding="utf-8")
         (orphan_dir / "knowledge").mkdir()
-        (orphan_dir / "knowledge" / "learned.md").write_text(
-            "# Learned\nSomething useful.", encoding="utf-8"
-        )
+        (orphan_dir / "knowledge" / "learned.md").write_text("# Learned\nSomething useful.", encoding="utf-8")
 
-        from core.org_sync import _archive_and_remove_orphan
+        from core.org.org_sync import _archive_and_remove_orphan
 
         result = _archive_and_remove_orphan(orphan_dir)
 
@@ -63,7 +59,7 @@ class TestArchiveAndRemoveOrphan:
         (orphan_dir / "procedures" / "howto.md").write_text("steps", encoding="utf-8")
         (orphan_dir / "status.json").write_text('{"enabled":true}', encoding="utf-8")
 
-        from core.org_sync import _archive_and_remove_orphan
+        from core.org.org_sync import _archive_and_remove_orphan
 
         _archive_and_remove_orphan(orphan_dir)
 
@@ -93,7 +89,7 @@ class TestArchiveAndRemoveOrphan:
         orphan_dir.mkdir()
         (orphan_dir / "episodes").mkdir()
 
-        from core.org_sync import _archive_and_remove_orphan
+        from core.org.org_sync import _archive_and_remove_orphan
 
         _archive_and_remove_orphan(orphan_dir)
 
@@ -109,9 +105,9 @@ class TestArchiveAndRemoveOrphan:
         orphan_dir.mkdir()
         (orphan_dir / "state").mkdir()
 
-        from core.org_sync import _archive_and_remove_orphan
+        from core.org.org_sync import _archive_and_remove_orphan
 
-        with patch("core.org_sync.shutil.copytree", side_effect=OSError("disk full")):
+        with patch("core.org.org_sync.shutil.copytree", side_effect=OSError("disk full")):
             result = _archive_and_remove_orphan(orphan_dir)
 
         assert result is False
@@ -128,7 +124,7 @@ class TestArchiveAndRemoveOrphan:
         orphan_dir.mkdir()
         (orphan_dir / "knowledge").mkdir()
 
-        from core.org_sync import _archive_and_remove_orphan
+        from core.org.org_sync import _archive_and_remove_orphan
 
         _archive_and_remove_orphan(orphan_dir)
         assert archive_root.is_dir()
@@ -149,7 +145,7 @@ class TestCleanupOrphanArchives:
         old_time = time.time() - (31 * 86400)
         os.utime(old_archive, (old_time, old_time))
 
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed = cleanup_orphan_archives(data_dir, max_age_days=30)
         assert removed == 1
@@ -164,7 +160,7 @@ class TestCleanupOrphanArchives:
         recent_archive.mkdir()
         (recent_archive / "state").mkdir()
 
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed = cleanup_orphan_archives(data_dir, max_age_days=30)
         assert removed == 0
@@ -183,7 +179,7 @@ class TestCleanupOrphanArchives:
         new = archive_root / "new_20260224_120000"
         new.mkdir()
 
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed = cleanup_orphan_archives(data_dir, max_age_days=30)
         assert removed == 1
@@ -192,7 +188,7 @@ class TestCleanupOrphanArchives:
 
     def test_noop_when_no_archive_dir(self, data_dir):
         """Returns 0 when archive directory does not exist."""
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed = cleanup_orphan_archives(data_dir)
         assert removed == 0
@@ -202,7 +198,7 @@ class TestCleanupOrphanArchives:
         archive_root = data_dir / "archive" / "orphans"
         archive_root.mkdir(parents=True)
 
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed = cleanup_orphan_archives(data_dir)
         assert removed == 0
@@ -217,7 +213,7 @@ class TestCleanupOrphanArchives:
         age_time = time.time() - (3 * 86400)
         os.utime(archive, (age_time, age_time))
 
-        from core.org_sync import cleanup_orphan_archives
+        from core.org.org_sync import cleanup_orphan_archives
 
         removed_keep = cleanup_orphan_archives(data_dir, max_age_days=7)
         assert removed_keep == 0
@@ -239,10 +235,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
         (orphan_dir / "episodes").mkdir()
         (orphan_dir / "episodes" / "log.jsonl").write_text("data\n", encoding="utf-8")
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         assert len(orphans) == 1
         assert orphans[0]["name"] == "rie"
@@ -262,10 +260,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
         orphan_dir.mkdir()
         (orphan_dir / "knowledge").mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         assert not orphan_dir.exists()
 
@@ -277,10 +277,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
         orphan_dir.mkdir()
         (orphan_dir / "vectordb").mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         assert len(orphans) == 1
         assert orphans[0]["action"] == "auto_removed"
@@ -298,10 +300,11 @@ class TestDetectOrphanAnimasArchiveIntegration:
         orphan_dir.mkdir()
         (orphan_dir / "state").mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared",
+            data_dir / "animas",
+            data_dir / "shared",
         )
         assert orphans == []
         assert orphan_dir.exists()
@@ -317,10 +320,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
         old_time = time.time() - (31 * 86400)
         os.utime(old, (old_time, old_time))
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         assert not old.exists()
 
@@ -333,10 +338,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
             orphan_dir.mkdir()
             (orphan_dir / "episodes").mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         archived = [o for o in orphans if o["action"] == "archived"]
         assert len(archived) == 3
@@ -351,10 +358,12 @@ class TestDetectOrphanAnimasArchiveIntegration:
         make_anima("sakura")
         make_anima("rin", supervisor="sakura")
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
         orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0,
+            data_dir / "animas",
+            data_dir / "shared",
+            age_threshold_s=0,
         )
         assert orphans == []
         assert (data_dir / "animas" / "sakura").exists()

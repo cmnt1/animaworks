@@ -21,12 +21,10 @@ class FakeRAGSearch:
         self.vector_returns: dict[str, list[dict[str, Any]]] = {}
         self.vector_query_returns: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.keyword_returns: dict[str, list[dict[str, Any]]] = {}
-        self.graph_returns: list[dict[str, Any]] = []
         self.vector_scopes: list[str] = []
         self.vector_queries: list[str] = []
         self.keyword_scopes: list[str] = []
         self.keyword_queries: list[str] = []
-        self.graph_calls = 0
 
     def _load_rag_pipeline_settings(self) -> dict[str, object]:
         return {
@@ -37,9 +35,6 @@ class FakeRAGSearch:
             "rrf_confidence_threshold": 0.02,
         }
 
-    def _build_entity_boost_config(self, query: str, settings: dict[str, object] | None = None) -> None:
-        return None
-
     def _get_indexer(self) -> object:
         return object()
 
@@ -49,10 +44,6 @@ class FakeRAGSearch:
         if (query, scope) in self.vector_query_returns:
             return self.vector_query_returns[(query, scope)]
         return self.vector_returns.get(scope, [])
-
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path, **kwargs) -> list[dict[str, Any]]:
-        self.graph_calls += 1
-        return self.graph_returns
 
     def _keyword_search_fallback(self, query: str, scope: str, *args, **kwargs) -> list[dict[str, Any]]:
         self.keyword_queries.append(query)
@@ -119,6 +110,8 @@ def test_heartbeat_policy_disables_rerank(fake_rag: FakeRAGSearch, monkeypatch: 
     assert results[0]["doc_id"] == "episode-1"
     assert CapturingPipeline.calls[0]["pool_k"] == 20
     assert CapturingPipeline.calls[0]["rerank_enabled"] is False
+    assert fake_rag.vector_scopes == ["episodes"]
+    assert CapturingPipeline.calls[0]["ranked_lists"] == [[fake_rag.vector_returns["episodes"][0]]]
 
 
 @pytest.mark.parametrize(
@@ -156,7 +149,6 @@ def test_explicit_scope_restricts_trigger_scopes(fake_rag: FakeRAGSearch, monkey
 
     assert fake_rag.vector_scopes == ["facts"]
     assert fake_rag.keyword_scopes == ["facts"]
-    assert fake_rag.graph_calls == 0
 
 
 def test_tool_offset_applies_after_final_ranking(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -378,80 +370,6 @@ def test_query_expansion_uses_reference_time_and_filters_event_time(
     assert CapturingPipeline.calls[0]["ranked_lists"][0][0]["doc_id"] == "inside"
 
 
-def test_unified_search_passes_access_boost_config_to_pipeline(
-    fake_rag: FakeRAGSearch,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class AccessFakeRAG(FakeRAGSearch):
-        def _build_access_boost_config(self, settings: dict[str, object]) -> str:
-            return "access-config"
-
-    access_rag = AccessFakeRAG(fake_rag._anima_dir)
-    access_rag.vector_returns["knowledge"] = [{"doc_id": "k", "content": "knowledge", "score": 0.8}]
-    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
-    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
-
-    _searcher(access_rag).search("query", scope="knowledge", limit=3, trigger="chat")
-
-    assert CapturingPipeline.calls[0]["access_boost"] == "access-config"
-
-
-def test_unified_search_builds_temporal_boost_from_yesterday_query(
-    fake_rag: FakeRAGSearch,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
-    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
-    fake_rag.vector_returns["episodes"] = [
-        {"doc_id": "yesterday", "content": "meeting", "score": 0.8, "source_file": "2026-07-17.md"}
-    ]
-
-    _searcher(fake_rag).search(
-        "昨日のミーティング",
-        scope="episodes",
-        limit=3,
-        trigger="chat",
-        reference_time=datetime(2026, 7, 18, 12, 0),
-    )
-
-    temporal = CapturingPipeline.calls[0]["temporal_boost"]
-    assert temporal is not None
-    assert temporal.time_range.start == datetime(2026, 7, 17)
-    assert temporal.time_range.end == datetime(2026, 7, 17, 23, 59, 59, 999999)
-    assert temporal.boost == 0.05
-    assert temporal.max_boost == 0.10
-    assert temporal.half_life_days == 7.0
-
-
-def test_unified_search_temporal_boost_config_gate_disables_auto_wiring(
-    fake_rag: FakeRAGSearch,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_settings = fake_rag._load_rag_pipeline_settings
-
-    def disabled_settings() -> dict[str, object]:
-        settings = original_settings()
-        settings["temporal_boost_enabled"] = False
-        return settings
-
-    monkeypatch.setattr(fake_rag, "_load_rag_pipeline_settings", disabled_settings)
-    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
-    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
-    fake_rag.vector_returns["episodes"] = [
-        {"doc_id": "yesterday", "content": "meeting", "score": 0.8, "source_file": "2026-07-17.md"}
-    ]
-
-    _searcher(fake_rag).search(
-        "昨日のミーティング",
-        scope="episodes",
-        limit=3,
-        trigger="chat",
-        reference_time=datetime(2026, 7, 18, 12, 0),
-    )
-
-    assert CapturingPipeline.calls[0]["temporal_boost"] is None
-
-
 def test_unified_search_explicit_range_overrides_query_expression(
     fake_rag: FakeRAGSearch,
     monkeypatch: pytest.MonkeyPatch,
@@ -459,10 +377,23 @@ def test_unified_search_explicit_range_overrides_query_expression(
     monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
     monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
     fake_rag.vector_returns["episodes"] = [
-        {"doc_id": "explicit", "content": "meeting", "score": 0.8, "source_file": "2026-07-01.md"}
+        {
+            "doc_id": "explicit",
+            "content": "meeting",
+            "score": 0.8,
+            "source_file": "2026-07-01.md",
+            "event_time_iso": "2026-07-01T00:00:00Z",
+        },
+        {
+            "doc_id": "query-date",
+            "content": "meeting",
+            "score": 0.7,
+            "source_file": "2026-07-17.md",
+            "event_time_iso": "2026-07-17T00:00:00Z",
+        },
     ]
 
-    _searcher(fake_rag).search(
+    results = _searcher(fake_rag).search(
         "昨日のミーティング",
         scope="episodes",
         limit=3,
@@ -472,31 +403,43 @@ def test_unified_search_explicit_range_overrides_query_expression(
         reference_time=datetime(2026, 7, 18, 12, 0),
     )
 
-    temporal = CapturingPipeline.calls[0]["temporal_boost"]
-    assert temporal.time_range.start == datetime(2026, 7, 1)
-    assert temporal.time_range.end == datetime(2026, 7, 2, 23, 59, 59, 999999)
+    assert [item["doc_id"] for item in results] == ["explicit"]
+    assert [item["doc_id"] for item in CapturingPipeline.calls[0]["ranked_lists"][0]] == ["explicit"]
 
 
-def test_search_many_automatically_builds_temporal_boost_per_query(
+def test_search_many_keeps_query_time_expression_as_filter(
     fake_rag: FakeRAGSearch,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
     monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
     fake_rag.vector_returns["episodes"] = [
-        {"doc_id": "dated", "content": "meeting", "score": 0.8, "source_file": "2026-07-18.md"}
+        {
+            "doc_id": "dated",
+            "content": "meeting",
+            "score": 0.8,
+            "source_file": "2026-07-18.md",
+            "event_time_iso": "2026-07-18T00:00:00Z",
+        },
+        {
+            "doc_id": "undated-match",
+            "content": "meeting",
+            "score": 0.7,
+            "source_file": "2026-07-01.md",
+            "event_time_iso": "2026-07-01T00:00:00Z",
+        },
     ]
 
-    _searcher(fake_rag).search_many(
-        ["2026-07-18 meeting"],
+    results = _searcher(fake_rag).search_many(
+        ["yesterday meeting"],
         scope="episodes",
         limit=3,
         trigger="chat",
+        reference_time=datetime(2026, 7, 19, 12, 0),
     )
 
-    temporal = CapturingPipeline.calls[0]["temporal_boost"]
-    assert temporal.time_range.start == datetime(2026, 7, 18)
-    assert temporal.time_range.end == datetime(2026, 7, 18, 23, 59, 59, 999999)
+    assert [item["doc_id"] for item in results] == ["dated"]
+    assert [item["doc_id"] for item in CapturingPipeline.calls[0]["ranked_lists"][0]] == ["dated"]
 
 
 def test_knowledge_bm25_keyword_list_is_merged_in_pipeline(

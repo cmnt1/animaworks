@@ -13,19 +13,20 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.config.schemas import AnimaWorksConfig, CredentialConfig
 from core.schemas import ModelConfig
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 @pytest.fixture(autouse=True)
 def _silence_activity():
-    with patch("core.memory.activity.ActivityLogger") as mock_activity:
+    with patch("core.activity.logger.ActivityLogger") as mock_activity:
         mock_activity.return_value.log = MagicMock()
+        mock_activity.return_value.alog = AsyncMock()
         yield
 
 

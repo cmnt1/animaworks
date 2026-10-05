@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.anima_factory import TEMPLATES_DIR, create_from_template
-from core.memory.consolidation import ConsolidationEngine, list_project_archives
+from core.anima.factory import TEMPLATES_DIR, create_from_template
+from core.memory.maintenance.consolidation import ConsolidationEngine, list_project_archives
 from core.schemas import CycleResult
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.task_runner import execute_background_contract
+from core.runtime.runner import AnimaRunner
+from core.runtime.task_runner import execute_background_contract
 
 
 def test_project_engine_paths_and_default_compatibility(tmp_path: Path) -> None:
@@ -20,10 +20,9 @@ def test_project_engine_paths_and_default_compatibility(tmp_path: Path) -> None:
 
     assert project_engine.episodes_dir == tmp_path / "episodes" / "projects" / "foo"
     assert project_engine.knowledge_dir == tmp_path / "knowledge" / "projects" / "foo"
-    assert project_engine.phase_b_carryover_path() == (tmp_path / "state" / "consolidation_phase_b_carryover_foo.json")
     assert default_engine.episodes_dir == tmp_path / "episodes"
     assert default_engine.knowledge_dir == tmp_path / "knowledge"
-    assert default_engine.phase_b_carryover_path() == tmp_path / "state" / "consolidation_phase_b_carryover.json"
+    assert not (tmp_path / "state").exists()
 
 
 @pytest.mark.parametrize("project", ["../outside", 123])
@@ -47,8 +46,8 @@ def test_librarian_template_configuration(tmp_path: Path, locale: str) -> None:
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir()
     with (
-        patch("core.anima_factory.ANIMA_TEMPLATES_DIR", TEMPLATES_DIR / locale / "anima_templates"),
-        patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        patch("core.anima.factory.ANIMA_TEMPLATES_DIR", TEMPLATES_DIR / locale / "anima_templates"),
+        patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
     ):
         anima_dir = create_from_template(animas_dir, "librarian")
 
@@ -71,14 +70,19 @@ async def test_runner_propagates_project_to_anima() -> None:
     runner.anima = SimpleNamespace(
         run_consolidation=AsyncMock(return_value=CycleResult(trigger="consolidation:daily", action="completed"))
     )
-    runner._scheduler_mgr = None
+    supervisor = SimpleNamespace(run_background=AsyncMock(return_value={"summary": "consolidated", "duration_ms": 12}))
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
-    await runner._handle_run_consolidation({"consolidation_type": "daily", "project": "foo"})
+    result = await runner._handle_run_consolidation({"consolidation_type": "daily", "project": "foo"})
 
-    runner.anima.run_consolidation.assert_awaited_once_with(
-        consolidation_type="daily",
-        project="foo",
+    supervisor.run_background.assert_awaited_once_with(
+        kind="consolidation",
+        payload={"consolidation_type": "daily", "project": "foo"},
+        display_lane="background",
     )
+    runner.anima.run_consolidation.assert_not_awaited()
+    assert result["status"] == "completed"
+    assert result["summary"] == "consolidated"
 
 
 @pytest.mark.asyncio

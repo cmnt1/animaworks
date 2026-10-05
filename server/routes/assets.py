@@ -17,9 +17,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.integrations.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
+from core.integrations.image.openai import OPENAI_IMAGE_MODELS, OPENAI_IMG2IMG_MODELS
 from core.paths import get_data_dir
-from core.tools.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
-from core.tools.image.openai import OPENAI_IMAGE_MODELS, OPENAI_IMG2IMG_MODELS
+from core.platform.tasks import spawn
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 
@@ -312,7 +313,7 @@ def _nanogpt_image_api_key() -> str:
         credential = load_config().credentials.get("nanogpt", CredentialConfig())
         configured = credential.api_key
     except Exception:
-        pass
+        logger.debug("NanoGPT image credential lookup failed", exc_info=True)
     return nanogpt_api_key(configured)
 
 
@@ -793,7 +794,7 @@ def create_assets_router() -> APIRouter:
 
             display_mode = load_config().image_gen.image_style or "anime"
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         result: dict = {
             "name": name,
@@ -931,7 +932,8 @@ def create_assets_router() -> APIRouter:
             "backup_id": backups[0] if backups else None,
         }
 
-    @router.api_route("/animas/{name}/assets/{filename}", methods=["GET", "HEAD"])
+    @router.get("/animas/{name}/assets/{filename}")
+    @router.head("/animas/{name}/assets/{filename}", include_in_schema=False)
     async def get_asset(
         name: str,
         filename: str,
@@ -992,7 +994,8 @@ def create_assets_router() -> APIRouter:
             headers={"Cache-Control": cache_control, "ETag": etag},
         )
 
-    @router.api_route("/animas/{name}/attachments/{filename}", methods=["GET", "HEAD"])
+    @router.get("/animas/{name}/attachments/{filename}")
+    @router.head("/animas/{name}/attachments/{filename}", include_in_schema=False)
     async def get_attachment(name: str, filename: str, request: Request):
         """Serve a user-uploaded attachment from a anima's attachments directory."""
         animas_dir = request.app.state.animas_dir
@@ -1042,7 +1045,7 @@ def create_assets_router() -> APIRouter:
         if not body.prompt:
             raise HTTPException(status_code=400, detail="prompt is required")
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline_kwargs: dict = {}
         if body.image_style:
@@ -1117,7 +1120,7 @@ def create_assets_router() -> APIRouter:
 
         reference_bytes = reference_path.read_bytes()
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         style = body.image_style or "anime"
         pipeline = ImageGenPipeline(
@@ -1168,7 +1171,7 @@ def create_assets_router() -> APIRouter:
 
         style = body.image_style or "anime"
         from core.config.models import ImageGenConfig
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -1178,7 +1181,7 @@ def create_assets_router() -> APIRouter:
         prompt = body.prompt or ""
         if body.step == "fullbody":
             if not prompt:
-                from core.asset_reconciler import _resolve_prompt
+                from core.anima.asset_reconciler import _resolve_prompt
 
                 prompt = _resolve_prompt(anima_dir, style="realistic" if style == "realistic" else "anime") or ""
             if not prompt.strip():
@@ -1359,7 +1362,7 @@ def create_assets_router() -> APIRouter:
                     import tempfile as _tempfile
                     from pathlib import Path as _Path
 
-                    from core.tools.image.openai import _write_reference_png
+                    from core.integrations.image.openai import _write_reference_png
 
                     with _tempfile.TemporaryDirectory(prefix="animaworks-ref-preflight-") as _tmp:
                         _write_reference_png(
@@ -1375,7 +1378,7 @@ def create_assets_router() -> APIRouter:
 
         prompt = body.prompt
         if not prompt:
-            from core.asset_reconciler import _extract_prompt, _resolve_prompt
+            from core.anima.asset_reconciler import _extract_prompt, _resolve_prompt
 
             prompt_style = "realistic" if is_realistic else "anime"
             prompt_composition = "bustup" if (body.generation_model or "").startswith("openai:") else "fullbody"
@@ -1455,7 +1458,7 @@ def create_assets_router() -> APIRouter:
                 shutil.copytree(assets_dir, backup_dir)
                 logger.info("Backup created: %s", backup_dir)
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -1492,7 +1495,7 @@ def create_assets_router() -> APIRouter:
                 _free_vram, _ = _torch.cuda.mem_get_info()
                 _low_vram_mode = _free_vram < 7 * 1024**3
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         # Emit start event immediately so UI shows spinner
         _generation_model = body.generation_model or DEFAULT_IMAGE_GENERATION_MODEL
@@ -1553,7 +1556,7 @@ def create_assets_router() -> APIRouter:
                         bg_loop,
                     )
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
             gen_kwargs["fullbody_step_callback"] = _on_step
 
@@ -1563,7 +1566,7 @@ def create_assets_router() -> APIRouter:
                     try:
                         await _ws.broadcast({"type": etype, "data": data})
                     except Exception:
-                        pass
+                        logger.debug("Best-effort operation failed", exc_info=True)
 
             async def _openai_progress_heartbeat(stop_event: asyncio.Event) -> None:
                 started_at = _time.monotonic()
@@ -1732,7 +1735,7 @@ def create_assets_router() -> APIRouter:
                     except asyncio.CancelledError:
                         pass
 
-        asyncio.create_task(_bg_generate())
+        spawn(_bg_generate(), name=f"asset-backup-generate-{name}-{backup_id}")
 
         # Return 202 immediately — result arrives via WebSocket
         return JSONResponse(
@@ -1846,12 +1849,12 @@ def create_assets_router() -> APIRouter:
             remaining_steps = ["bustup"] + [
                 f"expression:{e}" for e in ["smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"]
             ]
-            asyncio.create_task(_run_fullbody_copy())
+            spawn(_run_fullbody_copy(), name=f"asset-fullbody-copy-{name}")
             return {"status": "started", "steps": remaining_steps, "mode": "fullbody_only"}
 
         # ── Normal cascade rebuild ──
         # Resolve prompt (style-aware)
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = (
             _resolve_prompt(
@@ -1871,7 +1874,7 @@ def create_assets_router() -> APIRouter:
         else:
             remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -1958,7 +1961,7 @@ def create_assets_router() -> APIRouter:
             if ws:
                 await ws.broadcast({"type": event_type, "data": data})
 
-        asyncio.create_task(_run_cascade())
+        spawn(_run_cascade(), name=f"asset-cascade-{name}")
 
         return {
             "status": "started",

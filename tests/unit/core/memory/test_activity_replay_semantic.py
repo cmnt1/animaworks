@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from core.memory.activity import ActivityEntry, ActivityLogger, build_semantic_replay_events
+from core.activity.logger import ActivityEntry, ActivityLogger, build_semantic_replay_events
 
 BASE = "2026-05-14T12:00:00+09:00"
 

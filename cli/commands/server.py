@@ -11,7 +11,6 @@ import os
 import socket
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -19,50 +18,30 @@ from pathlib import Path
 
 import psutil
 
+from core.platform.env import DATA_DIR_ENV, SERVER_URL_ENV, get_env, read_process_env, set_server_url
+from core.platform.pid import read_server_pid
 from core.platform.process import (
-    find_matching_pids,
-    request_process_shutdown,
-    subprocess_daemon_kwargs,
+    find_first_matching_pid,
+    subprocess_session_kwargs,
     terminate_matching_processes,
     terminate_pid,
 )
 from core.platform.process import (
     is_process_alive as is_pid_alive,
 )
+from core.platform.subprocess_entries import SubprocessEntry
 
 logger = logging.getLogger("animaworks")
 
-# Command patterns used to identify the real foreground server process.
-# The daemon launcher also runs ``cli start`` briefly, so require the
-# foreground flag to avoid mistaking the launcher or restart helper for a
-# running server while it is still spawning the child process.
-_SERVER_CMD_MARKERS = ("main.py start", "animaworks start --foreground", "-m cli start --foreground")
-_RESTART_HELPER_CMD_MARKERS = (
-    "restart-helper",
-    "restart_helper_result.json",
-    "_ANIMAWORKS_RESTART_HELPER_PID",
-)
+# Command patterns used to identify the animaworks server process.
+# Matches both direct invocation (main.py start) and entry point (animaworks start).
+_SERVER_CMD_MARKERS = ("main.py start", "animaworks start", "-m cli start")
 
-_DAEMON_STARTUP_TIMEOUT = 120
+_DAEMON_STARTUP_TIMEOUT = 10
 _DAEMON_POLL_INTERVAL = 0.3
-_RESTART_MAX_RETRIES = int(os.environ.get("ANIMAWORKS_RESTART_MAX_RETRIES", "2"))
-_RESTART_RETRY_DELAY = int(os.environ.get("ANIMAWORKS_RESTART_RETRY_DELAY", "5"))
-_RESTART_PORT_WAIT_TIMEOUT = int(os.environ.get("ANIMAWORKS_RESTART_PORT_WAIT_TIMEOUT", "900"))
-_PID_WATCHDOG_STOP = threading.Event()
-
 # systemd unit templates set RestartPreventExitStatus=3 so an
 # already-running process does not trigger Restart=on-failure loops.
 EXIT_ALREADY_RUNNING = 3
-
-
-def _maybe_log_rag_preflight_blocked(result: object) -> None:
-    status = getattr(result, "status", None)
-    if status in {"cooldown", "locked", "disabled", "active"}:
-        logger.info(
-            "RAG startup preflight skipped for %s: status=%s",
-            getattr(result, "anima_name", "<unknown>"),
-            status,
-        )
 
 
 # ── PID helpers ───────────────────────────────────────────
@@ -93,28 +72,6 @@ def _remove_pid_file() -> None:
         logger.warning("Failed to remove PID file %s: %s", pid_file, exc)
 
 
-def _read_pid() -> int | None:
-    """Read and validate the PID from the PID file.
-
-    Returns the PID if the file exists and contains a valid integer,
-    or None if the file is missing or contains invalid data.
-    """
-    pid_file = _get_pid_file()
-    if not pid_file.exists():
-        return None
-    try:
-        text = pid_file.read_text(encoding="utf-8").strip()
-        return int(text)
-    except (ValueError, OSError) as exc:
-        logger.warning("Invalid PID file %s: %s", pid_file, exc)
-        return None
-
-
-def _is_process_alive(pid: int) -> bool:
-    """Check whether a process with the given PID is currently running."""
-    return is_pid_alive(pid)
-
-
 def _find_server_pid_by_process(
     extra_exclude_pids: set[int] | None = None,
     *,
@@ -124,23 +81,24 @@ def _find_server_pid_by_process(
     excluded = {os.getpid(), os.getppid()}
     if extra_exclude_pids:
         excluded |= extra_exclude_pids
-    helper_pid_str = os.environ.get("_ANIMAWORKS_RESTART_HELPER_PID")
+    helper_pid_str = get_env("_ANIMAWORKS_RESTART_HELPER_PID")
     if helper_pid_str:
         try:
             excluded.add(int(helper_pid_str))
         except ValueError:
             pass
+
     from core.paths import get_data_dir
 
     current_data_dir = get_data_dir()
-    matches = find_matching_pids(
-        _SERVER_CMD_MARKERS,
-        exclude_pids=excluded,
-        require_python=True,
-    )
-    for pid in matches:
-        if _is_restart_helper_process(pid):
-            continue
+    while True:
+        pid = find_first_matching_pid(
+            _SERVER_CMD_MARKERS,
+            exclude_pids=excluded,
+            require_python=True,
+        )
+        if pid is None or pid in excluded:
+            return None
 
         cmdline = _read_process_cmdline(pid)
         candidate_data_dir = _process_data_dir(pid, cmdline)
@@ -152,6 +110,7 @@ def _find_server_pid_by_process(
                 pid,
                 candidate_data_dir,
             )
+            excluded.add(pid)
             continue
 
         candidate_port = _command_option(cmdline, "--port")
@@ -163,23 +122,15 @@ def _find_server_pid_by_process(
                         pid,
                         candidate_port,
                     )
+                    excluded.add(pid)
                     continue
             except ValueError:
                 pass
 
-        # If process metadata is incomplete, retain the conservative behavior
-        # unless an explicitly different port proved this is another server.
-        if pid not in excluded:
-            return pid
-    return None
-
-
-def _is_restart_helper_process(pid: int) -> bool:
-    cmdline_parts = _read_process_cmdline(pid)
-    if not cmdline_parts:
-        return False
-    cmdline = " ".join(cmdline_parts)
-    return any(marker in cmdline for marker in _RESTART_HELPER_CMD_MARKERS)
+        # If /proc is unavailable or unreadable, retain the previous
+        # conservative behaviour unless an explicitly different port proved
+        # this is another server instance.
+        return pid
 
 
 def _read_process_cmdline(pid: int) -> list[str] | None:
@@ -191,21 +142,8 @@ def _read_process_cmdline(pid: int) -> list[str] | None:
 
 
 def _read_process_environ_data_dir(pid: int) -> tuple[bool, str | None]:
-    """Read only ANIMAWORKS_DATA_DIR from ``/proc/<pid>/environ``.
-
-    The boolean indicates whether the environment was readable.  Other
-    environment variables may contain secrets, so they are neither decoded
-    nor retained.
-    """
-    try:
-        raw = (Path("/proc") / str(pid) / "environ").read_bytes()
-    except OSError:
-        return False, None
-    prefix = b"ANIMAWORKS_DATA_DIR="
-    for entry in raw.split(b"\0"):
-        if entry.startswith(prefix):
-            return True, os.fsdecode(entry[len(prefix) :])
-    return True, None
+    """Read the runtime data directory from a candidate server process."""
+    return read_process_env(pid, DATA_DIR_ENV)
 
 
 def _command_option(cmdline: list[str] | None, option: str) -> str | None:
@@ -272,7 +210,7 @@ def _stop_server(
             print(f"Killed {orphans} orphan runner process(es).")
         return orphans
 
-    pid = _read_pid()
+    pid = read_server_pid()
 
     if pid is None:
         pid = _find_server_pid_by_process(extra_exclude_pids=extra_exclude_pids)
@@ -282,17 +220,17 @@ def _stop_server(
             return True
         print(f"PID file missing — found server process by scanning (pid={pid}).")
     else:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             print(f"Stale PID file (pid={pid}). Server is not running. Cleaning up.")
             _remove_pid_file()
             _cleanup_orphans()
             return True
 
     print(f"Stopping server (pid={pid})...")
-    if _request_supervisor_shutdown(host=host, port=port):
+    if os.name == "nt" and _request_supervisor_shutdown(host=host, port=port, expected_pid=pid):
         print("Supervisor shutdown requested.")
     try:
-        request_process_shutdown(pid, include_children=False)
+        terminate_pid(pid, force=False, include_children=False)
     except ProcessLookupError:
         print("Server already exited.")
         _remove_pid_file()
@@ -304,7 +242,7 @@ def _stop_server(
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             print("Server stopped.")
             _remove_pid_file()
             _cleanup_orphans()
@@ -327,11 +265,11 @@ def _stop_server(
 
     kill_deadline = time.monotonic() + 3
     while time.monotonic() < kill_deadline:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             break
         time.sleep(0.1)
 
-    if _is_process_alive(pid):
+    if is_pid_alive(pid):
         print(f"Error: Server (pid={pid}) still alive after SIGKILL.")
         return False
 
@@ -344,30 +282,41 @@ def _stop_server(
 
 # ── Orphan runner cleanup ─────────────────────────────────
 
+_RUNNER_CMD_MARKER = (
+    SubprocessEntry.SUPERVISOR_RUNNER.value,
+    "core.runtime.runner",  # legacy name until 2026-11 (S3a)
+)
 
-def _request_supervisor_shutdown(*, host: str, port: int, timeout: float = 30.0) -> bool:
-    """Ask the running server to stop supervised runners before process exit."""
-    check_host = _check_host(host)
-    if not _is_port_listening(check_host, port):
+
+def _request_supervisor_shutdown(*, host: str, port: int, expected_pid: int, timeout: float = 30.0) -> bool:
+    """Ask the matching loopback server to stop its supervised runners."""
+    import json
+
+    check_host = "127.0.0.1" if host == "0.0.0.0" else host
+    if check_host not in {"127.0.0.1", "::1", "localhost"} or not _is_port_listening(check_host, port):
         return False
-    url = f"http://{check_host}:{port}/api/system/internal/shutdown-supervisor"
-    request = urllib.request.Request(url, method="POST")
+    authority = f"[{check_host}]" if ":" in check_host else check_host
+    url = f"http://{authority}:{port}/api/system/internal/shutdown-supervisor"
+    request = urllib.request.Request(
+        url,
+        data=json.dumps({"expected_pid": expected_pid}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - loopback endpoint
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 -- loopback only
             return 200 <= int(response.status) < 300
     except (OSError, urllib.error.URLError, TimeoutError):
-        logger.debug("Supervisor shutdown request failed for %s", url, exc_info=True)
+        logger.debug("Supervisor shutdown request failed", exc_info=True)
         return False
-
-
-_RUNNER_CMD_MARKER = "core.supervisor.runner"
 
 
 def _kill_orphan_runners() -> int:
     """Kill orphaned Anima runner processes from previous server instances.
 
     Uses psutil to find processes whose command line contains the runner module
-    marker and references the ~/.animaworks/ data directory.
+    marker and references the ~/.animaworks/ data directory. ``include_children=False``
+    is intentional: each runner's own shutdown handler is responsible for its children.
 
     Returns the number of processes targeted.
     """
@@ -375,13 +324,12 @@ def _kill_orphan_runners() -> int:
 
     data_prefix = str(get_data_dir())
     killed = terminate_matching_processes(
-        (_RUNNER_CMD_MARKER,),
+        _RUNNER_CMD_MARKER,
         path_contains=data_prefix,
         exclude_pids={os.getpid(), os.getppid()},
         force=False,
-        include_children=True,
+        include_children=False,
         require_python=True,
-        collapse_descendants=True,
     )
     if killed:
         time.sleep(1)
@@ -401,42 +349,6 @@ def _is_port_listening(host: str, port: int) -> bool:
         return False
 
 
-def _check_host(host: str) -> str:
-    return "127.0.0.1" if host == "0.0.0.0" else host
-
-
-def _cleanup_unreachable_server_process(pid: int, *, host: str, port: int) -> bool:
-    """Kill a server-shaped process whose HTTP port is no longer reachable."""
-    check_host = _check_host(host)
-    if _is_port_listening(check_host, port):
-        return False
-
-    msg = f"Server process pid={pid} is alive but {check_host}:{port} is not listening. Cleaning up."
-    print(msg)
-    logger.warning(msg)
-    try:
-        terminate_pid(pid, force=True, include_children=True)
-    except ProcessLookupError:
-        pass
-    except Exception as exc:
-        print(f"Error: failed to clean up unresponsive server pid={pid}: {exc}")
-        return False
-
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and _is_process_alive(pid):
-        time.sleep(0.1)
-
-    if _is_process_alive(pid):
-        print(f"Error: unresponsive server pid={pid} is still alive after cleanup.")
-        return False
-
-    _remove_pid_file()
-    orphans = _kill_orphan_runners()
-    if orphans:
-        print(f"Killed {orphans} orphan runner process(es).")
-    return True
-
-
 def _get_daemon_log_path() -> Path:
     """Return path for daemon stdout/stderr redirect."""
     from core.paths import get_data_dir
@@ -450,54 +362,41 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     """Spawn the server as a background process and verify startup."""
     from core.paths import get_data_dir
 
-    check_host = _check_host(args.host)
-    existing_pid = _read_pid()
-    if existing_pid is not None and _is_process_alive(existing_pid):
-        if _is_port_listening(check_host, args.port):
-            print(f"Error: Server is already running (pid={existing_pid}).")
-            print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(EXIT_ALREADY_RUNNING)
-        if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
-            sys.exit(1)
+    existing_pid = read_server_pid()
+    if existing_pid is not None and is_pid_alive(existing_pid):
+        print(f"Error: Server is already running (pid={existing_pid}).")
+        print("Use 'animaworks stop' first, or 'animaworks restart'.")
+        sys.exit(EXIT_ALREADY_RUNNING)
     elif existing_pid is not None:
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process(port=args.port)
-    if orphan_pid is not None and _is_process_alive(orphan_pid):
-        if _is_port_listening(check_host, args.port):
-            print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
-            print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(EXIT_ALREADY_RUNNING)
-        if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
-            sys.exit(1)
+    if orphan_pid is not None and is_pid_alive(orphan_pid):
+        print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
+        print("Use 'animaworks stop' first, or 'animaworks restart'.")
+        sys.exit(EXIT_ALREADY_RUNNING)
 
     cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", args.host, "--port", str(args.port)]
 
     log_path = _get_daemon_log_path()
     try:
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
     except Exception:
         logger.debug("Failed to rotate daemon log before spawn: %s", log_path, exc_info=True)
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
-    # Belt-and-suspenders against cp932-default file I/O on JP Windows: force the
-    # daemon (and any subprocess it spawns) into Python UTF-8 mode so a stray
-    # encoding-less open()/read_text() can't double-encode Obsidian notes. Code
-    # paths still pin encoding="utf-8" explicitly; this is a backstop, not the fix.
-    daemon_env = {**os.environ, "PYTHONUTF8": "1"}
     proc = subprocess.Popen(
         cmd,
-        stdin=subprocess.DEVNULL,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=Path(__file__).resolve().parent.parent.parent,
-        env=daemon_env,
-        **subprocess_daemon_kwargs(),
+        **subprocess_session_kwargs(),
     )
     log_file.close()
 
+    check_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     deadline = time.monotonic() + _DAEMON_STARTUP_TIMEOUT
     started = False
 
@@ -539,9 +438,10 @@ def _start_pid_watchdog() -> None:
 
     def _watchdog() -> None:
         my_pid = os.getpid()
-        while not _PID_WATCHDOG_STOP.wait(30):
+        while True:
+            time.sleep(30)
             try:
-                current = _read_pid()
+                current = read_server_pid()
                 if current == my_pid:
                     continue
                 # PID file missing, empty, or pointing at a different/dead process
@@ -555,13 +455,8 @@ def _start_pid_watchdog() -> None:
                 # Don't let the watchdog crash; just log and retry next cycle
                 logger.debug("PID watchdog error", exc_info=True)
 
-    _PID_WATCHDOG_STOP.clear()
     t = threading.Thread(target=_watchdog, daemon=True, name="pid-watchdog")
     t.start()
-
-
-def _stop_pid_watchdog() -> None:
-    _PID_WATCHDOG_STOP.set()
 
 
 def cmd_start(args: argparse.Namespace) -> None:
@@ -592,281 +487,40 @@ def _pin_native_threads() -> None:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def _is_mode_c_status(data: dict) -> bool:
-    """Return True when status.json indicates Mode C / codex execution."""
-    mode = str(data.get("execution_mode") or data.get("resolved_mode") or "").strip().upper()
-    if mode == "C":
-        return True
-    model = str(data.get("model") or "").strip()
-    return model.startswith("codex/")
-
-
-def _is_mode_s_status(data: dict) -> bool:
-    """Return True when status.json indicates Mode S / Claude Agent SDK."""
-    mode = str(data.get("execution_mode") or data.get("resolved_mode") or "").strip().upper()
-    if mode == "S":
-        return True
-    model = str(data.get("model") or "").strip().lower()
-    return model.startswith("claude-") or model.startswith("anthropic/")
-
-
-def _package_importable(module_name: str) -> bool:
-    """Return True when *module_name* can be imported."""
-    try:
-        __import__(module_name)
-        return True
-    except Exception:
-        return False
-
-
-def _scan_sdk_dependent_animas(animas_dir: Path) -> tuple[list[str], list[str]]:
-    """Scan animas status.json for Mode C / Mode S dependents.
-
-    Returns:
-        (mode_c_names, mode_s_names)
-    """
-    import json
-
-    mode_c: list[str] = []
-    mode_s: list[str] = []
-    if not animas_dir.is_dir():
-        return mode_c, mode_s
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        status_path = anima_dir / "status.json"
-        if not status_path.is_file():
-            continue
-        try:
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        if _is_mode_c_status(data):
-            mode_c.append(anima_dir.name)
-        if _is_mode_s_status(data):
-            mode_s.append(anima_dir.name)
-    return mode_c, mode_s
-
-
-def _run_execution_sdk_preflight(animas_dir: Path | None = None) -> None:
-    """CRITICAL-log when Mode C/S animas exist but their SDK packages are missing.
-
-    Does not abort startup — operators must restore packages before new
-    spawns succeed.
-    """
-    try:
-        if animas_dir is None:
-            from core.paths import get_animas_dir
-
-            animas_dir = get_animas_dir()
-
-        mode_c, mode_s = _scan_sdk_dependent_animas(animas_dir)
-
-        if mode_c and not _package_importable("openai_codex"):
-            names = ", ".join(mode_c)
-            logger.critical(
-                "Mode C anima %s が存在するが openai-codex パッケージが見つからない。"
-                "`uv sync --frozen --all-extras` または "
-                "`uv pip install openai-codex openai-codex-cli-bin` で復元せよ。"
-                "新規spawnされるプロセスは全て失敗する",
-                names,
-            )
-
-        if mode_s and not _package_importable("claude_agent_sdk"):
-            names = ", ".join(mode_s)
-            logger.critical(
-                "Mode S anima %s が存在するが claude_agent_sdk パッケージが見つからない。"
-                "`uv sync --frozen --all-extras` または "
-                "`uv pip install 'animaworks[claude]'` で復元せよ。"
-                "新規spawnされるプロセスは全て失敗する",
-                names,
-            )
-
-        if mode_s:
-            names = ", ".join(mode_s)
-            try:
-                from core.platform.claude_code import get_claude_executable
-
-                cli_path = get_claude_executable()
-            except Exception:
-                cli_path = None
-            if cli_path is None:
-                logger.critical(
-                    "Mode S anima %s が存在するが Claude Code CLI が見つからない。"
-                    "Python SDK は CLI を同梱しない。`npm install -g @anthropic-ai/claude-code` で入れよ。"
-                    "CLI が無いと全セッションが『ストリームが3回切断』で失敗する",
-                    names,
-                )
-            if hasattr(os, "geteuid") and os.geteuid() == 0 and os.environ.get("IS_SANDBOX") != "1":
-                logger.critical(
-                    "root で実行中だが IS_SANDBOX が未設定。"
-                    "Claude Code CLI は root で bypassPermissions を拒否して即終了するため、"
-                    "Mode S anima %s の全セッションが『ストリームが3回切断』で失敗する。"
-                    "隔離コンテナなら `IS_SANDBOX=1` を設定、そうでなければ非 root で起動せよ",
-                    names,
-                )
-    except Exception:
-        logger.exception("Execution SDK preflight failed unexpectedly; continuing server startup")
-
-
-def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
-    """Repair suspected corrupt RAG DBs before the server imports Chroma."""
-    try:
-        from core import startup_progress
-        from core.config import load_config
-
-        startup_progress.set_phase("preflight", detail="Checking RAG vector databases", reset_counts=True)
-        startup_progress.raise_if_cancelled()
-        config = load_config()
-        rag = config.rag
-        if not config.setup_complete:
-            startup_progress.update_progress(detail="Setup is not complete", done_count=0, total_count=0)
-            return
-        if not bool(getattr(rag, "repair_enabled", True)):
-            startup_progress.update_progress(detail="RAG repair is disabled", done_count=0, total_count=0)
-            return
-        if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
-            startup_progress.update_progress(detail="RAG startup preflight is disabled", done_count=0, total_count=0)
-            return
-
-        from core.memory.rag.repair import get_repair_service
-
-        service = get_repair_service()
-        window_minutes = int(getattr(rag, "startup_repair_window_minutes", 1440))
-        quick_check_timeout = float(getattr(rag, "quick_check_timeout_seconds", 10.0))
-        suspects = service.discover_suspect_animas(
-            window_minutes=window_minutes,
-            quick_check_timeout_seconds=quick_check_timeout,
-            quick_check_source="startup_quick_check",
-        )
-        startup_progress.raise_if_cancelled()
-        reason = "startup_chroma_crash_preflight"
-        if not suspects and force_all_vectordb:
-            logger.info("RAG startup preflight: unclean exit observed, but no suspect DBs found")
-        if not suspects:
-            logger.info("RAG startup preflight: no suspect DBs found")
-            startup_progress.update_progress(detail="No suspect vector databases found", done_count=0, total_count=0)
-            return
-
-        _request_rag_startup_preflight_targets(service, suspects, reason=reason)
-    except Exception:
-        logger.exception("RAG startup preflight failed unexpectedly; continuing server startup")
-
-
-def _discover_rag_startup_preflight_targets(
-    *,
-    force_all_vectordb: bool = False,
-) -> tuple[object, list[str], str] | None:
-    """Discover startup RAG repair targets without starting a vector worker."""
-    try:
-        from core.config import load_config
-
-        config = load_config()
-        rag = config.rag
-        if not config.setup_complete:
-            return None
-        if not bool(getattr(rag, "repair_enabled", True)):
-            return None
-        if not bool(getattr(rag, "startup_repair_preflight_enabled", True)):
-            return None
-
-        from core.memory.rag.repair import get_repair_service
-
-        service = get_repair_service()
-        window_minutes = int(getattr(rag, "startup_repair_window_minutes", 1440))
-        suspects = service.discover_suspect_animas(window_minutes=window_minutes)
-        reason = "startup_chroma_crash_preflight"
-        if not suspects and force_all_vectordb:
-            logger.info("RAG startup preflight: unclean exit observed, but no suspect DBs found")
-        if not suspects:
-            logger.info("RAG startup preflight: no suspect DBs found")
-            return None
-        return service, suspects, reason
-    except Exception:
-        logger.exception("RAG startup preflight discovery failed unexpectedly; continuing server startup")
-        return None
-
-
-def _request_rag_startup_preflight_targets(
-    service: object,
-    suspects: list[str],
-    *,
-    reason: str,
-) -> None:
-    joined = ", ".join(suspects)
-    logger.warning("RAG startup preflight: requesting supervised repair for suspected vector DB(s): %s", joined)
-    for anima_name in suspects:
-        try:
-            service.request_repair(  # type: ignore[attr-defined]
-                anima_name,
-                reason=reason,
-                source="startup_preflight",
-                include_shared=True,
-            )
-        except Exception:
-            logger.exception("RAG startup preflight failed to request repair for %s", anima_name)
-
-
-def _run_rag_startup_preflight_via_worker(*, force_all_vectordb: bool = False) -> None:
-    """Request startup RAG repair without blocking server availability."""
-    discovered = _discover_rag_startup_preflight_targets(force_all_vectordb=force_all_vectordb)
-    if discovered is None:
-        return
-    service, suspects, reason = discovered
-
-    runnable: list[str] = []
-    repair_blocker = getattr(service, "repair_blocker", None)
-    for anima_name in suspects:
-        blocked = repair_blocker(anima_name, reason=reason) if callable(repair_blocker) else None
-        if blocked is None:
-            runnable.append(anima_name)
-        else:
-            _maybe_log_rag_preflight_blocked(blocked)
-
-    if not runnable:
-        logger.info("RAG startup preflight: all suspect DBs are currently blocked")
-        return
-
-    _request_rag_startup_preflight_targets(service, runnable, reason=reason)
-
-
 def _start_foreground(args: argparse.Namespace) -> None:
     """Run the server in the foreground (blocking, with log output)."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("root")
     _pin_native_threads()
 
     import uvicorn
 
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir, get_shared_dir
     from core.platform.fd_limits import raise_fd_soft_limit
     from server.app import create_app
 
     raise_fd_soft_limit(logger=logger, process_label="server")
 
-    check_host = _check_host(args.host)
-    existing_pid = _read_pid()
-    if existing_pid is not None and _is_process_alive(existing_pid):
-        if _is_port_listening(check_host, args.port):
-            print(f"Error: Server is already running (pid={existing_pid}).")
-            print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(EXIT_ALREADY_RUNNING)
-        if not _cleanup_unreachable_server_process(existing_pid, host=args.host, port=args.port):
-            sys.exit(1)
+    existing_pid = read_server_pid()
+    if existing_pid is not None and is_pid_alive(existing_pid):
+        print(f"Error: Server is already running (pid={existing_pid}).")
+        print("Use 'animaworks stop' first, or 'animaworks restart'.")
+        sys.exit(EXIT_ALREADY_RUNNING)
     elif existing_pid is not None:
         logger.info("Stale PID file found (pid=%d). Cleaning up.", existing_pid)
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process(port=args.port)
-    if orphan_pid is not None and _is_process_alive(orphan_pid):
-        if _is_port_listening(check_host, args.port):
-            print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
-            print("Use 'animaworks stop' first, or 'animaworks restart'.")
-            sys.exit(EXIT_ALREADY_RUNNING)
-        if not _cleanup_unreachable_server_process(orphan_pid, host=args.host, port=args.port):
-            sys.exit(1)
+    if orphan_pid is not None and is_pid_alive(orphan_pid):
+        print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
+        print("Use 'animaworks stop' first, or 'animaworks restart'.")
+        sys.exit(EXIT_ALREADY_RUNNING)
+
+    if not (get_env(SERVER_URL_ENV) or "").strip():
+        port = int(getattr(args, "port", 18500))
+        set_server_url(f"http://localhost:{port}")
 
     orphan_count = _kill_orphan_runners()
     if orphan_count:
@@ -901,7 +555,6 @@ def _start_foreground(args: argparse.Namespace) -> None:
             ws_ping_timeout=5,
         )
     finally:
-        _stop_pid_watchdog()
         _remove_pid_file()
 
 
@@ -913,11 +566,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 def cmd_stop(args: argparse.Namespace) -> None:
     """Stop the running AnimaWorks server."""
     force = getattr(args, "force", False)
-    if not _stop_server(
-        force=force,
-        host=getattr(args, "host", "127.0.0.1"),
-        port=getattr(args, "port", 18500),
-    ):
+    if not _stop_server(force=force):
         sys.exit(1)
 
 
@@ -970,13 +619,12 @@ def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
     data_dir = str(get_data_dir())
 
     helper_code = f"""
-import json, os, socket, sys, time, subprocess, traceback, urllib.error, urllib.request
+import json, os, socket, sys, time, subprocess, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from core.platform.process import (
-    find_matching_pids,
+    find_first_matching_pid,
     is_process_alive,
-    request_process_shutdown,
     subprocess_session_kwargs,
     terminate_pid,
 )
@@ -993,10 +641,9 @@ old_pid = {old_pid!r}
 host = {host!r}
 port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
-_RESTART_HELPER_CMD_MARKERS = {_RESTART_HELPER_CMD_MARKERS!r}
-MAX_RETRIES = {_RESTART_MAX_RETRIES!r}
-RETRY_DELAY = {_RESTART_RETRY_DELAY!r}
-PORT_WAIT_TIMEOUT = {_RESTART_PORT_WAIT_TIMEOUT!r}
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+PORT_WAIT_TIMEOUT = 15
 
 def _log(msg):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -1023,21 +670,11 @@ def _alive(pid):
     return is_process_alive(pid)
 
 def _find_server_process():
-    matches = find_matching_pids(
+    return find_first_matching_pid(
         _SERVER_CMD_MARKERS,
         exclude_pids={{os.getpid(), os.getppid()}},
         require_python=True,
     )
-    for pid in matches:
-        try:
-            import psutil
-            cmdline = " ".join(psutil.Process(pid).cmdline())
-        except Exception:
-            continue
-        if any(marker in cmdline for marker in _RESTART_HELPER_CMD_MARKERS):
-            continue
-        return pid
-    return None
 
 def _is_port_listening(h, p):
     try:
@@ -1046,37 +683,16 @@ def _is_port_listening(h, p):
     except OSError:
         return False
 
-def _request_supervisor_shutdown():
-    check_host = "127.0.0.1" if host == "0.0.0.0" else host
-    if not _is_port_listening(check_host, port):
-        return False
-    url = f"http://{{check_host}}:{{port}}/api/system/internal/shutdown-supervisor"
-    request = urllib.request.Request(url, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return 200 <= int(response.status) < 300
-    except (OSError, urllib.error.URLError, TimeoutError):
-        return False
-
 _log(f"Started (pid={{os.getpid()}}, old_pid={{old_pid}})")
 
 # Phase 1: Wait for old server to exit
 if old_pid is not None:
-    if _request_supervisor_shutdown():
-        _log("Requested supervisor shutdown from old server")
-    _log(f"Requesting graceful shutdown for old server pid={{old_pid}}")
-    try:
-        request_process_shutdown(old_pid, include_children=False)
-    except ProcessLookupError:
-        pass
-    except Exception as e:
-        _log(f"Graceful shutdown request failed for old server pid={{old_pid}}: {{e}}")
     _log(f"Waiting for old server (pid={{old_pid}}) to exit...")
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline and _alive(old_pid):
         time.sleep(0.3)
     if _alive(old_pid):
-        _log(f"Old server still alive after 180s, force-killing pid={{old_pid}}")
+        _log(f"Old server still alive after 30s, force-killing pid={{old_pid}}")
         try:
             terminate_pid(old_pid, force=True, include_children=True)
         except (OSError, ProcessLookupError):
@@ -1110,22 +726,13 @@ time.sleep(0.5)
 
 # Phase 3: Start new server with retries
 check_host = "127.0.0.1" if host == "0.0.0.0" else host
-cmd = [sys.executable, "-m", "cli", "start", "--foreground", "--host", host, "--port", str(port)]
-DAEMON_LOG = LOG_DIR / "server-daemon.log"
+cmd = [sys.executable, "-m", "cli", "start", "--host", host, "--port", str(port)]
 os.environ["_ANIMAWORKS_RESTART_HELPER_PID"] = str(os.getpid())
 
 for attempt in range(1, MAX_RETRIES + 1):
     _log(f"Starting server (attempt {{attempt}}/{{MAX_RETRIES}})...")
     try:
-        daemon_log = open(DAEMON_LOG, "a", encoding="utf-8")
-        proc = subprocess.Popen(
-            cmd,
-            cwd={project_root!r},
-            stdout=daemon_log,
-            stderr=subprocess.STDOUT,
-            **subprocess_session_kwargs(),
-        )
-        daemon_log.close()
+        proc = subprocess.Popen(cmd, cwd={project_root!r}, **subprocess_session_kwargs())
         _log(f"Spawned server process pid={{proc.pid}}")
     except Exception as e:
         _log(f"Failed to spawn server: {{e}}")
@@ -1154,13 +761,6 @@ for attempt in range(1, MAX_RETRIES + 1):
         sys.exit(0)
 
     _log(f"Attempt {{attempt}} failed: port not listening after {{PORT_WAIT_TIMEOUT}}s")
-    if proc.poll() is None:
-        _log(f"Terminating unready server process pid={{proc.pid}} before retry/fail")
-        try:
-            terminate_pid(proc.pid, force=True, include_children=True)
-        except (OSError, ProcessLookupError):
-            pass
-        time.sleep(1)
     if attempt < MAX_RETRIES:
         _log(f"Retrying in {{RETRY_DELAY}}s...")
         time.sleep(RETRY_DELAY)
@@ -1177,11 +777,10 @@ sys.exit(1)
 
     proc = subprocess.Popen(
         [sys.executable, "-c", helper_code],
-        stdin=subprocess.DEVNULL,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=project_root,
-        **subprocess_daemon_kwargs(),
+        **subprocess_session_kwargs(),
     )
     log_file.close()
     return proc.pid
@@ -1198,8 +797,8 @@ def cmd_restart(args: argparse.Namespace) -> None:
     After stopping, waits for the helper to bring the new server up and
     reports success or failure with log path.
     """
-    old_pid = _read_pid()
-    if old_pid is not None and not _is_process_alive(old_pid):
+    old_pid = read_server_pid()
+    if old_pid is not None and not is_pid_alive(old_pid):
         old_pid = None
     if old_pid is None:
         old_pid = _find_server_pid_by_process()
@@ -1234,12 +833,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
     daemon_log = _get_daemon_log_path()
 
     print("Waiting for server to start...")
-    restart_wait_timeout = (
-        (_RESTART_PORT_WAIT_TIMEOUT * _RESTART_MAX_RETRIES)
-        + (_RESTART_RETRY_DELAY * max(_RESTART_MAX_RETRIES - 1, 0))
-        + 30
-    )
-    deadline = time.monotonic() + restart_wait_timeout
+    deadline = time.monotonic() + 30
     started = False
     while time.monotonic() < deadline:
         if _is_port_listening(check_host, port):
@@ -1260,27 +854,14 @@ def cmd_restart(args: argparse.Namespace) -> None:
         time.sleep(0.5)
 
     if started:
-        new_pid = _read_pid()
+        new_pid = read_server_pid()
         pid_info = f" (pid={new_pid})" if new_pid else ""
         display_host = "localhost" if host == "0.0.0.0" else host
         print(f"Server restarted successfully{pid_info}.")
         print(f"  Dashboard: http://{display_host}:{port}/")
         print(f"  Logs:      {daemon_log}")
     else:
-        print(f"Error: Server did not start within {restart_wait_timeout} seconds.")
+        print("Error: Server did not start within 30 seconds.")
         print(f"  Helper log: {helper_log}")
         print(f"  Daemon log: {daemon_log}")
         sys.exit(1)
-
-
-# ── Deprecated modes ──────────────────────────────────────
-
-
-def cmd_gateway(args: argparse.Namespace) -> None:
-    print("Error: 'gateway' mode has been deprecated. Use 'animaworks start' instead.")
-    sys.exit(1)
-
-
-def cmd_worker(args: argparse.Namespace) -> None:
-    print("Error: 'worker' mode has been deprecated. Use 'animaworks start' instead.")
-    sys.exit(1)

@@ -3,8 +3,10 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
+import os
 import re
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -12,9 +14,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
-from server.routes.taskboard import summarize_task_board
 
 logger = logging.getLogger("animaworks.routes.system")
 
@@ -61,7 +62,7 @@ def _get_frontend_logger() -> logging.Logger:
     # the standard redaction (and cycle) filters here explicitly. Honour the
     # config redaction switch, failing open to on (symmetric with the other
     # setup paths).
-    from core.logging_config import attach_standard_log_filters
+    from core.infra.logging_config import attach_standard_log_filters
 
     try:
         from core.config import load_config
@@ -166,7 +167,7 @@ def _collect_running_background_tasks(
     malformed or concurrently replaced sidecar is treated as an empty state so
     the activity page remains available while workers update their marker.
     """
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sidecar_dir = shared_dir.parent / "run" / "animas"
     result: list[dict[str, object]] = []
@@ -180,7 +181,7 @@ def _collect_running_background_tasks(
             sidecar = {}
 
         if isinstance(sidecar, dict) and sidecar.get("is_busy") is not False:
-            task_queue = TaskQueueManager(animas_dir / name)
+            task_queue = TaskQueueManager(animas_dir / name, read_only=True)
             started_at = str(sidecar.get("busy_since") or "")
             lanes = sidecar.get("lanes", [])
             workers_by_slot: dict[int, dict[str, object]] = {}
@@ -214,26 +215,6 @@ def _collect_running_background_tasks(
     return result
 
 
-async def _vector_worker_status(request: Request) -> dict:
-    manager = getattr(request.app.state, "vector_worker", None)
-    if manager is None:
-        return {"enabled": False, "status": "missing", "write_circuit_breakers": []}
-    if not getattr(manager, "enabled", False):
-        return {"enabled": False, "status": "disabled", "write_circuit_breakers": []}
-    try:
-        status_method = getattr(manager, "status", None)
-        if status_method is None:
-            return {"enabled": True, "status": "unknown", "write_circuit_breakers": []}
-        data = await status_method()
-        if isinstance(data, dict):
-            data.setdefault("enabled", True)
-            data.setdefault("write_circuit_breakers", [])
-            return data
-    except Exception:
-        logger.warning("Failed to fetch vector worker status", exc_info=True)
-    return {"enabled": True, "status": "unavailable", "write_circuit_breakers": []}
-
-
 async def _zoom_gateway_status(request: Request) -> dict:
     manager = getattr(request.app.state, "zoom_gateway_manager", None)
     if manager is None:
@@ -247,7 +228,7 @@ async def _zoom_gateway_status(request: Request) -> dict:
 
 def _gpu_status() -> dict[str, object]:
     try:
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
 
         return get_gpu_status()
     except Exception:
@@ -269,9 +250,9 @@ async def _reschedule_all_heartbeats(supervisor) -> None:
         return
     for name in list(supervisor.processes.keys()):
         try:
-            await supervisor.send_request(name, "reschedule_heartbeat", {})
+            await supervisor.send_request(name, "reschedule_heartbeat", {}, timeout=10.0)
         except Exception:
-            logger.debug("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
+            logger.warning("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
 
 
 async def _reload_activity_schedules(supervisor) -> None:
@@ -290,27 +271,22 @@ def create_system_router() -> APIRouter:
 
     @router.post("/system/internal/shutdown-supervisor")
     async def shutdown_supervisor_for_cli(request: Request):
-        """Stop supervised Anima runners before an external CLI stops uvicorn.
-
-        Windows process termination does not reliably deliver a graceful ASGI
-        shutdown.  The local CLI calls this endpoint first so runner processes
-        are stopped by the in-process supervisor instead of being left behind
-        for orphan cleanup.
-        """
+        """Stop runners before the local Windows CLI terminates the server."""
         client_host = request.client.host if request.client else ""
         if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
-            return JSONResponse(
-                {"status": "forbidden", "detail": "loopback only"},
-                status_code=403,
-            )
-
+            return JSONResponse({"status": "forbidden", "detail": "loopback only"}, status_code=403)
+        # The CLI verifies the PID so a different instance on the same port
+        # cannot accidentally lose its runners.
+        if request.headers.get("content-length", "0") != "0":
+            try:
+                payload = await request.json()
+            except ValueError:
+                return JSONResponse({"status": "invalid"}, status_code=400)
+            if not isinstance(payload, dict) or payload.get("expected_pid") != os.getpid():
+                return JSONResponse({"status": "pid_mismatch"}, status_code=409)
         supervisor = getattr(request.app.state, "supervisor", None)
         if supervisor is None or not hasattr(supervisor, "shutdown_all"):
-            return JSONResponse(
-                {"status": "unavailable", "detail": "supervisor not initialized"},
-                status_code=503,
-            )
-
+            return JSONResponse({"status": "unavailable", "detail": "supervisor not initialized"}, status_code=503)
         processes = getattr(supervisor, "processes", {}) or {}
         process_count = len(processes) if hasattr(processes, "__len__") else None
         await supervisor.shutdown_all()
@@ -346,7 +322,6 @@ def create_system_router() -> APIRouter:
             "scheduler_running": supervisor.is_scheduler_running(),
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
             "zoom_gateway": await _zoom_gateway_status(request),
-            "vector_worker": await _vector_worker_status(request),
             "gpu": _gpu_status(),
         }
 
@@ -416,7 +391,7 @@ def create_system_router() -> APIRouter:
             busy_snapshot[name] = await _busy_state(name)
 
         # Discover current animas on disk
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor import ProcessSupervisor
 
         on_disk: set[str] = set()
         if animas_dir.exists():
@@ -531,22 +506,6 @@ def create_system_router() -> APIRouter:
             "anima_jobs": jobs,
         }
 
-    # ── Tasks ───────────────────────────────────────────
-
-    @router.get("/tasks/summary")
-    async def get_tasks_summary(request: Request):
-        """Aggregate active task counts across all animas from TaskBoard projection."""
-        import asyncio
-
-        animas_dir = request.app.state.animas_dir
-        shared_dir = request.app.state.shared_dir
-        anima_names = request.app.state.anima_names
-
-        summary = await asyncio.to_thread(summarize_task_board, animas_dir, shared_dir, anima_names)
-        pending = summary["pending"] + summary["delegated"]
-        in_progress = summary["in_progress"]
-        return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
-
     # ── Activity ───────────────────────────────────────────
 
     @router.get("/activity/running-tasks")
@@ -575,7 +534,7 @@ def create_system_router() -> APIRouter:
         id: str,
     ):
         """Return one complete trigger-based activity group by stable ID."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         anima_names = request.app.state.anima_names
         if anima not in anima_names:
@@ -620,7 +579,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity import ActivityLogger, build_semantic_replay_events
+        from core.activity.logger import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names
@@ -915,11 +874,9 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import load_config, save_config
+        from core.config.models import update_config
 
-        config = load_config()
-        config.image_gen.image_style = mode
-        save_config(config)
+        update_config(lambda config: setattr(config.image_gen, "image_style", mode))
         logger.info("Display mode changed to %s (image_style synced)", mode)
         return {"ok": True, "mode": mode}
 
@@ -933,83 +890,31 @@ def create_system_router() -> APIRouter:
         config = load_config()
         return {
             "activity_level": config.activity_level,
-            "activity_level_by_provider": dict(config.activity_level_by_provider),
             "activity_schedule": [e.model_dump() for e in config.activity_schedule],
         }
 
     @router.put("/settings/activity-level")
     async def set_activity_level(request: Request):
-        """Update global and/or per-provider activity levels, then reschedule.
-
-        Body may contain any of:
-          - ``activity_level`` (int 10-400): global/default slider
-          - ``activity_level_by_provider`` (dict): per-provider overrides.
-            Keys limited to ``claude``/``openai``/``nanogpt``/``opencode_go``/``default``.
-            Values validated 10-400.  Pass ``{}`` to clear overrides.
-        """
+        """Update global activity level and reschedule all heartbeats."""
         try:
             body = await request.json()
         except Exception:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
         level = body.get("activity_level")
-        by_provider = body.get("activity_level_by_provider")
-
-        if level is not None and (not isinstance(level, int) or not (10 <= level <= 400)):
+        if not isinstance(level, int) or not (10 <= level <= 400):
             return JSONResponse(
                 {"error": "activity_level must be int 10-400"},
                 status_code=400,
             )
 
-        valid_keys = {"claude", "openai", "nanogpt", "opencode_go", "default"}
-        if by_provider is not None:
-            if not isinstance(by_provider, dict):
-                return JSONResponse(
-                    {"error": "activity_level_by_provider must be an object"},
-                    status_code=400,
-                )
-            for k, v in by_provider.items():
-                if k not in valid_keys:
-                    return JSONResponse(
-                        {"error": f"invalid provider key: {k}"},
-                        status_code=400,
-                    )
-                if not isinstance(v, int) or not (10 <= v <= 400):
-                    return JSONResponse(
-                        {"error": f"{k}: value must be int 10-400"},
-                        status_code=400,
-                    )
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
-        if level is None and by_provider is None:
-            return JSONResponse(
-                {"error": "provide activity_level and/or activity_level_by_provider"},
-                status_code=400,
-            )
+        update = await asyncio.to_thread(apply_activity_schedule, activity_level=level)
 
-        from core.config.models import load_config, save_config
-
-        config = load_config()
-        if level is not None:
-            config.activity_level = level
-
-            # When night mode is active, also update the matching schedule entry
-            if config.activity_schedule:
-                from core.supervisor.scheduler_manager import _time_in_range
-
-                now_hhmm = now_local().strftime("%H:%M")
-                for entry in config.activity_schedule:
-                    if _time_in_range(entry.start, entry.end, now_hhmm):
-                        entry.level = level
-                        break
-
-        if by_provider is not None:
-            config.activity_level_by_provider = dict(by_provider)
-
-        save_config(config)
-
-        # Notify supervisor to reschedule all heartbeats
+        # Notify running Animas only when the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
-        if supervisor is not None:
+        if supervisor is not None and update.activity_level_changed:
             try:
                 await _reschedule_all_heartbeats(supervisor)
             except Exception:
@@ -1018,73 +923,8 @@ def create_system_router() -> APIRouter:
                     exc_info=True,
                 )
 
-        logger.info(
-            "Activity level updated: global=%s, by_provider=%s",
-            level,
-            by_provider,
-        )
-        return {
-            "ok": True,
-            "activity_level": config.activity_level,
-            "activity_level_by_provider": dict(config.activity_level_by_provider),
-        }
-
-    # ── Governor: differential OBR window ─────────────────────
-
-    @router.get("/settings/recent-burn-window")
-    async def get_recent_burn_window():
-        """Return the current recent_burn_window_sec from usage_policy.json.
-
-        ``None`` means "use cycle-cumulative average instead of differential".
-        """
-        from core.paths import get_data_dir
-        from server.usage_governor import load_policy
-
-        policy = load_policy(get_data_dir())
-        calib = policy.get("calibration", {}) or {}
-        # Distinguish "key absent → use code default" from "explicit null".
-        if "recent_burn_window_sec" in calib:
-            value = calib["recent_burn_window_sec"]
-        else:
-            value = 3600
-        return {"recent_burn_window_sec": value}
-
-    @router.put("/settings/recent-burn-window")
-    async def set_recent_burn_window(request: Request):
-        """Update recent_burn_window_sec.
-
-        Body: ``{"recent_burn_window_sec": int|null}``
-        - ``null``: fall back to cycle-cumulative OBR
-        - ``int``: differential window length in seconds (60 - 86400)
-        """
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-
-        if "recent_burn_window_sec" not in body:
-            return JSONResponse(
-                {"error": "missing recent_burn_window_sec"},
-                status_code=400,
-            )
-        value = body["recent_burn_window_sec"]
-        if value is not None:
-            if not isinstance(value, int) or not (60 <= value <= 86400):
-                return JSONResponse(
-                    {"error": "recent_burn_window_sec must be int 60..86400 or null"},
-                    status_code=400,
-                )
-
-        from core.paths import get_data_dir
-        from server.usage_governor import load_policy, save_policy
-
-        data_dir = get_data_dir()
-        policy = load_policy(data_dir)
-        calib = policy.setdefault("calibration", {})
-        calib["recent_burn_window_sec"] = value
-        save_policy(data_dir, policy)
-        logger.info("Governor recent_burn_window_sec updated to %s", value)
-        return {"ok": True, "recent_burn_window_sec": value}
+        logger.info("Activity level changed to %d%%", level)
+        return {"ok": True, "activity_level": level}
 
     @router.put("/settings/activity-schedule")
     async def set_activity_schedule(request: Request):
@@ -1110,7 +950,8 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import ActivityScheduleEntry, load_config, save_config
+        from core.config.models import ActivityScheduleEntry
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
         entries: list[ActivityScheduleEntry] = []
         for i, item in enumerate(raw_schedule):
@@ -1127,26 +968,18 @@ def create_system_router() -> APIRouter:
                     status_code=400,
                 )
 
-        config = load_config()
-        config.activity_schedule = entries
+        # Apply the current slot on root before notifying the workers.
+        update = await asyncio.to_thread(apply_activity_schedule, activity_schedule=entries)
+        config = update.config
 
-        # Apply the level for the current time immediately
-        if entries:
-            from core.supervisor.scheduler_manager import SchedulerManager
-
-            now_hhmm = now_local().strftime("%H:%M")
-            target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
-            if target is not None:
-                config.activity_level = target
-
-        save_config(config)
-
-        # Reschedule heartbeats and activity schedule jobs
+        # Heartbeat jobs only need rescheduling if the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
         if supervisor is not None:
             try:
-                await _reschedule_all_heartbeats(supervisor)
-                await _reload_activity_schedules(supervisor)
+                if update.activity_level_changed:
+                    await _reschedule_all_heartbeats(supervisor)
+                if update.activity_schedule_changed:
+                    await _reload_activity_schedules(supervisor)
             except Exception:
                 logger.warning(
                     "Failed to reload schedules after activity_schedule change",
@@ -1164,44 +997,14 @@ def create_system_router() -> APIRouter:
             "activity_schedule": [e.model_dump() for e in entries],
         }
 
-    # ── Token Usage / Cost ────────────────────────────────────
-
-    @router.get("/system/cost")
-    async def get_token_cost(
-        request: Request,
-        anima: str | None = None,
-        days: int = 30,
-    ):
-        """Return token usage summary and estimated cost."""
-        from core.memory.token_usage import TokenUsageLogger
-        from core.paths import get_data_dir
-
-        animas_dir = get_data_dir() / "animas"
-        if anima:
-            anima_dir = animas_dir / anima
-            if not anima_dir.is_dir():
-                return {"error": f"Anima '{anima}' not found"}
-            tul = TokenUsageLogger(anima_dir)
-            return {anima: tul.summarize(days)}
-
-        result: dict = {}
-        if animas_dir.is_dir():
-            for ad in sorted(animas_dir.iterdir()):
-                if ad.is_dir() and (ad / "token_usage").is_dir():
-                    tul = TokenUsageLogger(ad)
-                    s = tul.summarize(days)
-                    if s["total_sessions"] > 0:
-                        result[ad.name] = s
-        return result
-
     @router.get("/system/token-budget")
     async def get_token_budget(
         request: Request,
         anima: str | None = None,
     ):
         """Return current-month token budget status for each Anima."""
-        from core.memory.token_budget import read_token_budget_status
         from core.paths import get_data_dir
+        from core.usage.token_budget import read_token_budget_status
 
         current = now_local()
         animas_dir = get_data_dir() / "animas"
@@ -1232,17 +1035,6 @@ def create_system_router() -> APIRouter:
 
     # ── Hot Reload ─────────────────────────────────────────
 
-    @router.post("/system/hot-reload")
-    async def hot_reload_all(request: Request):
-        """Hot-reload all configuration and connections."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_all()
-
     @router.post("/system/hot-reload/slack")
     async def hot_reload_slack(request: Request):
         """Hot-reload Slack Socket Mode connections only."""
@@ -1265,18 +1057,71 @@ def create_system_router() -> APIRouter:
             )
         return await manager.reload_credentials()
 
-    @router.post("/system/hot-reload/animas")
-    async def hot_reload_animas(request: Request):
-        """Sync Anima processes with disk state."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_animas()
+    @router.post("/system/rewrite-runtime-refs")
+    async def rewrite_runtime_refs(request: Request):
+        """Synchronize live caches after REWRITE_REFS updates disk state."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        source = payload.get("source") if isinstance(payload, dict) else None
+        target = payload.get("target") if isinstance(payload, dict) else None
+        if not isinstance(source, str) or not isinstance(target, str) or source == target:
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
 
-    # ── System Consolidation ──────────────────────────────────
+        from core.anima.factory import validate_anima_name
+
+        if validate_anima_name(source) or validate_anima_name(target):
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
+
+        from core.messaging.discord_webhooks import get_webhook_manager
+
+        discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
+
+        bootstrap_retry_removed = False
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None and source in supervisor._bootstrap_retry_counts:  # noqa: SLF001
+            supervisor._bootstrap_retry_counts.pop(source, None)  # noqa: SLF001
+            supervisor._save_bootstrap_retries()  # noqa: SLF001
+            bootstrap_retry_removed = True
+
+        rooms_reloaded = 0
+        room_manager = getattr(request.app.state, "room_manager", None)
+        if room_manager is not None:
+            room_manager.load_all_rooms()
+            rooms_reloaded = len(room_manager.list_rooms(include_closed=True))
+
+        discord_gateway_reloaded = False
+        discord_gateway = getattr(request.app.state, "discord_gateway_manager", None)
+        if discord_gateway is not None:
+            discord_gateway.reload()
+            discord_gateway_reloaded = True
+
+        github_gateway_reloaded = False
+        github_gateway = getattr(request.app.state, "github_gateway_manager", None)
+        if github_gateway is not None:
+            github_gateway.reload()
+            github_gateway_reloaded = True
+
+        config_reloaded = False
+        reload_manager = getattr(request.app.state, "reload_manager", None)
+        if reload_manager is not None:
+            reload_result = await reload_manager.reload_all()
+            config_reloaded = not any(
+                isinstance(item, dict) and item.get("status") == "error" for item in reload_result.values()
+            )
+
+        result = {
+            "discord_mappings_updated": discord_updated,
+            "bootstrap_retry_removed": bootstrap_retry_removed,
+            "rooms_reloaded": rooms_reloaded,
+            "discord_gateway_reloaded": discord_gateway_reloaded,
+            "github_gateway_reloaded": github_gateway_reloaded,
+            "config_reloaded": config_reloaded,
+        }
+        if not config_reloaded:
+            return JSONResponse(result, status_code=503)
+        return result
 
     @router.get("/system/consolidation/status")
     async def consolidation_status(request: Request):
@@ -1370,86 +1215,6 @@ def create_system_router() -> APIRouter:
         supervisor = request.app.state.supervisor
         supervisor.start_missed_system_consolidations()
         return RedirectResponse(url="/#/scheduler", status_code=303)
-
-    @router.post("/system/anima-merge/rewrite-runtime-refs")
-    async def rewrite_anima_merge_runtime_refs(request: Request):
-        """Synchronize live caches after REWRITE_REFS updates disk state."""
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
-        source = payload.get("source") if isinstance(payload, dict) else None
-        target = payload.get("target") if isinstance(payload, dict) else None
-        if not isinstance(source, str) or not isinstance(target, str) or source == target:
-            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
-
-        from core.anima_factory import validate_anima_name
-
-        if validate_anima_name(source) or validate_anima_name(target):
-            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
-
-        from core.discord_webhooks import get_webhook_manager
-
-        discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
-
-        governor_updated = False
-        governor = getattr(request.app.state, "usage_governor", None)
-        if governor is not None:
-            suspended: list[str] = []
-            for name in governor.state.suspended_animas:
-                mapped = target if name == source else name
-                if mapped not in suspended:
-                    suspended.append(mapped)
-            governor_updated = suspended != governor.state.suspended_animas
-            if governor_updated:
-                governor.state.suspended_animas = suspended
-                governor.state.save()
-
-        bootstrap_retry_removed = False
-        supervisor = getattr(request.app.state, "supervisor", None)
-        if supervisor is not None and source in supervisor._bootstrap_retry_counts:  # noqa: SLF001
-            supervisor._bootstrap_retry_counts.pop(source, None)  # noqa: SLF001
-            supervisor._save_bootstrap_retries()  # noqa: SLF001
-            bootstrap_retry_removed = True
-
-        rooms_reloaded = 0
-        room_manager = getattr(request.app.state, "room_manager", None)
-        if room_manager is not None:
-            room_manager.load_all_rooms()
-            rooms_reloaded = len(room_manager.list_rooms(include_closed=True))
-
-        discord_gateway_reloaded = False
-        discord_gateway = getattr(request.app.state, "discord_gateway_manager", None)
-        if discord_gateway is not None:
-            discord_gateway.reload()
-            discord_gateway_reloaded = True
-
-        github_gateway_reloaded = False
-        github_gateway = getattr(request.app.state, "github_gateway_manager", None)
-        if github_gateway is not None:
-            github_gateway.reload()
-            github_gateway_reloaded = True
-
-        config_reloaded = False
-        reload_manager = getattr(request.app.state, "reload_manager", None)
-        if reload_manager is not None:
-            reload_result = await reload_manager.reload_all()
-            config_reloaded = not any(
-                isinstance(item, dict) and item.get("status") == "error" for item in reload_result.values()
-            )
-
-        result = {
-            "discord_mappings_updated": discord_updated,
-            "usage_state_updated": governor_updated,
-            "bootstrap_retry_removed": bootstrap_retry_removed,
-            "rooms_reloaded": rooms_reloaded,
-            "discord_gateway_reloaded": discord_gateway_reloaded,
-            "github_gateway_reloaded": github_gateway_reloaded,
-            "config_reloaded": config_reloaded,
-        }
-        if not config_reloaded:
-            return JSONResponse(result, status_code=503)
-        return result
 
     # ── Health Check ────────────────────────────────────────
 

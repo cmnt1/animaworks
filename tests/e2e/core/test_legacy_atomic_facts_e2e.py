@@ -4,13 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
-@pytest.mark.asyncio
 @pytest.mark.e2e
-async def test_legacy_atomic_facts_search_flow(tmp_path: Path) -> None:
+def test_legacy_atomic_facts_search_flow(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     for subdir in ("knowledge", "episodes", "procedures", "facts"):
         (anima_dir / subdir).mkdir(parents=True)
@@ -43,20 +42,19 @@ async def test_legacy_atomic_facts_search_flow(tmp_path: Path) -> None:
         ],
     )
 
-    backend = LegacyRAGBackend(
-        anima_dir,
-        common_knowledge_dir=common_knowledge_dir,
-        common_skills_dir=common_skills_dir,
-    )
-    rag = backend._ensure_rag_search()
-    rag._indexer_initialized = True
-    rag._indexer = None
+    rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
+    search_kwargs = {
+        "knowledge_dir": anima_dir / "knowledge",
+        "episodes_dir": anima_dir / "episodes",
+        "procedures_dir": anima_dir / "procedures",
+        "common_knowledge_dir": common_knowledge_dir,
+        "result_limit": 5,
+    }
+    scoped = rag.search_memory_text("LoCoMo reports", scope="facts", **search_kwargs)
+    recent = rag.search_memory_text("LoCoMo reports", scope="facts", **search_kwargs)
+    all_scope = rag.search_memory_text("LoCoMo reports", scope="all", **search_kwargs)
 
-    scoped = await backend.retrieve("LoCoMo reports", scope="facts", limit=5)
-    recent = await backend.get_recent_facts("LoCoMo reports", limit=5)
-    all_scope = await backend.retrieve("LoCoMo reports", scope="all", limit=5)
-
-    assert [r.content for r in scoped] == ["Alice prefers LoCoMo benchmark reports when evaluating memory changes."]
-    assert recent[0].metadata["fact_id"] == scoped[0].metadata["fact_id"]
-    assert any(r.metadata["memory_type"] == "facts" for r in all_scope)
-    assert all("expired" not in r.content.lower() for r in scoped + recent + all_scope)
+    assert [r["content"] for r in scoped] == ["Alice prefers LoCoMo benchmark reports when evaluating memory changes."]
+    assert recent[0]["fact_id"] == scoped[0]["fact_id"]
+    assert any(r["memory_type"] == "facts" for r in all_scope)
+    assert all("expired" not in r["content"].lower() for r in scoped + recent + all_scope)

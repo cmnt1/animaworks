@@ -4,14 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.fact_invalidation import FactCandidate, ReconcileAction, ReconcileConfig, reconcile_new_fact
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.invalidation import FactCandidate, ReconcileAction, ReconcileConfig, reconcile_new_fact
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
-@pytest.mark.asyncio
 @pytest.mark.e2e
-async def test_legacy_fact_invalidation_excludes_expired_facts_from_retrieval(tmp_path: Path) -> None:
+def test_legacy_fact_invalidation_excludes_expired_facts_from_retrieval(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     for subdir in ("knowledge", "episodes", "procedures", "facts"):
         (anima_dir / subdir).mkdir(parents=True)
@@ -54,19 +53,18 @@ async def test_legacy_fact_invalidation_excludes_expired_facts_from_retrieval(tm
     assert stored[0].valid_until == "2000-01-01T00:00:00+00:00"
     assert [record.text for record in read_fact_records(old_path)] == [new_fact.text]
 
-    backend = LegacyRAGBackend(
-        anima_dir,
-        common_knowledge_dir=common_knowledge_dir,
-        common_skills_dir=common_skills_dir,
-    )
-    rag = backend._ensure_rag_search()
-    rag._indexer_initialized = True
-    rag._indexer = None
+    rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
+    search_kwargs = {
+        "knowledge_dir": anima_dir / "knowledge",
+        "episodes_dir": anima_dir / "episodes",
+        "procedures_dir": anima_dir / "procedures",
+        "common_knowledge_dir": common_knowledge_dir,
+        "result_limit": 5,
+    }
+    scoped = rag.search_memory_text("LoCoMo score", scope="facts", **search_kwargs)
+    all_scope = rag.search_memory_text("LoCoMo score", scope="all", **search_kwargs)
 
-    scoped = await backend.retrieve("LoCoMo score", scope="facts", limit=5)
-    all_scope = await backend.retrieve("LoCoMo score", scope="all", limit=5)
-
-    assert any("85" in memory.content for memory in scoped)
-    assert all("70" not in memory.content for memory in scoped)
-    assert any(memory.metadata["memory_type"] == "facts" and "85" in memory.content for memory in all_scope)
-    assert all("70" not in memory.content for memory in all_scope)
+    assert any("85" in memory["content"] for memory in scoped)
+    assert all("70" not in memory["content"] for memory in scoped)
+    assert any(memory["memory_type"] == "facts" and "85" in memory["content"] for memory in all_scope)
+    assert all("70" not in memory["content"] for memory in all_scope)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.memory.skill_metadata import SkillMetadataService, match_skills_by_description
+from core.memory.skill_metadata import SkillMetadataService
 from core.schemas import SkillMeta
 from core.skills.loader import load_skill_metadata
 from core.skills.models import SkillTrustLevel
@@ -67,32 +67,6 @@ class TestSkillMetadataServiceBackwardCompat:
         metas = svc.list_common_skill_metas()
         assert len(metas) == 1
         assert metas[0].is_common is True
-
-    def test_list_skill_summaries(self, tmp_path: Path):
-        skills = tmp_path / "skills"
-        common = tmp_path / "common"
-        skills.mkdir()
-        common.mkdir()
-        _write_skill(skills, "my-skill", desc="My description")
-
-        svc = SkillMetadataService(skills, common)
-        summaries = svc.list_skill_summaries()
-        assert summaries == [("my-skill", "My description")]
-
-
-class TestMatchSkillsByDescription:
-    """Verify existing match_skills_by_description still works with delegated extraction."""
-
-    def test_tier1_match(self, tmp_path: Path):
-        skills = tmp_path / "skills"
-        skills.mkdir()
-        _write_skill(skills, "chatwork-tool", desc="「チャットワーク」「chatwork」のメッセージ送受信ツール")
-
-        svc = SkillMetadataService(skills, tmp_path / "common")
-        metas = svc.list_skill_metas()
-        matched = match_skills_by_description("チャットワークで送信して", metas)
-        assert len(matched) >= 1
-        assert matched[0].name == "chatwork-tool"
 
 
 class TestSkillCreatorExtendedFrontmatter:

@@ -16,43 +16,34 @@ Each engine implements one execution mode:
   - ``GeminiCLIExecutor`` (G): Gemini CLI -- gemini subprocess with stream-json
   - ``GrokCLIExecutor`` (X): Grok Build CLI -- ACP subprocess over stdio
   - ``LiteLLMExecutor``   (A): LiteLLM + tool_use loop -- any model with tool support
-  - ``AnthropicFallbackExecutor``: Anthropic SDK direct -- fallback when Agent SDK unavailable
+
+Engine classes are resolved on first access so importing shared execution
+utilities does not load every optional engine and its dependencies.
 """
 
-# AgentSDKExecutor requires claude_agent_sdk which may not be installed.
-# Import it lazily so the rest of the package works regardless.
-try:
-    from core.execution.agent_sdk import AgentSDKExecutor
-except ImportError:  # pragma: no cover
-    AgentSDKExecutor = None  # type: ignore[assignment,misc]
+from importlib import import_module
+from typing import Any
 
-# CodexSDKExecutor requires openai_codex (optional dependency).
-try:
-    from core.execution.codex_sdk import CodexSDKExecutor
-except ImportError:  # pragma: no cover
-    CodexSDKExecutor = None  # type: ignore[assignment,misc]
-
-# CursorAgentExecutor requires cursor-agent CLI (optional).
-try:
-    from core.execution.cursor_agent import CursorAgentExecutor
-except ImportError:  # pragma: no cover
-    CursorAgentExecutor = None  # type: ignore[assignment,misc]
-
-# GeminiCLIExecutor requires gemini CLI (optional).
-try:
-    from core.execution.gemini_cli import GeminiCLIExecutor
-except ImportError:  # pragma: no cover
-    GeminiCLIExecutor = None  # type: ignore[assignment,misc]
-
-# GrokCLIExecutor requires grok CLI (optional).
-try:
-    from core.execution.grok_cli import GrokCLIExecutor
-except ImportError:  # pragma: no cover
-    GrokCLIExecutor = None  # type: ignore[assignment,misc]
-
-from core.execution.anthropic_fallback import AnthropicFallbackExecutor
 from core.execution.base import BaseExecutor, ExecutionResult
-from core.execution.litellm_loop import LiteLLMExecutor
+
+_LAZY = {
+    "AgentSDKExecutor": "core.execution.engines.claude.executor",
+    "CodexSDKExecutor": "core.execution.engines.codex.executor",
+    "CursorAgentExecutor": "core.execution.engines.cursor.executor",
+    "GeminiCLIExecutor": "core.execution.engines.gemini.executor",
+    "GrokCLIExecutor": "core.execution.engines.grok.executor",
+    "LiteLLMExecutor": "core.execution.engines.litellm.executor",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _LAZY.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
 
 # Register the Antigravity custom provider so model names of the form
 # ``antigravity/<model_id>`` route through the Google AI Pro OAuth flow
@@ -69,7 +60,6 @@ except Exception:  # pragma: no cover — never block startup on this
 
 __all__ = [
     "AgentSDKExecutor",
-    "AnthropicFallbackExecutor",
     "BaseExecutor",
     "CodexSDKExecutor",
     "CursorAgentExecutor",

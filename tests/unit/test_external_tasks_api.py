@@ -14,8 +14,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from core.external_tasks.models import ExternalTask, Snapshot, SourceHealth
-from core.external_tasks.store import ExternalTaskStore
+from core.tasks.external.models import ExternalTask, Snapshot, SourceHealth
+from core.tasks.external.store import ExternalTaskStore
 from server.routes.external_tasks import create_external_tasks_router
 
 
@@ -224,9 +224,7 @@ def test_filter_by_since(seeded_client: TestClient) -> None:
     assert "gmail-1" not in ids  # updated 5 hours before base = 07:00
 
 
-def test_filter_by_since_skips_unparseable_last_updated(
-    client: TestClient, store_path: Path
-) -> None:
+def test_filter_by_since_skips_unparseable_last_updated(client: TestClient, store_path: Path) -> None:
     base = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
     _save_snapshot(
         store_path,
@@ -265,9 +263,7 @@ def test_filter_by_since_skips_unparseable_last_updated(
     assert ids == {"github-ok"}
 
 
-def test_filter_by_since_naive_param_returns_200(
-    client: TestClient, store_path: Path
-) -> None:
+def test_filter_by_since_naive_param_returns_200(client: TestClient, store_path: Path) -> None:
     base = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
     _save_snapshot(
         store_path,

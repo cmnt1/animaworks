@@ -1,32 +1,27 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _FileToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""FileToolsMixin — file read/write/edit, command execution, search, directory listing, web fetch."""
+"""FileToolsMixin — file read/write/edit, search, directory listing, and web fetch."""
 
-import json as _json
 import logging
 import os
 import re
-import shlex
-import shutil
-import subprocess
-import sys
 import threading
-import time
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
-from core.platform.process import subprocess_session_kwargs, terminate_subprocess
+from core.i18n import t
+from core.memory.state_lock import StateFileLock
 from core.tooling.handler_base import (
-    _CMD_HEAD_BYTES,
-    _CMD_TAIL_BYTES,
-    _CMD_TRUNCATE_BYTES,
     _GLOB_MAX_ENTRIES,
     _GREP_MAX_MATCHES,
-    _NEEDS_SHELL_RE,
     _READ_AVG_LINE_LENGTH,
     _READ_CHARS_PER_TOKEN,
     _READ_CONTEXT_FRACTION,
@@ -104,302 +99,13 @@ def _build_fuzzy_cjk_latin_pattern(old: str) -> re.Pattern[str] | None:
     return re.compile("".join(parts))
 
 
-# ── Background command execution ──────────────────────────
-
-_BG_CMD_TIMEOUT_DEFAULT = 1800  # 30 minutes
-_FG_CMD_TIMEOUT_DEFAULT = 120
-_BG_CMD_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
-_PIPE_THREAD_JOIN_TIMEOUT = 5.0
-_PIPE_THREAD_REJOIN_TIMEOUT = 1.0
-
-
-def _resolve_rtk_bin() -> str | None:
-    """Return an RTK executable path when available."""
-    rtk_bin = shutil.which("rtk")
-    if rtk_bin:
-        return rtk_bin
-
-    for candidate in (
-        Path.home() / ".cargo" / "bin" / ("rtk.exe" if sys.platform == "win32" else "rtk"),
-        Path.home() / ".local" / "bin" / ("rtk.exe" if sys.platform == "win32" else "rtk"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    return None
-
-
-def _rewrite_command_with_rtk(command: str) -> tuple[str, bool]:
-    """Rewrite a shell command through RTK when RTK has a known compact route.
-
-    This mirrors Claude/Codex instruction-mode RTK behavior for LiteLLM
-    executors: unsupported commands pass through unchanged, while known
-    commands become ``rtk <tool> ...`` before subprocess execution.
-    """
-    if not command.strip() or command.lstrip().startswith("rtk "):
-        return command, False
-
-    if os.environ.get("ANIMAWORKS_RTK_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
-        return command, False
-
-    rtk_bin = _resolve_rtk_bin()
-    if not rtk_bin:
-        return command, False
-
-    try:
-        result = subprocess.run(
-            [rtk_bin, "rewrite", command],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-        )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return command, False
-
-    rewritten = result.stdout.strip()
-    if result.returncode not in (0, 3) or not rewritten or rewritten == command:
-        return command, False
-    return rewritten, True
-
-
-def _spawn_command(command: str, cwd: str) -> tuple[subprocess.Popen, bool]:
-    """Launch ``command`` via Popen in an isolated process group.
-
-    Returns ``(proc, used_shell)``. Both the background ``CommandRunner`` and
-    the foreground ``execute_command`` path use this so a timeout can tear down
-    the *whole* tree: with ``shell=True`` on Windows, ``subprocess.run``'s
-    timeout kills only cmd.exe while the child (e.g. python) keeps the inherited
-    stdout/stderr pipes open, so ``communicate()`` blocks until the child exits
-    on its own. Killing children recursively (``terminate_subprocess`` defaults
-    to ``include_children=True``) releases the pipes so the drain completes.
-
-    Raises ``ValueError`` if a non-shell command cannot be tokenized.
-    """
-    is_windows = sys.platform == "win32"
-    used_shell = bool(_NEEDS_SHELL_RE.search(command)) or is_windows
-    popen_kwargs: dict[str, Any] = {
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-        "cwd": cwd,
-        **subprocess_session_kwargs(),
-    }
-    if used_shell:
-        # On Windows use cmd.exe (the default); on Unix use bash.
-        proc = subprocess.Popen(command, shell=True, executable=None if is_windows else "/bin/bash", **popen_kwargs)
-    else:
-        # posix=True (the shlex default) treats backslashes as escape characters,
-        # which destroys Windows paths like C:\Users\...
-        argv = shlex.split(command, posix=not is_windows)
-        proc = subprocess.Popen(argv, shell=False, **popen_kwargs)
-    return proc, used_shell
-
-
-class CommandRunner:
-    """Manage background command execution with streaming output to file.
-
-    Output is written to ``state/cmd_output/{cmd_id}.txt`` in Cursor-style
-    format: header (pid, command, started_at) → real-time stdout/stderr →
-    footer (exit_code, elapsed_seconds).
-    """
-
-    _counter: ClassVar[int] = 0
-    _counter_lock: ClassVar[threading.Lock] = threading.Lock()
-    _active: ClassVar[dict[str, CommandRunner]] = {}
-
-    def __init__(self, command: str, cwd: Path, timeout: int = _BG_CMD_TIMEOUT_DEFAULT) -> None:
-        self.command = command
-        self.cwd = cwd
-        self.timeout = timeout
-        self.cmd_id = ""
-        self.pid: int | None = None
-        self.process: subprocess.Popen | None = None
-        self._output_path: Path = Path()
-        self._start_time: float = 0.0
-
-    @classmethod
-    def _next_id(cls, prefix: str = "cmd") -> str:
-        with cls._counter_lock:
-            cls._counter += 1
-            return f"{prefix}_{cls._counter}"
-
-    def start(self, output_dir: Path) -> str:
-        """Launch the command in background, return cmd_id immediately."""
-        self.cmd_id = self._next_id()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        self._output_path = output_dir / f"{self.cmd_id}.txt"
-        self._start_time = time.monotonic()
-
-        try:
-            self.process, _ = _spawn_command(self.command, str(self.cwd))
-        except Exception as e:
-            self._write_error_file(str(e))
-            raise
-
-        self.pid = self.process.pid
-        self._write_header()
-        CommandRunner._active[self.cmd_id] = self
-
-        stdout_thread = threading.Thread(
-            target=self._stream_pipe,
-            args=(self.process.stdout, ""),
-            daemon=True,
-            name=f"cmd-stdout-{self.cmd_id}",
-        )
-        stderr_thread = threading.Thread(
-            target=self._stream_pipe,
-            args=(self.process.stderr, "[stderr] "),
-            daemon=True,
-            name=f"cmd-stderr-{self.cmd_id}",
-        )
-        stdout_thread.start()
-        stderr_thread.start()
-
-        waiter = threading.Thread(
-            target=self._wait_for_completion,
-            args=(stdout_thread, stderr_thread),
-            daemon=True,
-            name=f"cmd-wait-{self.cmd_id}",
-        )
-        waiter.start()
-
-        logger.info("background_cmd started cmd_id=%s pid=%s cmd=%s", self.cmd_id, self.pid, self.command[:80])
-        return self.cmd_id
-
-    def _write_header(self) -> None:
-        from core.time_utils import now_local
-
-        header = (
-            f"--- {self.cmd_id} ---\n"
-            f"pid: {self.pid}\n"
-            f"command: {self.command}\n"
-            f"started_at: {now_local().isoformat()}\n"
-            f"status: running\n"
-            f"---\n"
-        )
-        self._output_path.write_text(header, encoding="utf-8")
-
-    def _write_footer(self, exit_code: int, elapsed: float, timed_out: bool = False) -> None:
-        footer = f"\n--- FINISHED ---\nexit_code: {exit_code}\nelapsed_seconds: {round(elapsed, 1)}\n"
-        if timed_out:
-            footer += "timed_out: true\n"
-        footer += "---\n"
-        with open(self._output_path, "a", encoding="utf-8") as f:
-            f.write(footer)
-
-    def _write_error_file(self, error: str) -> None:
-        from core.time_utils import now_local
-
-        content = (
-            f"--- {self.cmd_id or 'error'} ---\n"
-            f"command: {self.command}\n"
-            f"started_at: {now_local().isoformat()}\n"
-            f"status: error\n"
-            f"---\n"
-            f"ERROR: {error}\n"
-            f"--- FINISHED ---\n"
-            f"exit_code: -1\n"
-            f"elapsed_seconds: 0.0\n"
-            f"---\n"
-        )
-        self._output_path.write_text(content, encoding="utf-8")
-
-    def _stream_pipe(self, pipe: Any, prefix: str) -> None:
-        """Read lines from a pipe and append to output file."""
-        if pipe is None:
-            return
-        total_bytes = 0
-        try:
-            with open(self._output_path, "a", encoding="utf-8") as f:
-                for line in pipe:
-                    total_bytes += len(line.encode("utf-8", errors="replace"))
-                    if total_bytes > _BG_CMD_OUTPUT_MAX_BYTES:
-                        f.write(f"\n... (output truncated at {_BG_CMD_OUTPUT_MAX_BYTES // (1024 * 1024)} MB) ...\n")
-                        f.flush()
-                        break
-                    f.write(f"{prefix}{line}")
-                    f.flush()
-        except (ValueError, OSError):
-            pass
-        finally:
-            try:
-                pipe.close()
-            except OSError:
-                pass
-
-    def _wait_for_completion(self, stdout_thread: threading.Thread, stderr_thread: threading.Thread) -> None:
-        """Wait for process to finish, then write footer."""
-        proc = self.process
-        if proc is None:
-            return
-        timed_out = False
-        try:
-            proc.wait(timeout=self.timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            terminate_subprocess(proc, force=False)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                terminate_subprocess(proc, force=True)
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    pass
-
-        pipe_readers = (
-            ("stdout", proc.stdout, stdout_thread),
-            ("stderr", proc.stderr, stderr_thread),
-        )
-        for _, _, thread in pipe_readers:
-            thread.join(timeout=_PIPE_THREAD_JOIN_TIMEOUT)
-
-        # Preserve all output available during the normal drain window.  Only
-        # force-close a pipe when its reader did not finish, then give the
-        # reader one final chance to observe EOF before dropping the runner
-        # from the active registry.
-        for pipe_name, pipe, thread in pipe_readers:
-            if not thread.is_alive():
-                continue
-            if pipe is not None:
-                try:
-                    pipe.close()
-                except (OSError, ValueError):
-                    logger.warning(
-                        "background_cmd failed to close %s pipe cmd_id=%s",
-                        pipe_name,
-                        self.cmd_id,
-                        exc_info=True,
-                    )
-            thread.join(timeout=_PIPE_THREAD_REJOIN_TIMEOUT)
-            if thread.is_alive():
-                logger.warning(
-                    "background_cmd %s reader still alive after pipe close cmd_id=%s",
-                    pipe_name,
-                    self.cmd_id,
-                )
-
-        elapsed = time.monotonic() - self._start_time
-        exit_code = proc.returncode if proc.returncode is not None else -1
-        self._write_footer(exit_code, elapsed, timed_out=timed_out)
-        CommandRunner._active.pop(self.cmd_id, None)
-        logger.info(
-            "background_cmd finished cmd_id=%s exit=%d elapsed=%.1fs timed_out=%s",
-            self.cmd_id,
-            exit_code,
-            elapsed,
-            timed_out,
-        )
-
-
 class FileToolsMixin:
-    """File read/write/edit, command execution, code search, directory listing, web fetch."""
+    """File read/write/edit, code search, directory listing, and web fetch."""
 
     # Declared for type-checker visibility
     _anima_dir: Path
     _context_window: int
-    _state_file_lock: threading.Lock | None
+    _state_file_lock: StateFileLock | None
 
     # ── Web fetch class-level config ──────────────────────────
     _WEB_FETCH_MAX_CHARS = 8000
@@ -419,7 +125,7 @@ class FileToolsMixin:
 
     # ── File budget ───────────────────────────────────────────
 
-    def _read_file_budget(self) -> tuple[int, int]:
+    def _read_file_budget(self: _FileToolsHost) -> tuple[int, int]:
         """Calculate (max_lines, max_chars) from context window.
 
         Two-tier budget matching Claude Code Read tool constraints:
@@ -440,7 +146,7 @@ class FileToolsMixin:
 
     # ── File operations ───────────────────────────────────────
 
-    def _handle_read_file(self, args: dict[str, Any]) -> str:
+    def _handle_read_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str)
         if err:
@@ -489,6 +195,14 @@ class FileToolsMixin:
         end_idx = min(start_idx + limit, total_lines)
         selected = all_lines[start_idx:end_idx]
 
+        anima_dir = getattr(self, "_anima_dir", None)
+        if anima_dir is not None:
+            from core.skills.ledger import skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and not truncated_read and offset == 1 and end_idx == total_lines:
+                self._read_paths.add(skill_pointer)
+
         width = len(str(end_idx)) if end_idx > 0 else 1
         numbered = [f"{str(i).rjust(width)}|{line}" for i, line in enumerate(selected, start=offset)]
 
@@ -518,13 +232,29 @@ class FileToolsMixin:
         )
         return "\n".join(parts)
 
-    def _handle_write_file(self, args: dict[str, Any]) -> str:
+    def _handle_write_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str, write=True)
         if err:
             return err
         path = Path(path_str)
         content = args.get("content", "")
+        anima_dir = getattr(self, "_anima_dir", None)
+        skill_capture = None
+        if anima_dir is not None:
+            from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and path.is_file() and skill_pointer not in self._read_paths:
+                try:
+                    existing = path.read_text(encoding="utf-8")[:2000]
+                except OSError:
+                    existing = "(could not read existing content)"
+                return _error_result(
+                    "ReadBeforeWrite",
+                    t("handler.skill_read_before_write", path=skill_pointer, existing=existing),
+                )
+            skill_capture = capture_skill_document(path, anima_dir)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -535,12 +265,24 @@ class FileToolsMixin:
                         path.write_text(content, encoding="utf-8")
                 else:
                     path.write_text(content, encoding="utf-8")
+            if skill_capture is not None and anima_dir is not None:
+                from core.skills.ledger import record_skill_change
+
+                record_skill_change(
+                    path,
+                    skill_capture,
+                    anima_dir=anima_dir,
+                    after_text=path.read_text(encoding="utf-8") if path.is_file() else None,
+                    after_exists=path.is_file(),
+                    actor=getattr(self, "_anima_name", anima_dir.name),
+                    route="write_file",
+                )
             logger.info("write_file path=%s", path_str)
             return f"Written to {path_str}"
         except Exception as e:
             return _error_result("WriteError", f"Error writing {path_str}: {e}")
 
-    def _try_write_with_frontmatter(self, path: Path, content: str) -> bool:
+    def _try_write_with_frontmatter(self: _FileToolsHost, path: Path, content: str) -> bool:
         """Auto-inject frontmatter when writing to knowledge/ or procedures/.
 
         Returns True if the write was handled, False to fall back to plain write.
@@ -595,7 +337,7 @@ class FileToolsMixin:
             )
         return False
 
-    def _handle_edit_file(self, args: dict[str, Any]) -> str:
+    def _handle_edit_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str, write=True)
         if err:
@@ -605,6 +347,22 @@ class FileToolsMixin:
             return _error_result(
                 "FileNotFound", f"File not found: {path_str}", suggestion="Use list_directory to find the correct path"
             )
+        anima_dir = getattr(self, "_anima_dir", None)
+        skill_capture = None
+        if anima_dir is not None:
+            from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and skill_pointer not in self._read_paths:
+                try:
+                    existing = path.read_text(encoding="utf-8")[:2000]
+                except OSError:
+                    existing = "(could not read existing content)"
+                return _error_result(
+                    "ReadBeforeWrite",
+                    t("handler.skill_read_before_write", path=skill_pointer, existing=existing),
+                )
+            skill_capture = capture_skill_document(path, anima_dir)
         try:
             lock = self._state_file_lock if self._state_file_lock and self._is_state_file(path) else None
             if lock:
@@ -638,6 +396,18 @@ class FileToolsMixin:
                     matched_original = matches[0].group()
                     content = content.replace(matched_original, new, 1)
                     path.write_text(content, encoding="utf-8")
+                    if skill_capture is not None and anima_dir is not None:
+                        from core.skills.ledger import record_skill_change
+
+                        record_skill_change(
+                            path,
+                            skill_capture,
+                            anima_dir=anima_dir,
+                            after_text=path.read_text(encoding="utf-8"),
+                            after_exists=True,
+                            actor=getattr(self, "_anima_name", anima_dir.name),
+                            route="edit_file",
+                        )
                     logger.info("edit_file path=%s (fuzzy CJK-Latin match)", path_str)
                     return f"Edited {path_str}"
 
@@ -651,6 +421,18 @@ class FileToolsMixin:
                     )
                 content = content.replace(old, new, 1)
                 path.write_text(content, encoding="utf-8")
+                if skill_capture is not None and anima_dir is not None:
+                    from core.skills.ledger import record_skill_change
+
+                    record_skill_change(
+                        path,
+                        skill_capture,
+                        anima_dir=anima_dir,
+                        after_text=path.read_text(encoding="utf-8"),
+                        after_exists=True,
+                        actor=getattr(self, "_anima_name", anima_dir.name),
+                        route="edit_file",
+                    )
             finally:
                 if lock:
                     lock.release()
@@ -658,79 +440,6 @@ class FileToolsMixin:
             return f"Edited {path_str}"
         except Exception as e:
             return _error_result("EditError", f"Error editing {path_str}: {e}")
-
-    # ── Command execution ─────────────────────────────────────
-
-    def _handle_execute_command(self, args: dict[str, Any]) -> str:
-        command = args.get("command", "")
-        err = self._check_command_permission(command)
-        if err:
-            return err
-
-        command, rtk_rewritten = _rewrite_command_with_rtk(command)
-
-        background = args.get("background", False)
-        if background:
-            timeout = args.get("timeout", _BG_CMD_TIMEOUT_DEFAULT)
-            runner = CommandRunner(command, self._task_cwd or self._anima_dir, timeout)
-            output_dir = self._anima_dir / "state" / "cmd_output"
-            try:
-                cmd_id = runner.start(output_dir)
-            except Exception as e:
-                return _error_result("ExecutionError", f"Failed to start background command: {e}")
-            return _json.dumps(
-                {
-                    "status": "background",
-                    "cmd_id": cmd_id,
-                    "output_file": str(runner._output_path),
-                },
-                ensure_ascii=False,
-            )
-
-        timeout = args.get("timeout", _FG_CMD_TIMEOUT_DEFAULT)
-
-        try:
-            try:
-                proc, used_shell = _spawn_command(command, str(self._task_cwd or self._anima_dir))
-            except ValueError as e:
-                return _error_result("InvalidArguments", f"Error parsing command: {e}")
-
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                terminate_subprocess(proc, force=False)
-                try:
-                    stdout, stderr = proc.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    terminate_subprocess(proc, force=True)
-                    try:
-                        proc.communicate(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        pass
-                return _error_result(
-                    "Timeout",
-                    f"Command timed out after {timeout}s",
-                    suggestion="Increase timeout or use background=true for long-running commands",
-                )
-
-            output = stdout or ""
-            if stderr:
-                output += f"\n[stderr]\n{stderr}"
-            logger.info(
-                "execute_command cmd=%s rc=%d shell=%s rtk=%s",
-                command[:80],
-                proc.returncode,
-                used_shell,
-                rtk_rewritten,
-            )
-            encoded = output.encode("utf-8", errors="replace")
-            if len(encoded) > _CMD_TRUNCATE_BYTES:
-                head = encoded[:_CMD_HEAD_BYTES].decode("utf-8", errors="ignore")
-                tail = encoded[-_CMD_TAIL_BYTES:].decode("utf-8", errors="ignore")
-                output = f"{head}\n\n... [truncated: {len(encoded)} bytes total] ...\n\n{tail}"
-            return output or f"(exit code {proc.returncode})"
-        except Exception as e:
-            return _error_result("ExecutionError", f"Error executing command: {e}")
 
     # ── Search ────────────────────────────────────────────────
 
@@ -748,7 +457,7 @@ class FileToolsMixin:
         return False
 
     def _iter_permitted_tree_paths(
-        self,
+        self: _FileToolsHost,
         root: Path,
         *,
         pattern: str = "",
@@ -795,7 +504,7 @@ class FileToolsMixin:
             logger.debug("Failed while walking %s", root, exc_info=True)
         return visible
 
-    def _handle_search_code(self, args: dict[str, Any]) -> str:
+    def _handle_search_code(self: _FileToolsHost, args: dict[str, Any]) -> str:
         import re as _re
 
         pattern_str = args.get("pattern", "")
@@ -881,7 +590,7 @@ class FileToolsMixin:
 
     # ── Directory listing ─────────────────────────────────────
 
-    def _handle_list_directory(self, args: dict[str, Any]) -> str:
+    def _handle_list_directory(self: _FileToolsHost, args: dict[str, Any]) -> str:
         dir_path_str = args.get("path", "")
         config = self._load_permissions_config()
         denied_roots = self._resolved_file_deny_roots(config)
@@ -963,7 +672,7 @@ class FileToolsMixin:
             result += f"\n(truncated at {max_entries} entries, total: {len(items)})"
         return result
 
-    def _handle_glob(self, args: dict[str, Any]) -> str:
+    def _handle_glob(self: _FileToolsHost, args: dict[str, Any]) -> str:
         """Handle Claude Code-compatible Glob tool.
 
         Maps Glob(pattern, path?) to list_directory(path, pattern, recursive=True).
@@ -1003,7 +712,7 @@ class FileToolsMixin:
             return True
         return False
 
-    def _handle_web_fetch(self, args: dict[str, Any]) -> str:
+    def _handle_web_fetch(self: _FileToolsHost, args: dict[str, Any]) -> str:
         import time
         from urllib.parse import urlparse
 
@@ -1140,7 +849,7 @@ class FileToolsMixin:
 
     # ── Web search ────────────────────────────────────────────
 
-    def _handle_web_search(self, args: dict[str, Any]) -> str:
+    def _handle_web_search(self: _FileToolsHost, args: dict[str, Any]) -> str:
         """Handle Claude Code-compatible WebSearch tool.
 
         Delegates to the web_search external tool module.
@@ -1154,14 +863,21 @@ class FileToolsMixin:
             )
         limit = args.get("limit", 5)
 
+        # Permission gate (fail-closed): web_search is a core tool module.
+        from core.tooling.permissions import check_tool_access
+
+        decision = check_tool_access(self._anima_dir, "web_search", None, origin="core")
+        if not decision.allowed:
+            return _error_result("PermissionDenied", decision.message)
+
         try:
             ext_args: dict[str, Any] = {
                 "query": query,
                 "count": limit,
                 "anima_dir": str(self._anima_dir),
             }
-            from core.tools.web_search import dispatch as ws_dispatch
-            from core.tools.web_search import format_results
+            from core.integrations.web_search import dispatch as ws_dispatch
+            from core.integrations.web_search import format_results
 
             result = ws_dispatch("web_search", ext_args)
             logger.info("WebSearch query=%s limit=%d", query[:60], limit)

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -56,6 +57,50 @@ class TestInternalRerank:
         data = resp.json()
         assert data["scores"] == pytest.approx([0.1, 0.9, 0.5])
         mock_reranker.score_sync.assert_called_once_with("hello", ["a", "b", "c"])
+
+    @pytest.mark.anyio
+    async def test_uses_configured_cross_encoder_model(self, app):
+        mock_reranker = MagicMock()
+        mock_reranker.score_sync.return_value = [0.5]
+        config = SimpleNamespace(rag=SimpleNamespace(cross_encoder_model="custom/cross-encoder"))
+
+        with (
+            patch("core.config.load_config", return_value=config),
+            patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker) as mock_get,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.post(
+                    "/api/internal/rerank",
+                    json={"query": "hello", "documents": ["a"]},
+                )
+
+        assert resp.status_code == 200
+        mock_get.assert_called_once_with("custom/cross-encoder")
+
+    @pytest.mark.anyio
+    async def test_empty_configured_model_uses_reranker_default(self, app):
+        mock_reranker = MagicMock()
+        mock_reranker.score_sync.return_value = [0.5]
+        config = SimpleNamespace(rag=SimpleNamespace(cross_encoder_model=""))
+
+        with (
+            patch("core.config.load_config", return_value=config),
+            patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker) as mock_get,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.post(
+                    "/api/internal/rerank",
+                    json={"query": "hello", "documents": ["a"]},
+                )
+
+        assert resp.status_code == 200
+        mock_get.assert_called_once_with()
 
     @pytest.mark.anyio
     async def test_empty_documents_returns_empty(self, app):

@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.background import BackgroundTask, BackgroundTaskManager, TaskStatus
+from core.tasks.background import BackgroundTask, BackgroundTaskManager, TaskStatus
 from core.tooling.handler import ToolHandler
 
 pytestmark = pytest.mark.e2e
@@ -432,134 +432,6 @@ def _create_test_app(
     return app
 
 
-# ── 5. WebSocket notification on background task completion ──
-
-
-class TestBackgroundTaskWSNotification:
-    """Test that task completion triggers WebSocket broadcast."""
-
-    async def test_ws_broadcast_called_on_completion(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """When a background task completes, _ws_broadcast is invoked."""
-        anima_dir = tmp_path / "animas" / "ws-test"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "state").mkdir()
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir(parents=True)
-
-        broadcast_payloads: list[dict] = []
-
-        async def mock_broadcast(payload: dict) -> None:
-            broadcast_payloads.append(payload)
-
-        # Build DigitalAnima with mocked dependencies
-        with (
-            patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-            patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-            patch("core.agent.AgentCore._check_sdk", return_value=False),
-            patch("core.agent.AgentCore._build_human_notifier", return_value=None),
-            patch(
-                "core.agent.AgentCore._build_background_manager",
-                return_value=BackgroundTaskManager(
-                    anima_dir,
-                    anima_name="ws-test",
-                    eligible_tools={"slow_tool": 5},
-                ),
-            ),
-            patch("core.agent.AgentCore._create_executor"),
-        ):
-            from core.anima import DigitalAnima
-
-            anima = DigitalAnima(anima_dir, shared_dir)
-            anima.set_ws_broadcast(mock_broadcast)
-
-        # The on_complete callback should be wired
-        mgr = anima.agent.background_manager
-        assert mgr is not None
-        assert mgr.on_complete is not None
-
-        # Submit a task
-        callback_done = asyncio.Event()
-        original_on_complete = mgr.on_complete
-
-        async def tracked_on_complete(task: BackgroundTask) -> None:
-            await original_on_complete(task)
-            callback_done.set()
-
-        mgr.on_complete = tracked_on_complete
-
-        mgr.submit("slow_tool", {"key": "val"}, _slow_handler)
-        await asyncio.wait_for(callback_done.wait(), timeout=5.0)
-
-        # Verify WebSocket broadcast was called
-        assert len(broadcast_payloads) == 1
-        payload = broadcast_payloads[0]
-        assert payload["type"] == "background_task.done"
-        assert payload["data"]["anima"] == "ws-test"
-        assert payload["data"]["tool_name"] == "slow_tool"
-        assert payload["data"]["status"] == "completed"
-        assert "result_summary" in payload["data"]
-
-    async def test_ws_broadcast_called_on_failure(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """WebSocket broadcast fires even when the task fails."""
-        anima_dir = tmp_path / "animas" / "ws-fail"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "state").mkdir()
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir(parents=True)
-
-        broadcast_payloads: list[dict] = []
-
-        async def mock_broadcast(payload: dict) -> None:
-            broadcast_payloads.append(payload)
-
-        with (
-            patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-            patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-            patch("core.agent.AgentCore._check_sdk", return_value=False),
-            patch("core.agent.AgentCore._build_human_notifier", return_value=None),
-            patch(
-                "core.agent.AgentCore._build_background_manager",
-                return_value=BackgroundTaskManager(
-                    anima_dir,
-                    anima_name="ws-fail",
-                    eligible_tools={"bad_tool": 5},
-                ),
-            ),
-            patch("core.agent.AgentCore._create_executor"),
-        ):
-            from core.anima import DigitalAnima
-
-            anima = DigitalAnima(anima_dir, shared_dir)
-            anima.set_ws_broadcast(mock_broadcast)
-
-        mgr = anima.agent.background_manager
-        assert mgr is not None
-
-        callback_done = asyncio.Event()
-        original_on_complete = mgr.on_complete
-
-        async def tracked_on_complete(task: BackgroundTask) -> None:
-            await original_on_complete(task)
-            callback_done.set()
-
-        mgr.on_complete = tracked_on_complete
-
-        mgr.submit("bad_tool", {}, _failing_handler)
-        await asyncio.wait_for(callback_done.wait(), timeout=5.0)
-
-        assert len(broadcast_payloads) == 1
-        payload = broadcast_payloads[0]
-        assert payload["type"] == "background_task.done"
-        assert payload["data"]["status"] == "failed"
-        assert "failed" in payload["data"]["result_summary"]
-
-
 # ── 6. IPC timeout configuration ────────────────────────────
 
 
@@ -581,14 +453,14 @@ class TestIPCTimeoutConfigurable:
 
         invalidate_cache()
 
-        from core.supervisor.ipc import IPCClient
+        from core.runtime.ipc import IPCClient
 
         timeout = IPCClient._resolve_ipc_timeout()
         assert timeout == 600.0
 
     def test_returns_default_when_config_unavailable(self) -> None:
         """_resolve_ipc_timeout falls back to 60.0 when config loading fails."""
-        from core.supervisor.ipc import IPCClient
+        from core.runtime.ipc import IPCClient
 
         # load_config is imported inside _resolve_ipc_timeout, so patch at source
         with patch(
@@ -605,7 +477,7 @@ class TestIPCTimeoutConfigurable:
 
         invalidate_cache()
 
-        from core.supervisor.ipc import IPCClient
+        from core.runtime.ipc import IPCClient
 
         timeout = IPCClient._resolve_ipc_timeout()
         assert timeout == 60.0

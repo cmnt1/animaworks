@@ -8,37 +8,19 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 import logging
 import os
-import re
-import warnings
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
-from core.memory._io import atomic_write_text
 from core.memory.config_reader import ConfigReader
-from core.memory.cron_logger import CronLogger
 from core.memory.frontmatter import FrontmatterService
-from core.memory.rag_search import RAGMemorySearch
-from core.memory.resolution_tracker import ResolutionTracker
-
-# ── Re-exports for backward compatibility ─────────────────
-# These were originally defined in this module.  External code
-# (builder.py, priming.py, tests) may import them from here.
-from core.memory.skill_metadata import (  # noqa: F401
-    _TIER2_STOP_WORDS,
-    SkillMetadataService,
-    _extract_bracket_keywords,
-    _extract_comma_keywords,
-    _match_tier1,
-    _match_tier2,
-    _match_tier3_vector,
-    _normalize_text,
-)
-from core.memory.skill_metadata import (
-    match_skills_by_description as _match_skills_by_description,
-)
+from core.memory.io import atomic_write_text
+from core.memory.maintenance.cron_logger import CronLogger
+from core.memory.maintenance.resolution_tracker import ResolutionTracker
+from core.memory.retrieval.rag_search import RAGMemorySearch
+from core.memory.skill_metadata import SkillMetadataService
+from core.memory.state_lock import StateFileLock
 from core.paths import (
     _resolve_at_imports,
     _strip_frontmatter,
@@ -47,31 +29,22 @@ from core.paths import (
     get_company_dir,
     get_shared_dir,
 )
+from core.platform.locks import locked_path
 from core.schemas import ModelConfig, SkillMeta
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.memory")
 
 
-def match_skills_by_description(*args: Any, **kwargs: Any):
-    """Deprecated compatibility re-export for the old skill matcher."""
-    warnings.warn(
-        "core.memory.manager.match_skills_by_description is deprecated; use SkillRouter instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _match_skills_by_description(*args, **kwargs)
-
-
 class MemoryManager:
     """File-system based library memory — Facade.
 
-    Delegates to specialised sub-services while preserving the original
-    public interface so that the 60+ call-sites remain unchanged.
+    Delegates memory operations to specialised sub-services.
     """
 
-    def __init__(self, anima_dir: Path, base_dir: Path | None = None) -> None:
+    def __init__(self, anima_dir: Path, base_dir: Path | None = None, *, read_only: bool = False) -> None:
         self.anima_dir = anima_dir
+        self.read_only = read_only
         self.company_dir = get_company_dir()
         self.common_skills_dir = get_common_skills_dir()
         self.common_knowledge_dir = get_common_knowledge_dir()
@@ -81,18 +54,21 @@ class MemoryManager:
         self.facts_dir = anima_dir / "facts"
         self.skills_dir = anima_dir / "skills"
         self.state_dir = anima_dir / "state"
-        for d in (
-            self.episodes_dir,
-            self.knowledge_dir,
-            self.procedures_dir,
-            self.facts_dir,
-            self.skills_dir,
-            self.state_dir,
-        ):
-            d.mkdir(parents=True, exist_ok=True)
+        if not self.read_only:
+            for d in (
+                self.episodes_dir,
+                self.knowledge_dir,
+                self.procedures_dir,
+                self.facts_dir,
+                self.skills_dir,
+                self.state_dir,
+            ):
+                d.mkdir(parents=True, exist_ok=True)
+        self.state_lock = StateFileLock(anima_dir)
 
-        self._migrate_current_task_to_state()
-        self._migrate_pending_to_state()
+        if not self.read_only:
+            self._migrate_current_task_to_state()
+            self._migrate_pending_to_state()
 
         # Eagerly initialize delegates (also available lazily via properties
         # for code that bypasses __init__ via __new__).
@@ -222,47 +198,10 @@ class MemoryManager:
         return self.__rag
 
     @property
-    def memory_backend(self):
-        """Return the active :class:`MemoryBackend` instance (lazy)."""
-        if not hasattr(self, "_memory_backend") or self._memory_backend is None:
-            self._init_memory_backend()
-        return self._memory_backend
-
-    def _init_memory_backend(self) -> None:
-        """Lazily create the MemoryBackend from config."""
-        try:
-            from core.memory.backend.registry import get_backend, resolve_backend_type
-
-            backend_type = resolve_backend_type(self.anima_dir)
-            extra_kwargs: dict[str, object] = {}
-            if backend_type == "legacy":
-                extra_kwargs["common_knowledge_dir"] = self.common_knowledge_dir
-                extra_kwargs["common_skills_dir"] = self.common_skills_dir
-            self._memory_backend = get_backend(
-                backend_type,
-                self.anima_dir,
-                **extra_kwargs,
-            )
-        except Exception:
-            logger.warning("Failed to init MemoryBackend, using legacy fallback", exc_info=True)
-            from core.memory.backend.legacy import LegacyRAGBackend
-
-            self._memory_backend = LegacyRAGBackend(
-                self.anima_dir,
-                common_knowledge_dir=self.common_knowledge_dir,
-                common_skills_dir=self.common_skills_dir,
-            )
-
-    @property
     def _frontmatter(self) -> FrontmatterService:
         if not hasattr(self, "_delegates_ready"):
             self._init_delegates()
         return self.__frontmatter
-
-    @property
-    def task_queue_path(self) -> Path:
-        """Path to the persistent task queue JSONL file."""
-        return self.state_dir / "task_queue.jsonl"
 
     # ── Read helpers ──────────────────────────────────────
 
@@ -280,7 +219,9 @@ class MemoryManager:
             logger.warning("Failed to resolve host memory path %s", path, exc_info=True)
             return None
 
-        denied_root = find_denied_root(resolved, load_denied_roots(self.anima_dir))
+        denied_root = find_denied_root(
+            resolved, load_denied_roots(self.anima_dir, read_only=getattr(self, "read_only", False))
+        )
         if denied_root is not None:
             logger.warning("Host memory read denied for %s by %s", resolved, denied_root)
             return None
@@ -308,7 +249,7 @@ class MemoryManager:
         return _strip_frontmatter(_resolve_at_imports(self._read_raw(path)))
 
     def _company_vision_path(self) -> tuple[Path, str]:
-        from core.company import get_company
+        from core.org.company import get_company
 
         company = get_company(self.anima_dir.name, animas_dir=self.anima_dir.parent)
         if company is not None:
@@ -364,15 +305,11 @@ class MemoryManager:
         """
         from core.config.models import _format_permissions_for_prompt, load_permissions
 
-        config = load_permissions(self.anima_dir)
+        config = load_permissions(self.anima_dir, read_only=getattr(self, "read_only", False))
         return _format_permissions_for_prompt(config, self.anima_dir.name)
 
     def read_current_state(self) -> str:
         return self._read(self.state_dir / "current_state.md") or "status: idle"
-
-    def read_pending(self) -> str:
-        logger.warning("read_pending() is deprecated — pending.md has been abolished; returning empty")
-        return ""
 
     def read_heartbeat_config(self) -> str:
         return self._read(self.anima_dir / "heartbeat.md")
@@ -418,14 +355,6 @@ class MemoryManager:
     def read_bootstrap(self) -> str:
         return self._read(self.anima_dir / "bootstrap.md")
 
-    def read_today_episodes(self) -> str:
-        path = self.episodes_dir / f"{today_local().isoformat()}.md"
-        return self._read(path)
-
-    def read_file(self, relpath: str) -> str:
-        """Read an arbitrary file relative to anima_dir."""
-        return self._read(self.anima_dir / relpath)
-
     # ── List helpers ──────────────────────────────────────
 
     def list_knowledge_files(self) -> list[str]:
@@ -436,12 +365,6 @@ class MemoryManager:
 
     def list_procedure_files(self) -> list[str]:
         return [f.stem for f in self._glob_host_readable(self.procedures_dir, "*.md")]
-
-    def list_fact_files(self) -> list[str]:
-        return [f.stem for f in self._glob_host_readable(self.facts_dir, "*.jsonl")]
-
-    def list_skill_files(self) -> list[str]:
-        return [f.parent.name for f in self._glob_host_readable(self.skills_dir, "*/SKILL.md")]
 
     def _glob_host_readable(self, directory: Path, pattern: str, *, reverse: bool = False) -> list[Path]:
         """Return canonical glob matches after pruning denied paths."""
@@ -457,79 +380,52 @@ class MemoryManager:
 
     # ── Shared user memory ────────────────────────────────
 
-    @staticmethod
-    def _shared_users_dir() -> Path:
-        return get_shared_dir() / "users"
-
-    def list_shared_users(self) -> list[str]:
-        """List user subdirectories under shared/users/."""
-        d = self._resolve_host_read_path(self._shared_users_dir())
-        if d is None or not d.is_dir():
-            return []
-        users: list[str] = []
-        for candidate in sorted(d.iterdir()):
-            resolved = self._resolve_host_read_path(candidate)
-            if resolved is not None and resolved.is_dir():
-                users.append(candidate.name)
-        return users
-
     # ── Write helpers ─────────────────────────────────────
 
-    def append_episode(self, entry: str, *, origin: str = "") -> None:
+    def append_episode(
+        self,
+        entry: str,
+        *,
+        origin: str = "",
+        _defer_index: bool = False,
+    ) -> Path | None:
         path = self.episodes_dir / f"{today_local().isoformat()}.md"
         try:
-            if not path.exists():
-                path.write_text(
-                    t("manager.action_log_header", date=today_local().isoformat()),
-                    encoding="utf-8",
-                )
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(f"\n{entry}\n")
-                f.flush()
-                os.fsync(f.fileno())
+            lock_path = path.with_name(f"{path.name}.lock")
+            with locked_path(lock_path, exclusive=True, thread_lock=True):
+                if not path.exists():
+                    path.write_text(
+                        t("manager.action_log_header", date=today_local().isoformat()),
+                        encoding="utf-8",
+                    )
+                payload = f"\n{entry}\n".encode()
+                fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                try:
+                    offset = 0
+                    while offset < len(payload):
+                        written = os.write(fd, payload[offset:])
+                        if written <= 0:
+                            raise OSError("episode append made no progress")
+                        offset += written
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         except OSError:
             logger.warning("Failed to append episode to %s", path, exc_info=True)
-            return
+            return None
         logger.debug("Episode appended, length=%d", len(entry))
 
-        # Index the updated episode file (incremental)
+        # Index outside state-lock critical sections when requested.
+        if not _defer_index:
+            self._index_episode_file(path, origin=origin)
+        return path
+
+    def _index_episode_file(self, path: Path, *, origin: str = "") -> None:
+        """Index an episode after its append is safely persisted."""
         self._rag.index_file(path, "episodes", origin=origin)
 
     def update_state(self, content: str) -> None:
         atomic_write_text(self.state_dir / "current_state.md", content)
-
-    def archive_and_reset_state(self, new_status: str = "status: idle") -> None:
-        """Archive current_state.md to episodes and reset.
-
-        Skips archiving if current content is just "status: idle" or empty.
-        On append_episode failure, the state is left unchanged to avoid
-        data loss.
-        """
-        state = self.read_current_state()
-        if not state or state.strip() == "status: idle":
-            return
-        try:
-            self.append_episode(f"## Working notes archived\n\n{state}")
-        except Exception:
-            logger.warning("archive_and_reset_state: failed to archive, leaving state unchanged", exc_info=True)
-            return
-        self.update_state(new_status.strip() or "status: idle")
-
-    def update_pending(self, content: str) -> None:
-        logger.warning("update_pending() is deprecated — pending.md has been abolished")
-
-    def write_knowledge(self, topic: str, content: str, *, origin: str = "") -> None:
-        safe = re.sub(r"[^\w\-_]", "_", topic)
-        path = self.knowledge_dir / f"{safe}.md"
-        try:
-            path.write_text(content, encoding="utf-8")
-        except OSError:
-            logger.warning("Failed to write knowledge to %s", path, exc_info=True)
-            return
-        logger.debug("Knowledge written topic='%s' length=%d", topic, len(content))
-
-        # Index the new/updated knowledge file
-        self._rag.index_file(path, "knowledge", origin=origin)
 
     # ── Backward-compatible RAG proxies ─────────────────
     # Tests and internal code may access these private attributes
@@ -585,20 +481,7 @@ class MemoryManager:
         """Facade: ConfigReader.read_model_config."""
         return self._config_reader.read_model_config()
 
-    def _read_model_config_from_md(self) -> ModelConfig:
-        """Facade: ConfigReader._read_model_config_from_md."""
-        return self._config_reader._read_model_config_from_md()
-
-    def resolve_api_key(self, config: ModelConfig | None = None) -> str | None:
-        """Facade: ConfigReader.resolve_api_key."""
-        return self._config_reader.resolve_api_key(config)
-
     # ── Facade: SkillMetadataService ──────────────────────
-
-    @staticmethod
-    def _extract_skill_meta(path: Path, *, is_common: bool = False) -> SkillMeta:
-        """Facade: SkillMetadataService.extract_skill_meta."""
-        return SkillMetadataService.extract_skill_meta(path, is_common=is_common)
 
     def list_skill_metas(self) -> list[SkillMeta]:
         """Facade: SkillMetadataService.list_skill_metas."""
@@ -607,14 +490,6 @@ class MemoryManager:
     def list_common_skill_metas(self) -> list[SkillMeta]:
         """Facade: SkillMetadataService.list_common_skill_metas."""
         return self._skill_meta.list_common_skill_metas()
-
-    def list_skill_summaries(self) -> list[tuple[str, str]]:
-        """Facade: SkillMetadataService.list_skill_summaries."""
-        return self._skill_meta.list_skill_summaries()
-
-    def list_common_skill_summaries(self) -> list[tuple[str, str]]:
-        """Facade: SkillMetadataService.list_common_skill_summaries."""
-        return self._skill_meta.list_common_skill_summaries()
 
     # ── Facade: CronLogger ────────────────────────────────
 
@@ -663,10 +538,6 @@ class MemoryManager:
             duration_ms=duration_ms,
         )
 
-    def read_cron_log(self, days: int = 1) -> str:
-        """Facade: CronLogger.read_cron_log."""
-        return self._cron.read_cron_log(days)
-
     # ── Facade: ResolutionTracker ─────────────────────────
 
     def append_resolution(self, issue: str, resolver: str) -> None:
@@ -700,7 +571,7 @@ class MemoryManager:
 
     def filter_resolutions_by_company(self, resolutions: list[dict[str, str]]) -> list[dict[str, str]]:
         """Keep resolutions whose resolver belongs to this anima's company."""
-        from core.company import get_company
+        from core.org.company import get_company
 
         animas_dir = self.anima_dir.parent
         company = get_company(self.anima_dir.name, animas_dir=animas_dir)
@@ -744,19 +615,41 @@ class MemoryManager:
         """Metadata from the most recent ``search_memory_text`` call."""
         return self._rag.last_search_meta
 
-    def search_procedures(self, query: str) -> list[dict]:
-        """Facade: search via search_memory_text with procedures scope."""
-        return self.search_memory_text(query, scope="procedures")
-
-    def search_knowledge(self, query: str) -> list[tuple[str, str]]:
-        """Facade: RAGMemorySearch.search_knowledge."""
-        return self._rag.search_knowledge(query, self.knowledge_dir)
-
     # ── Facade: FrontmatterService ────────────────────────
 
     def write_knowledge_with_meta(self, path: Path, content: str, metadata: dict) -> None:
         """Facade: FrontmatterService.write_knowledge_with_meta."""
         self._frontmatter.write_knowledge_with_meta(path, content, metadata)
+
+    def index_knowledge_file(self, path: Path, *, origin: str = "") -> None:
+        """Refresh RAG and sparse indexes after a knowledge write."""
+        self._rag.index_file(path, "knowledge", origin=origin)
+
+    def read_peer_profile(self, name: str, *, max_chars: int | None = None) -> str:
+        """Read a peer profile through the host deny-root policy."""
+        from core.memory.peer_profiles import peer_profile_path
+
+        path = peer_profile_path(self.anima_dir, name)
+        if path is None:
+            return ""
+        content = self._read(path)
+        return content[:max_chars] if max_chars is not None else content
+
+    def write_peer_profile(self, name: str, content: str, *, max_chars: int = 1500) -> Path:
+        """Atomically replace a safe peer profile without adding it to RAG."""
+        from core.memory.peer_profiles import peer_profile_path
+
+        path = peer_profile_path(self.anima_dir, name)
+        if path is None:
+            raise ValueError(f"Invalid peer profile name: {name!r}")
+        resolved = self._resolve_host_read_path(path)
+        if resolved is None or not resolved.is_relative_to((self.anima_dir / "peers").resolve()):
+            raise ValueError(f"Peer profile path is not writable: {name!r}")
+        content = content[: max(0, max_chars)].strip()
+        if not content:
+            raise ValueError("Peer profile content is empty")
+        atomic_write_text(resolved, content.rstrip() + "\n")
+        return resolved
 
     def read_knowledge_content(self, path: Path) -> str:
         """Facade: FrontmatterService.read_knowledge_content."""
@@ -775,10 +668,6 @@ class MemoryManager:
         if "superseded_at" in meta and "valid_until" not in meta:
             meta["valid_until"] = meta.pop("superseded_at")
         return meta
-
-    def update_knowledge_metadata(self, path: Path, updates: dict) -> None:
-        """Facade: FrontmatterService.update_knowledge_metadata."""
-        self._frontmatter.update_knowledge_metadata(path, updates)
 
     def write_procedure_with_meta(
         self,
@@ -806,10 +695,6 @@ class MemoryManager:
         text = self._read_raw(target)
         meta, _ = parse_frontmatter(text)
         return meta
-
-    def list_procedure_metas(self) -> list[SkillMeta]:
-        """Facade: FrontmatterService.list_procedure_metas."""
-        return self._frontmatter.list_procedure_metas(self._extract_skill_meta)
 
     def ensure_procedure_frontmatter(self) -> int:
         """Facade: FrontmatterService.ensure_procedure_frontmatter."""

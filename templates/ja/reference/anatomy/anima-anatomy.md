@@ -37,14 +37,14 @@ Anima の設計原則「カプセル化された個」に基づき、ファイ�
 | 分類 | ファイル | 理由 |
 |------|---------|------|
 | **カプセルの内側**（思考・記憶） | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | 人格・経験・学習は本人のもの。外部から変更不可 |
-| **カプセルの境界**（組織と個の接点） | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | 組織が個に期待する役割と権限。上司が変更可能 |
-| **カプセルの外側**（管理情報） | `status.json`, `specialty_prompt.md` | 純粋な設定・システム管理。CLI や管理者が操作 |
+| **カプセルの境界**（組織と個の接点） | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | root 所有の組織設定。上司は `cron.md` / `heartbeat.md` を編集でき、他のファイルは root 管理 API/CLI 経由で変更 |
+| **カプセルの外側**（管理情報） | `status.json`, `specialty_prompt.md` | root サーバーと停止中の CLI が扱う設定。Anima プロセスから直接書き込み不可 |
 
 - **内側**を変えると「別人になる」か「記憶を失う」。これは許されない
-- **境界**を変えると「転職する」か「業務範囲が変わる」。組織運営として正当
+- **境界**を変えると「転職する」か「業務範囲が変わる」。組織運営として正当だが、root 所有 API/ツール経由で行う
 - **外側**を変えても本人の人格や行動には直接影響しない
 
-> **成長と identity.md の関係**: identity.md は人格の不変ベースライン（気質）であり、自分で書き換えることはできない。「成長」は `knowledge/`（学んだ教訓）、`procedures/`（身につけた手順）、`skills/`（磨いたスキル）への蓄積で表現される。identity.md が固定でも、記憶の蓄積によって行動は確実に変化する——これが「同一人物が成長する」モデルである。identity.md を書き換えると「成長」ではなく「別人への置き換え」になる。ユーザーによる直接編集は可能。
+> **成長と identity.md の関係**: identity.md は人格の不変ベースライン（気質）であり、Anima 自身では書き換えられない。「成長」は `knowledge/`（学んだ教訓）、`procedures/`（身につけた手順）、`skills/`（磨いたスキル）への蓄積で表現される。identity.md が固定でも、記憶の蓄積によって行動は確実に変化する——これが「同一人物が成長する」モデルである。変更が必要な場合は人間の管理者が root 管理 API/CLI を使う。bootstrap 中の書き込み依頼も root が認可・保存する。
 
 ---
 
@@ -90,7 +90,7 @@ identity.md はあなたの人格の**不変のベースライン**。ここを�
 - 報告の義務、エスカレーション基準
 - **絶対に外してはいけない手順**（例: 機密情報を外部に話さない、本番環境の操作前に確認を取る）
 
-injection.md はあなたの**可変の行動指針**。業務方針の変更に応じて更新できる。
+injection.md はあなたの**可変の行動指針**。許可された上司や人間の管理者が root 経由で変更を依頼でき、bootstrap 中の書き込みも root に認可される。Anima プロセスから直接書き込まない。
 
 | 項目 | 値 |
 |------|-----|
@@ -154,7 +154,6 @@ injection.md はあなたの**可変の行動指針**。業務方針の変更に
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```
@@ -166,7 +165,6 @@ injection.md はあなたの**可変の行動指針**。業務方針の変更に
 | `model` | 使用する LLM モデル |
 | `credential` | API 認証情報の名前 |
 | `max_tokens` | 1回の応答の最大トークン |
-| `max_turns` | 1セッションの最大ターン数 |
 | `supervisor` | 上司の Anima 名（null = トップレベル） |
 | `background_model` | Heartbeat/Cron 用の軽量モデル（未設定時はメインモデル） |
 

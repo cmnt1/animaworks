@@ -1,4 +1,4 @@
-"""Tests for core.execution.litellm_loop — Mode A: LiteLLM tool_use loop."""
+"""Tests for core.execution.engines.litellm.executor — Mode A: LiteLLM tool_use loop."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,8 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.exceptions import LLMAPIError
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 from core.tooling.handler import ToolHandler
@@ -61,7 +60,6 @@ def model_config() -> ModelConfig:
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -92,7 +90,7 @@ def executor(
     tool_handler: ToolHandler,
     memory: MagicMock,
 ):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,
@@ -129,7 +127,7 @@ class TestBuildBaseTools:
     def test_excludes_use_tool_in_mode_a(self, anima_dir, model_config, memory):
         """use_tool is NOT included in Mode A (LiteLLM) — Mode B only."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -173,7 +171,7 @@ class TestBuildLlmKwargs:
     def test_includes_api_base(self, model_config: ModelConfig, anima_dir: Path, memory: MagicMock):
         model_config.api_base_url = "http://localhost:11434/v1"
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -184,49 +182,6 @@ class TestBuildLlmKwargs:
         )
         kwargs = ex._build_llm_kwargs()
         assert kwargs["api_base"] == "http://localhost:11434/v1"
-
-    def test_opencode_go_routes_as_openai_compatible(self, anima_dir: Path, memory: MagicMock):
-        cfg = ModelConfig(
-            model="opencode-go/glm-5.1",
-            api_key="sk-opencode",
-            max_tokens=1024,
-        )
-        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
-
-        ex = LiteLLMExecutor(
-            model_config=cfg,
-            anima_dir=anima_dir,
-            tool_handler=th,
-            tool_registry=[],
-            memory=memory,
-        )
-
-        kwargs = ex._build_llm_kwargs()
-        assert kwargs["model"] == "openai/glm-5.1"
-        assert kwargs["api_base"] == "https://opencode.ai/zen/go/v1"
-        assert kwargs["api_key"] == "sk-opencode"
-
-    def test_opencode_go_minimax_routes_as_anthropic_compatible(self, anima_dir: Path, memory: MagicMock):
-        cfg = ModelConfig(
-            model="opencode-go/minimax-m2.7",
-            api_key="sk-opencode",
-            max_tokens=1024,
-        )
-        th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
-
-        ex = LiteLLMExecutor(
-            model_config=cfg,
-            anima_dir=anima_dir,
-            tool_handler=th,
-            tool_registry=[],
-            memory=memory,
-        )
-
-        kwargs = ex._build_llm_kwargs()
-        assert kwargs["model"] == "anthropic/minimax-m2.7"
-        assert kwargs["api_base"] == "https://opencode.ai/zen/go/v1"
 
 
 # ── execute() — simple response ──────────────────────────────
@@ -240,43 +195,8 @@ class TestExecuteSimple:
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test prompt", system_prompt="sys")
         assert "Hello world" in result.text
-
-    async def test_retries_litellm_empty_response(self, executor):
-        class BadRequestError(Exception):
-            pass
-
-        err = BadRequestError(
-            "OpenAIException - The model returned an empty response. "
-            "This may be caused by stop sequences matching the output."
-        )
-        resp = make_litellm_response(content="retry worked", tool_calls=None)
-        mock = AsyncMock(side_effect=[err, resp])
-        _install_litellm_mock(mock)
-
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.asyncio.sleep", new_callable=AsyncMock) as sleep_mock,
-        ):
-            result = await executor.execute("test prompt", system_prompt="sys")
-
-        assert "retry worked" in result.text
-        assert mock.await_count == 2
-        sleep_mock.assert_awaited_once()
-
-    async def test_non_empty_litellm_error_retried_by_outer_loop(self, executor):
-        from core.execution.loop_guards import MAX_LLM_RETRIES
-
-        mock = AsyncMock(side_effect=RuntimeError("API timeout"))
-        _install_litellm_mock(mock)
-
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.loop_guards.asyncio.sleep", new_callable=AsyncMock),
-            pytest.raises(LLMAPIError, match="API timeout"),
-        ):
-            await executor.execute("test prompt", system_prompt="sys")
-
-        assert mock.await_count == MAX_LLM_RETRIES + 1
+        assert "stream" not in mock.call_args.kwargs
+        assert mock.call_args.kwargs["num_retries"] == 0
 
     async def test_no_result_message(self, executor):
         resp = make_litellm_response(content="text")
@@ -383,31 +303,38 @@ class TestExecuteContextTracking:
             await executor.execute("test", system_prompt="sys", tracker=tracker)
         assert tracker.usage_ratio > 0
 
-    async def test_session_chaining(self, executor, anima_dir: Path):
+    async def test_saves_shortterm_when_context_threshold_is_exceeded(self, executor, anima_dir: Path):
         tracker = ContextTracker(model="openai/gpt-4o", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
 
-        resp_threshold = make_litellm_response(
+        response = make_litellm_response(
             content="Partial",
             prompt_tokens=100_000,
             completion_tokens=10_000,
         )
-        resp_final = make_litellm_response(content="Continued", prompt_tokens=1000)
-
-        mock = AsyncMock(side_effect=[resp_threshold, resp_final])
+        mock = AsyncMock(return_value=response)
         _install_litellm_mock(mock)
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.build_system_prompt", return_value="sys"),
-            patch("core.execution._session.load_prompt", return_value="continue"),
-        ):
+        with patch("litellm.acompletion", mock):
             result = await executor.execute(
                 "test",
                 system_prompt="sys",
                 tracker=tracker,
                 shortterm=shortterm,
             )
-        assert "Continued" in result.text or "Partial" in result.text
+
+        assert result.text == "Partial"
+        saved_state = shortterm.load()
+        assert saved_state is not None
+        assert saved_state.accumulated_response == "Partial"
+
+
+async def test_oversized_prompt_returns_structured_context_overflow(executor):
+    with patch.object(executor, "_preflight_clamp_with_compaction", new=AsyncMock(return_value=None)):
+        result = await executor.execute("prompt", system_prompt="system")
+
+    assert result.error is True
+    assert result.reason == "context_overflow"
+    assert "prompt too large" in result.text
 
 
 # ── _partition_tool_calls ────────────────────────────────────
@@ -415,7 +342,7 @@ class TestExecuteContextTracking:
 
 class TestPartitionToolCalls:
     def test_all_reads_are_parallel(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("read_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("search_memory", {"query": "x"}, "call_2")
@@ -424,7 +351,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_different_paths_are_parallel(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/b"}, "call_2")
@@ -433,7 +360,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_same_path_serialised(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/a"}, "call_2")
@@ -469,7 +396,7 @@ class TestUseTool:
     async def test_use_tool_in_loop_returns_result(self, anima_dir, model_config, memory):
         """use_tool is callable in the loop and returns tool result to LLM."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -581,35 +508,24 @@ class TestToolExecutionErrorHandling:
         assert "serial write failed" in parsed["message"]
 
 
-# ── session chaining — execution_mode ─────────────────────
+# ── threshold shortterm metadata ───────────────────────────
 
 
-class TestSessionChainingExecutionMode:
-    """H1: Session chaining partial must pass execution_mode='a'."""
+class TestThresholdShorttermMetadata:
+    """Mode A threshold state records the session metadata for later resumption."""
 
-    async def test_session_chaining_preserves_a_mode(self, executor, anima_dir: Path):
-        """When session chaining triggers, build_system_prompt must be called
-        with execution_mode='a'."""
+    async def test_saves_session_metadata(self, executor, anima_dir: Path):
         tracker = ContextTracker(model="openai/gpt-4o", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
-
-        resp_threshold = make_litellm_response(
+        response = make_litellm_response(
             content="Partial",
             prompt_tokens=100_000,
             completion_tokens=10_000,
         )
-        resp_final = make_litellm_response(content="Continued", prompt_tokens=1000)
-
-        mock = AsyncMock(side_effect=[resp_threshold, resp_final])
+        mock = AsyncMock(return_value=response)
         _install_litellm_mock(mock)
 
-        build_spy = MagicMock(return_value="new-system-prompt")
-
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.build_system_prompt", build_spy),
-            patch("core.execution._session.load_prompt", return_value="continue"),
-        ):
+        with patch("litellm.acompletion", mock):
             await executor.execute(
                 "test",
                 system_prompt="sys",
@@ -617,12 +533,12 @@ class TestSessionChainingExecutionMode:
                 shortterm=shortterm,
             )
 
-        # Verify build_system_prompt was called with execution_mode="a"
-        if build_spy.called:
-            _, kwargs = build_spy.call_args
-            assert kwargs.get("execution_mode") == "a", (
-                f"Expected execution_mode='a', got {kwargs.get('execution_mode')!r}"
-            )
+        saved_state = shortterm.load()
+        assert saved_state is not None
+        assert saved_state.session_id == "litellm-a"
+        assert saved_state.trigger == "a_tool_loop"
+        assert saved_state.original_prompt == "test"
+        assert saved_state.accumulated_response == "Partial"
 
 
 # ── _BG_POOL_TOOLS ──────────────────────────────────────────
@@ -631,7 +547,7 @@ class TestSessionChainingExecutionMode:
 class TestBgPoolTools:
     def test_contains_image_gen_schema_names(self):
         """_BG_POOL_TOOLS includes all image_gen tool schema names."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         expected_image_tools = {
             "generate_character_assets",
@@ -648,14 +564,14 @@ class TestBgPoolTools:
 
     def test_contains_other_bg_tools(self):
         """_BG_POOL_TOOLS includes local_llm and run_command."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         assert "local_llm" in LiteLLMExecutor._BG_POOL_TOOLS
         assert "run_command" in LiteLLMExecutor._BG_POOL_TOOLS
 
     def test_does_not_contain_category_names(self):
         """_BG_POOL_TOOLS must NOT contain old category name 'image_generation'."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         assert "image_generation" not in LiteLLMExecutor._BG_POOL_TOOLS
 
@@ -684,10 +600,9 @@ class TestBuildLlmKwargsTimeoutAndNumCtx:
             api_key="sk-test",
             max_tokens=1024,
             context_threshold=0.50,
-            max_chains=2,
         )
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=ollama_config,

@@ -1,0 +1,92 @@
+{
+  "engine": "codex",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "happy",
+  "events": [
+    {
+      "type": "text_delta",
+      "text": "Context before the tool call."
+    },
+    {
+      "type": "tool_start",
+      "tool_name": "printf result",
+      "tool_id": "cmd-1"
+    },
+    {
+      "type": "tool_end",
+      "tool_id": "cmd-1",
+      "tool_name": "printf result"
+    },
+    {
+      "type": "text_delta",
+      "text": "Final answer after the tool call."
+    },
+    {
+      "type": "usage",
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    {
+      "type": "done",
+      "full_text": "Context before the tool call.\nFinal answer after the tool call.",
+      "result_message": {
+        "num_turns": 1,
+        "session_id": "thread-contract",
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 50,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0
+        }
+      },
+      "replied_to_from_transcript": [],
+      "tool_call_records": [
+        {
+          "tool_name": "printf result",
+          "tool_id": "cmd-1",
+          "input_summary": "printf result",
+          "result_summary": "result",
+          "is_error": false
+        }
+      ],
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "usage_already_emitted": true,
+      "stop_kind": "normal"
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_use",
+      "content": "printf result",
+      "tool": "Bash",
+      "meta": {
+        "args": {
+          "command": "printf result"
+        },
+        "tool_use_id": "cmd-1"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "result",
+      "tool": "Bash",
+      "meta": {
+        "tool_use_id": "cmd-1",
+        "is_error": false,
+        "exit_code": 0
+      }
+    }
+  ]
+}

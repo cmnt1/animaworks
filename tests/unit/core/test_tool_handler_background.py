@@ -11,9 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.background import BackgroundTaskManager
+from core.tasks.background import BackgroundTaskManager
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 

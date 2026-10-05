@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 
 
 @pytest.mark.parametrize("fail_verification", [False, True])
@@ -61,7 +61,7 @@ async def test_cancelled_repair_keeps_fence_until_consistent_generation(
         assert service._repairing is True
         assert service._repair_lock.locked()
         with pytest.raises(MemoryServiceUnavailable, match="repair in progress"):
-            await service.handle("memory.list_collections_checked", {})
+            await service.handle("memory.list_collections", {})
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(running, 5)

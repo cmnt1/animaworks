@@ -127,3 +127,28 @@ class TestSetupConfigRoundTrip:
         loaded = load_config(path)
         assert loaded.setup_complete is False
         assert loaded.locale == "ja"
+
+
+class TestRemovedCronGuardCompatibility:
+    def test_legacy_cron_guard_config_is_ignored(self, tmp_path: Path) -> None:
+        path = tmp_path / "config.json"
+        legacy_config = {
+            "version": 1,
+            "setup_complete": True,
+            "cron_guard": {
+                "mode": "disable",
+                "max_fires_per_window": 1,
+                "window_minutes": 1,
+                "max_consecutive_failures": 1,
+            },
+        }
+        path.write_text(json.dumps(legacy_config), encoding="utf-8")
+        invalidate_cache()
+        try:
+            loaded = load_config(path)
+        finally:
+            invalidate_cache()
+
+        assert loaded.setup_complete is True
+        assert not hasattr(loaded, "cron_guard")
+        assert "cron_guard" not in loaded.model_dump(mode="json")

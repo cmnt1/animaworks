@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.ontology.default import (
+from core.memory.facts.ontology import (
     DEFAULT_EDGE_TYPE,
     EDGE_TYPE_DESCRIPTIONS,
     EDGE_TYPES,
@@ -64,24 +64,24 @@ class TestEdgeTypeDefinitions:
         assert merged["WORKS_AT"] == "Employment / affiliation"
         assert merged["MENTORS"] == "Mentorship relationship"
 
-    def test_memory_config_accepts_custom_neo4j_edge_types(self) -> None:
+    def test_memory_config_accepts_custom_fact_edge_types(self) -> None:
         from core.config.schemas import MemoryConfig
 
         cfg = MemoryConfig(
-            neo4j_edge_types=[
+            fact_edge_types=[
                 {"name": "mentors", "description": "Mentorship relationship"},
             ]
         )
 
-        assert cfg.neo4j_edge_types[0].name == "MENTORS"
-        assert cfg.neo4j_edge_types[0].description == "Mentorship relationship"
+        assert cfg.fact_edge_types[0].name == "MENTORS"
+        assert cfg.fact_edge_types[0].description == "Mentorship relationship"
 
     def test_global_config_edge_types_are_resolved(self) -> None:
-        from core.config.schemas import Neo4jEdgeTypeConfig
+        from core.config.schemas import FactEdgeTypeConfig
 
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = [
-            Neo4jEdgeTypeConfig(name="mentors", description="Mentorship relationship"),
+        cfg.memory.fact_edge_types = [
+            FactEdgeTypeConfig(name="mentors", description="Mentorship relationship"),
         ]
 
         with patch("core.config.models.load_config", return_value=cfg):
@@ -93,7 +93,7 @@ class TestEdgeTypeDefinitions:
         (tmp_path / "status.json").write_text(
             json.dumps(
                 {
-                    "neo4j_edge_types": [
+                    "fact_edge_types": [
                         {"name": "reports_to", "description": "Org reporting line"},
                     ]
                 }
@@ -101,7 +101,7 @@ class TestEdgeTypeDefinitions:
             encoding="utf-8",
         )
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = []
+        cfg.memory.fact_edge_types = []
 
         with patch("core.config.models.load_config", return_value=cfg):
             descriptions = resolve_edge_type_descriptions(tmp_path)
@@ -183,7 +183,7 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_invalid_edge_type_falls_back_to_default(self) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         extractor = FactExtractor(model="test-model")
         llm_response = json.dumps(
@@ -200,7 +200,7 @@ class TestExtractorEdgeTypeValidation:
         )
 
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = []
+        cfg.memory.fact_edge_types = []
         with (
             patch("core.config.models.load_config", return_value=cfg),
             patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response),
@@ -222,7 +222,7 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_valid_edge_type_preserved(self) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         extractor = FactExtractor(model="test-model")
         llm_response = json.dumps(
@@ -239,7 +239,7 @@ class TestExtractorEdgeTypeValidation:
         )
 
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = []
+        cfg.memory.fact_edge_types = []
         with (
             patch("core.config.models.load_config", return_value=cfg),
             patch.object(extractor, "_call_llm", new_callable=AsyncMock, return_value=llm_response),
@@ -261,14 +261,14 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_configured_edge_type_from_status_is_preserved(self, tmp_path) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         (tmp_path / "status.json").write_text(
-            json.dumps({"neo4j_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
+            json.dumps({"fact_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
             encoding="utf-8",
         )
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = []
+        cfg.memory.fact_edge_types = []
         extractor = FactExtractor(model="test-model", anima_dir=tmp_path)
         llm_response = json.dumps(
             {
@@ -307,21 +307,21 @@ class TestPromptEdgeTypes:
     """Verify prompt templates include edge type instructions."""
 
     def test_ja_prompt_has_edge_types_placeholder(self) -> None:
-        from core.memory.extraction.prompts import ja
+        from core.memory.facts.prompts import ja
 
         assert "{edge_types_list}" in ja.FACT_USER
         assert "{reference_time}" in ja.FACT_USER
         assert "edge_type" in ja.FACT_USER
 
     def test_en_prompt_has_edge_types_placeholder(self) -> None:
-        from core.memory.extraction.prompts import en
+        from core.memory.facts.prompts import en
 
         assert "{edge_types_list}" in en.FACT_USER
         assert "{reference_time}" in en.FACT_USER
         assert "edge_type" in en.FACT_USER
 
     def test_ja_prompt_formats_correctly(self) -> None:
-        from core.memory.extraction.prompts import ja
+        from core.memory.facts.prompts import ja
 
         edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         result = ja.FACT_USER.format(
@@ -334,7 +334,7 @@ class TestPromptEdgeTypes:
         assert "RELATES_TO" in result
 
     def test_en_prompt_formats_correctly(self) -> None:
-        from core.memory.extraction.prompts import en
+        from core.memory.facts.prompts import en
 
         edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         result = en.FACT_USER.format(
@@ -348,268 +348,17 @@ class TestPromptEdgeTypes:
 
     def test_prompt_edge_types_include_per_anima_status_config(self, tmp_path) -> None:
         (tmp_path / "status.json").write_text(
-            json.dumps({"neo4j_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
+            json.dumps({"fact_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
             encoding="utf-8",
         )
         cfg = MagicMock()
-        cfg.memory.neo4j_edge_types = []
+        cfg.memory.fact_edge_types = []
 
         with patch("core.config.models.load_config", return_value=cfg):
             edge_types_list = format_edge_types_for_prompt(tmp_path)
 
         assert "`WORKS_AT`" in edge_types_list
         assert "`MENTORS`" in edge_types_list
-
-
-# ── Cypher query tests ────────────────────────────────────────────
-
-
-class TestQueriesEdgeType:
-    """Verify Cypher queries include edge_type."""
-
-    def test_create_fact_has_edge_type(self) -> None:
-        from core.memory.graph.queries import CREATE_FACT
-
-        assert "edge_type" in CREATE_FACT
-        assert "$edge_type" in CREATE_FACT
-        assert "raw_edge_type" in CREATE_FACT
-        assert "$raw_edge_type" in CREATE_FACT
-        assert "CREATE (s)-[r:RELATES_TO" in CREATE_FACT
-
-    def test_vector_search_facts_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import VECTOR_SEARCH_FACTS
-
-        assert "edge_type" in VECTOR_SEARCH_FACTS
-        assert "coalesce(r.edge_type, 'RELATES_TO')" in VECTOR_SEARCH_FACTS
-
-    def test_fulltext_search_facts_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import FULLTEXT_SEARCH_FACTS
-
-        assert "edge_type" in FULLTEXT_SEARCH_FACTS
-        assert "coalesce(r.edge_type, 'RELATES_TO')" in FULLTEXT_SEARCH_FACTS
-
-    def test_bfs_facts_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import BFS_FACTS_FROM_ENTITY
-
-        assert "edge_type" in BFS_FACTS_FROM_ENTITY
-
-    def test_bfs_facts_query_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import bfs_facts_query
-
-        query = bfs_facts_query(3)
-        assert "edge_type" in query
-        assert "coalesce(r.edge_type, 'RELATES_TO')" in query
-
-    def test_find_valid_facts_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import FIND_VALID_FACTS_BY_GROUP
-
-        assert "edge_type" in FIND_VALID_FACTS_BY_GROUP
-
-    def test_find_recent_facts_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import FIND_RECENT_FACTS
-
-        assert "edge_type" in FIND_RECENT_FACTS
-
-    def test_redirect_outgoing_preserves_edge_type(self) -> None:
-        from core.memory.graph.queries import REDIRECT_OUTGOING_FACTS
-
-        assert "edge_type" in REDIRECT_OUTGOING_FACTS
-        assert "coalesce(old.edge_type, 'RELATES_TO')" in REDIRECT_OUTGOING_FACTS
-
-    def test_redirect_incoming_preserves_edge_type(self) -> None:
-        from core.memory.graph.queries import REDIRECT_INCOMING_FACTS
-
-        assert "edge_type" in REDIRECT_INCOMING_FACTS
-        assert "coalesce(old.edge_type, 'RELATES_TO')" in REDIRECT_INCOMING_FACTS
-
-    def test_fetch_edges_for_community_returns_edge_type(self) -> None:
-        from core.memory.graph.queries import FETCH_EDGES_FOR_COMMUNITY
-
-        assert "edge_type" in FETCH_EDGES_FOR_COMMUNITY
-
-
-# ── HybridSearch edge_type_filter tests ───────────────────────────
-
-
-class TestHybridSearchEdgeTypeFilter:
-    """Verify HybridSearch.search filters by edge_type."""
-
-    @pytest.mark.asyncio
-    async def test_edge_type_filter_removes_non_matching(self) -> None:
-        from core.memory.graph.search import HybridSearch
-
-        mock_driver = MagicMock()
-        mock_driver.execute_query = AsyncMock(return_value=[])
-        search = HybridSearch(mock_driver, "test-group")
-
-        results_with_types = [
-            {"uuid": "1", "fact": "A works at B", "edge_type": "WORKS_AT", "rrf_score": 0.5},
-            {"uuid": "2", "fact": "A knows C", "edge_type": "KNOWS", "rrf_score": 0.4},
-            {"uuid": "3", "fact": "A relates to D", "edge_type": "RELATES_TO", "rrf_score": 0.3},
-        ]
-
-        with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.retrieval.rrf.rrf_merge", return_value=results_with_types),
-        ):
-            mock_gather.return_value = [results_with_types, [], []]
-
-            results = await search.search(
-                "test query",
-                scope="fact",
-                query_embedding=[0.1] * 384,
-                edge_type_filter="WORKS_AT",
-            )
-
-        assert all(r.get("edge_type") == "WORKS_AT" for r in results)
-
-    @pytest.mark.asyncio
-    async def test_no_filter_returns_all_types(self) -> None:
-        from core.memory.graph.search import HybridSearch
-
-        mock_driver = MagicMock()
-        mock_driver.execute_query = AsyncMock(return_value=[])
-        search = HybridSearch(mock_driver, "test-group")
-
-        results_with_types = [
-            {"uuid": "1", "fact": "A works at B", "edge_type": "WORKS_AT", "rrf_score": 0.5},
-            {"uuid": "2", "fact": "A knows C", "edge_type": "KNOWS", "rrf_score": 0.4},
-        ]
-
-        with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.retrieval.rrf.rrf_merge", return_value=results_with_types),
-        ):
-            mock_gather.return_value = [results_with_types, [], []]
-
-            results = await search.search(
-                "test query",
-                scope="fact",
-                query_embedding=[0.1] * 384,
-            )
-
-        assert len(results) == 2
-
-    @pytest.mark.asyncio
-    async def test_edge_type_filter_ignored_for_entity_scope(self) -> None:
-        from core.memory.graph.search import HybridSearch
-
-        mock_driver = MagicMock()
-        mock_driver.execute_query = AsyncMock(return_value=[])
-        search = HybridSearch(mock_driver, "test-group")
-
-        entity_results = [
-            {"uuid": "1", "name": "Alice", "summary": "A person", "rrf_score": 0.5},
-        ]
-
-        with (
-            patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.retrieval.rrf.rrf_merge", return_value=entity_results),
-        ):
-            mock_gather.return_value = [entity_results, [], []]
-
-            results = await search.search(
-                "test query",
-                scope="entity",
-                query_embedding=[0.1] * 384,
-                edge_type_filter="WORKS_AT",
-            )
-
-        assert len(results) == 1
-
-
-# ── Backend edge_type passthrough tests ───────────────────────────
-
-
-class TestBackendEdgeType:
-    """Verify Neo4jGraphBackend passes edge_type to CREATE_FACT."""
-
-    @pytest.mark.asyncio
-    async def test_ingest_passes_edge_type_to_create_fact(self) -> None:
-        from pathlib import Path
-
-        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
-
-        backend = Neo4jGraphBackend(Path("/tmp/test-anima"), group_id="test")
-
-        mock_driver = AsyncMock()
-        mock_driver.execute_query = AsyncMock(return_value=[])
-        mock_driver.execute_write = AsyncMock(return_value=None)
-        mock_driver.health_check = AsyncMock(return_value=True)
-        backend._driver = mock_driver
-        backend._schema_ensured = True
-
-        mock_extractor = AsyncMock()
-        mock_entity = MagicMock()
-        mock_entity.name = "Alice"
-        mock_entity.entity_type = "Person"
-        mock_entity.summary = "A person"
-        mock_entity.model_dump = lambda mode="json": {"name": "Alice", "entity_type": "Person", "summary": "A person"}
-
-        mock_fact = MagicMock()
-        mock_fact.source_entity = "Alice"
-        mock_fact.target_entity = "Alice"
-        mock_fact.fact = "Alice is a person"
-        mock_fact.valid_at = None
-        mock_fact.edge_type = "RELATES_TO"
-        mock_fact.raw_edge_type = "MENTORS"
-
-        mock_extractor.extract_entities = AsyncMock(return_value=[mock_entity])
-        mock_extractor.extract_facts = AsyncMock(return_value=[mock_fact])
-        backend._extractor = mock_extractor
-
-        mock_resolver = MagicMock()
-        resolved = MagicMock()
-        resolved.uuid = "entity-uuid-1"
-        resolved.name = "Alice"
-        resolved.summary = "A person"
-        resolved.is_new = True
-        mock_resolver.resolve = AsyncMock(return_value=resolved)
-        backend._resolver = mock_resolver
-
-        backend._embedding_available = False
-
-        await backend.ingest_text("Alice is a person", source="test")
-
-        create_fact_calls = [
-            call for call in mock_driver.execute_write.call_args_list if call.args and "edge_type" in str(call.args[0])
-        ]
-        assert len(create_fact_calls) >= 1
-        params = create_fact_calls[0].args[1]
-        assert "edge_type" in params
-        assert params["edge_type"] == "RELATES_TO"
-        assert params["raw_edge_type"] == "MENTORS"
-
-    def test_retrieve_content_includes_edge_type_label(self) -> None:
-        """Verify fact content format includes edge type."""
-        result_dict = {
-            "uuid": "fact-1",
-            "fact": "Alice works at Acme",
-            "source_name": "Alice",
-            "target_name": "Acme",
-            "edge_type": "WORKS_AT",
-            "valid_at": "2026-01-01T00:00:00",
-            "rrf_score": 0.8,
-        }
-
-        edge_label = result_dict.get("edge_type", "RELATES_TO")
-        content = f"{result_dict.get('source_name', '')} -[{edge_label}]-> {result_dict.get('target_name', '')}: {result_dict.get('fact', '')}"
-
-        assert "WORKS_AT" in content
-        assert "-[WORKS_AT]->" in content
-
-    def test_backward_compat_missing_edge_type(self) -> None:
-        """Facts without edge_type should be treated as RELATES_TO."""
-        result_dict = {
-            "uuid": "old-fact",
-            "fact": "old relationship",
-            "source_name": "A",
-            "target_name": "B",
-            "valid_at": "2026-01-01",
-            "rrf_score": 0.5,
-        }
-        edge_label = result_dict.get("edge_type", "RELATES_TO")
-        assert edge_label == "RELATES_TO"
 
 
 # ── Import validation ─────────────────────────────────────────────
@@ -619,16 +368,16 @@ class TestOntologyImports:
     """Verify re-exports from __init__.py."""
 
     def test_import_edge_types_from_init(self) -> None:
-        from core.memory.ontology import EDGE_TYPES
+        from core.memory.facts.ontology import EDGE_TYPES
 
         assert EDGE_TYPES is not None
 
     def test_import_edge_type_descriptions_from_init(self) -> None:
-        from core.memory.ontology import EDGE_TYPE_DESCRIPTIONS
+        from core.memory.facts.ontology import EDGE_TYPE_DESCRIPTIONS
 
         assert isinstance(EDGE_TYPE_DESCRIPTIONS, dict)
 
     def test_import_default_edge_type_from_init(self) -> None:
-        from core.memory.ontology import DEFAULT_EDGE_TYPE
+        from core.memory.facts.ontology import DEFAULT_EDGE_TYPE
 
         assert DEFAULT_EDGE_TYPE == "RELATES_TO"

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _SubordinateControlHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +20,7 @@ from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import OrgHelpersMixin, resolve_anima_name
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -30,7 +34,84 @@ class SubordinateControlMixin(OrgHelpersMixin):
     _activity: ActivityLogger
     _process_supervisor: Any
 
-    def _handle_disable_subordinate(self, args: dict[str, Any]) -> str:
+    def _request_subordinate_control(
+        self: _SubordinateControlHost,
+        target_name: str,
+        action: str,
+        **values: Any,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Ask root to apply a descendant change, or write locally in offline CLI mode."""
+        from core.anima.settings_store import settings_server_running
+        from core.platform.process_role import get_process_role
+
+        role = get_process_role()
+        if role == "root" or (role == "cli" and not settings_server_running()):
+            from core.anima.settings_store import update_status
+            from core.config.model_config import smart_update_model, update_status_model
+            from core.paths import get_animas_dir
+
+            target_dir = get_animas_dir() / target_name
+            changed = False
+            result: dict[str, Any] = {}
+            try:
+                if action in {"enable", "disable"}:
+                    enabled = action == "enable"
+
+                    def set_enabled(status: dict[str, Any]) -> None:
+                        nonlocal changed
+                        if status.get("enabled", True) != enabled:
+                            status["enabled"] = enabled
+                            changed = True
+
+                    update_status(target_dir, set_enabled)
+                elif action == "request_restart":
+                    update_status(target_dir, lambda status: status.__setitem__("restart_requested", True))
+                    changed = True
+                elif action == "set_model":
+                    result = smart_update_model(target_dir, model=str(values.get("model") or ""))
+                    changed = True
+                elif action == "set_background_model":
+                    update_status_model(
+                        target_dir,
+                        background_model=str(values.get("background_model") or ""),
+                        background_credential=str(values.get("background_credential") or ""),
+                    )
+                    changed = True
+            except (ValueError, OSError, FileNotFoundError) as exc:
+                return None, _error_result("InvalidState", str(exc))
+            return {"ok": True, "changed": changed, "result": result}, None
+
+        from urllib.parse import quote
+
+        from core.host_api import host_api, response_detail
+
+        try:
+            response = host_api.post(
+                f"/api/internal/animas/{quote(target_name, safe='')}/control",
+                json={"action": action, **values},
+                timeout=30.0,
+            )
+        except Exception as exc:
+            logger.warning("Root subordinate-control API failed for %s", target_name, exc_info=True)
+            return None, _error_result("HostAPIError", f"Root settings API unavailable: {exc}")
+        if response.status_code >= 400:
+            error_type = {
+                400: "InvalidArguments",
+                401: "PermissionDenied",
+                403: "PermissionDenied",
+                404: "AnimaNotFound",
+                409: "InvalidState",
+            }.get(response.status_code, "HostAPIError")
+            return None, _error_result(error_type, response_detail(response))
+        try:
+            payload = response.json()
+        except Exception as exc:
+            return None, _error_result("HostAPIError", f"Invalid root settings response: {exc}")
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            return None, _error_result("HostAPIError", "Unexpected root settings response")
+        return payload, None
+
+    def _handle_disable_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Disable a subordinate anima (set enabled=false in status.json)."""
         target_name = resolve_anima_name(args.get("name", ""))
         reason = args.get("reason", "")
@@ -42,26 +123,11 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if err:
             return err
 
-        from core.paths import get_animas_dir
-
-        target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
-
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
-
-        if not existing.get("enabled", True):
+        response, error = self._request_subordinate_control(target_name, "disable")
+        if error:
+            return error
+        if not response.get("changed"):
             return t("handler.already_disabled", target_name=target_name)
-
-        existing["enabled"] = False
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
         log_summary = t("handler.disable_log_summary", target_name=target_name)
         if reason:
             log_summary += t("handler.disable_reason", reason=reason)
@@ -84,7 +150,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result += "\n" + t("handler.reason_prefix", reason=reason)
         return result
 
-    def _handle_enable_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_enable_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Enable a subordinate anima (set enabled=true in status.json)."""
         target_name = resolve_anima_name(args.get("name", ""))
 
@@ -95,26 +161,11 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if err:
             return err
 
-        from core.paths import get_animas_dir
-
-        target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
-
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
-
-        if existing.get("enabled", True):
+        response, error = self._request_subordinate_control(target_name, "enable")
+        if error:
+            return error
+        if not response.get("changed"):
             return t("handler.already_enabled", target_name=target_name)
-
-        existing["enabled"] = True
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
 
         self._activity.log(
             "tool_use",
@@ -131,11 +182,9 @@ class SubordinateControlMixin(OrgHelpersMixin):
 
         return t("handler.enabled_success", target_name=target_name)
 
-    def _handle_set_subordinate_model(self, args: dict[str, Any]) -> str:
+    def _handle_set_subordinate_model(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Change a subordinate anima's LLM model (updates status.json)."""
-        from core.config.model_config import smart_update_model
         from core.config.models import KNOWN_MODELS
-        from core.paths import get_data_dir
 
         target_name = resolve_anima_name(args.get("name", ""))
         model = args.get("model", "").strip()
@@ -160,8 +209,14 @@ class SubordinateControlMixin(OrgHelpersMixin):
             )
             warn_msg = "\n" + t("handler.model_warning", model=model)
 
-        target_dir = get_data_dir() / "animas" / target_name
-        update_result = smart_update_model(target_dir, model=model)
+        response, error = self._request_subordinate_control(
+            target_name,
+            "set_model",
+            model=model,
+        )
+        if error:
+            return error
+        update_result = response.get("result") or {}
 
         log_summary = t("handler.model_change_log", target_name=target_name, model=model)
         if reason:
@@ -188,11 +243,8 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result_msg += "\n" + t("handler.reason_prefix", reason=reason)
         return result_msg + warn_msg
 
-    def _handle_set_subordinate_background_model(self, args: dict[str, Any]) -> str:
+    def _handle_set_subordinate_background_model(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Change a subordinate's background model (heartbeat/cron)."""
-        from core.config.models import update_status_model
-        from core.paths import get_data_dir
-
         target_name = args.get("name", "")
         model = args.get("model", "")
         credential = args.get("credential")
@@ -205,12 +257,14 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if err:
             return err
 
-        target_dir = get_data_dir() / "animas" / target_name
-        update_status_model(
-            target_dir,
+        _, error = self._request_subordinate_control(
+            target_name,
+            "set_background_model",
             background_model=model if model else "",
             background_credential=credential if credential else "",
         )
+        if error:
+            return error
 
         log_summary = t(
             "handler.bg_model_change_log",
@@ -238,11 +292,9 @@ class SubordinateControlMixin(OrgHelpersMixin):
             return t("handler.bg_model_changed", target_name=target_name, model=model)
         return t("handler.bg_model_cleared", target_name=target_name)
 
-    def _handle_restart_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_restart_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Request restart of a subordinate anima via sentinel flag in status.json."""
-        from core.paths import get_animas_dir
-
-        target_name = args.get("name", "")
+        target_name = resolve_anima_name(args.get("name", ""))
         reason = args.get("reason", "")
 
         if not target_name:
@@ -252,21 +304,9 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if err:
             return err
 
-        target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
-
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
-
-        existing["restart_requested"] = True
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _, error = self._request_subordinate_control(target_name, "request_restart")
+        if error:
+            return error
 
         log_summary = t("handler.restart_log", target_name=target_name)
         if reason:
@@ -290,7 +330,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result += "\n" + t("handler.reason_prefix", reason=reason)
         return result
 
-    def _handle_ping_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_ping_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Ping subordinate(s) for liveness check."""
         from datetime import datetime
 
@@ -377,7 +417,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
 
         return _json.dumps(results, ensure_ascii=False, indent=2)
 
-    def _handle_read_subordinate_state(self, args: dict[str, Any]) -> str:
+    def _handle_read_subordinate_state(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Read a descendant's current task state."""
         target_name = args.get("name", "")
         if not target_name:

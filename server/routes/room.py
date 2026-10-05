@@ -29,6 +29,7 @@ from server.routes.chat_chunk_handler import _chunk_to_event, _format_sse
 from server.routes.chat_emotion import extract_emotion
 
 logger = logging.getLogger(__name__)
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 # Meeting turns may use read-only tools to verify before answering, so a
 # speaker's whole stream needs a larger wall-clock budget than the old
 # reference-only turns — but the previous 300s cap let a single looping speaker
@@ -53,7 +54,7 @@ class _MeetingStreamIdle(Exception):
 
 async def _with_wall_timeout(
     stream: AsyncIterator[Any],
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109 - Implements timeout enforcement for a streaming iterator.
     *,
     idle_timeout: float,
 ) -> AsyncIterator[Any]:
@@ -932,7 +933,7 @@ def create_room_router() -> APIRouter:
         # the kickoff summary (fire-and-forget; failures never block close).
         room = room_manager.get_room(room_id)
         if room is not None and room.project_task_code:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 asyncio.to_thread(
                     _ensure_project_thread_for_room,
                     room.project_task_code,
@@ -942,6 +943,8 @@ def create_room_router() -> APIRouter:
                     list(room.action_items or []),
                 )
             )
+            _BACKGROUND_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
 
         # Generate minutes
         try:

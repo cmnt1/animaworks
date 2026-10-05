@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
+
+from cli._gateway import gateway_request
+from core.platform.env import anima_dir_env
 
 logger = logging.getLogger("animaworks")
 
@@ -16,12 +18,13 @@ logger = logging.getLogger("animaworks")
 
 def cmd_send(args: argparse.Namespace) -> None:
     """Send a message from an anima or a human user to an anima (filesystem based)."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
+    from core.messaging.sender import resolve_sender_source
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
-    source = _resolve_sender_source(args.from_person)
+    source = resolve_sender_source(args.from_person)
     messenger = Messenger(get_shared_dir(), args.from_person)
     msg = messenger.send(
         to=args.to_person,
@@ -35,33 +38,6 @@ def cmd_send(args: argparse.Namespace) -> None:
     print(f"Sent: {sender_label} -> {msg.to_person} (id: {msg.id}, thread: {msg.thread_id})")
     _persist_replied_to_for_a1(args.to_person)
     _notify_server_message_sent(args.from_person, args.to_person, args.message, msg.id)
-
-
-def _resolve_sender_source(name: str) -> str:
-    """Resolve a sender name to a message source ("anima" or "human").
-
-    A sender is an anima when it is registered in config or has an anima
-    directory.  Anything else is treated as a human sender so the receiving
-    anima accepts the message instead of ignoring it as an unknown anima
-    (see Messenger inbox validation of source=="anima" senders).
-    """
-    from core.paths import get_animas_dir
-
-    known: set[str] = set()
-    try:
-        from core.config.models import load_config
-
-        known = set(load_config().animas.keys())
-    except Exception:
-        pass
-    if name in known:
-        return "anima"
-    try:
-        if (get_animas_dir() / name / "identity.md").exists():
-            return "anima"
-    except Exception:
-        pass
-    return "human"
 
 
 def _persist_replied_to_for_a1(to: str) -> None:
@@ -79,9 +55,9 @@ def _persist_replied_to_for_a1(to: str) -> None:
     import json as _json
     from pathlib import Path
 
-    from core.execution.session_context import RuntimeSessionContext
+    from core.execution.session.session_context import RuntimeSessionContext
 
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if not anima_dir:
         return
     ctx = RuntimeSessionContext.from_env()
@@ -119,18 +95,21 @@ def _notify_server_message_sent(
     Triggers WebSocket broadcast and reply tracking.
     Fails silently if the server is not running.
     """
-    from cli.commands.server import _is_process_alive, _read_pid
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
-    pid = _read_pid()
-    if pid is None or not _is_process_alive(pid):
+    pid = read_server_pid()
+    if pid is None or not is_process_alive(pid):
         return
 
-    server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500")
     try:
-        import httpx
+        from core.internal_api import internal_api_headers
 
-        resp = httpx.post(
-            f"{server_url}/api/internal/message-sent",
+        resp = gateway_request(
+            argparse.Namespace(gateway_url=None),
+            "POST",
+            "/api/internal/message-sent",
+            headers=internal_api_headers(),
             json={
                 "from_person": from_anima,
                 "to_person": to_anima,
@@ -138,6 +117,7 @@ def _notify_server_message_sent(
                 "message_id": message_id,
             },
             timeout=5.0,
+            raw_response=True,
         )
         if resp.status_code == 200:
             logger.debug("Server notified of CLI send: %s -> %s", from_anima, to_anima)
@@ -145,43 +125,6 @@ def _notify_server_message_sent(
             logger.debug("Server notification failed: %s", resp.status_code)
     except Exception:
         logger.debug("Could not notify server of CLI message send", exc_info=True)
-
-
-# ── List ───────────────────────────────────────────────────
-
-
-def cmd_list(args: argparse.Namespace) -> None:
-    """List all animas (from gateway or filesystem)."""
-    if args.local:
-        _list_local()
-    else:
-        from cli._gateway import gateway_request_or_none
-
-        data = gateway_request_or_none(args, "GET", "/api/animas", timeout=10.0)
-        if data is None:
-            print("Gateway not reachable, falling back to filesystem...")
-            _list_local()
-        elif isinstance(data, list):
-            for p in data:
-                name = p.get("name", "unknown")
-                status = p.get("status", "unknown")
-                print(f"  {name} ({status})")
-        else:
-            print(data)
-
-
-def _list_local() -> None:
-    from core.init import ensure_runtime_dir
-    from core.paths import get_animas_dir
-
-    ensure_runtime_dir()
-    animas_dir = get_animas_dir()
-    if not animas_dir.exists():
-        print("No animas directory found.")
-        return
-    for d in sorted(animas_dir.iterdir()):
-        if d.is_dir() and (d / "identity.md").exists():
-            print(f"  {d.name}")
 
 
 # ── Status ─────────────────────────────────────────────────

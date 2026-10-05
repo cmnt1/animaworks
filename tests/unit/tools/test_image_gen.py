@@ -1,4 +1,4 @@
-"""Tests for core/tools/image_gen.py — Image generation pipeline."""
+"""Tests for core/integrations/image_gen.py — Image generation pipeline."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
-import subprocess
+import logging
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,8 +15,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.image_gen import (
+from core.integrations._base import ToolConfigError
+from core.integrations._image_pipeline import _append_image_error
+from core.integrations.image_gen import (
     FluxKontextClient,
     ImageGenPipeline,
     MeshyClient,
@@ -26,14 +27,6 @@ from core.tools.image_gen import (
     _retry,
     get_tool_schemas,
 )
-
-
-def _sample_image_bytes(fmt: str = "PNG", size: tuple[int, int] = (32, 24)) -> bytes:
-    from PIL import Image
-
-    buf = io.BytesIO()
-    Image.new("RGB", size, (96, 128, 160)).save(buf, format=fmt)
-    return buf.getvalue()
 
 # ── _image_to_data_uri ───────────────────────────────────────────
 
@@ -77,7 +70,7 @@ class TestRetry:
                 raise error
             return "ok"
 
-        with patch("core.tools.image_gen.time.sleep"):
+        with patch("core.integrations.image_gen.time.sleep"):
             result = _retry(fn, max_retries=3, delay=0.01)
         assert result == "ok"
         assert call_count == 3
@@ -103,7 +96,7 @@ class TestRetry:
                 raise httpx.ConnectError("connection refused")
             return "ok"
 
-        with patch("core.tools.image_gen.time.sleep"):
+        with patch("core.integrations.image_gen.time.sleep"):
             result = _retry(fn, max_retries=2, delay=0.01)
         assert result == "ok"
 
@@ -152,7 +145,7 @@ class TestNovelAIClient:
         mock_resp.content = zip_buf.getvalue()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp):
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp):
             client = NovelAIClient()
             result = client.generate_fullbody("1girl, black hair")
         assert result == b"PNG-BYTES"
@@ -178,8 +171,8 @@ class TestFluxKontextClient:
 
 
 class TestDispatchGenerateIcon:
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
-    @patch("core.tools.image_gen.FluxKontextClient")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations.image_gen.FluxKontextClient")
     @patch("core.config.models.load_config")
     def test_writes_icon_png_with_square_aspect_ratio(
         self,
@@ -202,7 +195,7 @@ class TestDispatchGenerateIcon:
 
         mock_flux_cls.return_value.generate_from_reference.return_value = b"CHAT_ICON_BYTES"
 
-        from core.tools.image_gen import dispatch
+        from core.integrations.image_gen import dispatch
 
         result = dispatch("generate_icon", {"anima_dir": str(tmp_path)})
         assert "error" not in result
@@ -211,8 +204,8 @@ class TestDispatchGenerateIcon:
         kw = mock_flux_cls.return_value.generate_from_reference.call_args[1]
         assert kw["aspect_ratio"] == "1:1"
 
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
-    @patch("core.tools.image_gen.FluxKontextClient")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations.image_gen.FluxKontextClient")
     @patch("core.config.models.load_config")
     def test_writes_icon_realistic_png_when_realistic_style(
         self,
@@ -235,7 +228,7 @@ class TestDispatchGenerateIcon:
 
         mock_flux_cls.return_value.generate_from_reference.return_value = b"ICON_REALISTIC"
 
-        from core.tools.image_gen import dispatch
+        from core.integrations.image_gen import dispatch
 
         result = dispatch("generate_icon", {"anima_dir": str(tmp_path)})
         assert "error" not in result
@@ -286,6 +279,26 @@ class TestMeshyClient:
 
 
 # ── PipelineResult ────────────────────────────────────────────────
+
+
+class TestImageGenerationErrorReporting:
+    def test_codex_limit_with_missing_fallback_key_is_retryable(self) -> None:
+        result = PipelineResult()
+        exc = RuntimeError("FAL_KEY required (codex: ERROR: You've hit your usage limit; try again at 12:06 PM.)")
+        _append_image_error(result, "fullbody", exc)
+
+        assert result.retryable is True
+        assert result.retry_after == "12:06 PM"
+        assert "12:06 PM" in result.errors[0]
+        assert "API" in result.errors[0]
+
+    def test_missing_backend_is_user_facing(self) -> None:
+        result = PipelineResult()
+        _append_image_error(result, "fullbody", RuntimeError("No image generation backend configured"))
+
+        assert result.retryable is False
+        assert "Codex" in result.errors[0]
+        assert "backend configured" not in result.errors[0]
 
 
 class TestPipelineResult:
@@ -374,7 +387,7 @@ class TestImageGenPipeline:
         )
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -395,7 +408,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", negative_prompt_extra="realistic, 3d render")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -417,7 +430,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", negative_prompt_extra="realistic")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -442,7 +455,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", style_reference=str(style_ref))
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -458,14 +471,12 @@ class TestImageGenPipeline:
 
     def test_generate_all_warns_missing_style_reference(self, tmp_path: Path, monkeypatch, caplog):
         monkeypatch.setenv("NOVELAI_TOKEN", "test-token")
-        import logging
-
         from core.config.models import ImageGenConfig
 
         cfg = ImageGenConfig(image_style="anime", style_reference="/nonexistent/path/style.png")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -488,7 +499,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", vibe_strength=0.3, vibe_info_extracted=0.5)
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -503,235 +514,7 @@ class TestImageGenPipeline:
             assert call_kwargs["vibe_strength"] == 0.3
             assert call_kwargs["vibe_info_extracted"] == 0.5
 
-    def test_generate_all_uses_openai_generation_model(self, tmp_path: Path):
-        from core.config.models import ImageGenConfig
-
-        cfg = ImageGenConfig(image_style="realistic")
-        pipe = ImageGenPipeline(tmp_path, config=cfg)
-
-        with patch("core.tools.image.openai.OpenAIImageClient") as mock_openai_cls:
-            mock_client = MagicMock()
-            mock_client.generate_fullbody.return_value = b"PNG-DATA"
-            mock_openai_cls.return_value = mock_client
-
-            result = pipe.generate_all(
-                prompt="realistic full body portrait",
-                skip_existing=False,
-                steps=["fullbody"],
-                generation_model="openai:gpt-image-2",
-                vibe_image=b"STYLE",
-            )
-
-            assert result.fullbody_path == tmp_path / "assets" / "avatar_fullbody_realistic.png"
-            mock_openai_cls.assert_called_once_with(model="gpt-image-2")
-            call_kwargs = mock_client.generate_fullbody.call_args[1]
-            assert call_kwargs["vibe_image"] == b"STYLE"
-            assert call_kwargs["face_reference_image"] is None
-
-    def test_openai_image_client_uses_codex_subscription_image_gen(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-        seen: dict[str, object] = {}
-
-        class FakePopen:
-            pid = 12345
-
-            def __init__(self, cmd, **kwargs):
-                seen["cmd"] = cmd
-                seen["env"] = kwargs["env"]
-                self.returncode = 0
-
-            def communicate(self, input=None, timeout=None):
-                image_paths = [Path(seen["cmd"][index + 1]) for index, item in enumerate(seen["cmd"]) if item == "--image"]
-                seen["reference_bytes"] = [path.read_bytes() for path in image_paths]
-                instruction = input
-                marker = "Save or copy the final generated image to this exact path:\n"
-                output_path = Path(instruction.split(marker, 1)[1].split("\n", 1)[0])
-                output_path.write_bytes(b"PNG-DATA")
-                seen["input"] = instruction
-                seen["instruction"] = instruction
-                return str(output_path), ""
-
-        def fake_popen(cmd, **kwargs):
-            seen["cmd"] = cmd
-            seen["env"] = kwargs["env"]
-            return FakePopen(cmd, **kwargs)
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
-
-        img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(
-            prompt="portrait",
-            vibe_image=_sample_image_bytes("PNG", size=(160, 160)),
-            face_reference_image=_sample_image_bytes("JPEG", size=(160, 160)),
-        )
-
-        assert img == b"PNG-DATA"
-        assert seen["cmd"][:2] == ["codex", "exec"]
-        assert seen["cmd"][-1] == "-"
-        assert "--ephemeral" in seen["cmd"]
-        assert "--ignore-rules" in seen["cmd"]
-        assert "--ignore-user-config" in seen["cmd"]
-        assert "--skip-git-repo-check" in seen["cmd"]
-        assert seen["cmd"][seen["cmd"].index("--cd") + 1] != str(Path.cwd())
-        assert seen["env"]["CODEX_HOME"] == str(codex_home)
-        assert seen["input"] == seen["instruction"]
-        assert seen["cmd"].count("--image") == 2
-        assert all(data.startswith(b"\x89PNG\r\n\x1a\n") for data in seen["reference_bytes"])
-        assert "style_reference.png" in seen["instruction"]
-        assert "face_reference.png" in seen["instruction"]
-        assert "use it as the face and identity reference" in seen["instruction"]
-        assert "bust-up, head-and-shoulders character portrait" in seen["instruction"]
-        assert "Use the built-in image generation tool with gpt-image-2" in seen["instruction"]
-
-    def test_openai_image_client_reports_codex_failure(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-
-        class FakePopen:
-            pid = 12345
-            returncode = 1
-
-            def __init__(self, cmd, **kwargs):
-                pass
-
-            def communicate(self, input=None, timeout=None):
-                return "", "image tool failed"
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
-
-        with pytest.raises(RuntimeError, match="Codex image_gen failed"):
-            OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
-
-    def test_openai_image_client_rejects_invalid_reference_image(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-
-        with pytest.raises(RuntimeError, match="face reference image could not be decoded"):
-            OpenAIImageClient(model="gpt-image-2").generate_fullbody(
-                prompt="portrait",
-                face_reference_image=b"<html>not an image</html>",
-            )
-
-    def test_openai_image_client_rejects_too_small_reference_before_codex(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-        popen_called = False
-
-        def fake_popen(cmd, **kwargs):
-            nonlocal popen_called
-            popen_called = True
-            raise AssertionError("Codex should not be launched for unsupported references")
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", fake_popen)
-
-        with pytest.raises(RuntimeError, match="image is too small"):
-            OpenAIImageClient(model="gpt-image-2").generate_fullbody(
-                prompt="portrait",
-                face_reference_image=_sample_image_bytes("JPEG", size=(64, 64)),
-            )
-
-        assert popen_called is False
-
-    def test_openai_image_client_retries_transient_stream_disconnect(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-        attempts: list[list[str]] = []
-        sleeps: list[float] = []
-
-        class FakePopen:
-            pid = 12345
-
-            def __init__(self, cmd, **kwargs):
-                self.cmd = cmd
-                self.returncode = 1 if not attempts else 0
-                attempts.append(cmd)
-
-            def communicate(self, input=None, timeout=None):
-                if self.returncode:
-                    return "", "ERROR: stream disconnected before completion: You can retry your request."
-                marker = "Save or copy the final generated image to this exact path:\n"
-                output_path = Path(input.split(marker, 1)[1].split("\n", 1)[0])
-                output_path.write_bytes(b"PNG-DATA")
-                return str(output_path), ""
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
-        monkeypatch.setattr("core.tools.image.openai.time.sleep", lambda wait: sleeps.append(wait))
-        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_RETRY_DELAY_SEC", "0")
-
-        img = OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
-
-        assert img == b"PNG-DATA"
-        assert len(attempts) == 2
-        assert sleeps == [0.0]
-
-    def test_openai_image_client_kills_process_tree_on_timeout(self, tmp_path: Path, monkeypatch):
-        from core.tools.image.openai import OpenAIImageClient
-
-        codex_home = tmp_path / "codex-home"
-        codex_home.mkdir()
-        killed: list[int] = []
-
-        class FakePopen:
-            pid = 24680
-            returncode = None
-
-            def __init__(self, cmd, **kwargs):
-                pass
-
-            def communicate(self, input=None, timeout=None):
-                raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout)
-
-        monkeypatch.setattr("core.tools.image.openai.get_codex_executable", lambda: "codex")
-        monkeypatch.setattr(
-            "server.routes.usage_routes.get_openai_subscription_codex_home",
-            lambda refresh=False: codex_home,
-        )
-        monkeypatch.setattr("core.tools.image.openai.subprocess.Popen", FakePopen)
-        monkeypatch.setattr("core.tools.image.openai._terminate_process_tree", lambda pid: killed.append(pid))
-        monkeypatch.setenv("ANIMAWORKS_CODEX_IMAGE_TIMEOUT_SEC", "1")
-
-        with pytest.raises(RuntimeError, match="timed out"):
-            OpenAIImageClient(model="gpt-image-2").generate_fullbody(prompt="portrait")
-
-        assert killed == [24680]
-
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
     def test_generate_all_icon_step_uses_square_aspect_ratio(
         self,
         _mock_persist: MagicMock,
@@ -747,7 +530,7 @@ class TestImageGenPipeline:
 
         pipe = ImageGenPipeline(tmp_path, config=ImageGenConfig(image_style="anime"))
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = b"ICON-BYTES"
             mock_cls.return_value = mock_client

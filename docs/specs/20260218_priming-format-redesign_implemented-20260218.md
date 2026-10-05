@@ -17,7 +17,7 @@ mio は存在しない `/opt/venv/` をハルシネーションして案内し�
 ### 根本原因
 
 1. **Priming の 200 文字 truncate で具体的なパスが消失**
-   - `_format_entry()` (`core/memory/activity.py:252-259`) が `summary or content` を 200 文字で切り詰め
+   - `_format_entry()` (`core/memory/activity/logger.py:252-259`) が `summary or content` を 200 文字で切り詰め
    - 「boto3 問題に対応した」という概要は残るが、作成したパスは消える
 2. **LLM が「概要で十分」と誤判断**
    - `behavior_rules.md` (L9-10) は「コンテキスト内の記憶で十分なら応答してよい」と定義
@@ -52,7 +52,7 @@ activity_log を source of truth、Priming を「ヒント（窓）」として�
 
 | ファイル | 現在の行数 | 変更内容 |
 |---------|-----------|---------|
-| `core/memory/activity.py` | 293 | `_format_entry()` ASCII化 + ポインタ、`EntryGroup` dataclass 新規、`_group_entries()` / `_format_group()` 新規、`format_for_priming()` グループベース書き換え、`recent()` 行番号付与、`to_dict()` に `_line_number` pop 追加 |
+| `core/memory/activity/logger.py` | 293 | `_format_entry()` ASCII化 + ポインタ、`EntryGroup` dataclass 新規、`_group_entries()` / `_format_group()` 新規、`format_for_priming()` グループベース書き換え、`recent()` 行番号付与、`to_dict()` に `_line_number` pop 追加 |
 | `core/memory/priming.py` | 428 | heartbeat 時チャネル B バジェット最低保証 |
 | `core/prompt/builder.py` | 483 | `_load_recent_activity_summary()` 関数削除、セクション 9 注入コード削除 |
 | `~/.animaworks/prompts/behavior_rules.md` | 87（ランタイム） | 「追加検索が必要な典型例」に 1 行追加 |
@@ -76,7 +76,7 @@ activity_log を source of truth、Priming を「ヒント（窓）」として�
 
 #### 1-1. `ActivityEntry` に `_line_number` フィールド追加
 
-**ファイル**: `core/memory/activity.py:36-49`
+**ファイル**: `core/memory/activity/logger.py:36-49`
 
 ```python
 @dataclass
@@ -113,7 +113,7 @@ def to_dict(self) -> dict[str, Any]:
 
 #### 1-2. `recent()` で行番号を記録
 
-**ファイル**: `core/memory/activity.py:157-198`
+**ファイル**: `core/memory/activity/logger.py:157-198`
 
 `recent()` 内の JSONL パースループで、`enumerate` を使い行番号を付与:
 
@@ -137,7 +137,7 @@ entries.append(entry)
 
 #### 1-3. `_format_entry()` の type_map を ASCII 化
 
-**ファイル**: `core/memory/activity.py:251-292`
+**ファイル**: `core/memory/activity/logger.py:251-292`
 
 ```python
 type_map: dict[str, str] = {
@@ -162,7 +162,7 @@ type_map: dict[str, str] = {
 
 #### 1-4. truncate 行末にソースファイルポインタを追加
 
-**ファイル**: `core/memory/activity.py:255-259`
+**ファイル**: `core/memory/activity/logger.py:255-259`
 
 現在:
 ```python
@@ -221,7 +221,7 @@ Phase 1 完了が前提（ASCII ラベルをグループヘッダで使用する
 
 #### 2-1. `EntryGroup` dataclass 追加
 
-**ファイル**: `core/memory/activity.py`（`ActivityEntry` の直後に配置）
+**ファイル**: `core/memory/activity/logger.py`（`ActivityEntry` の直後に配置）
 
 ```python
 @dataclass
@@ -240,7 +240,7 @@ class EntryGroup:
 
 #### 2-2. `_group_entries()` メソッド追加
 
-**ファイル**: `core/memory/activity.py`（`ActivityLogger` クラス内、`format_for_priming()` の前に配置）
+**ファイル**: `core/memory/activity/logger.py`（`ActivityLogger` クラス内、`format_for_priming()` の前に配置）
 
 ```python
 @staticmethod
@@ -375,7 +375,7 @@ def _set_source_lines(group):
 
 #### 2-3. `_format_group()` メソッド追加
 
-**ファイル**: `core/memory/activity.py`
+**ファイル**: `core/memory/activity/logger.py`
 
 ```python
 @staticmethod
@@ -424,7 +424,7 @@ def _format_group(group: EntryGroup) -> str:
 
 #### 2-4. `format_for_priming()` の書き換え
 
-**ファイル**: `core/memory/activity.py:211-249`
+**ファイル**: `core/memory/activity/logger.py:211-249`
 
 ```python
 def format_for_priming(

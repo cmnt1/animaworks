@@ -10,13 +10,13 @@ ConversationMemory, prompt building, and pre-flight size checks.
 
 from __future__ import annotations
 
-
 import pytest
 
-from core.memory.conversation import (
-    ConversationMemory,
+from core.memory.conversation.memory import (
     _MAX_STORED_CONTENT_CHARS,
+    ConversationMemory,
 )
+from core.memory.conversation.prompt import _format_history
 from core.schemas import ModelConfig
 
 
@@ -58,7 +58,7 @@ class TestLargeMessageHandling:
         big_msg = "x" * 2000
         mem.append_turn("human", big_msg)
         state = mem.load()
-        history = mem._format_history(state)
+        history = _format_history(state)
         # History should contain the truncated version
         assert "..." in history
         # Full 2000-char string should NOT appear
@@ -94,7 +94,7 @@ class TestLargeMessageHandling:
         mem.append_turn("assistant", "I see the error is on line 42." + " detail" * 300)
 
         state = mem.load()
-        history = mem._format_history(state)
+        history = _format_history(state)
 
         # History should be bounded
         assert len(history) < 10_000, f"History too long: {len(history)} chars"
@@ -104,21 +104,25 @@ class TestPreflightConstants:
     """Pre-flight size check constants are properly defined."""
 
     def test_soft_limit_exists(self):
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.prompt_log import _PROMPT_SOFT_LIMIT_BYTES
+
         assert _PROMPT_SOFT_LIMIT_BYTES > 0
 
     def test_hard_limit_exists(self):
-        from core.agent import _PROMPT_HARD_LIMIT_BYTES
+        from core.agent.prompt_log import _PROMPT_HARD_LIMIT_BYTES
+
         assert _PROMPT_HARD_LIMIT_BYTES > 0
 
     def test_sdk_buffer_size(self):
-        from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+        from core.execution.engines.claude._sdk_session import _SDK_MAX_BUFFER_SIZE
+
         assert _SDK_MAX_BUFFER_SIZE == 4 * 1024 * 1024
 
     def test_limits_ordering(self):
         """Soft < Hard < SDK buffer."""
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES, _PROMPT_HARD_LIMIT_BYTES
-        from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+        from core.agent.prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+        from core.execution.engines.claude._sdk_session import _SDK_MAX_BUFFER_SIZE
+
         assert _PROMPT_SOFT_LIMIT_BYTES < _PROMPT_HARD_LIMIT_BYTES < _SDK_MAX_BUFFER_SIZE
 
 

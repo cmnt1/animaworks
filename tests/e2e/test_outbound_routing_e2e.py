@@ -18,7 +18,7 @@ from core.config.models import (
     UserAliasConfig,
     save_config,
 )
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.tooling.handler import ToolHandler
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -65,12 +65,9 @@ def shared_dir(data_dir: Path) -> Path:
 def config_with_aliases(data_dir: Path) -> AnimaWorksConfig:
     cfg = AnimaWorksConfig(
         external_messaging=ExternalMessagingConfig(
-            preferred_channel="discord",
+            preferred_channel="slack",
             user_aliases={
-                "user": UserAliasConfig(
-                    discord_user_id="123456789012345678",
-                    outbound_dm=True,
-                ),
+                "user": UserAliasConfig(slack_user_id="U0TEST000001", outbound_dm=True),
             },
         ),
     )
@@ -109,22 +106,22 @@ def make_handler(shared_dir: Path):
 
 
 class TestSendMessageToAlias:
-    @patch("core.outbound._send_via_discord")
-    def test_send_to_user_alias_routes_to_discord(
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_send_to_user_alias_routes_to_slack(
         self,
-        mock_discord,
+        mock_slack,
         make_anima,
         animas_dir,
         config_with_aliases,
         data_dir,
         make_handler,
     ):
-        mock_discord.return_value = json.dumps(
+        mock_slack.return_value = json.dumps(
             {
                 "status": "sent",
-                "channel": "discord",
-                "recipient": "123456789012345678",
-                "message": "Message sent via Discord DM to 123456789012345678",
+                "channel": "slack",
+                "recipient": "U0TEST000001",
+                "message": "Message sent via Slack DM to U0TEST000001",
             }
         )
         sakura_dir = make_anima("sakura")
@@ -138,7 +135,7 @@ class TestSendMessageToAlias:
 
         data = json.loads(result)
         assert data["status"] == "sent"
-        mock_discord.assert_called_once_with("123456789012345678", "hello", "sakura", "sakura")
+        mock_slack.assert_called_once_with("U0TEST000001", "hello", "sakura", "sakura")
 
     def test_send_to_internal_anima_unchanged(
         self,
@@ -160,21 +157,21 @@ class TestSendMessageToAlias:
 
         assert "Message sent to kotoha" in result
 
-    @patch("core.outbound._send_via_discord")
-    def test_send_to_discord_prefix(
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_send_to_slack_prefix(
         self,
-        mock_discord,
+        mock_slack,
         make_anima,
         animas_dir,
         config_with_aliases,
         data_dir,
         make_handler,
     ):
-        mock_discord.return_value = json.dumps(
+        mock_slack.return_value = json.dumps(
             {
                 "status": "sent",
-                "channel": "discord",
-                "recipient": "123456789012345678",
+                "channel": "slack",
+                "recipient": "U0TEST000001",
                 "message": "OK",
             }
         )
@@ -187,7 +184,7 @@ class TestSendMessageToAlias:
         ):
             result = handler.handle(
                 "send_message",
-                {"to": "discord:123456789012345678", "content": "hi", "intent": "report"},
+                {"to": "slack:U0TEST000001", "content": "hi", "intent": "report"},
             )
 
         data = json.loads(result)
@@ -237,14 +234,13 @@ class TestBoardSlackSyncRouting:
                 )
             )
         )
-        cfg.heartbeat.channel_post_cooldown_s = 0
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.messaging.outbound_auto.SlackHTTPClient") as mock_client,
         ):
             result = handler.handle(
                 "post_channel",
@@ -261,17 +257,17 @@ class TestBoardSlackSyncRouting:
 
 class TestRobustRecipientHandling:
     @pytest.mark.parametrize("variant", ["USER", "User", "uSeR"])
-    @patch("core.outbound._send_via_discord")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_case_insensitive_alias(
         self,
-        mock_discord,
+        mock_slack,
         variant,
         make_anima,
         animas_dir,
         config_with_aliases,
         make_handler,
     ):
-        mock_discord.return_value = json.dumps({"status": "sent"})
+        mock_slack.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -284,8 +280,8 @@ class TestRobustRecipientHandling:
         data = json.loads(result)
         assert data["status"] == "sent"
 
-    @patch("core.outbound._send_via_slack")
-    def test_bare_slack_user_id_reports_disabled(
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_bare_slack_user_id(
         self,
         mock_slack,
         make_anima,
@@ -293,6 +289,7 @@ class TestRobustRecipientHandling:
         config_with_aliases,
         make_handler,
     ):
+        mock_slack.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -306,9 +303,7 @@ class TestRobustRecipientHandling:
             )
 
         data = json.loads(result)
-        assert data["status"] == "error"
-        assert data["error_type"] == "DeliveryFailed"
-        mock_slack.assert_not_called()
+        assert data["status"] == "sent"
 
     def test_case_insensitive_anima_name(
         self,
@@ -332,16 +327,16 @@ class TestRobustRecipientHandling:
 
         assert "Message sent to sakura" in result
 
-    @patch("core.outbound._send_via_discord")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_whitespace_in_recipient(
         self,
-        mock_discord,
+        mock_slack,
         make_anima,
         animas_dir,
         config_with_aliases,
         make_handler,
     ):
-        mock_discord.return_value = json.dumps({"status": "sent"})
+        mock_slack.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -382,10 +377,10 @@ class TestFallbackBehavior:
         assert parsed["status"] == "error"
         assert parsed["error_type"] == "RecipientResolutionError"
 
-    @patch("core.outbound._send_via_discord")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_activity_timeline_log_on_external(
         self,
-        mock_discord,
+        mock_slack,
         make_anima,
         animas_dir,
         config_with_aliases,
@@ -394,7 +389,7 @@ class TestFallbackBehavior:
     ):
         """ToolHandler logs external sends to the unified activity log
         (dm_logs are no longer written by messenger.send)."""
-        mock_discord.return_value = json.dumps({"status": "sent"})
+        mock_slack.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         messenger = Messenger(shared_dir, "sakura")
         handler = make_handler(sakura_dir, messenger=messenger)
@@ -405,10 +400,10 @@ class TestFallbackBehavior:
         ):
             handler.handle("send_message", {"to": "user", "content": "hello", "intent": "report"})
 
-        # ToolHandler records external sends in the unified activity log.
-        from core.memory.activity import ActivityLogger
+        # ToolHandler._log_tool_activity records dm_sent in unified activity log
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(sakura_dir)
-        entries = activity.recent(days=1, types=["message_sent"])
+        entries = activity.recent(days=1, types=["dm_sent"])
         assert len(entries) >= 1
         assert entries[0].to_person == "user"

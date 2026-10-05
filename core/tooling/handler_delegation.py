@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import _DelegationHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,43 +20,10 @@ from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
-    from core.messenger import Messenger
+    from core.activity.logger import ActivityLogger
+    from core.messaging.messenger import Messenger
 
 logger = logging.getLogger("animaworks.tool_handler")
-
-
-def _record_taskboard_delegation(
-    *,
-    delegated_to: str,
-    delegated_task_id: str,
-    delegator: str,
-    tracking_task_id: str | None = None,
-) -> None:
-    """Record optional TaskBoard presentation metadata after canonical publication."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
-
-    store = TaskBoardStore()
-    store.upsert_metadata(
-        anima_name=delegated_to,
-        task_id=delegated_task_id,
-        actor=delegator,
-        event_type="metadata_upserted",
-        visibility=AttentionVisibility.ACTIVE,
-        column=BoardColumn.TODO,
-        source_ref=f"task_queue:{delegated_to}:{delegated_task_id}",
-    )
-    if tracking_task_id:
-        store.upsert_metadata(
-            anima_name=delegator,
-            task_id=tracking_task_id,
-            actor=delegator,
-            event_type="metadata_upserted",
-            visibility=AttentionVisibility.ACTIVE,
-            column=BoardColumn.WAITING,
-            source_ref=f"task_queue:{delegator}:{tracking_task_id}",
-        )
 
 
 class DelegationMixin(OrgHelpersMixin):
@@ -68,7 +37,7 @@ class DelegationMixin(OrgHelpersMixin):
     _session_origin: str
     _session_origin_chain: list[str]
 
-    def _handle_delegate_task(self, args: dict[str, Any]) -> str:
+    def _handle_delegate_task(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Delegate a task to a direct subordinate."""
         from core.tooling.org_helpers import resolve_anima_name
 
@@ -84,7 +53,7 @@ class DelegationMixin(OrgHelpersMixin):
         resolved_wd = ""
         if workspace_raw:
             try:
-                from core.workspace import resolve_workspace
+                from core.org.workspace import resolve_workspace
 
                 resolved_wd = str(resolve_workspace(workspace_raw))
             except ValueError as e:
@@ -118,7 +87,7 @@ class DelegationMixin(OrgHelpersMixin):
                     t("tooling.model_list_hint", error=model_err),
                 )
 
-        from core.company import check_company_boundary
+        from core.org.company import check_company_boundary
         from core.paths import get_animas_dir
 
         animas_dir = get_animas_dir()
@@ -140,7 +109,7 @@ class DelegationMixin(OrgHelpersMixin):
         # 1つの ID を委譲側・受け側の両方で共有する（旧データは _resolve の双方向フォールバックで解決）
         sub_task_id = uuid.uuid4().hex[:12]
         tracking_task_id = sub_task_id
-        from core.tasks_dispatch import publish_delegation
+        from core.tasks.dispatch import publish_delegation
 
         task_desc = {
             "task_type": "llm",
@@ -158,9 +127,8 @@ class DelegationMixin(OrgHelpersMixin):
             "working_directory": resolved_wd,
             "model": model,
         }
-        used_server_fallback = False
         try:
-            used_server_fallback = publish_delegation(
+            publish_delegation(
                 target_dir,
                 task_desc,
                 delegator=self._anima_name,
@@ -171,20 +139,6 @@ class DelegationMixin(OrgHelpersMixin):
         except Exception as exc:
             logger.exception("delegate_task persistence failed")
             return _error_result("PersistenceFailed", str(exc))
-
-        if not used_server_fallback:
-            try:
-                _record_taskboard_delegation(
-                    delegated_to=target_name,
-                    delegated_task_id=sub_task_id,
-                    delegator=self._anima_name,
-                    tracking_task_id=tracking_task_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    "TaskBoard write failed in delegate_task; queue entries remain authoritative: %s",
-                    e,
-                )
 
         # Build outgoing origin_chain (provenance Phase 3)
         outgoing_chain = build_outgoing_origin_chain(
@@ -258,11 +212,11 @@ class DelegationMixin(OrgHelpersMixin):
         )
         return result + process_warning
 
-    def _handle_task_tracker(self, args: dict[str, Any]) -> str:
+    def _handle_task_tracker(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Track progress of delegated tasks."""
         status_filter = args.get("status", "active")
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         own_tqm = TaskQueueManager(self._anima_dir)
         delegated = [

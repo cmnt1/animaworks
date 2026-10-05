@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from apscheduler.schedulers.base import SchedulerNotRunningError
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 @pytest.fixture
@@ -33,7 +35,6 @@ class TestZombieReaperLoop:
     """Tests for _zombie_reaper_loop() in ProcessSupervisor."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.name == "nt", reason="os.WNOHANG not available on Windows")
     async def test_reaper_reaps_zombies(self, supervisor: ProcessSupervisor):
         """Only manager-owned Popen objects may consume their wait status."""
         exited = MagicMock(returncode=None)
@@ -136,17 +137,86 @@ class TestZombieReaperLoop:
 
         assert supervisor._zombie_reaper_task.done()
 
-    @pytest.mark.asyncio
-    async def test_shutdown_all_ignores_already_stopped_scheduler(self, supervisor: ProcessSupervisor):
-        """shutdown_all() should be idempotent when the scheduler is already stopped."""
 
-        class StoppedScheduler:
-            def shutdown(self, *, wait: bool = False) -> None:
-                raise SchedulerNotRunningError
+@pytest.mark.skipif(not hasattr(os, "WNOWAIT"), reason="Requires non-consuming POSIX waitid")
+@pytest.mark.parametrize("returncode", [0, 23, -signal.SIGTERM])
+async def test_reaper_preserves_real_exit_status_and_foreign_child(supervisor, returncode):
+    """A generic waitpid(-1) would turn both real statuses into false zeroes."""
+    code = (
+        f"raise SystemExit({returncode})"
+        if returncode >= 0
+        else "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"
+    )
+    original_sleep = asyncio.sleep
 
-        supervisor.scheduler = StoppedScheduler()
-        supervisor._scheduler_running = True
+    async def one_cycle(_duration):
+        supervisor._shutdown = True
+        await original_sleep(0)
 
-        await supervisor.shutdown_all()
+    with (
+        subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as owned,
+        subprocess.Popen(
+            [sys.executable, "-c", "raise SystemExit(17)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        ) as foreign,
+    ):
+        # Observe death without consuming status, just as the old reaper would
+        # encounter a zombie before its real subprocess owner polls it.
+        os.waitid(os.P_PID, owned.pid, os.WEXITED | os.WNOWAIT)
+        os.waitid(os.P_PID, foreign.pid, os.WEXITED | os.WNOWAIT)
+        supervisor.processes = {"owned": SimpleNamespace(process=owned)}
+        with patch.object(asyncio, "sleep", side_effect=one_cycle):
+            await supervisor._zombie_reaper_loop()
+        assert owned.returncode == returncode
+        assert owned.wait(timeout=2) == returncode
+        assert foreign.returncode is None
+        assert foreign.wait(timeout=2) == 17
 
-        assert supervisor._scheduler_running is False
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "core.runtime.runner",
+        "core.runtime.runner",  # legacy name until 2026-11 (S3a)
+    ],
+)
+def test_kill_zombie_runners_accepts_current_and_legacy_module_names(
+    supervisor: ProcessSupervisor,
+    module_name: str,
+) -> None:
+    pid_dir = supervisor.run_dir / "animas"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "sakura.pid"
+    pid_file.write_text("4321", encoding="utf-8")
+    process = MagicMock()
+    process.is_running.return_value = True
+    process.cmdline.return_value = ["python", "-m", module_name]
+
+    with (
+        patch("psutil.Process", return_value=process),
+        patch("server.supervisor.manager.snapshot_descendants", return_value=[]),
+        patch("server.supervisor.manager.kill_tree") as kill_tree,
+    ):
+        supervisor._kill_zombie_runners(["sakura"])
+
+    process.kill.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=5)
+    kill_tree.assert_called_once_with(4321, descendants=[], include_root=False)
+    assert not pid_file.exists()
+
+
+def test_kill_zombie_runners_skips_reused_pid_for_unrecognized_command(
+    supervisor: ProcessSupervisor,
+) -> None:
+    pid_dir = supervisor.run_dir / "animas"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "sakura.pid"
+    pid_file.write_text("4321", encoding="utf-8")
+    process = MagicMock()
+    process.is_running.return_value = True
+    process.cmdline.return_value = ["python", "-m", "unrelated.module"]
+
+    with patch("psutil.Process", return_value=process):
+        supervisor._kill_zombie_runners(["sakura"])
+
+    process.kill.assert_not_called()
+    assert not pid_file.exists()

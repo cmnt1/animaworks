@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from core.memory.conversation.finalize import finalize_session
+
 """E2E tests for episode dedup, state auto-update, and resolution propagation.
 
 Verifies the complete flow: fire-and-forget removal, heartbeat integration,
@@ -28,10 +30,9 @@ class TestFireAndForgetRemoved:
         # Check both facade and messaging mixin where process_message lives
         core_dir = Path(__file__).resolve().parents[2] / "core"
         content = ""
-        for fname in ("anima.py", "_anima_messaging.py"):
+        for fname in ("anima/digital_anima.py", "anima/messaging.py"):
             p = core_dir / fname
-            if p.exists():
-                content += p.read_text(encoding="utf-8")
+            content += p.read_text(encoding="utf-8")
 
         # Find the process_message method
         in_process_message = False
@@ -65,9 +66,11 @@ class TestFireAndForgetRemoved:
         the agent cycle cannot skip it.
         """
         core_dir = Path(__file__).resolve().parents[2] / "core"
-        lifecycle = (core_dir / "_anima_lifecycle.py").read_text(encoding="utf-8")
+        lifecycle = (core_dir / "anima" / "lifecycle.py").read_text(encoding="utf-8")
 
-        assert "finalize_if_session_ended" in lifecycle, "finalize_if_session_ended() not found in _anima_lifecycle.py"
+        assert "finalize_if_session_ended" in lifecycle, (
+            "finalize_if_session_ended() not found in core/anima/lifecycle.py"
+        )
 
         run_hb_idx = lifecycle.find("async def run_heartbeat")
         assert run_hb_idx >= 0, "run_heartbeat() not found"
@@ -107,7 +110,7 @@ class TestDifferentialFinalizationE2E:
     @pytest.mark.asyncio
     async def test_finalize_full_flow(self, data_dir):
         """Full finalization: turns → episode → state update → resolution."""
-        from core.memory.conversation import ConversationMemory, ConversationTurn
+        from core.memory.conversation.memory import ConversationMemory, ConversationTurn
         from core.schemas import ModelConfig
         from tests.helpers.filesystem import create_anima_dir
         from tests.helpers.mocks import make_litellm_response, patch_litellm
@@ -151,7 +154,7 @@ class TestDifferentialFinalizationE2E:
         compress_resp = make_litellm_response(content="サーバー障害修正完了、デプロイ予定")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv.finalize_session(min_turns=3)
+            result = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
 
         assert result is True
 
@@ -163,7 +166,7 @@ class TestDifferentialFinalizationE2E:
 
         # Verify new tasks are NOT auto-registered from session summary (disabled per 9198efcc)
         # Auto-detection produced noise (wrong assignees, stale items); heartbeat covers this.
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         active = tqm.load_active_tasks()
@@ -187,7 +190,7 @@ class TestDifferentialFinalizationE2E:
     @pytest.mark.asyncio
     async def test_no_duplicate_episodes_on_double_finalize(self, data_dir):
         """Calling finalize_session twice does not create duplicate episodes."""
-        from core.memory.conversation import ConversationMemory, ConversationTurn
+        from core.memory.conversation.memory import ConversationMemory, ConversationTurn
         from core.schemas import ModelConfig
         from tests.helpers.filesystem import create_anima_dir
         from tests.helpers.mocks import make_litellm_response, patch_litellm
@@ -210,11 +213,11 @@ class TestDifferentialFinalizationE2E:
 
         # First finalization
         with patch_litellm(summary_resp, compress_resp):
-            r1 = await conv.finalize_session(min_turns=3)
+            r1 = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
         assert r1 is True
 
         # Second finalization should be skipped (no new turns)
-        r2 = await conv.finalize_session(min_turns=3)
+        r2 = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
         assert r2 is False
 
 
@@ -243,4 +246,4 @@ class TestResolutionPropagationE2E:
         assert "解決済み案件" in prompt
         assert "ネットワーク障害修正" in prompt
         assert "DBマイグレーション完了" in prompt
-        assert "再調査・再報告は不要" in prompt
+        assert "再調査・再報告不要" in prompt

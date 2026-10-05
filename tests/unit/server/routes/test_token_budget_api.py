@@ -29,7 +29,7 @@ async def test_token_budget_endpoint_returns_each_anima_current_month_status(tmp
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
         patch("server.routes.system.now_local", return_value=datetime(2026, 7, 22, tzinfo=UTC)),
-        patch("core.memory.token_budget.read_token_budget_status", side_effect=budget_status),
+        patch("core.usage.token_budget.read_token_budget_status", side_effect=budget_status),
     ):
         transport = ASGITransport(app=_app())
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -61,7 +61,7 @@ async def test_token_budget_endpoint_can_filter_one_anima(tmp_path) -> None:
 
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
-        patch("core.memory.token_budget.read_token_budget_status", return_value=status),
+        patch("core.usage.token_budget.read_token_budget_status", return_value=status),
     ):
         transport = ASGITransport(app=_app())
         async with AsyncClient(transport=transport, base_url="http://test") as client:

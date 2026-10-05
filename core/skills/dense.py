@@ -22,8 +22,9 @@ import threading
 from collections import OrderedDict
 from collections.abc import Sequence
 
-from core.memory.rag.singleton import generate_embeddings, get_embedding_model_name
+from core.memory.rag.embedding import generate_embeddings, get_embedding_model_name
 from core.paths import get_shared_dir
+from core.platform.atomic_io import atomic_write_json
 from core.skills.models import SkillMetadata
 
 logger = logging.getLogger(__name__)
@@ -98,13 +99,13 @@ def _write_disk_cache(model: str, entries: dict[str, list[float]]) -> None:
         return
     try:
         path = get_shared_dir() / _CACHE_FILENAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps({"model": model, "entries": entries}, ensure_ascii=True),
-            encoding="utf-8",
+        atomic_write_json(
+            path,
+            {"model": model, "entries": entries},
+            indent=None,
+            ensure_ascii=True,
+            trailing_newline=False,
         )
-        tmp.replace(path)
     except Exception:
         logger.debug("Failed to write skill embed cache", exc_info=True)
 

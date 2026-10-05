@@ -5,7 +5,7 @@
 TaskBoard は正本のタスクと表示用metadataから構成される。
 状態確認は `list_tasks(detail=true)` / `task_tracker()` を使う。
 `state/current_state.md` は作業文脈、`state/task_results/` は試行結果であり、別の実行台帳ではない。
-表示列・snooze・archiveは実行結果や取消の代わりにならない。
+表示列・archiveは実行結果や取消の代わりにならない。
 
 ## 手書きの二重管理をしない
 

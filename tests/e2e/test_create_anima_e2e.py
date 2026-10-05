@@ -18,9 +18,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.anima_factory import create_from_md
+from core.anima.factory import create_from_md
 from core.memory import MemoryManager
-from core.paths import TEMPLATES_DIR
 from core.tooling.handler import ToolHandler
 
 # ── Sample character sheets ──────────────────────────────────
@@ -123,7 +122,7 @@ class TestCreateFromMdFullFlow:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "sakura"
-        assert status["role"] == "administration"
+        assert status["role"] == "general"
         assert status["execution_mode"] == "autonomous"
         assert status["model"] == "claude-sonnet-4-6"
         assert status["credential"] == "anthropic"
@@ -256,10 +255,8 @@ class TestCreateFromMdOmittedSections:
         permissions = anima_dir / "permissions.json"
         assert permissions.exists()
         data = json.loads(permissions.read_text(encoding="utf-8"))
-        expected = json.loads(
-            (TEMPLATES_DIR / "ja" / "roles" / "administration" / "permissions.json").read_text(encoding="utf-8")
-        )
-        assert data == expected
+        assert data.get("version") == 1
+        assert data.get("file_roots") == ["/"]
 
 
 class TestDuplicateAnimaNameError:
@@ -302,7 +299,7 @@ class TestRollbackOnFailure:
 
         with (
             patch(
-                "core.anima_factory._create_status_json",
+                "core.anima.factory._create_status_json",
                 side_effect=RuntimeError("Simulated status.json failure"),
             ),
             pytest.raises(RuntimeError, match="Simulated status.json failure"),
@@ -319,7 +316,7 @@ class TestRollbackOnFailure:
 
         with (
             patch(
-                "core.anima_factory._apply_defaults_from_sheet",
+                "core.anima.factory._apply_defaults_from_sheet",
                 side_effect=OSError("Simulated write failure"),
             ),
             pytest.raises(OSError, match="Simulated write failure"),
@@ -336,7 +333,7 @@ class TestRollbackOnFailure:
         # First attempt fails
         with (
             patch(
-                "core.anima_factory._create_status_json",
+                "core.anima.factory._create_status_json",
                 side_effect=RuntimeError("fail"),
             ),
             pytest.raises(RuntimeError),
@@ -371,7 +368,7 @@ class TestCreateAnimaToolHandler:
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         # Mock the config registration (imported inline in the handler method)
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -425,7 +422,7 @@ class TestCreateAnimaToolHandler:
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         # First creation succeeds
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result1 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -434,7 +431,7 @@ class TestCreateAnimaToolHandler:
 
         # Second creation should return an error string, not raise
         sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result2 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path2)},
@@ -457,7 +454,7 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path), "name": "custom-worker"},
@@ -484,7 +481,7 @@ class TestCreateAnimaToolHandler:
         memory = MemoryManager(caller_dir)
         handler = ToolHandler(anima_dir=caller_dir, memory=memory)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": "new_hire.md"},

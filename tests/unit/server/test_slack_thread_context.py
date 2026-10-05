@@ -7,6 +7,16 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_routing(monkeypatch):
+    from server.gateways import slack_socket
+
+    slack_socket._recent_ts.clear()
+    monkeypatch.setattr("core.notification.reply_routing.route_thread_reply", AsyncMock(return_value=False))
+
 # ── _fetch_thread_context ────────────────────────────────
 
 
@@ -14,19 +24,19 @@ class TestFetchThreadContext:
     """Tests for the _fetch_thread_context helper in slack_socket."""
 
     def test_returns_empty_when_no_thread_ts(self):
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         assert _fetch_thread_context("xoxb-token", "C123", "") == ""
 
     def test_returns_empty_when_no_token(self):
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         assert _fetch_thread_context("", "C123", "1234.5678") == ""
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_returns_empty_when_single_reply(self, mock_cls):
         """Single message (root only, no replies) should return empty."""
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.return_value = [
@@ -35,12 +45,13 @@ class TestFetchThreadContext:
         result = _fetch_thread_context("xoxb-token", "C123", "1000.0")
         assert result == ""
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_formats_thread_context(self, mock_cls):
         """Normal thread with root + 2 replies: parent summary + reply count."""
-        from server.slack_socket import _fetch_thread_context, _user_name_cache
+        from core.notification.slack_names import user_name_cache
+        from server.gateways.slack_socket import _fetch_thread_context
 
-        _user_name_cache.clear()
+        user_name_cache.clear()
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.return_value = [
@@ -55,12 +66,13 @@ class TestFetchThreadContext:
         assert "(2 replies in thread)" in result
         assert "[/Thread context]" in result
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_summary_includes_parent_and_reply_count(self, mock_cls):
         """Concise summary: parent message (truncated) + reply count only."""
-        from server.slack_socket import _fetch_thread_context, _user_name_cache
+        from core.notification.slack_names import user_name_cache
+        from server.gateways.slack_socket import _fetch_thread_context
 
-        _user_name_cache.clear()
+        user_name_cache.clear()
 
         replies = [{"user": f"U{i}", "text": f"msg {i}", "ts": f"{i}.0"} for i in range(15)]
         mock_client = mock_cls.return_value
@@ -71,10 +83,10 @@ class TestFetchThreadContext:
         assert "@User0: msg 0" in result
         assert "(14 replies in thread)" in result
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_api_failure_returns_empty(self, mock_cls):
         """API errors are caught and return empty string."""
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.side_effect = RuntimeError("API error")
@@ -88,17 +100,17 @@ class TestFetchThreadContext:
 class TestPerAnimaHandlerThreadInjection:
     """Per-Anima Socket Mode message handler injects thread context."""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context", return_value="")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context", return_value="")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_top_level_message_no_thread_context(
         self,
         mock_config,
@@ -115,7 +127,7 @@ class TestPerAnimaHandlerThreadInjection:
         tmp_path,
     ):
         """Top-level messages (no thread_ts) skip thread context fetch."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "anima1"})
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))
@@ -124,16 +136,15 @@ class TestPerAnimaHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
-        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
-            mgr = SlackSocketModeManager()
-            await mgr.start()
+        mgr = SlackSocketModeManager()
+        slack_cfg.resolve_anima.return_value = "anima1"
+        mgr._register_shared_handler(mock_app, "")
 
         handler = captured["message"][0]
         event = {"channel": "C1", "user": "U1", "text": "hello", "ts": "1.0"}
@@ -144,17 +155,17 @@ class TestPerAnimaHandlerThreadInjection:
         call_kw = mock_messenger.receive_external.call_args
         assert call_kw.kwargs.get("external_thread_ts", call_kw[1].get("external_thread_ts", "")) == ""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_thread_reply_injects_context(
         self,
         mock_config,
@@ -171,7 +182,7 @@ class TestPerAnimaHandlerThreadInjection:
         tmp_path,
     ):
         """Thread replies prepend thread context to content."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "anima1"})
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))
@@ -181,16 +192,15 @@ class TestPerAnimaHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
-        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
-            mgr = SlackSocketModeManager()
-            await mgr.start()
+        mgr = SlackSocketModeManager()
+        slack_cfg.resolve_anima.return_value = "anima1"
+        mgr._register_shared_handler(mock_app, "")
 
         handler = captured["message"][0]
         event = {
@@ -217,17 +227,17 @@ class TestPerAnimaHandlerThreadInjection:
 class TestSharedHandlerThreadInjection:
     """Shared Socket Mode handlers inject thread context."""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_shared_message_thread_injects_context(
         self,
         mock_config,
@@ -244,7 +254,7 @@ class TestSharedHandlerThreadInjection:
         tmp_path,
     ):
         """Shared message handler injects thread context for thread replies."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "sakura"}, default_anima="sakura")
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))
@@ -254,16 +264,15 @@ class TestSharedHandlerThreadInjection:
 
         captured: dict[str, list] = {}
         mock_app = MagicMock()
-        mock_app.client.auth_test = AsyncMock()
         mock_app.event = lambda t: lambda f: captured.setdefault(t, []).append(f) or f
         mock_app_cls.return_value = mock_app
         mock_handler_cls.return_value = AsyncMock()
         mock_messenger = MagicMock()
         mock_messenger_cls.return_value = mock_messenger
 
-        with patch("server.slack_socket.SlackSocketModeManager._discover_per_anima_bots", return_value=[]):
-            mgr = SlackSocketModeManager()
-            await mgr.start()
+        mgr = SlackSocketModeManager()
+        slack_cfg.resolve_anima.return_value = "anima1"
+        mgr._register_shared_handler(mock_app, "")
 
         handler = captured["message"][0]
         event = {
@@ -291,7 +300,7 @@ class TestReceiveExternalThreadTs:
     """Verify external_thread_ts passes through to Message."""
 
     def test_external_thread_ts_stored_in_message(self, tmp_path):
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir()
@@ -308,7 +317,7 @@ class TestReceiveExternalThreadTs:
         assert msg.external_thread_ts == "1.0"
 
     def test_external_thread_ts_defaults_empty(self, tmp_path):
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir()
@@ -329,8 +338,45 @@ class TestReceiveExternalThreadTs:
 class TestBuildReplyInstruction:
     """Tests for _build_reply_instruction with external_thread_ts."""
 
+    def test_uses_external_thread_ts_when_present(self):
+        from core.anima.inbox import _build_reply_instruction
+        from core.schemas import Message
+
+        m = Message(
+            from_person="slack:U1",
+            to_person="sakura",
+            content="reply",
+            source="slack",
+            source_message_id="2.0",
+            external_user_id="U1",
+            external_channel_id="C1",
+            external_thread_ts="1.0",
+        )
+        result = _build_reply_instruction(m)
+        assert "auto_reply" in result
+        assert "Discord" in result
+        assert 'thread_ts="2.0"' not in result
+
+    def test_falls_back_to_source_message_id(self):
+        from core.anima.inbox import _build_reply_instruction
+        from core.schemas import Message
+
+        m = Message(
+            from_person="slack:U1",
+            to_person="sakura",
+            content="top-level",
+            source="slack",
+            source_message_id="1.0",
+            external_user_id="U1",
+            external_channel_id="C1",
+            external_thread_ts="",
+        )
+        result = _build_reply_instruction(m)
+        assert "auto_reply" in result
+        assert "Discord" in result
+
     def test_no_thread_when_both_empty(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(
@@ -346,8 +392,27 @@ class TestBuildReplyInstruction:
         result = _build_reply_instruction(m)
         assert "thread_ts=" not in result
 
+    def test_observe_intent_returns_observe_hint(self):
+        from core.anima.inbox import _build_reply_instruction
+        from core.schemas import Message
+
+        m = Message(
+            from_person="slack:U1",
+            to_person="sumire",
+            content="@someone please review",
+            source="slack",
+            source_message_id="1.0",
+            external_user_id="U1",
+            external_channel_id="C1",
+            intent="observe",
+        )
+        result = _build_reply_instruction(m)
+        assert "auto_reply" in result
+        assert "Discord" in result
+        assert "使用できません" in result
+
     def test_chatwork_unaffected(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(

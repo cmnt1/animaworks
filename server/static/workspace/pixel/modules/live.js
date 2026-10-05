@@ -1,3 +1,5 @@
+import { api } from "../../../modules/api.js";
+
 function resolveBasePath() {
   const configured = document.querySelector('meta[name="aw-base-path"]')?.content || "";
   if (configured && !configured.includes("__AW_BASE__")) return configured.replace(/\/$/, "");
@@ -35,11 +37,9 @@ export class LiveClient {
 
   async fetchInitial() {
     try {
-      const response = await fetch(`${this.basePath}/api/animas`, {
+      const data = await api("/api/animas", {
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) return [];
-      const data = await response.json();
       return Array.isArray(data) ? data : data.animas || [];
     } catch {
       return [];

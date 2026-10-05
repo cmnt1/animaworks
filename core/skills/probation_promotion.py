@@ -68,19 +68,46 @@ def create_probation_skill_for_converter(
     body = converter._build_skill_body(final_skill_name, proc_meta, proc_body)
     active_skill_dir.mkdir(parents=True, exist_ok=False)
     skill_md = active_skill_dir / "SKILL.md"
-    converter._write_skill_file(skill_md, meta, body)
+    converter._write_skill_file(
+        skill_md,
+        meta,
+        body,
+        actor="autolearn",
+        automatic=True,
+        reason="create probation skill",
+    )
 
     scan_result = converter._scanner.scan_skill(active_skill_dir, source="anima")
     meta["security"] = scan_security_metadata(scan_result)
     meta["risk"]["requires_human_approval"] = runtime_approval_required(meta["risk"], scan_result)
-    converter._write_skill_file(skill_md, meta, body)
+    converter._write_skill_file(
+        skill_md,
+        meta,
+        body,
+        actor="autolearn",
+        automatic=True,
+        reason="persist probation scan metadata",
+    )
 
     if (
         scan_result.verdict != SkillScanVerdict.safe
         or scan_result.size_violations
         or meta["risk"]["requires_human_approval"]
     ):
+        from core.skills.ledger import capture_skill_document, record_skill_change
+
+        capture = capture_skill_document(skill_md, converter._anima_dir)
         shutil.rmtree(active_skill_dir, ignore_errors=True)
+        record_skill_change(
+            skill_md,
+            capture,
+            anima_dir=converter._anima_dir,
+            after_text=None,
+            after_exists=False,
+            actor="autolearn",
+            route="autolearn.remove_blocked_skill",
+            reason="scanner rejected generated skill",
+        )
         converter._append_audit(
             {
                 "event_type": AUTO_SKILL_BLOCKED,

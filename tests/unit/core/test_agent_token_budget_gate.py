@@ -9,11 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._agent_cycle import CycleMixin
-from core._anima_inbox import InboxMixin, InboxResult
-from core.memory.token_budget import calculate_token_budget_status
-from core.messenger import InboxItem
+from core.agent.cycle import CycleMixin
+from core.anima.inbox import InboxMixin, InboxResult
+from core.messaging.messenger import InboxItem
 from core.schemas import CycleResult, Message, ModelConfig
+from core.usage.token_budget import calculate_token_budget_status
 
 
 class _DummyCycle(CycleMixin):
@@ -44,11 +44,10 @@ class _DummyInbox(InboxMixin):
         self.name = anima_dir.name
         self.agent = agent
         self._inbox_lock = asyncio.Lock()
-        self._cron_idle = asyncio.Event()
-        self._cron_idle.set()
         self._status_slots = {"inbox": "idle"}
         self._task_slots = {"inbox": ""}
         self._activity = MagicMock()
+        self._activity.alog = AsyncMock()
         self.messenger = MagicMock()
         self._interrupt_event = asyncio.Event()
 
@@ -77,7 +76,7 @@ def test_calculate_token_budget_status() -> None:
 async def test_run_cycle_stops_at_budget_and_records_activity_and_one_notification(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=100)
 
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", return_value=125) as monthly_total:
+    with patch("core.usage.token_usage.TokenUsageLogger.monthly_total", return_value=125) as monthly_total:
         first = await agent.run_cycle("hello", trigger="inbox")
 
         notifications = list((tmp_path / "state" / "background_notifications").glob("*.md"))
@@ -110,7 +109,7 @@ async def test_run_cycle_stops_at_budget_and_records_activity_and_one_notificati
 async def test_streaming_stops_before_inner_cycle(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=100)
 
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", return_value=100):
+    with patch("core.usage.token_usage.TokenUsageLogger.monthly_total", return_value=100):
         events = [event async for event in agent.run_cycle_streaming("hello", trigger="chat")]
 
     assert agent.inner_calls == 0
@@ -122,7 +121,7 @@ async def test_streaming_stops_before_inner_cycle(tmp_path: Path) -> None:
 async def test_model_override_cannot_bypass_anima_budget(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=100)
 
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", return_value=100):
+    with patch("core.usage.token_usage.TokenUsageLogger.monthly_total", return_value=100):
         result = await agent.run_cycle(
             "hello",
             trigger="cron:daily",
@@ -137,7 +136,7 @@ async def test_model_override_cannot_bypass_anima_budget(tmp_path: Path) -> None
 async def test_unlimited_budget_has_no_aggregation_io_in_both_paths(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=None)
 
-    with patch("core.memory.token_usage.TokenUsageLogger", autospec=True) as usage_logger:
+    with patch("core.usage.token_usage.TokenUsageLogger", autospec=True) as usage_logger:
         result = await agent.run_cycle("hello", trigger="manual")
         events = [event async for event in agent.run_cycle_streaming("hello", trigger="chat")]
 
@@ -161,11 +160,11 @@ async def test_budget_blocked_inbox_is_not_read_or_archived(tmp_path: Path) -> N
         )
     )
 
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", return_value=100):
+    with patch("core.usage.token_usage.TokenUsageLogger.monthly_total", return_value=100):
         result = await inbox.process_inbox_message()
 
     assert result.action == "skipped"
-    inbox._process_inbox_messages.assert_awaited_once_with(None, track_retries=False)
+    inbox._process_inbox_messages.assert_awaited_once_with(track_retries=False)
     inbox.messenger.archive_paths.assert_not_called()
     assert not (tmp_path / "state" / "inbox_read_counts.json").exists()
     assert inbox._status_slots["inbox"] == "idle"
@@ -176,7 +175,7 @@ async def test_budget_blocked_inbox_is_not_read_or_archived(tmp_path: Path) -> N
 async def test_budget_check_io_failure_blocks_cycle(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=100)
 
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", side_effect=OSError("unreadable")):
+    with patch("core.usage.token_usage.TokenUsageLogger.monthly_total", side_effect=OSError("unreadable")):
         result = await agent.run_cycle("hello", trigger="manual")
 
     assert result.action == "skipped"
@@ -203,7 +202,7 @@ async def test_budget_blocked_inbox_preprocessing_has_no_persistent_side_effects
     inbox.messenger.has_unread.return_value = True
     inbox.messenger.receive_with_paths.return_value = [item]
 
-    with patch("core.memory.dedup.MessageDeduplicator.overflow_to_files") as overflow:
+    with patch("core.anima.inbox_overflow.MessageDeduplicator.overflow_to_files") as overflow:
         result = await inbox._process_inbox_messages(track_retries=False)
 
     assert result.inbox_items == [item]
@@ -211,5 +210,5 @@ async def test_budget_blocked_inbox_preprocessing_has_no_persistent_side_effects
     assert result.prompt_parts == []
     overflow.assert_not_called()
     inbox.messenger.archive_paths.assert_not_called()
-    inbox._activity.log.assert_not_called()
+    inbox._activity.alog.assert_not_awaited()
     assert not (tmp_path / "state" / "inbox_read_counts.json").exists()

@@ -21,11 +21,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from core.time_utils import today_local
 
 from core.schemas import CycleResult, ModelConfig
+from core.time_utils import today_local
 from core.tooling.handler import active_session_type
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,9 +61,9 @@ def _make_anima_with_mocks(anima_dir: Path, shared_dir: Path):
     model_config = ModelConfig(model="claude-sonnet-4-6")
 
     with (
-        patch("core.anima.AgentCore") as MockAgent,
-        patch("core.anima.MemoryManager") as MockMM,
-        patch("core.anima.Messenger") as MockMessenger,
+        patch("core.anima.digital_anima.AgentCore") as MockAgent,
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger") as MockMessenger,
     ):
         # MemoryManager.read_model_config() must return a real ModelConfig
         # so ConversationMemory receives correct configuration.
@@ -73,7 +72,7 @@ def _make_anima_with_mocks(anima_dir: Path, shared_dir: Path):
         # Messenger.unread_count() is called by the status property
         MockMessenger.return_value.unread_count.return_value = 0
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
         # Wire set_active_session_type to use the real ContextVar
@@ -91,7 +90,9 @@ class TestConversationDataLossProtection:
     """Verify that conversation turns survive agent errors."""
 
     async def test_process_message_error_preserves_user_input(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """When agent.run_cycle raises, the user's input and an error
         marker must already be persisted to conversation.json."""
@@ -116,15 +117,14 @@ class TestConversationDataLossProtection:
         assert human_turns[0]["content"] == "test message"
 
         # Error marker turn must also be present
-        error_turns = [
-            t for t in turns
-            if t["role"] == "assistant" and "ERROR" in t["content"]
-        ]
+        error_turns = [t for t in turns if t["role"] == "assistant" and "ERROR" in t["content"]]
         assert len(error_turns) == 1
         assert "エラー" in error_turns[0]["content"]
 
     async def test_process_message_success_saves_both_turns(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """On success, both the human input and the assistant response
         are persisted to conversation.json."""
@@ -153,7 +153,9 @@ class TestConversationDataLossProtection:
         assert turns[1]["content"] == "Hello! Nice to meet you."
 
     async def test_process_message_stream_error_preserves_data(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """When streaming fails mid-way, user input + partial response
         with error marker are persisted."""
@@ -191,7 +193,9 @@ class TestConversationDataLossProtection:
         assert "応答が中断されました" in assistant_turns[0]["content"]
 
     async def test_process_greet_error_preserves_data(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """When process_greet fails, an error marker is saved to
         conversation.json."""
@@ -211,15 +215,14 @@ class TestConversationDataLossProtection:
 
         # Error marker turn must be present
         assert len(turns) >= 1
-        error_turns = [
-            t for t in turns
-            if t["role"] == "assistant" and "ERROR" in t["content"]
-        ]
+        error_turns = [t for t in turns if t["role"] == "assistant" and "ERROR" in t["content"]]
         assert len(error_turns) == 1
         assert "エラー" in error_turns[0]["content"]
 
     async def test_transcript_not_written_by_append_turn(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """append_turn() no longer writes to transcript (replaced by
         unified activity log).  Verify that no transcript JSONL is

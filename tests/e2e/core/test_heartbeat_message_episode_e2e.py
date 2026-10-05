@@ -7,18 +7,9 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.time_utils import today_local
 from core.tooling.handler import active_session_type
-
-
-@pytest.fixture(autouse=True)
-def _skip_rag_indexing():
-    """Inbox e2e assertions use activity logs; RAG indexing would load HF models."""
-    with patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None):
-        yield
 
 
 class TestInboxMessageEpisodeE2E:
@@ -41,13 +32,14 @@ class TestInboxMessageEpisodeE2E:
         mio_messenger.send("alice", "AWS監視タスクを追加しました。30分間隔で確認してください。")
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
@@ -74,9 +66,9 @@ class TestInboxMessageEpisodeE2E:
         activity_dir = alice_dir / "activity_log"
         today_file = activity_dir / f"{today_local().isoformat()}.jsonl"
         assert today_file.exists()
-        lines = [line for line in today_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [l for l in today_file.read_text(encoding="utf-8").splitlines() if l.strip()]
         assert len(lines) >= 1
-        entries = [json.loads(line) for line in lines]
+        entries = [json.loads(l) for l in lines]
         msg_entries = [e for e in entries if e.get("type") == "message_received"]
         assert len(msg_entries) >= 1
         content_str = " ".join(e.get("content", "") or "" for e in msg_entries)
@@ -95,13 +87,14 @@ class TestInboxMessageEpisodeE2E:
         assert len(list(inbox_dir.glob("*.json"))) == 1
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
@@ -138,8 +131,8 @@ class TestInboxMessageEpisodeE2E:
             # Activity log records message_received
             activity_file = alice_dir / "activity_log" / f"{today_local().isoformat()}.jsonl"
             assert activity_file.exists()
-            lines = [line for line in activity_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-            msg_entries = [e for e in (json.loads(line) for line in lines) if e.get("type") == "message_received"]
+            lines = [l for l in activity_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+            msg_entries = [e for e in (json.loads(l) for l in lines) if e.get("type") == "message_received"]
             assert len(msg_entries) >= 1
             content_str = " ".join(e.get("content", "") or "" for e in msg_entries)
             assert "ログ確認" in content_str
@@ -168,13 +161,14 @@ class TestInboxMessageEpisodeE2E:
         ack_file.write_text(ack_msg.model_dump_json(), encoding="utf-8")
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
@@ -199,8 +193,8 @@ class TestInboxMessageEpisodeE2E:
 
         activity_file = alice_dir / "activity_log" / f"{today_local().isoformat()}.jsonl"
         assert activity_file.exists()
-        lines = [line for line in activity_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-        msg_entries = [e for e in (json.loads(line) for line in lines) if e.get("type") == "message_received"]
+        lines = [l for l in activity_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+        msg_entries = [e for e in (json.loads(l) for l in lines) if e.get("type") == "message_received"]
         content_str = " ".join(e.get("content", "") or "" for e in msg_entries)
 
         assert "DB バックアップ" in content_str
@@ -224,13 +218,14 @@ class TestInboxMessageEpisodeE2E:
         charlie_messenger.send("alice", "第三のタスク: パフォーマンス最適化")
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
@@ -255,8 +250,8 @@ class TestInboxMessageEpisodeE2E:
 
         activity_file = alice_dir / "activity_log" / f"{today_local().isoformat()}.jsonl"
         assert activity_file.exists()
-        lines = [line for line in activity_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-        msg_entries = [e for e in (json.loads(line) for line in lines) if e.get("type") == "message_received"]
+        lines = [l for l in activity_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+        msg_entries = [e for e in (json.loads(l) for l in lines) if e.get("type") == "message_received"]
         assert len(msg_entries) >= 3
         content_str = " ".join(e.get("content", "") or "" for e in msg_entries)
         from_str = " ".join(e.get("from_person", e.get("from", "")) or "" for e in msg_entries)
@@ -276,13 +271,14 @@ class TestInboxMessageEpisodeE2E:
         mio_messenger.send("alice", "テストメッセージ")
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
@@ -323,13 +319,14 @@ class TestHeartbeatNoInboxProcessing:
         mio_messenger.send("alice", "テストメッセージ")
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core._anima_heartbeat.ConversationMemory") as MockConv,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(alice_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()

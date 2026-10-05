@@ -121,21 +121,24 @@ class TestBuildMcpTools:
             assert isinstance(tool, Tool)
 
     def test_internal_tools_always_included(self) -> None:
-        """Internal tools from _EXPOSED_TOOL_NAMES are always returned."""
-        from core.mcp.server import _EXPOSED_TOOL_NAMES, _build_mcp_tools
+        """The shared MCP profile is materialized by the MCP server."""
+        from core.mcp.server import _build_mcp_tools
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
 
         tools, exposed = _build_mcp_tools()
+        expected = frozenset(MCP_TOOL_NAMES)
         actual_names = {t.name for t in tools}
-        assert actual_names >= _EXPOSED_TOOL_NAMES
-        assert exposed >= _EXPOSED_TOOL_NAMES
+        assert actual_names >= expected
+        assert exposed >= expected
 
     def test_outcome_tools_are_exposed(self) -> None:
-        from core.mcp.server import _EXPOSED_TOOL_NAMES, _build_mcp_tools
+        from core.mcp.server import _build_mcp_tools
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
 
         tools, _ = _build_mcp_tools()
         actual_names = {t.name for t in tools}
-        assert "report_procedure_outcome" in _EXPOSED_TOOL_NAMES
-        assert "report_knowledge_outcome" in _EXPOSED_TOOL_NAMES
+        assert "report_procedure_outcome" in MCP_TOOL_NAMES
+        assert "report_knowledge_outcome" in MCP_TOOL_NAMES
         assert "report_procedure_outcome" in actual_names
         assert "report_knowledge_outcome" in actual_names
 
@@ -146,14 +149,16 @@ class TestBuildMcpTools:
 class TestListToolsHandler:
     """Tests for the list_tools() MCP handler with dynamic supervisor filtering."""
 
-    async def test_filters_submit_tasks_in_normal_supervisor_session(self) -> None:
+    async def test_filters_submit_tasks_in_normal_supervisor_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """list_tools() hides submit_tasks even when Anima has subordinates."""
         import core.mcp.server as mcp_mod
         from core.mcp.server import MCP_TOOLS, list_tools
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         with (
             patch.object(mcp_mod, "_is_supervisor", True),
             patch.object(mcp_mod, "_has_newstaff", True),
+            patch.object(mcp_mod, "_has_notification_channels_for_anima", return_value=True),
         ):
             result = await list_tools()
 
@@ -162,9 +167,13 @@ class TestListToolsHandler:
         assert result_names == {t.name for t in MCP_TOOLS if t.name != "submit_tasks"}
 
     async def test_background_session_can_list_submit_tasks(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """submit_tasks is listed only for explicit background task-authoring sessions."""
+        """submit_tasks is listed only for explicit background task-authoring sessions.
+
+        ``background:*`` is a scoped (default) trigger, so skill-management
+        tools are still omitted but submit_tasks is advertised.
+        """
         import core.mcp.server as mcp_mod
-        from core.mcp.server import MCP_TOOLS, list_tools
+        from core.mcp.server import list_tools
 
         monkeypatch.setenv("ANIMAWORKS_TRIGGER", "background:manual")
         with (
@@ -175,13 +184,17 @@ class TestListToolsHandler:
 
         result_names = {t.name for t in result}
         assert "submit_tasks" in result_names
-        assert result_names == {t.name for t in MCP_TOOLS}
+        # background is a scoped trigger -> skill-management tools are omitted
+        from core.tooling.policy.surface import SKILL_MANAGEMENT_TOOL_NAMES
 
-    async def test_filters_supervisor_tools_when_non_supervisor(self) -> None:
-        """list_tools() excludes supervisor tools when Anima has no subordinates."""
+        assert not result_names & SKILL_MANAGEMENT_TOOL_NAMES
+
+    async def test_filters_supervisor_tools_when_non_supervisor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """list_tools() excludes delegate_task when Anima has no subordinates."""
         import core.mcp.server as mcp_mod
-        from core.mcp.server import _SUPERVISOR_TOOL_NAMES, MCP_TOOLS, list_tools
+        from core.mcp.server import MCP_TOOLS, list_tools
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         with (
             patch.object(mcp_mod, "_is_supervisor", False),
             patch.object(mcp_mod, "_has_newstaff", True),
@@ -189,11 +202,10 @@ class TestListToolsHandler:
             result = await list_tools()
 
         result_names = {t.name for t in result}
-        assert result_names & _SUPERVISOR_TOOL_NAMES == set()
-        non_supervisor_names = {
-            t.name for t in MCP_TOOLS if t.name not in _SUPERVISOR_TOOL_NAMES and t.name != "submit_tasks"
+        assert "delegate_task" not in result_names
+        assert result_names == {
+            t.name for t in MCP_TOOLS if t.name not in {"delegate_task", "submit_tasks", "call_human"}
         }
-        assert result_names == non_supervisor_names
 
     async def test_includes_create_anima_when_newstaff_skill(self) -> None:
         """list_tools() exposes create_anima when anima has newstaff skill."""
@@ -221,13 +233,14 @@ class TestListToolsHandler:
 
         assert "create_anima" not in {t.name for t in result}
 
-    async def test_supervisor_tool_names_from_schemas(self) -> None:
-        """_SUPERVISOR_TOOL_NAMES matches SUPERVISOR_TOOLS from schemas.py."""
-        from core.mcp.server import _SUPERVISOR_TOOL_NAMES
-        from core.tooling.schemas import _supervisor_tools
+    def test_mcp_surface_has_only_delegate_task_for_supervisors(self) -> None:
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
-        expected = frozenset(t["name"] for t in _supervisor_tools())
-        assert expected == _SUPERVISOR_TOOL_NAMES
+        regular = set(resolve_tool_surface(ToolSurfaceContext(), "chat", "S"))
+        supervisor = set(resolve_tool_surface(ToolSurfaceContext(has_subordinates=True), "chat", "S"))
+        assert "delegate_task" not in regular
+        assert "delegate_task" in supervisor
+        assert "ping_subordinate" not in supervisor
 
     def test_list_tools_is_async(self) -> None:
         """list_tools should be a coroutine function."""
@@ -240,6 +253,7 @@ class TestListToolsHandler:
     async def test_environment_whitelist_limits_list_tools(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import core.mcp.server as mcp_mod
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         monkeypatch.setenv(
             "ANIMAWORKS_MCP_TOOLS",
             "search_memory,read_memory_file,not_exposed",
@@ -264,7 +278,7 @@ class TestCallToolHandler:
     """Tests for the call_tool() MCP handler."""
 
     async def test_rejects_tool_not_in_exposed_set(self) -> None:
-        """call_tool() rejects tool names not in _EXPOSED_TOOL_NAMES."""
+        """call_tool() rejects tool names outside the resolved MCP surface."""
         import core.mcp.server as mcp_mod
 
         result = await mcp_mod.call_tool("nonexistent_tool", {"arg": "val"})
@@ -316,6 +330,16 @@ class TestCallToolHandler:
         payload = json.loads(result[0].text)
         assert payload["status"] == "error"
         assert payload["error_type"] == "ToolBlocked"
+
+    async def test_blocks_workspace_access_during_consolidation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "consolidation:daily")
+        result = await mcp_mod.call_tool("grant_workspace_access", {"alias": "x", "path": "/tmp/x"})
+
+        payload = json.loads(result[0].text)
+        assert payload["error_type"] == "ToolBlocked"
+        assert "consolidation" in payload["message"]
 
     async def test_blocks_create_anima_without_newstaff(self) -> None:
         """call_tool() blocks create_anima when newstaff skill is missing."""
@@ -491,6 +515,197 @@ class TestCallToolHandler:
         assert "socket timed out" in payload["message"]
 
 
+# ── TestTriggerScopedTools ────────────────────────────────────────────────
+
+
+class TestTriggerScopedTools:
+    """Tests for trigger-based aw MCP tool set selection."""
+
+    from core.tooling.policy.surface import SKILL_MANAGEMENT_TOOL_NAMES as SKILL_MANAGEMENT
+
+    def test_default_triggers_omit_skill_management(self) -> None:
+        """chat / inbox / cron / task (and friends) drop skill-management tools."""
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
+        for trigger in ("chat", "inbox", "cron", "task", "message", "background:manual"):
+            names = set(resolve_tool_surface(context, trigger, "S"))
+            assert not names & self.SKILL_MANAGEMENT, trigger
+            assert "search_memory" in names
+            assert "send_message" in names
+
+    def test_heartbeat_keeps_skill_management(self) -> None:
+        """heartbeat and consolidation keep every tool."""
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
+        for trigger in ("heartbeat", "heartbeat:seeded", "consolidation", "consolidation:cc"):
+            names = set(resolve_tool_surface(context, trigger, "S"))
+            assert names >= self.SKILL_MANAGEMENT, trigger
+            assert "curate_skills" in names
+
+    def test_empty_trigger_keeps_everything(self) -> None:
+        """An unknown/empty trigger keeps the full default set (safe default)."""
+        from core.tooling.policy.surface import MCP_TOOL_NAMES, ToolSurfaceContext, resolve_tool_surface
+
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
+        assert set(resolve_tool_surface(context, "", "S")) == set(MCP_TOOL_NAMES) - {"submit_tasks"}
+
+    def test_mcp_tools_env_for_trigger_scoped(self) -> None:
+        """A scoped trigger pins an explicit reduced ANIMAWORKS_MCP_TOOLS value."""
+        from core.mcp.server import _mcp_tools_env_for_trigger
+
+        value = _mcp_tools_env_for_trigger("inbox", enabled=True)
+        assert value is not None
+        names = set(value.split(","))
+        assert not names & self.SKILL_MANAGEMENT
+        assert "search_memory" in names
+
+    def test_mcp_tools_env_for_trigger_full_returns_none(self) -> None:
+        """heartbeat and disabled config leave the env var unset (full tool set)."""
+        from core.mcp.server import _mcp_tools_env_for_trigger
+
+        assert _mcp_tools_env_for_trigger("heartbeat", enabled=True) is None
+        assert _mcp_tools_env_for_trigger("inbox", enabled=False) is None
+
+    @staticmethod
+    def _config_with_trigger_scoped(trigger_scoped: bool) -> MagicMock:
+        cfg = MagicMock()
+        cfg.mcp.trigger_scoped_tools = trigger_scoped
+        return cfg
+
+    async def test_trigger_scoped_tools_false_includes_skill_management(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mcp.trigger_scoped_tools=false exposes skill tools for a scoped trigger."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "chat")
+        with (
+            patch("core.config.models.load_config", return_value=self._config_with_trigger_scoped(False)),
+            patch.object(mcp_mod, "_is_supervisor", True),
+            patch.object(mcp_mod, "_has_newstaff", True),
+        ):
+            result = await list_tools()
+        result_names = {t.name for t in result}
+        assert result_names & self.SKILL_MANAGEMENT
+
+    async def test_trigger_scoped_tools_true_excludes_skill_management(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mcp.trigger_scoped_tools=true keeps scoping (skill tools hidden for chat)."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "chat")
+        with (
+            patch("core.config.models.load_config", return_value=self._config_with_trigger_scoped(True)),
+            patch.object(mcp_mod, "_is_supervisor", True),
+            patch.object(mcp_mod, "_has_newstaff", True),
+        ):
+            result = await list_tools()
+        result_names = {t.name for t in result}
+        assert not result_names & self.SKILL_MANAGEMENT
+
+    def test_inbox_tool_json_total_under_16000(self) -> None:
+        """Inbox-trigger aw MCP tool definitions stay under 12,000 chars.
+
+        Simulates the published set for a normal (non-supervisor, non-newstaff)
+        Anima in an inbox run: trigger scoping + supervisor + newstaff gates
+        + the runtime submit_tasks block.
+        """
+        import core.mcp.server as mcp_mod
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+
+        tools, _exposed = mcp_mod._build_mcp_tools()
+        by_name = {t.name: t for t in tools}
+        names = set(resolve_tool_surface(ToolSurfaceContext(), "inbox", "S"))
+
+        total = sum(
+            len(
+                json.dumps(
+                    {"description": by_name[n].description, "inputSchema": by_name[n].inputSchema},
+                    ensure_ascii=False,
+                )
+            )
+            for n in names
+        )
+        assert total <= 16000, f"inbox MCP tool JSON total {total} > 16000"
+
+    def test_create_anima_not_advertised_without_newstaff(self) -> None:
+        """create_anima is not sent to an Anima without the newstaff skill."""
+        import asyncio
+
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        with (
+            patch.object(mcp_mod, "_is_supervisor", False),
+            patch.object(mcp_mod, "_has_newstaff", False),
+        ):
+            result = asyncio.run(list_tools())
+        assert "create_anima" not in {t.name for t in result}
+
+    def test_skill_tool_not_found_message_mentions_heartbeat(self) -> None:
+        """Not-found message for a skill tool hints it is available in heartbeat."""
+        from core.mcp.server import _tool_not_found_message
+
+        msg = _tool_not_found_message("curate_skills")
+        assert "heartbeat" in msg or "consolidation" in msg
+        plain = _tool_not_found_message("search_memory")
+        assert isinstance(plain, str) and plain
+
+
+class TestAgentSdkMcpTriggerEnv:
+    """Tests for the Agent SDK injecting ANIMAWORKS_MCP_TOOLS from the trigger."""
+
+    def _executor(self, tmp_path: Path, anima_dir: Path | None = None):
+        from core.schemas import ModelConfig
+
+        mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key", extra_mcp_servers={})
+        from core.execution.engines.claude.executor import AgentSDKExecutor
+
+        return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir or (tmp_path / "animas" / "a"))
+
+    def test_scoped_trigger_sets_mcp_tools_env(self, tmp_path: Path) -> None:
+        """A scoped trigger propagates ANIMAWORKS_MCP_TOOLS to the subprocess env."""
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="inbox", thread_id="t", trigger="inbox")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" in env
+        names = set(env["ANIMAWORKS_MCP_TOOLS"].split(","))
+        assert not names & TestTriggerScopedTools.SKILL_MANAGEMENT
+
+    def test_disabled_config_keeps_full_tool_set(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With config mcp.trigger_scoped_tools=False the env stays unset (full set)."""
+        from core.config.schemas import AnimaWorksConfig
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        cfg = AnimaWorksConfig()
+        cfg.mcp.trigger_scoped_tools = False
+        monkeypatch.setattr("core.config.models.load_config", lambda *a, **k: cfg)
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="inbox", thread_id="t", trigger="inbox")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" not in env or env.get("ANIMAWORKS_MCP_TOOLS") == ""
+
+    def test_heartbeat_leaves_full_tool_set(self, tmp_path: Path) -> None:
+        """Heartbeat leaves ANIMAWORKS_MCP_TOOLS unset so the full set is advertised."""
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="heartbeat", thread_id="t", trigger="heartbeat")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" not in env
+
+
 # ── TestResolveToolTimeout ───────────────────────────────────────────
 
 
@@ -510,27 +725,6 @@ class TestResolveToolTimeout:
 
         monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
         assert _resolve_tool_timeout("search_memory") == 120.0
-
-    def test_search_code_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """search_code is capped at 120s."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("search_code") == 120.0
-
-    def test_execute_command_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """execute_command gets a 1900s outer cap."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("execute_command") == 1900.0
-
-    def test_use_tool_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """use_tool gets a 1900s outer cap."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("use_tool") == 1900.0
 
     def test_create_anima_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """create_anima is allowed 1800s."""
@@ -709,13 +903,13 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", {"web_search": None}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": None}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             # HumanNotifier with no channels -> None
             mock_hn_inst = MagicMock()
@@ -759,13 +953,13 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", {}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             mock_hn_cls.from_config.return_value = mock_hn_inst
 
@@ -796,12 +990,12 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config", side_effect=RuntimeError("no config")),
-            patch("core.tools.TOOL_MODULES", {}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             result = mcp_mod._get_tool_handler()
 
@@ -830,13 +1024,13 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", side_effect=ImportError("no tools")),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", side_effect=ImportError("no tools")),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             mock_hn_inst = MagicMock()
             mock_hn_inst.channel_count = 0
@@ -858,10 +1052,13 @@ class TestLoadPermittedCategories:
 
     def test_no_permissions_file_returns_all(self, tmp_path: Path) -> None:
         """Without permissions.md, all tools are returned."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "core.tools.chatwork", "slack": "core.tools.slack"}),
+            patch(
+                "core.tooling.policy.registry.TOOL_MODULES",
+                {"chatwork": "core.integrations.chatwork", "slack": "core.integrations.slack"},
+            ),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -869,13 +1066,13 @@ class TestLoadPermittedCategories:
 
     def test_no_external_tools_section_returns_all(self, tmp_path: Path) -> None:
         """When permissions.md has no 外部ツール section, returns all."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 実行できるコマンド\n- git: OK\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -883,7 +1080,7 @@ class TestLoadPermittedCategories:
 
     def test_whitelist_mode(self, tmp_path: Path) -> None:
         """Individual allow entries produce a whitelist."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text(
@@ -892,7 +1089,7 @@ class TestLoadPermittedCategories:
         )
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -901,13 +1098,13 @@ class TestLoadPermittedCategories:
 
     def test_all_yes_mode(self, tmp_path: Path) -> None:
         """'all: yes' enables all tools."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -915,13 +1112,13 @@ class TestLoadPermittedCategories:
 
     def test_all_yes_with_deny(self, tmp_path: Path) -> None:
         """'all: yes' with individual deny entries."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n- gmail: no\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -970,7 +1167,7 @@ class TestExternalToolsInMcpTools:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         with patch(
-            "core.tooling.schemas.load_external_schemas_by_category",
+            "core.tooling.policy.schemas.load_external_schemas_by_category",
             return_value=[],
         ):
             tools, exposed = _build_mcp_tools()
@@ -1160,7 +1357,7 @@ class TestWrapResultHelper:
         from core.mcp.server import _wrap_result
 
         with patch(
-            "core.execution._sanitize.wrap_tool_result",
+            "core.trust.wrap_tool_result",
             side_effect=ImportError("no module"),
         ):
             result = _wrap_result("search_memory", "raw data")

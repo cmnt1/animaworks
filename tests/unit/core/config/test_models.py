@@ -21,16 +21,15 @@ from core.config.models import (
     CommandsPermission,
     CredentialConfig,
     ExternalToolsPermission,
-    GatewaySystemConfig,
     ImageGenConfig,
     LocalLLMConfig,
     PermissionsConfig,
+    PromptConfig,
     RAGConfig,
     SkillPromotionConfig,
     SkillsConfig,
     SystemConfig,
     ToolCreationPermission,
-    WorkerSystemConfig,
     _format_permissions_for_prompt,
     _match_pattern_table,
     _normalise_mode,
@@ -40,6 +39,7 @@ from core.config.models import (
     load_config,
     load_model_config,
     load_permissions,
+    parse_fallback_entry,
     read_anima_supervisor,
     register_anima_in_config,
     resolve_anima_config,
@@ -54,26 +54,17 @@ class TestSystemConfig:
     def test_defaults(self):
         sc = SystemConfig()
         assert sc.mode == "server"
-        assert sc.log_level == "INFO"
-        assert isinstance(sc.gateway, GatewaySystemConfig)
-        assert isinstance(sc.worker, WorkerSystemConfig)
+        assert not hasattr(sc, "log_level")
+        assert not hasattr(sc, "gateway")
+        assert not hasattr(sc, "worker")
 
-
-class TestGatewaySystemConfig:
-    def test_defaults(self):
-        gc = GatewaySystemConfig()
-        assert gc.host == "0.0.0.0"
-        assert gc.port == 18500
-        assert gc.redis_url is None
-        assert gc.worker_heartbeat_timeout == 45
-
-
-class TestWorkerSystemConfig:
-    def test_defaults(self):
-        wc = WorkerSystemConfig()
-        assert wc.gateway_url == "http://localhost:18500"
-        assert wc.listen_port == 18501
-        assert wc.heartbeat_interval == 15
+    def test_prompt_identity_business_exclusions_default(self):
+        assert PromptConfig().identity_business_exclude_headings == [
+            "外見",
+            "基本プロフィール",
+            "Appearance",
+            "Basic Profile",
+        ]
 
 
 class TestCredentialConfig:
@@ -102,7 +93,6 @@ class TestAnimaDefaults:
         assert pd.max_tokens == 8192
         assert pd.credential == "anthropic"
         assert pd.context_threshold == 0.50
-        assert pd.max_chains == 2
         assert pd.conversation_history_threshold == 0.30
 
 
@@ -127,6 +117,54 @@ class TestAnimaWorksConfig:
         restored = AnimaWorksConfig.model_validate(data)
         assert restored.animas["alice"].supervisor == "bob"
         assert restored.animas["alice"].speciality == "engineer"
+
+    def test_legacy_throttle_keys_are_ignored_when_loading_existing_config(self, tmp_path: Path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "heartbeat": {
+                        "msg_heartbeat_cooldown_s": 300,
+                        "cascade_window_s": 1800,
+                        "cascade_threshold": 3,
+                        "depth_window_s": 600,
+                        "max_depth": 6,
+                        "actionable_intents": ["report", "question"],
+                        "channel_post_cooldown_s": 300,
+                        "outbound_limit_enabled": False,
+                    },
+                    "anima_defaults": {
+                        "max_outbound_per_hour": 60,
+                        "max_outbound_per_day": 300,
+                        "max_recipients_per_run": 10,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        invalidate_cache()
+        try:
+            config = load_config(config_path)
+        finally:
+            invalidate_cache()
+
+        serialized = config.model_dump(mode="json")
+        assert config.heartbeat.interval_minutes == 30
+        assert not {
+            "msg_heartbeat_cooldown_s",
+            "cascade_window_s",
+            "cascade_threshold",
+            "depth_window_s",
+            "max_depth",
+            "actionable_intents",
+            "channel_post_cooldown_s",
+            "outbound_limit_enabled",
+        } & serialized["heartbeat"].keys()
+        assert not {
+            "max_outbound_per_hour",
+            "max_outbound_per_day",
+            "max_recipients_per_run",
+        } & serialized["anima_defaults"].keys()
 
 
 class TestLocalLLMConfig:
@@ -250,6 +288,24 @@ class TestFormatPermissionsForPrompt:
 
         assert config == PermissionsConfig()
 
+    def test_prompt_omits_default_permissions(self):
+        with __import__("unittest.mock", fromlist=["patch"]).patch("sys.platform", "linux"):
+            assert _format_permissions_for_prompt(PermissionsConfig(), "sora") == ""
+
+    def test_prompt_displays_only_non_default_permission_constraints(self):
+        prompt = _format_permissions_for_prompt(
+            PermissionsConfig(
+                commands=CommandsPermission(allow_all=False, allow=["git status"], deny=["rm -rf"]),
+                tool_creation=ToolCreationPermission(personal=False, shared=True),
+            ),
+            "sora",
+        )
+        assert "Allowed commands: git status" in prompt
+        assert "Additionally denied commands: rm -rf" in prompt
+        assert "Personal tool creation: not allowed" in prompt
+        assert "Shared tool creation: allowed" in prompt
+        assert "External tools: all allowed" not in prompt
+
     def test_prompt_displays_denied_roots(self, tmp_path: Path):
         denied = tmp_path / "private"
         prompt = _format_permissions_for_prompt(
@@ -290,29 +346,52 @@ class TestRAGConfig:
         rag = RAGConfig(min_retrieval_score=0.5)
         assert rag.min_retrieval_score == 0.5
 
-    def test_entity_boost_defaults_enabled(self) -> None:
-        """Production entity boost is config-controlled and enabled by default (P2-A)."""
-        rag = RAGConfig()
-        assert rag.entity_registry_enabled is True
-        assert rag.entity_boost_enabled is True
-        assert rag.entity_boost == 0.20
-        assert rag.entity_boost_cap == 0.80
+    def test_entity_registry_remains_enabled_for_fact_features(self) -> None:
+        assert RAGConfig().entity_registry_enabled is True
 
-    def test_temporal_boost_defaults(self) -> None:
-        """Time-aware retrieval uses conservative production defaults."""
-        rag = RAGConfig()
-        assert rag.temporal_boost_enabled is True
-        assert rag.temporal_boost == 0.05
-        assert rag.temporal_boost_max == 0.10
-        assert rag.temporal_half_life_days == 7.0
+    def test_removed_graph_retrieval_settings_are_ignored(self, tmp_path: Path) -> None:
+        retired_settings = {
+            "enable_spreading_activation": True,
+            "graph_cache_enabled": True,
+            "implicit_link_threshold": 0.75,
+            "spreading_memory_types": ["knowledge", "episodes"],
+            "entity_aware_graph_enabled": True,
+            "graph_entity_edge_cap": 8,
+            "graph_inverse_fan_enabled": True,
+            "graph_recency_weight_enabled": True,
+            "max_graph_hops": 2,
+        }
+        config_path = get_config_path(tmp_path)
+        config_path.write_text(json.dumps({"rag": retired_settings}), encoding="utf-8")
+        invalidate_cache()
 
-    def test_access_boost_defaults(self) -> None:
-        """Access-count LTP boost has conservative production defaults."""
-        rag = RAGConfig()
-        assert rag.access_boost_enabled is True
-        assert rag.access_boost_weight == 0.05
-        assert rag.access_boost_cap == 0.25
-        assert rag.access_boost_half_life_days == 30.0
+        try:
+            config = load_config(config_path)
+        finally:
+            invalidate_cache()
+
+        assert not retired_settings.keys() & config.rag.model_dump().keys()
+
+    def test_legacy_boost_config_keys_are_ignored(self) -> None:
+        rag = RAGConfig.model_validate(
+            {
+                "entity_boost_enabled": False,
+                "entity_boost": 0.9,
+                "entity_boost_cap": 1.0,
+                "temporal_boost_enabled": False,
+                "temporal_boost": 0.9,
+                "temporal_boost_max": 1.0,
+                "temporal_half_life_days": 1.0,
+                "access_boost_enabled": False,
+                "access_boost_weight": 0.9,
+                "access_boost_cap": 1.0,
+                "access_boost_half_life_days": 1.0,
+            }
+        )
+
+        assert "entity_boost_enabled" not in rag.model_dump()
+        assert "temporal_boost_enabled" not in rag.model_dump()
+        assert "access_boost_enabled" not in rag.model_dump()
 
     def test_fact_reconcile_defaults(self) -> None:
         """Fact reconciliation defaults to high-threshold, bounded top-k behavior."""
@@ -463,7 +542,7 @@ class TestLoadConfig:
         # Write a config with an anima (supervisor/speciality only; model in status.json)
         config_data = {
             "version": 1,
-            "system": {"mode": "server", "log_level": "INFO"},
+            "system": {"mode": "server"},
             "credentials": {"anthropic": {"api_key": ""}},
             "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
             "animas": {"alice": {"supervisor": "bob", "speciality": "engineer"}},
@@ -474,6 +553,35 @@ class TestLoadConfig:
         assert "alice" in config.animas
         assert config.animas["alice"].supervisor == "bob"
         assert config.animas["alice"].speciality == "engineer"
+
+    def test_removed_config_keys_are_ignored_without_breaking_legacy_config(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "system": {"mode": "server", "log_level": "DEBUG"},
+                    "rag": {"quick_check_timeout_seconds": 2.0},
+                    "background_task": {"result_retention_hours": 48},
+                    "priming": {
+                        "profile": "full",
+                        "compact_background_recall": {"heartbeat": {"episodes_max_items": 9}},
+                    },
+                    "channel_company_defaults": {"general": "alpha"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        config = load_config(path)
+
+        assert config.system.mode == "server"
+        assert not hasattr(config.system, "log_level")
+        assert not hasattr(config.rag, "quick_check_timeout_seconds")
+        assert not hasattr(config.background_task, "result_retention_hours")
+        assert not hasattr(config.priming, "profile")
+        assert config.priming.compact_background_recall.episodes_max_items == 2
+        assert not hasattr(config, "channel_company_defaults")
+        assert "channel_company_defaults" not in config.model_dump()
 
     def test_removed_consolidation_keys_are_ignored(self, tmp_path):
         path = tmp_path / "config.json"
@@ -784,7 +892,7 @@ class TestPatternSpecificity:
 
 class TestMatchPatternTable:
     def test_exact_match(self):
-        table = {"ollama/qwen3:14b": "A2", "ollama/*": "B"}
+        table = {"ollama/qwen3:14b": "A2", "ollama/*": "A"}
         assert _match_pattern_table("ollama/qwen3:14b", table) == "A2"
 
     def test_prefix_wildcard(self):
@@ -806,10 +914,10 @@ class TestMatchPatternTable:
     def test_specific_pattern_beats_catchall(self):
         table = {
             "ollama/qwen3:14b": "A2",
-            "ollama/*": "B",
+            "ollama/*": "A",
         }
         assert _match_pattern_table("ollama/qwen3:14b", table) == "A2"
-        assert _match_pattern_table("ollama/some-other", table) == "B"
+        assert _match_pattern_table("ollama/some-other", table) == "A"
 
     def test_empty_table_returns_none(self):
         assert _match_pattern_table("claude-sonnet-4-6", {}) is None
@@ -847,7 +955,7 @@ class TestResolveExecutionModeWildcard:
 
     def test_explicit_override_assisted(self):
         config = AnimaWorksConfig()
-        # 'assisted' (legacy Mode B name) normalises to A now that B is removed
+        # The legacy 'assisted' alias maps to the canonical autonomous mode.
         assert resolve_execution_mode(config, "any-model", "assisted") == "A"
 
     def test_explicit_override_legacy_a1(self):
@@ -862,11 +970,31 @@ class TestResolveExecutionModeWildcard:
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "any-model", "A2") == "A"
 
-    def test_explicit_override_new_sab(self):
+    def test_explicit_override_canonical_and_legacy_modes(self):
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "any-model", "S") == "S"
         assert resolve_execution_mode(config, "any-model", "A") == "A"
-        assert resolve_execution_mode(config, "any-model", "B") == "B"
+        assert resolve_execution_mode(config, "any-model", "B") == "A"
+        assert resolve_execution_mode(config, "any-model", "b") == "A"
+        assert resolve_execution_mode(config, "any-model", "basic") == "A"
+        assert _normalise_mode("B") == "A"
+        assert _normalise_mode("b") == "A"
+        assert _normalise_mode("basic") == "A"
+
+    def test_unknown_mode_defaults_to_a_with_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="animaworks.config"):
+            assert _normalise_mode("Z") == "A"
+        assert "Unrecognised execution mode 'Z'" in caplog.text
+
+    def test_fallback_legacy_b_mode_normalizes_to_a(self):
+        config = AnimaWorksConfig()
+        assert parse_fallback_entry("b:ollama/qwen3:14b", config) == ("a", "ollama/qwen3:14b")
+
+    def test_resolved_b_mode_is_canonical_a(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "x", "B") == "A"
 
     def test_claude_wildcard_s(self):
         config = AnimaWorksConfig()

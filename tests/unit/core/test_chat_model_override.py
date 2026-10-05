@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import _apply_chat_model_override
+from core.anima.messaging import _apply_chat_model_override
 from core.schemas import CycleResult, ModelConfig
 from server.routes.chat_models import ChatRequest
 
@@ -112,7 +112,7 @@ def test_apply_empty_model_returns_base() -> None:
     assert _apply_chat_model_override(owner, base, "", thread_id="default") is base
 
 
-# ── process_message integration (run_cycle wiring) ────────────────────
+# ── process_message integration (streaming cycle wiring) ─────────────
 
 
 def _agent() -> MagicMock:
@@ -131,13 +131,16 @@ def _agent() -> MagicMock:
     )
     agent.supports_message_injection = True
     agent._resolve_execution_mode = MagicMock(return_value="s")
-    agent.run_cycle = AsyncMock(
-        return_value=CycleResult(
+
+    async def _stream(*_args, **_kwargs):
+        result = CycleResult(
             trigger="message:human",
             action="responded",
             summary="ok",
         )
-    )
+        yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
+
+    agent.run_cycle_streaming = MagicMock(side_effect=_stream)
     return agent
 
 
@@ -176,26 +179,26 @@ class TestProcessMessageModelOverride:
         (d / "dm_logs").mkdir()
         return d
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
     async def test_model_override_reaches_run_cycle(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
-        """A requested model must be passed as ``model_config_override``."""
+        """A requested model must reach the streaming cycle as an override."""
         base = _base()
         override = base.model_copy(update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"})
         mock_mm_cls.return_value.read_model_config.return_value = base
         mock_agent_cls.return_value = _agent()
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
         config = MagicMock()
 
         with (
-            patch("core._anima_messaging.resolve_effective_model_config", return_value=base),
-            patch("core._anima_messaging.log_model_fallback", return_value=None),
+            patch("core.anima.messaging.resolve_effective_model_config", return_value=base),
+            patch("core.anima.messaging.log_model_fallback", return_value=None),
             patch("core.config.io.load_config", return_value=config),
             patch(
                 "core.config.model_mode.parse_fallback_entry",
@@ -208,13 +211,13 @@ class TestProcessMessageModelOverride:
         ):
             await anima.process_message("hello", from_person="human", model="gpt-4.1")
 
-        call = mock_agent_cls.return_value.run_cycle.await_args
+        call = mock_agent_cls.return_value.run_cycle_streaming.call_args
         assert call is not None
         assert call.kwargs["model_config_override"] is override
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
     async def test_invalid_model_continues_with_default(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
@@ -223,19 +226,19 @@ class TestProcessMessageModelOverride:
         mock_mm_cls.return_value.read_model_config.return_value = base
         mock_agent_cls.return_value = _agent()
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
         config = MagicMock()
 
         with (
-            patch("core._anima_messaging.resolve_effective_model_config", return_value=base),
-            patch("core._anima_messaging.log_model_fallback", return_value=None),
+            patch("core.anima.messaging.resolve_effective_model_config", return_value=base),
+            patch("core.anima.messaging.log_model_fallback", return_value=None),
             patch("core.config.io.load_config", return_value=config),
             patch("core.config.model_mode.parse_fallback_entry", return_value=None),
         ):
             await anima.process_message("hello", from_person="human", model="bad!!")
 
-        call = mock_agent_cls.return_value.run_cycle.await_args
+        call = mock_agent_cls.return_value.run_cycle_streaming.call_args
         assert call is not None
         assert call.kwargs["model_config_override"] is base

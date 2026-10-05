@@ -11,12 +11,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.models import ImageGenConfig
-from core.tools.image_gen import (
-    ImageGenPipeline,
+from core.integrations.image_gen import (
     _EXPRESSION_GUIDANCE,
     _EXPRESSION_PROMPTS,
+    ImageGenPipeline,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -62,16 +61,14 @@ class TestUnknownExpression:
 class TestSkipExisting:
     """skip_existing behaviour when the output file already exists."""
 
-    def test_skip_existing_returns_path(
-        self, anima_dir: Path, pipeline: ImageGenPipeline, reference_image: bytes
-    ):
+    def test_skip_existing_returns_path(self, anima_dir: Path, pipeline: ImageGenPipeline, reference_image: bytes):
         """skip_existing=True returns existing path without generation."""
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir(parents=True)
         existing = assets_dir / "avatar_bustup.png"
         existing.write_bytes(b"old_data")
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             result = pipeline.generate_bustup_expression(
                 reference_image=reference_image,
                 expression="neutral",
@@ -94,7 +91,7 @@ class TestSkipExisting:
         existing = assets_dir / "avatar_bustup.png"
         existing.write_bytes(b"old_data")
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client
@@ -113,9 +110,7 @@ class TestSkipExisting:
 class TestStylePrefixSuffix:
     """Style prefix/suffix from config are applied to the prompt."""
 
-    def test_style_prefix_and_suffix_applied(
-        self, anima_dir: Path, reference_image: bytes, generated_bytes: bytes
-    ):
+    def test_style_prefix_and_suffix_applied(self, anima_dir: Path, reference_image: bytes, generated_bytes: bytes):
         config = ImageGenConfig(
             image_style="anime",
             style_prefix="[PREFIX] ",
@@ -123,7 +118,7 @@ class TestStylePrefixSuffix:
         )
         pipeline = ImageGenPipeline(anima_dir, config=config)
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client
@@ -170,7 +165,7 @@ class TestOutputFilename:
     ):
         pipeline = ImageGenPipeline(anima_dir, config=ImageGenConfig(image_style="anime"))
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client
@@ -190,7 +185,7 @@ class TestFluxKontextClientCall:
     def test_called_with_correct_params(
         self, pipeline: ImageGenPipeline, reference_image: bytes, generated_bytes: bytes
     ):
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client
@@ -219,7 +214,7 @@ class TestImageBytesWritten:
         reference_image: bytes,
         generated_bytes: bytes,
     ):
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client
@@ -247,7 +242,7 @@ class TestAssetsDirectoryCreation:
         assets_dir = anima_dir / "assets"
         assert not assets_dir.exists()
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = generated_bytes
             mock_cls.return_value = mock_client

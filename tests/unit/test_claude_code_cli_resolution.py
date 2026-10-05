@@ -38,7 +38,7 @@ def test_explicit_claude_code_path_takes_priority(monkeypatch, tmp_path):
 
 
 def test_sdk_options_reject_windows_without_external_cli(monkeypatch):
-    from core.execution import _sdk_options
+    from core.execution.engines.claude import _sdk_options
     from core.platform import claude_code
 
     seen: dict[str, bool] = {}

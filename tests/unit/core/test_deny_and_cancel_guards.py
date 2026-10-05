@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from core.config.schemas import command_deny_matches
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 RM_RULE = r"re:\brm\s+(-\w*[rR]|--recursive)"
 

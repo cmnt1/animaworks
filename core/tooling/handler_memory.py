@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _MemoryToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,22 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.i18n import t
-from core.memory._io import archive_episode_before_write
-from core.memory.scope_policy import (
-    LEGACY_ONLY_SCOPES,
-    LEGACY_ONLY_SCOPES_FOR_ALL,
-    NEO4J_SCOPE_MAP,
-    SearchResultItem,
-    format_graph_memory_entry,
-    format_hybrid_search_results,
-    is_legacy_only_scope,
-    is_neo4j_backed_scope,
-    neo4j_scope_for,
-    title_for_legacy_scope,
-)
-from core.memory.search_metadata import format_result_metadata_line
+from core.memory.io import archive_episode_before_write
+from core.memory.retrieval.search_metadata import format_result_metadata_line
 from core.tooling.handler_base import (
     _error_result,
     _extract_first_heading,
@@ -38,11 +30,11 @@ from core.tooling.handler_base import (
 )
 
 if TYPE_CHECKING:
-    import threading
     from collections.abc import Callable
 
+    from core.activity.logger import ActivityLogger
     from core.memory import MemoryManager
-    from core.memory.activity import ActivityLogger
+    from core.memory.state_lock import StateFileLock
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -51,6 +43,21 @@ _SEARCH_MAX_LINES = 600
 _SEARCH_CONTEXT_BASE = 128_000
 _SEARCH_MIN_RESULTS = 3
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_CASE_RECORD_PR_RE = re.compile(r"(?<![\w])#\s*\d{2,}\b")
+# Hex runs that mix digits and letters, so plain numbers (amounts, IDs) don't count.
+_CASE_RECORD_SHA_RE = re.compile(
+    r"(?<![0-9a-f])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![0-9a-f])", re.IGNORECASE
+)
+_CASE_RECORD_DATE_RE = re.compile(
+    r"(?<!\d)(?:19|20)\d{2}(?:-\d{1,2}-\d{1,2}|/\d{1,2}/\d{1,2}|年\d{1,2}月\d{1,2}日)(?!\d)"
+)
+
+
+def _looks_like_case_record(content: str) -> bool:
+    """Heuristically identify project-specific notes better stored as episodes."""
+    if _CASE_RECORD_PR_RE.search(content) or _CASE_RECORD_SHA_RE.search(content):
+        return True
+    return len(set(_CASE_RECORD_DATE_RE.findall(content))) >= 2
 
 
 def _source_is_in_project(source: str, project: str) -> bool:
@@ -73,6 +80,168 @@ class _PathNormResult:
 
     rel: str
     channel_redirect: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryWriteRequest:
+    """Normalized inputs shared by scope-specific memory writers."""
+
+    rel: str
+    path: Path
+    content: str
+    mode: str
+    was_existing: bool
+    write_origin: str
+    skill_capture: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryWriteOutcome:
+    """Scope writer metadata needed by the common post-write path."""
+
+    auto_frontmatter_applied: bool = False
+    error: str | None = None
+
+
+_MEMORY_WRITE_SCOPE_PREFIXES = (
+    ("common_knowledge/", "common_knowledge"),
+    ("common_skills/", "common_skills"),
+    ("knowledge/", "knowledge"),
+    ("procedures/", "procedures"),
+    ("episodes/", "episodes"),
+    ("facts/", "facts"),
+    ("state/", "state"),
+    ("skills/", "skills"),
+    ("shortterm/", "shortterm"),
+    ("tools/", "tools"),
+)
+_MEMORY_WRITE_HANDLERS = {
+    "knowledge": "_write_knowledge_memory_file",
+    "procedures": "_write_procedure_memory_file",
+    "episodes": "_write_episode_memory_file",
+    "facts": "_write_plain_memory_file",
+    "state": "_write_plain_memory_file",
+    "skills": "_write_plain_memory_file",
+    "common_knowledge": "_write_plain_memory_file",
+    "common_skills": "_write_plain_memory_file",
+    "shortterm": "_write_plain_memory_file",
+    "tools": "_write_plain_memory_file",
+    "default": "_write_plain_memory_file",
+}
+
+
+def _knowledge_frontmatter_text(path: Path, rel: str, content: str, write_origin: str) -> str:
+    """Build completed YAML metadata for a knowledge overwrite."""
+    import yaml
+
+    from core.memory.frontmatter import parse_frontmatter, strip_content_frontmatter
+    from core.time_utils import now_local
+
+    if content.lstrip().startswith("---"):
+        meta, body = parse_frontmatter(content.lstrip())
+        if meta:
+            if path.exists():
+                try:
+                    existing_text = path.read_text(encoding="utf-8")
+                    existing_meta, _ = parse_frontmatter(existing_text)
+                    if existing_meta.get("created_at"):
+                        meta.setdefault("created_at", existing_meta["created_at"])
+                except OSError:
+                    pass
+            if write_origin:
+                meta["origin"] = write_origin
+            from core.memory.frontmatter import validate_and_complete_frontmatter
+
+            validate_and_complete_frontmatter(meta, path)
+            meta["updated_at"] = now_local().isoformat()
+            frontmatter = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
+            return f"---\n{frontmatter}---\n\n{body.lstrip()}"
+
+        clean_body = strip_content_frontmatter(content.lstrip())
+        timestamp = now_local().isoformat()
+        metadata: dict[str, Any] = {
+            "confidence": 0.5,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "source_episodes": 0,
+            "auto_consolidated": False,
+            "version": 1,
+        }
+        if path.exists():
+            try:
+                existing_text = path.read_text(encoding="utf-8")
+                existing_meta, _ = parse_frontmatter(existing_text)
+                if existing_meta.get("created_at"):
+                    metadata["created_at"] = existing_meta["created_at"]
+            except OSError:
+                pass
+        if write_origin:
+            metadata["origin"] = write_origin
+        frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
+        logger.info("Frontmatter parse failed for %s — applied fallback metadata", rel)
+        return f"---\n{frontmatter}---\n\n{clean_body.lstrip()}"
+
+    original_created_at = None
+    if path.exists():
+        try:
+            existing_text = path.read_text(encoding="utf-8")
+            existing_meta, _ = parse_frontmatter(existing_text)
+            original_created_at = existing_meta.get("created_at")
+        except OSError:
+            pass
+    timestamp = now_local().isoformat()
+    metadata = {
+        "confidence": 0.5,
+        "created_at": original_created_at or timestamp,
+        "updated_at": timestamp,
+        "source_episodes": 0,
+        "auto_consolidated": False,
+        "version": 1,
+    }
+    if write_origin:
+        metadata["origin"] = write_origin
+    clean_body = strip_content_frontmatter(content)
+    frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
+    return f"---\n{frontmatter}---\n\n{clean_body}"
+
+
+def _append_memory_content(path: Path, content: str) -> None:
+    with open(path, "a", encoding="utf-8") as file:
+        file.write(content)
+
+
+def _append_knowledge_content(path: Path, content: str, write_origin: str) -> None:
+    """Append knowledge content and retain the most conservative source origin."""
+    _append_memory_content(path, content)
+    if not write_origin or not path.is_file():
+        return
+
+    from core.memory.frontmatter import parse_frontmatter
+    from core.trust import ORIGIN_TRUST_MAP, TRUST_RANK
+
+    current_text = path.read_text(encoding="utf-8")
+    if not current_text.startswith("---"):
+        return
+    current_meta, current_body = parse_frontmatter(current_text)
+    if not current_meta:
+        return
+
+    current_origin = current_meta.get("origin")
+    current_trust = ORIGIN_TRUST_MAP.get(str(current_origin), "untrusted")
+    next_trust = ORIGIN_TRUST_MAP.get(write_origin, "untrusted")
+    current_rank = TRUST_RANK.get(current_trust, 0)
+    next_rank = TRUST_RANK.get(next_trust, 0)
+    # Both mixed and external_web currently map to untrusted; prefer the
+    # more specific external_web label on a tie.
+    should_downgrade = (
+        not current_origin or current_rank > next_rank or (current_origin == "mixed" and write_origin == "external_web")
+    )
+    if should_downgrade:
+        import yaml
+
+        current_meta["origin"] = write_origin
+        frontmatter = yaml.dump(current_meta, default_flow_style=False, allow_unicode=True)
+        path.write_text(f"---\n{frontmatter}---\n\n{current_body.lstrip()}", encoding="utf-8")
 
 
 def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
@@ -171,7 +340,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
         except ValueError:
             pass
 
-    from core.company_resources import company_resource_pointer, get_company_resources
+    from core.org.company_resources import company_resource_pointer, get_company_resources
 
     company_resources = get_company_resources(anima_dir)
     if company_resources is not None and resolved.is_relative_to(company_resources.root):
@@ -205,7 +374,7 @@ class MemoryToolsMixin:
     _descendant_state_files: list[Path]
     _descendant_state_dirs: list[Path]
     _peer_activity_dirs: list[Path]
-    _state_file_lock: threading.Lock | None
+    _state_file_lock: StateFileLock | None
     _on_schedule_changed: Callable[[str], None] | None
     _min_trust_seen: int
     _read_paths: set[str]
@@ -219,36 +388,7 @@ class MemoryToolsMixin:
         "common_skills/": "shared_common_skills",
     }
 
-    # ── Neo4j backend integration ──────────────────────────────────────────
-
-    _NEO4J_SCOPE_MAP: dict[str, str] = NEO4J_SCOPE_MAP
-    _LEGACY_ONLY_SCOPES: frozenset[str] = LEGACY_ONLY_SCOPES
-
-    def _should_use_neo4j(self, scope: str) -> bool:
-        """Return True if this scope should be routed to Neo4j backend."""
-        if is_legacy_only_scope(scope) or not is_neo4j_backed_scope(scope):
-            return False
-        try:
-            from core.memory.backend.registry import resolve_backend_type
-
-            if resolve_backend_type(Path(self._anima_dir)) == "neo4j":
-                return True
-        except Exception:
-            logger.debug("Failed to resolve memory backend type", exc_info=True)
-
-        try:
-            backend = self._memory.memory_backend
-            return type(backend).__name__ == "Neo4jGraphBackend"
-        except Exception:
-            return False
-
-    def _create_neo4j_backend(self) -> Any:
-        """Create a fresh Neo4j backend for a single ToolHandler search."""
-        from core.memory.backend.registry import get_backend
-
-        return get_backend("neo4j", Path(self._anima_dir))
-
-    def _record_memory_file_used(self, rel: str) -> None:
+    def _record_memory_file_used(self: _MemoryToolsHost, rel: str) -> None:
         """Best-effort explicit-use accounting for indexed memory files."""
         collection = self._collection_for_memory_file(rel)
         if collection is None:
@@ -279,223 +419,30 @@ class MemoryToolsMixin:
         except Exception:
             logger.debug("Failed to record explicit memory use for %s", rel, exc_info=True)
 
-    def _collection_for_memory_file(self, rel: str) -> str | None:
+    def _collection_for_memory_file(self: _MemoryToolsHost, rel: str) -> str | None:
         for prefix, template in self._USED_COLLECTION_PREFIXES.items():
             if rel.startswith(prefix):
                 return template.format(anima=self._current_anima_name())
         return None
 
-    def _current_anima_name(self) -> str:
+    def _current_anima_name(self: _MemoryToolsHost) -> str:
         return str(getattr(self, "_anima_name", "") or self._anima_dir.name)
 
-    def _memory_source_path(self, source: str) -> Path | None:
-        """Resolve a RAG ``source_file`` value to the file it represents."""
-        return resolve_memory_source_path(self._anima_dir, source)
-
-    def _memory_source_is_denied(self, source: str, denied_roots: tuple[Path, ...]) -> bool:
+    def _memory_source_is_denied(self: _MemoryToolsHost, source: str, denied_roots: tuple[Path, ...]) -> bool:
         """Return whether a persisted search hit originated below an explicit deny root."""
         return not memory_source_is_allowed(self._anima_dir, source, denied_roots)
 
-    @staticmethod
-    def _graph_memory_source(memory: Any) -> str:
-        metadata = getattr(memory, "metadata", {})
-        if isinstance(metadata, dict) and metadata.get("source_file"):
-            return str(metadata["source_file"])
-        return str(getattr(memory, "source", ""))
-
-    def _update_longterm_bm25_source(self, rel: str) -> None:
+    def _update_longterm_bm25_source(self: _MemoryToolsHost, rel: str) -> None:
         if not rel.startswith(("knowledge/", "episodes/", "procedures/")):
             return
         try:
-            from core.memory.bm25 import update_longterm_bm25_source
+            from core.memory.retrieval.bm25 import update_longterm_bm25_source
 
             update_longterm_bm25_source(self._anima_dir, rel)
         except Exception:
             logger.debug("Failed to update long-term BM25 index after memory write: %s", rel, exc_info=True)
 
-    def _retrieve_neo4j_memories(
-        self,
-        query: str,
-        scope: str,
-        limit: int,
-        *,
-        time_start: str | None = None,
-        time_end: str | None = None,
-    ) -> list[Any] | None:
-        """Retrieve memories via a fresh Neo4j backend, returning None on failure."""
-        import asyncio
-        import inspect
-
-        neo4j_scope = neo4j_scope_for(scope)
-        as_of_time = time_end
-
-        try:
-
-            async def retrieve_memories() -> list[Any]:
-                backend = None
-                try:
-                    backend = self._create_neo4j_backend()
-                    return await backend.retrieve(
-                        query,
-                        scope=neo4j_scope,
-                        limit=limit,
-                        trigger="tool",
-                        time_start=time_start,
-                        time_end=time_end,
-                        as_of_time=as_of_time,
-                    )
-                finally:
-                    if backend is not None:
-                        close = getattr(backend, "close", None)
-                        if close is not None:
-                            try:
-                                close_result = close()
-                                if inspect.isawaitable(close_result):
-                                    await close_result
-                            except Exception:
-                                logger.debug("Failed to close Neo4j backend after search", exc_info=True)
-
-            def run_retrieve() -> list[Any]:
-                return asyncio.run(retrieve_memories())
-
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop and loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    return pool.submit(run_retrieve).result(timeout=30)
-            return run_retrieve()
-        except Exception:
-            logger.warning("Neo4j search failed, falling back to legacy", exc_info=True)
-            return None
-
-    def _search_via_neo4j(
-        self,
-        query: str,
-        scope: str,
-        offset: int,
-        *,
-        time_start: str | None = None,
-        time_end: str | None = None,
-        denied_roots: tuple[Path, ...] = (),
-        project: str | None = None,
-    ) -> str | None:
-        """Execute search via Neo4j backend, returning formatted string or None on failure."""
-        memories = self._retrieve_neo4j_memories(
-            query,
-            scope,
-            limit=10 + offset,
-            time_start=time_start,
-            time_end=time_end,
-        )
-        if memories is None:
-            return None
-
-        if denied_roots:
-            memories = [
-                memory
-                for memory in memories
-                if not self._memory_source_is_denied(self._graph_memory_source(memory), denied_roots)
-            ]
-        if project:
-            memories = [
-                memory for memory in memories if _source_is_in_project(self._graph_memory_source(memory), project)
-            ]
-
-        if offset:
-            memories = memories[offset:]
-
-        if not memories:
-            return ""
-
-        scale = min(1.0, getattr(self, "_context_window", _SEARCH_CONTEXT_BASE) / _SEARCH_CONTEXT_BASE)
-        max_tokens = int(_SEARCH_MAX_TOKENS * scale)
-
-        header = f'Search results for "{query}" (graph, {scope}, {offset + 1}-{offset + len(memories)}):\n'
-        parts: list[str] = [header]
-        total_tokens = len(header) // 4
-
-        for i, mem in enumerate(memories):
-            entry = format_graph_memory_entry(mem, offset + i + 1)
-            entry_tokens = len(entry) // 4
-            if total_tokens + entry_tokens > max_tokens and i >= _SEARCH_MIN_RESULTS:
-                parts.append(f"\n... {len(memories) - i} more results truncated")
-                break
-            parts.append(entry)
-            total_tokens += entry_tokens
-
-        return "".join(parts)
-
-    def _search_all_hybrid(
-        self,
-        query: str,
-        offset: int,
-        *,
-        time_start: str | None = None,
-        time_end: str | None = None,
-        denied_roots: tuple[Path, ...] = (),
-        project: str | None = None,
-    ) -> str | None:
-        """Search Neo4j graph memory plus legacy-only scopes for scope='all'."""
-        graph_memories = self._retrieve_neo4j_memories(
-            query,
-            "all",
-            limit=10 + offset,
-            time_start=time_start,
-            time_end=time_end,
-        )
-        if graph_memories is None:
-            return None
-
-        context_window = getattr(self, "_context_window", _SEARCH_CONTEXT_BASE)
-        items: list[SearchResultItem] = []
-        for mem in graph_memories:
-            source = self._graph_memory_source(mem)
-            if not self._memory_source_is_denied(source, denied_roots) and (
-                not project or _source_is_in_project(source, project)
-            ):
-                items.append(SearchResultItem("Graph Memory", "graph", mem))
-
-        for legacy_scope in LEGACY_ONLY_SCOPES_FOR_ALL:
-            try:
-                legacy_time_range = {}
-                if time_start is not None:
-                    legacy_time_range["time_start"] = time_start
-                if time_end is not None:
-                    legacy_time_range["time_end"] = time_end
-                legacy_results = self._memory.search_memory_text(
-                    query,
-                    scope=legacy_scope,
-                    offset=0,
-                    context_window=context_window,
-                    **legacy_time_range,
-                )
-            except Exception:
-                logger.debug("Legacy search failed for scope=%s", legacy_scope, exc_info=True)
-                legacy_results = []
-            section_title = title_for_legacy_scope(legacy_scope)
-            for result in legacy_results:
-                source = str(result.get("source_file", ""))
-                if not self._memory_source_is_denied(source, denied_roots) and (
-                    not project or _source_is_in_project(source, project)
-                ):
-                    items.append(SearchResultItem(section_title, "legacy", result))
-
-        return format_hybrid_search_results(
-            query=query,
-            items=items,
-            offset=offset,
-            context_window=context_window,
-            search_max_tokens=_SEARCH_MAX_TOKENS,
-            search_context_base=_SEARCH_CONTEXT_BASE,
-            search_min_results=_SEARCH_MIN_RESULTS,
-        )
-
-    def _anima_search_hint(self, query: str) -> str | None:
+    def _anima_search_hint(self: _MemoryToolsHost, query: str) -> str | None:
         """If query looks like a search for a registered Anima, return a redirect hint.
 
         Checks all anima directories and config aliases so that queries like
@@ -546,7 +493,7 @@ class MemoryToolsMixin:
             logger.debug("handler_memory read failed", exc_info=True)
         return None
 
-    def _handle_search_memory(self, args: dict[str, Any]) -> str:
+    def _handle_search_memory(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         scope = args.get("scope", "all")
         query = args.get("query", "")
         offset = int(args.get("offset", 0))
@@ -559,7 +506,7 @@ class MemoryToolsMixin:
         if scope == "code":
             if not project:
                 return t("handler.code_search_requires_project")
-            from core.memory.code_index import search_code
+            from core.memory.retrieval.code_index import search_code
 
             code_results = search_code(self._anima_dir, project, query, limit=offset + 10)
             if isinstance(code_results, str):
@@ -588,46 +535,6 @@ class MemoryToolsMixin:
         # If the query seems to be about a registered Anima, redirect immediately.
         anima_hint = self._anima_search_hint(query)
 
-        # Neo4j backend: delegate to HybridSearch for eligible scopes
-        if self._should_use_neo4j(scope):
-            if scope == "all":
-                neo4j_result = self._search_all_hybrid(
-                    query,
-                    offset,
-                    time_start=time_start,
-                    time_end=time_end,
-                    denied_roots=denied_roots,
-                    project=project,
-                )
-                if neo4j_result is not None:
-                    if not neo4j_result:
-                        base = (
-                            f"No more results for '{query}' at offset={offset}."
-                            if offset > 0
-                            else f"No results for '{query}'"
-                        )
-                        if anima_hint:
-                            return f"{base}\n\n{anima_hint}"
-                        return base
-                    if anima_hint:
-                        return f"{anima_hint}\n\n{neo4j_result}"
-                    return neo4j_result
-            else:
-                neo4j_result = self._search_via_neo4j(
-                    query,
-                    scope,
-                    offset,
-                    time_start=time_start,
-                    time_end=time_end,
-                    denied_roots=denied_roots,
-                    project=project,
-                )
-            if neo4j_result is not None:
-                if not neo4j_result and anima_hint:
-                    return f"No results for '{query}'\n\n{anima_hint}"
-                if neo4j_result:
-                    return neo4j_result
-
         legacy_time_range: dict[str, str] = {}
         if time_start is not None:
             legacy_time_range["time_start"] = time_start
@@ -653,7 +560,7 @@ class MemoryToolsMixin:
         return self._format_search_results(query, scope, offset, results, anima_hint=anima_hint)
 
     def _format_search_results(
-        self,
+        self: _MemoryToolsHost,
         query: str,
         scope: str,
         offset: int,
@@ -793,7 +700,7 @@ class MemoryToolsMixin:
             return "traversal"
         return (D, real)
 
-    def _record_skill_view_if_applicable(self, rel: str) -> None:
+    def _record_skill_view_if_applicable(self: _MemoryToolsHost, rel: str) -> None:
         """Record a 'view' event if the path looks like a skill or procedure."""
         is_flat_personal_skill = self._is_flat_personal_skill_path(rel)
         is_skill = is_flat_personal_skill or (rel.startswith("skills/") and "SKILL.md" in rel)
@@ -834,7 +741,7 @@ class MemoryToolsMixin:
         except Exception:
             logger.debug("Failed to record skill view event for %s", rel, exc_info=True)
 
-    def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
+    def _handle_read_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         raw_path = args["path"]
         norm = _normalize_memory_path(raw_path, self._anima_dir)
         if norm.channel_redirect:
@@ -883,7 +790,7 @@ class MemoryToolsMixin:
                     "Path traversal detected — access denied.",
                 )
         elif rel.startswith("companies/"):
-            from core.company_resources import get_company_resources
+            from core.org.company_resources import get_company_resources
 
             resources = get_company_resources(self._anima_dir)
             path = (resources.root.parent.parent / rel).resolve() if resources is not None else None
@@ -994,7 +901,146 @@ class MemoryToolsMixin:
                 hint = f"\nAvailable files in {parent.name}/:\n" + "\n".join(f"  - {s}" for s in siblings)
         return f"File not found: {rel}{hint}"
 
-    def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
+    def _resolve_write_origin(self: _MemoryToolsHost) -> str:
+        """Return the conservative origin for knowledge written this session."""
+        from core.trust import read_session_trust
+
+        min_trust = getattr(self, "_min_trust_seen", 2)
+        runtime_context = getattr(self, "_runtime_session_context", None)
+        tool_session_id = getattr(runtime_context, "tool_session_id", "")
+        if tool_session_id:
+            min_trust = min(min_trust, read_session_trust(self._anima_dir, tool_session_id))
+        return {0: "external_web", 1: "mixed"}.get(min_trust, "")
+
+    def _write_plain_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if request.mode == "append":
+            _append_memory_content(request.path, request.content)
+        else:
+            request.path.write_text(request.content, encoding="utf-8")
+        return _MemoryWriteOutcome()
+
+    def _write_knowledge_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if request.mode == "overwrite" and request.rel.endswith(".md"):
+            request.path.write_text(
+                _knowledge_frontmatter_text(request.path, request.rel, request.content, request.write_origin),
+                encoding="utf-8",
+            )
+            return _MemoryWriteOutcome(auto_frontmatter_applied=True)
+        if request.mode == "append":
+            _append_knowledge_content(request.path, request.content, request.write_origin)
+            return _MemoryWriteOutcome()
+        return self._write_plain_memory_file(request)
+
+    def _write_procedure_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if (
+            request.mode == "overwrite"
+            and request.rel.endswith(".md")
+            and not request.content.lstrip().startswith("---")
+        ):
+            metadata = {
+                "description": _extract_first_heading(request.content),
+                "success_count": 0,
+                "failure_count": 0,
+                "confidence": 0.5,
+            }
+            self._memory.write_procedure_with_meta(request.path, request.content, metadata)
+            return _MemoryWriteOutcome(auto_frontmatter_applied=True)
+        return self._write_plain_memory_file(request)
+
+    def _write_episode_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        from core.platform.locks import locked_path
+
+        lock_path = request.path.with_name(f"{request.path.name}.lock")
+        with locked_path(lock_path, exclusive=True, thread_lock=True):
+            if request.mode == "overwrite" and request.path.exists():
+                try:
+                    archive_episode_before_write(self._anima_dir, request.path)
+                except OSError as exc:
+                    logger.warning("Failed to archive episode before overwrite: %s", request.path, exc_info=True)
+                    return _MemoryWriteOutcome(
+                        error=_error_result(
+                            "WriteError",
+                            f"Failed to archive existing episode before overwrite: {exc}",
+                        )
+                    )
+            if request.mode == "overwrite":
+                from core.platform.atomic_io import atomic_write_text
+
+                atomic_write_text(request.path, request.content)
+                return _MemoryWriteOutcome()
+            return self._write_plain_memory_file(request)
+
+    def _write_root_prompt_setting(
+        self: _MemoryToolsHost,
+        target_name: str,
+        setting: str,
+        content: str,
+        mode: str,
+    ) -> str:
+        """Persist bootstrap/supervisor prompt settings through their root owner."""
+        if not isinstance(mode, str) or mode not in {"overwrite", "append"}:
+            return _error_result("InvalidArguments", "Root-owned settings support overwrite or append only")
+        target_dir = self._anima_dir.parent / target_name
+        from core.platform.process_role import get_process_role
+
+        role = get_process_role()
+        from core.anima.settings_store import settings_server_running
+
+        if role == "root" or (role == "cli" and not settings_server_running()):
+            try:
+                if mode == "append":
+                    path = target_dir / f"{setting}.md"
+                    content = (path.read_text(encoding="utf-8") if path.is_file() else "") + content
+                if setting == "identity":
+                    from core.anima.settings_store import write_identity
+
+                    write_identity(target_dir, content)
+                else:
+                    from core.anima.settings_store import write_injection
+
+                    write_injection(target_dir, content)
+            except Exception as exc:
+                return _error_result("WriteError", f"Failed to update {setting}.md: {exc}")
+            self._activity.log("memory_write", summary=f"../{target_name}/{setting}.md (offline root settings)")
+            return f"Written to ../{target_name}/{setting}.md through the offline root settings store"
+
+        from urllib.parse import quote
+
+        from core.host_api import response_detail
+        from core.internal_api import host_api
+
+        try:
+            response = host_api.post(
+                f"/api/internal/animas/{quote(target_name, safe='')}/prompt-settings",
+                json={"setting": setting, "content": content, "mode": mode},
+                timeout=30.0,
+            )
+        except Exception as exc:
+            logger.warning("Root prompt-settings API failed for %s/%s", target_name, setting, exc_info=True)
+            return _error_result("HostAPIError", f"Root settings API unavailable: {exc}")
+        if response.status_code >= 400:
+            error_type = {
+                400: "InvalidArguments",
+                401: "PermissionDenied",
+                403: "PermissionDenied",
+                404: "FileNotFound",
+            }.get(
+                response.status_code,
+                "HostAPIError",
+            )
+            return _error_result(error_type, response_detail(response))
+        self._activity.log("memory_write", summary=f"../{target_name}/{setting}.md (root API)")
+        return f"Written to ../{target_name}/{setting}.md through the root settings API"
+
+    def _write_memory_scope(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        scope = next(
+            (scope for prefix, scope in _MEMORY_WRITE_SCOPE_PREFIXES if request.rel.startswith(prefix)),
+            "default",
+        )
+        writer_name = _MEMORY_WRITE_HANDLERS[scope]
+        return getattr(self, writer_name)(request)
+
+    def _handle_write_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         raw_path = args["path"]
         norm = _normalize_memory_path(raw_path, self._anima_dir)
         if norm.channel_redirect:
@@ -1054,6 +1100,25 @@ class MemoryToolsMixin:
         else:
             path = self._anima_dir / rel
 
+        mode = args.get("mode", "overwrite")
+        content = args.get("content", "")
+        if not rel.startswith(("common_knowledge/", "common_skills/")):
+            try:
+                from core.paths import get_animas_dir
+
+                anima_root = get_animas_dir().resolve()
+                target_path = path.resolve()
+                target_relative = target_path.relative_to(anima_root)
+            except (OSError, RuntimeError, ValueError):
+                target_relative = None
+            if target_relative is not None and len(target_relative.parts) == 2:
+                target_name, filename = target_relative.parts
+                if filename in {"identity.md", "injection.md"}:
+                    if "content" not in args or not isinstance(content, str):
+                        return _error_result("InvalidArguments", "content must be a string")
+                    setting = filename.removesuffix(".md")
+                    return self._write_root_prompt_setting(target_name, setting, content, mode)
+
         # Security check: block protected files and path traversal
         if not self._superuser and not rel.startswith(("common_knowledge/", "common_skills/")):
             err = _is_protected_write(self._anima_dir, path)
@@ -1080,7 +1145,10 @@ class MemoryToolsMixin:
                 )
 
         _was_existing = path.exists()
-        mode = args.get("mode", "overwrite")
+
+        from core.skills.ledger import capture_skill_document, is_skill_document_path
+
+        _is_skill_document = is_skill_document_path(path, self._anima_dir)
 
         # ── Read-before-write guard ──
         _rbw_skip = mode == "append" or not _was_existing or rel.startswith(("episodes/", "state/", "shortterm/"))
@@ -1089,272 +1157,167 @@ class MemoryToolsMixin:
                 _existing = path.read_text(encoding="utf-8")[:2000]
             except OSError:
                 _existing = "(could not read existing content)"
+            message_key = "handler.skill_read_before_write" if _is_skill_document else "handler.read_before_write"
             return _error_result(
                 "ReadBeforeWrite",
-                t("handler.read_before_write", path=rel, existing=_existing),
+                t(message_key, path=rel, existing=_existing),
             )
 
+        _skill_capture = capture_skill_document(path, self._anima_dir)
         content = args["content"]
+        write_origin = self._resolve_write_origin() if rel.startswith("knowledge/") and rel.endswith(".md") else ""
 
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        request = _MemoryWriteRequest(
+            rel=rel,
+            path=path,
+            content=content,
+            mode=mode,
+            was_existing=_was_existing,
+            write_origin=write_origin,
+            skill_capture=_skill_capture,
+        )
 
         lock = self._state_file_lock if self._state_file_lock and self._is_state_file(path) else None
         if lock:
             lock.acquire()
         try:
-            if rel.startswith("episodes/") and mode == "overwrite" and _was_existing:
-                try:
-                    archive_episode_before_write(self._anima_dir, path)
-                except OSError as exc:
-                    logger.warning("Failed to archive episode before overwrite: %s", path, exc_info=True)
-                    return _error_result(
-                        "WriteError",
-                        f"Failed to archive existing episode before overwrite: {exc}",
-                    )
-
-            # Auto-add YAML frontmatter for procedure overwrite writes
-            auto_frontmatter_applied = False
-            if (
-                rel.startswith("procedures/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and not content.lstrip().startswith("---")
-            ):
-                desc = _extract_first_heading(content)
-                metadata = {
-                    "description": desc,
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "confidence": 0.5,
-                }
-                self._memory.write_procedure_with_meta(path, content, metadata)
-                auto_frontmatter_applied = True
-            elif (
-                rel.startswith("knowledge/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and content.lstrip().startswith("---")
-            ):
-                # LLM wrote frontmatter — parse, validate, and complete
-                import yaml as _yaml_km_fm
-
-                from core.memory.frontmatter import (
-                    parse_frontmatter as _parse_fm_hw,
-                )
-                from core.memory.frontmatter import (
-                    validate_and_complete_frontmatter as _validate_fm_hw,
-                )
-                from core.time_utils import now_local as _now_local_hw
-
-                _meta_hw, _body_hw = _parse_fm_hw(content.lstrip())
-                if _meta_hw:
-                    # Preserve original created_at on overwrite; update updated_at
-                    if path.exists():
-                        try:
-                            _existing_text = path.read_text(encoding="utf-8")
-                            _existing_meta, _ = _parse_fm_hw(_existing_text)
-                            if _existing_meta.get("created_at"):
-                                _meta_hw.setdefault("created_at", _existing_meta["created_at"])
-                        except OSError:
-                            pass
-                    _validate_fm_hw(_meta_hw, path)
-                    _meta_hw["updated_at"] = _now_local_hw().isoformat()
-                    _fm_hw = _yaml_km_fm.dump(_meta_hw, default_flow_style=False, allow_unicode=True)
-                    path.write_text(f"---\n{_fm_hw}---\n\n{_body_hw.lstrip()}", encoding="utf-8")
-                    auto_frontmatter_applied = True
-                else:
-                    # Parse failed — strip broken FM, apply framework-generated metadata
-                    from core.memory.frontmatter import strip_content_frontmatter as _strip_fm_hw
-
-                    _clean_body_hw = _strip_fm_hw(content.lstrip())
-                    _ts_fb = _now_local_hw().isoformat()
-                    _fallback_meta: dict[str, Any] = {
-                        "confidence": 0.5,
-                        "created_at": _ts_fb,
-                        "updated_at": _ts_fb,
-                        "source_episodes": 0,
-                        "auto_consolidated": False,
-                        "version": 1,
-                    }
-                    if path.exists():
-                        try:
-                            _existing_text_fb = path.read_text(encoding="utf-8")
-                            _existing_meta_fb, _ = _parse_fm_hw(_existing_text_fb)
-                            if _existing_meta_fb.get("created_at"):
-                                _fallback_meta["created_at"] = _existing_meta_fb["created_at"]
-                        except OSError:
-                            pass
-                    _fm_fb = _yaml_km_fm.dump(
-                        _fallback_meta,
-                        default_flow_style=False,
-                        allow_unicode=True,
-                    )
-                    path.write_text(
-                        f"---\n{_fm_fb}---\n\n{_clean_body_hw.lstrip()}",
-                        encoding="utf-8",
-                    )
-                    auto_frontmatter_applied = True
-                    logger.info(
-                        "Frontmatter parse failed for %s — applied fallback metadata",
-                        rel,
-                    )
-            elif (
-                rel.startswith("knowledge/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and not content.lstrip().startswith("---")
-            ):
-                import yaml as _yaml_km
-
-                from core.memory.frontmatter import strip_content_frontmatter
-                from core.time_utils import now_local
-
-                # Preserve original created_at on overwrite
-                _original_created_at = None
-                if path.exists():
-                    try:
-                        from core.memory.frontmatter import parse_frontmatter as _parse_fm_ow
-
-                        _existing_text_ow = path.read_text(encoding="utf-8")
-                        _existing_meta_ow, _ = _parse_fm_ow(_existing_text_ow)
-                        _original_created_at = _existing_meta_ow.get("created_at")
-                    except OSError:
-                        pass
-                ts = now_local().isoformat()
-                metadata: dict[str, Any] = {
-                    "confidence": 0.5,
-                    "created_at": _original_created_at or ts,
-                    "updated_at": ts,
-                    "source_episodes": 0,
-                    "auto_consolidated": False,
-                    "version": 1,
-                }
-                _trust_rank_map_pre = {0: "external_web", 1: "mixed"}
-                _min_trust_pre = getattr(self, "_min_trust_seen", 2)
-                if _min_trust_pre >= 2:
-                    _trust_file_pre = self._anima_dir / "run" / "min_trust_seen"
-                    try:
-                        if _trust_file_pre.exists():
-                            _min_trust_pre = min(
-                                _min_trust_pre,
-                                int(_trust_file_pre.read_text(encoding="utf-8").strip()),
-                            )
-                    except (ValueError, OSError):
-                        pass
-                _origin_pre = _trust_rank_map_pre.get(_min_trust_pre, "")
-                if _origin_pre:
-                    metadata["origin"] = _origin_pre
-                _clean = strip_content_frontmatter(content)
-                _fm = _yaml_km.dump(metadata, default_flow_style=False, allow_unicode=True)
-                path.write_text(f"---\n{_fm}---\n\n{_clean}", encoding="utf-8")
-                auto_frontmatter_applied = True
-            elif mode == "append":
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(content)
-            else:
-                path.write_text(content, encoding="utf-8")
+            outcome = self._write_memory_scope(request)
+            if outcome.error:
+                return outcome.error
         finally:
             if lock:
                 lock.release()
-        logger.info(
-            "write_memory_file path=%s mode=%s",
-            args["path"],
-            args.get("mode", "overwrite"),
-        )
+        return self._complete_memory_write(request, auto_frontmatter_applied=outcome.auto_frontmatter_applied)
 
-        # Activity log: memory write
+    def _complete_memory_write(
+        self: _MemoryToolsHost,
+        request: _MemoryWriteRequest,
+        *,
+        auto_frontmatter_applied: bool,
+    ) -> str:
+        self._record_memory_file_change(request)
+        similar_hint = self._memory_write_similarity_hint(request)
+        self._reload_schedule_if_needed(request.rel)
+        result = self._format_memory_write_result(
+            request,
+            auto_frontmatter_applied=auto_frontmatter_applied,
+            similar_hint=similar_hint,
+        )
+        self._update_memory_write_indexes(request)
+        return result
+
+    def _record_memory_file_change(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> None:
+        if request.skill_capture is not None:
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                request.path,
+                request.skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=request.path.read_text(encoding="utf-8") if request.path.is_file() else None,
+                after_exists=request.path.is_file(),
+                actor=self._anima_name,
+                route="write_memory_file",
+                reason=f"mode={request.mode}",
+            )
+
+        logger.info("write_memory_file path=%s mode=%s", request.rel, request.mode)
         self._activity.log(
             "memory_write",
-            summary=f"{rel} ({args.get('mode', 'overwrite')})",
-            meta={"path": rel, "mode": args.get("mode", "overwrite")},
+            summary=f"{request.rel} ({request.mode})",
+            meta={"path": request.rel, "mode": request.mode},
         )
 
-        # ── Filename token hint for new knowledge files ──
-        _similar_hint = ""
-        if rel.startswith("knowledge/") and mode == "overwrite" and not _was_existing:
-            _new_stem = Path(rel).stem.replace("-", "_")
-            _new_tokens = set(_new_stem.split("_"))
-            _knowledge_dir = self._anima_dir / "knowledge"
-            if _knowledge_dir.is_dir():
-                _existing_names = [
-                    f.name for f in _knowledge_dir.iterdir() if f.suffix == ".md" and f.name != Path(rel).name
-                ]
-                _similar = []
-                for _ef in _existing_names:
-                    _ef_tokens = set(_ef.replace("-", "_").replace(".md", "").split("_"))
-                    if len(_new_tokens & _ef_tokens) >= 2:
-                        _similar.append(_ef)
-                if _similar:
-                    _similar.sort()
-                    _lines = "\n".join(f"  - {s}" for s in _similar[:10])
-                    _similar_hint = t("handler.similar_knowledge_hint", files=_lines)
+    def _memory_write_similarity_hint(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> str:
+        if not (request.rel.startswith("knowledge/") and request.mode == "overwrite" and not request.was_existing):
+            return ""
 
-        # Trigger schedule reload if heartbeat or cron config changed
-        if args["path"] in ("heartbeat.md", "cron.md") and self._on_schedule_changed:
-            try:
-                self._on_schedule_changed(self._anima_name)
-                logger.info("Schedule reload triggered for '%s'", self._anima_name)
-            except Exception:
-                logger.exception("Schedule reload failed for '%s'", self._anima_name)
+        knowledge_dir = self._anima_dir / "knowledge"
+        if not knowledge_dir.is_dir():
+            return ""
+        new_tokens = set(Path(request.rel).stem.replace("-", "_").split("_"))
+        existing_names = [
+            file.name
+            for file in knowledge_dir.iterdir()
+            if file.suffix == ".md" and file.name != Path(request.rel).name
+        ]
+        similar = [
+            name
+            for name in existing_names
+            if len(new_tokens & set(name.replace("-", "_").replace(".md", "").split("_"))) >= 2
+        ]
+        if not similar:
+            return ""
+        similar.sort()
+        lines = "\n".join(f"  - {name}" for name in similar[:10])
+        return t("handler.similar_knowledge_hint", files=lines)
 
-        result = f"Written to {args['path']}"
-        if _similar_hint:
-            result = f"{result}\n\n{_similar_hint}"
+    def _reload_schedule_if_needed(self: _MemoryToolsHost, rel: str) -> None:
+        if rel not in ("heartbeat.md", "cron.md") or not self._on_schedule_changed:
+            return
+        try:
+            self._on_schedule_changed(self._anima_name)
+            logger.info("Schedule reload triggered for '%s'", self._anima_name)
+        except Exception:
+            logger.exception("Schedule reload failed for '%s'", self._anima_name)
 
-        # Warn (but don't block) if episode filename is non-standard
-        episode_warning = _validate_episode_path(args["path"])
+    def _format_memory_write_result(
+        self: _MemoryToolsHost,
+        request: _MemoryWriteRequest,
+        *,
+        auto_frontmatter_applied: bool,
+        similar_hint: str,
+    ) -> str:
+        rel = request.rel
+        result = f"Written to {rel}"
+        if similar_hint:
+            result = f"{result}\n\n{similar_hint}"
+
+        if rel.startswith("knowledge/") and _looks_like_case_record(request.content):
+            result = f"{result}\n\n{t('handler.case_record_episodes_hint')}"
+            logger.info("Knowledge write resembles a case record; suggested episodes destination: %s", rel)
+
+        episode_warning = _validate_episode_path(rel)
         if episode_warning:
-            logger.warning("Non-standard episode path: %s", args["path"])
+            logger.warning("Non-standard episode path: %s", rel)
             result = f"{result}\n\n{episode_warning}"
 
-        # Validate skill file format (soft validation: warn but don't block)
         if (rel.startswith("skills/") or rel.startswith("common_skills/")) and rel.endswith(".md"):
-            validation_msg = _validate_skill_format(args["content"])
+            validation_msg = _validate_skill_format(request.content)
             if validation_msg:
                 result = f"{result}\n\n{t('handler.skill_format_validation', msg=validation_msg)}"
 
-        # Validate procedure file format (soft validation: warn but don't block)
         if rel.startswith("procedures/") and rel.endswith(".md") and not auto_frontmatter_applied:
-            validation_msg = _validate_procedure_format(args["content"])
+            validation_msg = _validate_procedure_format(request.content)
             if validation_msg:
                 result = f"{result}\n\n{t('handler.procedure_format_validation', msg=validation_msg)}"
+        return result
 
-        # Auto-update RAG index for skill/procedure writes
+    def _update_memory_write_indexes(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> None:
+        rel = request.rel
+        path = request.path
         if rel.startswith(("skills/", "procedures/")) and rel.endswith(".md"):
             indexer = self._memory._get_indexer()
             if indexer:
                 memory_type = "skills" if rel.startswith("skills/") else "procedures"
                 try:
                     indexer.index_file(path, memory_type=memory_type, force=True)
-                except Exception as e:
-                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
+                except Exception as exc:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, exc)
             self._update_longterm_bm25_source(rel)
 
-        # Auto-update RAG index for knowledge writes + origin frontmatter
-        # (skip origin injection when auto-frontmatter already handled it)
         if rel.startswith("knowledge/") and rel.endswith(".md"):
-            _trust_rank_map = {0: "external_web", 1: "mixed"}
-            min_trust = getattr(self, "_min_trust_seen", 2)
-
-            # Also check file-based trust (Mode S writes via MCP subprocess)
-            if min_trust >= 2:
-                _trust_file = self._anima_dir / "run" / "min_trust_seen"
+            origin = request.write_origin
+            if not origin:
                 try:
-                    if _trust_file.exists():
-                        file_val = int(_trust_file.read_text(encoding="utf-8").strip())
-                        min_trust = min(min_trust, file_val)
-                except (ValueError, OSError):
-                    pass
+                    from core.memory.frontmatter import parse_frontmatter
 
-            origin = _trust_rank_map.get(min_trust, "")
-
-            if origin and mode != "append" and not auto_frontmatter_applied:
-                current = path.read_text(encoding="utf-8")
-                if not current.startswith("---\norigin:"):
-                    path.write_text(
-                        f"---\norigin: {origin}\n---\n\n{current}",
-                        encoding="utf-8",
-                    )
+                    current_meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+                    origin = str(current_meta.get("origin", ""))
+                except OSError:
+                    origin = ""
 
             indexer = self._memory._get_indexer()
             if indexer:
@@ -1365,16 +1328,14 @@ class MemoryToolsMixin:
                         force=True,
                         origin=origin or None,
                     )
-                except Exception as e:
-                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
+                except Exception as exc:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, exc)
             self._update_longterm_bm25_source(rel)
 
         if rel.startswith("episodes/") and rel.endswith(".md"):
             self._update_longterm_bm25_source(rel)
 
-        return result
-
-    def _handle_archive_memory_file(self, args: dict[str, Any]) -> str:
+    def _handle_archive_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         """Archive a memory file by moving it to archive/superseded/."""
         import shutil
 
@@ -1433,6 +1394,9 @@ class MemoryToolsMixin:
         )
         if err:
             return err
+        from core.skills.ledger import capture_skill_document
+
+        skill_capture = capture_skill_document(target, self._anima_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
         dest = archive_dir / target.name
 
@@ -1445,6 +1409,19 @@ class MemoryToolsMixin:
                 counter += 1
 
         shutil.move(str(target), str(dest))
+        if skill_capture is not None:
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                target,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=None,
+                after_exists=False,
+                actor=self._anima_name,
+                route="archive_memory_file",
+                reason=reason,
+            )
         self._update_longterm_bm25_source(rel)
 
         logger.info("archive_memory_file: %s -> %s (reason: %s)", rel, dest.name, reason)

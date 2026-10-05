@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from fastapi import Request
+
+from core.platform.env import data_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +20,6 @@ import logging
 import os
 import ssl
 import subprocess
-import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -25,9 +28,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from core.platform.atomic_io import atomic_write_json
 from core.platform.claude_code import get_claude_executable
 from core.platform.codex import get_codex_device_login
 
@@ -138,10 +142,7 @@ def _save_usage_snapshot(payload: dict[str, Any]) -> None:
     path = _usage_snapshot_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(path, payload, indent=2, ensure_ascii=False)
     except Exception:
         logger.warning("Failed to save usage snapshot to %s", path, exc_info=True)
 
@@ -204,9 +205,9 @@ def _discover_claude_cred_paths() -> list[str]:
             if cred.is_file():
                 paths.append(str(cred))
     # Also check env variable pointing to specific directories
-    data_dir_env = os.environ.get("ANIMAWORKS_DATA_DIR")
-    if data_dir_env:
-        p = Path(data_dir_env).parent / ".claude" / ".credentials.json"
+    data_dir_override = data_dir_env()
+    if data_dir_override:
+        p = Path(data_dir_override).parent / ".claude" / ".credentials.json"
         paths.append(str(p))
     return paths
 
@@ -368,27 +369,7 @@ def _refresh_claude_token(
         oauth["accessToken"] = new_access
         oauth["refreshToken"] = new_refresh
         oauth["expiresAt"] = int(time.time() * 1000) + expires_in * 1000
-        temp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=cred_path.parent,
-                prefix=f".{cred_path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temp_file:
-                json.dump(cred_data, temp_file, ensure_ascii=False)
-                temp_path = Path(temp_file.name)
-            os.replace(temp_path, cred_path)
-        except Exception as e:
-            logger.warning("Claude token refresh could not persist %s: %s", cred_path, e)
-            if temp_path is not None:
-                try:
-                    temp_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            return None
+        atomic_write_json(cred_path, cred_data, indent=None, trailing_newline=False)
         logger.info("Refreshed Claude OAuth token, persisted to %s", cred_path)
         return new_access
     except Exception as e:
@@ -678,7 +659,7 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
 
             clear_alert("claude")
         except Exception:
-            pass
+            logger.debug("Optional usage status update failed", exc_info=True)
         _clear_rate_limit_backoff("claude")
         _set_cache("claude", result)
         return result
@@ -706,7 +687,7 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
             try:
                 body = e.read().decode("utf-8", "replace")
             except Exception:
-                pass
+                logger.debug("Optional usage status update failed", exc_info=True)
             # Match on "scope" alone: permission_error is the type for every 403
             # on this API, so keying off it would swallow genuine non-scope 403s
             # (org policy, region block) into a misleading "re-login" hint.
@@ -796,10 +777,7 @@ def _extract_codex_account_id(tokens: dict[str, Any]) -> str | None:
 
 
 def _persist_codex_auth_data(path: Path, auth_data: dict[str, Any]) -> None:
-    path.write_text(
-        json.dumps(auth_data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, auth_data, indent=2, ensure_ascii=False)
 
 
 def _refresh_codex_token(auth_path: Path, auth_data: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -956,7 +934,7 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
 
             clear_alert("openai")
         except Exception:
-            pass
+            logger.debug("Optional usage status update failed", exc_info=True)
         _clear_rate_limit_backoff("openai")
         _set_cache("openai", result)
         return result
@@ -1409,7 +1387,7 @@ def create_usage_router() -> APIRouter:
             body = await request.json()
             interactive = bool((body or {}).get("interactive"))
         except Exception:
-            pass
+            logger.debug("Optional usage status update failed", exc_info=True)
         payload, status_code = _relogin_claude(interactive=interactive)
         if payload.get("success"):
             try:
@@ -1417,7 +1395,7 @@ def create_usage_router() -> APIRouter:
 
                 clear_alert("claude")
             except Exception:
-                pass
+                logger.debug("Optional usage status update failed", exc_info=True)
         return JSONResponse(payload, status_code=status_code)
 
     @router.post("/usage/openai/relogin")
@@ -1431,7 +1409,7 @@ def create_usage_router() -> APIRouter:
 
                 clear_alert("openai")
             except Exception:
-                pass
+                logger.debug("Optional usage status update failed", exc_info=True)
         return JSONResponse(payload, status_code=status_code)
 
     @router.get("/usage/jev/settings")

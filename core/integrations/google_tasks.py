@@ -1,0 +1,445 @@
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file is part of AnimaWorks core/server, licensed under Apache-2.0.
+# See LICENSE for the full license text.
+
+"""AnimaWorks Google Tasks tool -- Google Tasks API access.
+
+Provides task list and task listing, task/tasklist creation and update via Google Tasks API.
+Uses the same OAuth2 credential pattern as Gmail and Google Calendar.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from functools import partial
+from pathlib import Path
+from typing import Any
+
+from core.integrations._base import dispatch_by_table, without_anima_dir
+from core.integrations._comm_cli import cli_main_safely
+from core.integrations._google_auth import GoogleOAuth
+
+# ── Execution Profile ─────────────────────────────────────
+
+EXECUTION_PROFILE: dict[str, dict[str, object]] = {
+    "list_tasklists": {"expected_seconds": 10, "background_eligible": False},
+    "list_tasks": {"expected_seconds": 10, "background_eligible": False},
+    "insert_task": {"expected_seconds": 10, "background_eligible": False},
+    "insert_tasklist": {"expected_seconds": 10, "background_eligible": False},
+    "update_task": {"expected_seconds": 10, "background_eligible": False},
+    "update_tasklist": {"expected_seconds": 10, "background_eligible": False},
+}
+
+TOOL_DESCRIPTION = "Google Tasks task lists and tasks (list, create, update)"
+
+SCOPES = ["https://www.googleapis.com/auth/tasks"]
+
+_DEFAULT_CREDENTIALS_DIR = Path.home() / ".animaworks" / "credentials" / "google_tasks"
+
+
+# ── Client ────────────────────────────────────────────────
+
+
+class GoogleTasksClient:
+    """Google Tasks API client with OAuth2 authentication."""
+
+    def __init__(
+        self,
+        credentials_path: Path | None = None,
+        token_path: Path | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> None:
+        self.credentials_path = credentials_path or (_DEFAULT_CREDENTIALS_DIR / "credentials.json")
+        self.token_path = token_path or (_DEFAULT_CREDENTIALS_DIR / "token.json")
+        self._oauth = GoogleOAuth(
+            scopes=SCOPES,
+            env_prefix="GOOGLE_TASKS",
+            token_path=self.token_path,
+            credentials_path=self.credentials_path,
+            client_id=client_id,
+            client_secret=client_secret,
+            tool_name="google_tasks",
+            missing_credentials_error=(
+                "No credentials found. Place credentials.json at {credentials_path} or set "
+                "{env_prefix}_CLIENT_ID and {env_prefix}_CLIENT_SECRET environment variables."
+            ),
+            import_error_message=(
+                "google_tasks tool requires google-api packages. "
+                "Install with: pip install animaworks[gmail] or google-api-python-client google-auth-oauthlib"
+            ),
+        )
+        self.client_id = self._oauth.client_id
+        self.client_secret = self._oauth.client_secret
+        self._service = None
+
+    def _persist_token(self, creds: Any) -> None:
+        """Best-effort save of refreshed credentials.
+
+        Sandboxed runs mount ``~/.animaworks`` read-only (write-access
+        charter), so persisting raises EROFS there. The refreshed creds
+        are already valid in memory; a stale token.json only costs an
+        extra refresh next run, so never let the save kill the call.
+        """
+        self._oauth._persist_token(creds)
+
+    def _get_credentials(self) -> Any:
+        """Obtain valid credentials via OAuth2."""
+        return self._oauth.get_credentials()
+
+    def _build_service(self) -> Any:
+        """Build the Tasks API service."""
+        if self._service is None:
+            from googleapiclient.discovery import build
+
+            creds = self._get_credentials()
+            self._service = build("tasks", "v1", credentials=creds)
+        return self._service
+
+    def list_tasklists(self, *, max_results: int = 50) -> list[dict[str, Any]]:
+        """List the user's task lists."""
+        service = self._build_service()
+        result = service.tasklists().list(maxResults=max_results).execute()
+        items = result.get("items", [])
+        return [{"id": i.get("id", ""), "title": i.get("title", ""), "updated": i.get("updated", "")} for i in items]
+
+    def list_tasks(
+        self,
+        *,
+        tasklist_id: str,
+        max_results: int = 50,
+        show_completed: bool = True,
+    ) -> list[dict[str, Any]]:
+        """List tasks in a task list."""
+        service = self._build_service()
+        result = (
+            service.tasks()
+            .list(
+                tasklist=tasklist_id,
+                maxResults=max_results,
+                showCompleted=show_completed,
+            )
+            .execute()
+        )
+        items = result.get("items", [])
+        return [
+            {
+                "id": i.get("id", ""),
+                "title": i.get("title", ""),
+                "status": i.get("status", ""),
+                "due": i.get("due", ""),
+                "updated": i.get("updated", ""),
+                "notes": (i.get("notes") or "")[:200],
+            }
+            for i in items
+        ]
+
+    def insert_task(
+        self,
+        *,
+        tasklist_id: str,
+        title: str,
+        notes: str = "",
+        due: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a task in a task list."""
+        service = self._build_service()
+        body: dict[str, Any] = {"title": title}
+        if notes:
+            body["notes"] = notes
+        if due:
+            body["due"] = due
+        created = service.tasks().insert(tasklist=tasklist_id, body=body).execute()
+        return {
+            "id": created.get("id", ""),
+            "title": created.get("title", ""),
+            "status": created.get("status", ""),
+            "due": created.get("due", ""),
+        }
+
+    def insert_tasklist(self, *, title: str) -> dict[str, Any]:
+        """Create a new task list."""
+        service = self._build_service()
+        created = service.tasklists().insert(body={"title": title}).execute()
+        return {
+            "id": created.get("id", ""),
+            "title": created.get("title", ""),
+            "updated": created.get("updated", ""),
+        }
+
+    def update_task(
+        self,
+        *,
+        tasklist_id: str,
+        task_id: str,
+        title: str | None = None,
+        notes: str | None = None,
+        due: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a task (patch: only provided fields are updated)."""
+        body: dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+        if notes is not None:
+            body["notes"] = notes
+        if due is not None:
+            body["due"] = due
+        if status is not None:
+            if status not in ("needsAction", "completed"):
+                raise ValueError("status must be 'needsAction' or 'completed'")
+            body["status"] = status
+        if not body:
+            return {"error": "At least one of title, notes, due, status is required"}
+        service = self._build_service()
+        updated = service.tasks().patch(tasklist=tasklist_id, task=task_id, body=body).execute()
+        return {
+            "id": updated.get("id", ""),
+            "title": updated.get("title", ""),
+            "status": updated.get("status", ""),
+            "due": updated.get("due", ""),
+            "notes": (updated.get("notes") or "")[:200],
+        }
+
+    def update_tasklist(self, *, tasklist_id: str, title: str) -> dict[str, Any]:
+        """Update a task list's title."""
+        service = self._build_service()
+        updated = service.tasklists().patch(tasklist=tasklist_id, body={"title": title}).execute()
+        return {
+            "id": updated.get("id", ""),
+            "title": updated.get("title", ""),
+            "updated": updated.get("updated", ""),
+        }
+
+
+# ── Tool schemas ──────────────────────────────────────────
+
+
+def get_tool_schemas() -> list[dict]:
+    """Return tool schemas (empty — use skill-based documentation)."""
+    return []
+
+
+# ── Dispatch ──────────────────────────────────────────────
+
+
+def _dispatch_list_tasklists(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    return client.list_tasklists(max_results=int(args.get("max_results", 50)))
+
+
+def _dispatch_list_tasks(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    if not tasklist_id:
+        return {"error": "tasklist_id is required"}
+    return client.list_tasks(
+        tasklist_id=tasklist_id,
+        max_results=int(args.get("max_results", 50)),
+        show_completed=args.get("show_completed", True),
+    )
+
+
+def _dispatch_insert_task(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    title = args.get("title", "")
+    if not tasklist_id or not title:
+        return {"error": "tasklist_id and title are required"}
+    return client.insert_task(
+        tasklist_id=tasklist_id,
+        title=title,
+        notes=args.get("notes", ""),
+        due=args.get("due") or None,
+    )
+
+
+def _dispatch_insert_tasklist(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    title = args.get("title", "")
+    if not title:
+        return {"error": "title is required"}
+    return client.insert_tasklist(title=title)
+
+
+def _dispatch_update_task(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    task_id = args.get("task_id", "")
+    if not tasklist_id or not task_id:
+        return {"error": "tasklist_id and task_id are required"}
+    try:
+        return client.update_task(
+            tasklist_id=tasklist_id,
+            task_id=task_id,
+            title=args.get("title") or None,
+            notes=args.get("notes") if "notes" in args else None,
+            due=args.get("due") if "due" in args else None,
+            status=args.get("status") if "status" in args else None,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+def _dispatch_update_tasklist(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    title = args.get("title", "")
+    if not tasklist_id or not title:
+        return {"error": "tasklist_id and title are required"}
+    return client.update_tasklist(tasklist_id=tasklist_id, title=title)
+
+
+_DISPATCH_HANDLERS = {
+    "google_tasks_list_tasklists": _dispatch_list_tasklists,
+    "google_tasks_list_tasks": _dispatch_list_tasks,
+    "google_tasks_insert_task": _dispatch_insert_task,
+    "google_tasks_insert_tasklist": _dispatch_insert_tasklist,
+    "google_tasks_update_task": _dispatch_update_task,
+    "google_tasks_update_tasklist": _dispatch_update_tasklist,
+}
+
+
+def dispatch(name: str, args: dict[str, Any]) -> Any:
+    """Dispatch a tool call by schema name."""
+    client = GoogleTasksClient()
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(
+        handlers,
+        name,
+        without_anima_dir(args),
+        unknown_result=lambda action: {"error": f"Unknown action: {action}"},
+    )
+
+
+# ── CLI ───────────────────────────────────────────────────
+
+
+@cli_main_safely
+def cli_main(argv: list[str] | None = None) -> None:
+    """CLI entry point for the Google Tasks tool."""
+    parser = argparse.ArgumentParser(
+        prog="animaworks-tool google_tasks",
+        description="Google Tasks operations",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    p_lists = subparsers.add_parser("tasklists", help="List task lists")
+    p_lists.add_argument("-n", "--max-results", type=int, default=50, help="Max results")
+    p_lists.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    p_tasks = subparsers.add_parser("list", help="List tasks in a task list")
+    p_tasks.add_argument("tasklist_id", help="Task list ID")
+    p_tasks.add_argument("-n", "--max-results", type=int, default=50, help="Max results")
+    p_tasks.add_argument("--no-completed", action="store_true", help="Hide completed tasks")
+    p_tasks.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    p_add = subparsers.add_parser("add", help="Add a task to a task list")
+    p_add.add_argument("tasklist_id", help="Task list ID")
+    p_add.add_argument("title", help="Task title")
+    p_add.add_argument("--notes", default="", help="Task notes")
+    p_add.add_argument("--due", default="", help="Due date (RFC 3339)")
+    p_add.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    p_newlist = subparsers.add_parser("new-list", help="Create a new task list")
+    p_newlist.add_argument("title", help="Task list title")
+    p_newlist.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    p_update = subparsers.add_parser("update", help="Update a task")
+    p_update.add_argument("tasklist_id", help="Task list ID")
+    p_update.add_argument("task_id", help="Task ID")
+    p_update.add_argument("--title", default="", help="New task title")
+    p_update.add_argument("--notes", default="", help="New notes")
+    p_update.add_argument("--due", default="", help="Due date (RFC 3339)")
+    p_update.add_argument("--status", choices=("needsAction", "completed"), help="Status")
+    p_update.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    p_updatelist = subparsers.add_parser("update-list", help="Update a task list title")
+    p_updatelist.add_argument("tasklist_id", help="Task list ID")
+    p_updatelist.add_argument("title", help="New list title")
+    p_updatelist.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    args = parser.parse_args(argv)
+    client = GoogleTasksClient()
+
+    try:
+        if args.command == "tasklists":
+            out = client.list_tasklists(max_results=args.max_results)
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                for i in out:
+                    print(f"  {i.get('id', '')}  {i.get('title', '')}")
+
+        elif args.command == "list":
+            out = client.list_tasks(
+                tasklist_id=args.tasklist_id,
+                max_results=args.max_results,
+                show_completed=not getattr(args, "no_completed", False),
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                for i in out:
+                    print(f"  [{i.get('status', '')}] {i.get('title', '')}  {i.get('due', '')}")
+
+        elif args.command == "add":
+            out = client.insert_task(
+                tasklist_id=args.tasklist_id,
+                title=args.title,
+                notes=getattr(args, "notes", "") or "",
+                due=args.due or None,
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                print(f"Created: {out.get('title', '')} (id={out.get('id', '')})")
+
+        elif args.command == "new-list":
+            out = client.insert_tasklist(title=args.title)
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                print(f"Created list: {out.get('title', '')} (id={out.get('id', '')})")
+
+        elif args.command == "update":
+            body = {}
+            if getattr(args, "title", ""):
+                body["title"] = args.title
+            if getattr(args, "notes", ""):
+                body["notes"] = args.notes
+            if getattr(args, "due", ""):
+                body["due"] = args.due
+            if getattr(args, "status", ""):
+                body["status"] = args.status
+            if not body:
+                print(
+                    "Error: provide at least one of --title, --notes, --due, --status",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            out = client.update_task(
+                tasklist_id=args.tasklist_id,
+                task_id=args.task_id,
+                title=body.get("title"),
+                notes=body.get("notes"),
+                due=body.get("due"),
+                status=body.get("status"),
+            )
+            if "error" in out:
+                print(f"Error: {out['error']}", file=sys.stderr)
+                sys.exit(1)
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                print(f"Updated: {out.get('title', '')} (id={out.get('id', '')})")
+
+        elif args.command == "update-list":
+            out = client.update_tasklist(tasklist_id=args.tasklist_id, title=args.title)
+            if getattr(args, "json", False):
+                print(json.dumps(out, ensure_ascii=False, indent=2))
+            else:
+                print(f"Updated list: {out.get('title', '')} (id={out.get('id', '')})")
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)

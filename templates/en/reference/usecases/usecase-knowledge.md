@@ -1,157 +1,157 @@
-# Use Case: Knowledge Management & Documentation
+# Use case: Knowledge management and documentation maintenance
 
-This use case covers managing and evolving organizational knowledge—creating and updating procedures, maintaining FAQs, structuring information, and more.
+This use case involves managing and developing an organization's knowledge, including creating and updating procedure manuals, maintaining FAQs, and structuring information.
 
 ---
 
-## Problems This Solves
+## Problems this can solve
 
-- Procedures are outdated and never updated
-- The same questions get answered over and over
-- Knowledge is siloed and not shared
+- Procedure manuals are outdated and not updated
+- Answering the same questions repeatedly
+- Knowledge held by specific individuals is not shared
 - Documents are scattered and hard to find
-- Onboarding new members takes too long
+- Onboarding new members takes time
 
 ---
 
-## Pattern 1: Automated Procedure Creation & Updates
+## Pattern 1: Automatic creation and update of procedure manuals
 
-### What It Does
-Automatically generates procedures from actual work logs and updates them when things change.
+### What to do
+Automatically generate procedure manuals from actual work logs and update them when changes occur.
 
-### How It Works
-1. Monitor execution logs from work
+### How it works
+1. Monitor work execution logs
 2. Detect recurring work patterns
-3. Auto-generate procedure drafts with:
+3. Automatically generate a draft procedure manual:
    - Prerequisites
-   - Step-by-step instructions
-   - Caveats and common errors
+   - Steps (step-by-step)
+   - Cautions and common errors
    - Completion criteria
-4. Save as official versions after human review
+4. Save as the official version after human review
 
-### Examples
-- Generate server deployment procedures from execution logs
-- Turn troubleshooting history into FAQs
-- Record setup steps for new tools during first use
+### Use cases
+- Automatically generate server deployment procedures from execution logs
+- Convert troubleshooting response histories into FAQs
+- Record setup procedures for new tools during the first operation
 
-### Tips
-- "Create a procedure after the same pattern appears 3 times" is a good rule of thumb
-- Include the "why" behind each step in procedures
-- When execution fails, feed that back into the procedure
+### Key points
+- "If the same pattern appears three times, turn it into a procedure manual" is a good threshold
+- Include background explanations of "why we do it this way" in the manual
+- If issues occur at runtime, reflect them in the manual as feedback
 
 ---
 
-## Pattern 2: FAQ Building & Automated Answers
+## Pattern 2: Building an FAQ and automated responses
 
-### What It Does
-Builds a database of common questions and answers, and automatically answers when the same questions come up.
+### What to do
+Database frequently asked questions and their answers, and automatically respond when the same question comes in.
 
-### How It Works
+### How it works
 1. Analyze inquiry history
-2. Identify frequent question patterns
-3. Create answer templates
-4. For new inquiries:
-   - If a matching FAQ exists, answer automatically
-   - Otherwise, escalate to a human
+2. Identify frequently asked question patterns
+3. Create response templates
+4. When a new inquiry arrives:
+   - Automatically respond if it matches an existing FAQ
+   - Escalate to a human if there is no match
    - When a human answers, add that Q&A to the FAQ
 
-### Examples
-- "How do I reset my password?" → Auto-answer from FAQ
-- "How do I use feature X?" → Provide links to relevant procedures
-- New question arrives → Record the human answer and add to FAQ
+### Use cases
+- "How do I reset my password?" → Automatically answer from the FAQ
+- "How do I use feature X?" → Provide a link to the relevant procedure manual
+- A new question arrives → Record the human's answer and add it to the FAQ
 
 ---
 
-## Pattern 3: Structuring & Categorizing Knowledge
+## Pattern 3: Structuring and classifying knowledge
 
-### What It Does
-Organizes scattered information into a clear structure and makes it easy to search.
+### What to do
+Organize scattered information systematically and consolidate it into a searchable format.
 
-### How It Works
-1. Gather existing documents, notes, and chat logs
+### How it works
+1. Collect existing documents, notes, and chat logs
 2. Classify content by category
 3. Detect duplicates and contradictions
-4. Create a structured index
-5. Update the index periodically
+4. Create a structured table of contents (index)
+5. Update the table of contents regularly
 
-### Examples
-- Organize project design docs by theme
-- Group insights shared in chat by category
-- Merge information spread across multiple files into a single guide
+### Use cases
+- Organize project design documents by theme
+- Compile insights shared in chat by category
+- Integrate information scattered across multiple files into a single guide
 
 ---
 
-## Pattern 4: Accumulating Lessons Learned & Retrospectives
+## Pattern 4: Accumulating lessons learned and retrospectives
 
-### What It Does
-Records causes and countermeasures when problems occur as "lessons learned" to prevent recurrence.
+### What to do
+Record the causes and countermeasures of problems as "lessons learned" to prevent recurrence of the same issues.
 
-### How It Works
+### How it works
 1. A problem or incident occurs
-2. After resolution, record:
-   - What happened (symptoms)
+2. After the response is completed, record the following:
+   - What happened (symptom)
    - Why it happened (root cause)
-   - How it was handled (response steps)
-   - How to prevent it (preventive measures)
-3. When similar issues arise, automatically search and surface past lessons
+   - How it was handled (response procedure)
+   - How to prevent it in the future (preventive measures)
+3. When a similar problem occurs, automatically search and present past lessons learned
 
-### Examples
-- "A similar error occurred before. Previous fix: ○○"
-- Auto-generate post-mortem reports after incident response
-- Update "common issues and countermeasures" quarterly
+### Use cases
+- "A similar error occurred before. Previous resolution: ○○"
+- Automatically generate a postmortem report after incident response
+- Update a "common problems and countermeasures list" quarterly
 
 ---
 
-## Pattern 5: Onboarding Material Maintenance
+## Pattern 5: Maintaining onboarding materials
 
-### What It Does
-Maintains and updates handover materials for new members (human or Anima) joining the organization.
+### What to do
+Create and update handover materials for new members (whether human or Anima) joining the organization.
 
-### How It Works
-1. Inventory existing procedures, FAQs, and rules
-2. Prioritize information new members need
-3. Create a "read first" document list
-4. Periodically check that content is still current
+### How it works
+1. Take stock of existing procedure manuals, FAQs, and rules
+2. Organize the information new members need in order of priority
+3. Create a "documents to read first" list
+4. Regularly check whether content has become outdated
 
-### Examples
-- "Give these 5 documents to new engineers" checklist
+### Use cases
+- A list of "these 5 documents to hand to a new engineer when they join"
 - Keep development environment setup procedures up to date
-- Maintain a "house rules" document for organizational norms
+- Maintain a "house rules" document summarizing organizational rules and conventions
 
 ---
 
-## Pattern 6: Document Freshness Management
+## Pattern 6: Document freshness management
 
-### What It Does
-Periodically checks whether existing documents still match current reality.
+### What to do
+Regularly check whether existing documents have diverged from the current state.
 
-### How It Works
-1. Track last-updated dates for all documents
-2. List documents not updated for a set period (e.g., 3 months)
-3. Compare content with current state and decide if updates are needed
-4. Notify owners when updates are required
+### How it works
+1. Track the last update date of all documents
+2. List items that have not been updated for a certain period (e.g., 3 months)
+3. Compare content with the current state to determine if an update is needed
+4. Notify the responsible person for items that need updating
 
-### Examples
-- "These 3 procedures haven't been updated in over 3 months"
-- "The command in procedure A has changed due to a version upgrade"
-- "FAQ answer B no longer matches the current UI"
+### Use cases
+- "The following 3 procedure manuals have not been updated for over 3 months"
+- "The command in procedure manual A has changed due to a version upgrade"
+- "The answer in FAQ B does not match the current UI"
 
 ---
 
-## Setup Tips
+## Configuration tips
 
-### Minimal Setup (1 Anima)
+### Minimal configuration (single Anima)
 - One Anima handles all knowledge management
-- Creates and updates procedures mainly on human request
-- Also handles FAQ auto-responses
+- Creates and updates procedure manuals mainly based on human instructions
+- Also handles automated FAQ responses
 
-### Recommended Setup
-- **Knowledge manager**: Creates, updates, and manages document freshness
-- Other Anima (development, monitoring, etc.) report insights to the knowledge manager
-- Knowledge manager organizes and stores information systematically
+### Recommended configuration
+- **Knowledge management lead**: Handles document creation, updates, and freshness management
+- Other Anima (development, monitoring, etc.) relay findings to the knowledge management lead
+- The knowledge management lead systematically organizes and stores the information
 
-### Effective Operation Tips
-- Don't aim for perfection from day one. Grow knowledge by recording issues as they occur
-- "Findable via search" is the top priority. Use clear titles and categories
-- Verify that procedures work when executed before publishing
-- Periodically review and update or remove outdated information
+### Tips for effective operation
+- Don't aim for perfection from the start. Grow the system by recording issues as they occur, repeatedly
+- "Being findable through search" is the top priority. Carefully craft titles and categories
+- Publish procedure manuals only after confirming they work when executed
+- Regularly review and update or remove outdated information

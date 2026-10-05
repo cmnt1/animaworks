@@ -3,7 +3,7 @@
 // Singleton EventTarget; manages anima:thread → ChatSession map.
 
 import { createHistoryState, applyHistoryData, mergePolledHistory } from "./history-loader.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 
 // ── ChatSession ──────────────────────
 
@@ -146,6 +146,9 @@ export class ChatSessionManager extends EventTarget {
     } catch {
       session.historyState = createHistoryState();
     }
+    // Marks that at least one full load finished, so callers can tell
+    // "no history" apart from "history not fetched yet".
+    session.historyState.loaded = true;
     this.#dispatch("history-loaded", { anima, thread });
     return session.historyState;
   }
@@ -464,7 +467,7 @@ export class ChatSessionManager extends EventTarget {
         session._abortController.abort();
       }
     }
-    fetch(`${basePath}/api/animas/${encodeURIComponent(anima)}/interrupt`, { method: "POST" }).catch(() => {});
+    api(`/api/animas/${encodeURIComponent(anima)}/interrupt`, { method: "POST" }).catch(() => {});
   }
 
   /**

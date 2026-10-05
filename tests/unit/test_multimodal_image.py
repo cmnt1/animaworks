@@ -24,13 +24,12 @@ import pytest
 
 from server.routes.chat import (
     SUPPORTED_IMAGE_TYPES,
+    ChatRequest,
     ImageAttachment,
     _validate_images,
     build_content_blocks,
     save_images,
-    ChatRequest,
 )
-
 
 # ── 1. ImageAttachment model validation ────────────────────────
 
@@ -151,13 +150,13 @@ class TestBuildContentBlocks:
 
 class TestConversationTurnAttachments:
     def test_default_empty_attachments(self) -> None:
-        from core.memory.conversation import ConversationTurn
+        from core.memory.conversation.memory import ConversationTurn
 
         turn = ConversationTurn(role="human", content="test")
         assert turn.attachments == []
 
     def test_attachments_stored(self) -> None:
-        from core.memory.conversation import ConversationTurn
+        from core.memory.conversation.memory import ConversationTurn
 
         turn = ConversationTurn(
             role="human",
@@ -173,7 +172,7 @@ class TestConversationTurnAttachments:
 class TestConversationMemoryAttachments:
     def test_append_turn_with_attachments(self, tmp_path: Path) -> None:
         """append_turn stores attachment paths in the turn."""
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
         from core.schemas import ModelConfig
 
         # Setup minimal anima dir
@@ -194,10 +193,11 @@ class TestConversationMemoryAttachments:
         assert state.turns[0].attachments == ["attachments/img.png"]
 
     def test_append_turn_without_attachments_backward_compat(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """append_turn without attachments still works (backward compat)."""
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
         from core.schemas import ModelConfig
 
         anima_dir = tmp_path / "anima"
@@ -221,7 +221,7 @@ class TestConversationMemoryAttachments:
         unified activity log).  Attachments are stored in the in-memory
         conversation state and persisted to conversation.json.
         """
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
         from core.schemas import ModelConfig
 
         anima_dir = tmp_path / "anima"
@@ -233,7 +233,9 @@ class TestConversationMemoryAttachments:
         conv = ConversationMemory(anima_dir, config)
 
         conv.append_turn(
-            "human", "check image", attachments=["attachments/photo.jpg"],
+            "human",
+            "check image",
+            attachments=["attachments/photo.jpg"],
         )
         conv.save()
 
@@ -247,13 +249,14 @@ class TestConversationMemoryAttachments:
         assert len(transcript_files) == 0
 
     def test_conversation_state_omits_attachments_when_empty(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """conversation.json stores empty attachments list when none provided.
 
         append_turn() no longer writes to transcript JSONL.
         """
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
         from core.schemas import ModelConfig
 
         anima_dir = tmp_path / "anima"

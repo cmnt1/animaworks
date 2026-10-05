@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import litellm
 
 logger = logging.getLogger(__name__)
+
+# gpt-5, gpt-5.6-luna, gpt-6-luna, gpt-10... but not gpt-4.1 / gpt-4o.
+_REASONING_GPT_RE = re.compile(r"gpt-(?:[5-9]|\d{2,})(?!\d)")
 
 _DEFAULT_MAX_TOKENS = 2048
 _DEFAULT_TEMPERATURE = 0.7
@@ -96,7 +100,7 @@ def _is_repeating(text: str, window: int = _REPEAT_WINDOW) -> bool:
 
 def extract_emotion(full_text: str) -> str:
     """Parse the emotion tag from a front response; default to ``neutral``."""
-    from core.emotion_tag import parse_emotion_value
+    from core.anima.emotion_tag import parse_emotion_value
 
     return parse_emotion_value(full_text)
 
@@ -128,10 +132,9 @@ class VoiceFrontLane:
         # llama.cpp endpoints; "local" is a harmless placeholder.
         self._api_key = api_key
         self._api_version = api_version
-        # ponytail: gpt-5.x (Azure/OpenAI) rejects temperature != 1 and would
-        # spend the small max_tokens budget on reasoning; substring match is
-        # enough until a second reasoning family shows up.
-        self._reasoning_model = "gpt-5" in model
+        # gpt-5 and later (Azure/OpenAI) reject temperature != 1 and would
+        # spend the small max_tokens budget on reasoning.
+        self._reasoning_model = _REASONING_GPT_RE.search(str(model)) is not None
         self._system_prompt = system_prompt
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -256,6 +259,7 @@ class VoiceFrontLane:
                 kwargs["tool_choice"] = tool_choice
             else:
                 kwargs.pop("tool_choice", None)
+            # Streaming plus tool calls uses the low-latency lane; one_shot_completion is not suitable here.
             response = await litellm.acompletion(**kwargs)
 
             chunks: list[str] = []

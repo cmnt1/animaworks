@@ -1,10 +1,10 @@
 """SSoT compliance tests for the per-task ``model`` override.
 
 The model override's single source of truth is the pending task_desc and the
-task queue entry meta (``meta.model``), **not** a column on the TaskBoard /
-external-task projection schemas.  These models must still load legacy JSON
-without a ``model`` key, and the SSoT propagation paths (queue meta ->
-pending task_desc) must carry the model through.
+task queue entry meta (``meta.model``), **not** a field on the canonical
+TaskBoard row / external-task projection schemas.  These models must still
+load legacy JSON without a ``model`` key, and the SSoT propagation paths
+(queue meta -> pending task_desc) must carry the model through.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -12,9 +12,9 @@ pending task_desc) must carry the model through.
 
 from __future__ import annotations
 
-from core.external_tasks.models import ExternalTask
 from core.schemas import TaskEntry
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask
+from core.tasks.board.models import BoardColumn, BoardRow
+from core.tasks.external.models import ExternalTask
 
 
 def _entry(**overrides) -> TaskEntry:
@@ -32,15 +32,18 @@ def _entry(**overrides) -> TaskEntry:
     return TaskEntry(**fields)
 
 
-def _board_task(**overrides):
+def _board_row(**overrides):
     fields = {
         "anima_name": "a",
         "task_id": "t1",
-        "visibility": AttentionVisibility.ACTIVE,
+        "canonical_task_id": "t1",
+        "queue_status": "pending",
+        "updated_at": "2026-01-01T00:00:00+00:00",
         "column": BoardColumn.TODO,
+        "visibility": "active",
     }
     fields.update(overrides)
-    return BoardTask(**fields)
+    return BoardRow(**fields)
 
 
 class TestExternalTaskNoModelField:
@@ -65,11 +68,16 @@ class TestExternalTaskNoModelField:
         assert "model" not in ExternalTask.model_fields
 
 
-class TestBoardTaskNoModelField:
+class TestBoardRowNoModelField:
     def test_loads_without_model_field(self):
-        task = _board_task()
-        assert task.task_id == "t1"
+        row = _board_row()
+        assert row.task_id == "t1"
 
     def test_model_is_not_a_schema_field(self):
-        # SSoT is the pending task_desc + queue meta, not the TaskBoard row.
-        assert "model" not in BoardTask.model_fields
+        # SSoT is the pending task_desc + queue meta, not a TaskBoard row field.
+        assert "model" not in BoardRow.model_fields
+
+    def test_meta_carries_model_through(self):
+        # The canonical row keeps the model in ``meta``, as a plain value.
+        row = _board_row(meta={"model": "claude-opus"})
+        assert row.meta["model"] == "claude-opus"

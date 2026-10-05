@@ -7,740 +7,500 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.platform.process import subprocess_daemon_kwargs
+from core.platform.process import subprocess_session_kwargs
 
-# ── PID helpers ──────────────────────────────────────────
-
-
-class TestPidHelpers:
-    @patch("cli.commands.server._get_pid_file")
-    def test_write_pid_file(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _write_pid_file
-
-        pid_file = tmp_path / "server.pid"
-        mock_get_pid.return_value = pid_file
-
-        _write_pid_file()
-
-        assert pid_file.exists()
-        assert pid_file.read_text().strip() == str(os.getpid())
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_remove_pid_file(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _remove_pid_file
-
-        pid_file = tmp_path / "server.pid"
-        pid_file.write_text("12345", encoding="utf-8")
-        mock_get_pid.return_value = pid_file
-
-        _remove_pid_file()
-
-        assert not pid_file.exists()
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_remove_pid_file_missing(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _remove_pid_file
-
-        pid_file = tmp_path / "server.pid"
-        mock_get_pid.return_value = pid_file
-
-        # Should not raise
-        _remove_pid_file()
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_valid(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "server.pid"
-        pid_file.write_text("12345", encoding="utf-8")
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() == 12345
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_missing(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "nonexistent.pid"
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() is None
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_invalid(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "server.pid"
-        pid_file.write_text("not_a_number", encoding="utf-8")
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() is None
-
-    def test_is_process_alive_current(self):
-        from cli.commands.server import _is_process_alive
-
-        # Current process should be alive
-        assert _is_process_alive(os.getpid()) is True
-
-    def test_is_process_alive_nonexistent(self):
-        from cli.commands.server import _is_process_alive
-
-        # Very high PID that likely doesn't exist
-        assert _is_process_alive(999999999) is False
+# ── Public PID lifecycle and process discovery ────────────
 
 
-class TestFindServerPidByProcess:
-    @patch("cli.commands.server.psutil.Process")
-    def test_reads_process_cmdline_cross_platform(self, mock_process):
-        """Command-line fallback does not depend on Linux /proc."""
-        from cli.commands.server import _read_process_cmdline
-
-        mock_process.return_value.cmdline.return_value = ["python", "-m", "cli", "start", "--port", "18501"]
-
-        assert _read_process_cmdline(12345) == ["python", "-m", "cli", "start", "--port", "18501"]
-        mock_process.assert_called_once_with(12345)
-
-    @patch("cli.commands.server.find_matching_pids", return_value=[])
-    def test_returns_none_when_no_match(self, mock_find):
-        """Returns None when no matching process is found."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        result = _find_server_pid_by_process()
-
-        assert result is None
-        mock_find.assert_called_once()
-
-    @patch("cli.commands.server._is_restart_helper_process", return_value=False)
-    @patch("cli.commands.server.find_matching_pids", return_value=[12345])
-    def test_finds_matching_process(self, mock_find, mock_is_helper):
-        """Delegates process lookup to the adapter."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        assert _find_server_pid_by_process() == 12345
-        mock_find.assert_called_once()
-        mock_is_helper.assert_called_once_with(12345)
-
-    @patch("cli.commands.server._is_restart_helper_process", side_effect=[True, False])
-    @patch("cli.commands.server.find_matching_pids", return_value=[111, 222])
-    def test_skips_restart_helper_processes(self, mock_find, mock_is_helper):
-        """Restart helper code contains server markers but must not block start."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        assert _find_server_pid_by_process() == 222
-        mock_find.assert_called_once()
-        assert mock_is_helper.call_count == 2
-
-    @patch("cli.commands.server.find_matching_pids", return_value=[])
-    def test_excludes_restart_helper_pid_from_env(self, mock_find, monkeypatch):
-        """Restart helper PID from env var is added to exclude set."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        monkeypatch.setenv("_ANIMAWORKS_RESTART_HELPER_PID", "77777")
-        _find_server_pid_by_process()
-
-        _, kwargs = mock_find.call_args
-        assert 77777 in kwargs["exclude_pids"]
-
-    @patch("cli.commands.server.find_matching_pids", return_value=[])
-    def test_ignores_invalid_restart_helper_pid(self, mock_find, monkeypatch):
-        """Invalid env var value is silently ignored."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        monkeypatch.setenv("_ANIMAWORKS_RESTART_HELPER_PID", "not-a-pid")
-        _find_server_pid_by_process()
-
-        _, kwargs = mock_find.call_args
-        assert all(isinstance(p, int) for p in kwargs["exclude_pids"])
-
-    @patch("cli.commands.server._read_process_cmdline", return_value=["python", "-m", "cli", "start"])
-    @patch("cli.commands.server._read_process_environ_data_dir")
-    @patch("cli.commands.server.find_matching_pids", return_value=[12345])
-    def test_ignores_process_with_different_data_dir(
-        self, mock_find, mock_environ, mock_cmdline, tmp_path, monkeypatch
+class TestPidLifecycle:
+    def test_foreground_start_writes_and_cleans_pid_file(
+        self,
+        tmp_path,
+        data_dir_at_tmp_path,
+        monkeypatch,
     ):
-        """A matching command for another runtime is not the same server."""
-        from cli.commands.server import _find_server_pid_by_process
+        """Exercise PID persistence through the public foreground-start command."""
+        from cli.commands.server import cmd_start
+        from core.platform.env import SERVER_URL_ENV
+        from core.platform.pid import read_server_pid
+        from core.runtime.process_role import get_process_role
 
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "current-data"))
-        mock_environ.return_value = (True, str(tmp_path / "other-data"))
+        monkeypatch.delenv("ANIMAWORKS_PROCESS_ROLE", raising=False)
+        monkeypatch.setenv(SERVER_URL_ENV, "http://127.0.0.1:18500")
+        args = argparse.Namespace(host="127.0.0.1", port=18500, foreground=True)
+        app = MagicMock()
 
-        assert _find_server_pid_by_process(port=18500) is None
-        mock_find.assert_called_once()
+        def assert_pid_written(*_args, **_kwargs):
+            assert get_process_role() == "root"
+            assert read_server_pid() == os.getpid()
 
-    @patch(
-        "cli.commands.server._read_process_cmdline",
-    )
-    @patch("cli.commands.server._read_process_environ_data_dir")
-    @patch("cli.commands.server.find_matching_pids", return_value=[12345])
-    def test_ignores_process_with_different_data_dir_argument(
-        self, mock_find, mock_environ, mock_cmdline, tmp_path, monkeypatch
-    ):
-        """An explicit candidate --data-dir takes precedence over its environment."""
-        from cli.commands.server import _find_server_pid_by_process
+        with (
+            patch("core.infra.runtime_init.ensure_runtime_dir"),
+            patch("core.platform.fd_limits.raise_fd_soft_limit"),
+            patch("server.app.create_app", return_value=app),
+            patch("cli.commands.server.find_first_matching_pid", return_value=None),
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+            patch("uvicorn.run", side_effect=assert_pid_written) as run_server,
+            patch("atexit.register"),
+            patch("threading.Thread") as thread_class,
+        ):
+            thread_class.return_value.start.return_value = None
+            cmd_start(args)
 
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "current-data"))
-        mock_cmdline.return_value = [
-            "python",
-            "-m",
-            "cli",
-            f"--data-dir={tmp_path / 'other-data'}",
-            "start",
-        ]
-
-        assert _find_server_pid_by_process(port=18500) is None
-        mock_environ.assert_not_called()
-
-    @patch(
-        "cli.commands.server._read_process_cmdline",
-        return_value=["python", "-m", "cli", "start", "--port", "18501"],
-    )
-    @patch("cli.commands.server._read_process_environ_data_dir", return_value=(False, None))
-    @patch("cli.commands.server.find_matching_pids", return_value=[12345])
-    def test_unreadable_environ_ignores_different_port(self, mock_find, mock_environ, mock_cmdline):
-        """An unreadable environment still permits excluding another explicit port."""
-        from cli.commands.server import _find_server_pid_by_process
-
-        assert _find_server_pid_by_process(port=18500) is None
-        mock_find.assert_called_once()
-
-    @patch("cli.commands.server.psutil.Process")
-    def test_resolves_relative_data_dir_from_candidate_cwd(self, mock_process):
-        """Relative candidate paths use the server process working directory."""
-        from cli.commands.server import _process_data_dir
-
-        mock_process.return_value.cwd.return_value = "/srv/animaworks"
-
-        result = _process_data_dir(12345, ["animaworks", "--data-dir", "runtime", "start"])
-
-        assert result == Path("/srv/animaworks/runtime").resolve()
-        mock_process.assert_called_once_with(12345)
+        run_server.assert_called_once()
+        assert read_server_pid() is None
 
 
-# ── _stop_server ─────────────────────────────────────────
+class TestFindServerThroughStopCommand:
+    """Verify process discovery through the user-facing ``cmd_stop`` command."""
+
+    @pytest.fixture(autouse=True)
+    def _runtime_data_dir(self, data_dir_at_tmp_path):
+        pass
+
+    def test_no_matching_process_reports_not_running(self, capsys):
+        from cli.commands.server import cmd_stop
+
+        with (
+            patch("cli.commands.server.find_first_matching_pid", return_value=None) as find_process,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        assert "not running" in capsys.readouterr().out
+        find_process.assert_called_once()
+
+    def test_process_env_data_dir_is_used(self, tmp_path):
+        from cli.commands.server import cmd_stop
+
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start"]
+        with (
+            patch("cli.commands.server.find_first_matching_pid", return_value=12345) as find_process,
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.read_process_env", return_value=(True, str(tmp_path))) as read_env,
+            patch("cli.commands.server.is_pid_alive", return_value=False),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        read_env.assert_called_once()
+        find_process.assert_called_once()
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
+
+    def test_explicit_different_data_dir_is_ignored(self, tmp_path, capsys):
+        from cli.commands.server import cmd_stop
+
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start", "--data-dir=/tmp/other-data"]
+        with (
+            patch("cli.commands.server.find_first_matching_pid", side_effect=[12345, None]) as find_process,
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.read_process_env") as read_env,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        read_env.assert_not_called()
+        assert find_process.call_count == 2
+        assert 12345 in find_process.call_args_list[1].kwargs["exclude_pids"]
+        assert "not running" in capsys.readouterr().out
+
+    def test_relative_data_dir_resolves_against_process_cwd(self, tmp_path, monkeypatch):
+        from cli.commands.server import cmd_stop
+
+        runtime_dir = tmp_path / "runtime"
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(runtime_dir))
+        process = MagicMock()
+        process.cmdline.return_value = ["animaworks", "start", "--data-dir", "runtime"]
+        process.cwd.return_value = str(tmp_path)
+        with (
+            patch("cli.commands.server.find_first_matching_pid", return_value=12345),
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.is_pid_alive", return_value=False),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        process.cwd.assert_called_once()
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
+
+
+# ── Public stop command ───────────────────────────────────
 
 
 class TestStopServer:
     @pytest.fixture(autouse=True)
-    def _no_real_supervisor_shutdown(self):
-        # _stop_server() posts to the real 127.0.0.1:18500 server if one is
-        # listening; never let unit tests reach a live instance.
-        with patch(
-            "cli.commands.server._request_supervisor_shutdown", return_value=False
+    def _runtime_data_dir(self, data_dir_at_tmp_path):
+        pass
+
+    @pytest.mark.parametrize("exit_after", [12.0, 89.0])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_default_waits_for_whole_server_shutdown_without_force_kill(self, exit_after, force):
+        from cli.commands.server import cmd_stop
+
+        clock = [0.0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with (
+            patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
+            patch("cli.commands.server.time.sleep", side_effect=sleep),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", side_effect=lambda _pid: clock[0] < exit_after),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
         ):
-            yield
+            cmd_stop(argparse.Namespace(force=force))
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_no_pid_file_no_process(self, mock_pid, mock_find, mock_orphans, capsys):
-        from cli.commands.server import _stop_server
+        assert exit_after <= clock[0] < 90
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
 
-        result = _stop_server()
-        assert result is True
+    def test_default_still_reports_failure_at_ninety_seconds(self):
+        from cli.commands.server import cmd_stop
+
+        clock = [0.0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with (
+            patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
+            patch("cli.commands.server.time.sleep", side_effect=sleep),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            pytest.raises(SystemExit) as stopped,
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        assert stopped.value.code == 1
+        assert 90 <= clock[0] < 90.3
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
+
+    def test_no_pid_file_no_process(self, capsys):
+        from cli.commands.server import cmd_stop
+
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=None),
+            patch("cli.commands.server.find_first_matching_pid", return_value=None) as find_process,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0) as clean_orphans,
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
         assert "not running" in capsys.readouterr().out
-        mock_orphans.assert_called_once()
+        find_process.assert_called_once()
+        clean_orphans.assert_called_once()
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_stale_pid(self, mock_pid, mock_alive, mock_remove, mock_orphans, capsys):
-        from cli.commands.server import _stop_server
+    def test_stale_pid(self, capsys):
+        from cli.commands.server import cmd_stop
 
-        result = _stop_server()
-        assert result is True
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=False),
+            patch("cli.commands.server.terminate_matching_processes", return_value=0) as clean_orphans,
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
         assert "Stale" in capsys.readouterr().out
-        mock_orphans.assert_called_once()
+        clean_orphans.assert_called_once()
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server.request_process_shutdown")
-    @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_successful_stop(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_terminate,
-        mock_remove,
-        mock_orphans,
-        capsys,
-    ):
-        from cli.commands.server import _stop_server
+    def test_successful_stop(self):
+        from cli.commands.server import cmd_stop
 
-        result = _stop_server()
-        assert result is True
-        mock_terminate.assert_called_once_with(12345, include_children=False)
-        mock_orphans.assert_called_once()
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", side_effect=[True, False]),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server.request_process_shutdown", side_effect=ProcessLookupError)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_process_already_exited_on_kill(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_terminate,
-        mock_orphans,
-        capsys,
-    ):
-        from cli.commands.server import _stop_server
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
 
-        result = _stop_server()
-        assert result is True
+    def test_process_already_exited_on_kill(self, capsys):
+        from cli.commands.server import cmd_stop
+
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.terminate_pid", side_effect=ProcessLookupError),
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
         assert "already exited" in capsys.readouterr().out
-        mock_orphans.assert_called_once()
 
-    @patch("cli.commands.server.request_process_shutdown", side_effect=PermissionError)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_permission_error(self, mock_pid, mock_alive, mock_terminate, capsys):
-        from cli.commands.server import _stop_server
+    def test_permission_error(self, capsys):
+        from cli.commands.server import cmd_stop
 
-        result = _stop_server()
-        assert result is False
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.terminate_pid", side_effect=PermissionError),
+            pytest.raises(SystemExit) as stopped,
+        ):
+            cmd_stop(argparse.Namespace(force=False))
+
+        assert stopped.value.code == 1
         assert "Permission denied" in capsys.readouterr().out
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server.request_process_shutdown")
-    @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_fallback_to_process_scan(
-        self,
-        mock_pid,
-        mock_find,
-        mock_alive,
-        mock_terminate,
-        mock_remove,
-        mock_orphans,
-        capsys,
-    ):
-        """When PID file is missing, fall back to process scan."""
-        from cli.commands.server import _stop_server
+    def test_fallback_to_process_scan(self, tmp_path: Path, capsys):
+        from cli.commands.server import cmd_stop
 
-        result = _stop_server()
-        assert result is True
-        out = capsys.readouterr().out
-        assert "PID file missing" in out
-        assert "54321" in out
-        mock_terminate.assert_called_once_with(54321, include_children=False)
-        mock_orphans.assert_called_once()
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start"]
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=None),
+            patch("cli.commands.server.find_first_matching_pid", return_value=54321) as find_process,
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.read_process_env", return_value=(True, str(tmp_path))),
+            patch("cli.commands.server.is_pid_alive", return_value=False),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
 
-    # ── Force mode tests ─────────────────────────────────
+        output = capsys.readouterr().out
+        assert "PID file missing" in output
+        assert "54321" in output
+        find_process.assert_called_once()
+        terminate.assert_called_once_with(54321, force=False, include_children=False)
 
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server.request_process_shutdown")
-    @patch("time.sleep")
-    @patch("time.monotonic")
-    @patch("cli.commands.server._is_process_alive")
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_force_sigkill_after_timeout(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_monotonic,
-        mock_sleep,
-        mock_shutdown,
-        mock_terminate,
-        mock_remove,
-        mock_orphans,
-        capsys,
-    ):
+    def test_force_sigkill_after_timeout(self, capsys):
         """Force mode escalates to SIGKILL when SIGTERM times out."""
-        from cli.commands.server import _stop_server
+        from cli.commands.server import cmd_stop
 
-        fake_time = [0.0]
+        clock = [0.0]
+        alive = iter([True, True, False, False])
 
-        def advance_sleep(seconds):
-            fake_time[0] += seconds
+        def sleep(_seconds):
+            clock[0] += 100.0
 
-        mock_monotonic.side_effect = lambda: fake_time[0]
-        mock_sleep.side_effect = advance_sleep
+        with (
+            patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
+            patch("cli.commands.server.time.sleep", side_effect=sleep),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", side_effect=lambda _pid: next(alive)),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server.terminate_matching_processes", return_value=0),
+        ):
+            cmd_stop(argparse.Namespace(force=True))
 
-        call_count = [0]
+        output = capsys.readouterr().out
+        assert "SIGKILL" in output
+        assert "force-killed" in output
+        assert terminate.call_count == 2
+        assert terminate.call_args_list[0].args == (12345,)
+        assert terminate.call_args_list[0].kwargs == {"force": False, "include_children": False}
+        assert terminate.call_args_list[1].args == (12345,)
+        assert terminate.call_args_list[1].kwargs == {"force": True, "include_children": True}
 
-        def alive_side_effect(pid):
-            call_count[0] += 1
-            return call_count[0] <= 10
-
-        mock_alive.side_effect = alive_side_effect
-
-        result = _stop_server(timeout=1, force=True)
-        assert result is True
-        out = capsys.readouterr().out
-        assert "SIGKILL" in out
-        assert "force-killed" in out
-        mock_shutdown.assert_called_once_with(12345, include_children=False)
-        assert mock_terminate.call_count == 1
-        assert mock_terminate.call_args.args == (12345,)
-        assert mock_terminate.call_args.kwargs == {
-            "force": True,
-            "include_children": True,
-        }
-
-    @patch("cli.commands.server._kill_orphan_runners", return_value=3)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_non_force_kills_orphans_when_no_server(
-        self,
-        mock_pid,
-        mock_find,
-        mock_orphans,
-        capsys,
-    ):
+    def test_non_force_kills_orphans_when_no_server(self, capsys):
         """Normal stop also cleans up orphan runners when server is not running."""
-        from cli.commands.server import _stop_server
+        from cli.commands.server import cmd_stop
 
-        result = _stop_server(force=False)
-        assert result is True
-        out = capsys.readouterr().out
-        assert "3 orphan" in out
-        assert "not running" in out
-        mock_orphans.assert_called_once()
+        with (
+            patch("cli.commands.server.read_server_pid", return_value=None),
+            patch("cli.commands.server.find_first_matching_pid", return_value=None),
+            patch("cli.commands.server.terminate_matching_processes", return_value=3),
+        ):
+            cmd_stop(argparse.Namespace(force=False))
 
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server.request_process_shutdown")
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_non_force_timeout_returns_false(self, mock_pid, mock_terminate, mock_alive, capsys):
-        """Without --force, timeout returns False without SIGKILL."""
-        from cli.commands.server import _stop_server
+        output = capsys.readouterr().out
+        assert "3 orphan" in output
+        assert "not running" in output
 
-        result = _stop_server(timeout=1, force=False)
-        assert result is False
-        out = capsys.readouterr().out
-        assert "did not stop" in out
-        assert "SIGKILL" not in out
+    def test_non_force_timeout_returns_failure(self, capsys):
+        """Without --force, timeout exits with failure and does not send SIGKILL."""
+        from cli.commands.server import cmd_stop
 
+        clock = [0.0]
 
-# ── cmd_start ────────────────────────────────────────────
+        def sleep(_seconds):
+            clock[0] += 100.0
 
+        with (
+            patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
+            patch("cli.commands.server.time.sleep", side_effect=sleep),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.terminate_pid") as terminate,
+            pytest.raises(SystemExit) as stopped,
+        ):
+            cmd_stop(argparse.Namespace(force=False))
 
-class TestUnreachableServerCleanup:
-    @patch("cli.commands.server._kill_orphan_runners", return_value=2)
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._is_process_alive", side_effect=[True, False, False])
-    @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server._is_port_listening", return_value=False)
-    def test_cleanup_unreachable_server_process(
-        self,
-        mock_port,
-        mock_terminate,
-        mock_alive,
-        mock_remove,
-        mock_orphans,
-        capsys,
-    ):
-        from cli.commands.server import _cleanup_unreachable_server_process
-
-        result = _cleanup_unreachable_server_process(12345, host="127.0.0.1", port=18500)
-
-        assert result is True
-        assert "not listening" in capsys.readouterr().out
-        mock_terminate.assert_called_once_with(12345, force=True, include_children=True)
-        mock_remove.assert_called_once()
-        mock_orphans.assert_called_once()
-
-    @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    def test_cleanup_unreachable_server_skips_reachable_process(self, mock_port, mock_terminate):
-        from cli.commands.server import _cleanup_unreachable_server_process
-
-        result = _cleanup_unreachable_server_process(12345, host="127.0.0.1", port=18500)
-
-        assert result is False
-        mock_terminate.assert_not_called()
+        assert stopped.value.code == 1
+        output = capsys.readouterr().out
+        assert "did not stop" in output
+        assert "SIGKILL" not in output
+        terminate.assert_called_once_with(12345, force=False, include_children=False)
 
 
-class TestSupervisorShutdownRequest:
-    @patch("cli.commands.server.urllib.request.urlopen")
-    @patch("cli.commands.server._is_port_listening", return_value=False)
-    def test_skips_when_port_is_not_listening(self, mock_port, mock_urlopen):
-        from cli.commands.server import _request_supervisor_shutdown
-
-        assert _request_supervisor_shutdown(host="127.0.0.1", port=18500) is False
-        mock_urlopen.assert_not_called()
-
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    def test_posts_internal_shutdown_endpoint(self, mock_port):
-        from cli.commands.server import _request_supervisor_shutdown
-
-        response = MagicMock()
-        response.status = 200
-        context = MagicMock()
-        context.__enter__.return_value = response
-        context.__exit__.return_value = None
-
-        with patch("cli.commands.server.urllib.request.urlopen", return_value=context) as mock_urlopen:
-            assert _request_supervisor_shutdown(host="0.0.0.0", port=18500, timeout=3.0) is True
-
-        request = mock_urlopen.call_args.args[0]
-        assert request.full_url == "http://127.0.0.1:18500/api/system/internal/shutdown-supervisor"
-        assert request.get_method() == "POST"
-        assert mock_urlopen.call_args.kwargs == {"timeout": 3.0}
+# ── Public cmd_start behavior ─────────────────────────────
 
 
-class TestOrphanRunnerCleanup:
-    @patch("core.paths.get_data_dir")
-    @patch("cli.commands.server.terminate_matching_processes", return_value=15)
-    def test_kill_orphan_runners_collapses_runner_process_trees(self, mock_terminate, mock_data_dir, tmp_path):
-        from cli.commands.server import _kill_orphan_runners
+@pytest.fixture(autouse=True)
+def _server_test_data_dir(data_dir_at_tmp_path):
+    """Keep server command paths inside each test's temporary root."""
 
-        mock_data_dir.return_value = tmp_path / ".animaworks"
 
-        count = _kill_orphan_runners()
+@pytest.fixture
+def foreground_server_mocks(monkeypatch, data_dir_at_tmp_path):
+    from core.platform.pid import read_server_pid
 
-        assert count == 15
-        assert mock_terminate.call_count == 1
-        assert mock_terminate.call_args.args == (("core.supervisor.runner",),)
-        kwargs = mock_terminate.call_args.kwargs
-        assert kwargs["path_contains"] == str(tmp_path / ".animaworks")
-        assert isinstance(kwargs["exclude_pids"], set)
-        assert len(kwargs["exclude_pids"]) == 2
-        assert kwargs["force"] is False
-        assert kwargs["include_children"] is True
-        assert kwargs["require_python"] is True
-        assert kwargs["collapse_descendants"] is True
+    app = MagicMock()
+    create_app = MagicMock(return_value=app)
+
+    def _run_server(*_args, **_kwargs):
+        assert read_server_pid() == os.getpid()
+
+    run_server = MagicMock(side_effect=_run_server)
+    thread_factory = MagicMock()
+    find_process = MagicMock(return_value=None)
+    clean_orphans = MagicMock(return_value=0)
+    monkeypatch.setattr("server.app.create_app", create_app)
+    monkeypatch.setattr("uvicorn.run", run_server)
+    monkeypatch.setattr("core.infra.runtime_init.ensure_runtime_dir", lambda: None)
+    monkeypatch.setattr("core.platform.fd_limits.raise_fd_soft_limit", lambda **_kwargs: None)
+    monkeypatch.setattr("cli.commands.server.find_first_matching_pid", find_process)
+    monkeypatch.setattr("cli.commands.server.terminate_matching_processes", clean_orphans)
+    monkeypatch.setattr("threading.Thread", thread_factory)
+    monkeypatch.setattr("atexit.register", lambda *_args, **_kwargs: None)
+    from core.platform.env import SERVER_URL_ENV
+
+    monkeypatch.setenv(SERVER_URL_ENV, "")
+    return {
+        "app": app,
+        "create_app": create_app,
+        "run_server": run_server,
+        "data_dir": data_dir_at_tmp_path,
+        "find_process": find_process,
+    }
 
 
 class TestCmdStart:
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=999)
-    def test_already_running(self, mock_pid, mock_alive, mock_port):
+    def test_already_running(self):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
         args = argparse.Namespace(host="0.0.0.0", port=18500)
-        with pytest.raises(SystemExit) as exc:
+        with (
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.read_server_pid", return_value=999),
+            pytest.raises(SystemExit) as exc,
+        ):
             cmd_start(args)
         assert exc.value.code == EXIT_ALREADY_RUNNING
 
-    @patch("cli.commands.server._get_daemon_log_path")
-    @patch("cli.commands.server.subprocess.Popen")
-    @patch("cli.commands.server._cleanup_unreachable_server_process", return_value=True)
-    @patch("cli.commands.server._is_port_listening", side_effect=[False, True])
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=999)
-    def test_daemon_start_cleans_live_pid_without_listening_port(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_find,
-        mock_port,
-        mock_cleanup,
-        mock_popen,
-        mock_log_path,
-        tmp_path,
-    ):
-        from cli.commands.server import _spawn_daemon
-
-        mock_log_path.return_value = tmp_path / "server.log"
-        mock_proc = MagicMock()
-        mock_proc.pid = 555
-        mock_proc.poll.return_value = None
-        mock_popen.return_value = mock_proc
-
-        args = argparse.Namespace(host="127.0.0.1", port=18500)
-        _spawn_daemon(args)
-
-        mock_cleanup.assert_called_once_with(999, host="127.0.0.1", port=18500)
-        mock_popen.assert_called_once()
-        call_kwargs = mock_popen.call_args.kwargs
-        assert call_kwargs["stdin"] is subprocess.DEVNULL
-        for key, value in subprocess_daemon_kwargs().items():
-            assert call_kwargs[key] == value
-
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
-    @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_already_running_orphan(self, mock_pid, mock_alive, mock_find, mock_port):
-        """Detect running orphan process (no PID file) and refuse to start."""
+    def test_already_running_orphan(self, tmp_path):
+        """A process found by the shared process adapter prevents daemon startup."""
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start", "--data-dir", str(tmp_path)]
         args = argparse.Namespace(host="0.0.0.0", port=18500)
-        with pytest.raises(SystemExit) as exc:
+        with (
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.find_first_matching_pid", return_value=777) as find_process,
+            patch("cli.commands.server.is_pid_alive", side_effect=lambda pid: pid == 777),
+            patch("cli.commands.server.read_server_pid", return_value=None),
+            pytest.raises(SystemExit) as exc,
+        ):
             cmd_start(args)
         assert exc.value.code == EXIT_ALREADY_RUNNING
-        mock_find.assert_called_once_with(port=18500)
+        find_process.assert_called_once()
 
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._pin_native_threads")
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=999)
-    def test_foreground_already_running(self, mock_pid, mock_alive, mock_pin, mock_port):
+    def test_foreground_already_running(self):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
         args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
-        with pytest.raises(SystemExit) as exc:
+        with (
+            patch("cli.commands.server.is_pid_alive", return_value=True),
+            patch("cli.commands.server.read_server_pid", return_value=999),
+            pytest.raises(SystemExit) as exc,
+        ):
             cmd_start(args)
         assert exc.value.code == EXIT_ALREADY_RUNNING
 
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._pin_native_threads")
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
-    @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_foreground_already_running_orphan(self, mock_pid, mock_alive, mock_find, mock_pin, mock_port):
+    def test_foreground_already_running_orphan(self, tmp_path):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start", "--data-dir", str(tmp_path)]
         args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
-        with pytest.raises(SystemExit) as exc:
+        with (
+            patch("cli.commands.server.psutil.Process", return_value=process),
+            patch("cli.commands.server.find_first_matching_pid", return_value=777) as find_process,
+            patch("cli.commands.server.is_pid_alive", side_effect=lambda pid: pid == 777),
+            patch("cli.commands.server.read_server_pid", return_value=None),
+            pytest.raises(SystemExit) as exc,
+        ):
             cmd_start(args)
         assert exc.value.code == EXIT_ALREADY_RUNNING
-        mock_find.assert_called_once_with(port=18500)
+        find_process.assert_called_once()
 
-    @patch("cli.commands.server._start_foreground")
-    @patch("cli.commands.server._spawn_daemon")
-    def test_pid1_runs_foreground(self, mock_daemon, mock_fg, monkeypatch):
-        """As PID 1 (container) daemonize is impossible; fall back to foreground."""
+    def test_pid1_runs_foreground(self, foreground_server_mocks, monkeypatch):
+        """As PID 1 (container) daemonize is impossible, so the public command serves foreground."""
         from cli.commands.server import cmd_start
 
-        monkeypatch.setattr("os.getpid", lambda: 1)
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
-        cmd_start(args)
-        mock_fg.assert_called_once_with(args)
-        mock_daemon.assert_not_called()
+        monkeypatch.setattr(os, "getpid", lambda: 1)
+        cmd_start(argparse.Namespace(host="0.0.0.0", port=18500))
 
-    @patch("cli.commands.server._start_foreground")
-    @patch("cli.commands.server._spawn_daemon")
-    def test_normal_pid_daemonizes(self, mock_daemon, mock_fg):
-        """A normal (non-PID-1) process still daemonizes by default."""
+        foreground_server_mocks["create_app"].assert_called_once()
+        foreground_server_mocks["run_server"].assert_called_once()
+
+    def test_normal_pid_daemonizes(self, tmp_path, monkeypatch):
+        """A normal process starts a detached child through the public subprocess boundary."""
         from cli.commands.server import cmd_start
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500)
-        cmd_start(args)
-        mock_daemon.assert_called_once_with(args)
-        mock_fg.assert_not_called()
+        process = MagicMock()
+        process.pid = 23456
+        process.poll.return_value = None
+        popen = MagicMock(return_value=process)
+        monkeypatch.setattr("cli.commands.server.subprocess.Popen", popen)
+        monkeypatch.setattr("cli.commands.server.find_first_matching_pid", MagicMock(return_value=None))
+        monkeypatch.setattr("cli.commands.server.socket.create_connection", MagicMock(return_value=MagicMock()))
 
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._start_pid_watchdog")
-    @patch("uvicorn.run")
-    @patch("server.app.create_app")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
-    @patch("core.init.ensure_runtime_dir")
-    @patch("cli.commands.server._write_pid_file")
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=999)
-    def test_stale_pid_cleanup_and_start(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_find,
-        mock_kill,
-        mock_write_pid,
-        mock_ensure,
-        mock_animas,
-        mock_shared,
-        mock_create,
-        mock_uvicorn,
-        mock_watchdog,
-        mock_remove,
-    ):
+        cmd_start(argparse.Namespace(host="0.0.0.0", port=18500))
+
+        popen.assert_called_once()
+
+    def test_stale_pid_cleanup_and_start(self, foreground_server_mocks, monkeypatch):
+        from cli.commands.server import cmd_start
+        from core.platform.pid import read_server_pid
+
+        pid_file = foreground_server_mocks["data_dir"] / "server.pid"
+        pid_file.write_text("999", encoding="utf-8")
+        monkeypatch.setattr("cli.commands.server.is_pid_alive", lambda _pid: False)
+
+        cmd_start(argparse.Namespace(host="0.0.0.0", port=18507, foreground=True))
+
+        assert foreground_server_mocks["run_server"].call_args.kwargs["port"] == 18507
+        assert read_server_pid() is None
+
+    def test_uvicorn_timeout_keep_alive(self, foreground_server_mocks):
         from cli.commands.server import cmd_start
 
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
+        cmd_start(argparse.Namespace(host="0.0.0.0", port=18500, foreground=True))
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
-        cmd_start(args)
+        assert foreground_server_mocks["run_server"].call_args.kwargs["timeout_keep_alive"] == 65
 
-        mock_uvicorn.assert_called_once_with(
-            mock_app,
-            host="0.0.0.0",
-            port=18500,
-            log_level="info",
-            timeout_keep_alive=65,
-            ws_ping_interval=25,
-            ws_ping_timeout=5,
-        )
-
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._start_pid_watchdog")
-    @patch("uvicorn.run")
-    @patch("server.app.create_app")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
-    @patch("core.init.ensure_runtime_dir")
-    @patch("cli.commands.server._write_pid_file")
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_uvicorn_timeout_keep_alive(
-        self,
-        mock_pid,
-        mock_find,
-        mock_kill,
-        mock_write_pid,
-        mock_ensure,
-        mock_animas,
-        mock_shared,
-        mock_create,
-        mock_uvicorn,
-        mock_watchdog,
-        mock_remove,
-    ):
+    def test_uvicorn_ws_ping_settings(self, foreground_server_mocks):
         from cli.commands.server import cmd_start
 
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
+        cmd_start(argparse.Namespace(host="0.0.0.0", port=18500, foreground=True))
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
-        cmd_start(args)
-
-        call_kwargs = mock_uvicorn.call_args
-        assert call_kwargs.kwargs.get("timeout_keep_alive") == 65
-
-    @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._start_pid_watchdog")
-    @patch("uvicorn.run")
-    @patch("server.app.create_app")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
-    @patch("core.init.ensure_runtime_dir")
-    @patch("cli.commands.server._write_pid_file")
-    @patch("cli.commands.server._kill_orphan_runners", return_value=0)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_uvicorn_ws_ping_settings(
-        self,
-        mock_pid,
-        mock_find,
-        mock_kill,
-        mock_write_pid,
-        mock_ensure,
-        mock_animas,
-        mock_shared,
-        mock_create,
-        mock_uvicorn,
-        mock_watchdog,
-        mock_remove,
-    ):
-        from cli.commands.server import cmd_start
-
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
-
-        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
-        cmd_start(args)
-
-        call_kwargs = mock_uvicorn.call_args
-        assert call_kwargs.kwargs.get("ws_ping_interval") == 25
-        assert call_kwargs.kwargs.get("ws_ping_timeout") == 5
+        kwargs = foreground_server_mocks["run_server"].call_args.kwargs
+        assert kwargs["ws_ping_interval"] == 25
+        assert kwargs["ws_ping_timeout"] == 5
 
 
 # ── cmd_serve ────────────────────────────────────────────
@@ -756,182 +516,111 @@ class TestCmdServe:
         mock_start.assert_called_once_with(args)
 
 
-# ── cmd_stop ─────────────────────────────────────────────
+# cmd_stop behavior is covered end-to-end by TestStopServer above.
 
 
-class TestCmdStop:
-    @patch("cli.commands.server._stop_server", return_value=True)
-    def test_stop_success(self, mock_stop):
-        from cli.commands.server import cmd_stop
-
-        args = argparse.Namespace(force=False)
-        cmd_stop(args)
-        mock_stop.assert_called_once_with(force=False, host="127.0.0.1", port=18500)
-
-    @patch("cli.commands.server._stop_server", return_value=False)
-    def test_stop_failure(self, mock_stop):
-        from cli.commands.server import cmd_stop
-
-        args = argparse.Namespace(force=False)
-        with pytest.raises(SystemExit):
-            cmd_stop(args)
-
-    @patch("cli.commands.server._stop_server", return_value=True)
-    def test_stop_force(self, mock_stop):
-        from cli.commands.server import cmd_stop
-
-        args = argparse.Namespace(force=True)
-        cmd_stop(args)
-        mock_stop.assert_called_once_with(force=True, host="127.0.0.1", port=18500)
+# ── Public cmd_restart behavior ──────────────────────────
 
 
-# ── cmd_restart ──────────────────────────────────────────
+@pytest.fixture
+def restart_command_mocks(monkeypatch, data_dir_at_tmp_path):
+    """Stub OS process/socket boundaries while using real restart helpers."""
+    helper = MagicMock()
+    helper.pid = 99999
+    popen = MagicMock(return_value=helper)
+    socket_connection = MagicMock()
+    clean_orphans = MagicMock(return_value=0)
+    monkeypatch.setattr("cli.commands.server.subprocess.Popen", popen)
+    monkeypatch.setattr("cli.commands.server._request_supervisor_shutdown", MagicMock(return_value=False))
+    monkeypatch.setattr("cli.commands.server.socket.create_connection", lambda *_args, **_kwargs: socket_connection)
+    monkeypatch.setattr("cli.commands.server.terminate_matching_processes", clean_orphans)
+    monkeypatch.setattr("shutil.rmtree", lambda _path: None)
+    return {
+        "data_dir": data_dir_at_tmp_path,
+        "popen": popen,
+        "helper": helper,
+        "clean_orphans": clean_orphans,
+    }
 
 
 class TestCmdRestart:
-    @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._clear_pycache", return_value=0)
-    @patch("cli.commands.server._stop_server", return_value=True)
-    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_restart_spawns_helper_then_stops(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_helper,
-        mock_stop,
-        mock_clear,
-        mock_port,
-        mock_log,
-        capsys,
-    ):
+    def test_restart_spawns_helper_before_stopping(self, restart_command_mocks, monkeypatch, capsys):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
-        cmd_restart(args)
+        data_dir = restart_command_mocks["data_dir"]
+        (data_dir / "server.pid").write_text("12345", encoding="utf-8")
+        monkeypatch.setattr("cli.commands.server.find_first_matching_pid", MagicMock(return_value=None))
+        monkeypatch.setattr("cli.commands.server.is_pid_alive", MagicMock(side_effect=[True, True, False]))
+        terminate = MagicMock()
+        monkeypatch.setattr("cli.commands.server.terminate_pid", terminate)
 
-        mock_helper.assert_called_once_with(args, 12345)
-        mock_stop.assert_called_once_with(
-            force=False,
-            extra_exclude_pids={99999},
-            host="0.0.0.0",
-            port=18500,
-        )
-        out = capsys.readouterr().out
-        assert "99999" in out
+        cmd_restart(argparse.Namespace(host="0.0.0.0", port=18500, force=False))
 
-    @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._clear_pycache", return_value=0)
-    @patch("cli.commands.server._stop_server", return_value=True)
-    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_restart_with_force(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_helper,
-        mock_stop,
-        mock_clear,
-        mock_port,
-        mock_log,
-    ):
+        helper_code = restart_command_mocks["popen"].call_args.args[0][2]
+        assert "old_pid = 12345" in helper_code
+        assert terminate.call_args.kwargs == {"force": False, "include_children": False}
+        assert "99999" in capsys.readouterr().out
+
+    def test_restart_force_escalates_through_stop_api(self, restart_command_mocks, monkeypatch, capsys):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, force=True)
-        cmd_restart(args)
+        data_dir = restart_command_mocks["data_dir"]
+        (data_dir / "server.pid").write_text("12345", encoding="utf-8")
+        monkeypatch.setattr("cli.commands.server.find_first_matching_pid", MagicMock(return_value=None))
+        alive = MagicMock(side_effect=[True, True, True, False, False])
+        monkeypatch.setattr("cli.commands.server.is_pid_alive", alive)
+        clock = [0.0]
+        monkeypatch.setattr("cli.commands.server.time.monotonic", lambda: clock[0])
+        monkeypatch.setattr("cli.commands.server.time.sleep", lambda _seconds: clock.__setitem__(0, clock[0] + 100.0))
+        terminate = MagicMock()
+        monkeypatch.setattr("cli.commands.server.terminate_pid", terminate)
 
-        mock_stop.assert_called_once_with(
-            force=True,
-            extra_exclude_pids={99999},
-            host="0.0.0.0",
-            port=18500,
-        )
+        cmd_restart(argparse.Namespace(host="0.0.0.0", port=18500, force=True))
 
-    @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._clear_pycache", return_value=0)
-    @patch("cli.commands.server._stop_server", return_value=True)
-    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_restart_stale_pid_falls_back_to_scan(
-        self,
-        mock_pid,
-        mock_alive,
-        mock_find,
-        mock_helper,
-        mock_stop,
-        mock_clear,
-        mock_port,
-        mock_log,
-    ):
-        """When PID exists but process is dead, falls back to process scan."""
+        assert terminate.call_count == 2
+        assert terminate.call_args_list[0].kwargs == {"force": False, "include_children": False}
+        assert terminate.call_args_list[1].kwargs == {"force": True, "include_children": True}
+        assert "force-killed" in capsys.readouterr().out
+
+    def test_restart_stale_pid_falls_back_to_scan(self, restart_command_mocks, monkeypatch):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
-        cmd_restart(args)
+        data_dir = restart_command_mocks["data_dir"]
+        (data_dir / "server.pid").write_text("12345", encoding="utf-8")
+        find_process = MagicMock(return_value=None)
+        monkeypatch.setattr("cli.commands.server.find_first_matching_pid", find_process)
+        monkeypatch.setattr("cli.commands.server.is_pid_alive", MagicMock(side_effect=[False, False]))
 
-        mock_find.assert_called_once()
-        mock_helper.assert_called_once_with(args, None)
+        cmd_restart(argparse.Namespace(host="0.0.0.0", port=18500, force=False))
 
-    @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._clear_pycache", return_value=0)
-    @patch("cli.commands.server._stop_server", return_value=True)
-    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_restart_no_pid_no_process(
-        self, mock_pid, mock_find, mock_helper, mock_stop, mock_clear, mock_port, mock_log
-    ):
-        """When no PID file and no process found, old_pid=None."""
+        helper_code = restart_command_mocks["popen"].call_args.args[0][2]
+        assert "old_pid = None" in helper_code
+        find_process.assert_called_once()
+
+    def test_restart_without_pid_uses_public_process_scan(self, restart_command_mocks, monkeypatch):
         from cli.commands.server import cmd_restart
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
-        cmd_restart(args)
+        data_dir = restart_command_mocks["data_dir"]
+        process = MagicMock()
+        process.cmdline.return_value = ["python", "-m", "cli", "start", "--data-dir", str(data_dir)]
+        monkeypatch.setattr("cli.commands.server.psutil.Process", lambda _pid: process)
+        find_process = MagicMock(return_value=54321)
+        monkeypatch.setattr("cli.commands.server.find_first_matching_pid", find_process)
+        monkeypatch.setattr("cli.commands.server.is_pid_alive", lambda _pid: False)
+        terminate = MagicMock()
+        monkeypatch.setattr("cli.commands.server.terminate_pid", terminate)
 
-        mock_find.assert_called_once()
-        mock_helper.assert_called_once_with(args, None)
+        cmd_restart(argparse.Namespace(host="0.0.0.0", port=18500, force=False))
 
-    @patch("cli.commands.server._get_daemon_log_path", return_value=Path("/tmp/daemon.log"))
-    @patch("cli.commands.server._is_port_listening", return_value=True)
-    @patch("cli.commands.server._clear_pycache", return_value=0)
-    @patch("cli.commands.server._stop_server", return_value=True)
-    @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
-    @patch("cli.commands.server._read_pid", return_value=None)
-    def test_restart_no_pid_file_finds_by_scan(
-        self,
-        mock_pid,
-        mock_find,
-        mock_helper,
-        mock_stop,
-        mock_clear,
-        mock_port,
-        mock_log,
-    ):
-        """When PID file is missing but process scan finds server, passes scanned PID."""
-        from cli.commands.server import cmd_restart
-
-        args = argparse.Namespace(host="0.0.0.0", port=18500, force=False)
-        cmd_restart(args)
-
-        mock_find.assert_called_once()
-        mock_helper.assert_called_once_with(args, 54321)
+        helper_code = restart_command_mocks["popen"].call_args.args[0][2]
+        assert "old_pid = 54321" in helper_code
+        assert find_process.call_count == 2
+        terminate.assert_called_once_with(54321, force=False, include_children=False)
 
 
 class TestSpawnRestartHelper:
-    @patch("cli.commands.server._get_daemon_log_path")
-    def test_helper_starts_detached_process(self, mock_log_path, tmp_path, data_dir):
+    def test_helper_starts_detached_process(self):
         from cli.commands.server import _spawn_restart_helper
-
-        log_file = tmp_path / "daemon.log"
-        mock_log_path.return_value = log_file
 
         args = argparse.Namespace(host="0.0.0.0", port=18500)
 
@@ -944,25 +633,18 @@ class TestSpawnRestartHelper:
 
         assert pid == 77777
         call_kwargs = mock_popen.call_args
-        assert call_kwargs.kwargs["stdin"] is subprocess.DEVNULL
-        for key, value in subprocess_daemon_kwargs().items():
+        for key, value in subprocess_session_kwargs().items():
             assert call_kwargs.kwargs[key] == value
         helper_code = mock_popen.call_args.args[0][2]
-        assert "find_matching_pids" in helper_code
-        assert "_RESTART_HELPER_CMD_MARKERS" in helper_code
-        assert "api/system/internal/shutdown-supervisor" in helper_code
+        assert "find_first_matching_pid" in helper_code
         assert "terminate_pid" in helper_code
         assert "Lingering server process still detected" in helper_code
         assert "include_children=True" in helper_code
-        assert "/proc" not in helper_code
+        assert "/proc/" not in helper_code
         assert "os.killpg" not in helper_code
 
-    @patch("cli.commands.server._get_daemon_log_path")
-    def test_helper_accepts_none_old_pid(self, mock_log_path, tmp_path, data_dir):
+    def test_helper_accepts_none_old_pid(self):
         from cli.commands.server import _spawn_restart_helper
-
-        log_file = tmp_path / "daemon.log"
-        mock_log_path.return_value = log_file
 
         args = argparse.Namespace(host="0.0.0.0", port=18500)
 
@@ -974,25 +656,6 @@ class TestSpawnRestartHelper:
             pid = _spawn_restart_helper(args, old_pid=None)
 
         assert pid == 88888
-
-
-# ── Deprecated commands ──────────────────────────────────
-
-
-class TestDeprecatedCommands:
-    def test_gateway_deprecated(self):
-        from cli.commands.server import cmd_gateway
-
-        args = argparse.Namespace()
-        with pytest.raises(SystemExit):
-            cmd_gateway(args)
-
-    def test_worker_deprecated(self):
-        from cli.commands.server import cmd_worker
-
-        args = argparse.Namespace()
-        with pytest.raises(SystemExit):
-            cmd_worker(args)
 
 
 # ── _clear_pycache ───────────────────────────────────────

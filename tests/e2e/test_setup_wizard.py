@@ -1007,14 +1007,13 @@ async def test_setup_activates_runtime_without_restart(data_dir, monkeypatch):
     """First-run setup starts shared services before launching workers."""
     import asyncio
 
-    from core import startup_progress
+    from core.infra import startup_progress
     from server.app import lifespan
 
     _write_config(data_dir, external_tasks={"enabled": False})
     app = _create_app(data_dir)
     app.state.listen_port = 18892
-    app.state.vector_worker = AsyncMock()
-    app.state.startup_preflight_runner = lambda **kwargs: None
+    app.state.startup_preflight_runner = lambda: None
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
     startup_progress._reset_for_testing()
     try:
@@ -1022,7 +1021,6 @@ async def test_setup_activates_runtime_without_restart(data_dir, monkeypatch):
             patch("core.config.global_permissions.GlobalPermissionsCache.get"),
             patch("server.app._startup_animas_background", new_callable=AsyncMock) as start_animas,
             patch("server.app._run_model_warmup", new_callable=AsyncMock),
-            patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         ):
             async with lifespan(app):
                 start_animas.assert_not_awaited()
@@ -1038,7 +1036,6 @@ async def test_setup_activates_runtime_without_restart(data_dir, monkeypatch):
                     assert response.status_code == 200, response.text
                 await asyncio.wait_for(app.state._anima_startup_task, timeout=5)
                 start_animas.assert_awaited_once()
-                app.state.vector_worker.start.assert_awaited_once()
                 assert app.state.supervisor.child_env_urls == {
                     "ANIMAWORKS_EMBED_URL": "http://127.0.0.1:18892/api/internal/embed",
                     "ANIMAWORKS_VECTOR_URL": "http://127.0.0.1:18892/api/internal/vector",

@@ -15,16 +15,12 @@ from core.exceptions import (
     ChannelNotFoundError,
     ConfigError,
     ConfigNotFoundError,
-    ConfigValidationError,
     DeliveryError,
     ExecutionError,
     ExecutorUnavailableError,
     IPCConnectionError,
     LLMAPIError,
-    LLMTimeoutError,
-    MemoryCorruptedError,
     MemoryIOError,
-    MemoryReadError,
     MemoryWriteError,
     MessagingError,
     ProcessError,
@@ -34,7 +30,6 @@ from core.exceptions import (
     ToolConfigError,
     ToolError,
     ToolExecutionError,
-    ToolNotFoundError,
 )
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -43,17 +38,13 @@ ALL_EXCEPTIONS = [
     AnimaWorksError,
     ExecutionError,
     LLMAPIError,
-    LLMTimeoutError,
     StreamDisconnectedError,
     ExecutorUnavailableError,
     ToolError,
     ToolConfigError,
     ToolExecutionError,
-    ToolNotFoundError,
     MemoryIOError,
-    MemoryReadError,
     MemoryWriteError,
-    MemoryCorruptedError,
     TaskPersistenceError,
     ProcessError,
     AnimaNotFoundError,
@@ -61,7 +52,6 @@ ALL_EXCEPTIONS = [
     IPCConnectionError,
     ConfigError,
     ConfigNotFoundError,
-    ConfigValidationError,
     MessagingError,
     RecipientNotFoundError,
     DeliveryError,
@@ -71,21 +61,16 @@ ALL_EXCEPTIONS = [
 
 LEAF_EXCEPTIONS = [
     LLMAPIError,
-    LLMTimeoutError,
     StreamDisconnectedError,
     ExecutorUnavailableError,
     ToolConfigError,
     ToolExecutionError,
-    ToolNotFoundError,
-    MemoryReadError,
     MemoryWriteError,
-    MemoryCorruptedError,
     TaskPersistenceError,
     AnimaNotFoundError,
     AnimaNotRunningError,
     IPCConnectionError,
     ConfigNotFoundError,
-    ConfigValidationError,
     RecipientNotFoundError,
     DeliveryError,
     ChannelNotFoundError,
@@ -93,16 +78,11 @@ LEAF_EXCEPTIONS = [
 ]
 
 FAMILY_MAP: dict[type[AnimaWorksError], list[type[AnimaWorksError]]] = {
-    ExecutionError: [
-        LLMAPIError,
-        LLMTimeoutError,
-        StreamDisconnectedError,
-        ExecutorUnavailableError,
-    ],
-    ToolError: [ToolConfigError, ToolExecutionError, ToolNotFoundError],
-    MemoryIOError: [MemoryReadError, MemoryWriteError, MemoryCorruptedError, TaskPersistenceError],
+    ExecutionError: [LLMAPIError, StreamDisconnectedError, ExecutorUnavailableError],
+    ToolError: [ToolConfigError, ToolExecutionError],
+    MemoryIOError: [MemoryWriteError, TaskPersistenceError],
     ProcessError: [AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError],
-    ConfigError: [ConfigNotFoundError, ConfigValidationError],
+    ConfigError: [ConfigNotFoundError],
     MessagingError: [
         RecipientNotFoundError,
         DeliveryError,
@@ -214,19 +194,10 @@ class TestStreamDisconnectedPartialText:
     def test_default_partial_text(self) -> None:
         exc = StreamDisconnectedError("boom")
         assert exc.partial_text == ""
-        assert exc.retry_after_s is None
 
     def test_custom_partial_text(self) -> None:
         exc = StreamDisconnectedError("boom", partial_text="hello")
         assert exc.partial_text == "hello"
-
-    def test_custom_retry_after(self) -> None:
-        exc = StreamDisconnectedError("boom", retry_after_s=52.0)
-        assert exc.retry_after_s == 52.0
-
-    def test_custom_category(self) -> None:
-        exc = StreamDisconnectedError("boom", category="rate_limit")
-        assert exc.category == "rate_limit"
 
     def test_str_returns_message(self) -> None:
         exc = StreamDisconnectedError("boom", partial_text="hello")
@@ -253,7 +224,7 @@ class TestReExportExecutionBase:
 
 class TestReExportToolsBase:
     def test_re_export_tools_base(self) -> None:
-        from core.tools._base import ToolConfigError as ReExported
+        from core.integrations._base import ToolConfigError as ReExported
 
         assert ReExported is ToolConfigError
 
@@ -263,7 +234,7 @@ class TestReExportToolsBase:
 
 class TestReExportTaskPersistenceError:
     def test_re_export_from_task_queue(self) -> None:
-        from core.memory.task_queue import TaskPersistenceError as ReExported
+        from core.tasks.queue import TaskPersistenceError as ReExported
 
         assert ReExported is TaskPersistenceError
 

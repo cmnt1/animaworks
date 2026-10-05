@@ -21,8 +21,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.exceptions import IPCConnectionError
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 # ── Test 1: stop() sends shutdown via IPC while still RUNNING ────────
@@ -76,8 +76,7 @@ async def test_stop_sends_shutdown_via_ipc_e2e():
 
             # Verify the server received the shutdown request
             assert shutdown_received.is_set(), (
-                "Server never received 'shutdown' request — "
-                "send_request() was likely blocked by premature state change"
+                "Server never received 'shutdown' request — send_request() was likely blocked by premature state change"
             )
 
             # Verify the handle ended in STOPPED state
@@ -99,7 +98,7 @@ async def test_health_check_recovers_stuck_stopping_e2e():
     change the state to FAILED, and trigger _handle_process_failure for
     automatic recovery.
     """
-    from core.supervisor.manager import HealthConfig, ProcessSupervisor
+    from server.supervisor.manager import HealthConfig, ProcessSupervisor
 
     with TemporaryDirectory() as tmpdir:
         supervisor = ProcessSupervisor(
@@ -141,14 +140,11 @@ async def test_health_check_recovers_stuck_stopping_e2e():
 
         # Verify state transitioned to FAILED
         assert handle.state == ProcessState.FAILED, (
-            f"Expected FAILED but got {handle.state} — "
-            "health check did not detect stuck STOPPING state"
+            f"Expected FAILED but got {handle.state} — health check did not detect stuck STOPPING state"
         )
 
         # Verify recovery was triggered
-        assert failure_called, (
-            "_handle_process_failure should be called for a handle stuck in STOPPING"
-        )
+        assert failure_called, "_handle_process_failure should be called for a handle stuck in STOPPING"
         assert failure_name == "test-stuck"
 
 
@@ -227,21 +223,16 @@ async def test_ipc_stream_connection_close_raises_runtime_error_e2e():
             kill_task = asyncio.create_task(kill_connection_after_chunk())
 
             with pytest.raises(IPCConnectionError, match="Connection closed"):
-                async for response in client.send_request_stream(
-                    request, timeout=5.0
-                ):
+                async for response in client.send_request_stream(request, timeout=5.0):
                     chunks_received.append(response)
 
             await kill_task
 
             # Verify we got at least the first chunk before the error
-            assert len(chunks_received) >= 1, (
-                "Should have received at least one chunk before connection close"
-            )
+            assert len(chunks_received) >= 1, "Should have received at least one chunk before connection close"
             assert chunks_received[0].chunk == "partial data"
 
         finally:
-            await client.close()
             # Ensure server is stopped
             try:
                 await server.stop()

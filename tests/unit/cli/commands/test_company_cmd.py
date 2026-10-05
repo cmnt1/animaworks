@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -119,7 +119,7 @@ def test_company_export_calls_core_and_prints_summary(
 
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
-        patch("core.company.export_company", return_value=result) as export_company,
+        patch("core.org.company.export_company", return_value=result) as export_company,
     ):
         _run(parser, ["company", "export", "alpha", "--out", str(output_dir)])
 
@@ -245,3 +245,18 @@ def test_company_cli_e2e_create_assign_adopt_and_split_idempotently(
     assert len(repeated_lines) == 3
     assert all(line.startswith("SKIP ") for line in repeated_lines)
     assert split_source.is_symlink() and split_source.resolve() == split_destination.resolve()
+
+
+def test_company_assignment_uses_root_api_when_server_is_live(data_dir: Path, monkeypatch, capsys) -> None:
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"lines": ["ASSIGN alice -> alpha"]}
+    monkeypatch.setattr("core.platform.pid.is_server_running", lambda _data_dir: True)
+    with patch("core.internal_api.host_api.post", return_value=response) as host_post:
+        _run(_parser(), ["company", "assign", "alice", "--to", "alpha"])
+
+    host_post.assert_called_once_with(
+        "/api/internal/company/assign",
+        json={"anima_names": ["alice"], "company_name": "alpha", "unassign": False},
+        timeout=30.0,
+    )
+    assert "ASSIGN alice -> alpha" in capsys.readouterr().out

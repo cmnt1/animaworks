@@ -40,7 +40,7 @@ class TestTmpCmd:
         (tmp_root / "sample.txt").write_text("hello", encoding="utf-8")
 
         args = argparse.Namespace(project=False, top=10)
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             output = _capture_stdout(tmp_cmd.cmd_tmp_list, args)
 
         assert "sample.txt" in output
@@ -77,7 +77,7 @@ class TestTmpCmd:
             older_than=7,
             min_size=None,
         )
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             code, output = _capture_exit(tmp_cmd.cmd_tmp_clean, args)
 
         assert code == 0

@@ -169,7 +169,7 @@ def test_extract_action_items_route(tmp_path: Path, monkeypatch):
     async def fake_llm(*args, **kwargs):
         return '[{"assignee": "rin", "task": "資料を作る"}]'
 
-    monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fake_llm)
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", fake_llm)
 
     response = client.post(f"/rooms/{room.room_id}/action-items/extract", json={})
 

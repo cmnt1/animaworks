@@ -17,13 +17,13 @@ from __future__ import annotations
 import asyncio
 import contextvars
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.exceptions import AnimaNotRunningError, ProcessError
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCRequest
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 # ── A2: StreamingIPCHandler BaseException safety valve ──────────
 
@@ -34,7 +34,7 @@ class TestStreamingHandlerBaseException:
     @pytest.mark.asyncio
     async def test_system_exit_in_stream_yields_fatal_error(self):
         """SystemExit in process_message_stream -> FATAL_STREAM_ERROR queued."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -74,7 +74,7 @@ class TestStreamingHandlerBaseException:
         The producer task re-raises it (contained within the task), and the
         stream ends gracefully via SENTINEL without a FATAL_STREAM_ERROR.
         """
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -102,18 +102,13 @@ class TestStreamingHandlerBaseException:
                 responses.append(resp)
 
         # CancelledError must NOT produce FATAL_STREAM_ERROR
-        fatal_errors = [
-            r for r in responses
-            if r.error and r.error.get("code") == "FATAL_STREAM_ERROR"
-        ]
-        assert len(fatal_errors) == 0, (
-            f"CancelledError should not produce FATAL_STREAM_ERROR, got: {fatal_errors}"
-        )
+        fatal_errors = [r for r in responses if r.error and r.error.get("code") == "FATAL_STREAM_ERROR"]
+        assert len(fatal_errors) == 0, f"CancelledError should not produce FATAL_STREAM_ERROR, got: {fatal_errors}"
 
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_in_stream_yields_fatal_error(self):
         """KeyboardInterrupt in process_message_stream -> FATAL_STREAM_ERROR."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -148,7 +143,7 @@ class TestStreamingHandlerBaseException:
     @pytest.mark.asyncio
     async def test_cycle_done_drains_generator_in_its_context(self):
         """The upstream generator finalizes in the producer Context."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         scoped = contextvars.ContextVar("stream_scope", default="outer")
         finalized = asyncio.Event()
@@ -203,19 +198,21 @@ class TestHandleProcessFailureSetsRestarting:
     @pytest.mark.asyncio
     async def test_state_set_to_restarting(self, tmp_path: Path):
         """After _handle_process_failure is called, handle.state is RESTARTING."""
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
+        from server.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._shutdown = False
         supervisor._restarting = set()
-        supervisor._restart_counts = {}
         supervisor.animas_dir = tmp_path / "animas"
-        supervisor.restart_policy = MagicMock()
-        supervisor.restart_policy.max_retries = 3
-        supervisor.restart_policy.backoff_base_sec = 0.01
-        supervisor.restart_policy.backoff_max_sec = 0.01
         supervisor.processes = {}
-        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)
+        supervisor._restart_ctl = RestartController(
+            failed_threshold=3,
+            base_delay_sec=0.01,
+            max_delay_sec=0.01,
+            stable_reset_sec=300,
+        )
+        supervisor._ensure_restart_worker = MagicMock()
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -227,26 +224,28 @@ class TestHandleProcessFailureSetsRestarting:
         handle.state = ProcessState.FAILED
         supervisor.processes["test-anima"] = handle
 
-        # Mock respawn transaction to be a no-op
-        supervisor._respawn_anima_transaction = AsyncMock(return_value=handle)
-
         await supervisor._handle_process_failure("test-anima", handle)
 
-        # The state should have been set to RESTARTING during the call
-        # (it may have been changed back by respawn, but the transaction call
-        # proves the RESTARTING path was entered)
-        supervisor._respawn_anima_transaction.assert_awaited_once_with("test-anima")
+        # The state should have been set to RESTARTING during the call and the
+        # restart worker ensured.
+        assert handle.state == ProcessState.RESTARTING
+        supervisor._ensure_restart_worker.assert_called_once_with("test-anima")
 
     @pytest.mark.asyncio
     async def test_health_check_skips_restarting(self, tmp_path: Path):
         """_check_process_health returns early for RESTARTING state."""
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
+        from server.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._restarting = set()
-        supervisor._restart_counts = {}
-        supervisor._permanently_failed = set()
-        supervisor._failed_log_times = {}
+        supervisor.processes = {}
+        supervisor._restart_ctl = RestartController(
+            failed_threshold=3,
+            base_delay_sec=0.01,
+            max_delay_sec=0.01,
+            stable_reset_sec=300,
+        )
 
         handle = ProcessHandle(
             anima_name="test-anima",

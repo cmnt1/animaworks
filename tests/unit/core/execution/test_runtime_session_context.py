@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 
 def test_runtime_session_context_env_roundtrip(monkeypatch):
-    from core.execution.session_context import RuntimeSessionContext
+    from core.execution.session.session_context import RuntimeSessionContext
 
     ctx = RuntimeSessionContext.create(
         session_type="heartbeat",
@@ -24,7 +24,7 @@ def test_runtime_session_context_env_roundtrip(monkeypatch):
 
 
 def test_runtime_session_scope_resets():
-    from core.execution.session_context import RuntimeSessionContext, current_runtime_session, runtime_session_scope
+    from core.execution.session.session_context import RuntimeSessionContext, current_runtime_session, runtime_session_scope
 
     ctx = RuntimeSessionContext.create(
         session_type="chat",
@@ -39,8 +39,8 @@ def test_runtime_session_scope_resets():
 
 
 def test_agent_sdk_env_includes_runtime_session(tmp_path):
-    from core.execution.agent_sdk import AgentSDKExecutor
-    from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+    from core.execution.engines.claude.executor import AgentSDKExecutor
+    from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
     from core.schemas import ModelConfig
 
     executor = AgentSDKExecutor(ModelConfig(model="claude-sonnet-4-6"), tmp_path)
@@ -63,7 +63,7 @@ def test_agent_sdk_env_includes_runtime_session(tmp_path):
 
 
 def test_no_runtime_session_env_when_unscoped(tmp_path):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.executor import AgentSDKExecutor
     from core.schemas import ModelConfig
 
     executor = AgentSDKExecutor(ModelConfig(model="claude-sonnet-4-6"), tmp_path)
@@ -76,7 +76,7 @@ def test_no_runtime_session_env_when_unscoped(tmp_path):
 
 
 def test_tool_handler_bind_runtime_session_clears_new_context_only(tmp_path):
-    from core.execution.session_context import RuntimeSessionContext
+    from core.execution.session.session_context import RuntimeSessionContext
     from core.tooling.handler import ToolHandler
 
     handler = ToolHandler(anima_dir=tmp_path, memory=MagicMock())

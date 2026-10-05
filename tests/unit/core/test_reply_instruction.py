@@ -4,13 +4,12 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for _build_reply_instruction() in core._anima_inbox.
+"""Tests for _build_reply_instruction() in core.anima.inbox.
 
 Covers:
-- Slack: deprecated -> auto_reply annotation (Discord migration)
-- Discord: full metadata (channel, thread, user_id)
-- Discord: missing external_user_id (no @mention)
-- Discord: thread handling and auto-response
+- Slack: full metadata (channel, ts, user_id)
+- Slack: missing external_user_id (no @mention)
+- Slack: missing source_message_id (no --thread)
 - Chatwork: full metadata
 - Edge case: empty external_channel_id (guard in caller, but function still safe)
 - Unknown source: returns empty string
@@ -19,8 +18,7 @@ Covers:
 from dataclasses import dataclass
 from unittest.mock import patch
 
-from core._anima_inbox import _build_reply_instruction
-from core.i18n import t
+from core.anima.inbox import _build_reply_instruction
 
 
 @dataclass
@@ -34,88 +32,47 @@ class _FakeMsg:
     external_thread_ts: str = ""
 
 
-_MOCK_DISCORD_AUTO_OFF = patch("core._anima_inbox._is_auto_response_enabled_discord", return_value=False)
-_MOCK_DISCORD_AUTO_ON = patch("core._anima_inbox._is_auto_response_enabled_discord", return_value=True)
+_MOCK_AUTO_OFF = patch("core.anima.inbox._is_auto_response_enabled", return_value=False)
+_MOCK_AUTO_ON = patch("core.anima.inbox._is_auto_response_enabled", return_value=True)
 
 
 class TestBuildReplyInstructionSlack:
-    """Slack is deprecated (Discord migration); it returns an auto_reply note."""
-
-    def test_slack_is_deprecated(self):
-        """Slack messages return an auto_reply annotation, never a tool instruction."""
-        msg = _FakeMsg(
-            source="slack",
-            external_channel_id="C12345",
-            source_message_id="1234567890.123456",
-            external_user_id="U99999",
-        )
-        result = _build_reply_instruction(msg)
-        assert "[auto_reply:" in result
-        assert "[reply_instruction:" not in result
-        assert "slack_channel_post" in result
-
-
-class TestBuildReplyInstructionDiscord:
-    """Discord reply instruction generation (the Slack replacement)."""
+    """Slack reply instruction generation."""
 
     def test_full_metadata(self):
-        """Discord message with channel, thread, and user_id produces tool instruction."""
-        msg = _FakeMsg(
-            source="discord",
-            external_channel_id="C12345",
-            external_user_id="U99999",
-            external_thread_ts="T55555",
-        )
-        with _MOCK_DISCORD_AUTO_OFF:
-            result = _build_reply_instruction(msg)
-        placeholder = t("inbox.reply_placeholder")
-        assert "[reply_instruction:" in result
-        assert "use tool discord_channel_post" in result
-        assert 'channel_id="C12345"' in result
-        assert f'text="<@U99999> {placeholder}"' in result
-        assert 'thread_id="T55555"' in result
-        # Thread arrival appends a thread_required reminder.
-        assert "[thread_required:" in result
+        msg = _FakeMsg(source="slack", external_channel_id="C12345")
+        result = _build_reply_instruction(msg)
+        assert result.startswith("  [auto_reply:")
+        assert "Discord" in result
+        assert "use tool slack_channel_post" not in result
 
     def test_missing_user_id(self):
-        """Discord without external_user_id omits @mention."""
-        msg = _FakeMsg(
-            source="discord",
-            external_channel_id="C12345",
-            external_user_id="",
-            external_thread_ts="T55555",
-        )
-        with _MOCK_DISCORD_AUTO_OFF:
-            result = _build_reply_instruction(msg)
-        assert "<@" not in result
-        assert 'thread_id="T55555"' in result
-        assert 'channel_id="C12345"' in result
+        msg = _FakeMsg(source="slack", external_channel_id="C12345")
+        result = _build_reply_instruction(msg)
+        assert result.startswith("  [auto_reply:")
+        assert "Discord" in result
+        assert "use tool slack_channel_post" not in result
 
-    def test_missing_thread(self):
-        """Discord without thread omits thread_id and thread_required."""
-        msg = _FakeMsg(
-            source="discord",
-            external_channel_id="C12345",
-            external_user_id="U99999",
-            external_thread_ts="",
-        )
-        with _MOCK_DISCORD_AUTO_OFF:
-            result = _build_reply_instruction(msg)
-        assert "thread_id=" not in result
-        assert "[thread_required:" not in result
-        assert 'channel_id="C12345"' in result
+    def test_missing_source_message_id(self):
+        msg = _FakeMsg(source="slack", external_channel_id="C12345")
+        result = _build_reply_instruction(msg)
+        assert result.startswith("  [auto_reply:")
+        assert "Discord" in result
+        assert "use tool slack_channel_post" not in result
+
+    def test_missing_both_optional_fields(self):
+        msg = _FakeMsg(source="slack", external_channel_id="C12345")
+        result = _build_reply_instruction(msg)
+        assert result.startswith("  [auto_reply:")
+        assert "Discord" in result
+        assert "use tool slack_channel_post" not in result
 
     def test_auto_response_enabled(self):
-        """When Discord auto_response is enabled, returns auto_reply annotation."""
-        msg = _FakeMsg(
-            source="discord",
-            external_channel_id="C12345",
-            external_user_id="U99999",
-        )
-        with _MOCK_DISCORD_AUTO_ON:
-            result = _build_reply_instruction(msg)
-        assert "[auto_reply:" in result
-        assert "[reply_instruction:" not in result
+        msg = _FakeMsg(source="slack", external_channel_id="C12345")
+        result = _build_reply_instruction(msg)
+        assert result.startswith("  [auto_reply:")
+        assert "Discord" in result
+        assert "use tool slack_channel_post" not in result
 
 
 class TestBuildReplyInstructionChatwork:
@@ -148,26 +105,28 @@ class TestBuildReplyInstructionEdgeCases:
         msg = _FakeMsg(source="human", external_channel_id="C123")
         assert _build_reply_instruction(msg) == ""
 
-    def test_discord_empty_channel(self):
-        """Discord with empty channel_id still generates instruction (caller guards)."""
+    def test_slack_empty_channel(self):
+        """Slack with empty channel_id still generates instruction (caller guards)."""
         msg = _FakeMsg(
-            source="discord",
+            source="slack",
             external_channel_id="",
+            source_message_id="ts123",
             external_user_id="U123",
         )
-        with _MOCK_DISCORD_AUTO_OFF:
+        with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
-        assert "[reply_instruction:" in result
-        assert "discord_channel_post" in result
+        assert "[auto_reply:" in result
+        assert "Discord" in result
 
     def test_reply_instruction_format(self):
         """Verify exact format: '  [reply_instruction: CMD]'."""
         msg = _FakeMsg(
-            source="discord",
+            source="slack",
             external_channel_id="C1",
+            source_message_id="ts1",
             external_user_id="U1",
         )
-        with _MOCK_DISCORD_AUTO_OFF:
+        with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
-        assert result.startswith("  [reply_instruction: ")
+        assert result.startswith("  [auto_reply: ")
         assert result.endswith("]")

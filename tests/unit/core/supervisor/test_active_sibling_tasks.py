@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 
 def _executor(tmp_path: Path) -> PendingTaskExecutor:

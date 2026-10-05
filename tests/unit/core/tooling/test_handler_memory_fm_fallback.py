@@ -37,6 +37,7 @@ class _FakeWriteHandler(MemoryToolsMixin):
         self._state_file_lock: threading.Lock | None = None
         self._on_schedule_changed = None
         self._min_trust_seen = 2
+        self._runtime_session_context = None
         self._read_paths: set[str] = set()
 
     def _is_state_file(self, path: Path) -> bool:
@@ -58,6 +59,32 @@ def handler(tmp_path: Path) -> _FakeWriteHandler:
 
 
 # ── Tests: parse-failed frontmatter fallback ─────────────
+
+
+def test_case_record_knowledge_write_completes_with_episodes_hint(handler: _FakeWriteHandler) -> None:
+    content = "Release follow-up for PR #1842, commit deadbee, on 2026-09-28."
+
+    result = handler._handle_write_memory_file(
+        {"path": "knowledge/release-note.md", "content": content, "mode": "overwrite"}
+    )
+
+    assert "Written to knowledge/release-note.md" in result
+    assert "episodes/" in result
+    assert (handler._anima_dir / "knowledge" / "release-note.md").is_file()
+    assert "Release follow-up" in (handler._anima_dir / "knowledge" / "release-note.md").read_text()
+
+
+def test_regular_knowledge_write_has_no_case_record_hint(handler: _FakeWriteHandler) -> None:
+    result = handler._handle_write_memory_file(
+        {
+            "path": "knowledge/stable-setting.md",
+            "content": "The stable retry delay is 30 seconds.",
+            "mode": "overwrite",
+        }
+    )
+
+    assert "Written to knowledge/stable-setting.md" in result
+    assert "episodes/" not in result
 
 
 class TestParsefailedFrontmatterFallback:
@@ -138,6 +165,79 @@ class TestParsefailedFrontmatterFallback:
         meta, body = parse_frontmatter(text)
         assert meta["confidence"] == 0.9
         assert "Good body" in body
+
+    def test_plain_knowledge_write_applies_mixed_origin_once(self, handler: _FakeWriteHandler) -> None:
+        handler._min_trust_seen = 1
+        handler._handle_write_memory_file(
+            {"path": "knowledge/mixed.md", "content": "# Mixed knowledge", "mode": "overwrite"}
+        )
+
+        text = (handler._anima_dir / "knowledge" / "mixed.md").read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(text)
+        assert meta["origin"] == "mixed"
+        assert text.count("---") == 2
+        assert "# Mixed knowledge" in body
+
+    def test_llm_frontmatter_origin_is_downgraded_in_place(self, handler: _FakeWriteHandler) -> None:
+        handler._min_trust_seen = 0
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/llm-frontmatter.md",
+                "content": "---\ntitle: Source\norigin: human\n---\n\n# Knowledge body",
+                "mode": "overwrite",
+            }
+        )
+
+        text = (handler._anima_dir / "knowledge" / "llm-frontmatter.md").read_text(encoding="utf-8")
+        meta, body = parse_frontmatter(text)
+        assert meta["origin"] == "external_web"
+        assert text.count("---") == 2
+        assert "# Knowledge body" in body
+
+    def test_legacy_shared_trust_file_is_ignored_without_runtime_context(self, handler: _FakeWriteHandler) -> None:
+        (handler._anima_dir / "run").mkdir()
+        (handler._anima_dir / "run" / "min_trust_seen").write_text("0", encoding="utf-8")
+        handler._handle_write_memory_file(
+            {"path": "knowledge/no-context.md", "content": "# Local knowledge", "mode": "overwrite"}
+        )
+
+        meta, _ = parse_frontmatter((handler._anima_dir / "knowledge" / "no-context.md").read_text(encoding="utf-8"))
+        assert "origin" not in meta
+
+    def test_other_session_trust_file_is_not_used(self, handler: _FakeWriteHandler) -> None:
+        from core.trust import record_session_trust
+        from core.execution.session.session_context import RuntimeSessionContext
+
+        own_context = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")
+        other_context = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")
+        handler._runtime_session_context = own_context
+        record_session_trust(handler._anima_dir, other_context.tool_session_id, 0)
+        handler._handle_write_memory_file(
+            {"path": "knowledge/isolated.md", "content": "# Isolated knowledge", "mode": "overwrite"}
+        )
+
+        meta, _ = parse_frontmatter((handler._anima_dir / "knowledge" / "isolated.md").read_text(encoding="utf-8"))
+        assert "origin" not in meta
+
+    def test_append_downgrades_existing_origin_only_when_needed(self, handler: _FakeWriteHandler) -> None:
+        path = handler._anima_dir / "knowledge" / "append.md"
+        path.write_text("---\norigin: mixed\n---\n\nExisting body\n", encoding="utf-8")
+        handler._min_trust_seen = 0
+        handler._handle_write_memory_file(
+            {"path": "knowledge/append.md", "content": "Appended external data", "mode": "append"}
+        )
+        meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert meta["origin"] == "external_web"
+        assert "Appended external data" in body
+
+        path.write_text("---\norigin: mixed\n---\n\nExisting body\n", encoding="utf-8")
+        handler._min_trust_seen = 1
+        handler._handle_write_memory_file(
+            {"path": "knowledge/append.md", "content": "Appended mixed data", "mode": "append"}
+        )
+        meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert meta["origin"] == "mixed"
+        assert "Appended mixed data" in body
 
     def test_content_without_frontmatter_not_affected(self, handler: _FakeWriteHandler) -> None:
         plain_content = "# Knowledge Title\n\nSome knowledge without frontmatter."

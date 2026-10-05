@@ -53,7 +53,7 @@ async def test_post_consolidation_reconsolidates_failing_knowledge_with_file_cap
     async def fake_revise(self, content, meta, model):  # noqa: ANN001, ARG001
         return f"Revised: {content}"
 
-    monkeypatch.setattr("core.memory.reconsolidation.ReconsolidationEngine._revise_knowledge", fake_revise)
+    monkeypatch.setattr("core.memory.maintenance.reconsolidation.ReconsolidationEngine._revise_knowledge", fake_revise)
 
     summary = await run_post_consolidation_knowledge_correction(
         anima_dir,
@@ -72,9 +72,11 @@ async def test_post_consolidation_reconsolidates_failing_knowledge_with_file_cap
     second_meta = mm.read_knowledge_metadata(second)
     assert summary["reconsolidation"]["knowledge"]["targets_found"] == 1
     assert summary["reconsolidation"]["knowledge"]["updated"] == 1
-    assert first_meta["failure_count"] == 0
-    assert first_meta["version"] == 2
+    assert first_meta["failure_count"] == 3
+    assert first_meta["version"] == 1
     assert second_meta["failure_count"] == 4
+    assert second_meta["reconsolidated_failure_count"] == 4
+    assert second_meta["version"] == 2
 
 
 @pytest.mark.asyncio
@@ -101,10 +103,8 @@ async def test_post_consolidation_timeout_returns_partial_summary(
 
 @pytest.mark.asyncio
 async def test_system_consolidation_helper_uses_configured_limits(tmp_path: Path) -> None:
-    from core.lifecycle.system_consolidation import SystemConsolidationMixin
+    from core.lifecycle.system_consolidation import run_knowledge_self_correction_if_enabled
 
-    anima = MagicMock()
-    anima.memory.anima_dir = tmp_path
     cfg = MagicMock(
         knowledge_self_correction_enabled=True,
         knowledge_self_correction_max_reconsolidation_files=3,
@@ -116,8 +116,8 @@ async def test_system_consolidation_helper_uses_configured_limits(tmp_path: Path
         new_callable=AsyncMock,
         return_value={"ok": True},
     ) as mock_run:
-        await SystemConsolidationMixin._run_knowledge_self_correction_if_enabled(
-            anima,
+        await run_knowledge_self_correction_if_enabled(
+            tmp_path,
             "test_anima",
             cfg,
             model="test-model",

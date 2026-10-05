@@ -1,8 +1,7 @@
 {
   "version": 1,
   "file_roots": [
-    "C:\\Users\\cmnt\\.animaworks",
-    "E:\\OneDriveBiz\\Obsidian"
+    "/"
   ],
   "commands": {
     "allow_all": true,
@@ -13,9 +12,11 @@
     "allow_all": true,
     "allow": [
       "discord_channel_post",
+      "discord_send",
       "discord_channel_history",
       "discord_unreplied",
-      "notebooklm"
+      "github_create-issue",
+      "github_create-pr"
     ],
     "deny": [
       "notion"
@@ -24,8 +25,5 @@
   "tool_creation": {
     "personal": true,
     "shared": false
-  },
-  "file_roots_readonly": [
-    "E:\\OneDriveBiz\\Tools\\abconfig\\Cnct_Env.py"
-  ]
+  }
 }

@@ -31,18 +31,14 @@ class TestRenderUtilsHelpers:
         assert _RENDER_UTILS_JS.exists()
         self.source = _RENDER_UTILS_JS.read_text(encoding="utf-8")
 
-    def test_escape_attr_function_exists(self) -> None:
-        assert "function _escapeAttr(" in self.source
+    def test_escape_attr_uses_shared_html_utils(self) -> None:
+        assert 'import { escapeAttr as _escapeAttr } from "../html-utils.js";' in self.source
+        assert "function _escapeAttr(" not in self.source
 
-    def test_escape_attr_handles_ampersand(self) -> None:
-        assert '"&amp;"' in self.source
-
-    def test_escape_attr_handles_quotes(self) -> None:
-        assert '"&quot;"' in self.source
-
-    def test_escape_attr_handles_lt_gt(self) -> None:
-        assert '"&lt;"' in self.source
-        assert '"&gt;"' in self.source
+    def test_shared_escape_attr_handles_html_special_characters(self) -> None:
+        html_utils = (_STATIC_DIR / "shared" / "html-utils.js").read_text(encoding="utf-8")
+        for entity in ("&amp;", "&quot;", "&lt;", "&gt;", "&#39;"):
+            assert entity in html_utils
 
     def test_bubble_actions_html_function_exists(self) -> None:
         assert "function _bubbleActionsHtml(" in self.source

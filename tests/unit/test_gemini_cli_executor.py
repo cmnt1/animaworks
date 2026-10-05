@@ -16,10 +16,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.execution.base import ExecutionResult
-from core.execution.gemini_cli import (
+from core.execution.engine_base import engine_error_metadata
+from core.execution.engines.gemini.executor import (
     GeminiCLIExecutor,
     _find_gemini_binary,
-    _gemini_error_metadata,
     _resolve_gemini_model,
     is_gemini_cli_available,
 )
@@ -48,7 +48,6 @@ def model_config():
         max_tokens=4096,
         credential="gemini",
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -86,19 +85,21 @@ def _mock_proc(stdout_data: bytes, returncode: int = 0, stderr_data: bytes = b""
 
 class TestBinaryDiscovery:
     def test_find_binary_returns_match(self):
-        with patch("shutil.which", side_effect=lambda n: "/usr/bin/gemini" if n == "gemini" else None):
+        with patch(
+            "core.platform.gemini.shutil.which", side_effect=lambda n: "/usr/bin/gemini" if n == "gemini" else None
+        ):
             assert _find_gemini_binary() == "/usr/bin/gemini"
 
     def test_find_binary_returns_none_when_missing(self):
-        with patch("shutil.which", return_value=None):
+        with patch("core.platform.gemini.shutil.which", return_value=None):
             assert _find_gemini_binary() is None
 
     def test_is_available_true(self):
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"):
+        with patch("core.platform.gemini.find_gemini_binary", return_value="/usr/bin/gemini"):
             assert is_gemini_cli_available() is True
 
     def test_is_available_false(self):
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.platform.gemini.find_gemini_binary", return_value=None):
             assert is_gemini_cli_available() is False
 
 
@@ -128,6 +129,18 @@ class TestWorkspace:
     def test_workspace_location(self, executor, anima_dir):
         assert executor._workspace == anima_dir / ".gemini-workspace"
 
+    def test_write_settings_propagates_runtime_trigger(self, executor):
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor._ensure_workspace()
+        ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
+        with runtime_session_scope(ctx):
+            executor._write_settings()
+
+        settings_path = executor._workspace / ".gemini" / "settings.json"
+        config = json.loads(settings_path.read_text())
+        assert config["mcpServers"]["aw"]["env"]["ANIMAWORKS_TRIGGER"] == "cron:daily"
+
     def test_write_settings(self, executor):
         executor._ensure_workspace()
         executor._write_settings()
@@ -140,6 +153,7 @@ class TestWorkspace:
         assert "-m" in aw_conf["args"]
         assert "core.mcp.server" in aw_conf["args"]
         assert "ANIMAWORKS_ANIMA_DIR" in aw_conf["env"]
+        assert aw_conf["env"]["ANIMAWORKS_SERVER_URL"].startswith("http")
 
 
 # ── System prompt ────────────────────────────────────────────
@@ -167,7 +181,7 @@ class TestSystemPrompt:
 
 class TestBuildCommand:
     def test_command_structure(self, executor):
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"):
             cmd = executor._build_command("hello world")
         assert cmd[0] == "/usr/bin/gemini"
         assert "-p" in cmd
@@ -183,7 +197,7 @@ class TestBuildCommand:
         assert cmd[m_idx + 1] == "gemini-2.5-pro"
 
     def test_empty_when_no_binary(self, executor):
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             assert executor._build_command("test") == []
 
 
@@ -290,7 +304,7 @@ class TestStatsParsing:
 class TestExecute:
     @pytest.mark.asyncio
     async def test_not_installed(self, executor):
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             result = await executor.execute(prompt="hello")
         assert "gemini" in result.text.lower() or "インストール" in result.text
 
@@ -329,7 +343,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hi", system_prompt="You are helpful")
@@ -369,7 +383,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="search")
@@ -384,7 +398,7 @@ class TestExecute:
         proc = _mock_proc(b"", returncode=1, stderr_data=b"Error: unauthenticated, run gemini auth login")
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -396,7 +410,7 @@ class TestExecute:
         proc = _mock_proc(b"", returncode=1, stderr_data=b"Something went wrong")
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -416,7 +430,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -435,7 +449,7 @@ class TestExecute:
             )
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             await executor.execute(prompt="test", system_prompt="You are a test assistant")
@@ -478,7 +492,7 @@ class TestExecuteStreaming:
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             collected = []
@@ -520,7 +534,7 @@ class TestExecuteStreaming:
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
 
         with (
-            patch("core.execution.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             collected = []
@@ -539,7 +553,7 @@ class TestExecuteStreaming:
         from core.prompt.context import ContextTracker
 
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
-        with patch("core.execution.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             collected = []
             async for evt in executor.execute_streaming(system_prompt="", prompt="hello", tracker=tracker):
                 collected.append(evt)
@@ -596,13 +610,13 @@ class TestMCPModes:
 class TestGeminiErrorMetadata:
     def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
 
-        with patch("core.execution.gemini_cli.get_rate_guard", return_value=guard):
-            metadata = _gemini_error_metadata("quota exceeded", "gemini-2.5-pro")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata("quota exceeded", mode="G", model="gemini-2.5-pro", always_terminal=True)
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
         assert metadata == {"terminal": True, "reason": "quota_exhausted"}
@@ -611,13 +625,15 @@ class TestGeminiErrorMetadata:
 
     def test_rate_limit_error_records_short_block(self, tmp_path: Path) -> None:
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
 
-        with patch("core.execution.gemini_cli.get_rate_guard", return_value=guard):
-            metadata = _gemini_error_metadata("rate limit exceeded", "gemini-2.5-pro")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
+                "rate limit exceeded", mode="G", model="gemini-2.5-pro", always_terminal=True
+            )
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
         assert metadata == {"terminal": True, "reason": "rate_limit"}

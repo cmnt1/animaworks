@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import fact_extraction
-from core.memory.fact_extraction import extract_and_store_facts
-from core.memory.fact_invalidation import ReconcileAction, ReconcileResult
-from core.memory.facts import FactRecord
+from core.memory.facts import extraction as fact_extraction
+from core.memory.facts.extraction import extract_and_store_facts_with_outcome
+from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
+from core.memory.facts.store import FactRecord
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_duplicate_reconcile_skips_append(
+async def test_extract_and_store_facts_with_outcome_duplicate_reconcile_skips_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -25,12 +25,12 @@ async def test_extract_and_store_facts_duplicate_reconcile_skips_append(
     )
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fail_append(*args, **kwargs):
         raise AssertionError("duplicate reconcile should skip append")
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fail_append)
     monkeypatch.setattr(
         fact_extraction,
@@ -43,19 +43,20 @@ async def test_extract_and_store_facts_duplicate_reconcile_skips_append(
         ),
     )
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         tmp_path / "alice",
         "Alice tracks LoCoMo memory scores.",
         source_episode="episodes/2026-06-03.md",
         enabled=True,
     )
 
-    assert stored == []
+    assert outcome.records == []
+    assert outcome.duplicates == 1
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_update_reconcile_reindexes_affected_paths(
+async def test_extract_and_store_facts_with_outcome_update_reconcile_reindexes_affected_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -72,7 +73,7 @@ async def test_extract_and_store_facts_update_reconcile_reindexes_affected_paths
     calls: dict[str, object] = {}
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(path: Path, records: list[FactRecord]):
         calls["append"] = (path, records)
@@ -93,7 +94,7 @@ async def test_extract_and_store_facts_update_reconcile_reindexes_affected_paths
     ) -> None:
         calls["index"] = (path, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_upsert_fact_entities", fake_upsert)
     monkeypatch.setattr(fact_extraction, "_index_fact_records", fake_index)
@@ -111,7 +112,7 @@ async def test_extract_and_store_facts_update_reconcile_reindexes_affected_paths
         ),
     )
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         anima_dir,
         "Alice prefers LoCoMo reports.",
         source_episode="episodes/2026-06-03.md",
@@ -119,7 +120,7 @@ async def test_extract_and_store_facts_update_reconcile_reindexes_affected_paths
         enabled=True,
     )
 
-    assert stored == []
+    assert outcome.records == []
     assert calls["append"] == (anima_dir, [])
     assert calls["upsert"] == (anima_dir, [updated])
     assert calls["index"] == (anima_dir, [], "episode", True, None, None, {affected_path})

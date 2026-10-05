@@ -14,10 +14,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.anima import DigitalAnima
-from core.supervisor import task_runner, task_runner_supervisor
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.anima.digital_anima import DigitalAnima
+from core.runtime import task_runner, task_runner_supervisor
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 def _job(
@@ -79,7 +79,7 @@ async def test_stalled_job_kills_only_target_group(
         "sakura",
         tmp_path / "animas" / "sakura",
         tmp_path / "shared",
-        busy_hang_threshold_sec=0.05,
+        runner_liveness_timeout_sec=0.05,
     )
     job = _job(supervisor, process)
     job.last_progress_at -= 1.0
@@ -124,7 +124,7 @@ async def test_continuing_progress_is_not_killed(tmp_path: Path) -> None:
         "sakura",
         tmp_path / "animas" / "sakura",
         tmp_path / "shared",
-        busy_hang_threshold_sec=0.12,
+        runner_liveness_timeout_sec=0.12,
     )
     job = _job(supervisor, process, job_id="job-progress")
     supervisor.jobs[job.identity.job_id] = job

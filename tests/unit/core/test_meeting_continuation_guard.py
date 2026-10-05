@@ -35,7 +35,7 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-6"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
+        patch("core.agent.agent_core.ToolHandler"),
         patch("core.agent.AgentCore._check_sdk", return_value=False),
         patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
         patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
@@ -72,15 +72,15 @@ def _done_chunk(full_text: str) -> dict:
 
 async def _run(agent, *, trigger: str, prompt_tier_override: str | None):
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=_build_result_mock()),
+        patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
         patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
         patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
         patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-        patch("core._agent_cycle._save_prompt_log"),
-        patch("core.execution._sdk_session._clear_session_id"),
+        patch("core.agent.cycle._save_prompt_log"),
+        patch("core.execution.engines.claude._sdk_session._clear_session_id"),
         patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
     ):
-        mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+        mock_preflight.return_value = ("mocked system prompt", "test prompt")
         mock_retry_cfg.return_value = {
             "checkpoint_enabled": False,
             "retry_max": 2,
@@ -154,7 +154,7 @@ class TestMeetingContinuationGuard:
     @pytest.mark.asyncio
     async def test_continuation_bounded_by_cap(self, tmp_path: Path) -> None:
         """If the model never emits the sentinel, the guard stops at the cap."""
-        from core._agent_cycle import _MEETING_CONT_MAX_RETRIES
+        from core.agent.cycle import _MEETING_CONT_MAX_RETRIES
 
         agent = _make_agent(tmp_path)
         calls = [0]
@@ -212,7 +212,7 @@ class TestMeetingContinuationGuard:
         # well past the continuation deadline so the guard must not re-invoke.
         ticks = iter([0.0] + [10_000.0] * 50)
 
-        with patch("core._agent_cycle.time.monotonic", side_effect=lambda: next(ticks)):
+        with patch("core.agent.cycle.time.monotonic", side_effect=lambda: next(ticks)):
             events = await _run(agent, trigger="chat", prompt_tier_override=PROMPT_PROFILE_MEETING)
 
         assert calls[0] == 1, "continuation must not start once past the wall deadline"

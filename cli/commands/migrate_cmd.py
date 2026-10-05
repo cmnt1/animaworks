@@ -35,7 +35,6 @@ def cmd_migrate(args: argparse.Namespace) -> None:
     verbose: bool = getattr(args, "verbose", False)
     force: bool = getattr(args, "force", False)
     list_mode: bool = getattr(args, "list", False)
-    resync_db: bool = getattr(args, "resync_db", False)
 
     runner = MigrationRunner(data_dir)
     register_all_steps(runner)
@@ -55,10 +54,7 @@ def cmd_migrate(args: argparse.Namespace) -> None:
         print()
 
     # Execute
-    if resync_db:
-        report = runner.run_resync_db(dry_run=dry_run, verbose=verbose)
-    else:
-        report = runner.run_all(dry_run=dry_run, verbose=verbose, force=force)
+    report = runner.run_all(dry_run=dry_run, verbose=verbose, force=force)
 
     # Print results
     for step, result in report.steps:
@@ -115,5 +111,4 @@ def register_migrate_command(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--verbose", action="store_true", help="Show detailed file-level changes")
     p.add_argument("--list", action="store_true", help="List all migration steps and their status")
     p.add_argument("--force", action="store_true", help="Re-apply all migrations regardless of state")
-    p.add_argument("--resync-db", action="store_true", help="Resync SQLite prompt DB only")
     p.set_defaults(func=cmd_migrate)

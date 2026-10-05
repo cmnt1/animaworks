@@ -19,41 +19,7 @@ from pathlib import Path
 
 import pytest
 
-
-class _FakeEmbeddingModel:
-    """Deterministic embedding model for exercising Chroma paths in CI."""
-
-    def encode(
-        self,
-        texts: list[str],
-        *,
-        convert_to_numpy: bool = True,
-        show_progress_bar: bool = False,
-        batch_size: int | None = None,
-        purpose: str = "document",
-        priority: str | None = None,
-    ) -> list[list[float]]:
-        return [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in texts]
-
-    def get_sentence_embedding_dimension(self) -> int:
-        return 8
-
-
-@pytest.fixture(autouse=True)
-def fake_rag_embeddings(monkeypatch):
-    """Avoid external Hugging Face model downloads in common-knowledge e2e tests."""
-
-    model = _FakeEmbeddingModel()
-    monkeypatch.setattr(
-        "core.memory.rag.singleton.get_embedding_model",
-        lambda model_name=None: model,
-    )
-    monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings",
-        model.encode,
-    )
-    return model
-
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 
 # Skip the entire module if ChromaDB or sentence-transformers are missing
 chromadb = pytest.importorskip("chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'")
@@ -168,12 +134,7 @@ def vector_store(temp_dirs):
     vectordb_dir = anima_dir.parent.parent / "vectordb"
     vectordb_dir.mkdir(parents=True, exist_ok=True)
 
-    store = ChromaVectorStore(persist_dir=vectordb_dir)
-    yield store
-
-    from tests.helpers.chroma import close_chroma_store
-
-    close_chroma_store(store)
+    return ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
 
 
 # ── Test 1: Shared Knowledge Indexing and Retrieval ─────────────────
@@ -356,7 +317,7 @@ async def test_priming_with_shared_knowledge(temp_dirs, vector_store, monkeypatc
     Verifies:
     - Channel C searches both personal and shared knowledge (include_shared=True)
     - related_knowledge in PrimingResult contains shared results
-    - Shared source paths appear in the formatted output
+    - [shared] label appears in the formatted output
     """
     anima_dir, common_knowledge_dir, data_dir = temp_dirs
 
@@ -414,8 +375,8 @@ async def test_priming_with_shared_knowledge(temp_dirs, vector_store, monkeypatc
     combined = result.related_knowledge + result.related_knowledge_untrusted
     assert combined, "Priming should return related knowledge from shared collection"
 
-    # Current priming emits source references instead of scope labels.
-    assert "common_knowledge/coding-standards.md" in combined, combined
+    # Pointer-first recall keeps the readable shared scope in the path.
+    assert "common_knowledge/" in combined, f"Expected a readable shared knowledge pointer, got:\n{combined}"
 
     # Format the priming section and verify structure
     formatted = format_priming_section(result, sender_name="tester")
@@ -480,8 +441,12 @@ async def test_priming_personal_and_shared_merged(temp_dirs, vector_store, monke
     combined = result.related_knowledge + result.related_knowledge_untrusted
     assert combined, "Priming should return related knowledge"
 
-    assert "knowledge/project-alpha.md" in combined, combined
-    assert "common_knowledge/coding-standards.md" in combined, combined
+    # Both scopes must retain usable pointers without relying on old labels.
+    has_personal = "] knowledge/" in combined
+    has_shared = "] common_knowledge/" in combined
+    assert has_personal and has_shared, (
+        f"Priming output should contain both personal and shared pointers. Got:\n{combined}"
+    )
 
 
 # ── Test 4: read_memory_file with common_knowledge prefix ──────────

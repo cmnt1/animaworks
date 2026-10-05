@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 class TestArchiveAllCleansNonJsonFiles:
@@ -35,20 +34,12 @@ class TestArchiveAllCleansNonJsonFiles:
         alice.archive_all()
 
         processed = shared / "inbox" / "alice" / "processed"
-        assert (processed / f"{msg.id}.json").exists(), (
-            ".json file should be in processed/"
-        )
-        assert (processed / "stray_note.txt").exists(), (
-            ".txt file should be in processed/"
-        )
+        assert (processed / f"{msg.id}.json").exists(), ".json file should be in processed/"
+        assert (processed / "stray_note.txt").exists(), ".txt file should be in processed/"
 
         # inbox should be empty (except the processed/ subdirectory)
-        remaining = [
-            p for p in (shared / "inbox" / "alice").iterdir() if p.is_file()
-        ]
-        assert remaining == [], (
-            f"No files should remain in inbox, but found: {remaining}"
-        )
+        remaining = [p for p in (shared / "inbox" / "alice").iterdir() if p.is_file()]
+        assert remaining == [], f"No files should remain in inbox, but found: {remaining}"
 
 
 class TestNonJsonFileDoesNotAffectHasUnread:
@@ -66,13 +57,9 @@ class TestNonJsonFileDoesNotAffectHasUnread:
         assert txt_file.exists()
 
         # has_unread only checks *.json, so it should be False
-        assert messenger.has_unread() is False, (
-            "has_unread() should be False when only non-JSON files are present"
-        )
+        assert messenger.has_unread() is False, "has_unread() should be False when only non-JSON files are present"
 
         # archive_all should still clean up the .txt file
         messenger.archive_all()
         processed = shared / "inbox" / "carol" / "processed"
-        assert (processed / "spurious.txt").exists(), (
-            ".txt file should be moved to processed/ by archive_all"
-        )
+        assert (processed / "spurious.txt").exists(), ".txt file should be moved to processed/ by archive_all"

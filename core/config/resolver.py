@@ -9,82 +9,50 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError
-
 from core.config.local_llm import is_local_llm_default, resolve_local_llm_role_model
 from core.config.opencode_go import OPENCODE_GO_PROVIDER, with_opencode_go_defaults
-from core.config.schemas import (
-    AnimaDefaults,
-    AnimaModelConfig,
-    AnimaWorksConfig,
-    CredentialConfig,
-    ResolvedProcessModelConfig,
-    TaskProcessIsolationConfig,
-)
+from core.config.schemas import AnimaDefaults, AnimaModelConfig, AnimaWorksConfig, CredentialConfig
 
 logger = logging.getLogger("animaworks.config")
 
+STATUS_JSON_FIELD_MAP: dict[str, str] = {
+    "model": "model",
+    "background_model": "background_model",
+    "background_credential": "background_credential",
+    "context_threshold": "context_threshold",
+    "context_absolute_ceiling": "context_absolute_ceiling",
+    "task_compaction_tokens": "task_compaction_tokens",
+    "task_compaction_max": "task_compaction_max",
+    "max_session_age_hours": "max_session_age_hours",
+    "conversation_history_threshold": "conversation_history_threshold",
+    "credential": "credential",
+    "execution_mode": "execution_mode",
+    "supervisor": "supervisor",
+    "max_tokens": "max_tokens",
+    "fallback_model": "fallback_model",
+    "fallback_models": "fallback_models",
+    "thinking": "thinking",
+    "thinking_effort": "thinking_effort",
+    "background_thinking_effort": "background_thinking_effort",
+    "voice_thinking_effort": "voice_thinking_effort",
+    "mode_s_auth": "mode_s_auth",
+    "default_workspace": "default_workspace",
+    "consolidation_enabled": "consolidation_enabled",
+    "heartbeat_enabled": "heartbeat_enabled",
+    "token_budget_monthly": "token_budget_monthly",
+    "extra_mcp_servers": "extra_mcp_servers",
+}
+STATUS_JSON_NULLABLE_FIELDS = frozenset({"supervisor", "speciality", "token_budget_monthly"})
 
-def resolve_process_model_config(anima_dir: Path) -> ResolvedProcessModelConfig:
-    """Resolve the process topology SSoT from ``status.json``.
 
-    Invalid topology fields are returned as an explicit invalid result.  They
-    are never coerced to legacy because doing so could switch process or DB
-    ownership silently.
-    """
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return ResolvedProcessModelConfig()
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        return ResolvedProcessModelConfig(valid=False, error=f"invalid status.json: {exc}")
-    if not isinstance(data, dict):
-        return ResolvedProcessModelConfig(valid=False, error="status.json must contain a JSON object")
-
-    # Fork policy (docs/fork-policy.md #1): default to legacy so an upstream
-    # sync never flips a running anima's process topology implicitly.
-    process_model = data.get("process_model", "legacy")
-    if not isinstance(process_model, str) or process_model not in {"legacy", "phase2", "phase3"}:
-        return ResolvedProcessModelConfig(valid=False, error=f"invalid process_model: {process_model!r}")
-
-    has_flags = "task_process_isolation" in data
-    if process_model == "legacy":
-        warnings = ("task_process_isolation is ignored for legacy process_model",) if has_flags else ()
-        return ResolvedProcessModelConfig(
-            process_model="legacy",
-            task_process_isolation=TaskProcessIsolationConfig(),
-            warnings=warnings,
-        )
-    if process_model == "phase3":
-        warnings = ("task_process_isolation is ignored for phase3 process_model",) if has_flags else ()
-        return ResolvedProcessModelConfig(
-            process_model="phase3",
-            task_process_isolation=TaskProcessIsolationConfig(
-                cron=True,
-                heartbeat=True,
-                task=True,
-                background=True,
-            ),
-            warnings=warnings,
-        )
-
-    raw_flags = data.get("task_process_isolation", {})
-    try:
-        flags = TaskProcessIsolationConfig.model_validate(raw_flags)
-    except ValidationError as exc:
-        return ResolvedProcessModelConfig(
-            process_model="phase2",
-            task_process_isolation=TaskProcessIsolationConfig(),
-            valid=False,
-            error=f"invalid task_process_isolation: {exc.errors(include_url=False)}",
-        )
-    return ResolvedProcessModelConfig(process_model="phase2", task_process_isolation=flags)
+def is_root_memory_owner(anima_dir: Path) -> bool:
+    """Always return True for phase3-fixed; retained only until RAG legacy branches are removed in R07."""
+    del anima_dir
+    return True
 
 
 def _load_status_json(anima_dir: Path) -> dict[str, Any]:
@@ -93,56 +61,18 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
     Returns a dict with field names matching AnimaDefaults fields.
     Missing or invalid files return an empty dict.
     """
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return {}
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        logger.debug("Failed to read status.json from %s", anima_dir)
-        return {}
+    from core.platform.status_store import read_status
+
+    data = read_status(anima_dir)
 
     # Map status.json fields to AnimaModelConfig field names
     result: dict[str, Any] = {}
-    field_mapping = {
-        "model": "model",
-        "background_model": "background_model",
-        "background_credential": "background_credential",
-        "context_threshold": "context_threshold",
-        "context_absolute_ceiling": "context_absolute_ceiling",
-        "task_compaction_tokens": "task_compaction_tokens",
-        "task_compaction_max": "task_compaction_max",
-        "max_session_age_hours": "max_session_age_hours",
-        "max_chains": "max_chains",
-        "conversation_history_threshold": "conversation_history_threshold",
-        "credential": "credential",
-        "execution_mode": "execution_mode",
-        "supervisor": "supervisor",
-        "max_tokens": "max_tokens",
-        "fallback_model": "fallback_model",
-        "fallback_models": "fallback_models",
-        "thinking": "thinking",
-        "thinking_effort": "thinking_effort",
-        "background_thinking_effort": "background_thinking_effort",
-        "voice_thinking_effort": "voice_thinking_effort",
-        "llm_timeout": "llm_timeout",
-        "mode_s_auth": "mode_s_auth",
-        "max_outbound_per_hour": "max_outbound_per_hour",
-        "max_outbound_per_day": "max_outbound_per_day",
-        "max_recipients_per_run": "max_recipients_per_run",
-        "default_workspace": "default_workspace",
-        "consolidation_enabled": "consolidation_enabled",
-        "heartbeat_enabled": "heartbeat_enabled",
-        "token_budget_monthly": "token_budget_monthly",
-        "extra_mcp_servers": "extra_mcp_servers",
-    }
     # Fields where None is a valid explicit value (e.g. supervisor=null
     # means "top-level / no supervisor").  Empty string is still "not set".
-    _nullable_fields = frozenset({"supervisor", "speciality", "token_budget_monthly"})
-    for status_key, config_key in field_mapping.items():
+    for status_key, config_key in STATUS_JSON_FIELD_MAP.items():
         if status_key in data:
             value = data[status_key]
-            if value is None and status_key in _nullable_fields or value not in (None, ""):
+            if value is None and status_key in STATUS_JSON_NULLABLE_FIELDS or value not in (None, ""):
                 result[config_key] = value
     return result
 
@@ -151,13 +81,9 @@ def _load_status_role(anima_dir: Path | None) -> str:
     """Read the role from status.json, defaulting to ``administration``."""
     if anima_dir is None:
         return "administration"
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return "administration"
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return "administration"
+    from core.platform.status_store import read_status
+
+    data = read_status(anima_dir)
     role = data.get("role")
     return role if isinstance(role, str) and role.strip() else "administration"
 
@@ -222,15 +148,14 @@ def resolve_anima_config(
     credential_name = resolved_defaults.credential
     if credential_name == OPENCODE_GO_PROVIDER:
         raw_credential = config.credentials.get(credential_name)
-        defaults = with_opencode_go_defaults(raw_credential)
+        provider_defaults = with_opencode_go_defaults(raw_credential)
         credential = CredentialConfig(
-            type=(raw_credential.type if raw_credential else "api_key"),
-            api_key=defaults["api_key"] or "",
-            base_url=defaults["base_url"],
+            type=raw_credential.type if raw_credential else "api_key",
+            api_key=provider_defaults["api_key"] or "",
+            base_url=provider_defaults["base_url"],
             keys=dict(raw_credential.keys) if raw_credential else {},
         )
         return resolved_defaults, credential
-
     if credential_name not in config.credentials:
         raise KeyError(f"Credential '{credential_name}' (for anima '{anima_name}') not found in config.credentials")
 
@@ -245,5 +170,5 @@ def resolve_anima_config(
 __all__ = [
     "_load_status_json",
     "resolve_anima_config",
-    "resolve_process_model_config",
+    "is_root_memory_owner",
 ]

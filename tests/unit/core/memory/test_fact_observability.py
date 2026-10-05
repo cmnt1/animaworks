@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import fact_extraction
-from core.memory.consolidation import ConsolidationEngine
-from core.memory.conversation_finalize import _extract_session_facts_nonfatal
-from core.memory.fact_extraction import FactExtractionOutcome
-from core.memory.fact_observability import reset_warning_rate_limits
-from core.memory.facts import FactRecord
+from core.memory.conversation.finalize import _extract_session_facts_nonfatal
+from core.memory.facts import extraction as fact_extraction
+from core.memory.facts.extraction import FactExtractionOutcome
+from core.memory.facts.observability import reset_warning_rate_limits
+from core.memory.facts.store import FactRecord
+from core.memory.maintenance.consolidation import ConsolidationEngine
 
 
 def _fact() -> FactRecord:
@@ -32,7 +32,7 @@ async def test_session_fact_extraction_completion_log_includes_counters(
     async def fake_extract(*args, **kwargs):
         return FactExtractionOutcome([_fact()])
 
-    monkeypatch.setattr("core.memory.fact_extraction.extract_and_store_facts_with_outcome", fake_extract)
+    monkeypatch.setattr("core.memory.facts.extraction.extract_and_store_facts_with_outcome", fake_extract)
 
     with caplog.at_level("INFO", logger="animaworks.conversation_memory"):
         result = await _extract_session_facts_nonfatal(
@@ -57,7 +57,7 @@ async def test_consolidation_fact_extraction_completion_log_includes_counters(
     async def fake_extract(*args, **kwargs):
         return FactExtractionOutcome([], True, "extract", "failed")
 
-    monkeypatch.setattr("core.memory.fact_extraction.extract_and_store_facts_with_outcome", fake_extract)
+    monkeypatch.setattr("core.memory.facts.extraction.extract_and_store_facts_with_outcome", fake_extract)
     engine = ConsolidationEngine(tmp_path / "alice", "alice")
 
     with caplog.at_level("INFO", logger="animaworks.consolidation"):

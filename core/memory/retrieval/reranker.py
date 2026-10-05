@@ -9,9 +9,7 @@ CrossEncoder model locally.  HTTP failures skip rerank (original order is
 kept) rather than falling back to a local model load.
 """
 
-import asyncio
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -31,11 +29,13 @@ class CrossEncoderReranker:
         self._model_name = model_name
         self._model = None
         self._available = True
-        self._rerank_url = os.environ.get("ANIMAWORKS_RERANK_URL")
+        from core.memory.rag.endpoints import get_endpoints
+
+        self._rerank_url = get_endpoints().rerank_url
         if self._rerank_url:
             self._device = "cpu"
         else:
-            from core.gpu import is_component_degraded, resolve_device
+            from core.infra.gpu import is_component_degraded, resolve_device
 
             self._device = "cpu" if is_component_degraded("reranker") else resolve_device("reranker")
         self._lock = threading.Lock()
@@ -68,7 +68,7 @@ class CrossEncoderReranker:
             from sentence_transformers import CrossEncoder
 
             self._model = CrossEncoder(self._model_name, device=self._device)
-            from core.gpu import record_component_device
+            from core.infra.gpu import record_component_device
 
             record_component_device("reranker", self._device)
             logger.info(
@@ -80,13 +80,13 @@ class CrossEncoderReranker:
             return True
         except Exception as exc:
             if self._device == "cuda":
-                from core.gpu import record_gpu_failure
+                from core.infra.gpu import record_gpu_failure
 
                 record_gpu_failure("reranker", exc)
                 try:
                     self._device = "cpu"
                     self._model = CrossEncoder(self._model_name, device="cpu")
-                    from core.gpu import record_component_device
+                    from core.infra.gpu import record_component_device
 
                     record_component_device("reranker", "cpu")
                     logger.warning("Cross-encoder GPU load failed; falling back to CPU: %s", exc)
@@ -121,7 +121,7 @@ class CrossEncoderReranker:
             )
             return result
         except Exception as exc:
-            from core.gpu import is_cuda_failure, record_component_device, record_gpu_failure
+            from core.infra.gpu import is_cuda_failure, record_component_device, record_gpu_failure
 
             if self._device == "cuda" and is_cuda_failure(exc):
                 logger.error("GPU failure detected - falling back to CPU reranker", exc_info=True)
@@ -143,7 +143,7 @@ class CrossEncoderReranker:
 
     def _score_http(self, query: str, texts: list[str], rerank_url: str) -> list[float] | None:
         """Score via server's /api/internal/rerank. On failure return None (skip)."""
-        from core.memory.rag.singleton import _shared_http_client
+        from core.memory.rag.embedding import _shared_http_client
 
         started = time.perf_counter()
         all_scores: list[float] = []
@@ -226,39 +226,6 @@ class CrossEncoderReranker:
             texts = [str(item.get(text_field, "")) for item in items]
 
         scores = self._score_sync(query, texts)
-        if scores is None:
-            return [dict(item) for item in items[:top_k]]
-
-        scored = list(zip(items, scores, strict=False))
-        scored.sort(key=lambda x: x[1], reverse=True)
-
-        result: list[dict] = []
-        for item, score in scored[:top_k]:
-            row = dict(item)
-            row["ce_score"] = score
-            row["score"] = score
-            row["search_method"] = "cross_encoder"
-            result.append(row)
-        return result
-
-    async def rerank(
-        self,
-        query: str,
-        items: list[dict],
-        *,
-        text_field: str | Callable[[dict], str] = "fact",
-        top_k: int = 10,
-    ) -> list[dict]:
-        """Async rerank for Neo4j hybrid search."""
-        if not items:
-            return []
-
-        if callable(text_field):
-            texts = [str(text_field(item)) for item in items]
-        else:
-            texts = [str(item.get(text_field, "")) for item in items]
-
-        scores = await asyncio.to_thread(self._score_sync, query, texts)
         if scores is None:
             return [dict(item) for item in items[:top_k]]
 

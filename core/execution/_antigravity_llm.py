@@ -376,7 +376,7 @@ class AntigravityLLM(CustomLLM):
         litellm_params: Any = None,
         logger_fn: Any = None,
         headers: dict | None = None,
-        timeout: float | httpx.Timeout | None = None,
+        timeout: float | httpx.Timeout | None = None,  # noqa: ASYNC109 - LiteLLM interface contract.
         client: Any = None,
     ) -> ModelResponse:
         access_token, project_id = _get_access_token()
@@ -432,7 +432,7 @@ class AntigravityLLM(CustomLLM):
         litellm_params: Any = None,
         logger_fn: Any = None,
         headers: dict | None = None,
-        timeout: float | httpx.Timeout | None = None,
+        timeout: float | httpx.Timeout | None = None,  # noqa: ASYNC109 - LiteLLM interface contract.
         client: Any = None,
     ) -> AsyncIterator[GenericStreamingChunk]:
         access_token, project_id = _get_access_token()

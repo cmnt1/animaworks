@@ -40,8 +40,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from core.tools._base import get_credential  # noqa: E402
-from core.tools.notion import NotionClient  # noqa: E402
+from core.credentials import get_credential  # noqa: E402
+from core.integrations.notion import NotionClient  # noqa: E402
 
 
 DEFAULT_DATABASE_ID = "b3319880-9617-40cb-b048-4a66d3def1a8"

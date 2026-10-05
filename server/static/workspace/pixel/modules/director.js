@@ -460,5 +460,3 @@ export class Director {
     ctx.fillRect(x - 2, y - 9, 4, 18);
   }
 }
-
-export { safeSummary, MAX_ACTIVE, MAX_QUEUED };

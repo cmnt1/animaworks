@@ -6,13 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.activity import ActivityEntry
+from core.activity.logger import ActivityEntry
 from core.memory.priming import channel_c, channel_f, outbound
 from core.memory.priming.channel_e import _itemize_pending_tasks
 from core.memory.priming.engine import PrimingEngine
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.rag.store import Document, SearchResult
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 
 def test_select_within_budget_keeps_whole_items_in_priority_order() -> None:
@@ -30,7 +30,7 @@ def test_select_within_budget_keeps_whole_items_in_priority_order() -> None:
 
 
 def test_sentence_boundary_trim_handles_japanese_and_english() -> None:
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
 
     for prefix, boundary in (("日" * 130, "。"), ("English words " * 11, "!")):
@@ -53,7 +53,7 @@ def test_sentence_boundary_trim_handles_japanese_and_english() -> None:
 
 
 def test_sentence_boundary_trim_uses_ellipsis_when_boundary_is_too_early() -> None:
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
 
     content = "短い文。" + "続" * 250
@@ -183,7 +183,7 @@ async def test_recent_outbound_returns_one_item_per_activity(tmp_path: Path, mon
         def recent(self, **kwargs):
             return [entry]
 
-    monkeypatch.setattr("core.memory.activity.ActivityLogger", FakeActivityLogger)
+    monkeypatch.setattr("core.activity.logger.ActivityLogger", FakeActivityLogger)
     monkeypatch.setattr(outbound, "now_local", lambda: datetime.fromisoformat(entry.ts))
 
     output = await outbound.collect_recent_outbound(anima_dir)
@@ -225,15 +225,18 @@ async def test_prime_memories_selects_items_within_single_budget(tmp_path: Path,
     monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
-    monkeypatch.setattr(engine, "_channel_g_graph_context", empty)
 
     result = await engine.prime_memories("知識を確認", max_tokens=160)
 
     # Items are selected whole by rank, emitted intact (never "..."-truncated).
     assert estimate_tokens(result.related_knowledge) <= 160
     assert "..." not in result.related_knowledge
-    emitted = [item.rank for item in result.items.get("related_knowledge", ())]
-    assert emitted == sorted(emitted, reverse=True)
+    emitted = sorted(
+        (item for item in knowledge_items if item.text in result.related_knowledge),
+        key=lambda item: result.related_knowledge.index(item.text),
+    )
+    emitted_ranks = [item.rank for item in emitted]
+    assert emitted_ranks == sorted(emitted_ranks, reverse=True)
 
 
 @pytest.mark.asyncio
@@ -257,6 +260,14 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
         rank=1,
     )
     related_items = (low, high)
+    scheduled_channels: list[str] = []
+    run_channel = engine._run_priming_channel
+
+    async def record_channel(name: str, coro):
+        scheduled_channels.append(name)
+        return await run_channel(name, coro)
+
+    monkeypatch.setattr(engine, "_run_priming_channel", record_channel)
 
     async def empty(*args, **kwargs):
         return ""
@@ -278,9 +289,10 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
 
     # Only the highest-rank item fits; the whole pointer is kept, never split.
     assert result.related_knowledge == high.text
-    assert result.items["related_knowledge"] == (high,)
+    assert high.text in result.related_knowledge
     assert low.text not in result.related_knowledge
     assert "..." not in result.related_knowledge
+    assert "G" not in scheduled_channels
 
 
 async def empty_pair() -> tuple[str, str]:

@@ -18,8 +18,7 @@ class FakeReconcileMixin:
         pass
 
     # Import the method from the actual mixin
-    from core.supervisor._mgr_reconcile import ReconcileMixin
-
+    from server.supervisor._mgr_reconcile import ReconcileMixin
     _check_config_freshness = ReconcileMixin._check_config_freshness
 
 
@@ -79,12 +78,11 @@ class TestCheckConfigFreshness:
         obj = FakeReconcileMixin()
         obj._check_config_freshness()  # stores initial hash
 
-        changed_content = b'{"setting": 2}\n'
-        config_path.write_bytes(changed_content)
+        config_path.write_text('{"setting": 2}\n', encoding="utf-8")
         obj._check_config_freshness()  # detects content change
 
         mock_load.assert_called_once()
-        assert obj._last_config_hash == hashlib.sha256(changed_content).hexdigest()
+        assert obj._last_config_hash == hashlib.sha256(config_path.read_bytes()).hexdigest()
 
     @patch("core.config.models.get_config_path")
     def test_exception_is_silently_caught(self, mock_path):

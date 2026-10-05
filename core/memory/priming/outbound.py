@@ -15,12 +15,13 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger("animaworks.priming")
 
 _HUMAN_NOTIFY_BUDGET_TOKENS = 500
+HUMAN_NOTIFICATION_CHANNELS: frozenset[str] = frozenset({"chat", "heartbeat"})
 
 
 def _timestamp_rank(value: str) -> float:
@@ -38,7 +39,7 @@ async def collect_recent_outbound(anima_dir: Path, max_entries: int = 3) -> str:
     ensuring builder.py never reads ActivityLogger directly (hippocampus model).
     """
     try:
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(
@@ -96,12 +97,12 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
     """Collect recent call_human notifications for context injection.
 
     Returns formatted string of human_notify entries from last 24 hours.
-    Only active for chat, heartbeat, and message: sessions.
+    Only active for chat and heartbeat sessions.
     """
-    if channel not in ("chat", "heartbeat") and not channel.startswith("message:"):
+    if channel not in HUMAN_NOTIFICATION_CHANNELS:
         return ""
 
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.notification import notification_key_for
 
     activity = ActivityLogger(anima_dir)
@@ -110,15 +111,17 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         return ""
 
     items: list[MemoryItem] = []
-    header = "## Pending Human Notifications (last 24h)"
+    header = t("priming.pending_human_notifications_header")
 
     for entry in reversed(entries):
         ts = entry.ts[:16]
         body = entry.content or entry.summary or ""
-        via = entry.via or ""
         subject = str(entry.meta.get("subject") or "")
         notification_key = str(entry.meta.get("notification_key") or notification_key_for(subject, body))
-        line = f"[{ts}] call_human (via {via}):\n{body}"
+        summary = " ".join((subject or body).split())[:80]
+        if not summary:
+            continue
+        line = t("priming.human_notification_summary", time_str=ts, summary=summary)
         items.append(
             MemoryItem(
                 source="pending_human_notifications",

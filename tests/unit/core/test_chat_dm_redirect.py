@@ -7,7 +7,7 @@ explicitly enabled.
 
 from unittest.mock import patch
 
-from core._anima_messaging import MessagingMixin
+from core.anima.messaging import MessagingMixin
 from core.config.schemas import AnimaWorksConfig as Config
 from core.config.schemas import UserAliasConfig
 

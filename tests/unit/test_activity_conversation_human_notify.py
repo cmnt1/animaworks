@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 
 
 @pytest.fixture

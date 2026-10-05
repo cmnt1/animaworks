@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 

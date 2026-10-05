@@ -17,17 +17,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.supervisor import task_runner, task_runner_supervisor
-from core.supervisor.ipc import IPCServer
-from core.supervisor.ipc_v2 import (
+from core.runtime import task_runner, task_runner_supervisor
+from core.runtime.ipc import IPCServer
+from core.runtime.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2Connection,
     IPCV2ConnectionError,
     IPCV2ConnectionState,
     IPCV2Identity,
 )
-from core.supervisor.task_runner import _progress_loop, _RootLink
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime.task_runner import _progress_loop, _RootLink
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 # ── child: _progress_loop never dies ───────────────────────────────────
 
@@ -91,14 +91,12 @@ async def test_rootlink_reconnect_single_flight(monkeypatch, tmp_path) -> None:
     connect_mock = AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "req-1"})))
     monkeypatch.setattr(task_runner, "_connect", connect_mock)
 
-    memory_client = SimpleNamespace(connection=broken)
-    link = _RootLink(broken, tmp_path / "sock", state, "req-1", memory_client)
+    link = _RootLink(broken, tmp_path / "sock", state, "req-1")
 
     results = await asyncio.gather(link.reconnect(broken), link.reconnect(broken))
     assert results == [new_conn, new_conn]
     assert connect_mock.await_count == 1, "reconnect must be single-flight"
     assert link.connection is new_conn
-    assert memory_client.connection is new_conn
 
 
 @pytest.mark.asyncio
@@ -111,7 +109,7 @@ async def test_rootlink_reconnect_rejects_foreign_run_contract(monkeypatch, tmp_
         "_connect",
         AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "other"}))),
     )
-    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1", None)
+    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1")
     with pytest.raises(IPCV2ConnectionError):
         await link.reconnect(broken)
     new_conn.close.assert_awaited()
@@ -237,3 +235,65 @@ async def test_v1_handler_survives_broken_pipe(tmp_path) -> None:
     # "Unhandled exception in client_connected_cb" and severs sibling state.
     await server._handle_connection(reader, writer)
     assert writer.closed
+
+
+@pytest.mark.asyncio
+async def test_tasks_submitted_event_wakes_root(monkeypatch, tmp_path) -> None:
+    """A child's tasks_submitted event must fan out to the root's wake."""
+    from core.tasks.wake import register_wake, unregister_wake
+
+    monkeypatch.setattr(task_runner_supervisor, "_RECEIVE_POLL_TIMEOUT_SEC", 0.1)
+    sup = TaskRunnerSupervisor("t-anima", tmp_path / "anima", tmp_path / "shared")
+    identity = IPCV2Identity(
+        job_id="job-wake",
+        root_epoch=sup.root_epoch,
+        attempt=1,
+        lane="task",
+        display_lane="background",
+    )
+    job = TaskRunnerJob(
+        identity=identity,
+        request_id=f"run-{uuid.uuid4()}",
+        params={},
+        result=asyncio.get_running_loop().create_future(),
+        peer_state=IPCV2ConnectionState(identity),
+        process=None,
+        pid=999_999,
+        pgid=999_999,
+        last_progress_at=asyncio.get_running_loop().time(),
+    )
+    sup._jobs[identity.job_id] = job
+
+    (server_r, server_w), (client_r, client_w) = await _stream_pair()
+    handler = asyncio.create_task(sup._handle_connection(server_r, server_w))
+    client = IPCV2Connection(client_r, client_w, IPCV2ConnectionState(identity))
+
+    inbound: list = []
+
+    async def _drain_client() -> None:
+        while True:
+            inbound.append(await client.receive())
+
+    drain = asyncio.create_task(_drain_client())
+    woke = asyncio.Event()
+    register_wake("t-anima", woke.set)
+    try:
+        await client.send_event(
+            "hello",
+            {"capabilities": {"reconnect": True, "steer": False}, "last_received_seq": 0, "last_acked_seq": 0},
+        )
+        for _ in range(100):  # wait for the replayed run request
+            if any(e.kind == "request" for e in inbound):
+                break
+            await asyncio.sleep(0.01)
+        assert any(e.kind == "request" for e in inbound), "handshake did not complete"
+
+        await client.send_event("tasks_submitted", {})
+        await asyncio.wait_for(woke.wait(), timeout=1.0)
+    finally:
+        for task in (drain, handler):
+            task.cancel()
+        await asyncio.gather(drain, handler, return_exceptions=True)
+        for w in (client_w, server_w):
+            w.close()
+        unregister_wake("t-anima")

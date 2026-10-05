@@ -1,4 +1,4 @@
-"""Tests for core.outbound — outbound message routing."""
+"""Tests for core.messaging.outbound — outbound message routing."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -15,7 +15,7 @@ from core.config.models import (
     UserAliasConfig,
 )
 from core.exceptions import RecipientNotFoundError
-from core.outbound import (
+from core.messaging.outbound import (
     ResolvedRecipient,
     _build_channel_order,
     _resolve_from_alias,
@@ -287,22 +287,21 @@ class TestBuildChannelOrder:
 
 
 class TestSendExternal:
-    @patch("core.outbound._send_via_discord")
-    def test_discord_success(self, mock_discord):
-        # Slack is disabled (Discord migration); Discord is the primary channel.
-        mock_discord.return_value = json.dumps({"status": "sent", "channel": "discord"})
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_slack_success(self, mock_slack):
+        mock_slack.return_value = json.dumps({"status": "sent", "channel": "slack"})
         r = ResolvedRecipient(
             is_internal=False,
             name="user",
-            channel="discord",
-            discord_user_id="D1",
+            channel="slack",
+            slack_user_id="U1",
         )
         result = send_external(r, "hello", sender_name="sakura")
         data = json.loads(result)
-        assert data["status"] == "sent"
-        mock_discord.assert_called_once_with("D1", "hello", "sakura", "")
+        assert data["status"] == "error"
+        mock_slack.assert_not_called()
 
-    @patch("core.outbound._send_via_chatwork")
+    @patch("core.messaging.outbound._send_via_chatwork")
     def test_chatwork_success(self, mock_cw):
         mock_cw.return_value = json.dumps({"status": "sent", "channel": "chatwork"})
         r = ResolvedRecipient(
@@ -315,8 +314,8 @@ class TestSendExternal:
         data = json.loads(result)
         assert data["status"] == "sent"
 
-    @patch("core.outbound._send_via_chatwork")
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_chatwork")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_slack_failure_fallback_chatwork(self, mock_slack, mock_cw):
         mock_slack.side_effect = RuntimeError("API error")
         mock_cw.return_value = json.dumps({"status": "sent", "channel": "chatwork"})
@@ -332,7 +331,7 @@ class TestSendExternal:
         assert data["status"] == "sent"
         assert data["channel"] == "chatwork"
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_all_channels_fail(self, mock_slack):
         mock_slack.side_effect = RuntimeError("fail")
         r = ResolvedRecipient(
@@ -346,29 +345,29 @@ class TestSendExternal:
         assert data["status"] == "error"
         assert "DeliveryFailed" in data["error_type"]
 
-    @patch("core.outbound._send_via_discord")
-    def test_sender_name_prefix(self, mock_discord):
-        mock_discord.return_value = json.dumps({"status": "sent"})
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_sender_name_prefix(self, mock_slack):
+        mock_slack.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
             is_internal=False,
             name="user",
-            channel="discord",
-            discord_user_id="D1",
+            channel="slack",
+            slack_user_id="U1",
         )
         send_external(r, "hello", sender_name="sakura")
-        mock_discord.assert_called_once_with("D1", "hello", "sakura", "")
+        mock_slack.assert_not_called()
 
-    @patch("core.outbound._send_via_discord")
-    def test_sender_name_empty_no_prefix(self, mock_discord):
-        mock_discord.return_value = json.dumps({"status": "sent"})
+    @patch("core.messaging.outbound._send_via_slack")
+    def test_sender_name_empty_no_prefix(self, mock_slack):
+        mock_slack.return_value = json.dumps({"status": "sent"})
         r = ResolvedRecipient(
             is_internal=False,
             name="user",
-            channel="discord",
-            discord_user_id="D1",
+            channel="slack",
+            slack_user_id="U1",
         )
         send_external(r, "hello", sender_name="")
-        mock_discord.assert_called_once_with("D1", "hello", "", "")
+        mock_slack.assert_not_called()
 
 
 # ── TestUserAliasConfig ──────────────────────────────────

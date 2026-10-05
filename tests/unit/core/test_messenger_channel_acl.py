@@ -1,4 +1,4 @@
-"""Unit tests for Board channel ACL in core/messenger.py."""
+"""Unit tests for Board channel ACL in core/messaging/messenger.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,12 +11,13 @@ from pathlib import Path
 import pytest
 
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     is_channel_member,
     load_channel_meta,
     save_channel_meta,
+    update_channel_meta,
 )
 
 
@@ -80,10 +81,12 @@ class TestLoadChannelMeta:
     def test_description_field(self, shared_dir: Path):
         meta_path = shared_dir / "channels" / "team.meta.json"
         meta_path.write_text(
-            json.dumps({
-                "members": ["alice"],
-                "description": "Team discussion",
-            }),
+            json.dumps(
+                {
+                    "members": ["alice"],
+                    "description": "Team discussion",
+                }
+            ),
             encoding="utf-8",
         )
         result = load_channel_meta(shared_dir, "team")
@@ -93,11 +96,13 @@ class TestLoadChannelMeta:
     def test_loads_slack_sync_tombstone_fields(self, shared_dir: Path):
         meta_path = shared_dir / "channels" / "team.meta.json"
         meta_path.write_text(
-            json.dumps({
-                "members": ["alice"],
-                "slack_sync_disabled": True,
-                "slack_deleted_at": "2026-04-02T01:02:03+00:00",
-            }),
+            json.dumps(
+                {
+                    "members": ["alice"],
+                    "slack_sync_disabled": True,
+                    "slack_deleted_at": "2026-04-02T01:02:03+00:00",
+                }
+            ),
             encoding="utf-8",
         )
         result = load_channel_meta(shared_dir, "team")
@@ -136,6 +141,21 @@ class TestSaveChannelMeta:
         loaded = load_channel_meta(shared_dir, "ch")
         assert loaded is not None
         assert loaded.members == ["alice", "bob"]
+
+    def test_update_channel_meta_modifies_the_locked_current_value(self, shared_dir: Path):
+        save_channel_meta(shared_dir, "team", ChannelMeta(members=["alice"], description="discussion"))
+
+        def add_member(meta: ChannelMeta | None) -> ChannelMeta | None:
+            assert meta is not None
+            meta.members.append("bob")
+            return meta
+
+        updated = update_channel_meta(shared_dir, "team", add_member)
+
+        assert updated is not None
+        assert updated.members == ["alice", "bob"]
+        assert updated.description == "discussion"
+        assert (shared_dir / "channels" / "team.meta.json.lock").is_file()
 
 
 # ── is_channel_member ────────────────────────────────────

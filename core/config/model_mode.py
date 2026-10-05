@@ -5,7 +5,7 @@
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Model execution mode resolution (S/C/D/G/X/A/B) from model name patterns."""
+"""Model execution mode resolution for canonical S/C/D/G/X/A modes."""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ from core.config.schemas import AnimaWorksConfig
 
 logger = logging.getLogger("animaworks.config")
 
+CANONICAL_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X", "A"})
+_CANONICAL_MODES_LOWER = frozenset(mode.lower() for mode in CANONICAL_MODES)
+
 # Default model_modes with wildcard pattern support.
 # Patterns use fnmatch syntax (*, ?, [seq]).
 # Order matters for specificity — more specific patterns should appear first,
@@ -24,7 +27,7 @@ logger = logging.getLogger("animaworks.config")
 #
 # Mode values: S = SDK (Agent SDK / Claude Code), C = Codex (Codex CLI wrapper),
 #              D = Cursor Agent CLI, G = Gemini CLI, X = Grok Build CLI,
-#              A = Autonomous (tool_use), B = Basic (no tool_use)
+#              A = LiteLLM tool_use loop
 #
 # IMPORTANT: When status.json omits "execution_mode", resolve_execution_mode()
 # falls through to these patterns to determine the mode from the model name.
@@ -88,9 +91,6 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "ollama/*": "A",
 }
 
-# Backward-compatible alias
-DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
-
 # ── Known model catalog ──────────────────────────────────────────────────────
 # Concrete model names for reference. Used by SUPERVISOR_TOOLS description.
 # Mode is determined by DEFAULT_MODEL_MODE_PATTERNS at runtime; this list is
@@ -101,6 +101,9 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "openai/gpt-4o-mini", "mode": "A", "note": ""},
     {"name": "openai/o3", "mode": "A", "note": ""},
     {"name": "openai/o4-mini", "mode": "A", "note": ""},
+    {"name": "deepseek/deepseek-chat", "mode": "A", "note": ""},
+    {"name": "openai/deepseek-v4-flash", "mode": "A", "note": ""},
+    {"name": "openai/deepseek-v4-flash-0731", "mode": "A", "note": ""},
     {"name": "gemini/gemini-2.5-flash", "mode": "G", "note": ""},
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
     {"name": "claude-opus-5-5", "mode": "S", "note": "Opus 5.5・最新"},
@@ -156,6 +159,7 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "openai/gemma4-26b-a4b", "mode": "A", "note": "Gemma 4 26B MoE・vLLM"},
     {"name": "ollama/glm-4.7", "mode": "A", "note": "ローカル・tool_use対応"},
     {"name": "ollama/qwen3:14b", "mode": "A", "note": "ローカル中型"},
+    {"name": "ollama/qwen3:30b", "mode": "A", "note": "ローカル大型"},
     {"name": "ollama/qwen3:32b", "mode": "A", "note": "ローカル大型"},
     # ── Codex (Mode C) ──────────────────────────────────────────────────────
     {"name": "codex/gpt-6-astra", "mode": "C", "note": "Codex CLI経由・最高性能"},
@@ -179,6 +183,10 @@ KNOWN_MODELS: list[dict[str, str]] = [
     # ── Ollama Local (tool_use 非対応も A で実行) ────────────────────────────────
     {"name": "ollama/gemma3:4b", "mode": "A", "note": "軽量ローカル"},
     {"name": "ollama/gemma3:12b", "mode": "A", "note": "中型ローカル"},
+    {"name": "opencode-go/glm-5", "mode": "A", "note": "OpenCode Go"},
+    {"name": "opencode-go/kimi-k2.5", "mode": "A", "note": "OpenCode Go"},
+    {"name": "opencode-go/deepseek-v4-flash", "mode": "A", "note": "OpenCode Go"},
+    {"name": "opencode-go/qwen3.5-plus", "mode": "A", "note": "OpenCode Go"},
 ]
 
 # ── Tool-use capability ─────────────────────────────────────
@@ -275,6 +283,8 @@ def resolve_tool_use_capability(model_name: str) -> str:
 # ── Legacy mode value mapping ──────────────────────────────
 # Maps legacy A1/A1F/A2 and text-based values to canonical S/C/D/G/X/A scheme.
 _LEGACY_MODE_MAP: dict[str, str] = {
+    "b": "A",
+    "basic": "A",
     "autonomous": "A",
     "assisted": "A",
     "a1": "S",
@@ -405,21 +415,19 @@ def _match_pattern_table(
 
 
 def _normalise_mode(raw: str) -> str:
-    """Normalise a mode value to S/C/D/G/X/A, applying legacy mapping if needed.
+    """Normalize legacy and canonical mode values to one of the six modes.
 
-    Accepts legacy values (``"A1"``, ``"A2"``, ``"autonomous"``, etc.) and
-    canonical values (``"S"``, ``"C"``, ``"D"``, ``"G"``, ``"X"``, ``"A"``).
+    Retired and otherwise unknown values safely map to Mode A.
     """
     lower = raw.strip().lower()
     mapped = _LEGACY_MODE_MAP.get(lower)
     if mapped:
         return mapped
     upper = raw.strip().upper()
-    if upper in ("S", "C", "A", "D", "G", "X"):
+    if upper in CANONICAL_MODES:
         return upper
-    # Unrecognised — return as-is (upper) for forward compat
-    logger.warning("Unrecognised execution mode '%s'; passing through as '%s'", raw, upper)
-    return upper
+    logger.warning("Unrecognised execution mode '%s'; defaulting to 'A'", raw)
+    return "A"
 
 
 def _match_models_json(model_name: str) -> dict | None:
@@ -527,9 +535,9 @@ def parse_fallback_entry(
     # preserves model-only entries containing a tag colon, e.g.
     # ``ollama/qwen3:14b``.
     if len(value) >= 2 and value[1] == ":":
-        mode = value[0]
+        mode = _normalise_mode(value[0]).lower()
         model = value[2:].strip()
-        if mode not in {"s", "c", "d", "g", "x", "a"}:
+        if mode not in _CANONICAL_MODES_LOWER:
             logger.warning("Skipping fallback model entry with invalid mode: %r", entry)
             return None
         if not model:
@@ -538,7 +546,7 @@ def parse_fallback_entry(
         return mode, model
 
     mode = resolve_execution_mode(config, value).lower()
-    if mode not in {"s", "c", "d", "g", "x", "a"}:
+    if mode not in _CANONICAL_MODES_LOWER:
         logger.warning(
             "Skipping fallback model entry with unresolved mode %r: %r",
             mode,
@@ -549,9 +557,8 @@ def parse_fallback_entry(
 
 
 __all__ = [
+    "CANONICAL_MODES",
     "DEFAULT_MODEL_MODE_PATTERNS",
-    "DEFAULT_MODEL_MODES",
-    "DEFAULT_TOOL_USE_CAPABILITY_PATTERNS",
     "KNOWN_MODELS",
     "ToolUseCapability",
     "_LEGACY_MODE_MAP",

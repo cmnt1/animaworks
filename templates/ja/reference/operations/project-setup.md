@@ -23,7 +23,7 @@ AnimaWorks の設定構造と Anima 追加手順のリファレンス。
 
 ### 初期化時に作成されるディレクトリ
 
-`ensure_runtime_dir`（`core/init.py`）により以下が作成される:
+`ensure_runtime_dir`（`core/infra/runtime_init.py`）により以下が作成される:
 
 - `animas/` — Anima ディレクトリ
 - `shared/inbox/` — 受信メッセージキュー
@@ -48,7 +48,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,12 +61,12 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "dynamic_budget": true },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
 
-**注意**: `animas` セクションは組織レイアウト（`supervisor`, `speciality`）のみを保持する。モデル名・credential・max_turns 等のモデル設定は各 Anima の `status.json` に記録される（後述の「Anima 設定の解決」参照）。
+**注意**: `animas` セクションは組織レイアウト（`supervisor`, `speciality`）のみを保持する。モデル名・credential などのモデル設定は各 Anima の `status.json` に記録される（後述の「Anima 設定の解決」参照）。
 
 各セクションの役割:
 
@@ -75,7 +75,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `version` | 設定スキーマバージョン（現在 `1`） |
 | `setup_complete` | 初回セットアップ完了フラグ |
 | `locale` | UI言語（`"ja"` / `"en"`） |
-| `system` | サーバーモード・ログレベル |
+| `system` | サーバーモード・タイムゾーン |
 | `credentials` | APIキー・エンドポイント（名前付き） |
 | `model_modes` | モデル名→実行モードの上書きマップ |
 | `anima_defaults` | 全 Anima 共通のデフォルト設定 |
@@ -93,8 +93,13 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | フィールド | 型 | デフォルト | 説明 |
 |-----------|-----|----------|------|
 | `supervisor` | `str | None` | None |  |
+| `company` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
+| `heartbeat_enabled` | `bool | None` | None |  |
+| `background_review_enabled` | `bool | None` | None |  |
+| `token_budget_monthly` | `int | None` | None |  |
+| `aliases` | `list[str]` | `[]` |  |
 
 #### デフォルト値 (anima_defaults)
 
@@ -102,24 +107,31 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-4-6"` |  |
 | `fallback_model` | `str | None` | None |  |
+| `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
 | `background_credential` | `str | None` | None |  |
+| `background_thinking_effort` | `str | None` | None |  |
+| `voice_thinking_effort` | `str | None` | None |  |
 | `max_tokens` | `int` | `8192` |  |
-| `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
-| `max_chains` | `int` | `2` |  |
+| `context_absolute_ceiling` | `float` | `0.75` |  |
+| `task_compaction_tokens` | `int` | `0` |  |
+| `task_compaction_max` | `int` | `6` |  |
+| `max_session_age_hours` | `float` | `24.0` |  |
 | `conversation_history_threshold` | `float` | `0.3` |  |
 | `execution_mode` | `str | None` | None |  |
 | `supervisor` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
+| `extra_mcp_servers` | `dict[str, dict]` | `{}` |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
-| `llm_timeout` | `int` | `600` |  |
 | `mode_s_auth` | `str | None` | None |  |
-| `max_outbound_per_hour` | `int | None` | None |  |
-| `max_outbound_per_day` | `int | None` | None |  |
-| `max_recipients_per_run` | `int | None` | None |  |
+| `default_workspace` | `str` | `""` |  |
+| `tool_compression` | `bool` | `True` |  |
+| `consolidation_enabled` | `bool` | `True` |  |
+| `heartbeat_enabled` | `bool` | `True` |  |
+| `token_budget_monthly` | `int | None` | None |  |
 
 #### AnimaWorksConfig トップレベル
 
@@ -136,19 +148,39 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `anima_defaults` | Anima設定デフォルト値 |
 | `animas` | Anima別設定オーバーライド |
 | `consolidation` | 記憶統合設定 |
+| `background_review` |  |
 | `rag` | RAG（検索拡張生成）設定 |
+| `gpu` |  |
+| `memory` |  |
+| `skills` |  |
+| `chatwork_tool` |  |
+| `prompt` |  |
 | `priming` | プライミング（自動記憶想起）設定 |
 | `image_gen` | 画像生成設定 |
 | `human_notification` |  |
+| `interaction` |  |
 | `server` |  |
+| `llm_rate_guard` |  |
+| `mcp` |  |
 | `external_messaging` |  |
+| `external_tasks` |  |
+| `github_webhook` |  |
+| `event_export` |  |
 | `background_task` |  |
 | `activity_log` |  |
+| `logging` |  |
 | `heartbeat` |  |
 | `voice` |  |
 | `housekeeping` |  |
+| `inbox` |  |
+| `local_llm` |  |
+| `jev` |  |
+| `workspaces` |  |
+| `github_identities` |  |
 | `activity_level` |  |
+| `activity_level_by_provider` |  |
 | `activity_schedule` |  |
+| `icon_url_template` |  |
 | `ui` |  |
 
 <!-- AUTO-GENERATED:END -->
@@ -280,13 +312,7 @@ tool_use をサポートするクラウド・ローカルモデル向け。LiteL
 - **特徴**: LiteLLM 経由で tool_use ループを回す。ツール実行はフレームワークがディスパッチ
 - **credential**: 各プロバイダに対応した credential を指定
 
-### Mode B (Basic): Assisted（LLM は思考のみ）
-
-tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O はフレームワークが代行する。
-
-- **対象モデル**: `ollama/gemma3*`, `ollama/phi4*`, 小規模 Ollama モデル等
-- **特徴**: 1ショットで応答を生成。ツール実行不可
-- **credential**: 通常 `ollama` 等のローカル credential
+Mode B は廃止されています。tool_use 非対応モデルは推奨しません。設定に残る `execution_mode: "B"` は Mode A として扱われます。
 
 ### モード自動判定の仕組み
 
@@ -297,7 +323,7 @@ tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O は�
 {
   "model_modes": {
     "ollama/my-custom-model": "A",
-    "ollama/experimental-*": "B"
+    "ollama/experimental-*": "A"
   }
 }
 ```
@@ -307,7 +333,7 @@ tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O は�
 2. `~/.animaworks/models.json`（完全一致 → ワイルドカード）
 3. `config.json` の `model_modes`（非推奨フォールバック）
 4. コードのデフォルトパターン（完全一致 → ワイルドカード）
-5. いずれにもマッチしない場合は `B`（安全側にフォールバック）
+5. いずれにもマッチしない場合は Mode A
 
 ## クレデンシャル設定
 
@@ -398,7 +424,7 @@ Anima のモデル設定は **`status.json` が Single Source of Truth（SSoT）
 | 2（フォールバック） | `anima_defaults` | `config.json` の全体デフォルト。`status.json` に未設定のフィールドに適用 |
 
 `config.json` の `animas` セクションは **組織レイアウト**（`supervisor`, `speciality`）のみを保持する。
-モデル名・credential・max_turns 等のモデル設定は `status.json` に記録される。
+モデル名・credential などのモデル設定は `status.json` に記録される。
 
 ### status.json の構造
 
@@ -411,8 +437,6 @@ Anima のモデル設定は **`status.json` が Single Source of Truth（SSoT）
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 10000,
-  "max_chains": 10,
   "context_threshold": 0.80,
   "execution_mode": null
 }
@@ -433,7 +457,7 @@ animaworks anima set-model --all <モデル名>
 
 ### 設定のリロード
 
-`status.json` を変更した後、プロセスを再起動せずに設定を反映するには `reload` コマンドを使用する:
+root/CLI が許可された `status.json` 設定を変更した後、プロセスを再起動せずにモデル設定を反映するには `reload` コマンドを使う。`set-model` コマンドは起動中の Anima に reload を要求する:
 
 ```bash
 # 単一 Anima のリロード
@@ -447,10 +471,10 @@ animaworks anima reload --all
 
 **典型的な設定変更ワークフロー**:
 
-1. `animaworks anima set-model <name> <model>` でモデルを変更
-2. `animaworks anima reload <name>` で即座に反映
+1. `animaworks anima set-model <name> <model>` でモデルを変更する（root API が `status.json` を更新し、起動中の Anima に reload を要求する）
+2. 自動通知されない root/CLI 更新の後は `animaworks anima reload <name>` を使う
 
-手動で `status.json` を編集した場合も同様に `reload` で反映できる。
+Anima プロセスから `status.json` を直接編集しない。root 所有 CLI/API 操作を使う。
 
 ### デフォルト値一覧（anima_defaults）
 
@@ -458,10 +482,8 @@ animaworks anima reload --all
 |-----------|-------------|------|
 | `model` | `claude-sonnet-4-6` | 使用するLLMモデル |
 | `max_tokens` | `8192` | 1回の応答の最大トークン数 |
-| `max_turns` | `10000` | 1セッションの最大ターン数 |
 | `credential` | `"anthropic"` | 使用する credential 名 |
 | `context_threshold` | `0.50` | コンテキスト使用率がこの閾値を超えると短期記憶を外部化 |
-| `max_chains` | `2` | 自動セッション継続の最大回数 |
 
 ### 階層構造
 
@@ -484,7 +506,7 @@ animaworks anima reload --all
 | `animaworks anima reload <name>` | status.json を再読み込みしてモデル設定を即座に反映（プロセス再起動なし） | なし |
 | `animaworks anima reload --all` | 全 Anima の設定を一括リロード | なし |
 | `animaworks anima restart <name>` | Anima プロセスを完全に再起動（コード変更の反映時に使用） | 15-30秒 |
-| `animaworks anima set-model <name> <model>` | モデルを変更（status.json を更新。反映には `reload` が必要） | なし |
+| `animaworks anima set-model <name> <model>` | root 所有 status を更新し、起動中 Anima のモデル設定を reload | なし |
 | `animaworks anima set-model --all <model>` | 全 Anima のモデルを一括変更 | なし |
 | `animaworks anima enable <name>` | 休止中の Anima を有効化してプロセスを起動 | — |
 | `animaworks anima disable <name>` | Anima を休止（プロセス停止、status.json の enabled=false） | — |

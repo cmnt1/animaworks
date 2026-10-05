@@ -40,7 +40,9 @@ def test_respects_abconfig_location(tmp_path, monkeypatch):
     assert nanogpt.nanogpt_api_key("old-key") == "bridge"
 
 
-def test_without_local_files_preserves_config_and_environment(monkeypatch):
+def test_without_local_files_preserves_config_and_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(nanogpt, "_DEFAULT_ABCONFIG_DIR", tmp_path)
+    monkeypatch.delenv("ANIMAWORKS_ABCONFIG_PATH", raising=False)
     monkeypatch.setenv("NANOGPT_API_KEY", "env-key")
     assert nanogpt.nanogpt_api_key("configured") == "configured"
     assert nanogpt.nanogpt_api_key() == "env-key"
@@ -92,7 +94,7 @@ def test_resolution_does_not_persist_local_key_in_config(source):
 
 
 def test_usage_images_and_tools_use_current_key(source):
-    from core.tools._base import get_credential
+    from core.credentials import get_credential
     from server.routes.assets import _nanogpt_image_api_key
     from server.routes.usage_routes import _read_nanogpt_api_key
 
@@ -104,26 +106,24 @@ def test_usage_images_and_tools_use_current_key(source):
 
 
 def test_model_catalog_uses_local_key(source):
-    from server.routes.config_routes import _refresh_nanogpt_models
+    from core.config.model_discovery import _probe_openai_compatible
 
     config = AnimaWorksConfig(credentials={"nanogpt": CredentialConfig(api_key="old-key")})
-    with (
-        patch("server.routes.config_routes._list_nanogpt_models", return_value=["model"]) as request,
-        patch("server.routes.config_routes._cache_provider_models"),
-    ):
-        assert _refresh_nanogpt_models(config)["status"] == "ok"
+    with patch("core.config.model_discovery._http_get_models", return_value=["model"]) as request:
+        models = _probe_openai_compatible(config)
+    assert models[0].model == "nanogpt/model"
     assert request.call_args.args[1] == "new-key"
 
 
 def test_memory_helper_does_not_restore_stale_model_key(source):
-    from core.memory._llm_utils import get_llm_kwargs_for_model, get_llm_kwargs_for_model_config
+    from core.llm.oneshot import get_llm_kwargs_for_model, get_llm_kwargs_for_model_config
     from core.schemas import ModelConfig
 
     config = AnimaWorksConfig(credentials={"nanogpt": CredentialConfig(api_key="old-key")})
     model = ModelConfig(model="nanogpt/deepseek/deepseek-v4-flash", api_key="old-key", api_key_env="NANOGPT_API_KEY")
     with (
         patch("core.config.load_config", return_value=config),
-        patch("core.memory._llm_utils.ensure_credentials_in_env"),
+        patch("core.llm.oneshot.ensure_credentials_in_env"),
     ):
         assert get_llm_kwargs_for_model(model.model)["api_key"] == "new-key"
         assert get_llm_kwargs_for_model_config(model)["api_key"] == "new-key"

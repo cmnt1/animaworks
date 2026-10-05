@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.ipc import IPCClient, IPCServer, IPCRequest, IPCResponse
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCClient, IPCServer, IPCRequest, IPCResponse
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 @pytest.mark.asyncio
@@ -32,10 +32,7 @@ async def test_large_message_roundtrip():
 
         async def handler(request: IPCRequest) -> IPCResponse:
             msg = request.params.get("message", "")
-            return IPCResponse(
-                id=request.id,
-                result={"length": len(msg), "echo": msg[:10]}
-            )
+            return IPCResponse(id=request.id, result={"length": len(msg), "echo": msg[:10]})
 
         server = IPCServer(socket_path, handler)
         await server.start()
@@ -46,17 +43,12 @@ async def test_large_message_roundtrip():
 
             # 128KB message — would have caused LimitOverrunError before fix
             large_msg = "X" * (128 * 1024)
-            request = IPCRequest(
-                id="e2e_large_001",
-                method="echo",
-                params={"message": large_msg}
-            )
+            request = IPCRequest(id="e2e_large_001", method="echo", params={"message": large_msg})
             response = await client.send_request(request, timeout=10.0)
 
             assert response.error is None
             assert response.result["length"] == 128 * 1024
 
-            await client.close()
         finally:
             await server.stop()
 
@@ -114,7 +106,7 @@ async def test_ping_counter_reaches_threshold_when_failed():
 @pytest.mark.asyncio
 async def test_health_check_detects_failed_state():
     """E2E: _check_process_health() should detect FAILED state directly."""
-    from core.supervisor.manager import ProcessSupervisor, HealthConfig
+    from server.supervisor.manager import ProcessSupervisor, HealthConfig
 
     with TemporaryDirectory() as tmpdir:
         supervisor = ProcessSupervisor(
@@ -134,6 +126,7 @@ async def test_health_check_detects_failed_state():
 
         # Set started_at far enough back to pass startup grace period
         from datetime import timedelta
+
         handle.stats.started_at = now_jst() - timedelta(seconds=60)
 
         supervisor.processes["test-anima"] = handle

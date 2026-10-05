@@ -38,6 +38,7 @@ def _make_app(setup_complete: bool, tmp_path: Path):
         mock_sup_cls.return_value = mock_sup
 
         from server.app import create_app
+
         app = create_app(animas_dir, shared_dir)
 
     # The startup readiness gate (added after setup_guard) returns 503 until
@@ -51,15 +52,35 @@ def _make_app(setup_complete: bool, tmp_path: Path):
     return app
 
 
+class TestTaskboardStartup:
+    async def test_root_lifespan_ensures_taskboard_schema_once(self, tmp_path: Path, monkeypatch) -> None:
+        from fastapi import FastAPI
+
+        from server.app import lifespan
+
+        shared_dir = tmp_path / "shared"
+        calls: list[Path] = []
+        monkeypatch.setattr(
+            "core.tasks.board.tasks.ensure_task_store_schema",
+            lambda path: calls.append(path),
+        )
+        app = FastAPI()
+        app.state.shared_dir = shared_dir
+        app.state.setup_complete = False
+
+        async with lifespan(app):
+            pass
+
+        assert calls == [shared_dir / "taskboard.sqlite3"]
+
+
 class TestSetupGuardNotComplete:
     """When setup_complete=False, the guard should enforce setup-mode routing."""
 
     async def test_root_redirects_to_setup(self, tmp_path: Path):
         app = _make_app(False, tmp_path)
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test", follow_redirects=False
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
             resp = await client.get("/")
 
         assert resp.status_code == 307
@@ -87,9 +108,7 @@ class TestSetupGuardNotComplete:
     async def test_other_paths_redirect_to_setup(self, tmp_path: Path):
         app = _make_app(False, tmp_path)
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test", follow_redirects=False
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
             resp = await client.get("/some/random/path")
 
         assert resp.status_code == 307
@@ -112,9 +131,7 @@ class TestSetupGuardComplete:
     async def test_setup_page_redirects_to_dashboard(self, tmp_path: Path):
         app = _make_app(True, tmp_path)
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test", follow_redirects=False
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
             resp = await client.get("/setup/")
 
         assert resp.status_code == 307
@@ -153,9 +170,7 @@ class TestSetupCacheControl:
         """Setup index.html should include Cache-Control: no-cache during setup."""
         app = _make_app(False, tmp_path)
         transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test", follow_redirects=False
-        ) as client:
+        async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
             resp = await client.get("/setup/")
 
         if resp.status_code == 200:

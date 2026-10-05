@@ -2,6 +2,8 @@
 // Pure HTML-generating functions used by both Dashboard and Workspace chat UIs.
 // All functions are DOM-independent (return HTML strings) except bindToolCallHandlers.
 import { t } from "../i18n.js";
+import { escapeAttr as _escapeAttr } from "../html-utils.js";
+import { api } from "../../modules/api.js";
 
 // ── Think-tag strip (frontend safety net) ─────────────
 const _THINK_CLOSE_RE = /<\/think>\s*/;
@@ -320,12 +322,6 @@ const DEFAULT_TOOL_RESULT_TRUNCATE = 500;
 
 // ── Bubble Action Helpers ──────────────────────
 
-function _escapeAttr(str) {
-  if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 function _bubbleActionsHtml(rawText) {
   if (!rawText) return "";
   return `<div class="bubble-actions">`
@@ -557,7 +553,7 @@ export function renderSessionDivider(session, isFirst, opts) {
  * @param {function} opts.escapeHtml
  * @param {number}  [opts.truncateLen]
  */
-export function renderToolCalls(toolCalls, opts) {
+function renderToolCalls(toolCalls, opts) {
   if (!toolCalls || toolCalls.length === 0) return "";
   const { escapeHtml } = opts;
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
@@ -590,7 +586,7 @@ export function renderToolCalls(toolCalls, opts) {
 /**
  * Render the detail content of a single tool call.
  */
-export function renderToolCallDetail(tc, opts) {
+function renderToolCallDetail(tc, opts) {
   const { escapeHtml } = opts;
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
   let html = "";
@@ -909,7 +905,7 @@ export function bindToolCallHandlers(container) {
  * @param {object} opts - Same opts as renderHistoryMessage (escapeHtml, renderMarkdown, smartTimestamp)
  * @returns {string} HTML string
  */
-export function renderCollapsibleSession(sessions, type, opts) {
+function renderCollapsibleSession(sessions, type, opts) {
   const { escapeHtml, renderMarkdown, smartTimestamp } = opts;
 
   const allMessages = sessions.flatMap((s) => s.messages || []);
@@ -1365,19 +1361,17 @@ export function bindHumanNotifyHandlers(container, opts = {}) {
     }
 
     try {
-      let path = `/api/animas/${encodeURIComponent(animaName)}/interactions/${encodeURIComponent(callbackId)}/resolve`;
-      try {
-        const { basePath } = await import("/shared/base-path.js");
-        if (basePath && path.startsWith("/")) path = `${basePath}${path}`;
-      } catch {
-        // base-path optional when not running under the dashboard shell
-      }
-      const res = await fetch(path, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, comment: "" }),
-      });
+      const res = await api(
+        `/api/animas/${encodeURIComponent(animaName)}/interactions/${encodeURIComponent(callbackId)}/resolve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, comment: "" }),
+          acceptedStatuses: [409],
+          rawResponse: true,
+          redirectOnUnauthorized: false,
+        },
+      );
       if (res.ok || res.status === 409) {
         if (actions) {
           const label = res.status === 409

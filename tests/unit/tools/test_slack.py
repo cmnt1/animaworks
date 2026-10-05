@@ -1,4 +1,4 @@
-"""Tests for core/tools/slack.py — Slack integration."""
+"""Tests for core/integrations/slack.py — Slack integration."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,15 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.slack import (
+from core.integrations._base import ToolConfigError
+from core.integrations.slack import (
     MessageCache,
     clean_slack_markup,
     format_slack_ts,
     get_tool_schemas,
     truncate,
 )
-
 
 # ── format_slack_ts ───────────────────────────────────────────────
 
@@ -100,9 +99,7 @@ class TestMessageCache:
         cache = MessageCache(db_path=db_path)
         try:
             # Verify tables exist
-            rows = cache.conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            rows = cache.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             table_names = {r["name"] for r in rows}
             assert "channels" in table_names
             assert "messages" in table_names
@@ -114,14 +111,14 @@ class TestMessageCache:
     def test_upsert_channel(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_channel({
-                "id": "C123",
-                "name": "general",
-                "is_member": True,
-            })
-            row = cache.conn.execute(
-                "SELECT * FROM channels WHERE channel_id = 'C123'"
-            ).fetchone()
+            cache.upsert_channel(
+                {
+                    "id": "C123",
+                    "name": "general",
+                    "is_member": True,
+                }
+            )
+            row = cache.conn.execute("SELECT * FROM channels WHERE channel_id = 'C123'").fetchone()
             assert row["name"] == "general"
             assert row["type"] == "public_channel"
         finally:
@@ -131,9 +128,7 @@ class TestMessageCache:
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
             cache.upsert_channel({"id": "D123", "is_im": True, "user": "U999"})
-            row = cache.conn.execute(
-                "SELECT * FROM channels WHERE channel_id = 'D123'"
-            ).fetchone()
+            row = cache.conn.execute("SELECT * FROM channels WHERE channel_id = 'D123'").fetchone()
             assert row["type"] == "im"
             assert "DM:" in row["name"]
         finally:
@@ -142,15 +137,15 @@ class TestMessageCache:
     def test_upsert_user(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_user({
-                "id": "U001",
-                "profile": {"display_name": "Alice"},
-                "real_name": "Alice Smith",
-                "name": "alice",
-            })
-            row = cache.conn.execute(
-                "SELECT * FROM users WHERE user_id = 'U001'"
-            ).fetchone()
+            cache.upsert_user(
+                {
+                    "id": "U001",
+                    "profile": {"display_name": "Alice"},
+                    "real_name": "Alice Smith",
+                    "name": "alice",
+                }
+            )
+            row = cache.conn.execute("SELECT * FROM users WHERE user_id = 'U001'").fetchone()
             assert row["name"] == "Alice"
         finally:
             cache.close()
@@ -185,12 +180,18 @@ class TestMessageCache:
     def test_search_with_channel_filter(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U1", "text": "match this", "thread_ts": "", "reply_count": 0},
-            ])
-            cache.upsert_messages("C2", [
-                {"ts": "2.0", "user": "U1", "text": "match this too", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U1", "text": "match this", "thread_ts": "", "reply_count": 0},
+                ],
+            )
+            cache.upsert_messages(
+                "C2",
+                [
+                    {"ts": "2.0", "user": "U1", "text": "match this too", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             results = cache.search("match", channel_id="C1")
             assert len(results) == 1
         finally:
@@ -199,11 +200,14 @@ class TestMessageCache:
     def test_get_recent(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U1", "text": "first", "thread_ts": "", "reply_count": 0},
-                {"ts": "2.0", "user": "U1", "text": "second", "thread_ts": "", "reply_count": 0},
-                {"ts": "3.0", "user": "U1", "text": "third", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U1", "text": "first", "thread_ts": "", "reply_count": 0},
+                    {"ts": "2.0", "user": "U1", "text": "second", "thread_ts": "", "reply_count": 0},
+                    {"ts": "3.0", "user": "U1", "text": "third", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             results = cache.get_recent("C1", limit=2)
             assert len(results) == 2
             # Most recent first
@@ -214,10 +218,13 @@ class TestMessageCache:
     def test_find_mentions(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U2", "text": "Hey <@U001>!", "thread_ts": "", "reply_count": 0},
-                {"ts": "2.0", "user": "U001", "text": "my own msg", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U2", "text": "Hey <@U001>!", "thread_ts": "", "reply_count": 0},
+                    {"ts": "2.0", "user": "U001", "text": "my own msg", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             mentions = cache.find_mentions("U001")
             assert len(mentions) == 1
             assert mentions[0]["text"] == "Hey <@U001>!"
@@ -227,11 +234,14 @@ class TestMessageCache:
     def test_find_unreplied_threaded(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U2", "text": "<@U001> help", "thread_ts": "1.0", "reply_count": 1},
-                # U001 replied in thread
-                {"ts": "1.5", "user": "U001", "text": "sure", "thread_ts": "1.0", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U2", "text": "<@U001> help", "thread_ts": "1.0", "reply_count": 1},
+                    # U001 replied in thread
+                    {"ts": "1.5", "user": "U001", "text": "sure", "thread_ts": "1.0", "reply_count": 0},
+                ],
+            )
             unreplied = cache.find_unreplied("U001")
             assert len(unreplied) == 0
         finally:
@@ -240,9 +250,12 @@ class TestMessageCache:
     def test_find_unreplied_not_replied(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U2", "text": "<@U001> need help", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U2", "text": "<@U001> need help", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             unreplied = cache.find_unreplied("U001")
             assert len(unreplied) == 1
         finally:
@@ -281,9 +294,12 @@ class TestMessageCache:
         try:
             cache.upsert_channel({"id": "C1", "name": "ch1"})
             cache.upsert_user({"id": "U1", "profile": {"display_name": "A"}, "real_name": "A", "name": "a"})
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U1", "text": "msg", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U1", "text": "msg", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             stats = cache.get_stats()
             assert stats["channels"] == 1
             assert stats["users"] == 1
@@ -294,14 +310,15 @@ class TestMessageCache:
     def test_update_sync_state(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("C1", [
-                {"ts": "1.0", "user": "U1", "text": "a", "thread_ts": "", "reply_count": 0},
-                {"ts": "2.0", "user": "U1", "text": "b", "thread_ts": "", "reply_count": 0},
-            ])
+            cache.upsert_messages(
+                "C1",
+                [
+                    {"ts": "1.0", "user": "U1", "text": "a", "thread_ts": "", "reply_count": 0},
+                    {"ts": "2.0", "user": "U1", "text": "b", "thread_ts": "", "reply_count": 0},
+                ],
+            )
             cache.update_sync_state("C1")
-            row = cache.conn.execute(
-                "SELECT * FROM sync_state WHERE channel_id = 'C1'"
-            ).fetchone()
+            row = cache.conn.execute("SELECT * FROM sync_state WHERE channel_id = 'C1'").fetchone()
             assert row is not None
             assert row["oldest_ts"] == "1.0"
             assert row["newest_ts"] == "2.0"
@@ -320,10 +337,11 @@ class TestSlackClient:
         # We need to mock the slack_sdk import first
         mock_wc = MagicMock()
         mock_sae = type("SlackApiError", (Exception,), {})
-        with patch.dict("core.tools._slack_client.__dict__", {"WebClient": mock_wc, "SlackApiError": mock_sae}):
-            with patch("core.tools._slack_client.get_credential", side_effect=ToolConfigError("no token")):
+        with patch.dict("core.integrations._slack_client.__dict__", {"WebClient": mock_wc, "SlackApiError": mock_sae}):
+            with patch("core.integrations._slack_client.get_credential", side_effect=ToolConfigError("no token")):
                 with pytest.raises(ToolConfigError):
-                    from core.tools.slack import SlackClient
+                    from core.integrations.slack import SlackClient
+
                     SlackClient()
 
 

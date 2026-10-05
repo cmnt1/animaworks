@@ -314,7 +314,7 @@ def default_gmail_client() -> GmailLike:
     if token_path and token_path.exists():
         return _ReadonlyGmailClient(token_path)
 
-    from core.tools.gmail import GmailClient
+    from core.integrations.gmail import GmailClient
 
     return GmailClient()
 

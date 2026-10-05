@@ -14,9 +14,9 @@ import pytest
 from PIL import Image
 
 from core.config.models import ImageGenConfig
-from core.tools.image import atlascloud
-from core.tools.image.atlascloud import AtlasCloudImageClient
-from core.tools.image_gen import _build_fullbody_client, _build_reference_client
+from core.integrations.image import atlascloud
+from core.integrations.image.atlascloud import AtlasCloudImageClient
+from core.integrations.image_gen import _build_fullbody_client, _build_reference_client
 
 
 @pytest.fixture
@@ -143,8 +143,8 @@ def test_poll_timeout_preserves_one_submission(client, monkeypatch) -> None:
 def test_explicit_backend_bypasses_codex_and_fal(client, factory) -> None:
     config = ImageGenConfig(backend="atlascloud")
     with (
-        patch("core.tools.image_gen.AtlasCloudImageClient", return_value=client),
-        patch("core.tools.image_gen.codex_available") as codex,
+        patch("core.integrations.image_gen.AtlasCloudImageClient", return_value=client),
+        patch("core.integrations.image_gen.codex_available") as codex,
     ):
         assert factory(config) is client
     codex.assert_not_called()

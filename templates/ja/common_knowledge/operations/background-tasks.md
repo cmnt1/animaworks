@@ -9,10 +9,10 @@
 `animaworks-tool submit` を使うことで、タスクをバックグラウンドで実行し、
 自分自身はすぐに次の作業に移ることができる。
 
-ランタイムでは `core/background.py` の **BackgroundTaskManager** がツール実行と
-`state/background_tasks/{task_id}.json` への状態永続化を担当し、
-Anima 子プロセス内の **PendingTaskExecutor**（`core/supervisor/pending_executor.py`）が
-`animaworks-tool submit` が書いた待ちキューを監視して `BackgroundTaskManager` に載せ替える。
+`animaworks-tool submit` は `task_type="command"` として TaskStore に登録され、
+Anima 子プロセス内の **PendingTaskExecutor**（`core/tasks/pending_executor.py`）が試行を取得する。
+**BackgroundTaskManager**（`core/tasks/background.py`）がツールをバックグラウンド実行し、
+試行は TaskStore、互換用の結果 JSON は `state/background_tasks/{task_id}.json` に保存する。
 
 ## いつ submit を使うか
 
@@ -82,11 +82,8 @@ submit は即座に JSON を標準出力へ出して終了する（`task_id` は
 
 ## 結果の受け取り
 
-1. submit 後、**PendingTaskExecutor** が `state/background_tasks/pending/` の記述子を取り込み、
-   `BackgroundTaskManager.submit` でバックグラウンド実行する（Anima の会話ロック外）。
-2. 実行中〜完了まで、同一 `task_id` の状態は **`state/background_tasks/{task_id}.json`** にも保存される。
-   `BackgroundTaskManager.submit` / `submit_async` が書き出すタイミングでは **初回から `running`**（UUID 12 桁の `task_id` を採番した直後にディスクへ保存）。完了で `completed`、例外で `failed`。
-   データ型上は `pending` 列挙値もあるが、マネージャの通常投入フローでは使われない。**キュー待ち**は別物で、`state/background_tasks/pending/*.json` の記述子が表す。
+1. submit はツール名・引数・Anima を含む `task_type="command"` の入力を TaskStore に登録する。PendingTaskExecutor が実行試行を取得し、会話ロック外で BackgroundTaskManager に実行を依頼する。
+2. TaskStore は試行と結果参照を記録する。`state/background_tasks/{task_id}.json` は従来の照会 API との互換用に同じ task_id で `running` → `completed` / `failed` を記録する。
 3. 完了時に `_on_background_task_complete` が **`state/background_notifications/{task_id}.md`** に Markdown 通知を書く。
 4. 次回の **heartbeat** で `drain_background_notifications()` が当該 `.md` を読み取り・削除し、コンテキストへ注入される。
 5. Web UI の WebSocket や `call_human` 系の人間通知が有効なら、同じ完了タイミングでそちらにも載る場合がある。
@@ -101,10 +98,7 @@ submit は即座に JSON を標準出力へ出して終了する（`task_id` は
   3. 修正して再度 submit する
   4. 解決できない場合は上司に報告する
 
-- **クラッシュや異常終了**で `processing/` に JSON が残った場合、Anima プロセス起動時に **PendingTaskExecutor** が回収する:
-  - **コマンド型**（`animaworks-tool submit`）: `state/background_tasks/pending/processing/*.json` → `state/background_tasks/pending/failed/`
-  - **LLM 型**は正規タスクと試行IDで管理し、記述子を回収しない。未完了の仕事はpendingと永続的な要確認通知を残す。実際の副作用を確認してから明示的に再開する。
-  旧LLMファイルは移行の証拠のみ。再開のために移動・再生成しない。
+- プロセス異常終了時は TaskStore の試行所有者を確認し、所有者の終了が確定したタスクを pending（要確認）として記録する。副作用が発生済みの可能性があるため、自動再実行はしない。結果 JSON が `running` のまま残っていても完了と判断せず、実際の状態を確認してから明示的に再開する。
 
 ## よくある間違い
 
@@ -138,10 +132,10 @@ submit したらすぐに次の作業に移ること。
 
 ## 技術的な仕組み（参考）
 
-### BackgroundTaskManager（`core/background.py`）
+### BackgroundTaskManager（`core/tasks/background.py`）
 
 - **役割**: 長時間ツール呼び出しを `asyncio` タスクとしてバックグラウンド実行し、完了・失敗時に `on_complete`（任意の非同期コールバック）を `await` する。コンストラクタで `state/background_tasks/` を `mkdir(parents=True)` する。
-- **同期ツール**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` を `run_in_executor(None, ...)` でスレッドプール実行。
+- **同期ツール**: `submit(tool_name, tool_args, execute_fn, task_id=None)` → `execute_fn(name, args) -> str | None` を `run_in_executor(None, ...)` でスレッドプール実行。`task_id` が省略されれば生成し、CLI command task では TaskStore と同じ ID を渡す。
 - **非同期ツール**: `submit_async`（同シグネチャで `execute_fn` が `Awaitable[str]`）→ イベントループ上で `await execute_fn(...)`。
 - **スケジューリング**: `asyncio.create_task(..., name=f"bg-{task_id}")` でラップ。完了時 `_async_tasks` から該当エントリを除去。
 - **永続化**: 各変更後 `_save_task` で `state/background_tasks/{task_id}.json` に `to_dict()`（`ensure_ascii=False`, `indent=2`）。破損 JSON は `_load_task` で警告ログのうえ `None`。
@@ -150,23 +144,26 @@ submit したらすぐに次の作業に移ること。
 - **資格あるツール名**（`is_eligible`）は次の **3 層**をマージ（後勝ち）。キーはそのまま辞書照合（Mode A のスキーマ名 `generate_3d_model` と Mode S 提出用の `image_gen:3d` の**両方**があり得る）:
   1. コード内デフォルト `_DEFAULT_ELIGIBLE_TOOLS`（値は目安秒数。現状のキー）:
      `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations`（各 30）、`local_llm` / `run_command`（各 60）
-  2. `BackgroundTaskManager.from_profiles` 経由で、各モジュールの `EXECUTION_PROFILE` から `background_eligible: true` のサブコマンドを抽出（`core.tools._base.get_eligible_tools_from_profiles`）。キーは `"{tool_name}:{subcmd}"`、秒数は `expected_seconds`（未設定時 60）
+  2. `BackgroundTaskManager.from_profiles` 経由で、各モジュールの `EXECUTION_PROFILE` から `background_eligible: true` のサブコマンドを抽出（`core.integrations._base.get_eligible_tools_from_profiles`）。キーは `"{tool_name}:{subcmd}"`、秒数は `expected_seconds`（未設定時 60）
   3. `config.json` の `background_task.eligible_tools` — 各キーに対し `threshold_s` を秒数として上書き
-- **無効化**: `config.json` で `background_task.enabled: false` にすると `BackgroundTaskManager` 自体が作られない（その場合、submit キューは取り込まれても実行側で警告になる）。
-- **掃除**: `cleanup_old_tasks(max_age_hours=24)` は、(1) `completed` / `failed` で `completed_at` が **24 時間超**過去の JSON を削除、(2) `running` のまま `created_at` が **48 時間超**過去のファイル（プロセスクラッシュ等の孤児）を削除。戻り値は削除件数。`config.json` の `background_task.result_retention_hours` はスキーマに存在するが、**現行の `BackgroundTaskManager` 実装からは参照されない**（呼び出し側が `cleanup_old_tasks` に任意の `max_age_hours` を渡す API のみ）。
+- **無効化**: `config.json` で `background_task.enabled: false` にすると `BackgroundTaskManager` 自体が作られない。submit は TaskStore に登録されるが、実行試行は pending に戻り、要確認通知が発生する。
+- **掃除**: `cleanup_old_tasks(max_age_hours=24)` は、(1) `completed` / `failed` で `completed_at` が指定時間を超えた JSON、(2) `running` のまま `created_at` が **48 時間超**過去のファイル（プロセスクラッシュ等の孤児）を削除する。戻り値は削除件数。保持時間は呼び出し側が `max_age_hours` で指定し、対応する `config.json` 設定キーはない。
 
 ### 同ファイル内のその他 API: `rotate_dm_logs`
 
-`core/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
+`core/tasks/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
 
 ### コマンド型タスク（`animaworks-tool submit`）
 
-1. `animaworks-tool submit` が `state/background_tasks/pending/{task_id}.json` に記述子を書く（`ANIMAWORKS_ANIMA_DIR` 必須）。
-2. PendingTaskExecutor の watcher が最大 **3 秒**間隔（`wake()` で即時も可）で `pending/` を監視。
-3. `pending/*.json` → `pending/processing/` にリネームしてから `execute_pending_task`。
-4. コマンド型は内部で `animaworks-tool … -j` を **サブプロセス**として起動。**1 回あたりの壁時計タイムアウトは 1800 秒（30 分）**（`pending_executor._PENDING_TASK_SUBPROCESS_TIMEOUT`）。成功後、processing 内のファイルは削除。例外時は `pending/failed/` へ。
-5. 実処理は `BackgroundTaskManager.submit(composite_name, tool_args, execute_fn)` に委譲。`composite_name` は `tool:subcommand`（例: `image_gen:3d`）。これが `is_eligible` と照合される。
-6. 完了時に `_on_background_task_complete` が `state/background_notifications/{task_id}.md` を書き、heartbeat で `drain_background_notifications()` が読み取る。
+1. `animaworks-tool submit` は `task_type="command"`、ツール名、引数、Anima、`task_id` を含む入力を TaskStore に原子的に登録する（`ANIMAWORKS_ANIMA_DIR` 必須）。
+2. TaskStore watcher は既存の claim / attempt 機構でタスクを取得する。`BackgroundTaskManager` は元の `task_id` を結果 JSON にも使う。
+3. コマンド型は内部で `animaworks-tool … -j` を **サブプロセス**として起動する。**1 回あたりの壁時計タイムアウトは 1800 秒（30 分）**（`pending_executor._PENDING_TASK_SUBPROCESS_TIMEOUT`）。
+4. stdout またはエラーは `state/task_results/{task_id}/{attempt_token}.md` に保存し、TaskStore の試行に結果参照を記録する。状態・引数・試行の正本は TaskStore。
+5. BackgroundTaskManager は `state/background_tasks/{task_id}.json` に `running` → `completed` / `failed` を保存し、`_on_background_task_complete` は `state/background_notifications/{task_id}.md` に通知を書く。heartbeat が通知を取り込む。
+
+### 旧コマンド記述子の移行
+
+以前の `state/background_tasks/pending/*.json` は新ランタイムでは監視しない。停止中に `animaworks task-store migrate --anima NAME --backup PATH` を実行すると、未処理のトップレベル記述子を検証して TaskStore に取り込む。元ファイルは証跡として残す。`processing/` と `failed/` は自動再実行・移行せず、警告とともに残すため、副作用を確認してから運用者が判断する。
 
 ### LLM 型タスク（正規タスクストア）
 
@@ -180,18 +177,13 @@ SQLiteや旧タスクファイルを直接編集せず、タスクツールを�
 
 ### ファイルのライフサイクル
 
-**コマンド型**（`animaworks-tool submit` の待ちキュー）:
+**コマンド型**（`animaworks-tool submit`）:
 
 ```
-state/background_tasks/pending/*.json
-  → pending/processing/*.json
-  → 成功: 削除 | 失敗: pending/failed/*.json
-```
-
-併せて **タスク状態ファイル**（実行全体）:
-
-```
-state/background_tasks/{task_id}.json   # running → completed / failed
+TaskStore の command 入力 → claim / attempt
+  → 成功: done | 失敗・中断: pending（要確認。自動再実行なし）
+state/task_results/{task_id}/{attempt_token}.md  # attempt output / error
+state/background_tasks/{task_id}.json           # 互換用の running → completed / failed 結果
 ```
 
 **LLM 型**（`submit_tasks` / `delegate_task`）:
@@ -202,4 +194,4 @@ state/background_tasks/{task_id}.json   # running → completed / failed
   → 明示resumeで保存済み入力を使う新しい試行
 ```
 
-上記のコマンド型ファイル回収はLLMタスクには適用しない。旧LLMのJSONL・記述子は移行・export形式であり、実行開始の合図ではない。
+コマンド型とLLM型は別の入力形式だが、どちらも TaskStore の claim / attempt で実行する。旧LLMのJSONL・`state/pending/` 記述子は移行・export用であり、実行開始の合図ではない。

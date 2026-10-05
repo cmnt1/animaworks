@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.forgetting import (
+from core.memory.maintenance.forgetting import (
     ForgettingEngine,
 )
 from core.time_utils import now_jst
@@ -100,10 +100,10 @@ class TestIsProtected:
         meta = {"memory_type": "skills", "importance": "normal"}
         assert forgetting_engine._is_protected(meta) is True
 
-    def test_is_protected_shared_users(self, forgetting_engine):
-        """Verify that memory_type='shared_users' is protected from forgetting."""
+    def test_is_protected_shared_users_is_not_a_protected_vector_type(self, forgetting_engine):
+        """Legacy shared-user index entries are no longer blanket-protected."""
         meta = {"memory_type": "shared_users", "importance": "normal"}
-        assert forgetting_engine._is_protected(meta) is True
+        assert forgetting_engine._is_protected(meta) is False
 
     def test_is_protected_important(self, forgetting_engine):
         """Verify that importance='important' is protected regardless of type."""
@@ -134,8 +134,8 @@ class TestIsProtected:
         }
         assert forgetting_engine._is_protected(meta) is False
 
-    def test_is_protected_expired_important_skills_and_users_stay_protected(self, forgetting_engine):
-        """Permanent memory types stay protected even when [IMPORTANT] expires."""
+    def test_is_protected_expired_important_skills_stay_protected(self, forgetting_engine):
+        """Skills stay protected even when [IMPORTANT] expires."""
         old_date = (now_jst() - timedelta(days=370)).isoformat()
         base = {
             "importance": "important",
@@ -143,7 +143,7 @@ class TestIsProtected:
             "updated_at": old_date,
         }
         assert forgetting_engine._is_protected({**base, "memory_type": "skills"}) is True
-        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is True
+        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is False
 
     def test_is_protected_normal_knowledge(self, forgetting_engine):
         """Verify that memory_type='knowledge', importance='normal' is NOT protected."""
@@ -157,6 +157,22 @@ class TestIsProtected:
 
 
 # ── Synaptic Downscaling Tests ──────────────────────────────────────
+
+
+def test_empty_scan_warns_when_collection_count_is_nonzero(forgetting_engine, caplog) -> None:
+    store = MagicMock(spec=["get_all", "count"])
+    store.get_all.return_value = []
+    store.count.return_value = 12
+
+    with (
+        patch.object(forgetting_engine, "_get_vector_store", return_value=store),
+        caplog.at_level("WARNING", logger="animaworks.forgetting"),
+    ):
+        assert forgetting_engine._get_all_chunks("test_anima_knowledge") == []
+
+    store.get_all.assert_called_once_with("test_anima_knowledge", limit=100_000)
+    store.count.assert_called_once_with("test_anima_knowledge")
+    assert "count=12" in caplog.text
 
 
 class TestSynapticDownscaling:
@@ -363,6 +379,52 @@ class TestSynapticDownscaling:
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
 
+    def test_dry_run_counts_candidates_without_updating_metadata(self, forgetting_engine):
+        old_date = (now_jst() - timedelta(days=120)).isoformat()
+        low_since = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="would_mark_low",
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+            _make_chunk(
+                doc_id="complete_forgetting_candidate",
+                updated_at=old_date,
+                activation_level="low",
+                low_activation_since=low_since,
+                source_file="knowledge/old.md",
+            ),
+            _make_chunk(
+                doc_id="protected",
+                importance="important",
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+        ]
+
+        def get_chunks(collection_name):
+            return chunks if collection_name == "test_anima_knowledge" else []
+
+        mock_store = MagicMock()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling(dry_run=True)
+
+        assert result["dry_run"] is True
+        assert result["scanned"] == 3
+        assert result["marked_low"] == 1
+        assert result["complete_forgetting_targets"] == 1
+        assert result["collections"]["test_anima_knowledge"] == {
+            "scanned": 3,
+            "marked_low": 1,
+            "complete_forgetting_targets": 1,
+        }
+        mock_store.update_metadata.assert_not_called()
+        mock_store.upsert.assert_not_called()
+
     def test_synaptic_downscaling_scans_knowledge_episodes_procedures(self, forgetting_engine):
         """Test that downscaling scans knowledge, episodes, and procedures."""
         chunks_knowledge = [
@@ -511,12 +573,18 @@ class TestListForgettingCandidates:
         old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="a", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file="knowledge/same.md",
+                doc_id="a",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file="knowledge/same.md",
             ),
             _make_chunk(
-                doc_id="b", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file="knowledge/same.md",
+                doc_id="b",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file="knowledge/same.md",
             ),
         ]
         with (
@@ -532,8 +600,11 @@ class TestListForgettingCandidates:
         old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id=f"c{i}", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file=f"knowledge/f{i}.md",
+                doc_id=f"c{i}",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file=f"knowledge/f{i}.md",
             )
             for i in range(5)
         ]
@@ -550,12 +621,18 @@ class TestListForgettingCandidates:
         old = (now_jst() - timedelta(days=100)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="older", access_count=0, activation_level="low",
-                low_activation_since=very_old, source_file="knowledge/older.md",
+                doc_id="older",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=very_old,
+                source_file="knowledge/older.md",
             ),
             _make_chunk(
-                doc_id="younger", access_count=0, activation_level="low",
-                low_activation_since=old, source_file="knowledge/younger.md",
+                doc_id="younger",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old,
+                source_file="knowledge/younger.md",
             ),
         ]
         with (

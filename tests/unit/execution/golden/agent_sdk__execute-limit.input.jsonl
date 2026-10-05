@@ -1,0 +1,2 @@
+{"scenario":"interrupt","kind":"assistant","blocks":[{"type":"text","text":"This response should not be consumed"}]}
+{"kind":"result","usage":{"input_tokens":100,"output_tokens":50},"num_turns":1,"session_id":"ses-interrupted"}

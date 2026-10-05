@@ -12,7 +12,7 @@ Heartbeat Observe は、状態確認と計画判断のための軽量な観測�
 
 ## HEARTBEAT_OK の条件
 
-`HEARTBEAT_OK` は、事前観測または `heartbeat_observe_snapshot` の直接呼出しによる固定スコープ観測を完了し、未処理指示、STALE/OVERDUEタスク、未実行pending、未確認task_results、報告すべきブロッカーがない場合に限る。
+`HEARTBEAT_OK` は、事前観測または `heartbeat_observe_snapshot` の直接呼出しによる固定スコープ観測を完了し、未処理指示、期限を過ぎたタスク、未実行pending、未確認task_results、報告すべきブロッカーがない場合に限る。
 
 ## 追加確認
 

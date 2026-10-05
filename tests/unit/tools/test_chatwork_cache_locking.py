@@ -10,8 +10,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from core.tools import _cache
-from core.tools._chatwork_cache import MessageCache
+from core.integrations import _cache
+from core.integrations._chatwork_cache import MessageCache
 
 ROOMS = [{"room_id": i, "name": f"room-{i}", "type": "group"} for i in range(50)]
 

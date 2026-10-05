@@ -11,7 +11,7 @@ tools to prevent context bloat in Agent SDK sessions.
 
 from pathlib import Path
 
-from core.execution.agent_sdk import (
+from core.execution.engines.claude._sdk_security import (
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,
@@ -19,12 +19,12 @@ from core.execution.agent_sdk import (
     _GREP_DEFAULT_HEAD_LIMIT,
     _READ_DEFAULT_LIMIT,
     _build_output_guard,
-    _cleanup_tool_outputs,
     _guard_bash,
     _guard_glob,
     _guard_grep,
     _guard_read,
 )
+from core.execution.engines.claude._sdk_session import _cleanup_tool_outputs
 
 # ── _guard_bash tests ────────────────────────────────────────
 
@@ -66,7 +66,7 @@ class TestGuardBash:
     def test_output_dir_in_wrapped(self, tmp_path: Path) -> None:
         """Wrapped command uses anima_dir/shortterm/tool_outputs."""
         result = _guard_bash({"command": "echo test"}, tmp_path)
-        expected_dir = (tmp_path / "shortterm" / "tool_outputs").as_posix()
+        expected_dir = str(tmp_path / "shortterm" / "tool_outputs")
         assert expected_dir in result["command"]
 
     def test_truncation_thresholds(self, tmp_path: Path) -> None:
@@ -203,7 +203,9 @@ class TestBuildOutputGuard:
     def test_read_dispatches(self, tmp_path: Path) -> None:
         """Read tool dispatches to _guard_read."""
         result = _build_output_guard(
-            "Read", {"file_path": "/f"}, tmp_path,
+            "Read",
+            {"file_path": "/f"},
+            tmp_path,
         )
         assert result is not None
         assert result["limit"] == _READ_DEFAULT_LIMIT
@@ -211,7 +213,9 @@ class TestBuildOutputGuard:
     def test_grep_dispatches(self, tmp_path: Path) -> None:
         """Grep tool dispatches to _guard_grep."""
         result = _build_output_guard(
-            "Grep", {"pattern": "x"}, tmp_path,
+            "Grep",
+            {"pattern": "x"},
+            tmp_path,
         )
         assert result is not None
         assert result["head_limit"] == _GREP_DEFAULT_HEAD_LIMIT
@@ -219,7 +223,9 @@ class TestBuildOutputGuard:
     def test_glob_dispatches(self, tmp_path: Path) -> None:
         """Glob tool dispatches to _guard_glob."""
         result = _build_output_guard(
-            "Glob", {"pattern": "*.py"}, tmp_path,
+            "Glob",
+            {"pattern": "*.py"},
+            tmp_path,
         )
         assert result is not None
         assert result["head_limit"] == _GLOB_DEFAULT_HEAD_LIMIT
@@ -227,35 +233,45 @@ class TestBuildOutputGuard:
     def test_write_returns_none(self, tmp_path: Path) -> None:
         """Write tool returns None (not guarded)."""
         result = _build_output_guard(
-            "Write", {"file_path": "/f", "content": "x"}, tmp_path,
+            "Write",
+            {"file_path": "/f", "content": "x"},
+            tmp_path,
         )
         assert result is None
 
     def test_edit_returns_none(self, tmp_path: Path) -> None:
         """Edit tool returns None (not guarded)."""
         result = _build_output_guard(
-            "Edit", {"file_path": "/f"}, tmp_path,
+            "Edit",
+            {"file_path": "/f"},
+            tmp_path,
         )
         assert result is None
 
     def test_unknown_tool_returns_none(self, tmp_path: Path) -> None:
         """Unknown tool returns None."""
         result = _build_output_guard(
-            "SomeOtherTool", {}, tmp_path,
+            "SomeOtherTool",
+            {},
+            tmp_path,
         )
         assert result is None
 
     def test_read_with_explicit_limit_returns_none(self, tmp_path: Path) -> None:
         """Read with explicit limit returns None (no modification needed)."""
         result = _build_output_guard(
-            "Read", {"file_path": "/f", "limit": 100}, tmp_path,
+            "Read",
+            {"file_path": "/f", "limit": 100},
+            tmp_path,
         )
         assert result is None
 
     def test_grep_with_explicit_head_limit_returns_none(self, tmp_path: Path) -> None:
         """Grep with explicit head_limit returns None."""
         result = _build_output_guard(
-            "Grep", {"pattern": "x", "head_limit": 50}, tmp_path,
+            "Grep",
+            {"pattern": "x", "head_limit": 50},
+            tmp_path,
         )
         assert result is None
 

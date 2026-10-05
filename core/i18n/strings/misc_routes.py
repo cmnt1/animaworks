@@ -9,4 +9,9 @@
 
 from __future__ import annotations
 
-STRINGS: dict[str, dict[str, str]] = {}
+STRINGS: dict[str, dict[str, str]] = {
+    "anima.status_json_invalid": {
+        "ja": "Anima '{name}' の status.json が壊れているか読み取れないため、操作を中止しました。",
+        "en": "Anima '{name}' status.json is invalid or unreadable; the operation was aborted.",
+    },
+}

@@ -4,50 +4,46 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.memory.task_queue — TaskQueueManager and task lifecycle."""
+"""Unit tests for core.tasks.queue — TaskQueueManager and task lifecycle."""
 
-import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from core.memory.task_queue import (
+from core.schemas import TaskEntry
+from core.tasks.board.tasks import TaskStore, task_database_path
+from core.tasks.queue import (
     _ACTIVE_STATUSES,
     _TERMINAL_STATUSES,
     TaskPersistenceError,
     TaskQueueManager,
+    _elapsed_seconds,
+    _format_elapsed_from_sec,
 )
-from core.taskboard.tasks import TaskStore, task_database_path
 
 # ── Test 1: _append raises TaskPersistenceError on OSError ─────────────
 
 
-@pytest.mark.skipif(os.name == "nt", reason="chmod does not make directories read-only on Windows")
 def test_append_raises_task_persistence_error_on_oserror(tmp_path: Path) -> None:
-    """Test that _append raises TaskPersistenceError when file write fails.
-
-    Mock the file open to raise OSError, then verify TaskPersistenceError
-    is raised. Test through add_task() which calls _append().
-    """
+    """Store write failures are translated to TaskPersistenceError."""
     anima_dir = tmp_path / "anima"
     anima_dir.mkdir()
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
 
     tqm = TaskQueueManager(anima_dir)
 
-    state_dir = anima_dir / "state"
-    state_dir.chmod(0o444)
-    try:
-        with pytest.raises(TaskPersistenceError):
-            tqm.add_task(
-                source="human",
-                original_instruction="test task",
-                assignee="anima",
-                summary="test",
-            )
-    finally:
-        state_dir.chmod(0o755)
+    with (
+        patch.object(TaskStore, "apply", side_effect=OSError("read-only database")),
+        pytest.raises(TaskPersistenceError),
+    ):
+        tqm.add_task(
+            source="human",
+            original_instruction="test task",
+            assignee="anima",
+            summary="test",
+        )
 
 
 # ── Test 2: "blocked"/"failed" statuses are retired ─────────────────────
@@ -177,25 +173,16 @@ def test_task_tracker_completed_includes_cancelled(tmp_path: Path) -> None:
     (hinata_dir / "state").mkdir(exist_ok=True)
 
     # Create delegated task in sakura's queue
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
 
-    hinata_task = hinata_tqm.add_task(
-        source="human",
-        original_instruction="subordinate task",
-        assignee="hinata",
-        summary="sub task",
+    hinata_task = hinata_tqm.submit(
+        {"task_id": "cancelled-child", "title": "sub task", "description": "subordinate task"}
     )
     hinata_tqm.update_status(hinata_task.task_id, "cancelled")
-
-    sakura_tqm.add_delegated_task(
-        original_instruction="delegate to hinata",
-        assignee="hinata",
-        summary="delegated",
-        meta={"delegated_to": "hinata", "delegated_task_id": hinata_task.task_id},
-    )
+    sakura_tqm.store.alias("sakura", "delegated-cancelled", "hinata", hinata_task.task_id)
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -241,25 +228,16 @@ def test_task_tracker_active_excludes_cancelled(tmp_path: Path) -> None:
     (sakura_dir / "state").mkdir(exist_ok=True)
     (hinata_dir / "state").mkdir(exist_ok=True)
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
 
-    hinata_task = hinata_tqm.add_task(
-        source="human",
-        original_instruction="subordinate task",
-        assignee="hinata",
-        summary="sub task",
+    hinata_task = hinata_tqm.submit(
+        {"task_id": "cancelled-child", "title": "sub task", "description": "subordinate task"}
     )
     hinata_tqm.update_status(hinata_task.task_id, "cancelled")
-
-    sakura_tqm.add_delegated_task(
-        original_instruction="delegate to hinata",
-        assignee="hinata",
-        summary="delegated",
-        meta={"delegated_to": "hinata", "delegated_task_id": hinata_task.task_id},
-    )
+    sakura_tqm.store.alias("sakura", "delegated-cancelled", "hinata", hinata_task.task_id)
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -597,7 +575,7 @@ def test_format_for_priming_shows_auto_taskexec_for_in_progress(tmp_path: Path) 
     assert "abc12345" in result or "abc1234" in result
 
 
-# ── TaskBoard metadata sync on terminal status ─────────────────────────
+# ── Terminal status updates ─────────────────────────
 
 
 def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "sakura"):
@@ -608,12 +586,9 @@ def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: st
     return TaskQueueManager(anima_dir), data_dir
 
 
-def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Terminal status closes existing TaskBoard metadata to archived/done."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_marks_task_terminal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Terminal status simply marks the canonical task terminal (no metadata)."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="delegate work",
@@ -621,44 +596,16 @@ def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monke
         summary="delegate work",
         task_id="task-term-1",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="delegator",
-        visibility="active",
-        column="waiting",
-    )
 
-    for terminal in ("done", "cancelled"):
-        # Reset to active so each terminal path is exercised independently.
-        tqm.update_status(entry.task_id, "pending")
-        store.upsert_metadata(
-            anima_name="sakura",
-            task_id=entry.task_id,
-            actor="test",
-            visibility="active",
-            column="waiting",
-        )
-        result = tqm.update_status(entry.task_id, terminal)
-        assert result is not None
-        assert result.status == terminal
-        meta = store.get_metadata("sakura", entry.task_id)
-        assert meta is not None
-        assert meta.visibility == AttentionVisibility.ARCHIVED
-        assert meta.column == BoardColumn.DONE
-        assert meta.updated_by == "sakura"
-        events = store.list_events(anima_name="sakura", task_id=entry.task_id)
-        assert any(event["event_type"] == "archived" for event in events)
+    result = tqm.update_status(entry.task_id, "done")
+
+    assert result is not None
+    assert result.status == "done"
 
 
-def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-queueing an archived task to pending revives the board card so the
-    pending attention gate does not cancel it as "archived by TaskBoard"."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_then_pending_reactivates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A terminal task can be re-queued to pending."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="revivable work",
@@ -666,43 +613,17 @@ def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, mon
         summary="revivable work",
         task_id="task-revive-1",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="delegator",
-        visibility="active",
-        column="todo",
-    )
-    tqm.update_status(entry.task_id, "cancelled")
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None and meta.visibility == AttentionVisibility.ARCHIVED
+
+    result = tqm.update_status(entry.task_id, "done")
+    assert result is not None and result.status == "done"
 
     result = tqm.update_status(entry.task_id, "pending")
     assert result is not None and result.status == "pending"
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None
-    assert meta.visibility == AttentionVisibility.ACTIVE
-    assert meta.column == BoardColumn.TODO
-
-    # Tombstoned cards are deliberate suppressions and must stay suppressed.
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="test",
-        visibility="tombstoned",
-    )
-    tqm.update_status(entry.task_id, "pending")
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None
-    assert meta.visibility == AttentionVisibility.TOMBSTONED
 
 
-def test_update_status_terminal_does_not_create_metadata_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Terminal status must not invent a TaskBoard metadata row when none exists."""
-    from core.taskboard.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_succeeds_without_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Terminal status never touches a TaskBoard metadata row (none exists anymore)."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="plain task",
@@ -712,84 +633,14 @@ def test_update_status_terminal_does_not_create_metadata_row(tmp_path: Path, mon
     )
 
     result = tqm.update_status(entry.task_id, "done")
+
     assert result is not None
     assert result.status == "done"
 
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    assert store.get_metadata("sakura", entry.task_id) is None
-    assert store.list_metadata(anima_name="sakura") == []
 
-
-@pytest.mark.parametrize("visibility", ["expired", "archived", "tombstoned"])
-def test_update_status_terminal_preserves_suppressed_visibility(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    visibility: str,
-) -> None:
-    """Terminal queue sync must not replace a more specific suppression reason."""
-    from core.taskboard.models import AttentionVisibility
-    from core.taskboard.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
-    entry = tqm.add_task(
-        source="human",
-        original_instruction="suppressed task",
-        assignee="sakura",
-        summary="suppressed task",
-        task_id=f"task-{visibility}",
-    )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="planner",
-        visibility=visibility,
-        column="suppressed",
-    )
-
-    tqm.update_status(entry.task_id, "cancelled")
-
-    metadata = store.get_metadata("sakura", entry.task_id)
-    assert metadata is not None
-    assert metadata.visibility == AttentionVisibility(visibility)
-    assert metadata.column.value == "suppressed"
-    assert metadata.updated_by == "planner"
-
-
-def test_update_status_succeeds_when_taskboard_store_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Queue terminal update remains successful if TaskBoard store fails."""
+def test_update_status_non_terminal_changes_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-terminal transitions just change the canonical status."""
     tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
-    entry = tqm.add_task(
-        source="human",
-        original_instruction="resilient task",
-        assignee="sakura",
-        summary="resilient task",
-        task_id="task-resilient",
-    )
-
-    class _BoomStore:
-        def get_metadata(self, *args, **kwargs):
-            raise RuntimeError("store down")
-
-        def upsert_metadata(self, *args, **kwargs):
-            raise RuntimeError("store down")
-
-    with patch("core.taskboard.store.TaskBoardStore", return_value=_BoomStore()):
-        result = tqm.update_status(entry.task_id, "done")
-
-    assert result is not None
-    assert result.status == "done"
-    reloaded = TaskQueueManager(tqm.anima_dir).get_task_by_id(entry.task_id)
-    assert reloaded is not None
-    assert reloaded.status == "done"
-
-
-def test_update_status_non_terminal_does_not_touch_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-terminal transitions leave TaskBoard metadata unchanged."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="active task",
@@ -797,30 +648,11 @@ def test_update_status_non_terminal_does_not_touch_metadata(tmp_path: Path, monk
         summary="active task",
         task_id="task-active",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="planner",
-        visibility="active",
-        column="todo",
-        position=3.0,
-    )
-    before = store.get_metadata("sakura", entry.task_id)
-    assert before is not None
-    before_updated_at = before.updated_at
 
     result = tqm.update_status(entry.task_id, "in_progress")
+
     assert result is not None
     assert result.status == "in_progress"
-
-    after = store.get_metadata("sakura", entry.task_id)
-    assert after is not None
-    assert after.visibility == AttentionVisibility.ACTIVE
-    assert after.column == BoardColumn.TODO
-    assert after.position == 3.0
-    assert after.updated_at == before_updated_at
-    assert after.updated_by == "planner"
 
 
 # ── Legacy jsonl compat: blocked/failed/deadline rows read as pending ──────
@@ -928,3 +760,375 @@ def test_update_status_pending_on_legacy_blocked_task_succeeds(tmp_path: Path) -
     result = tqm.update_status("legacy-blocked-2", "cancelled", summary="won't proceed")
     assert result is not None
     assert result.status == "cancelled"
+
+
+JST = timezone(timedelta(hours=9))
+
+
+@pytest.fixture
+def task_queue(tmp_path):
+    """Create a TaskQueueManager with a temp anima dir."""
+    anima_dir = tmp_path / "animas" / "test"
+    (anima_dir / "state").mkdir(parents=True)
+    return TaskQueueManager(anima_dir)
+
+
+class TestAddTask:
+    def test_add_task_creates_entry(self, task_queue):
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="Issue全取得してPR作成",
+            assignee="rin",
+            summary="Issue取得とPR作成",
+        )
+        assert isinstance(entry, TaskEntry)
+        assert entry.source == "human"
+        assert entry.assignee == "rin"
+        assert entry.status == "pending"
+        assert len(entry.task_id) == 12
+
+    def test_add_task_persists_to_canonical_store(self, task_queue):
+        task_queue.add_task(
+            source="human",
+            original_instruction="test",
+            assignee="rin",
+            summary="test",
+        )
+        entries = TaskQueueManager(task_queue.anima_dir)._load_all()
+        assert len(entries) == 1
+        assert next(iter(entries.values())).source == "human"
+        assert not task_queue.queue_path.exists()
+
+    def test_add_multiple_tasks(self, task_queue):
+        task_queue.add_task(
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+        )
+        task_queue.add_task(
+            source="anima",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+        )
+        tasks = task_queue.list_tasks()
+        assert len(tasks) == 2
+
+    def test_add_task_with_relay_chain(self, task_queue):
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="test",
+            assignee="rin",
+            summary="test",
+            relay_chain=["owner", "sakura", "rin"],
+        )
+        assert entry.relay_chain == ["owner", "sakura", "rin"]
+
+
+class TestUpdateStatus:
+    def test_update_status_persists(self, task_queue):
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="s",
+        )
+        task_queue.update_status(entry.task_id, "done")
+        tasks = task_queue.list_tasks(status="done")
+        assert len(tasks) == 1
+
+    def test_update_nonexistent_task(self, task_queue):
+        result = task_queue.update_status("nonexistent", "done")
+        assert result is None
+
+    def test_update_invalid_status(self, task_queue):
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="s",
+        )
+        result = task_queue.update_status(entry.task_id, "invalid_status")
+        assert result is None
+
+    def test_update_summary(self, task_queue):
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="original",
+        )
+        updated = task_queue.update_status(entry.task_id, "in_progress", summary="updated")
+        assert updated.summary == "updated"
+
+
+class TestGetPending:
+    def test_get_pending_empty(self, task_queue):
+        assert task_queue.get_pending() == []
+
+    def test_get_pending_filters_done(self, task_queue):
+        e1 = task_queue.add_task(
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+        )
+        e2 = task_queue.add_task(
+            source="human",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+        )
+        task_queue.update_status(e1.task_id, "done")
+        pending = task_queue.get_pending()
+        assert len(pending) == 1
+        assert pending[0].task_id == e2.task_id
+
+    def test_get_pending_includes_in_progress(self, task_queue):
+        e1 = task_queue.add_task(
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+        )
+        task_queue.update_status(e1.task_id, "in_progress")
+        pending = task_queue.get_pending()
+        assert len(pending) == 1
+
+
+class TestFormatForPriming:
+    def test_format_empty(self, task_queue):
+        assert task_queue.format_for_priming() == ""
+
+    def test_format_human_high_priority(self, task_queue):
+        task_queue.add_task(
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="Important task",
+        )
+        output = task_queue.format_for_priming()
+        assert "\U0001f534 HIGH" in output
+        assert "Important task" in output
+
+    def test_format_anima_normal_priority(self, task_queue):
+        task_queue.add_task(
+            source="anima",
+            original_instruction="t",
+            assignee="a",
+            summary="Normal task",
+        )
+        output = task_queue.format_for_priming()
+        assert "\u26aa" in output
+        assert "Normal task" in output
+
+    def test_format_respects_budget(self, task_queue):
+        for i in range(50):
+            task_queue.add_task(
+                source="human",
+                original_instruction=f"task {i}",
+                assignee="a",
+                summary=f"Very long task description number {i} with lots of detail",
+            )
+        output = task_queue.format_for_priming(budget_tokens=100)
+        assert len(output) <= 500
+
+    def test_format_shows_relay_chain(self, task_queue):
+        task_queue.add_task(
+            source="human",
+            original_instruction="t",
+            assignee="rin",
+            summary="Delegated task",
+            relay_chain=["owner", "sakura", "rin"],
+        )
+        output = task_queue.format_for_priming()
+        assert "chain:" in output
+        assert "owner" in output
+
+
+class TestCompact:
+    def test_compact_empty_queue(self, task_queue):
+        removed = task_queue.compact()
+        assert removed == 0
+
+
+class TestSourceValidation:
+    def test_invalid_source_raises(self, task_queue):
+        with pytest.raises(ValueError, match="Invalid source"):
+            task_queue.add_task(
+                source="invalid",
+                original_instruction="t",
+                assignee="a",
+                summary="s",
+            )
+
+    def test_valid_sources(self, task_queue):
+        e1 = task_queue.add_task(
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+        )
+        e2 = task_queue.add_task(
+            source="anima",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+        )
+        assert e1.source == "human"
+        assert e2.source == "anima"
+
+
+class TestInstructionSizeCap:
+    def test_long_instruction_preserved(self, task_queue):
+        long_text = "x" * 20_000
+        entry = task_queue.add_task(
+            source="human",
+            original_instruction=long_text,
+            assignee="a",
+            summary="s",
+        )
+        assert entry.original_instruction == long_text
+
+
+class TestCorruptedFile:
+    def test_corrupted_line_skipped(self, task_queue):
+        task_queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
+        task_queue.add_task(
+            source="human",
+            original_instruction="valid",
+            assignee="a",
+            summary="valid task",
+        )
+        with task_queue.queue_path.open("a") as f:
+            f.write("THIS IS NOT VALID JSON\n")
+        tasks = task_queue.list_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].summary == "valid task"
+
+
+class TestFormatForPrimingWithStaleness:
+    def _write_task_entry(self, task_queue, *, updated_at):
+        import uuid
+
+        task_id = uuid.uuid4().hex[:12]
+        entry = {
+            "task_id": task_id,
+            "ts": updated_at,
+            "source": "human",
+            "original_instruction": "test instruction",
+            "assignee": "rin",
+            "status": "pending",
+            "summary": "Test task",
+            "relay_chain": [],
+            "updated_at": updated_at,
+        }
+        task_queue.store.apply(task_queue.anima_dir.name, entry)
+        return task_id
+
+    def test_format_shows_elapsed_time(self, task_queue):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        updated_at = (now - timedelta(minutes=15)).isoformat()
+        self._write_task_entry(task_queue, updated_at=updated_at)
+
+        with patch("core.tasks.queue.now_local", return_value=now):
+            output = task_queue.format_for_priming()
+
+        assert "\u23f1\ufe0f 15\u5206\u7d4c\u904e" in output
+
+    def test_format_shows_stale_marker(self, task_queue):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        updated_at = (now - timedelta(minutes=45)).isoformat()
+        self._write_task_entry(task_queue, updated_at=updated_at)
+
+        with patch("core.tasks.queue.now_local", return_value=now):
+            output = task_queue.format_for_priming()
+
+        assert "\u26a0\ufe0f STALE" in output
+
+    def test_format_no_stale_for_recent_task(self, task_queue):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        updated_at = (now - timedelta(minutes=5)).isoformat()
+        self._write_task_entry(task_queue, updated_at=updated_at)
+
+        with patch("core.tasks.queue.now_local", return_value=now):
+            output = task_queue.format_for_priming()
+
+        assert "\u26a0\ufe0f STALE" not in output
+
+    def test_format_handles_legacy_deadline_key_without_crash(self, task_queue):
+        now = datetime(2026, 3, 1, 15, 0, 0, tzinfo=JST)
+        updated_at = (now - timedelta(minutes=5)).isoformat()
+        task_id = self._write_task_entry(task_queue, updated_at=updated_at)
+        row = task_queue.get_task_by_id(task_id).model_dump()
+        assert row["task_id"] == task_id
+        row["deadline"] = "2026-03-01T14:00:00+09:00"
+        task_queue.store.apply(task_queue.anima_dir.name, row)
+
+        with patch("core.tasks.queue.now_local", return_value=now):
+            output = task_queue.format_for_priming()
+
+        assert "Test task" in output
+        assert "\U0001f4c5" not in output
+        assert "\U0001f534 OVERDUE" not in output
+
+    def test_format_handles_invalid_updated_at(self, task_queue):
+        entry = {
+            "task_id": "abc123def456",
+            "ts": "not-a-date",
+            "source": "human",
+            "original_instruction": "test",
+            "assignee": "rin",
+            "status": "pending",
+            "summary": "Bad timestamp task",
+            "relay_chain": [],
+            "updated_at": "not-a-valid-iso-timestamp",
+        }
+        task_queue.store.apply(task_queue.anima_dir.name, entry)
+
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        with patch("core.tasks.queue.now_local", return_value=now):
+            output = task_queue.format_for_priming()
+
+        assert "Bad timestamp task" in output
+
+
+class TestElapsedSeconds:
+    def test_valid_timestamps(self):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        updated_at = "2026-03-01T11:30:00+09:00"
+        result = _elapsed_seconds(updated_at, now)
+        assert result == 1800.0
+
+    def test_invalid_timestamp_returns_none(self):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        result = _elapsed_seconds("not-valid", now)
+        assert result is None
+
+    def test_none_timestamp_returns_none(self):
+        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
+        result = _elapsed_seconds(None, now)
+        assert result is None
+
+
+class TestFormatElapsedFromSec:
+    def test_minutes_only(self):
+        result = _format_elapsed_from_sec(13 * 60)
+        assert result == "\u23f1\ufe0f 13\u5206\u7d4c\u904e"
+
+    def test_hours_and_minutes(self):
+        result = _format_elapsed_from_sec(2 * 3600 + 15 * 60)
+        assert result == "\u23f1\ufe0f 2\u6642\u959315\u5206\u7d4c\u904e"
+
+    def test_exact_hours(self):
+        result = _format_elapsed_from_sec(2 * 3600)
+        assert result == "\u23f1\ufe0f 2\u6642\u9593\u7d4c\u904e"
+
+    def test_none_returns_empty(self):
+        result = _format_elapsed_from_sec(None)
+        assert result == ""
+
+    def test_negative_returns_empty(self):
+        result = _format_elapsed_from_sec(-300)
+        assert result == ""

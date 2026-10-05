@@ -10,28 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from core.supervisor.ipc import (
-    IPCClient,
-    IPCServer,
-    IPCRequest,
-    IPCResponse,
-    IPCEvent
-)
+import pytest
 
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 
 # ── Protocol Tests ────────────────────────────────────────────────
 
+
 def test_ipc_request_serialization():
     """Test IPCRequest JSON serialization."""
-    request = IPCRequest(
-        id="req_001",
-        method="test_method",
-        params={"key": "value"}
-    )
+    request = IPCRequest(id="req_001", method="test_method", params={"key": "value"})
 
     json_str = request.to_json()
     data = json.loads(json_str)
@@ -43,11 +34,7 @@ def test_ipc_request_serialization():
 
 def test_ipc_request_deserialization():
     """Test IPCRequest JSON deserialization."""
-    json_str = json.dumps({
-        "id": "req_002",
-        "method": "another_method",
-        "params": {"foo": "bar"}
-    })
+    json_str = json.dumps({"id": "req_002", "method": "another_method", "params": {"foo": "bar"}})
 
     request = IPCRequest.from_json(json_str)
 
@@ -59,10 +46,7 @@ def test_ipc_request_deserialization():
 def test_ipc_response_serialization():
     """Test IPCResponse JSON serialization."""
     # Normal response
-    response = IPCResponse(
-        id="req_001",
-        result={"status": "ok"}
-    )
+    response = IPCResponse(id="req_001", result={"status": "ok"})
     json_str = response.to_json()
     data = json.loads(json_str)
     assert data["id"] == "req_001"
@@ -70,10 +54,7 @@ def test_ipc_response_serialization():
     assert "error" not in data
 
     # Error response
-    error_response = IPCResponse(
-        id="req_002",
-        error={"code": "ERROR", "message": "Something went wrong"}
-    )
+    error_response = IPCResponse(id="req_002", error={"code": "ERROR", "message": "Something went wrong"})
     json_str = error_response.to_json()
     data = json.loads(json_str)
     assert data["id"] == "req_002"
@@ -84,11 +65,7 @@ def test_ipc_response_serialization():
 def test_ipc_response_streaming():
     """Test streaming IPCResponse."""
     # Chunk
-    chunk_response = IPCResponse(
-        id="req_003",
-        stream=True,
-        chunk="Hello "
-    )
+    chunk_response = IPCResponse(id="req_003", stream=True, chunk="Hello ")
     json_str = chunk_response.to_json()
     data = json.loads(json_str)
     assert data["stream"] is True
@@ -96,12 +73,7 @@ def test_ipc_response_streaming():
     assert "done" not in data
 
     # Final chunk
-    final_response = IPCResponse(
-        id="req_003",
-        stream=True,
-        done=True,
-        result={"total_chunks": 3}
-    )
+    final_response = IPCResponse(id="req_003", stream=True, done=True, result={"total_chunks": 3})
     json_str = final_response.to_json()
     data = json.loads(json_str)
     assert data["stream"] is True
@@ -109,21 +81,8 @@ def test_ipc_response_streaming():
     assert data["result"]["total_chunks"] == 3
 
 
-def test_ipc_event_serialization():
-    """Test IPCEvent JSON serialization."""
-    event = IPCEvent(
-        event="status_changed",
-        data={"status": "thinking"}
-    )
-
-    json_str = event.to_json()
-    data = json.loads(json_str)
-
-    assert data["event"] == "status_changed"
-    assert data["data"] == {"status": "thinking"}
-
-
 # ── Server/Client Tests ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_ipc_server_client_communication():
@@ -134,14 +93,8 @@ async def test_ipc_server_client_communication():
         # Define a simple request handler
         async def handler(request: IPCRequest) -> IPCResponse:
             if request.method == "echo":
-                return IPCResponse(
-                    id=request.id,
-                    result={"echo": request.params.get("message")}
-                )
-            return IPCResponse(
-                id=request.id,
-                error={"code": "UNKNOWN_METHOD", "message": "Unknown method"}
-            )
+                return IPCResponse(id=request.id, result={"echo": request.params.get("message")})
+            return IPCResponse(id=request.id, error={"code": "UNKNOWN_METHOD", "message": "Unknown method"})
 
         # Start server
         server = IPCServer(socket_path, handler)
@@ -153,11 +106,7 @@ async def test_ipc_server_client_communication():
             await client.connect()
 
             # Send request
-            request = IPCRequest(
-                id="test_001",
-                method="echo",
-                params={"message": "Hello, World!"}
-            )
+            request = IPCRequest(id="test_001", method="echo", params={"message": "Hello, World!"})
             response = await client.send_request(request, timeout=5.0)
 
             # Verify response
@@ -167,7 +116,6 @@ async def test_ipc_server_client_communication():
             assert response.error is None
 
             # Clean up
-            await client.close()
 
         finally:
             await server.stop()
@@ -181,14 +129,8 @@ async def test_ipc_ping_pong():
 
         async def handler(request: IPCRequest) -> IPCResponse:
             if request.method == "ping":
-                return IPCResponse(
-                    id=request.id,
-                    result={"pong": True}
-                )
-            return IPCResponse(
-                id=request.id,
-                error={"code": "UNKNOWN_METHOD"}
-            )
+                return IPCResponse(id=request.id, result={"pong": True})
+            return IPCResponse(id=request.id, error={"code": "UNKNOWN_METHOD"})
 
         server = IPCServer(socket_path, handler)
         await server.start()
@@ -204,7 +146,6 @@ async def test_ipc_ping_pong():
             assert response.result is not None
             assert response.result["pong"] is True
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -218,10 +159,7 @@ async def test_ipc_error_handling():
 
         async def handler(request: IPCRequest) -> IPCResponse:
             if request.method == "error":
-                return IPCResponse(
-                    id=request.id,
-                    error={"code": "TEST_ERROR", "message": "Test error"}
-                )
+                return IPCResponse(id=request.id, error={"code": "TEST_ERROR", "message": "Test error"})
             return IPCResponse(id=request.id, result={})
 
         server = IPCServer(socket_path, handler)
@@ -238,7 +176,6 @@ async def test_ipc_error_handling():
             assert response.error["code"] == "TEST_ERROR"
             assert response.result is None
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -268,7 +205,6 @@ async def test_ipc_timeout():
             with pytest.raises(asyncio.TimeoutError):
                 await client.send_request(request, timeout=1.0)
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -283,10 +219,7 @@ async def test_ipc_large_message():
         async def handler(request: IPCRequest) -> IPCResponse:
             # Echo back the length of the received message
             msg_len = len(request.params.get("message", ""))
-            return IPCResponse(
-                id=request.id,
-                result={"length": msg_len}
-            )
+            return IPCResponse(id=request.id, result={"length": msg_len})
 
         server = IPCServer(socket_path, handler)
         await server.start()
@@ -297,22 +230,18 @@ async def test_ipc_large_message():
 
             # Create a message larger than 64KB (the old default limit)
             large_message = "A" * (128 * 1024)  # 128KB
-            request = IPCRequest(
-                id="large_001",
-                method="echo",
-                params={"message": large_message}
-            )
+            request = IPCRequest(id="large_001", method="echo", params={"message": large_message})
             response = await client.send_request(request, timeout=10.0)
 
             assert response.result is not None
             assert response.result["length"] == 128 * 1024
 
-            await client.close()
         finally:
             await server.stop()
 
 
 def test_ipc_buffer_limit_constant():
     """Test that IPC_BUFFER_LIMIT is set to 16MB."""
-    from core.supervisor.ipc import IPC_BUFFER_LIMIT
+    from core.runtime.ipc import IPC_BUFFER_LIMIT
+
     assert IPC_BUFFER_LIMIT == 16 * 1024 * 1024

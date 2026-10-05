@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,7 +16,6 @@ Usage via animaworks-tool:
 
 import argparse
 import json
-import os
 import re
 import sys
 import uuid
@@ -35,7 +36,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_lease_action(args)
         return
 
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     if not anima_dir_str:
         print(
             "Error: ANIMAWORKS_ANIMA_DIR not set.\n"
@@ -51,9 +52,9 @@ def cmd_task(args: argparse.Namespace) -> None:
         print(f"Error: anima_dir not found: {anima_dir}", file=sys.stderr)
         sys.exit(1)
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
-    manager = TaskQueueManager(anima_dir)
+    manager = TaskQueueManager(anima_dir, read_only=(sub == "list"))
 
     if sub == "add":
         _cmd_add(args, manager)
@@ -71,20 +72,20 @@ def cmd_task(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _get_task_store():
-    from core.taskboard.board_actions import get_task_store
+def _get_task_store(*, read_only: bool = False):
+    from core.tasks.board.board_actions import get_task_store
 
-    return get_task_store()
+    return get_task_store(read_only=read_only)
 
 
 def _find_task_matches(store, task_id: str, owner: str | None = None) -> list[dict]:
-    from core.taskboard.board_actions import find_task_matches
+    from core.tasks.board.board_actions import find_task_matches
 
     return find_task_matches(store, task_id, owner)
 
 
 def _resolve_task(store, task_id: str) -> dict:
-    from core.taskboard.board_actions import BoardActionError, resolve_task
+    from core.tasks.board.board_actions import BoardActionError, resolve_task
 
     try:
         return resolve_task(store, task_id)
@@ -161,8 +162,8 @@ def _remaining_lease(expires_at: str, now: datetime | None = None) -> str:
 def _cmd_board(args: argparse.Namespace) -> None:
     from core.paths import get_animas_dir
 
-    store = _get_task_store()
-    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    store = _get_task_store(read_only=True)
+    actor_dir = anima_dir_env() or ""
     if actor_dir and not Path(actor_dir).is_dir():
         print(f"Error: anima_dir not found: {actor_dir}", file=sys.stderr)
         sys.exit(1)
@@ -205,6 +206,7 @@ def _cmd_board(args: argparse.Namespace) -> None:
     rows.sort(
         key=lambda row: (
             group(row),
+            0 if row.get("source") == "human" else 1,
             _parse_timestamp(row.get("updated_at") or row.get("ts")) or min_time,
             row.get("task_id", ""),
         )
@@ -235,7 +237,7 @@ def _cmd_board(args: argparse.Namespace) -> None:
 
 
 def _cmd_show(args: argparse.Namespace) -> None:
-    store = _get_task_store()
+    store = _get_task_store(read_only=True)
     task_id = args.task_id
     owner_filter = getattr(args, "anima", None)
     matches = _find_task_matches(store, task_id, owner_filter)
@@ -278,7 +280,7 @@ def _parse_ttl(value: str) -> int:
 
 
 def _actor() -> str:
-    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    actor_dir = anima_dir_env() or ""
     if not actor_dir:
         return "human"
     path = Path(actor_dir)
@@ -292,16 +294,22 @@ def _post_board_action(payload: dict) -> dict:
     """Run the action on the host when the sandbox cannot write the task DB."""
     import httpx
 
-    from core.tasks_dispatch import _server_url
+    from core.internal_api import internal_api_headers
+    from core.platform.env import server_url
 
-    response = httpx.post(f"{_server_url()}/api/internal/task-board-action", json=payload, timeout=60.0)
+    response = httpx.post(
+        f"{server_url()}/api/internal/task-board-action",
+        json=payload,
+        headers=internal_api_headers(),
+        timeout=60.0,
+    )
     response.raise_for_status()
     return response.json()
 
 
 def _cmd_lease_action(args: argparse.Namespace) -> None:
-    from core.taskboard.board_actions import BoardActionError, run_board_action
-    from core.tasks_dispatch import is_task_permission_error
+    from core.tasks.board.board_actions import BoardActionError, run_board_action
+    from core.tasks.dispatch import is_task_permission_error
 
     as_json = getattr(args, "json", False)
     action = args.task_command
@@ -355,8 +363,8 @@ def _exit_board_error(message: str, exit_code: int, payload: dict | None, as_jso
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
-    from core.tasks_dispatch import publish_tasks
-    from core.workspace import resolve_workspace
+    from core.org.workspace import resolve_workspace
+    from core.tasks.dispatch import publish_tasks
 
     source = getattr(args, "source", "anima")
     instruction = getattr(args, "instruction", "")
@@ -424,7 +432,7 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
 
 def _cmd_update(args: argparse.Namespace, manager) -> None:
     from core.i18n import t
-    from core.tasks_dispatch import update_task
+    from core.tasks.dispatch import update_task
 
     task_id = getattr(args, "task_id", "")
     status = getattr(args, "status", "")
@@ -459,7 +467,7 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
 
 def _cmd_resume(args: argparse.Namespace, manager) -> None:
     """Requeue a task under the same task_id using its saved execution input."""
-    from core.tasks_dispatch import update_task
+    from core.tasks.dispatch import update_task
 
     task_id = getattr(args, "task_id", "")
 
@@ -483,7 +491,7 @@ def _cmd_resume(args: argparse.Namespace, manager) -> None:
 
 
 def _cmd_list(args: argparse.Namespace, manager) -> None:
-    from core.memory.task_queue import mark_executability
+    from core.tasks.queue import mark_executability
 
     status_filter = getattr(args, "status", None)
     tasks = manager.list_tasks(status=status_filter)

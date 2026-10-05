@@ -22,21 +22,27 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 
 from core.execution.base import ExecutionResult, TokenUsage, ToolCallRecord
-from core.execution.grok_cli import (
+from core.execution.engine_base import engine_error_metadata
+from core.execution.engines.grok.executor import (
     _MAX_RESUME_TURNS,
     GrokCLIExecutor,
     _find_grok_binary,
-    _grok_error_metadata,
-    _load_session_id,
     _resolve_grok_model,
     _resolve_real_error,
     _resolve_session_type,
-    _save_session_id,
-    _session_id_path,
     is_grok_cli_available,
 )
+from core.execution.session.session_ids import EngineSessionIds
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
+
+_GROK_SESSION_IDS = EngineSessionIds("grok")
+
+
+def _load_grok_session_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> tuple[str | None, int]:
+    record = _GROK_SESSION_IDS.load(anima_dir, session_type, thread_id)
+    return (record.session_id, record.turn_count) if record is not None else (None, 0)
+
 
 _REAL_GROK_QUOTA_ERROR = "API error (status 402 Payment Required): Grok Build usage balance exhausted"
 
@@ -56,7 +62,6 @@ def model_config() -> ModelConfig:
         max_tokens=4096,
         credential="grok",
         context_threshold=0.5,
-        max_chains=2,
     )
 
 
@@ -126,6 +131,9 @@ class _FakeProc:
     def send_signal(self, sig: signal.Signals) -> None:
         self.sent_signals.append(sig)
 
+    def terminate(self) -> None:
+        self.send_signal(signal.SIGTERM)
+
     def kill(self) -> None:
         self.kill_calls += 1
         self.returncode = -9
@@ -183,8 +191,11 @@ async def _stream(
 ) -> list[dict]:
     tracker = tracker or ContextTracker(model="grok/grok-4.5")
     with (
-        patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+        patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
+        # The fake pid may belong to a real process on the host; never resolve
+        # (and signal) its process group, so signals reach the fake instead.
+        patch("core.execution.process_runner.os.getpgid", side_effect=ProcessLookupError, create=True),
     ):
         return [
             event
@@ -200,11 +211,11 @@ async def _stream(
 
 class TestDiscoveryAndHelpers:
     def test_binary_discovery_and_availability(self):
-        with patch("core.execution.grok_cli.shutil.which", return_value="/opt/grok"):
+        with patch("core.platform.grok.shutil.which", return_value="/opt/grok"):
             assert _find_grok_binary() == "/opt/grok"
-        with patch("core.execution.grok_cli._find_grok_binary", return_value="/opt/grok"):
+        with patch("core.platform.grok.get_grok_executable", return_value="/opt/grok"):
             assert is_grok_cli_available() is True
-        with patch("core.execution.grok_cli._find_grok_binary", return_value=None):
+        with patch("core.platform.grok.get_grok_executable", return_value=None):
             assert is_grok_cli_available() is False
 
     @pytest.mark.parametrize(
@@ -300,7 +311,7 @@ class TestResolveRealError:
 class TestGrokFailureMetadata:
     def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(
@@ -308,10 +319,12 @@ class TestGrokFailureMetadata:
             path=guard_path,
         )
 
-        with patch("core.execution.grok_cli.get_rate_guard", return_value=guard):
-            metadata = _grok_error_metadata(
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
                 _REAL_GROK_QUOTA_ERROR,
-                "grok/grok-4.5",
+                mode="X",
+                model="grok/grok-4.5",
+                always_terminal=True,
             )
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
@@ -321,6 +334,16 @@ class TestGrokFailureMetadata:
 
 
 class TestDiscoveryAndHelperEnvironment:
+    def test_mcp_env_propagates_runtime_trigger(self, executor: GrokCLIExecutor):
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
+        with runtime_session_scope(ctx):
+            servers = executor._mcp_servers()
+        env_map = {item["name"]: item["value"] for item in servers[0]["env"]}
+        assert env_map["ANIMAWORKS_TRIGGER"] == "cron:daily"
+        assert env_map["ANIMAWORKS_SERVER_URL"].startswith("http")
+
     def test_mcp_env_passes_embed_and_vector_urls(self, executor: GrokCLIExecutor):
         """MCP server env must include embed/vector/rerank URLs so it delegates
         over HTTP instead of loading models in-process
@@ -356,10 +379,10 @@ class TestDiscoveryAndHelperEnvironment:
         assert _resolve_session_type("chat:web") == "chat"
         assert _resolve_session_type("heartbeat:timer") == "heartbeat"
         expected = anima_dir / "shortterm/chat/thread-a/grok_session_id.txt"
-        assert _session_id_path(anima_dir, "chat", "thread-a") == expected
-        _save_session_id(anima_dir, "sid-a", "chat", "thread-a", 4)
-        assert _load_session_id(anima_dir, "chat", "thread-a") == ("sid-a", 4)
-        assert _load_session_id(anima_dir, "chat", "thread-b") == (None, 0)
+        assert _GROK_SESSION_IDS.path_for(anima_dir, "chat", "thread-a") == expected
+        _GROK_SESSION_IDS.save(anima_dir, "sid-a", "chat", "thread-a", 4)
+        assert _load_grok_session_id(anima_dir, "chat", "thread-a") == ("sid-a", 4)
+        assert _load_grok_session_id(anima_dir, "chat", "thread-b") == (None, 0)
 
 
 class TestSandboxConfiguration:
@@ -553,7 +576,7 @@ class TestSandboxConfiguration:
         )
         caplog.set_level(logging.DEBUG, logger="animaworks.execution.grok_cli")
 
-        with patch("core.execution.grok_cli.Path.home", return_value=tmp_path):
+        with patch("core.execution.engines.grok.executor.Path.home", return_value=tmp_path):
             executor._log_sandbox_status()
 
         assert "Grok sandbox enforced" in caplog.text
@@ -578,7 +601,7 @@ class TestSandboxConfiguration:
             encoding="utf-8",
         )
 
-        with patch("core.execution.grok_cli.Path.home", return_value=tmp_path):
+        with patch("core.execution.engines.grok.executor.Path.home", return_value=tmp_path):
             executor._log_sandbox_status()
 
         assert "Grok sandbox not enforced (Landlock)" in caplog.text
@@ -610,6 +633,7 @@ class TestACPProtocol:
         assert {entry["name"] for entry in aw["env"]} == {
             "ANIMAWORKS_ANIMA_DIR",
             "ANIMAWORKS_PROJECT_DIR",
+            "ANIMAWORKS_SERVER_URL",
             "PYTHONPATH",
             "PATH",
         }
@@ -622,7 +646,7 @@ class TestACPProtocol:
         assert len(done) == 1
 
     def test_build_command_order(self, executor: GrokCLIExecutor):
-        with patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"):
+        with patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"):
             assert executor._build_command() == [
                 "/usr/bin/grok",
                 "agent",
@@ -641,11 +665,11 @@ class TestACPProtocol:
     ) -> None:
         proc = _FakeProc(_success_events())
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch.object(executor, "_write_sandbox_config", return_value=True),
             patch.object(executor, "_log_sandbox_status"),
             patch("pty.openpty", return_value=(101, 102)),
-            patch("core.execution.grok_cli.os.close") as close_fd,
+            patch("core.execution.engines.grok.executor.os.close") as close_fd,
             patch("asyncio.create_subprocess_exec", return_value=proc) as create,
         ):
             events = [
@@ -674,7 +698,7 @@ class TestACPProtocol:
         monkeypatch.setenv("GROK_SANDBOX", "foreign-profile")
         proc = _FakeProc(_success_events())
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch.object(executor, "_write_sandbox_config", return_value=False),
             patch("asyncio.create_subprocess_exec", return_value=proc) as create,
         ):
@@ -693,9 +717,9 @@ class TestACPProtocol:
         """Env must set GROK_CLAUDE_SKILLS_ENABLED=false to stop Grok loading native skills."""
         proc = _FakeProc(_success_events())
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch.object(executor, "_write_sandbox_config", return_value=True),
-            patch("core.execution.grok_cli.os.close"),
+            patch("core.execution.engines.grok.executor.os.close"),
             patch("pty.openpty", return_value=(101, 102)),
             patch("asyncio.create_subprocess_exec", return_value=proc) as create,
         ):
@@ -712,7 +736,7 @@ class TestACPProtocol:
         """GROK_CLAUDE_SKILLS_ENABLED=false must be set even when sandbox is off."""
         proc = _FakeProc(_success_events())
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch.object(executor, "_write_sandbox_config", return_value=False),
             patch("asyncio.create_subprocess_exec", return_value=proc) as create,
         ):
@@ -1029,7 +1053,7 @@ class TestEventConversion:
         ]
         proc = _FakeProc(_success_events(updates=updates))
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute("hello", "system", trigger="heartbeat")
@@ -1044,7 +1068,7 @@ class TestSessions:
     async def test_chat_persists_then_resumes_without_system_override(self, executor: GrokCLIExecutor, anima_dir: Path):
         first = _FakeProc(_success_events(session_id="saved"))
         await _stream(executor, first, trigger="message:user", thread_id="thread-a")
-        assert _load_session_id(anima_dir, "chat", "thread-a") == ("saved", 1)
+        assert _load_grok_session_id(anima_dir, "chat", "thread-a") == ("saved", 1)
 
         second = _FakeProc(_success_events(session_id="saved", load=True))
         await _stream(executor, second, trigger="chat", thread_id="thread-a")
@@ -1052,7 +1076,7 @@ class TestSessions:
         assert requests[1]["method"] == "session/load"
         assert requests[1]["params"]["sessionId"] == "saved"
         assert "_meta" not in requests[1]["params"]
-        assert _load_session_id(anima_dir, "chat", "thread-a") == ("saved", 2)
+        assert _load_grok_session_id(anima_dir, "chat", "thread-a") == ("saved", 2)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("trigger", ["heartbeat", "cron:daily", "task:run"])
@@ -1063,7 +1087,7 @@ class TestSessions:
 
     @pytest.mark.asyncio
     async def test_resume_failure_retries_once_fresh(self, executor: GrokCLIExecutor, anima_dir: Path):
-        _save_session_id(anima_dir, "stale", "chat", "default", 3)
+        _GROK_SESSION_IDS.save(anima_dir, "stale", "chat", "default", 3)
         failed = _FakeProc(
             [
                 {"id": 1, "result": {}},
@@ -1072,10 +1096,10 @@ class TestSessions:
         )
         fresh = _FakeProc(_success_events(session_id="recovered"))
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
             patch("asyncio.create_subprocess_exec", side_effect=[failed, fresh]) as create,
         ):
-            events = [
+            _events = [
                 event
                 async for event in executor.execute_streaming(
                     "system", "hello", ContextTracker(model="grok/grok-4.5"), trigger="chat"
@@ -1084,24 +1108,21 @@ class TestSessions:
         assert create.call_count == 2
         assert _requests(failed)[1]["method"] == "session/load"
         assert _requests(fresh)[1]["method"] == "session/new"
-        assert _load_session_id(anima_dir, "chat") == ("recovered", 1)
-        assert events[-1]["session_rotated"] is True
+        assert _load_grok_session_id(anima_dir, "chat") == ("recovered", 1)
 
     @pytest.mark.asyncio
     async def test_turn_rotation_and_pending(self, executor: GrokCLIExecutor, anima_dir: Path):
-        _save_session_id(anima_dir, "old", "chat", "default", _MAX_RESUME_TURNS)
+        _GROK_SESSION_IDS.save(anima_dir, "old", "chat", "default", _MAX_RESUME_TURNS)
         rotated = _FakeProc(_success_events(session_id="fresh"))
         rotated_events = await _stream(executor, rotated, trigger="chat")
         assert _requests(rotated)[1]["method"] == "session/new"
-        assert rotated_events[-1]["session_rotated"] is True
         assert rotated_events[-1]["session_rotation_pending"] is False
 
-        _save_session_id(anima_dir, "almost", "chat", "default", _MAX_RESUME_TURNS - 1)
+        _GROK_SESSION_IDS.save(anima_dir, "almost", "chat", "default", _MAX_RESUME_TURNS - 1)
         pending = _FakeProc(_success_events(session_id="almost", load=True))
         pending_events = await _stream(executor, pending, trigger="chat")
-        assert pending_events[-1]["session_rotated"] is False
         assert pending_events[-1]["session_rotation_pending"] is True
-        assert _load_session_id(anima_dir, "chat") == ("almost", _MAX_RESUME_TURNS)
+        assert _load_grok_session_id(anima_dir, "chat") == ("almost", _MAX_RESUME_TURNS)
 
 
 class TestTerminalPaths:
@@ -1143,13 +1164,13 @@ class TestTerminalPaths:
         guard.config.quota_block_seconds = 1800
         with (
             patch(
-                "core.execution.grok_cli._resolve_real_error",
+                "core.execution.engines.grok.executor._resolve_real_error",
                 return_value={
                     "status_code": 402,
                     "message": _REAL_GROK_QUOTA_ERROR,
                 },
             ),
-            patch("core.execution.grok_cli.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             events = await _stream(executor, proc)
 
@@ -1169,7 +1190,7 @@ class TestTerminalPaths:
 
     @pytest.mark.asyncio
     async def test_not_installed_done_once(self, executor: GrokCLIExecutor):
-        with patch("core.execution.grok_cli._find_grok_binary", return_value=None):
+        with patch("core.execution.engines.grok.executor._find_grok_binary", return_value=None):
             events = [
                 event
                 async for event in executor.execute_streaming("system", "hello", ContextTracker(model="grok/grok-4.5"))
@@ -1198,7 +1219,7 @@ class TestTerminalPaths:
     @pytest.mark.asyncio
     async def test_file_not_found_done_once(self, executor: GrokCLIExecutor):
         with (
-            patch("core.execution.grok_cli._find_grok_binary", return_value="/missing/grok"),
+            patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/missing/grok"),
             patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError),
         ):
             events = [
@@ -1236,10 +1257,13 @@ class TestTerminalPaths:
             return b""
 
         proc.stdout.readline = stall_after_session  # type: ignore[method-assign]
-        with patch("core.execution.grok_cli._IDLE_TIMEOUT_SECONDS", 0.01):
-            events = await _stream(executor, proc)
-        assert len([event for event in events if event["type"] == "done"]) == 1
-        assert "grok" in next(event for event in events if event["type"] == "error")["message"].lower()
+        from core.execution.watchdog import Watchdog
+
+        with (
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
+            pytest.raises(TimeoutError, match="idle"),
+        ):
+            await _stream(executor, proc)
         assert signal.SIGTERM in proc.sent_signals
 
     @pytest.mark.asyncio
@@ -1272,7 +1296,10 @@ class TestTerminalPaths:
         proc.send_signal = MagicMock()
         proc.kill = MagicMock()
         await executor._kill_process(proc, timeout=0)
-        proc.send_signal.assert_called_once_with(signal.SIGTERM)
+        if os.name == "nt":
+            proc.terminate.assert_called_once()
+        else:
+            proc.send_signal.assert_called_once_with(signal.SIGTERM)
         proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1290,9 +1317,9 @@ class TestTerminalPaths:
         proc.send_signal = MagicMock()
         proc.kill = MagicMock()
         with (
-            patch("core.execution.grok_cli.os.getpgid", return_value=9999),
-            patch("core.execution.grok_cli.os.getpgrp", return_value=1111),
-            patch("core.execution.grok_cli.os.killpg") as killpg,
+            patch("core.execution.engines.grok.executor.os.getpgid", return_value=9999),
+            patch("core.execution.engines.grok.executor.os.getpgrp", return_value=1111),
+            patch("core.execution.engines.grok.executor.os.killpg") as killpg,
         ):
             await executor._kill_process(proc, timeout=0)
         assert call(9999, signal.SIGKILL) in killpg.call_args_list
@@ -1309,9 +1336,9 @@ class TestTerminalPaths:
         proc.send_signal = MagicMock()
         proc.kill = MagicMock()
         with (
-            patch("core.execution.grok_cli.os.getpgid", return_value=1111),
-            patch("core.execution.grok_cli.os.getpgrp", return_value=1111),
-            patch("core.execution.grok_cli.os.killpg") as killpg,
+            patch("core.execution.engines.grok.executor.os.getpgid", return_value=1111),
+            patch("core.execution.engines.grok.executor.os.getpgrp", return_value=1111),
+            patch("core.execution.engines.grok.executor.os.killpg") as killpg,
         ):
             await executor._kill_process(proc, timeout=0)
         killpg.assert_not_called()

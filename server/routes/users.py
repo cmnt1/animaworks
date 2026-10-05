@@ -26,6 +26,7 @@ from core.auth.manager import (
     verify_password,
 )
 from core.auth.models import AuthUser
+from core.platform.atomic_io import atomic_write_text
 
 logger = logging.getLogger("animaworks.routes.users")
 
@@ -107,7 +108,7 @@ def create_users_router() -> APIRouter:
 
         # Reject usernames that collide with anima names (exact match)
         try:
-            from core.anima_roster import is_anima_name, refresh_anima_roster
+            from core.anima.roster import is_anima_name, refresh_anima_roster
 
             refresh_anima_roster()
             if is_anima_name(body.username):
@@ -144,7 +145,7 @@ def create_users_router() -> APIRouter:
             lines = [f"# {body.display_name or body.username}\n"]
             if body.bio:
                 lines.append(f"\n{body.bio}\n")
-            profile_path.write_text("".join(lines), encoding="utf-8")
+            atomic_write_text(profile_path, "".join(lines))
 
         logger.info("Added user '%s'", body.username)
         return {

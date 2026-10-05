@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,22 +13,22 @@ Usage via animaworks-tool:
     animaworks-tool supervisor ping [--name NAME]
     animaworks-tool supervisor read-state NAME
     animaworks-tool supervisor task-tracker [--status STATUS]
+
+These commands delegate to ``ToolHandler`` (via
+``core.tooling.standalone.build_standalone_tool_handler``) so their output
+matches what the MCP / Mode A executors return for the same tool.
 """
 
 import argparse
-import json
 import logging
-import os
 import sys
 from pathlib import Path
-
-from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks")
 
 
 def _get_anima_dir() -> Path:
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     if not anima_dir_str:
         print("Error: ANIMAWORKS_ANIMA_DIR not set (set automatically inside an anima's tool context)", file=sys.stderr)
         sys.exit(1)
@@ -37,43 +39,10 @@ def _get_anima_dir() -> Path:
     return anima_dir
 
 
-def _load_supervisor_map(animas_dir: Path) -> dict[str, str | None]:
-    result: dict[str, str | None] = {}
-    if not animas_dir.is_dir():
-        return result
-    from core.config.models import read_anima_supervisor
+def _build_handler():
+    from core.tooling.standalone import build_standalone_tool_handler
 
-    for child in animas_dir.iterdir():
-        if child.is_dir() and not child.name.startswith("."):
-            result[child.name] = read_anima_supervisor(child)
-    return result
-
-
-def _get_descendants(supervisor_map: dict[str, str | None], root: str) -> list[str]:
-    visited: set[str] = {root}
-    queue = [n for n, sup in supervisor_map.items() if sup == root]
-    result: list[str] = []
-    while queue:
-        current = queue.pop(0)
-        if current in visited:
-            continue
-        visited.add(current)
-        result.append(current)
-        queue.extend(n for n, sup in supervisor_map.items() if sup == current)
-    return result
-
-
-def _is_ancestor(supervisor_map: dict[str, str | None], ancestor: str, name: str) -> bool:
-    if ancestor == name:
-        return True
-    current: str | None = name
-    visited: set[str] = set()
-    while current and current not in visited:
-        visited.add(current)
-        if current == ancestor:
-            return True
-        current = supervisor_map.get(current)
-    return False
+    return build_standalone_tool_handler(_get_anima_dir(), for_mcp=False)
 
 
 def cmd_supervisor(args: argparse.Namespace) -> None:
@@ -96,76 +65,13 @@ def cmd_supervisor(args: argparse.Namespace) -> None:
 
 
 def _cmd_org_dashboard(args: argparse.Namespace) -> None:
-    anima_dir = _get_anima_dir()
-    caller_name = anima_dir.name
-    data_dir = get_data_dir()
-    animas_dir = data_dir / "animas"
-    sockets_dir = data_dir / "run" / "sockets"
-
-    supervisor_map = _load_supervisor_map(animas_dir)
-    descendants = _get_descendants(supervisor_map, caller_name)
-
-    def _node(name: str) -> dict:
-        desc_dir = animas_dir / name
-        active_label = ""
-        state_path = desc_dir / "state" / "current_state.md"
-        if state_path.exists():
-            try:
-                active_label = state_path.read_text(encoding="utf-8").strip()
-            except OSError:
-                pass
-
-        sock_path = sockets_dir / f"{name}.sock"
-        alive = sock_path.exists()
-
-        last_activity_time: str | None = None
-        activity_dir = desc_dir / "activity_log"
-        if activity_dir.exists():
-            from core.memory.activity import ActivityLogger
-
-            al = ActivityLogger(desc_dir)
-            entries = al.recent(days=1, limit=1)
-            if entries:
-                last_activity_time = entries[-1].ts
-
-        return {
-            "name": name,
-            "status": "alive" if alive else "stopped",
-            "active_label": active_label or None,
-            "last_activity_time": last_activity_time,
-        }
-
-    tree: list[dict] = []
-    for name in descendants:
-        tree.append(_node(name))
-
-    result = {"caller": caller_name, "descendants": tree}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(_build_handler().handle("org_dashboard", {}))
 
 
 def _cmd_ping(args: argparse.Namespace) -> None:
-    anima_dir = _get_anima_dir()
-    caller_name = anima_dir.name
-    data_dir = get_data_dir()
-    animas_dir = data_dir / "animas"
-    sockets_dir = data_dir / "run" / "sockets"
-
     target_name = getattr(args, "name", None)
-    if target_name:
-        if ".." in target_name or "/" in target_name or "\\" in target_name:
-            print("Error: invalid target name", file=sys.stderr)
-            sys.exit(1)
-        targets = [target_name]
-    else:
-        supervisor_map = _load_supervisor_map(animas_dir)
-        targets = _get_descendants(supervisor_map, caller_name)
-
-    result: list[dict] = []
-    for name in targets:
-        sock_path = sockets_dir / f"{name}.sock"
-        alive = sock_path.exists()
-        result.append({"name": name, "alive": alive})
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    tool_args = {"name": target_name} if target_name else {}
+    print(_build_handler().handle("ping_subordinate", tool_args))
 
 
 def _cmd_read_state(args: argparse.Namespace) -> None:
@@ -173,54 +79,12 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
     if not target_name:
         print("Error: NAME is required", file=sys.stderr)
         sys.exit(1)
-
-    if ".." in target_name or "/" in target_name or "\\" in target_name:
-        print("Error: invalid target name", file=sys.stderr)
-        sys.exit(1)
-
-    anima_dir = _get_anima_dir()
-    caller_name = anima_dir.name
-    data_dir = get_data_dir()
-    animas_dir = data_dir / "animas"
-
-    supervisor_map = _load_supervisor_map(animas_dir)
-    if not _is_ancestor(supervisor_map, caller_name, target_name):
-        print(
-            f"Error: {caller_name} is not an ancestor of {target_name}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    target_dir = animas_dir / target_name
-    active_label = ""
-    pending = ""
-    state_path = target_dir / "state" / "current_state.md"
-    pending_path = target_dir / "state" / "pending.md"
-    if state_path.exists():
-        try:
-            active_label = state_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            pass
-    if pending_path.exists():
-        try:
-            pending = pending_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            pass
-
-    result = {"active_label": active_label or None, "pending": pending or None}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(_build_handler().handle("read_subordinate_state", {"name": target_name}))
 
 
 def _cmd_task_tracker(args: argparse.Namespace) -> None:
-    anima_dir = _get_anima_dir()
     status_filter = getattr(args, "status", "delegated")
-
-    from core.memory.task_queue import TaskQueueManager
-
-    manager = TaskQueueManager(anima_dir)
-    tasks = manager.list_tasks(status=status_filter)
-    result = [t.model_dump() for t in tasks]
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(_build_handler().handle("task_tracker", {"status": status_filter}))
 
 
 def register_supervisor_command(subparsers) -> None:

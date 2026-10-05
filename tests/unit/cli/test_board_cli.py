@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
+import pytest
 
 # ── cmd_board_read ───────────────────────────────────────
 
@@ -26,11 +26,15 @@ from unittest.mock import MagicMock, patch
 class TestCmdBoardRead:
     """Tests for cmd_board_read — reading shared channel messages."""
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_read_prints_json(
-        self, mock_ensure, mock_shared, mock_messenger_cls, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        capsys,
     ):
         """cmd_board_read prints JSON when messages exist."""
         from cli.commands.board import cmd_board_read
@@ -46,7 +50,9 @@ class TestCmdBoardRead:
         cmd_board_read(args)
 
         mock_messenger.read_channel.assert_called_once_with(
-            "general", limit=20, human_only=False, source="human",
+            "general",
+            limit=20,
+            human_only=False,
         )
 
         captured = capsys.readouterr()
@@ -54,11 +60,15 @@ class TestCmdBoardRead:
         assert len(parsed) == 2
         assert parsed[0]["from"] == "alice"
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_read_no_messages(
-        self, mock_ensure, mock_shared, mock_messenger_cls, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        capsys,
     ):
         """cmd_board_read prints 'No messages' when channel is empty."""
         from cli.commands.board import cmd_board_read
@@ -73,11 +83,15 @@ class TestCmdBoardRead:
         captured = capsys.readouterr()
         assert "No messages in #ops" in captured.out
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_read_passes_human_only(
-        self, mock_ensure, mock_shared, mock_messenger_cls, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        capsys,
     ):
         """cmd_board_read forwards human_only flag to Messenger."""
         from cli.commands.board import cmd_board_read
@@ -90,14 +104,19 @@ class TestCmdBoardRead:
         cmd_board_read(args)
 
         mock_messenger.read_channel.assert_called_once_with(
-            "general", limit=5, human_only=True, source="human",
+            "general",
+            limit=5,
+            human_only=True,
         )
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_read_messenger_constructed_with_cli(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
     ):
         """cmd_board_read constructs Messenger with 'cli' as anima_name."""
         from cli.commands.board import cmd_board_read
@@ -118,15 +137,19 @@ class TestCmdBoardRead:
 class TestCmdBoardPost:
     """Tests for cmd_board_post — posting to shared channels."""
 
-    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_success(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
+        capsys,
     ):
         """cmd_board_post calls post_channel and prints confirmation."""
         from cli.commands.board import cmd_board_post
@@ -135,25 +158,31 @@ class TestCmdBoardPost:
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="alice", channel="general", text="Hello everyone!",
+            from_anima="alice",
+            channel="general",
+            text="Hello everyone!",
         )
         cmd_board_post(args)
 
         mock_messenger.post_channel.assert_called_once_with(
-            "general", "Hello everyone!",
+            "general",
+            "Hello everyone!",
         )
         captured = capsys.readouterr()
         assert "Posted to #general" in captured.out
 
-    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_triggers_fanout(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
     ):
         """cmd_board_post calls _fanout_board_mentions with correct args."""
         from cli.commands.board import cmd_board_post
@@ -162,23 +191,31 @@ class TestCmdBoardPost:
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="alice", channel="dev", text="Hey @bob check this",
+            from_anima="alice",
+            channel="dev",
+            text="Hey @bob check this",
         )
         cmd_board_post(args)
 
         mock_fanout.assert_called_once_with(
-            mock_messenger, "alice", "dev", "Hey @bob check this",
+            mock_messenger,
+            "alice",
+            "dev",
+            "Hey @bob check this",
         )
 
-    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_triggers_server_notification(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
     ):
         """cmd_board_post notifies the running server."""
         from cli.commands.board import cmd_board_post
@@ -187,21 +224,26 @@ class TestCmdBoardPost:
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="alice", channel="general", text="Hello!",
+            from_anima="alice",
+            channel="general",
+            text="Hello!",
         )
         cmd_board_post(args)
 
-        mock_notify.assert_called_once_with("alice", "general", "Hello!", source="anima")
+        mock_notify.assert_called_once_with("alice", "general", "Hello!")
 
-    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_messenger_constructed_with_from_anima(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
     ):
         """cmd_board_post constructs Messenger with from_anima name."""
         from cli.commands.board import cmd_board_post
@@ -210,55 +252,27 @@ class TestCmdBoardPost:
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="sakura", channel="general", text="test",
+            from_anima="sakura",
+            channel="general",
+            text="test",
         )
         cmd_board_post(args)
 
         mock_messenger_cls.assert_called_once_with(Path("/tmp/shared"), "sakura")
 
-    @patch("cli.commands.board._is_human_alias", return_value=True)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
-    def test_post_human_alias_uses_human_source(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias,
-    ):
-        """Configured human aliases post through the human ACL path."""
-        from cli.commands.board import cmd_board_post
-
-        mock_messenger = MagicMock()
-        mock_messenger_cls.return_value = mock_messenger
-
-        args = argparse.Namespace(
-            from_anima="cmnt", channel="affiliate", text="Owner instruction",
-        )
-        cmd_board_post(args)
-
-        mock_messenger.post_channel.assert_called_once_with(
-            "affiliate",
-            "Owner instruction",
-            source="human",
-            from_name="cmnt",
-        )
-        mock_notify.assert_called_once_with(
-            "cmnt",
-            "affiliate",
-            "Owner instruction",
-            source="human",
-        )
-
-    @patch("cli.commands.board._is_human_alias", return_value=False)
-    @patch("cli.commands.board._notify_server_board_posted")
-    @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_channel_not_found_exits_1_with_stderr(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
+        capsys,
     ):
         """ChannelNotFoundError → exit code 1 and Error on stderr."""
         import pytest
@@ -273,7 +287,9 @@ class TestCmdBoardPost:
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="alice", channel="ghost", text="nope",
+            from_anima="alice",
+            channel="ghost",
+            text="nope",
         )
         with pytest.raises(SystemExit) as exc_info:
             cmd_board_post(args)
@@ -284,41 +300,19 @@ class TestCmdBoardPost:
         mock_fanout.assert_not_called()
         mock_notify.assert_not_called()
 
-    @patch("cli.commands.board._is_human_alias", return_value=False)
     @patch("cli.commands.board._notify_server_board_posted")
     @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
-    def test_post_denied_does_not_notify_or_fanout(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias, capsys,
-    ):
-        """Failed board posts must not fan out or sync externally."""
-        from cli.commands.board import cmd_board_post
-
-        mock_messenger = MagicMock()
-        mock_messenger.post_channel.return_value = False
-        mock_messenger_cls.return_value = mock_messenger
-
-        args = argparse.Namespace(
-            from_anima="alice", channel="affiliate", text="Should not sync",
-        )
-        cmd_board_post(args)
-
-        assert "Post denied or failed for #affiliate" in capsys.readouterr().out
-        mock_fanout.assert_not_called()
-        mock_notify.assert_not_called()
-
-    @patch("cli.commands.board._is_human_alias", return_value=False)
-    @patch("cli.commands.board._notify_server_board_posted")
-    @patch("cli.commands.board._fanout_board_mentions")
-    @patch("core.messenger.Messenger")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_post_channel_access_denied_exits_1_with_stderr(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_fanout, mock_notify, mock_is_human_alias, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_fanout,
+        mock_notify,
+        capsys,
     ):
         """ChannelAccessDeniedError → exit code 1 and Error on stderr."""
         import pytest
@@ -327,13 +321,13 @@ class TestCmdBoardPost:
         from core.exceptions import ChannelAccessDeniedError
 
         mock_messenger = MagicMock()
-        mock_messenger.post_channel.side_effect = ChannelAccessDeniedError(
-            "Channel 'secret' is closed"
-        )
+        mock_messenger.post_channel.side_effect = ChannelAccessDeniedError("Channel 'secret' is closed")
         mock_messenger_cls.return_value = mock_messenger
 
         args = argparse.Namespace(
-            from_anima="alice", channel="secret", text="blocked",
+            from_anima="alice",
+            channel="secret",
+            text="blocked",
         )
         with pytest.raises(SystemExit) as exc_info:
             cmd_board_post(args)
@@ -351,11 +345,15 @@ class TestCmdBoardPost:
 class TestCmdBoardDmHistory:
     """Tests for cmd_board_dm_history — reading DM history."""
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_dm_history_prints_json(
-        self, mock_ensure, mock_shared, mock_messenger_cls, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        capsys,
     ):
         """cmd_board_dm_history prints JSON when DM history exists."""
         from cli.commands.board import cmd_board_dm_history
@@ -377,11 +375,15 @@ class TestCmdBoardDmHistory:
         assert len(parsed) == 2
         assert parsed[1]["from"] == "bob"
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_dm_history_no_messages(
-        self, mock_ensure, mock_shared, mock_messenger_cls, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        capsys,
     ):
         """cmd_board_dm_history prints 'No DM history' when empty."""
         from cli.commands.board import cmd_board_dm_history
@@ -396,11 +398,14 @@ class TestCmdBoardDmHistory:
         captured = capsys.readouterr()
         assert "No DM history with bob" in captured.out
 
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_dm_history_respects_limit(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
     ):
         """cmd_board_dm_history passes limit to Messenger.read_dm_history."""
         from cli.commands.board import cmd_board_dm_history
@@ -415,46 +420,20 @@ class TestCmdBoardDmHistory:
         mock_messenger.read_dm_history.assert_called_once_with("bob", limit=50)
 
 
-class TestNotifyServerBoardPosted:
-    @patch("time.sleep")
-    @patch("httpx.post")
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
-    def test_retries_transient_server_unavailable(
-        self,
-        mock_read_pid,
-        mock_is_alive,
-        mock_post,
-        mock_sleep,
-    ):
-        from cli.commands.board import _notify_server_board_posted
-
-        first = MagicMock(status_code=503)
-        second = MagicMock(status_code=200)
-        mock_post.side_effect = [first, second]
-
-        _notify_server_board_posted(
-            "cmnt",
-            "affiliate",
-            "Owner instruction",
-            source="human",
-        )
-
-        assert mock_post.call_count == 2
-        mock_sleep.assert_called_once_with(1.0)
-        assert mock_post.call_args.kwargs["json"]["source"] == "human"
-
-
 # ── _fanout_board_mentions ───────────────────────────────
 
 
 class TestFanoutBoardMentions:
     """Tests for _fanout_board_mentions — @mention fanout logic."""
 
+    @pytest.fixture(autouse=True)
+    def _runtime_data_dir(self, data_dir_at_tmp_path: Path) -> None:
+        """Use the real path accessor with each test's temporary root."""
+
     def test_at_name_sends_dm_to_running_anima(self, tmp_path):
         """@sakura sends a DM to sakura if she has a running socket."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -462,10 +441,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "Hey @sakura, check this",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hey @sakura, check this",
+        )
 
         # Should send exactly one board_mention DM
         assert mock_messenger.send.call_count == 1
@@ -476,8 +457,8 @@ class TestFanoutBoardMentions:
 
     def test_at_all_sends_to_all_running_except_sender(self, tmp_path):
         """@all sends DMs to all running animas except the posting anima."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -487,23 +468,23 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "Hello @all!",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hello @all!",
+        )
 
         # alice is excluded (sender); bob and charlie should receive DMs
         assert mock_messenger.send.call_count == 2
-        targets = {
-            c.kwargs["to"] for c in mock_messenger.send.call_args_list
-        }
+        targets = {c.kwargs["to"] for c in mock_messenger.send.call_args_list}
         assert targets == {"bob", "charlie"}
         assert "alice" not in targets
 
     def test_no_mentions_does_nothing(self, tmp_path):
         """Text without @mentions should not trigger any fanout."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -512,17 +493,19 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "No mentions here",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "No mentions here",
+        )
 
         mock_messenger.send.assert_not_called()
 
     def test_mentioned_anima_not_running(self, tmp_path):
         """@bob when bob has no socket file should not send any DM."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -531,17 +514,19 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "charlie", "dev", "Hey @bob, are you there?",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "charlie",
+            "dev",
+            "Hey @bob, are you there?",
+        )
 
         mock_messenger.send.assert_not_called()
 
     def test_at_all_excludes_sender_socket(self, tmp_path):
         """@all must not send a DM to the posting anima even if its socket exists."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -550,36 +535,38 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "@all standup time",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "@all standup time",
+        )
 
-        targets = {
-            c.kwargs["to"] for c in mock_messenger.send.call_args_list
-        }
+        targets = {c.kwargs["to"] for c in mock_messenger.send.call_args_list}
         assert "alice" not in targets
         assert "bob" in targets
 
     def test_no_sockets_dir_does_nothing(self, tmp_path):
         """If sockets directory does not exist, no fanout should occur."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         # Do NOT create sockets_dir
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "@all hello",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "@all hello",
+        )
 
         mock_messenger.send.assert_not_called()
 
     def test_fanout_dm_content_format(self, tmp_path):
         """Fanout DM content includes board_reply tag, original text, and reply instructions."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -588,10 +575,12 @@ class TestFanoutBoardMentions:
         mock_messenger = MagicMock(spec=Messenger)
 
         original_text = "Hey @bob, please review the PR"
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "alice", "dev", original_text,
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "dev",
+            original_text,
+        )
 
         assert mock_messenger.send.call_count == 1
         content = mock_messenger.send.call_args.kwargs["content"]
@@ -606,8 +595,8 @@ class TestFanoutBoardMentions:
 
     def test_fanout_multiple_named_mentions(self, tmp_path):
         """@bob @charlie sends DMs to both but not to unmentioned alice."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -617,22 +606,21 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger, "dave", "project",
-                "@bob @charlie please review",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "dave",
+            "project",
+            "@bob @charlie please review",
+        )
 
-        targets = {
-            c.kwargs["to"] for c in mock_messenger.send.call_args_list
-        }
+        targets = {c.kwargs["to"] for c in mock_messenger.send.call_args_list}
         assert targets == {"bob", "charlie"}
         assert "alice" not in targets
 
     def test_fanout_send_failure_is_silent(self, tmp_path):
         """If messenger.send raises, _fanout_board_mentions should not propagate."""
-        from core.messenger import Messenger
         from cli.commands.board import _fanout_board_mentions
+        from core.messaging.messenger import Messenger
 
         sockets_dir = tmp_path / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
@@ -641,11 +629,37 @@ class TestFanoutBoardMentions:
         mock_messenger = MagicMock(spec=Messenger)
         mock_messenger.send.side_effect = RuntimeError("IPC failure")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            # Should not raise
-            _fanout_board_mentions(
-                mock_messenger, "alice", "general", "Hey @bob",
-            )
+        # Should not raise
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hey @bob",
+        )
 
         mock_messenger.send.assert_called_once()
 
+
+def test_board_post_server_notification_uses_gateway_request():
+    from cli.commands.board import _notify_server_board_posted
+
+    response = MagicMock(status_code=200)
+    with (
+        patch("core.platform.pid.read_server_pid", return_value=123),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("core.internal_api.internal_api_headers", return_value={"X-AnimaWorks-Internal-Auth": "token"}),
+        patch("cli.commands.board.gateway_request", return_value=response) as mock_gateway,
+    ):
+        _notify_server_board_posted("alice", "general", "hello")
+
+    args, kwargs = mock_gateway.call_args
+    assert args[0].gateway_url is None
+    assert args[1:3] == ("POST", "/api/internal/message-sent")
+    assert kwargs["headers"] == {"X-AnimaWorks-Internal-Auth": "token"}
+    assert kwargs["json"] == {
+        "from_person": "alice",
+        "to_person": "#channel:general",
+        "content": "hello",
+    }
+    assert kwargs["timeout"] == 5.0
+    assert kwargs["raw_response"] is True

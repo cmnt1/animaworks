@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.housekeeping import run_housekeeping
-from core.messenger import Messenger
+from core.config.models import InboxConfig
+from core.memory.maintenance.housekeeping import run_housekeeping
+from core.messaging.messenger import Messenger
 from core.time_utils import now_local
 
 
@@ -40,7 +41,7 @@ async def test_housekeeping_expires_low_priority_inbox_but_preserves_human(tmp_p
     _rewrite_timestamp(alice_inbox / f"{low_priority.id}.json", old)
     _rewrite_timestamp(alice_inbox / f"{human_msg.id}.json", old)
 
-    result = await run_housekeeping(tmp_path, inbox_ttl_hours=24)
+    result = await run_housekeeping(tmp_path, inbox=InboxConfig(ttl_hours=24))
 
     shared = result["shared_inbox"]
     assert shared["expired"] == 1

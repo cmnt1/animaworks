@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from core.time_utils import now_jst
-from pathlib import Path, PurePosixPath
-
+from pathlib import Path
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import IPCRequest, IPCResponse, IPCEvent
-
+from core.runtime.ipc import IPCRequest, IPCResponse
+from core.time_utils import now_jst
 
 # ── CycleResult model_dump(mode="json") Tests ────────────────────────
 
@@ -59,7 +57,6 @@ class TestCycleResultJsonMode:
             summary="Test response",
             duration_ms=500,
             context_usage_ratio=0.42,
-            session_chained=True,
             total_turns=3,
         )
         dumped = result.model_dump(mode="json")
@@ -132,13 +129,13 @@ class TestIPCResponseDatetimeSerialization:
         """to_json() should handle Path objects via default=str."""
         response = IPCResponse(
             id="test_002",
-            result={"path": PurePosixPath("/tmp/test"), "status": "ok"},
+            result={"path": Path("/tmp/test"), "status": "ok"},
         )
 
         json_str = response.to_json()
         data = json.loads(json_str)
 
-        assert data["result"]["path"] == "/tmp/test"
+        assert data["result"]["path"] == str(Path("/tmp/test"))
         assert data["result"]["status"] == "ok"
 
     def test_normal_response_unchanged(self):
@@ -199,36 +196,3 @@ class TestIPCRequestDatetimeSerialization:
         data = json.loads(json_str)
 
         assert data["params"] == {"message": "hello", "count": 5}
-
-
-# ── IPCEvent.to_json() with non-primitive data Tests ─────────────────
-
-
-class TestIPCEventDatetimeSerialization:
-    """Verify IPCEvent.to_json() handles non-primitive data."""
-
-    def test_event_with_datetime_in_data(self):
-        """to_json() should not raise when data contains a datetime object."""
-        now = now_jst()
-        event = IPCEvent(
-            event="status_changed",
-            data={"status": "active", "since": now},
-        )
-
-        json_str = event.to_json()
-        data = json.loads(json_str)
-
-        assert data["data"]["status"] == "active"
-        assert isinstance(data["data"]["since"], str)
-
-    def test_normal_event_unchanged(self):
-        """Normal events with primitive types should still work correctly."""
-        event = IPCEvent(
-            event="heartbeat",
-            data={"status": "ok"},
-        )
-
-        json_str = event.to_json()
-        data = json.loads(json_str)
-
-        assert data == {"event": "heartbeat", "data": {"status": "ok"}}

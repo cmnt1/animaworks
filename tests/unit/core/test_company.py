@@ -10,14 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.company import (
-    BoundaryCheck,
-    check_company_boundary,
-    get_company,
-    get_company_display_name,
-    is_cross_company,
-    read_company_config,
-)
 from core.config.models import (
     AnimaModelConfig,
     AnimaWorksConfig,
@@ -26,8 +18,16 @@ from core.config.models import (
     read_anima_company_checked,
     save_config,
 )
-from core.messenger import Messenger
-from core.org_sync import sync_org_structure
+from core.messaging.messenger import Messenger
+from core.org.company import (
+    BoundaryCheck,
+    check_company_boundary,
+    get_company,
+    get_company_display_name,
+    is_cross_company,
+    read_company_config,
+)
+from core.org.org_sync import sync_org_structure
 from core.tooling.handler import ToolHandler
 from core.tooling.handler_base import meeting_context, meeting_mode
 from core.tooling.handler_delegation import DelegationMixin
@@ -225,7 +225,7 @@ class TestBoundaryCheck:
             "to_display_name": "Beta Corporation",
         }
         monkeypatch.setattr(Path, "read_text", denied_read)
-        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(return_value=response))
 
         result = check_company_boundary("alice", "bob", data_dir=tmp_path)
 
@@ -255,7 +255,7 @@ class TestBoundaryCheck:
             "cross_company": cross_company,
             "to_display_name": "Target Company",
         }
-        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(return_value=response))
 
         result = check_company_boundary("alice", "missing", data_dir=tmp_path)
 
@@ -268,7 +268,7 @@ class TestBoundaryCheck:
     ) -> None:
         """(e) An unreadable target plus API failure -> fail closed."""
         _make_anima(tmp_path, "alice", company="alpha")
-        monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(side_effect=OSError("connection refused")))
 
         result = check_company_boundary("alice", "missing", data_dir=tmp_path)
 
@@ -283,7 +283,7 @@ class TestBoundaryCheck:
         _make_anima(tmp_path, "alice", company="alpha")
         _make_anima(tmp_path, "bob", company="beta")
         monkeypatch.setattr(
-            "core.company.get_company_display_name",
+            "core.org.company.get_company_display_name",
             MagicMock(side_effect=PermissionError("denied")),
         )
 
@@ -421,7 +421,7 @@ def test_send_message_unverifiable_boundary_fails_closed_with_stable_error(
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", denied_read)
-    monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+    monkeypatch.setattr("core.host_api.host_api.get", MagicMock(side_effect=OSError("connection refused")))
 
     result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
 
@@ -466,7 +466,7 @@ def test_delegate_task_rejects_cross_company_before_persistence(
 
     assert "Beta Corporation" in result
     assert "owner" in result.lower() or "オーナー" in result
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     assert TaskQueueManager(worker_dir).list_tasks() == []
     assert TaskQueueManager(boss_dir).list_tasks() == []
@@ -485,7 +485,7 @@ def test_delegate_task_allows_same_company(
     result = _delegate(harness)
 
     assert "worker" in result
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     children = TaskQueueManager(worker_dir).list_tasks()
     aliases = TaskQueueManager(boss_dir).list_tasks()

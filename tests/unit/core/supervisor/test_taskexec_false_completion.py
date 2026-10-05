@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.i18n import t
-from core.supervisor.pending_executor import (
+from core.tasks.pending_executor import (
     _SENTINEL_CANCELLED,
     PendingTaskExecutor,
     TaskExecError,
@@ -39,7 +39,6 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     mock_anima._background_lock = asyncio.Lock()
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
-    mock_anima._active_parallel_tasks = {}
     return PendingTaskExecutor(
         anima=mock_anima,
         anima_name="test-anima",
@@ -137,10 +136,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="Agent SDK timeout"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
     @pytest.mark.asyncio
@@ -169,9 +169,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert "recovered" in result
 
@@ -198,9 +199,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "all good"
 
@@ -232,9 +234,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "401 unauthorized の対処を文書化しました"
 
@@ -266,10 +269,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="authentication"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
 
@@ -348,9 +352,9 @@ class TestSerialBatchUnfinishedDependency:
     @pytest.mark.asyncio
     async def test_unfinished_dependency_syncs_to_queue(self, tmp_path):
         """An ended incomplete predecessor never releases or reruns its child."""
-        from core.memory.task_queue import TaskQueueManager
-        from core.taskboard.tasks import process_identity
-        from core.tasks_dispatch import publish_tasks
+        from core.tasks.board.tasks import process_identity
+        from core.tasks.dispatch import publish_tasks
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         tasks = [
@@ -403,20 +407,20 @@ class TestSubmissionLine:
         return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
 
     def test_missing_timestamp_yields_empty(self):
-        from core.supervisor.pending_executor import _submission_line
+        from core.tasks.pending_executor import _submission_line
 
         assert _submission_line("", locale="ja") == ""
         assert _submission_line("garbage-date", locale="ja") == ""
 
     def test_ja_formats_submission_and_elapsed(self):
-        from core.supervisor.pending_executor import _submission_line
+        from core.tasks.pending_executor import _submission_line
 
         line = _submission_line(self._iso(3.2), locale="ja")
         assert line.startswith("提出: ")
         assert "（経過 3時間" in line
 
     def test_en_formats_submission_and_elapsed(self):
-        from core.supervisor.pending_executor import _submission_line
+        from core.tasks.pending_executor import _submission_line
 
         line = _submission_line(self._iso(3.2), locale="en")
         assert line.startswith("Submitted: ")
@@ -425,7 +429,7 @@ class TestSubmissionLine:
     def test_past_timestamp_never_negative(self):
         from datetime import UTC, datetime, timedelta
 
-        from core.supervisor.pending_executor import _submission_line
+        from core.tasks.pending_executor import _submission_line
 
         future = (datetime.now(UTC) + timedelta(hours=5)).isoformat()
         line = _submission_line(future, locale="ja")
@@ -434,7 +438,7 @@ class TestSubmissionLine:
     def test_submission_time_rendered_in_app_timezone(self):
         from datetime import UTC, datetime
 
-        from core.supervisor.pending_executor import _submission_line
+        from core.tasks.pending_executor import _submission_line
         from core.time_utils import get_app_timezone
 
         line = _submission_line("2026-09-25T10:04:00+00:00", locale="ja")

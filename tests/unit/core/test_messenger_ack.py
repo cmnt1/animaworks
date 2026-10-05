@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import Message
 
 
@@ -44,9 +44,7 @@ def _place_message(
     msg.id = str(uuid.uuid4())
     if not msg.thread_id:
         msg.thread_id = msg.id
-    (inbox_dir / f"{msg.id}.json").write_text(
-        msg.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (inbox_dir / f"{msg.id}.json").write_text(msg.model_dump_json(indent=2), encoding="utf-8")
 
 
 # ── receive_and_archive ACK ─────────────────────────────
@@ -82,9 +80,7 @@ class TestReceiveAndArchiveACK:
         assert data["from_person"] == "alice"
         assert data["to_person"] == "bob"
 
-    def test_no_ack_for_ack_messages(
-        self, shared_dir: Path, messenger: Messenger
-    ) -> None:
+    def test_no_ack_for_ack_messages(self, shared_dir: Path, messenger: Messenger) -> None:
         """Receiving an ack-type message should NOT generate another ACK (loop prevention)."""
         alice_inbox = shared_dir / "inbox" / "alice"
         _place_message(alice_inbox, "bob", "[既読通知] 1件", msg_type="ack")
@@ -97,9 +93,7 @@ class TestReceiveAndArchiveACK:
             assert len(ack_files) == 0, "ACK messages must not generate further ACKs"
         # bob_inbox may not even be created — that is also correct
 
-    def test_ack_groups_by_sender(
-        self, shared_dir: Path, messenger: Messenger
-    ) -> None:
+    def test_ack_groups_by_sender(self, shared_dir: Path, messenger: Messenger) -> None:
         """Multiple messages from the same sender produce exactly one ACK."""
         alice_inbox = shared_dir / "inbox" / "alice"
         _place_message(alice_inbox, "bob", "msg-1")
@@ -116,9 +110,7 @@ class TestReceiveAndArchiveACK:
         assert data["type"] == "ack"
         assert "3件" in data["content"]
 
-    def test_ack_multiple_senders(
-        self, shared_dir: Path, messenger: Messenger
-    ) -> None:
+    def test_ack_multiple_senders(self, shared_dir: Path, messenger: Messenger) -> None:
         """Messages from different senders generate separate ACKs."""
         alice_inbox = shared_dir / "inbox" / "alice"
         _place_message(alice_inbox, "bob", "from bob")
@@ -140,9 +132,7 @@ class TestReceiveAndArchiveACK:
         assert bob_data["type"] == "ack"
         assert charlie_data["type"] == "ack"
 
-    def test_ack_content_includes_summary(
-        self, shared_dir: Path, messenger: Messenger
-    ) -> None:
+    def test_ack_content_includes_summary(self, shared_dir: Path, messenger: Messenger) -> None:
         """ACK message contains '[既読通知]' and a truncated summary of the received message."""
         alice_inbox = shared_dir / "inbox" / "alice"
         _place_message(alice_inbox, "bob", "Important project update")
@@ -157,9 +147,7 @@ class TestReceiveAndArchiveACK:
         assert "[既読通知]" in data["content"]
         assert "Important project update" in data["content"]
 
-    def test_messages_still_archived(
-        self, shared_dir: Path, messenger: Messenger
-    ) -> None:
+    def test_messages_still_archived(self, shared_dir: Path, messenger: Messenger) -> None:
         """After ACK is sent, original messages are moved to processed/."""
         alice_inbox = shared_dir / "inbox" / "alice"
         _place_message(alice_inbox, "bob", "archive me")

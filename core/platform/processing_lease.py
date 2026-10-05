@@ -4,7 +4,11 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Lease sidecars for claimed pending-task descriptors.
+"""Lease sidecars for pre-TaskStore pending descriptors.
+
+Runtime task claims and attempt liveness are owned by TaskStore. This module
+remains for offline migration checks of legacy ``state/pending/processing``
+descriptors.
 
 Schema:
   * v1 — ``pid/anima/leased_at/task_id`` (legacy runner in-process claims)
@@ -19,11 +23,22 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+from core.platform.atomic_io import atomic_write_json
+from core.platform.subprocess_entries import SubprocessEntry
+
 logger = logging.getLogger(__name__)
 
 LeaseLiveness = Literal["live", "dead", "unknown"]
 
-_RUNNER_CMDLINE_MARKERS = ("core.supervisor.runner", "core.supervisor.task_runner")
+_SUPERVISOR_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.SUPERVISOR_RUNNER.value,
+    "core.runtime.runner",  # legacy name until 2026-11 (S3a)
+)
+_TASK_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.TASK_RUNNER.value,
+    "core.runtime.task_runner",  # legacy name until 2026-11 (S3a)
+)
+_RUNNER_CMDLINE_MARKERS = _SUPERVISOR_RUNNER_CMDLINE_MARKERS + _TASK_RUNNER_CMDLINE_MARKERS
 
 from core.platform.process import is_process_alive
 
@@ -49,38 +64,6 @@ def _process_create_time(pid: int) -> float | None:
     except Exception:
         # psutil.Error hierarchy plus OS-level failures — treat as unavailable.
         return None
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Write JSON via temp+fsync+replace (+ directory fsync when possible)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    data = json.dumps(payload, ensure_ascii=False)
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as fh:
-            fh.write(data)
-            fh.flush()
-            try:
-                os.fsync(fh.fileno())
-            except OSError:
-                logger.debug("fsync failed for lease temp file %s", tmp_path, exc_info=True)
-        os.replace(tmp_path, path)
-        try:
-            dir_fd = os.open(str(path.parent), os.O_RDONLY)
-        except OSError:
-            return
-        try:
-            os.fsync(dir_fd)
-        except OSError:
-            logger.debug("directory fsync failed for %s", path.parent, exc_info=True)
-        finally:
-            os.close(dir_fd)
-    except Exception:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
 
 
 def write_processing_lease(
@@ -136,9 +119,14 @@ def write_processing_lease(
                 "process_start_time": float(start_time),
             }
         )
-        _atomic_write_json(lease_path, payload)
-    else:
-        lease_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(
+        lease_path,
+        payload,
+        indent=None,
+        ensure_ascii=False,
+        trailing_newline=False,
+        fsync_dir=v2_ready,
+    )
     return lease_path
 
 
@@ -216,7 +204,7 @@ def _pid_exists(pid: int) -> bool | None:
 
 
 def _cmdline_matches_v1(cmdline: str, anima: str) -> bool:
-    return "core.supervisor.runner" in cmdline and anima in cmdline
+    return any(marker in cmdline for marker in _SUPERVISOR_RUNNER_CMDLINE_MARKERS) and anima in cmdline
 
 
 def _cmdline_matches_v2(cmdline: str, anima: str, job_id: str) -> bool:

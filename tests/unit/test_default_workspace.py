@@ -71,7 +71,7 @@ class TestDefaultWorkspaceInPrompt:
         from core.memory import MemoryManager
         from core.prompt.builder import build_system_prompt
 
-        with patch("core.workspace.resolve_workspace", return_value=Path("/home/user/myproj")):
+        with patch("core.org.workspace.resolve_workspace", return_value=Path("/home/user/myproj")):
             memory = MemoryManager(anima_dir)
             result = build_system_prompt(memory, trigger="chat")
 
@@ -98,7 +98,7 @@ class TestDefaultWorkspaceInPrompt:
         from core.memory import MemoryManager
         from core.prompt.builder import build_system_prompt
 
-        with patch("core.workspace.resolve_workspace", side_effect=ValueError("Not found")):
+        with patch("core.org.workspace.resolve_workspace", side_effect=ValueError("Not found")):
             memory = MemoryManager(anima_dir)
             result = build_system_prompt(memory, trigger="chat")
 
@@ -127,9 +127,9 @@ class TestPendingExecutorDefaultWorkspaceFallback:
         anima_dir = _write_status(data_dir, "test-anima", model="claude-sonnet-4-6", default_workspace="proj")
         (anima_dir / "state" / "pending").mkdir(parents=True, exist_ok=True)
 
-        from core.supervisor.pending_executor import _resolve_default_workspace
+        from core.tasks.pending_executor import _resolve_default_workspace
 
-        with patch("core.workspace.resolve_workspace", return_value=Path("/abs/path/proj")):
+        with patch("core.org.workspace.resolve_workspace", return_value=Path("/abs/path/proj")):
             resolved = _resolve_default_workspace(anima_dir)
 
         assert resolved == str(Path("/abs/path/proj"))
@@ -138,7 +138,7 @@ class TestPendingExecutorDefaultWorkspaceFallback:
         """_resolve_default_workspace returns empty when not set."""
         anima_dir = _write_status(data_dir, "test-anima", model="claude-sonnet-4-6")
 
-        from core.supervisor.pending_executor import _resolve_default_workspace
+        from core.tasks.pending_executor import _resolve_default_workspace
 
         resolved = _resolve_default_workspace(anima_dir)
 

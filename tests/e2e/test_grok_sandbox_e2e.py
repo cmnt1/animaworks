@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core.execution.grok_cli import GrokCLIExecutor
+from core.execution.engines.grok.executor import GrokCLIExecutor
 from core.platform.grok import is_grok_authenticated, is_grok_cli_available
 from core.schemas import ModelConfig
 
@@ -93,7 +93,6 @@ async def test_grok_profile_enforces_deny_and_write_roots(
         max_tokens=4096,
         credential="grok",
         context_threshold=0.5,
-        max_chains=2,
     )
     executor = GrokCLIExecutor(model_config, anima_dir)
 

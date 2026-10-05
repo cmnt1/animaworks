@@ -15,7 +15,7 @@ import asyncio
 import pytest
 
 from core.config.schemas import HousekeepingConfig
-from core.supervisor._mgr_scheduler import SchedulerMixin
+from server.supervisor._mgr_scheduler import SchedulerMixin
 
 
 def test_archive_superseded_retention_days_default() -> None:

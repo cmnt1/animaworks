@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.execution.error_classifier import FailoverReason, RecoveryHint
+from core.llm.guard.error_classifier import FailoverReason, RecoveryHint
 from core.execution.loop_guards import call_llm_with_retry
 
 # ── call_llm_with_retry: on_context_overflow ─────────────────
@@ -106,7 +106,7 @@ class TestOnContextOverflow:
 
 
 def _make_mixin(model: str = "openai/deepseek-v4-flash", thinking: bool | None = True, effort: str | None = "high"):
-    from core.execution._litellm_context import ContextMixin
+    from core.execution.engines.litellm._litellm_context import ContextMixin
 
     obj = ContextMixin()
     obj._model_config = SimpleNamespace(
@@ -174,7 +174,6 @@ class TestKeepRecentCompaction:
 class TestDeepseekThinkingKwargs:
     def _kwargs(self, thinking, effort="high"):
         obj = _make_mixin(thinking=thinking, effort=effort)
-        obj._resolve_llm_timeout = lambda: 600
         obj._resolve_num_retries = lambda: 2
         obj._resolve_api_key = lambda: "k"
         obj._apply_provider_kwargs = lambda kw: None
@@ -210,6 +209,6 @@ class TestDeepseekThinkingKwargs:
 
 class TestFgTimeoutDefault:
     def test_default_is_120(self):
-        from core.tooling.handler_files import _FG_CMD_TIMEOUT_DEFAULT
+        from core.tooling.handler_exec import _FG_CMD_TIMEOUT_DEFAULT
 
         assert _FG_CMD_TIMEOUT_DEFAULT == 120

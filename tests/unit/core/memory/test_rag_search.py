@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/rag_search.py — RAGMemorySearch."""
+"""Unit tests for core/memory/retrieval/rag_search.py — RAGMemorySearch."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.rag.retriever import AccessBatch, MemoryRetriever, RetrievalResult
-from core.memory.rag_search import (
+from core.memory.rag.retriever import MemoryRetriever, RetrievalResult
+from core.memory.retrieval.rag_search import (
     RAGMemorySearch,
     _keyword_token_matches,
     _read_keyword_file,
@@ -134,7 +134,7 @@ class TestGetIndexerLazyInit:
         )
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
             patch("core.memory.rag.MemoryIndexer") as indexer_cls,
             patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
             patch.object(rag, "_check_shared_collections") as check_shared,
@@ -161,7 +161,7 @@ class TestGetIndexerLazyInit:
         rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
             patch("core.memory.rag.MemoryIndexer") as indexer_cls,
             patch.object(rag, "_check_shared_collections") as check_shared,
         ):
@@ -179,7 +179,11 @@ class TestLongtermBM25Refresh:
         anima_dir: Path,
         knowledge_dir: Path,
     ) -> None:
-        from core.memory.bm25 import is_longterm_bm25_dirty, rebuild_longterm_bm25_index, search_longterm_memory_bm25
+        from core.memory.retrieval.bm25 import (
+            is_longterm_bm25_dirty,
+            rebuild_longterm_bm25_index,
+            search_longterm_memory_bm25,
+        )
 
         (knowledge_dir / "old.md").write_text("# Old\n\nBaseline memo.", encoding="utf-8")
         rebuild_longterm_bm25_index(anima_dir)
@@ -229,173 +233,6 @@ class TestGetIndexerDependencyMissing:
         assert rag._indexer is None
 
 
-class TestGraphEpisodesSearch:
-    def test_retriever_saves_expanded_episode_results_for_graph_ranker(self, tmp_path: Path) -> None:
-        retriever = MemoryRetriever(MagicMock(), MagicMock(), tmp_path / "knowledge")
-        seed = RetrievalResult(
-            doc_id="episode-1",
-            content="seed",
-            score=0.8,
-            metadata={"memory_type": "episodes"},
-            source_scores={"vector": 0.8},
-        )
-        expanded = RetrievalResult(
-            doc_id="episode-2",
-            content="expanded",
-            score=0.6,
-            metadata={"memory_type": "episodes"},
-            source_scores={"pagerank": 0.6},
-        )
-        batch = AccessBatch()
-
-        with (
-            patch.object(
-                retriever,
-                "_vector_search",
-                return_value=[("episode-1", "seed", 0.8, {"memory_type": "episodes"})],
-            ) as vector_search,
-            patch.object(retriever, "_apply_score_adjustments", return_value=[seed]),
-            patch.object(retriever, "_apply_spreading_activation", return_value=[seed, expanded]),
-            patch.object(retriever, "_get_spreading_memory_types", return_value=("episodes",)),
-        ):
-            results = retriever.search(
-                "query",
-                "alice",
-                memory_type="episodes",
-                top_k=10,
-                enable_spreading_activation=True,
-                access_batch=batch,
-            )
-
-        vector_search.assert_called_once()
-        assert results == [seed, expanded]
-        assert batch.take_episode_graph_results("query", 10) == ([seed, expanded], True)
-
-    def test_reuses_primary_episode_graph_results_without_second_vector_search(
-        self,
-        rag: RAGMemorySearch,
-        knowledge_dir: Path,
-    ) -> None:
-        class FakeIndexer:
-            vector_store = object()
-
-        seed = RetrievalResult(
-            doc_id="episode-1",
-            content="seed",
-            score=0.8,
-            metadata={"source_file": "episodes/1.md", "memory_type": "episodes"},
-            source_scores={"vector": 0.8},
-        )
-        primary_neighbor = RetrievalResult(
-            doc_id="episode-2",
-            content="primary neighbor",
-            score=0.6,
-            metadata={"source_file": "episodes/2.md", "memory_type": "episodes"},
-            source_scores={"pagerank": 0.6},
-        )
-        retriever = MagicMock()
-        batch = AccessBatch()
-        rag._indexer = FakeIndexer()
-
-        def primary_search(**kwargs):
-            batch.remember_episode_graph_results(
-                kwargs["query"],
-                kwargs["top_k"],
-                [seed, primary_neighbor],
-                expanded=True,
-            )
-            return [seed, primary_neighbor]
-
-        retriever.search.side_effect = primary_search
-        with patch.object(rag, "_get_retriever", return_value=retriever):
-            vector = rag._vector_search_primary(
-                "query",
-                "episodes",
-                0,
-                knowledge_dir,
-                result_limit=10,
-                access_batch=batch,
-            )
-            graph = rag._graph_episodes_search(
-                "query",
-                10,
-                knowledge_dir,
-                indexer=rag._indexer,
-                access_batch=batch,
-            )
-
-        retriever.search.assert_called_once()
-        retriever.expand_search_results.assert_not_called()
-        assert [item["doc_id"] for item in vector] == ["episode-1", "episode-2"]
-        assert [item["doc_id"] for item in graph] == ["episode-1", "episode-2"]
-        assert all(item["search_method"] == "vector" for item in vector)
-        assert graph[0]["search_method"] == "vector_graph"
-
-    def test_reuses_retriever(self, rag: RAGMemorySearch, knowledge_dir: Path) -> None:
-        class FakeIndexer:
-            vector_store = object()
-
-        indexer = FakeIndexer()
-        with patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls:
-            retriever_cls.return_value.indexer = indexer
-            retriever_cls.return_value.knowledge_dir = knowledge_dir
-            retriever_cls.return_value.search.return_value = []
-            rag._graph_episodes_search("first", 10, knowledge_dir, indexer=indexer)
-            rag._graph_episodes_search("second", 10, knowledge_dir, indexer=indexer)
-
-        retriever_cls.assert_called_once_with(indexer.vector_store, indexer, knowledge_dir)
-
-    def test_reuses_prepared_indexer(self, rag: RAGMemorySearch, knowledge_dir: Path) -> None:
-        class FakeIndexer:
-            vector_store = object()
-
-        with (
-            patch.object(rag, "_get_indexer", side_effect=AssertionError("must not recheck shared indexes")),
-            patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
-        ):
-            retriever_cls.return_value.search.return_value = []
-            assert rag._graph_episodes_search("locomo", 10, knowledge_dir, indexer=FakeIndexer()) == []
-
-    def test_preserves_entity_aware_fact_metadata(
-        self,
-        rag: RAGMemorySearch,
-        knowledge_dir: Path,
-    ) -> None:
-        class FakeIndexer:
-            vector_store = object()
-
-        fact_result = RetrievalResult(
-            doc_id="alice/facts/fact-1#0",
-            content="Alice prefers LoCoMo score deltas.",
-            score=0.42,
-            metadata={
-                "source_file": "facts/fact-1",
-                "memory_type": "facts",
-                "fact_id": "fact-1",
-                "edge_type": "PREFERS",
-                "source_entity": "Alice",
-                "target_entity": "LoCoMo",
-                "valid_at_iso": "2026-06-03T10:00:00+09:00",
-                "valid_until": "",
-                "source_episode": "episodes/2026-06-03.md",
-                "source_session_id": "session-1",
-            },
-            source_scores={"pagerank": 0.84},
-        )
-
-        with (
-            patch.object(rag, "_get_indexer", return_value=FakeIndexer()),
-            patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
-        ):
-            retriever_cls.return_value.search.return_value = [fact_result]
-            results = rag._graph_episodes_search("locomo", 10, knowledge_dir)
-
-        assert results[0]["memory_type"] == "facts"
-        assert results[0]["source_file"] == "facts/fact-1"
-        assert results[0]["fact_id"] == "fact-1"
-        assert results[0]["source_episode"] == "episodes/2026-06-03.md"
-
-
 # ── search_memory_text ───────────────────────────────────
 
 
@@ -408,7 +245,7 @@ class TestSearchMemoryTextKeywordOnly:
         procedures_dir: Path,
         common_knowledge_dir: Path,
     ) -> None:
-        with patch("core.memory.rag_search.search_activity_log", return_value=[]) as search:
+        with patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]) as search:
             rag.search_memory_text(
                 "meeting",
                 scope="activity_log",
@@ -422,6 +259,7 @@ class TestSearchMemoryTextKeywordOnly:
 
         assert search.call_args.kwargs["time_start"] == "2026-07-01"
         assert search.call_args.kwargs["time_end"] == "2026-07-02"
+        assert search.call_args.kwargs["all_time"] is True
 
     def test_explicit_time_range_is_forwarded_to_unified_search(
         self,

@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import signal
 from unittest.mock import MagicMock, patch
 
 import psutil
+import pytest
 
 from core.platform import process
 
@@ -25,24 +26,6 @@ class TestSubprocessSessionKwargs:
     def test_posix_returns_start_new_session(self):
         with patch("core.platform.process.os.name", "posix"):
             assert process.subprocess_session_kwargs() == {"start_new_session": True}
-
-
-class TestSubprocessDaemonKwargs:
-    def test_windows_detaches_from_parent_console(self):
-        with (
-            patch("core.platform.process.os.name", "nt"),
-            patch(
-                "core.platform.process.subprocess.CREATE_NEW_PROCESS_GROUP",
-                512,
-                create=True,
-            ),
-            patch("core.platform.process.subprocess.DETACHED_PROCESS", 8, create=True),
-        ):
-            assert process.subprocess_daemon_kwargs() == {"creationflags": 520}
-
-    def test_posix_returns_start_new_session(self):
-        with patch("core.platform.process.os.name", "posix"):
-            assert process.subprocess_daemon_kwargs() == {"start_new_session": True}
 
 
 class TestTerminatePid:
@@ -70,28 +53,142 @@ class TestTerminatePid:
         ):
             process.terminate_pid(99999)
 
-    def test_windows_request_process_shutdown_prefers_ctrl_break(self):
+    def test_include_children_snapshots_before_group_signal(self):
+        calls = []
+        child = MagicMock()
+        child.terminate.side_effect = lambda: calls.append("child")
+        root = MagicMock()
+        root.children.side_effect = lambda recursive: (calls.append("snapshot"), [child])[1]
+
+        def killpg(_pgid, _sig):
+            calls.append("killpg")
+
+        with (
+            patch("core.platform.process.os.name", "posix"),
+            patch("core.platform.process.os.getpgid", return_value=123, create=True),
+            patch("core.platform.process.os.killpg", side_effect=killpg, create=True),
+            patch("core.platform.process.psutil.Process", return_value=root),
+        ):
+            process.terminate_pid(123, include_children=True)
+
+        assert calls == ["snapshot", "killpg", "child"]
+
+
+class TestProcessTreeHelpers:
+    def test_signal_tree_kills_group_and_snapshotted_descendants(self):
+        child = MagicMock()
+        with (
+            patch("core.platform.process.os.name", "posix"),
+            patch("core.platform.process.os.killpg", create=True) as killpg,
+        ):
+            process.signal_tree(123, getattr(signal, "SIGKILL", 9), pgid=456, descendants=[child])
+
+        killpg.assert_called_once_with(456, getattr(signal, "SIGKILL", 9))
+        child.send_signal.assert_called_once_with(getattr(signal, "SIGKILL", 9))
+
+    @pytest.mark.parametrize(
+        ("sig", "root_method", "child_method"),
+        [(signal.SIGTERM, "terminate", "terminate"), (getattr(signal, "SIGKILL", 9), "kill", "kill")],
+    )
+    def test_signal_tree_maps_windows_signals_without_killpg(self, sig, root_method, child_method):
+        root = MagicMock()
+        child = MagicMock()
         with (
             patch("core.platform.process.os.name", "nt"),
-            patch("core.platform.process.signal.CTRL_BREAK_EVENT", 1, create=True),
-            patch("core.platform.process.os.kill") as mock_kill,
-            patch("core.platform.process.terminate_pid") as mock_terminate,
+            patch("core.platform.process.os.killpg", create=True) as killpg,
+            patch("core.platform.process.psutil.Process", return_value=root),
         ):
-            process.request_process_shutdown(12345)
+            process.signal_tree(123, sig, pgid=456, descendants=[child])
 
-        mock_kill.assert_called_once_with(12345, 1)
-        mock_terminate.assert_not_called()
+        killpg.assert_not_called()
+        getattr(root, root_method).assert_called_once_with()
+        getattr(child, child_method).assert_called_once_with()
 
-    def test_windows_request_process_shutdown_falls_back_to_terminate(self):
+    def test_kill_tree_orders_deepest_first_and_ignores_psutil_errors(self):
+        killed = []
+        deep = MagicMock()
+        deep.parents.return_value = [MagicMock(), MagicMock()]
+        deep.kill.side_effect = lambda: killed.append("deep")
+        shallow = MagicMock()
+        shallow.parents.return_value = [MagicMock()]
+        shallow.kill.side_effect = lambda: killed.append("shallow")
+        missing = MagicMock()
+        missing.parents.return_value = []
+        missing.kill.side_effect = psutil.NoSuchProcess(pid=1)
+        denied = MagicMock()
+        denied.parents.side_effect = psutil.AccessDenied(pid=2)
+        denied.kill.side_effect = psutil.AccessDenied(pid=2)
+        root = MagicMock()
+        root.kill.side_effect = lambda: killed.append("root")
+
+        with patch("core.platform.process.psutil.Process", return_value=root):
+            count = process.kill_tree(123, descendants=[shallow, missing, denied, deep])
+
+        assert killed == ["deep", "shallow", "root"]
+        assert count == 3
+
+    def test_process_group_exists_checks_posix_group_and_missing_group(self):
+        with (
+            patch("core.platform.process.os.name", "posix"),
+            patch("core.platform.process.os.killpg", create=True) as killpg,
+        ):
+            assert process.process_group_exists(456, fallback_alive=False)
+            killpg.side_effect = ProcessLookupError
+            assert not process.process_group_exists(456, fallback_alive=True)
+
+        assert killpg.call_count == 2
+        killpg.assert_called_with(456, 0)
+
+    def test_process_group_exists_uses_fallback_without_posix_group(self):
         with (
             patch("core.platform.process.os.name", "nt"),
-            patch("core.platform.process.signal.CTRL_BREAK_EVENT", 1, create=True),
-            patch("core.platform.process.os.kill", side_effect=OSError),
-            patch("core.platform.process.terminate_pid") as mock_terminate,
+            patch("core.platform.process.os.killpg", create=True) as killpg,
         ):
-            process.request_process_shutdown(12345, include_children=True)
+            assert process.process_group_exists(456, fallback_alive=True)
+            assert not process.process_group_exists(None, fallback_alive=False)
 
-        mock_terminate.assert_called_once_with(12345, force=False, include_children=True)
+        killpg.assert_not_called()
+
+    def test_terminate_tree_terms_then_kills_only_wait_procs_survivors(self):
+        exited = MagicMock()
+        survivor = MagicMock()
+        with patch("core.platform.process.psutil.wait_procs", return_value=([exited], [survivor])) as wait_procs:
+            alive = process.terminate_tree(123, descendants=[exited, survivor], grace_sec=2.0, include_root=False)
+
+        exited.terminate.assert_called_once_with()
+        survivor.terminate.assert_called_once_with()
+        wait_procs.assert_called_once_with([exited, survivor], timeout=2.0)
+        exited.kill.assert_not_called()
+        survivor.kill.assert_called_once_with()
+        assert alive == [survivor]
+
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            "core.runtime.task_runner",
+            "core.runtime.task_runner",  # legacy name until 2026-11 (S3a)
+        ],
+    )
+    def test_task_runner_subtree_pids_includes_job_and_marker_subtrees(self, module_name: str):
+        job_descendant = MagicMock(pid=11)
+        marker_descendant = MagicMock(pid=21)
+        job_root = MagicMock()
+        job_root.children.return_value = [job_descendant]
+        marker_root = MagicMock(pid=20)
+        marker_root.cmdline.return_value = ["python", "-m", module_name]
+        marker_root.children.return_value = [marker_descendant]
+        unrelated = MagicMock(pid=30)
+        unrelated.cmdline.return_value = ["python", "-m", "other"]
+        root = MagicMock()
+        root.children.return_value = [marker_root, unrelated]
+
+        def process_for(pid):
+            return {10: job_root, 20: marker_root}[pid]
+
+        with patch("core.platform.process.psutil.Process", side_effect=process_for):
+            pids = process.task_runner_subtree_pids(root, {10})
+
+        assert pids == {10, 11, 20, 21}
 
 
 class TestFindMatchingPids:
@@ -141,29 +238,3 @@ class TestFindMatchingPids:
 
         assert count == 3
         assert mock_terminate.call_count == 3
-
-    def test_terminate_matching_processes_can_collapse_matched_descendants(self):
-        parent = SimpleNamespace(pid=1, parent=lambda: None)
-        child = SimpleNamespace(pid=2, parent=lambda: parent)
-        sibling = SimpleNamespace(pid=3, parent=lambda: None)
-
-        def fake_process(pid: int):
-            return {1: parent, 2: child, 3: sibling}[pid]
-
-        with (
-            patch("core.platform.process.find_matching_pids", return_value=[1, 2, 3]),
-            patch("core.platform.process.psutil.Process", side_effect=fake_process),
-            patch("core.platform.process.terminate_pid") as mock_terminate,
-        ):
-            count = process.terminate_matching_processes(
-                ("runner",),
-                force=True,
-                include_children=True,
-                collapse_descendants=True,
-            )
-
-        assert count == 2
-        assert mock_terminate.call_args_list[0].args == (1,)
-        assert mock_terminate.call_args_list[0].kwargs == {"force": True, "include_children": True}
-        assert mock_terminate.call_args_list[1].args == (3,)
-        assert mock_terminate.call_args_list[1].kwargs == {"force": True, "include_children": True}

@@ -18,7 +18,7 @@
   → Anima B は「Anima A からの指示」として受け取る（source="anima" = trusted）
 ```
 
-- `Messenger.send()` は `source` を設定せず、デフォルト `"anima"` になる — `core/messenger.py:99-107`
+- `Messenger.send()` は `source` を設定せず、デフォルト `"anima"` になる — `core/messaging/messenger.py:99-107`
 - `origin_chain` の伝播メカニズムがなく、元の外部 origin が消失する
 - Anima B 側では `meta={"from_type": "anima"}` と記録され、外部由来であることが検出不能
 
@@ -30,9 +30,9 @@
 
 | コンポーネント | 影響 | 説明 |
 |--------------|------|------|
-| `core/messenger.py` | Direct | `send()` に `origin_chain` 引数追加 |
+| `core/messaging/messenger.py` | Direct | `send()` に `origin_chain` 引数追加 |
 | `core/tooling/handler_comms.py` | Direct | `_handle_send_message()` で現在セッションの origin を渡す |
-| `core/anima.py` | Direct | セッションの origin コンテキストを ToolHandler に伝播 |
+| `core/anima/digital_anima.py` | Direct | セッションの origin コンテキストを ToolHandler に伝播 |
 | `core/tooling/handler.py` | Direct | ToolHandler に `session_origin` / `session_origin_chain` を保持 |
 
 ## Decided Approach / 確定方針
@@ -59,14 +59,14 @@ Anima がメッセージを送信する際、**現在処理中のセッション
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/messenger.py` | Modify | `send()` に `origin_chain` 引数追加、Message に設定 |
+| `core/messaging/messenger.py` | Modify | `send()` に `origin_chain` 引数追加、Message に設定 |
 | `core/tooling/handler.py` | Modify | `set_session_origin()` メソッド追加、`_session_origin` / `_session_origin_chain` 保持 |
 | `core/tooling/handler_comms.py` | Modify | `_handle_send_message()` で `_session_origin_chain` を Messenger に渡す |
-| `core/anima.py` | Modify | `process_message()` / `_process_inbox_messages()` で ToolHandler にセッション origin を設定 |
+| `core/anima/digital_anima.py` | Modify | `process_message()` / `_process_inbox_messages()` で ToolHandler にセッション origin を設定 |
 
 #### Change 1: Messenger.send() 拡張
 
-**Target**: `core/messenger.py`
+**Target**: `core/messaging/messenger.py`
 
 ```python
 # Before (line 57-107)
@@ -135,7 +135,7 @@ msg = self.messenger.send(
 
 #### Change 4: セッション開始時に origin 設定
 
-**Target**: `core/anima.py`
+**Target**: `core/anima/digital_anima.py`
 
 ```python
 # process_message() 内（Chat API 経由）
@@ -163,7 +163,7 @@ self.tool_handler.set_session_origin(msg_origin, msg_origin_chain)
 
 | # | Task | Target |
 |---|------|--------|
-| 3-1-1 | `send()` に `origin_chain` 引数追加 | `core/messenger.py` |
+| 3-1-1 | `send()` に `origin_chain` 引数追加 | `core/messaging/messenger.py` |
 
 **Completion condition**: `send(to, content, origin_chain=["external_platform", "anima"])` で Message.origin_chain が正しく設定されること
 
@@ -181,9 +181,9 @@ self.tool_handler.set_session_origin(msg_origin, msg_origin_chain)
 
 | # | Task | Target |
 |---|------|--------|
-| 3-3-1 | `process_message()` で `set_session_origin(ORIGIN_HUMAN)` | `core/anima.py` |
-| 3-3-2 | `_process_inbox_messages()` で Message.source → origin 変換 + `set_session_origin()` | `core/anima.py` |
-| 3-3-3 | heartbeat / cron で `set_session_origin(ORIGIN_SYSTEM)` | `core/anima.py` |
+| 3-3-1 | `process_message()` で `set_session_origin(ORIGIN_HUMAN)` | `core/anima/digital_anima.py` |
+| 3-3-2 | `_process_inbox_messages()` で Message.source → origin 変換 + `set_session_origin()` | `core/anima/digital_anima.py` |
+| 3-3-3 | heartbeat / cron で `set_session_origin(ORIGIN_SYSTEM)` | `core/anima/digital_anima.py` |
 
 **Completion condition**: E2E で「Slack → Anima A → send_message → Anima B の Inbox」の Message.origin_chain に `"external_platform"` が含まれること
 
@@ -223,10 +223,10 @@ self.tool_handler.set_session_origin(msg_origin, msg_origin_chain)
 
 ## References
 
-- `core/messenger.py:57-114` — Messenger.send()
-- `core/messenger.py:436-470` — Messenger.receive_external()
+- `core/messaging/messenger.py:57-114` — Messenger.send()
+- `core/messaging/messenger.py:436-470` — Messenger.receive_external()
 - `core/tooling/handler_comms.py` — _handle_send_message()
 - `core/tooling/handler_org.py` — _handle_delegate_task()
-- `core/anima.py:461-525` — process_message()
-- `core/anima.py:874-937` — process_inbox_message()
+- `core/anima/digital_anima.py:461-525` — process_message()
+- `core/anima/digital_anima.py:874-937` — process_inbox_message()
 - セキュリティ検証チャット — 信頼ロンダリング攻撃シナリオ

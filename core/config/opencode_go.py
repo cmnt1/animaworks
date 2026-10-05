@@ -59,7 +59,7 @@ def opencode_go_api_key(configured: str | None = None) -> str:
     if configured:
         return configured
     try:
-        from core.tools._base import resolve_env_style_credential
+        from core.credentials import resolve_env_style_credential
 
         value = resolve_env_style_credential(OPENCODE_GO_API_KEY_ENV)
         if value:

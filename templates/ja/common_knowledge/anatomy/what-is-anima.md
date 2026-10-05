@@ -31,7 +31,7 @@ Anima は **ツールではなく、自律的に思考・判断・行動する�
 - **Heartbeat（定期巡回）**: 一定間隔で自動起動し、状況確認・計画立案を行う
 - **Cron（定時タスク）**: 決まった時間に必ず実行するタスクを持てる
 - **TaskExec（タスク実行）**: `submit_tasks` または `delegate_task` で登録された **LLM タスク**を正規タスクストアから取得し、保存済み入力を別の試行で実行する。
-- **バックグラウンドツール実行**: 長時間の外部ツールは `BackgroundTaskManager`（`core/background.py`）に載せて非同期実行でき、会話ループを長時間ブロックしない（詳細は下記）
+- **バックグラウンドツール実行**: 長時間の外部ツールは `BackgroundTaskManager`（`core/tasks/background.py`）に載せて非同期実行でき、会話ループを長時間ブロックしない（詳細は下記）
 
 ## ライフサイクル
 
@@ -62,7 +62,7 @@ Chat と Heartbeat（および cron / TaskExec などのバックグラウンド
 
 #### バックグラウンドツール実行（BackgroundTaskManager）
 
-`core/background.py` の `BackgroundTaskManager` は、**長時間になりがちな外部ツール呼び出しをバックグラウンドで実行**し、状態と結果をディスクに残して後から参照できるようにする。`config.json` の `background_task.enabled` が `false` のときはマネージャ自体が無効化され、エージェント経由のバックグラウンド投入も行われない。
+`core/tasks/background.py` の `BackgroundTaskManager` は、**長時間になりがちな外部ツール呼び出しをバックグラウンドで実行**し、状態と結果をディスクに残して後から参照できるようにする。`config.json` の `background_task.enabled` が `false` のときはマネージャ自体が無効化され、エージェント経由のバックグラウンド投入も行われない。
 
 - **永続化**: 各タスクは `TaskStatus`（`running` / `completed` / `failed` など）と結果文字列を `state/background_tasks/{task_id}.json` に保存する。メモリ上のキャッシュとディスクの両方から `get_task` / `list_tasks` で参照できる。
 - **投入 API**: `submit` は `task_id` を即返し、`asyncio.create_task` でラップした `_run_task` が本体を走らせる。同期ツール実装は `run_in_executor` でスレッドプール上で実行される。非同期ツール向けに `submit_async` もある。完了時は任意の `on_complete` コールバックを `await` する（コールバック内の例外はログに落ち、タスク結果には影響しない）。
@@ -72,8 +72,8 @@ Chat と Heartbeat（および cron / TaskExec などのバックグラウンド
   3. `config.json` の `background_task.eligible_tools`（各ツールの `threshold_s` が同じマップの値として上書き）
   `is_eligible(name)` は **名前がマップに含まれるかだけ**を見る（値は目安秒数として保持され、閾値比較には使われない）。
 - **エージェント経由**: `ToolHandler` が未登録ツールを外部ディスパッチする際、名前が上記マップにあれば `BackgroundTaskManager.submit` に回し、即座に `task_id` を含む JSON を返す。結果確認は `check_background_task` / `list_background_tasks` などのツールで行う。
-- **CLI 経由（`animaworks-tool submit`）**: コマンド型ツールの記述子は引き続き **`state/background_tasks/pending/`** と processing の流れを使う。`PendingTaskExecutor` はこのコマンドキューを監視し、別途、正規タスクストアからLLMタスクを取得する。LLMタスク投入のためにファイルを作成しない。
-- **整理**: `cleanup_old_tasks(max_age_hours=24)` は、`completed` / `failed` で `completed_at` から **24 時間超**経過した JSON を削除し、さらに `running` のまま `created_at` から **48 時間超**経過したファイル（プロセスクラッシュ等の孤児）も削除する。`config.json` の `background_task.result_retention_hours` はスキーマ上あるが、**現行の `BackgroundTaskManager` は参照しない**（呼び出し側が `cleanup_old_tasks` に渡す時間で制御する想定）。
+- **CLI 経由（`animaworks-tool submit`）**: コマンド型ツールも TaskStore に `task_type="command"` として登録される。`PendingTaskExecutor` がTaskStoreから試行を取得し、BackgroundTaskManager が実行する。結果状態は互換性のため `state/background_tasks/{task_id}.json` にも保存され、完了通知から確認できる。
+- **整理**: `cleanup_old_tasks(max_age_hours=24)` は、`completed` / `failed` で `completed_at` から指定時間を超えた JSON と、`running` のまま `created_at` から **48 時間超**経過したファイル（プロセスクラッシュ等の孤児）を削除する。保持時間は呼び出し側が引数 `max_age_hours` で指定し、設定キーはない。
 
 同じモジュールの **`rotate_dm_logs`** は、`shared/dm_logs/*.jsonl` のうち `max_age_days`（デフォルト 7 日）より古い行を `{元ファイル名}.{YYYYMMDD}.archive.jsonl` に追記アーカイブし、アクティブファイルを最近の行だけに書き換える（DM 履歴の肥大化対策）。
 

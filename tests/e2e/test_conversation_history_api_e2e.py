@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.activity.logger import ActivityLogger
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -663,9 +663,7 @@ async def test_api_thread_history_uses_file_fallback(tmp_path: Path) -> None:
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get(
-            "/api/animas/fb-anima/conversation/history?limit=50&thread_id=th123456&strict_thread=1"
-        )
+        resp = await client.get("/api/animas/fb-anima/conversation/history?limit=50&thread_id=th123456&strict_thread=1")
         assert resp.status_code == 200
         data = resp.json()
         msgs = [m for s in data["sessions"] for m in s["messages"]]
@@ -673,7 +671,5 @@ async def test_api_thread_history_uses_file_fallback(tmp_path: Path) -> None:
         assert msgs[1]["content"] == "スレッドの回答"
 
         # Invalid thread_id is rejected
-        resp = await client.get(
-            "/api/animas/fb-anima/conversation/history?thread_id=../evil&strict_thread=1"
-        )
+        resp = await client.get("/api/animas/fb-anima/conversation/history?thread_id=../evil&strict_thread=1")
         assert resp.status_code == 400

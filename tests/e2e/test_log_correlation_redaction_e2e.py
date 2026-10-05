@@ -20,7 +20,7 @@ import logging
 import pytest
 import structlog
 
-from core.logging_config import (
+from core.infra.logging_config import (
     bind_cycle_context,
     clear_cycle_context,
     setup_anima_logging,

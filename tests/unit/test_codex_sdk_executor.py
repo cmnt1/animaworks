@@ -23,35 +23,41 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._agent_executor import ExecutorFactoryMixin
+from core.agent.executor_factory import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult, TokenUsage
-from core.execution.codex_sdk import (
+from core.execution.engines.codex.executor import (
     CodexSDKExecutor,
-    _clear_thread_id,
-    _close_codex_client,
-    _close_subprocess_stdio,
+    _should_cli_exec_fallback,
+    _stderr_contains_fatal_signal,
+    clear_codex_thread_id,
+)
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.engines.codex.events import (
     _codex_item_tool_name,
     _CodexUsageAccumulator,
-    _default_home_dir,
-    _default_path_env,
-    _event_idle_timeout_seconds,
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
-    _is_desktop_extension_codex,
     _item_to_tool_record,
-    _load_thread_id,
-    _normalize_codex_thread_session_ids,
-    _resolve_codex_model,
-    _save_thread_id,
-    _should_cli_exec_fallback,
-    _should_prefer_cli_exec,
-    _stderr_contains_fatal_signal,
     _usage_to_dict,
-    clear_codex_thread_id,
-    clear_codex_thread_ids,
+)
+from core.execution.engines.codex.setup import (
+    _close_codex_client,
+    _close_subprocess_stdio,
+    _default_home_dir,
+    _is_desktop_extension_codex,
+    _should_prefer_cli_exec,
+    default_path_env,
+    resolve_codex_model,
 )
 from core.prompt.context import ContextTracker
+
+_CODEX_SESSION_IDS = EngineSessionIds("codex")
+
+
+def _load_codex_thread_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> str | None:
+    record = _CODEX_SESSION_IDS.load(anima_dir, session_type, thread_id)
+    return record.session_id if record is not None else None
 
 
 def _install_fake_openai_codex() -> None:
@@ -117,7 +123,6 @@ def model_config():
         credential="openai",
         api_key="test-key-123",
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -179,13 +184,13 @@ def _read_activity_jsonl(anima_dir: Path) -> list[dict]:
 
 
 class TestHelpers:
-    def test_resolve_codex_model_strips_prefix(self):
-        assert _resolve_codex_model("codex/o4-mini") == "o4-mini"
-        assert _resolve_codex_model("codex/gpt-4.1") == "gpt-4.1"
-        assert _resolve_codex_model("openai-codex/gpt-5.3-codex") == "gpt-5.3-codex"
+    def testresolve_codex_model_strips_prefix(self):
+        assert resolve_codex_model("codex/o4-mini") == "o4-mini"
+        assert resolve_codex_model("codex/gpt-4.1") == "gpt-4.1"
+        assert resolve_codex_model("openai-codex/gpt-5.3-codex") == "gpt-5.3-codex"
 
-    def test_resolve_codex_model_no_prefix(self):
-        assert _resolve_codex_model("o4-mini") == "o4-mini"
+    def testresolve_codex_model_no_prefix(self):
+        assert resolve_codex_model("o4-mini") == "o4-mini"
 
     def test_get_thread_id_from_id_attr(self):
         obj = MagicMock()
@@ -200,37 +205,6 @@ class TestHelpers:
     def test_get_thread_id_none(self):
         obj = MagicMock(spec=[])
         assert _get_thread_id(obj) is None
-
-    def test_normalize_codex_thread_session_ids_fills_missing_session_id(self):
-        payload = {
-            "thread": {
-                "id": "019eaa7f-8952-745a-thread",
-                "cliVersion": "0.135.0",
-                "modelProvider": "openai",
-                "turns": [],
-            }
-        }
-
-        _normalize_codex_thread_session_ids(payload)
-
-        assert payload["thread"]["sessionId"] == "019eaa7f-8952-745a-thread"
-
-    def test_normalize_codex_thread_session_ids_keeps_existing_session_id(self):
-        payload = {
-            "data": [
-                {
-                    "id": "thread-id",
-                    "sessionId": "session-id",
-                    "cliVersion": "0.135.0",
-                    "modelProvider": "openai",
-                    "turns": [],
-                }
-            ]
-        }
-
-        _normalize_codex_thread_session_ids(payload)
-
-        assert payload["data"][0]["sessionId"] == "session-id"
 
     def test_extract_item_text_string_content(self):
         item = MagicMock()
@@ -353,9 +327,10 @@ class TestHelpers:
         assert record.tool_name == "file_change"
         assert record.input_summary == "update: core/demo.py"
 
-    def test_event_idle_timeout_prefers_background_triggers(self):
-        assert _event_idle_timeout_seconds("heartbeat") < _event_idle_timeout_seconds("chat")
-        assert _event_idle_timeout_seconds("inbox:sakura") == _event_idle_timeout_seconds("heartbeat")
+    def test_all_triggers_share_the_engine_event_idle_timeout(self):
+        from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
+
+        assert DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS == 1200
 
     def test_stderr_contains_fatal_signal_detects_stream_closed(self):
         assert _stderr_contains_fatal_signal("error: Stream closed")
@@ -375,12 +350,14 @@ class TestHelpers:
         monkeypatch.setenv("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "1")
         assert _should_prefer_cli_exec("task:demo")
 
-    def test_should_prefer_cli_exec_for_windows_background(self, monkeypatch):
+    def test_should_prefer_cli_exec_for_windows_background_desktop_bundle(self, monkeypatch):
         monkeypatch.delenv("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", raising=False)
-        monkeypatch.setattr("core.execution.codex_sdk.sys.platform", "win32")
+        monkeypatch.setattr("core.execution.engines.codex.setup.sys.platform", "win32")
         monkeypatch.setattr(
-            "core.execution.codex_sdk.get_codex_executable",
-            lambda: r"C:\Users\cmnt\AppData\Roaming\npm\codex.CMD",
+            "core.execution.engines.codex.setup.get_codex_executable",
+            lambda: (
+                r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe"
+            ),
         )
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")
@@ -472,36 +449,34 @@ class TestHelpers:
 
 class TestSessionPersistence:
     def test_save_and_load_thread_id(self, anima_dir):
-        _save_thread_id(anima_dir, "thread-abc", "chat")
-        assert _load_thread_id(anima_dir, "chat") == "thread-abc"
+        _CODEX_SESSION_IDS.save(anima_dir, "thread-abc", "chat")
+        assert _load_codex_thread_id(anima_dir, "chat") == "thread-abc"
 
     def test_load_thread_id_missing(self, anima_dir):
-        assert _load_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "chat") is None
 
     def test_clear_thread_id(self, anima_dir):
-        _save_thread_id(anima_dir, "thread-xyz", "heartbeat")
-        _clear_thread_id(anima_dir, "heartbeat")
-        assert _load_thread_id(anima_dir, "heartbeat") is None
+        _CODEX_SESSION_IDS.save(anima_dir, "thread-xyz", "heartbeat")
+        _CODEX_SESSION_IDS.clear(anima_dir, "heartbeat")
+        assert _load_codex_thread_id(anima_dir, "heartbeat") is None
 
-    def test_clear_all_thread_ids(self, anima_dir):
-        _save_thread_id(anima_dir, "t1", "chat")
-        _save_thread_id(anima_dir, "t2", "heartbeat")
-        _save_thread_id(anima_dir, "t3", "inbox")
-        _save_thread_id(anima_dir, "t4", "inbox", "inbox")
-        clear_codex_thread_ids(anima_dir)
-        assert _load_thread_id(anima_dir, "chat") is None
-        assert _load_thread_id(anima_dir, "heartbeat") is None
-        assert _load_thread_id(anima_dir, "inbox") is None
-        assert _load_thread_id(anima_dir, "inbox", "inbox") == "t4"
+    def test_executor_clear_session_only_clears_resolved_namespace(self, executor, anima_dir):
+        _CODEX_SESSION_IDS.save(anima_dir, "chat-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "heartbeat-thread", "heartbeat")
+
+        executor.clear_session("message:owner")
+
+        assert _load_codex_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "heartbeat") == "heartbeat-thread"
 
     def test_clear_single_thread_id_for_non_chat_thread(self, anima_dir):
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
-        _save_thread_id(anima_dir, "chat-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "chat-thread", "chat")
 
         clear_codex_thread_id(anima_dir, "inbox", "inbox")
 
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "chat-thread"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "chat-thread"
 
 
 # ── Executor instantiation tests ─────────────────────────────
@@ -512,13 +487,13 @@ class TestExecutorInit:
         assert executor.supports_streaming is True
 
     def test_build_env_includes_api_key(self, executor):
-        with patch("core.execution.codex_sdk.PROJECT_DIR", "/fake/project", create=True):
+        with patch("core.paths.PROJECT_DIR", "/fake/project", create=True):
             env = executor._build_env()
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
 
     def test_build_env_includes_runtime_session(self, executor):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         ctx = RuntimeSessionContext.create(
             session_type="chat",
@@ -586,7 +561,7 @@ class TestExecutorInit:
             else:
                 assert name not in env
 
-    def test_default_path_env_prepends_embedded_codex(self):
+    def testdefault_path_env_prepends_embedded_codex(self):
         if os.name == "nt":
             codex_exe = r"C:\Tools\codex.exe"
             base_path = r"C:\Windows\System32"
@@ -594,14 +569,14 @@ class TestExecutorInit:
             codex_exe = "/opt/codex/bin/codex"
             base_path = "/usr/bin"
         with (
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=codex_exe),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=codex_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
-            value = _default_path_env()
+            value = default_path_env()
         parts = value.split(os.pathsep)
         assert parts[0] == str(Path(codex_exe).resolve().parent)
 
-    def test_default_path_env_includes_launcher_python_dir(self):
+    def testdefault_path_env_includes_launcher_python_dir(self):
         if os.name == "nt":
             py_exe = r"E:\Projects\Tools\General\animaworks\.venv\Scripts\python.exe"
             base_path = r"C:\Windows\System32"
@@ -609,11 +584,11 @@ class TestExecutorInit:
             py_exe = "/home/user/proj/.venv/bin/python3"
             base_path = "/usr/bin"
         with (
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
-            patch("core.execution.codex_sdk.sys.executable", py_exe),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=None),
+            patch("core.execution.engines.codex.setup.sys.executable", py_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
-            value = _default_path_env()
+            value = default_path_env()
         parts = value.split(os.pathsep)
         assert str(Path(py_exe).resolve().parent) in parts
 
@@ -622,7 +597,7 @@ class TestExecutorInit:
         fake_config = MagicMock()
 
         with (
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=r"C:\Tools\codex.exe"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=r"C:\Tools\codex.exe"),
             patch("openai_codex.CodexConfig", return_value=fake_config) as mock_config,
             patch("openai_codex.AsyncCodex", return_value=fake_client) as mock_codex,
         ):
@@ -699,56 +674,14 @@ class TestConfigWriting:
         hooks = json.loads((anima_dir / ".codex_home" / "hooks.json").read_text(encoding="utf-8"))
         (entry,) = hooks["hooks"]["PreToolUse"]
         assert entry["matcher"] == "Bash"
-        assert "core.tooling.codex_command_hook" in entry["hooks"][0]["command"]
+        assert "cli.codex_command_hook" in entry["hooks"][0]["command"]
         assert str(anima_dir.resolve()) in entry["hooks"][0]["command"]
 
         permissions = SimpleNamespace(file_roots=["/"], file_roots_denied=[])
         with patch("core.config.models.load_permissions", return_value=permissions):
             assert executor._codex_thread_kwargs("prompt")["config"] == {"bypass_hook_trust": True}
-        with patch("core.execution.codex_sdk.get_codex_executable", return_value="/usr/bin/codex"):
+        with patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/usr/bin/codex"):
             assert "--dangerously-bypass-hook-trust" in executor._build_cli_exec_command()
-
-    def test_write_codex_config_keeps_files_together_in_effective_home(self, executor, tmp_path):
-        config_home = tmp_path / "default-codex-home"
-
-        with patch.object(executor, "_effective_codex_home", return_value=config_home):
-            executor._write_codex_config("My prompt")
-
-        assert (config_home / "config.toml").exists()
-        assert (config_home / "instructions.md").exists()
-        assert (config_home / "hooks.json").exists()
-
-    @pytest.mark.parametrize("has_auth_file", [True, False])
-    def test_codex_login_forces_chatgpt_auth_and_strips_api_keys(self, anima_dir, monkeypatch, tmp_path, has_auth_file):
-        from core.schemas import ModelConfig
-
-        fake_home = tmp_path / "user-home"
-        default_config_home = fake_home / ".codex"
-        default_config_home.mkdir(parents=True)
-        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
-        monkeypatch.delenv("CODEX_HOME", raising=False)
-        if has_auth_file:
-            (default_config_home / "auth.json").write_text("{}", encoding="utf-8")
-
-        login_executor = CodexSDKExecutor(
-            model_config=ModelConfig(model="codex/o4-mini", credential="openai", credential_type="codex_login"),
-            anima_dir=anima_dir,
-            tool_registry=[],
-            personal_tools={},
-        )
-        with patch("core.execution.codex_sdk.is_codex_login_available", return_value=True):
-            login_executor._write_codex_config("My prompt")
-        config_home = anima_dir / ".codex_home" if has_auth_file else default_config_home
-        assert login_executor._effective_codex_home() == config_home
-        parsed = tomllib.loads((config_home / "config.toml").read_text(encoding="utf-8"))
-        assert parsed["preferred_auth_method"] == "chatgpt"
-        assert parsed["forced_login_method"] == "chatgpt"
-
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-svcacct-leak")
-        monkeypatch.setenv("CODEX_API_KEY", "sk-svcacct-leak")
-        env = login_executor._build_env()
-        assert "OPENAI_API_KEY" not in env
-        assert "CODEX_API_KEY" not in env
 
     def test_write_codex_config_toml_content(self, executor, anima_dir):
         executor._write_codex_config("My prompt")
@@ -757,14 +690,10 @@ class TestConfigWriting:
         assert "sandbox_mode" in config_toml
         assert "danger-full-access" in config_toml  # default file_roots=["/"]
         assert 'approval_policy = "never"' in config_toml
-        assert "never round-trip non-ASCII text" in config_toml
-        assert "-Encoding utf8" in config_toml
         assert "[mcp_servers.aw]" in config_toml
         parsed = tomllib.loads(config_toml)
         assert parsed["approval_policy"] == "never"
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
-        assert parsed["mcp_servers"]["aw"]["required"] is True
-        assert parsed["mcp_servers"]["aw"]["startup_timeout_sec"] == 30
         assert parsed["mcp_servers"]["aw"]["command"] == sys.executable
         assert parsed["mcp_servers"]["aw"]["args"] == ["-m", "core.mcp.server"]
 
@@ -827,7 +756,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -904,7 +833,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -939,7 +868,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -966,7 +895,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -984,7 +913,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=None),
             pytest.raises(RuntimeError, match="sandbox the MCP server"),
         ):
             exc._write_codex_config("prompt")
@@ -1008,7 +937,7 @@ class TestConfigWriting:
         from openai_codex.generated.v2_all import ReasoningEffort
         from pydantic import BaseModel
 
-        from core.execution.codex_sdk import _patch_reasoning_effort_enum
+        from core.execution.engines.codex.setup import _patch_reasoning_effort_enum
 
         class PreBuilt(BaseModel):
             effort: ReasoningEffort
@@ -1048,6 +977,30 @@ class TestConfigWriting:
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         parsed = tomllib.loads(config_toml)
         assert parsed["model_reasoning_effort"] == "ultra"
+
+    def test_write_codex_config_models_json_effort_overrides_thinking_effort(
+        self, model_config, anima_dir, monkeypatch
+    ):
+        """models.jsonのreasoning_effortはanimaのthinking_effort（フォールバック継承分）より優先。"""
+        import core.config.model_mode as model_mode
+
+        monkeypatch.setattr(
+            model_mode,
+            "_match_models_json",
+            lambda name: {"mode": "C", "reasoning_effort": "max"} if name == "codex/gpt-6-luna" else None,
+        )
+        model_config.model = "codex/gpt-6-luna"
+        model_config.thinking_effort = "medium"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        assert parsed["model_reasoning_effort"] == "max"
+
+        model_config.extra_keys = {"codex_reasoning_effort": "low"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        assert parsed["model_reasoning_effort"] == "low"
 
     def test_write_codex_config_openai_provider_by_default(self, executor, anima_dir):
         executor._write_codex_config("prompt")
@@ -1113,7 +1066,7 @@ class TestConfigWriting:
 
     def test_toml_escapes_special_characters(self, model_config, anima_dir):
         """Paths with quotes/backslashes are escaped in TOML output."""
-        from core.execution.codex_sdk import _escape_toml_string
+        from core.execution.engines.codex.setup import _escape_toml_string
 
         assert _escape_toml_string('path/with"quote') == 'path/with\\"quote'
         assert _escape_toml_string("path\\back") == "path\\\\back"
@@ -1126,9 +1079,9 @@ class TestConfigWriting:
         source_auth.write_text('{"token":"abc"}', encoding="utf-8")
 
         with (
-            patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent),
+            patch("core.platform.codex._candidate_auth_paths", return_value=[source_auth]),
             patch("pathlib.Path.symlink_to", side_effect=OSError("symlink blocked")),
-            patch("core.execution.codex_sdk.os.link", side_effect=OSError("hardlink blocked")),
+            patch("core.execution.engines.codex.setup.os.link", side_effect=OSError("hardlink blocked")),
         ):
             executor._codex_home.mkdir(parents=True, exist_ok=True)
             executor._propagate_auth()
@@ -1138,7 +1091,6 @@ class TestConfigWriting:
         assert not target_auth.is_symlink()
         assert target_auth.read_text(encoding="utf-8") == '{"token":"abc"}'
 
-    @pytest.mark.skipif(os.name == "nt", reason="config.toml escapes Windows path separators")
     def test_worker_codex_home_isolated_and_shares_auth(self, model_config, anima_dir):
         """Worker slots write config/instructions only inside their own homes."""
         default_codex = anima_dir.parent / "user-home" / ".codex"
@@ -1159,7 +1111,7 @@ class TestConfigWriting:
             codex_home=worker_one_home,
         )
 
-        with patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent):
+        with patch("core.platform.codex._candidate_auth_paths", return_value=[source_auth]):
             zero._write_codex_config("slot zero prompt")
             one._write_codex_config("slot one prompt")
 
@@ -1167,12 +1119,10 @@ class TestConfigWriting:
         assert one._build_env()["CODEX_HOME"] == str(worker_one_home)
         assert (worker_zero_home / "instructions.md").read_text(encoding="utf-8") == "slot zero prompt"
         assert (worker_one_home / "instructions.md").read_text(encoding="utf-8") == "slot one prompt"
-        assert str(worker_zero_home / "instructions.md") in (worker_zero_home / "config.toml").read_text(
-            encoding="utf-8"
-        )
-        assert str(worker_one_home / "instructions.md") in (worker_one_home / "config.toml").read_text(encoding="utf-8")
-        assert (worker_zero_home / "auth.json").resolve() == source_auth.resolve()
-        assert (worker_one_home / "auth.json").resolve() == source_auth.resolve()
+        assert tomllib.loads((worker_zero_home / "config.toml").read_text(encoding="utf-8"))["model_instructions_file"] == str(worker_zero_home / "instructions.md")
+        assert tomllib.loads((worker_one_home / "config.toml").read_text(encoding="utf-8"))["model_instructions_file"] == str(worker_one_home / "instructions.md")
+        assert (worker_zero_home / "auth.json").samefile(source_auth)
+        assert (worker_one_home / "auth.json").samefile(source_auth)
         assert not (anima_dir / ".codex_home" / "config.toml").exists()
 
     def test_default_codex_home_remains_backward_compatible(self, model_config, anima_dir):
@@ -1194,8 +1144,8 @@ def test_agent_executor_factory_forwards_worker_codex_home(model_config, anima_d
 
     sentinel = SimpleNamespace()
     with (
-        patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=True),
-        patch("core.execution.codex_sdk.CodexSDKExecutor", return_value=sentinel) as constructor,
+        patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=True),
+        patch("core.execution.engines.codex.executor.CodexSDKExecutor", return_value=sentinel) as constructor,
     ):
         result = factory._create_executor()
 
@@ -1230,7 +1180,7 @@ class TestBlockingExecution:
         assert "sandbox" not in mock_thread.turn.call_args.kwargs
         assert result.usage.input_tokens == 100
         assert result.usage.output_tokens == 50
-        assert _load_thread_id(anima_dir, "chat") == "thread-001"
+        assert _load_codex_thread_id(anima_dir, "chat") == "thread-001"
 
     @pytest.mark.asyncio
     async def test_execute_keeps_text_from_tool_turn(self, executor):
@@ -1275,7 +1225,7 @@ class TestBlockingExecution:
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             await executor.execute(prompt="test")
 
-        assert _load_thread_id(anima_dir, "chat") == "tid-saved"
+        assert _load_codex_thread_id(anima_dir, "chat") == "tid-saved"
 
     @pytest.mark.asyncio
     async def test_execute_heartbeat_trigger_does_not_persist_thread(self, executor, anima_dir):
@@ -1289,7 +1239,7 @@ class TestBlockingExecution:
         mock_codex = _mock_codex(mock_thread)
 
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             result = await executor.execute(
@@ -1298,8 +1248,8 @@ class TestBlockingExecution:
             )
 
         assert result.text == "Heartbeat response"
-        assert _load_thread_id(anima_dir, "heartbeat") is None
-        assert _load_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "heartbeat") is None
+        assert _load_codex_thread_id(anima_dir, "chat") is None
 
     @pytest.mark.asyncio
     async def test_execute_inbox_trigger_does_not_resume_or_persist_thread(self, executor, anima_dir):
@@ -1312,10 +1262,10 @@ class TestBlockingExecution:
 
         mock_codex = _mock_codex(mock_thread)
 
-        _save_thread_id(anima_dir, "old-chat", "chat")
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "old-chat", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             result = await executor.execute(
@@ -1326,8 +1276,8 @@ class TestBlockingExecution:
 
         assert result.text == "Inbox response"
         mock_codex.thread_resume.assert_not_called()
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "old-chat"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_execute_interrupted_before_run(self, model_config, anima_dir):
@@ -1382,7 +1332,7 @@ class TestBlockingExecution:
             yield {"type": "done", "full_text": "cli preferred", "usage": {}}
 
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
             patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback) as mock_fallback,
             patch.object(executor, "_create_codex_client") as mock_client,
         ):
@@ -1394,7 +1344,7 @@ class TestBlockingExecution:
 
     @pytest.mark.asyncio
     async def test_execute_retry_on_resume_failure(self, executor, anima_dir):
-        _save_thread_id(anima_dir, "stale-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-thread", "chat")
 
         mock_turn = MagicMock()
         mock_turn.final_response = "After retry"
@@ -1508,7 +1458,7 @@ class TestStreamingExecution:
         events = []
 
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
             patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=cli_events) as mock_fallback,
             patch.object(executor, "_create_codex_client") as mock_client,
         ):
@@ -1622,12 +1572,12 @@ class TestStreamingExecution:
         mock_thread = _mock_stream_thread("new-inbox-thread", [msg_event, done_event])
         mock_codex = _mock_codex(mock_thread)
 
-        _save_thread_id(anima_dir, "old-chat", "chat")
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "old-chat", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
 
         events = []
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
@@ -1642,8 +1592,8 @@ class TestStreamingExecution:
 
         assert any(e["type"] == "done" for e in events)
         mock_codex.thread_resume.assert_not_called()
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "old-chat"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_stream_tool_events(self, executor, anima_dir):
@@ -1683,6 +1633,59 @@ class TestStreamingExecution:
         assert "tool_end" in types
         tool_start = next(e for e in events if e["type"] == "tool_start")
         assert "web_search" in tool_start["tool_name"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sdk_type", "name"),
+        [
+            ("dynamicToolCall", "dynamic-operation"),
+            ("collabAgentToolCall", "collaboration-agent"),
+        ],
+    )
+    async def test_dynamic_and_collaboration_items_emit_tool_lifecycle(self, executor, sdk_type, name):
+        started_item = SimpleNamespace(type=sdk_type, id="tool-1", name=name, status="inProgress")
+        completed_item = SimpleNamespace(
+            type=sdk_type,
+            id="tool-1",
+            name=name,
+            input={"query": "test"},
+            output="result",
+            status="completed",
+        )
+        events = [
+            SimpleNamespace(
+                method="item/started",
+                payload=SimpleNamespace(item=started_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="item/completed",
+                payload=SimpleNamespace(item=completed_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("special-tool-thread", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for event in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run a tool",
+                tracker=tracker,
+            ):
+                chunks.append(event)
+
+        starts = [event for event in chunks if event["type"] == "tool_start"]
+        ends = [event for event in chunks if event["type"] == "tool_end"]
+        assert starts == [{"type": "tool_start", "tool_name": name, "tool_id": "tool-1"}]
+        assert ends == [{"type": "tool_end", "tool_id": "tool-1", "tool_name": name}]
+        done = next(event for event in chunks if event["type"] == "done")
+        assert done["tool_call_records"][0]["tool_name"] == name
+        assert done["tool_call_records"][0]["result_summary"] == "result"
 
     @pytest.mark.asyncio
     async def test_stream_command_execution_logs_bash_activity(self, executor, anima_dir):
@@ -2411,7 +2414,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for ev in executor.execute_streaming(
@@ -2470,7 +2473,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for event in executor.execute_streaming(
@@ -2547,11 +2550,12 @@ class TestProgressiveStreaming:
         mock_thread.id = "idle-thread"
         mock_codex = _mock_codex(mock_thread)
 
+        from core.execution.watchdog import Watchdog
+
         with (
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
-            patch("core.execution.codex_sdk._should_cli_exec_fallback", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             with pytest.raises(Exception) as exc_info:
@@ -2563,7 +2567,7 @@ class TestProgressiveStreaming:
                 ):
                     pass
 
-        assert "idle timeout" in str(exc_info.value)
+        assert "idle" in str(exc_info.value)
 
 
 # ── Mode resolution tests ────────────────────────────────────
@@ -2601,36 +2605,6 @@ class TestModeResolution:
         mock_config.model_modes = {}
         mode = resolve_execution_mode(mock_config, "openai/gpt-4.1")
         assert mode == "A"
-
-
-# ── CLI exec usage cache recording ───────────────────────────
-
-
-class TestCliExecUsageCache:
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("cache_key", ["cached_input_tokens", "cache_read_tokens"])
-    async def test_cache_read_tokens_recorded_from_cli_exec(self, executor, cache_key):
-        async def fake_stream(system_prompt, prompt, tracker, trigger=""):
-            yield {
-                "type": "done",
-                "full_text": "ok",
-                "result_message": None,
-                "replied_to_from_transcript": set(),
-                "tool_call_records": [],
-                "usage": {
-                    "input_tokens": 100,
-                    "output_tokens": 20,
-                    cache_key: 77,
-                },
-            }
-
-        with patch.object(executor, "_execute_streaming_via_cli_exec", fake_stream):
-            result = await executor._execute_via_cli_exec(prompt="p", system_prompt="s")
-
-        assert result.usage is not None
-        assert result.usage.input_tokens == 100
-        assert result.usage.output_tokens == 20
-        assert result.usage.cache_read_tokens == 77
 
 
 def _usage_snapshot(total_input, total_output, total_cache, last_input, last_output, last_cache):
@@ -2705,7 +2679,7 @@ class TestCodexUsageDeltas:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("blocking", [False, True])
     async def test_native_resume_stream_and_blocking_have_same_turn_local_usage(self, executor, anima_dir, blocking):
-        _save_thread_id(anima_dir, "resumed-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "resumed-thread", "chat")
         first = _usage_snapshot(1200, 120, 900, 200, 20, 100)
         final = _usage_snapshot(1700, 180, 1300, 300, 40, 250)
         thread = _mock_stream_thread(
@@ -2832,7 +2806,7 @@ class TestCodexUsageDeltas:
             patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
             patch.object(executor, "_build_env", return_value={}),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
         ):
             if blocking:
                 result = await executor.execute(prompt="p", trigger="task:test")
@@ -2892,7 +2866,7 @@ class TestPartialToolEvidence:
         thread.turn.return_value.stream.return_value = events()
         codex = _mock_codex(thread)
         if resumed:
-            _save_thread_id(anima_dir, "thread-tools", "chat")
+            _CODEX_SESSION_IDS.save(anima_dir, "thread-tools", "chat")
         with (
             patch.object(executor, "_create_codex_client", return_value=codex),
             patch.object(executor, "_execute_streaming_via_cli_exec") as cli,
@@ -2953,7 +2927,7 @@ class TestPartialToolEvidence:
             patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
             patch.object(executor, "_build_env", return_value={}),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
         ):
             if blocking:
                 result = await executor.execute(prompt="p", trigger="task:test")

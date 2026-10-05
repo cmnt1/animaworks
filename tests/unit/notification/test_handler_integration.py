@@ -12,12 +12,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.notification.interactive import InteractionRequest
 from core.notification.notifier import HumanNotifier, NotificationChannel
 from core.tooling.handler import ToolHandler
 
 # ── Mock Channel ──────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
 
 
 class StubChannel(NotificationChannel):

@@ -7,39 +7,67 @@ from __future__ import annotations
 
 import argparse
 import json
-import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-class TestPrintAnimaStatus:
-    """Tests for formatted anima status output."""
+def test_rename_dm_logs_appends_under_locked_jsonl_helper(tmp_path: Path) -> None:
+    from cli.commands.anima_mgmt import _rename_dm_logs
 
-    @patch("core.paths.get_animas_dir")
-    def test_uses_status_as_state_fallback(self, mock_animas_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import _print_anima_status
+    dm_logs = tmp_path / "shared" / "dm_logs"
+    dm_logs.mkdir(parents=True)
+    source = dm_logs / "alice-bob.jsonl"
+    destination = dm_logs / "bob-carol.jsonl"
+    source.write_text('{"from":"alice","text":"old"}\n', encoding="utf-8")
+    destination.write_text('{"from":"carol","text":"existing"}\n', encoding="utf-8")
 
-        animas_dir = tmp_path / "animas"
-        anima_dir = animas_dir / "yuri"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps(
-                {
-                    "model": "nanogpt/qwen3-coder-30b-a3b-instruct",
-                    "execution_mode": "A",
-                }
-            ),
-            encoding="utf-8",
-        )
-        mock_animas_dir.return_value = animas_dir
+    assert _rename_dm_logs(tmp_path / "shared", "alice", "carol") == 1
 
-        _print_anima_status("yuri", {"status": "running", "pid": 123})
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["text"] for line in lines] == ["existing", "old"]
+    assert not source.exists()
+    assert (dm_logs / "bob-carol.jsonl.lock").is_file()
 
-        captured = capsys.readouterr()
-        assert "State: running" in captured.out
-        assert "Status: running" in captured.out
+
+def test_rename_rag_cleanup_deletes_old_collections_through_owner(tmp_path: Path) -> None:
+    from cli.commands.anima_mgmt import _cleanup_rag_collections
+
+    anima_dir = tmp_path / "animas" / "new_name"
+    (anima_dir / "vectordb").mkdir(parents=True)
+    store = MagicMock()
+    store.delete_collection.return_value = True
+    access_context = MagicMock()
+    access_context.__enter__.return_value = SimpleNamespace(store=store)
+    with patch("core.memory.rag.cli_access.open_vector_access", return_value=access_context) as open_access:
+        assert _cleanup_rag_collections(anima_dir, "old_name") is False
+
+    open_access.assert_called_once_with("new_name", anima_dir, purpose="rename")
+    assert store.delete_collection.call_args_list[0].args == ("old_name_knowledge",)
+    assert store.delete_collection.call_count == 6
+
+
+def test_rename_rag_cleanup_queues_rebuild_when_owner_is_busy(tmp_path: Path) -> None:
+    from cli.commands.anima_mgmt import _cleanup_rag_collections
+    from core.memory.rag.owner_lock import VectorOwnerBusy
+
+    anima_dir = tmp_path / "animas" / "new_name"
+    (anima_dir / "vectordb").mkdir(parents=True)
+    with (
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=VectorOwnerBusy("busy")),
+        patch("core.memory.rag.repair.state.write_repair_request_state") as write_request,
+    ):
+        assert _cleanup_rag_collections(anima_dir, "old_name") is True
+
+    write_request.assert_called_once_with(
+        "new_name",
+        reason="anima_renamed",
+        collection=None,
+        source="cli",
+        include_shared=True,
+    )
 
 
 class TestCmdAnimaDelete:
@@ -172,6 +200,84 @@ class TestCmdAnimaDelete:
         captured = capsys.readouterr()
         assert "Warning" in captured.out
         assert "kotoha" in captured.out
+
+
+def test_delete_with_live_server_delegates_to_api(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    response = MagicMock()
+    response.json.return_value = {
+        "status": "deleted",
+        "name": "alice",
+        "archive_path": str(data_dir / "archive" / "alice.zip"),
+        "supervisor_warnings": [],
+    }
+    args = argparse.Namespace(anima="alice", force=True, no_archive=False, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        cmd_anima_delete(args)
+
+    mock_gateway.assert_called_once_with(
+        args,
+        "DELETE",
+        "/api/animas/alice?archive=true",
+        timeout=30.0,
+        raw_response=True,
+    )
+    assert (animas_dir / "alice").is_dir()
+    assert "Archived to:" in capsys.readouterr().out
+
+
+def test_delete_with_stale_server_pid_uses_local_service(tmp_path):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(anima="alice", force=True, no_archive=True, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=False),
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+    ):
+        cmd_anima_delete(args)
+
+    mock_gateway.assert_not_called()
+    assert not (animas_dir / "alice").exists()
+    config = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    assert "alice" not in config["animas"]
+
+
+def test_delete_refuses_local_changes_if_live_server_api_is_unreachable(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(anima="alice", force=True, no_archive=False, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("cli.commands.anima_mgmt.gateway_request", side_effect=RuntimeError("gateway unavailable")),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        cmd_anima_delete(args)
+
+    assert exc_info.value.code == 1
+    assert (animas_dir / "alice").is_dir()
+    assert "gateway unavailable" in capsys.readouterr().out
 
 
 class TestCmdAnimaDisable:
@@ -334,7 +440,7 @@ class TestUnregisterAnimaFromConfig:
 
         result = unregister_anima_from_config(tmp_path, "alice")
         assert result is True
-        updated = json.loads((tmp_path / "config.json").read_text())
+        updated = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
         assert "alice" not in updated["animas"]
         assert "bob" in updated["animas"]
 
@@ -354,237 +460,155 @@ class TestUnregisterAnimaFromConfig:
         assert result is False
 
 
-class TestCmdAnimaCodexYolo:
-    """Tests for cmd_anima_codex_yolo."""
+@pytest.mark.parametrize(
+    ("command_name", "endpoint", "initial_enabled", "expected_enabled", "label"),
+    [
+        ("cmd_anima_enable", "/api/animas/alice/enable", False, True, "Enabled"),
+        ("cmd_anima_disable", "/api/animas/alice/disable", True, False, "Disabled"),
+    ],
+)
+@pytest.mark.parametrize("server_running", [True, False])
+def test_enable_disable_gateway_and_offline_paths(
+    command_name, endpoint, initial_enabled, expected_enabled, label, server_running, tmp_path, capsys
+):
+    import cli.commands.anima_mgmt as anima_mgmt
 
-    def setup_method(self):
-        from core.config.models import invalidate_cache, invalidate_models_json_cache
-
-        invalidate_cache()
-        invalidate_models_json_cache()
-
-    def _make_runtime(
-        self,
-        tmp_path: Path,
-        *,
-        animas: dict[str, dict[str, object]],
-    ) -> Path:
-        data_dir = tmp_path / ".animaworks"
-        animas_dir = data_dir / "animas"
-        animas_dir.mkdir(parents=True)
-        (data_dir / "config.json").write_text(json.dumps({"version": 1}), encoding="utf-8")
-        for name, status in animas.items():
-            anima_dir = animas_dir / name
-            anima_dir.mkdir()
-            # file_roots must stay outside data_dir (write-root policy, 28ca1672).
-            workspace = tmp_path / "workspaces" / name
-            workspace.mkdir(parents=True)
-            (anima_dir / "identity.md").write_text(f"# {name}", encoding="utf-8")
-            (anima_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
-            (anima_dir / "permissions.json").write_text(
-                json.dumps(
-                    {
-                        "version": 1,
-                        "file_roots": [str(workspace)],
-                        "commands": {"allow_all": True, "allow": [], "deny": []},
-                        "external_tools": {"allow_all": True, "allow": [], "deny": []},
-                        "tool_creation": {"personal": True, "shared": False},
-                    }
-                ),
-                encoding="utf-8",
-            )
-        return data_dir
-
-    def _write_test_codex_yolo_config(self, anima_dir: Path) -> Path:
-        config_path = anima_dir / ".codex_home" / "config.toml"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            "\n".join(
-                [
-                    'sandbox_mode = "workspace-write"',
-                    'approval_policy = "never"',
-                    "[sandbox_workspace_write]",
-                    "network_access = true",
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-        return config_path
-
-    @patch("core.paths.get_data_dir")
-    def test_codex_yolo_preserves_permissions_and_updates_config(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands import anima_mgmt
-
-        data_dir = self._make_runtime(
-            tmp_path,
-            animas={"sakura": {"enabled": True, "model": "codex/o4-mini"}},
-        )
-        mock_data_dir.return_value = data_dir
-
-        args = argparse.Namespace(anima="sakura", all=False, restart=False, gateway_url=None)
-        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
-            anima_mgmt.cmd_anima_codex_yolo(args)
-
-        captured = capsys.readouterr()
-        assert "sakura" in captured.out
-        assert "Codex YOLO updated for 1 anima(s)." in captured.out
-
-        anima_dir = data_dir / "animas" / "sakura"
-        permissions = json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))
-        assert permissions["file_roots"] == [str(tmp_path / "workspaces" / "sakura")]
-
-        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
-        parsed = tomllib.loads(config_toml)
-        assert parsed["sandbox_mode"] == "workspace-write"
-        assert parsed["sandbox_workspace_write"]["network_access"] is True
-        assert parsed["approval_policy"] == "never"
-
-    @patch("core.paths.get_data_dir")
-    def test_codex_yolo_all_skips_non_codex_animas(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands import anima_mgmt
-
-        data_dir = self._make_runtime(
-            tmp_path,
-            animas={
-                "sakura": {"enabled": True, "model": "codex/o4-mini"},
-                "mei": {"enabled": True, "model": "claude-sonnet-4-6"},
-            },
-        )
-        mock_data_dir.return_value = data_dir
-
-        args = argparse.Namespace(anima=None, all=True, restart=False, gateway_url=None)
-        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
-            anima_mgmt.cmd_anima_codex_yolo(args)
-
-        captured = capsys.readouterr()
-        assert "sakura" in captured.out
-        assert "mei" not in captured.out
-        sakura_permissions = json.loads(
-            (data_dir / "animas" / "sakura" / "permissions.json").read_text(encoding="utf-8")
-        )
-        mei_permissions = json.loads((data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8"))
-        assert sakura_permissions["file_roots"] == [str(tmp_path / "workspaces" / "sakura")]
-        assert mei_permissions["file_roots"] == [str(tmp_path / "workspaces" / "mei")]
-        assert (data_dir / "animas" / "sakura" / ".codex_home" / "config.toml").is_file()
-        assert not (data_dir / "animas" / "mei" / ".codex_home" / "config.toml").exists()
-
-    @patch("core.paths.get_data_dir")
-    def test_codex_yolo_rejects_name_with_all(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import cmd_anima_codex_yolo
-
-        data_dir = self._make_runtime(
-            tmp_path,
-            animas={"sakura": {"enabled": True, "model": "codex/o4-mini"}},
-        )
-        mock_data_dir.return_value = data_dir
-
-        args = argparse.Namespace(anima="sakura", all=True, restart=False, gateway_url=None)
-        with pytest.raises(SystemExit):
-            cmd_anima_codex_yolo(args)
-
-        captured = capsys.readouterr()
-        assert "not both" in captured.out
-
-    @patch("core.paths.get_data_dir")
-    def test_codex_yolo_single_refresh_failure_exits_nonzero(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands import anima_mgmt
-
-        data_dir = self._make_runtime(
-            tmp_path,
-            animas={"sakura": {"enabled": True, "model": "codex/o4-mini"}},
-        )
-        mock_data_dir.return_value = data_dir
-
-        args = argparse.Namespace(anima="sakura", all=False, restart=False, gateway_url=None)
-        with (
-            patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=RuntimeError("broken config")),
-            pytest.raises(SystemExit),
-        ):
-            anima_mgmt.cmd_anima_codex_yolo(args)
-
-        captured = capsys.readouterr()
-        assert "config refresh failed" in captured.out
-        assert "Codex YOLO updated for 0 anima(s)." in captured.out
-
-    @patch("core.paths.get_data_dir")
-    @patch("requests.post")
-    def test_codex_yolo_restart_posts_when_server_running(
-        self,
-        mock_post,
-        mock_data_dir,
-        tmp_path,
-        capsys,
-    ):
-        from cli.commands import anima_mgmt
-
-        data_dir = self._make_runtime(
-            tmp_path,
-            animas={"sakura": {"enabled": True, "model": "codex/o4-mini"}},
-        )
+    data_dir = tmp_path / ".animaworks"
+    animas_dir = data_dir / "animas"
+    anima_dir = animas_dir / "alice"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+    status_file = anima_dir / "status.json"
+    status_file.write_text(json.dumps({"enabled": initial_enabled, "role": "general"}), encoding="utf-8")
+    if server_running:
         (data_dir / "server.pid").write_text("1234", encoding="utf-8")
-        mock_data_dir.return_value = data_dir
-        response = MagicMock()
-        response.raise_for_status.return_value = None
-        mock_post.return_value = response
 
-        args = argparse.Namespace(
-            anima="sakura",
-            all=False,
-            restart=True,
-            gateway_url="http://localhost:18500",
+    response = MagicMock()
+    response.json.return_value = {"ok": True}
+    args = argparse.Namespace(anima="alice", gateway_url="http://custom:18501")
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        getattr(anima_mgmt, command_name)(args)
+
+    output = capsys.readouterr().out
+    status = json.loads(status_file.read_text(encoding="utf-8"))
+    if server_running:
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            endpoint,
+            timeout=10,
+            raw_response=True,
         )
-        with patch.object(anima_mgmt, "_refresh_codex_yolo_config", side_effect=self._write_test_codex_yolo_config):
-            anima_mgmt.cmd_anima_codex_yolo(args)
+        assert f"{label} anima 'alice': {{'ok': True}}" in output
+        assert "offline mode" not in output
+        assert status["enabled"] is initial_enabled
+    else:
+        mock_gateway.assert_not_called()
+        assert f"{label} anima 'alice' (offline mode)" in output
+        assert status["enabled"] is expected_enabled
+    assert status["role"] == "general"
 
-        captured = capsys.readouterr()
-        assert "restarted" in captured.out
-        mock_post.assert_called_once_with(
-            "http://localhost:18500/api/animas/sakura/restart",
-            timeout=30.0,
-        )
+
+def test_restart_gateway_when_server_running(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_restart
+
+    data_dir = tmp_path / ".animaworks"
+    data_dir.mkdir()
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    response = MagicMock()
+    response.json.return_value = {"pid": 5678}
+    args = argparse.Namespace(anima="alice", gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        cmd_anima_restart(args)
+
+    mock_gateway.assert_called_once_with(
+        args,
+        "POST",
+        "/api/animas/alice/restart",
+        timeout=30.0,
+        raw_response=True,
+    )
+    output = capsys.readouterr().out
+    assert "Anima 'alice' restarted successfully" in output
+    assert "PID: 5678" in output
 
 
-class TestCmdAnimaSetMemoryBackend:
-    """Tests for cmd_anima_set_memory_backend."""
+def test_restart_keeps_server_stopped_message_and_exit_code(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_restart
 
-    @patch("core.paths.get_data_dir")
-    def test_set_neo4j_prints_experimental_warning(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
+    data_dir = tmp_path / ".animaworks"
+    data_dir.mkdir()
+    args = argparse.Namespace(anima="alice", gateway_url=None)
 
-        data_dir = tmp_path / ".animaworks"
-        anima_dir = data_dir / "animas" / "sakura"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
-        mock_data_dir.return_value = data_dir
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        cmd_anima_restart(args)
 
-        args = argparse.Namespace(anima="sakura", backend="neo4j", clear=False)
-        cmd_anima_set_memory_backend(args)
+    assert exc_info.value.code == 1
+    assert capsys.readouterr().out.strip() == "Error: Server is not running"
+    mock_gateway.assert_not_called()
 
-        captured = capsys.readouterr()
-        assert "Memory backend set to 'neo4j' for 'sakura'" in captured.out
-        assert "experimental/opt-in" in captured.out
-        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
-        assert status["memory_backend"] == "neo4j"
 
-    @patch("core.paths.get_data_dir")
-    def test_set_legacy_does_not_print_experimental_warning(self, mock_data_dir, tmp_path, capsys):
-        from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
+@pytest.mark.parametrize("server_running", [True, False])
+def test_set_model_uses_root_api_when_server_is_running(server_running, tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_set_model
 
-        data_dir = tmp_path / ".animaworks"
-        anima_dir = data_dir / "animas" / "sakura"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": True, "memory_backend": "neo4j"}),
-            encoding="utf-8",
-        )
-        mock_data_dir.return_value = data_dir
+    data_dir = tmp_path / ".animaworks"
+    anima_dir = data_dir / "animas" / "alice"
+    anima_dir.mkdir(parents=True)
+    if server_running:
+        (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(all=False, anima="alice", model="new-model", credential=None)
 
-        args = argparse.Namespace(anima="sakura", backend="legacy", clear=False)
-        cmd_anima_set_memory_backend(args)
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch(
+            "core.config.model_config.smart_update_model",
+            return_value={"family_changed": False, "execution_mode": "S"},
+        ) as mock_local,
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+    ):
+        mock_gateway.return_value.json.return_value = {
+            "family_changed": False,
+            "credential": "",
+            "execution_mode": "S",
+        }
+        cmd_anima_set_model(args)
 
-        captured = capsys.readouterr()
-        assert "Memory backend set to 'legacy' for 'sakura'" in captured.out
-        assert "experimental/opt-in" not in captured.out
-        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
-        assert status["memory_backend"] == "legacy"
+    output = capsys.readouterr().out
+    assert "Model updated to 'new-model' for 'alice'" in output
+    assert ("Running anima processes were asked to reload" in output) is server_running
+    assert mock_gateway.called is server_running
+    assert mock_local.called is not server_running
+
+
+def test_gateway_request_raw_response_preserves_caller_error_handling():
+    import httpx
+
+    from cli._gateway import gateway_request
+
+    response = MagicMock()
+    args = argparse.Namespace(gateway_url="http://gateway.test:18501")
+    with patch("httpx.request", return_value=response) as mock_request:
+        assert gateway_request(args, "POST", "/api/animas/alice/enable", timeout=10, raw_response=True) is response
+    mock_request.assert_called_once_with(
+        "POST",
+        "http://gateway.test:18501/api/animas/alice/enable",
+        json=None,
+        timeout=10,
+    )
+
+    error = httpx.ConnectError("offline", request=httpx.Request("POST", "http://gateway.test:18501"))
+    with patch("httpx.request", side_effect=error), pytest.raises(httpx.ConnectError, match="offline"):
+        gateway_request(args, "POST", "/api/animas/alice/enable", timeout=10, raw_response=True)

@@ -1,0 +1,671 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file is part of AnimaWorks core/server, licensed under Apache-2.0.
+# See LICENSE for the full license text.
+
+
+"""Mode S PreToolUse / PreCompact hook factories, and subordinate path
+management.
+
+Depends on ``_sdk_security``, ``_sdk_stream``, and ``_sdk_session`` within
+this package.  ``claude_agent_sdk.types`` is imported at function scope
+because the SDK is an optional dependency.
+"""
+
+import asyncio
+import json
+import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from core.execution.engines.claude._sdk_security import (
+    _build_output_guard,
+    _check_a1_bash_command,
+    _check_a1_file_access,
+)
+from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
+from core.execution.engines.claude._sdk_stream import _log_tool_use
+from core.platform.tasks import spawn
+from core.prompt.context import CHARS_PER_TOKEN
+from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+from core.trust import TRUST_RANK, record_session_trust, resolve_tool_trust
+
+logger = logging.getLogger("animaworks.execution.agent_sdk")
+
+# Native write tools hard-blocked during meeting turns. Meeting turns are
+# read-only by design; the meeting prompt profile already instructs this, and
+# this set enforces it for SDK-native file mutation tools as a safety net.
+# Communication/delegation tools are blocked separately in the tool handler.
+_MEETING_BLOCKED_WRITE_TOOLS: frozenset[str] = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+
+
+@dataclass(frozen=True, slots=True)
+class _PreToolGuardDecision:
+    """A tool-specific guard outcome before the SDK response is constructed."""
+
+    reason: str
+    blocked: bool = True
+    block_reason: str = ""
+    should_log: bool = True
+    log_tool_name: str | None = None
+
+
+# ── Subordinate management ───────────────────────────────────
+
+
+def _collect_all_subordinates(
+    anima_name: str,
+    animas_cfg: dict[str, Any],
+) -> set[str]:
+    """Recursively collect all subordinates (direct + transitive) of *anima_name*."""
+    result: set[str] = set()
+    queue = [anima_name]
+    while queue:
+        current = queue.pop()
+        for sub_name, sub_cfg in animas_cfg.items():
+            if sub_cfg.supervisor == current and sub_name not in result:
+                result.add(sub_name)
+                queue.append(sub_name)
+    return result
+
+
+def _cache_subordinate_paths(
+    anima_dir: Path,
+) -> tuple[list[Path], list[Path], list[Path], list[Path], list[Path]]:
+    """Cache subordinate and peer paths for permission checks at hook build time.
+
+    Collects paths for **all** hierarchical subordinates (not just direct
+    reports) so that a top-level supervisor can access management files
+    and activity_log of any anima beneath them in the org tree.
+
+    Returns:
+        (sub_activity_dirs, sub_mgmt_files, peer_activity_dirs,
+         descendant_read_files, descendant_read_dirs)
+
+    - sub_mgmt_files: all descendants' cron.md, heartbeat.md, status.json,
+      injection.md (read/write)
+    - descendant_read_files: all descendants' identity.md, injection.md,
+      status.json, state files (read-only)
+    - descendant_read_dirs: all descendants' state/plans/ (read-only dir)
+    """
+    sub_activity_dirs: list[Path] = []
+    sub_mgmt_files: list[Path] = []
+    peer_activity_dirs: list[Path] = []
+    descendant_read_files: list[Path] = []
+    descendant_read_dirs: list[Path] = []
+    try:
+        from core.config.models import load_config
+        from core.paths import get_animas_dir
+
+        cfg = load_config()
+        animas_dir = get_animas_dir()
+        anima_name = anima_dir.name
+        all_subs = _collect_all_subordinates(anima_name, cfg.animas)
+
+        for sub_name in all_subs:
+            sub_dir = (animas_dir / sub_name).resolve()
+            sub_activity_dirs.append(sub_dir / "activity_log")
+
+            for fname in ("cron.md", "heartbeat.md", "status.json", "injection.md"):
+                sub_mgmt_files.append(sub_dir / fname)
+
+            descendant_read_files.append(sub_dir / "identity.md")
+            descendant_read_files.append(sub_dir / "injection.md")
+            descendant_read_files.append(sub_dir / "status.json")
+            descendant_read_files.append(sub_dir / "state" / "current_state.md")
+            descendant_read_files.append(sub_dir / "state" / "task_queue.jsonl")
+            descendant_read_dirs.append(sub_dir / "state" / "plans")
+
+        # Collect peer activity_log dirs (same supervisor, excluding self)
+        my_supervisor = None
+        if anima_name in cfg.animas:
+            my_supervisor = cfg.animas[anima_name].supervisor
+        for peer_name, peer_cfg in cfg.animas.items():
+            if peer_name != anima_name and peer_cfg.supervisor == my_supervisor:
+                peer_dir = (animas_dir / peer_name).resolve()
+                peer_activity_dirs.append(peer_dir / "activity_log")
+    except Exception:
+        logger.debug("Failed to cache subordinate paths for Mode S hook", exc_info=True)
+    return sub_activity_dirs, sub_mgmt_files, peer_activity_dirs, descendant_read_files, descendant_read_dirs
+
+
+# ── Hook factories ───────────────────────────────────────────
+
+
+def _build_pre_tool_hook(
+    anima_dir: Path,
+    *,
+    max_tokens: int = 8192,
+    context_window: int = 200_000,
+    session_stats: dict[str, Any] | None = None,
+    superuser: bool = False,
+    on_task_intercepted: Callable[[], None] | None = None,
+    has_subordinates: bool = False,
+    task_cwd: Path | None = None,
+) -> Callable:
+    """Build a PreToolUse hook with security checks, output guards, and tool logging.
+
+    When *session_stats* is provided the hook also performs mid-session
+    context budget observation and compaction-blocked detection.  If
+    ``compaction_blocked`` is set by the PreCompact hook, this hook
+    returns ``continue_=False`` to end the session and trigger AnimaWorks
+    session chaining via ``force_chain``.
+    """
+    from claude_agent_sdk.types import (
+        HookContext,
+        HookInput,
+        PreToolUseHookSpecificOutput,
+        SyncHookJSONOutput,
+    )
+
+    # Cache subordinate and peer paths once at hook build time
+    _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = (
+        _cache_subordinate_paths(anima_dir)
+    )
+
+    def _deny(
+        reason: str,
+        *,
+        blocked: bool = True,
+        block_reason: str = "",
+        should_log: bool = True,
+        log_tool_name: str | None = None,
+    ) -> _PreToolGuardDecision:
+        return _PreToolGuardDecision(
+            reason=reason,
+            blocked=blocked,
+            block_reason=block_reason,
+            should_log=should_log,
+            log_tool_name=log_tool_name,
+        )
+
+    def _guard_agent_task(tool_name: str, _tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        from core.i18n import t as _t
+
+        logger.info("Hard-blocked %s tool for %s", tool_name, anima_dir.name)
+        return _deny(_t("sdk_hooks.agent_task_blocked"), block_reason="Agent/Task hard-blocked")
+
+    def _guard_submit_tasks(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        trigger = session_stats.get("trigger", "") if session_stats else ""
+        if str(trigger).startswith("task:"):
+            from core.i18n import t as _t
+
+            logger.info("Blocked submit_tasks from TaskExec session (%s) for %s", trigger, anima_dir.name)
+            return _deny(_t("sdk_hooks.task_no_subtask"), should_log=False, log_tool_name="submit_tasks")
+        if "submit_tasks" not in resolve_tool_surface(ToolSurfaceContext(), str(trigger or ""), "S"):
+            from core.i18n import t as _t
+
+            logger.info(
+                "Blocked submit_tasks outside explicit background session (%s) for %s",
+                trigger or "<none>",
+                anima_dir.name,
+            )
+            return _deny(_t("sdk_hooks.submit_tasks_unavailable"), should_log=False, log_tool_name="submit_tasks")
+
+        from core.execution.session.session_context import current_runtime_session
+        from core.tooling.policy.submit_tasks import submit_tasks
+
+        runtime = current_runtime_session()
+        try:
+            result_str = submit_tasks(
+                anima_dir,
+                anima_dir.name,
+                tool_input,
+                session_origin=runtime.origin if runtime is not None else "",
+            )
+        except Exception as exc:
+            result_str = json.dumps(
+                {"status": "error", "error_type": "SubmitTasksError", "message": str(exc)},
+                ensure_ascii=False,
+            )
+
+        is_error = False
+        task_ids_str = ""
+        try:
+            parsed = json.loads(result_str)
+            if isinstance(parsed, dict):
+                if "error" in parsed or parsed.get("status") == "error":
+                    is_error = True
+                else:
+                    task_ids_str = ", ".join(parsed.get("task_ids", []))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if is_error:
+            reason = f"INTERCEPT_OK: submit_tasks error: {result_str}"
+        else:
+            from core.i18n import t as _t
+
+            reason = _t("sdk_hooks.submit_tasks_success", task_ids=task_ids_str)
+        return _deny(reason, blocked=False, log_tool_name="submit_tasks")
+
+    def _guard_agent_output(_tool_name: str, _tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        from core.i18n import t as _t
+
+        return _deny(_t("sdk_hooks.agent_task_blocked"), block_reason="Agent/Task disabled")
+
+    def _guard_file_access(
+        tool_input: dict[str, Any],
+        *,
+        write: bool,
+    ) -> _PreToolGuardDecision | None:
+        file_path = tool_input.get("file_path", "")
+        check_kwargs: dict[str, Any] = {
+            "subordinate_activity_dirs": _sub_activity_dirs,
+            "subordinate_management_files": _sub_mgmt_files,
+            "descendant_read_files": _desc_read_files,
+            "descendant_read_dirs": _desc_read_dirs,
+            "peer_activity_dirs": _peer_activity_dirs,
+            "superuser": superuser,
+        }
+        if write:
+            check_kwargs["task_cwd"] = task_cwd
+        violation = _check_a1_file_access(file_path, anima_dir, write=write, **check_kwargs)
+        if violation:
+            return _deny(violation, block_reason=violation)
+        return None
+
+    def _guard_meeting_write(tool_name: str) -> _PreToolGuardDecision | None:
+        from core.tooling.handler_base import meeting_mode
+
+        if tool_name in _MEETING_BLOCKED_WRITE_TOOLS and meeting_mode.get():
+            return _deny("BLOCKED: meeting turns are read-only", block_reason="meeting read-only")
+        return None
+
+    def _guard_bash(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision | None:
+        command = tool_input.get("command", "")
+        trigger = session_stats.get("trigger", "unknown") if session_stats else "unknown"
+        violation = _check_a1_bash_command(command, anima_dir, superuser=superuser, trigger=trigger)
+        if violation:
+            return _deny(violation, block_reason=violation)
+        return None
+
+    def _file_access_guard(*, write: bool) -> Callable[[str, dict[str, Any]], _PreToolGuardDecision | None]:
+        def guard(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision | None:
+            return _guard_file_access(tool_input, write=write)
+
+        return guard
+
+    tool_guard_handlers: dict[str, Callable[[str, dict[str, Any]], _PreToolGuardDecision | None]] = {
+        "Agent": _guard_agent_task,
+        "Task": _guard_agent_task,
+        "submit_tasks": _guard_submit_tasks,
+        "mcp__aw__submit_tasks": _guard_submit_tasks,
+        "TaskOutput": _guard_agent_output,
+        "AgentOutput": _guard_agent_output,
+        "Write": _file_access_guard(write=True),
+        "Edit": _file_access_guard(write=True),
+        "Read": _file_access_guard(write=False),
+        "Bash": _guard_bash,
+    }
+
+    async def _pre_tool_hook(
+        input_data: HookInput,
+        tool_use_id: str | None,
+        context: HookContext,
+    ) -> SyncHookJSONOutput:
+        tool_name = input_data.get("tool_name", "")
+        raw_inp = input_data.get("tool_input", {})
+        tool_input = raw_inp if isinstance(raw_inp, dict) else {}
+        context_observation_reason = ""
+
+        def _finish(
+            output: SyncHookJSONOutput,
+            *,
+            should_log: bool = True,
+            blocked: bool | None = None,
+            block_reason: str = "",
+            log_tool_name: str | None = None,
+        ) -> SyncHookJSONOutput:
+            """Record the tool decision at one point, then return its SDK output."""
+            if context_observation_reason:
+                _log_tool_use(
+                    anima_dir,
+                    tool_name,
+                    tool_input,
+                    tool_use_id=tool_use_id,
+                    blocked=False,
+                    block_reason=context_observation_reason,
+                )
+            if should_log:
+                log_kwargs: dict[str, Any] = {"tool_use_id": tool_use_id}
+                if blocked is not None:
+                    log_kwargs["blocked"] = blocked
+                if block_reason:
+                    log_kwargs["block_reason"] = block_reason
+                _log_tool_use(anima_dir, log_tool_name or tool_name, tool_input, **log_kwargs)
+            return output
+
+        # ── Heartbeat soft timeout check ──
+        if session_stats is not None and session_stats.get("trigger") == "heartbeat":
+            elapsed = time.monotonic() - session_stats["start_time"]
+            soft_timeout = session_stats.get("hb_soft_timeout", 300)
+            if elapsed > soft_timeout and not session_stats.get("hb_soft_warned"):
+                session_stats["hb_soft_warned"] = True
+                from core.i18n import t as _t
+
+                logger.info(
+                    "Heartbeat soft timeout reached (%.0fs > %ds) for %s — injecting wrap-up reminder",
+                    elapsed,
+                    soft_timeout,
+                    anima_dir.name,
+                )
+                return _finish(
+                    SyncHookJSONOutput(
+                        hookSpecificOutput=PreToolUseHookSpecificOutput(
+                            hookEventName="PreToolUse",
+                            permissionDecision="allow",
+                            additionalContext=_t("reminder.hb_time_limit"),
+                        )
+                    ),
+                    should_log=False,
+                )
+
+        # ── Task context compaction — end the current SDK turn for same-session resume ──
+        if session_stats is not None and str(session_stats.get("trigger", "")).startswith("task:"):
+            compaction_limit = session_stats.get("task_compaction_tokens", 0)
+            compaction_count = session_stats.get("task_compaction_count", 0)
+            compaction_max = session_stats.get("task_compaction_max", 0)
+            context_tokens = session_stats.get("last_context_tokens", 0)
+            if (
+                isinstance(compaction_limit, int)
+                and compaction_limit > 0
+                and isinstance(compaction_count, int)
+                and isinstance(compaction_max, int)
+                and compaction_count < compaction_max
+                and isinstance(context_tokens, int)
+                and context_tokens >= compaction_limit
+            ):
+                session_stats["task_compact_requested"] = True
+                logger.info(
+                    "Task context threshold reached (task_id=%s, tokens=%d, threshold=%d, next_compaction=%d/%d)",
+                    str(session_stats.get("trigger", "")).removeprefix("task:"),
+                    context_tokens,
+                    compaction_limit,
+                    compaction_count + 1,
+                    compaction_max,
+                )
+                return _finish(SyncHookJSONOutput(continue_=False), should_log=False)
+
+        # ── Compaction blocked — end session for AnimaWorks chaining ──
+        if session_stats is not None and session_stats.get("compaction_blocked"):
+            session_stats["compaction_blocked"] = False
+            session_stats["force_chain"] = True
+            logger.info(
+                "Compaction was blocked by PreCompact — ending session for AnimaWorks session chaining (anima=%s)",
+                anima_dir.name,
+            )
+            return _finish(SyncHookJSONOutput(continue_=False), should_log=False)
+
+        # ── Context budget observation ──
+        if session_stats is not None:
+            session_stats["tool_call_count"] += 1
+            estimated_tokens = (
+                session_stats["system_prompt_tokens"]
+                + session_stats["user_prompt_tokens"]
+                + session_stats["total_result_bytes"] // CHARS_PER_TOKEN
+            )
+            remaining = context_window - estimated_tokens
+            budget = max_tokens * _CONTEXT_AUTOCOMPACT_SAFETY
+            if remaining < budget:
+                logger.info(
+                    "Context approaching limit: estimated=%d remaining=%d "
+                    "context_window=%d — SDK auto-compact will handle",
+                    estimated_tokens,
+                    remaining,
+                    context_window,
+                )
+                context_observation_reason = (
+                    f"context_observation: estimated {estimated_tokens} tokens, remaining {remaining} — SDK managing"
+                )
+
+        # ── Trust tracking: update min_trust_seen in session_stats ──
+        if session_stats is not None:
+            trust_str = resolve_tool_trust(tool_name, tool_input)
+            rank = TRUST_RANK.get(trust_str, 0)
+            current_min = session_stats.get("min_trust_seen", 2)
+            session_stats["min_trust_seen"] = min(current_min, rank)
+
+            # Persist to the active tool session so its MCP subprocess can read.
+            from core.execution.session.session_context import current_runtime_session
+
+            ctx = current_runtime_session()
+            if ctx is not None:
+                record_session_trust(anima_dir, ctx.tool_session_id, rank)
+
+        # Tool-name-specific checks are dispatched through one guard table.
+        guard_handler = tool_guard_handlers.get(tool_name)
+        guard = _guard_meeting_write(tool_name)
+        if guard is not None or guard_handler is not None:
+            if guard is None:
+                guard = guard_handler(tool_name, tool_input)
+            if guard is not None:
+                return _finish(
+                    SyncHookJSONOutput(
+                        hookSpecificOutput=PreToolUseHookSpecificOutput(
+                            hookEventName="PreToolUse",
+                            permissionDecision="deny",
+                            permissionDecisionReason=guard.reason,
+                        )
+                    ),
+                    should_log=guard.should_log,
+                    blocked=guard.blocked,
+                    block_reason=guard.block_reason,
+                    log_tool_name=guard.log_tool_name,
+                )
+
+        # Output guard
+        updated = _build_output_guard(tool_name, tool_input, anima_dir)
+        if updated is not None:
+            return _finish(
+                SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="allow",
+                        updatedInput=updated,
+                    )
+                )
+            )
+
+        return _finish(SyncHookJSONOutput())
+
+    return _pre_tool_hook
+
+
+def _build_pre_compact_hook(
+    anima_dir: Path,
+    *,
+    session_stats: dict[str, Any] | None = None,
+    context_window: int = 200_000,
+) -> Callable:
+    """Build a PreCompact hook that blocks SDK auto-compact.
+
+    Blocks automatic compaction and sets ``compaction_blocked`` flag in
+    *session_stats* so the next PreToolUse hook returns ``continue_=False``,
+    triggering AnimaWorks session chaining instead of SDK's built-in
+    context summarization.
+
+    Manual compaction (trigger="manual") is excluded via matcher="auto"
+    in _sdk_options.py and always allowed through.
+
+    Safety valve: if estimated context exceeds 95% of context_window,
+    compaction is allowed through (Recovery case -- blocking would fail
+    the API request).
+    """
+    _RECOVERY_THRESHOLD = 0.95
+
+    from claude_agent_sdk.types import HookContext, SyncHookJSONOutput
+
+    async def _pre_compact_hook(
+        input_data: dict,
+        tool_use_id: str | None,
+        context: HookContext,
+    ) -> SyncHookJSONOutput:
+        trigger = input_data.get("trigger", "unknown")
+        logger.info(
+            "SDK auto-compact triggered: trigger=%s anima=%s",
+            trigger,
+            anima_dir.name,
+        )
+        try:
+            from core.memory.maintenance.background_review import request_background_review
+
+            request_background_review(anima_dir, "auto_compact")
+        except Exception:
+            logger.warning("Could not queue pre-compaction review for %s", anima_dir.name)
+
+        if session_stats is not None:
+            estimated_tokens = (
+                session_stats["system_prompt_tokens"]
+                + session_stats["user_prompt_tokens"]
+                + session_stats["total_result_bytes"] // CHARS_PER_TOKEN
+            )
+            if estimated_tokens > context_window * _RECOVERY_THRESHOLD:
+                logger.warning(
+                    "Context near limit (%.1f%%) \u2014 allowing SDK compaction as recovery",
+                    estimated_tokens / context_window * 100,
+                )
+                _log_compaction_event(anima_dir, trigger, blocked=False)
+                return SyncHookJSONOutput()
+
+        if session_stats is not None:
+            session_stats["compaction_blocked"] = True
+        logger.info(
+            "Blocking SDK auto-compact for %s \u2014 AnimaWorks session chaining will handle",
+            anima_dir.name,
+        )
+        _log_compaction_event(anima_dir, trigger, blocked=True)
+        return SyncHookJSONOutput(
+            decision="block",
+            reason="AnimaWorks session chaining handles context management. Session will end on next tool call.",
+        )
+
+    return _pre_compact_hook
+
+
+def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> None:
+    """Record compaction event to activity log."""
+    try:
+        from core.activity.logger import ActivityLogger
+
+        activity = ActivityLogger(anima_dir)
+        action = "blocked" if blocked else "allowed"
+        activity.log(
+            event_type="tool_use",
+            content=f"SDK context compaction ({trigger}) \u2014 {action}",
+            summary=f"auto-compact:{trigger}:{action}",
+            meta={"trigger": trigger, "blocked": blocked},
+        )
+    except Exception:
+        logger.debug("Failed to write compaction activity log", exc_info=True)
+
+
+# ── PostToolUse: knowledge frontmatter ──────────────────
+
+
+def _build_post_tool_hook(anima_dir: Path) -> Callable:
+    """Build a PostToolUse hook that attaches ACTION-RULE bodies to side-effect
+    tool results and updates knowledge frontmatter after Write/Edit."""
+
+    knowledge_dir = (anima_dir / "knowledge").resolve()
+
+    async def _post_tool_hook(
+        input_data: dict,
+        tool_use_id: str | None,
+        context: Any,
+    ) -> dict:
+        tool_name = input_data.get("tool_name", "")
+        raw_input = input_data.get("tool_input", {})
+        tool_input = raw_input if isinstance(raw_input, dict) else {}
+
+        # Attach relevant ACTION-RULE bodies to side-effect tool results.
+        #
+        # MCP aw tools (``mcp__aw__*``) already have their rules attached by
+        # the handler itself (core.tooling.handler._attach_action_rules);
+        # attaching again here would duplicate the rule body in the result.
+        # Attach here only for SDK-native tool names (Bash, Write, ...).
+        if not tool_name.startswith("mcp__aw__"):
+            try:
+                from core.tooling.policy.action_gate import (
+                    action_tool_name_for_sdk,
+                    find_action_rules,
+                    format_action_rules,
+                )
+
+                action_tool = action_tool_name_for_sdk(tool_name)
+                if action_tool is not None:
+                    rules = await asyncio.to_thread(find_action_rules, anima_dir, action_tool, tool_input)
+                    rendered = format_action_rules(rules)
+                    if rendered:
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": "PostToolUse",
+                                "additionalContext": rendered,
+                            }
+                        }
+                    return {}
+            except Exception:
+                logger.debug("Failed to attach action rules in PostToolUse for %s", tool_name, exc_info=True)
+
+        if tool_name not in ("Write", "Edit"):
+            return {}
+
+        file_path = tool_input.get("file_path", "")
+        try:
+            knowledge_path = await asyncio.to_thread(Path(file_path).resolve)
+        except (OSError, RuntimeError, TypeError):
+            return {}
+        if knowledge_path.suffix.lower() != ".md" or not knowledge_path.is_relative_to(knowledge_dir):
+            return {}
+
+        # Cycle-context inheritance is intentional here: this task is spawned
+        # synchronously within the active cycle as a direct continuation of the
+        # tool action the agent just took (updating frontmatter for a knowledge
+        # file it wrote this cycle). It runs near-immediately and its logs belong
+        # to this cycle, so we let it inherit the cycle_id rather than detach.
+        spawn(
+            _update_knowledge_frontmatter(Path(file_path)),
+            name=f"update-knowledge-frontmatter-{Path(file_path).name}",
+        )
+        return {"async_": True}
+
+    return _post_tool_hook
+
+
+async def _update_knowledge_frontmatter(path: Path) -> None:
+    """Update ``updated_at`` and increment ``version`` in knowledge YAML frontmatter.
+
+    Runs as a fire-and-forget async task from the PostToolUse hook.
+    Silently ignores files without frontmatter or any errors.
+    """
+    try:
+        from core.memory.frontmatter import parse_frontmatter
+        from core.time_utils import now_iso
+
+        text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+        if not text.startswith("---"):
+            return
+
+        meta, body = parse_frontmatter(text)
+        if not meta:
+            return
+
+        meta["updated_at"] = now_iso()
+        meta["version"] = meta.get("version", 0) + 1
+
+        import yaml
+
+        from core.platform.atomic_io import atomic_write_text
+
+        fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
+        atomic_write_text(path, f"---\n{fm}---\n\n{body.lstrip()}")
+        logger.debug("Updated knowledge frontmatter: %s (version=%d)", path.name, meta["version"])
+    except Exception:
+        logger.debug("Failed to update frontmatter for %s", path, exc_info=True)

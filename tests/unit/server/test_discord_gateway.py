@@ -6,15 +6,13 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from server.discord_gateway import (
+from server.gateways.discord_gateway import (
     DiscordGatewayManager,
     _build_discord_annotation,
-    _is_broadcast_only_channel,
     _is_duplicate_id,
 )
 
@@ -57,27 +55,18 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg = MagicMock()
         mock_cfg.animas = {
             "sakura": MagicMock(aliases=["さくら"]),
-            "hikaru": MagicMock(aliases=["ひかる"]),
-            "ayane": MagicMock(aliases=["あやね"]),
-            "ria": MagicMock(aliases=["りあ", "リア"]),
             "kotoha": MagicMock(aliases=[]),
         }
         mock_cfg.external_messaging.discord.channel_members = {
-            "ch1": ["sakura", "ria", "kotoha"],
+            "ch1": ["sakura", "kotoha"],
             "ch2": ["kotoha"],
             "dm-sakura": ["sakura"],
-            "ops-ch": ["sakura", "kotoha"],
-            "finance-ch": ["sakura", "ayane", "kotoha"],
-            "property-ch": ["sakura", "hikaru"],
         }
-        mock_cfg.external_messaging.discord.anima_mapping = {"property-ch": "hikaru"}
         mock_cfg.external_messaging.discord.default_anima = "sakura"
-        mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops", "finance-ch": "finance"}
-        mock_cfg.external_messaging.discord.system_agents = {}
-        mock_cfg.external_messaging.user_aliases = {"cmnt": MagicMock()}
+        mock_cfg.external_messaging.discord.board_mapping = {}
 
         monkeypatch.setattr(
-            "server.discord_gateway.load_config",
+            "server.gateways.discord_gateway.load_config",
             lambda: mock_cfg,
         )
         return mock_cfg
@@ -93,253 +82,10 @@ class TestDiscordGatewayManagerRouting:
         result = manager._detect_target_anima("sakuraに聞いて", "ch1", discord_cfg)
         assert result == "sakura"
 
-    def test_ops_board_is_broadcast_only(self, _mock_config):
-        discord_cfg = _mock_config.external_messaging.discord
-        assert _is_broadcast_only_channel("ops-ch", "ops", discord_cfg) is True
-        assert _is_broadcast_only_channel("ch1", "general", discord_cfg) is False
-
-    @pytest.mark.asyncio
-    async def test_ops_without_explicit_anima_is_not_delivered_to_inbox(
-        self,
-        manager: DiscordGatewayManager,
-    ):
-        message = MagicMock()
-        message.id = "ops-no-target-001"
-        message.author.id = "human-1"
-        message.author.display_name = "Human"
-        message.author.name = "human"
-        message.webhook_id = None
-        message.mentions = []
-        message.content = "状況共有です"
-        message.channel.id = "ops-ch"
-        message.channel.parent_id = None
-        message.channel.name = "ops"
-        message.guild = object()
-        message.reference = None
-
-        with (
-            patch("server.discord_gateway._route_to_board"),
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-        ):
-            await manager._handle_message(message)
-
-        MockMessenger.return_value.receive_external.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_system_agent_is_mirrored_to_board_without_inbox_delivery(
-        self,
-        manager: DiscordGatewayManager,
-        _mock_config,
-    ):
-        _mock_config.external_messaging.discord.system_agents = {
-            "system-bot-1": SimpleNamespace(
-                name="Daily Ops Dashboard Bot",
-                board_from="daily-ops-dashboard",
-                route_to_animas=False,
-            )
-        }
-
-        message = MagicMock()
-        message.id = "system-agent-001"
-        message.author.id = "system-bot-1"
-        message.author.display_name = "Daily_Ops_Dashboard_Bot"
-        message.author.name = "Daily_Ops_Dashboard_Bot"
-        message.webhook_id = None
-        message.mentions = []
-        message.content = "NBO取込が完了しました"
-        message.channel.id = "finance-ch"
-        message.channel.parent_id = None
-        message.channel.name = "finance"
-        message.guild = object()
-        message.reference = None
-
-        with (
-            patch("server.discord_gateway._route_to_board") as route_to_board,
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-        ):
-            await manager._handle_message(message)
-
-        route_to_board.assert_called_once_with(
-            "finance-ch",
-            "NBO取込が完了しました",
-            "daily-ops-dashboard",
-            message_id="system-agent-001",
-            board_mapping=_mock_config.external_messaging.discord.board_mapping,
-            source="system_agent",
-        )
-        MockMessenger.return_value.receive_external.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_human_alias_webhook_echo_is_ignored(
-        self,
-        manager: DiscordGatewayManager,
-    ):
-        message = MagicMock()
-        message.id = "human-alias-webhook-001"
-        message.author.id = "webhook-author-1"
-        message.author.display_name = "cmnt"
-        message.author.name = "cmnt"
-        message.webhook_id = "webhook-1"
-        message.mentions = []
-        message.content = "Owner instruction echoed from webhook"
-        message.channel.id = "ch1"
-        message.channel.parent_id = None
-        message.channel.name = "affiliate"
-        message.guild = object()
-        message.reference = None
-
-        with (
-            patch("server.discord_gateway._route_to_board") as route_to_board,
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-        ):
-            await manager._handle_message(message)
-
-        route_to_board.assert_not_called()
-        MockMessenger.return_value.receive_external.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_ops_with_explicit_anima_is_delivered_to_that_inbox(
-        self,
-        manager: DiscordGatewayManager,
-        tmp_path,
-    ):
-        anima_dir = tmp_path / "animas" / "sakura"
-        anima_dir.mkdir(parents=True)
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-
-        message = MagicMock()
-        message.id = "ops-target-001"
-        message.author.id = "human-1"
-        message.author.display_name = "Human"
-        message.author.name = "human"
-        message.webhook_id = None
-        message.mentions = []
-        message.content = "sakura 対応お願いします"
-        message.channel.id = "ops-ch"
-        message.channel.parent_id = None
-        message.channel.name = "ops"
-        message.guild = object()
-        message.reference = None
-
-        with (
-            patch("server.discord_gateway._route_to_board"),
-            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
-            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-        ):
-            await manager._handle_message(message)
-
-        MockMessenger.return_value.receive_external.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_channel_anima_mapping_routes_implicit_work_to_department_lead(
-        self,
-        manager: DiscordGatewayManager,
-        tmp_path,
-    ):
-        anima_dir = tmp_path / "animas" / "hikaru"
-        anima_dir.mkdir(parents=True)
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-
-        message = MagicMock()
-        message.id = "property-lead-001"
-        message.author.id = "human-1"
-        message.author.display_name = "Human"
-        message.author.name = "human"
-        message.webhook_id = None
-        message.mentions = []
-        message.content = "この物件を分析してください"
-        message.channel.id = "property-ch"
-        message.channel.parent_id = None
-        message.channel.name = "property"
-        message.guild = object()
-        message.reference = None
-
-        with (
-            patch("server.discord_gateway._route_to_board"),
-            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
-            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-        ):
-            await manager._handle_message(message)
-
-        MockMessenger.assert_called_once_with(shared_dir, "hikaru")
-        MockMessenger.return_value.receive_external.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_reply_to_anima_webhook_routes_to_referenced_anima(
-        self,
-        manager: DiscordGatewayManager,
-        tmp_path,
-    ):
-        anima_dir = tmp_path / "animas" / "ayane"
-        anima_dir.mkdir(parents=True)
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-
-        parent = MagicMock()
-        parent.author.display_name = "ayane"
-        parent.content = "Gmail intake completed"
-        parent.webhook_id = "anima-webhook-1"
-
-        message = MagicMock()
-        message.id = "gmail-intake-reply-001"
-        message.author.id = "human-1"
-        message.author.display_name = "Human"
-        message.author.name = "human"
-        message.webhook_id = None
-        message.mentions = []
-        message.content = "この見積をもう一度確認してください"
-        message.channel.id = "finance-ch"
-        message.channel.parent_id = None
-        message.channel.name = "finance"
-        message.guild = object()
-        message.reference.message_id = "gmail-intake-parent-001"
-
-        async def fetch_message(_message_id):
-            return parent
-
-        message.channel.fetch_message = fetch_message
-
-        with (
-            patch("server.discord_gateway._route_to_board"),
-            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
-            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
-            patch("server.discord_gateway.Messenger") as MockMessenger,
-            patch(
-                "core.discord_webhooks.DiscordWebhookManager.lookup_thread_anima",
-                return_value=None,
-            ),
-        ):
-            await manager._handle_message(message)
-
-        MockMessenger.assert_called_once_with(shared_dir, "ayane")
-        MockMessenger.return_value.receive_external.assert_called_once()
-
     def test_detect_anima_by_japanese_alias(self, manager: DiscordGatewayManager, _mock_config):
         discord_cfg = _mock_config.external_messaging.discord
         result = manager._detect_target_anima("今日はさくらに連絡", "ch1", discord_cfg)
         assert result == "sakura"
-
-    def test_short_japanese_alias_not_detected_inside_common_word(
-        self,
-        manager: DiscordGatewayManager,
-        _mock_config,
-    ):
-        discord_cfg = _mock_config.external_messaging.discord
-        result = manager._detect_target_anima("とりあえず安城市の1Kから作り始める", "ch1", discord_cfg)
-        assert result is None
-
-    def test_short_japanese_alias_detected_as_direct_address(
-        self,
-        manager: DiscordGatewayManager,
-        _mock_config,
-    ):
-        discord_cfg = _mock_config.external_messaging.discord
-        result = manager._detect_target_anima("今日はりあに連絡", "ch1", discord_cfg)
-        assert result == "ria"
 
     def test_detect_anima_single_member_channel(self, manager: DiscordGatewayManager, _mock_config):
         discord_cfg = _mock_config.external_messaging.discord

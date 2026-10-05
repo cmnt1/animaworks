@@ -34,7 +34,7 @@ def cmd_anima_urgent_submit(args: argparse.Namespace) -> None:
     PendingTaskExecutor, registers it in ``task_queue.jsonl`` with
     ``priority=urgent``, and marks the Anima as urgent-active.
     """
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
     from core.urgent import add_urgent
 
     anima_dir = _anima_dir(args.name)

@@ -1316,7 +1316,7 @@ async function _cancelRemake() {
   if (_selectedAnima && _previewBackupId) {
     const enc = encodeURIComponent(_selectedAnima);
     try {
-      await fetch(`${basePath}/api/animas/${enc}/assets/remake-preview`, { method: "DELETE" });
+      await api(`/api/animas/${enc}/assets/remake-preview`, { method: "DELETE" });
     } catch {
       // Ignore cleanup errors
     }

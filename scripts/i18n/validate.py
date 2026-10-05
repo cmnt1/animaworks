@@ -1,0 +1,216 @@
+"""Structural and language validation for generated translation sections."""
+
+from __future__ import annotations
+
+import re
+from collections import Counter
+from typing import Any
+
+import yaml
+
+
+class ValidationError(ValueError):
+    """Raised when a translated section violates a preservation rule."""
+
+
+_HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+", re.MULTILINE)
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$).*?^ {0,3}(`{3,}|~{3,})[ \t]*$", re.MULTILINE | re.DOTALL)
+_PLACEHOLDER_RE = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_.]*)\}(?!\})")
+# URLs end at backticks and CJK/full-width text (Japanese prose glued to a URL).
+_URL_RE = re.compile(r"https?://[^\s<>()`\u3000-\u9fff\uff00-\uffef]+")
+_LINK_DEST_RE = re.compile(r"\]\(([^\s)]+)")
+_JAPANESE_RE = re.compile(r"[ぁ-んァ-ン一-龯々〆ヵヶ]")
+_KANA_RE = re.compile(r"[ぁ-んァ-ン]")
+_HANGUL_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
+_ALLOWED_FRONTMATTER_KEYS = {"description", "title", "summary"}
+
+# Minimum amount of visible source Japanese below which the ratio thresholds are
+# skipped to avoid false failures on short, example-laden sections. An
+# essentially-unchanged (all-Japanese) output is still rejected regardless.
+_SHORT_JA_THRESHOLD = 20
+# Relaxed language-ratio thresholds (target-language presence per plan).
+_EN_JA_RATIO = 0.05
+_KO_KANA_RATIO = 0.05
+_KO_HANGUL_RATIO = 0.02
+# A translation that is still mostly Japanese pad is treated as not performed.
+_NOT_PERFORMED_RATIO = 0.5
+
+_BOILERPLATE_PHRASES = (
+    "understood",
+    "please provide",
+    "i'd be happy",
+    "i would be happy",
+    "here is",
+    "here's",
+    "sure,",
+    "certainly,",
+    "以下は翻訳",
+    "번역 결과",
+    "번역이 완료",
+)
+
+
+def _code_blocks(text: str) -> list[str]:
+    return [match.group(0) for match in _FENCE_RE.finditer(text)]
+
+
+def _frontmatter(text: str) -> tuple[dict[str, Any], str] | None:
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        return None
+    end = next((i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") in {"---", "..."}), None)
+    if end is None:
+        raise ValidationError("Frontmatter closing delimiter is missing")
+    raw = "".join(lines[1:end])
+    try:
+        parsed = yaml.safe_load(raw) or {}
+    except yaml.YAMLError as exc:
+        raise ValidationError("Frontmatter is not valid YAML") from exc
+    if not isinstance(parsed, dict):
+        raise ValidationError("Frontmatter must be a YAML mapping")
+    return parsed, raw
+
+
+def _table_shapes(text: str) -> list[tuple[int, int]]:
+    shapes: list[tuple[int, int]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            continue
+        cells = stripped.strip("|").split("|")
+        shapes.append((len(cells), len(cells)))
+    return shapes
+
+
+def _visible(text: str) -> str:
+    text = re.sub(r"⟦P\d+⟧", " ", text)
+    text = re.sub(r"```.*?```|~~~.*?~~~", " ", text, flags=re.DOTALL)
+    text = re.sub(r"`[^`]*`", " ", text)
+    text = re.sub(r"https?://\S+", " ", text)
+    return text
+
+
+def has_translatable_japanese(text: str) -> bool:
+    """Return True when the section carries visible Japanese prose worth translating."""
+    return bool(_JAPANESE_RE.search(_visible(text)))
+
+
+def _check_boilerplate(translated: str) -> None:
+    head = re.sub(r"^\s+", "", translated)[:60].lower()
+    for phrase in _BOILERPLATE_PHRASES:
+        if head.startswith(phrase):
+            raise ValidationError("Output begins with a canned model response instead of a translation")
+
+
+def _count_visible_japanese(text: str) -> int:
+    return len(_JAPANESE_RE.findall(_visible(text)))
+
+
+def _check_language(source_visible: str, translated_visible: str, lang: str) -> None:
+    source_visible = _visible(source_visible)
+    translated_visible = _visible(translated_visible)
+    if not _JAPANESE_RE.search(source_visible):
+        return
+    letters = [char for char in translated_visible if char.isalpha()]
+    if not letters:
+        raise ValidationError(f"Translation to {lang} contains no readable text")
+
+    # Japanese characters that already appear in the source (usage examples,
+    # quotes, protected fragments) are expected to survive; exclude them from
+    # the translated-side ratio instead of penalising a legitimate output.
+    # Chinese legitimately shares Han characters with Japanese, so only kana
+    # can show that a zh output is still Japanese.
+    ja_marker = _KANA_RE if lang == "zh" else _JAPANESE_RE
+    source_ja = set(_JAPANESE_RE.findall(source_visible))
+    ja_only = [char for char in letters if ja_marker.fullmatch(char) and char not in source_ja]
+    japanese_ratio = len(ja_only) / len(letters) if letters else 0.0
+
+    short = _count_visible_japanese(source_visible) < _SHORT_JA_THRESHOLD
+    # An output that is still essentially all Japanese was never translated
+    # (an unchanged copy keeps the source characters even after excluding
+    # source-shared ones); reject it even for short sections.
+    all_ja = sum(1 for char in letters if ja_marker.fullmatch(char))
+    raw_japanese_ratio = all_ja / len(letters) if letters else 0.0
+    if raw_japanese_ratio >= _NOT_PERFORMED_RATIO:
+        raise ValidationError(f"Translation to {lang} was not performed (Japanese ratio {raw_japanese_ratio:.1%})")
+    if short:
+        return
+
+    if lang == "en":
+        if japanese_ratio >= _EN_JA_RATIO:
+            raise ValidationError(f"English output contains too much Japanese text ({japanese_ratio:.1%})")
+    elif lang == "ko":
+        kana_ratio = sum(bool(_KANA_RE.fullmatch(char)) for char in letters) / len(letters)
+        hangul_ratio = sum(bool(_HANGUL_RE.fullmatch(char)) for char in letters) / len(letters)
+        if kana_ratio >= _KO_KANA_RATIO:
+            raise ValidationError(f"Korean output contains too much kana ({kana_ratio:.1%})")
+        if hangul_ratio < _KO_HANGUL_RATIO:
+            raise ValidationError(f"Korean output contains too little Hangul ({hangul_ratio:.1%})")
+    elif lang == "zh":
+        if japanese_ratio >= _EN_JA_RATIO:
+            raise ValidationError(f"Chinese output contains too much Japanese text ({japanese_ratio:.1%})")
+
+
+def _frontmatter_errors(source: str, translated: str) -> list[str]:
+    try:
+        source_data = _frontmatter(source)
+    except ValidationError:
+        # Template frontmatter such as ``name: {{skill_name}}`` is not YAML in the
+        # source either; its keys and delimiters stay protected verbatim.
+        return []
+    try:
+        translated_data = _frontmatter(translated)
+    except ValidationError as exc:
+        return [str(exc)]
+    if source_data is None or translated_data is None:
+        return ["frontmatter delimiters changed"]
+    source_mapping, _ = source_data
+    translated_mapping, _ = translated_data
+    errors: list[str] = []
+    if set(source_mapping) != set(translated_mapping):
+        errors.append("frontmatter keys changed")
+    for key in set(source_mapping) - _ALLOWED_FRONTMATTER_KEYS:
+        if source_mapping.get(key) != translated_mapping.get(key):
+            errors.append(f"frontmatter value changed for {key}")
+    return errors
+
+
+def validate_translation(
+    source: str,
+    translated: str,
+    lang: str,
+    *,
+    source_visible: str | None = None,
+    translated_visible: str | None = None,
+    frontmatter: bool = False,
+) -> None:
+    """Raise :class:`ValidationError` if structure, identifiers, or locale changed."""
+    errors: list[str] = []
+    if _PLACEHOLDER_RE.findall(source) != _PLACEHOLDER_RE.findall(translated):
+        if Counter(_PLACEHOLDER_RE.findall(source)) != Counter(_PLACEHOLDER_RE.findall(translated)):
+            errors.append("placeholder set changed")
+    if _code_blocks(source) != _code_blocks(translated):
+        errors.append("fenced code blocks changed")
+    if [len(match.group(1)) for match in _HEADING_RE.finditer(source)] != [
+        len(match.group(1)) for match in _HEADING_RE.finditer(translated)
+    ]:
+        errors.append("heading count or levels changed")
+    if Counter(_URL_RE.findall(source)) != Counter(_URL_RE.findall(translated)):
+        errors.append("URL set changed")
+    if Counter(_LINK_DEST_RE.findall(source)) != Counter(_LINK_DEST_RE.findall(translated)):
+        errors.append("Markdown link destinations changed")
+    if _table_shapes(source) != _table_shapes(translated):
+        errors.append("table row/column structure changed")
+
+    if frontmatter:
+        errors.extend(_frontmatter_errors(source, translated))
+
+    if errors:
+        raise ValidationError("; ".join(errors))
+
+    _check_boilerplate(translated_visible if translated_visible is not None else translated)
+    _check_language(
+        source_visible if source_visible is not None else _visible(source),
+        translated_visible if translated_visible is not None else _visible(translated),
+        lang,
+    )

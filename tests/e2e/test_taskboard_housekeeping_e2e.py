@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.housekeeping import run_housekeeping
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.config.models import HousekeepingConfig
+from core.memory.maintenance.housekeeping import run_housekeeping
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 pytestmark = pytest.mark.e2e
@@ -72,10 +72,11 @@ async def test_housekeeping_preserves_legacy_llm_evidence_and_cleans_unrelated_a
 
     results = await run_housekeeping(
         data_dir,
-        pending_processing_stale_hours=24,
-        background_running_stale_hours=48,
-        current_state_stale_hours=24,
-        taskboard_suppressed_retention_days=30,
+        housekeeping=HousekeepingConfig(
+            pending_processing_stale_hours=24,
+            background_running_stale_hours=48,
+            current_state_stale_hours=24,
+        ),
     )
 
     taskboard = results["taskboard_stale"]
@@ -96,20 +97,13 @@ async def test_housekeeping_preserves_legacy_llm_evidence_and_cleans_unrelated_a
     assert state_path.read_text(encoding="utf-8") == "status: idle\n"
     assert "stale idle notes" in next((idle_anima_dir / "episodes").glob("*.md")).read_text(encoding="utf-8")
 
-    events = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3").list_events(
-        anima_name="sakura",
-        task_id="recover-task",
-    )
-    assert not any(event["event_type"] == "stale_processing_recovered" for event in events)
 
-
-async def test_taskboard_housekeeping_archives_orphan_metadata_and_purges_stale(tmp_path: Path) -> None:
+async def test_housekeeping_no_longer_touches_presentation_metadata(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
     (anima_dir / "episodes").mkdir(parents=True, exist_ok=True)
 
-    # Live task keeps its metadata; ghost/missing-anima/stale-archived are cleaned.
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
         source="human",
@@ -119,67 +113,26 @@ async def test_taskboard_housekeeping_archives_orphan_metadata_and_purges_stale(
         task_id="live-task",
     )
 
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    stale_ts = (now_local() - timedelta(hours=30)).isoformat()
-    ancient_ts = (now_local() - timedelta(days=40)).isoformat()
-
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id="live-task",
-        actor="test",
-        visibility="active",
-        column="todo",
-        updated_at=stale_ts,
-    )
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id="ghost-task",
-        actor="test",
-        visibility="active",
-        column="todo",
-        updated_at=stale_ts,
-    )
-    store.upsert_metadata(
-        anima_name="merged-away",
-        task_id="after-merge",
-        actor="test",
-        visibility="snoozed",
-        column="waiting",
-        updated_at=stale_ts,
-    )
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id="ancient-archived",
-        actor="test",
-        visibility="archived",
-        column="done",
-        updated_at=ancient_ts,
-    )
-
     results = await run_housekeeping(
         data_dir,
-        pending_processing_stale_hours=24,
-        background_running_stale_hours=48,
-        current_state_stale_hours=24,
-        taskboard_suppressed_retention_days=30,
-        taskboard_orphan_metadata_stale_hours=24,
+        housekeeping=HousekeepingConfig(
+            pending_processing_stale_hours=24,
+            background_running_stale_hours=48,
+            current_state_stale_hours=24,
+        ),
     )
 
     taskboard = results["taskboard_stale"]
-    assert taskboard["orphan_archived"] == 2
-    assert taskboard["purged_deleted"] == 1
+    assert "orphan_archived" not in taskboard
+    assert "purged_deleted" not in taskboard
+    # Canonical task is unaffected.
+    assert queue.get_task_by_id("live-task").status == "pending"
+    # No presentation metadata table is created (tasks are the only board source).
+    shared_db = data_dir / "shared" / "taskboard.sqlite3"
+    if shared_db.exists():
+        import sqlite3
 
-    live = store.get_metadata("sakura", "live-task")
-    assert live is not None
-    assert live.visibility.value == "active"
-
-    ghost = store.get_metadata("sakura", "ghost-task")
-    assert ghost is not None
-    assert ghost.visibility.value == "archived"
-    assert ghost.tombstone_reason == "queue_missing_reconciled"
-
-    missing_anima = store.get_metadata("merged-away", "after-merge")
-    assert missing_anima is not None
-    assert missing_anima.visibility.value == "archived"
-
-    assert store.get_metadata("sakura", "ancient-archived") is None
+        with sqlite3.connect(shared_db) as db:
+            names = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "taskboard_metadata" not in names
+        assert "taskboard_events" not in names

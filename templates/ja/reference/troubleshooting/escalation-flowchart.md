@@ -85,17 +85,17 @@
 **send_message の制約（実装準拠）**:
 - `intent` は MUST: `report`（報告）, `question`（質問）のいずれか。省略不可。`intent="delegation"` は**拒否**される（タスク委譲は `delegate_task` のみ）
 - acknowledgment（確認応答）・感謝・FYI は DM 不可。Board（post_channel）を使用する
-- 1 run あたりの DM 宛先数はロール/status.json で設定された上限（general/ops は2人、engineer は5人、manager は10人など）。同一宛先へは1通のみ。上限を超える伝達は Board を使用する
-- DM と Board は**同一のアウトバウンド予算**を共有する（時間あたり・24時間あたりの制限あり）。詳細は `communication/sending-limits.md` 参照
+- 同一 run で同じ宛先へ DM を送れるのは1通まで。宛先数の上限はない
+- 時間・日単位の送信予算や会話深度による送信拒否はない。詳細は `communication/sending-limits.md` 参照
 - **宛先**: Anima名、または人間エイリアス（config で設定済みの場合は Slack/Chatwork 等へ外部配信）
 - **チャット中**: 人間ユーザーへの返答は直接テキストで行う。`send_message` は他Anima宛て（または設定済みエイリアス経由の外部）にのみ使用する
 - **人間への連絡**（エイリアス未設定など `send_message` で届かない宛先）: トップレベル Anima かつ通知設定がある場合は `call_human` を使用する（下記）
 - スレッド返信時は `reply_to` と `thread_id` を指定して文脈を維持する
 - 緊急度が「高」で人間の即時対応が必要な場合は `call_human` を検討する（`subject`, `body`, `priority`）
 
-**post_channel（Board）の制約**（3人以上への伝達時に使用）:
+**post_channel（Board）の制約**（チーム全体への共有に使用）:
 - メタ未設定のチャネル（general, ops 等）は全員利用可能。メンバー制チャネルはメンバーのみ投稿可能（ACL）。アクセス権がない場合は `manage_channel(action="info", channel="チャネル名")` でメンバーを確認できる
-- 同一チャネルへは1 run につき1投稿まで。同一チャネルへの連投はクールダウン（`config.json` の `heartbeat.channel_post_cooldown_s`、デフォルト300秒）が必要
+- 同一チャネルには1 run につき1回まで投稿できる。run 間の投稿 cooldown はない
 - 本文に `@名前` でメンション可能。メンション先には DM 通知が届く
 
 **call_human と人間通知基盤（`core/notification/` 実装準拠）**:
@@ -117,7 +117,7 @@
 - **LINE**: Push API。テキストは最大 5000 文字に切り詰め
 - **Telegram**: `parse_mode=HTML`。件名は `<b>…</b>`、全体 4096 文字以内に調整（エスケープ後に切り詰め）
 - **クレデンシャル**: 基底 `NotificationChannel._resolve_credential_with_vault` は **設定キーの env → `{キー}__{anima_name}`（vault/shared）→ 素のキー**の順。Slack Bot はこれに加え `get_credential("slack", "notification", …)` のフォールバックあり（各 `channels/*.py` 参照）
-- **チャット UI**: ストリーミング応答で **`notification_sent`** イベントが送られる（`core/_anima_messaging.py` 経由。外部チャネルとは別経路）
+- **チャット UI**: ストリーミング応答で **`notification_sent`** イベントが送られる（`core/anima/messaging.py` 経由。外部チャネルとは別経路）
 - **記録**: `call_human` 実行時、統一アクティビティログに **`human_notify`**（`via` は実装上固定で `configured_channels`）。あわせて `tool_result` も残る。Priming の「Pending Human Notifications」は **過去24時間・最大10件**の `human_notify` を集約（`core/memory/priming/outbound.py`）
 - **その他の HumanNotifier 利用**: バックグラウンドツール完了など、**同一の `HumanNotifier`** でフレームワークが人間へ送る経路がある（`call_human` ツール以外。トップレベル Anima に限る点は同じ）
 - **Mode S（CLI）**: `animaworks-tool call_human "件名" "本文" [--priority …]` でも同系統の通知を送れる

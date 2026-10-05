@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import fact_invalidation as fact_invalidation_module
-from core.memory.fact_invalidation import (
+from core.memory.facts import invalidation as fact_invalidation_module
+from core.memory.facts.invalidation import (
     FactCandidate,
     ReconcileAction,
     ReconcileConfig,
     reconcile_new_fact,
 )
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
 from core.memory.rag.store import Document, SearchResult
 
 
@@ -113,8 +113,8 @@ def test_vector_candidate_search_keeps_same_id_duplicate_and_uses_source_file_me
                 )
             ]
 
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name: FakeVectorStore())
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", lambda anima_name: FakeVectorStore())
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
     monkeypatch.setattr(
         fact_invalidation_module,
         "find_fact_record",
@@ -172,8 +172,8 @@ def test_same_id_vector_duplicate_skips_append_without_llm(
         assert candidates[0].record.fact_id == contradiction.fact_id
         return "CONTRADICT"
 
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name: FakeVectorStore())
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", lambda anima_name: FakeVectorStore())
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
 
     result = reconcile_new_fact(
         anima_dir,

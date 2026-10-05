@@ -1,0 +1,2 @@
+{"kind":"stream","chunks":[{"tool_call":{"id":"call_tool_1","name":"search_memory","arguments":"{\"query\":\"golden tool scenario\"}"}},{"usage":{"prompt_tokens":13,"completion_tokens":3},"finish":"tool_calls"}]}
+{"kind":"stream","chunks":[{"text":"Tool-assisted answer"},{"usage":{"prompt_tokens":17,"completion_tokens":5},"finish":"stop"}]}

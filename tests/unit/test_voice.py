@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,6 +26,7 @@ from core.voice.tts_factory import create_tts_provider
 from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 # ── TestSplitSentences ──────────────────────────────────────────
 
@@ -146,14 +150,19 @@ class TestTTSFactory:
 
 
 class TestVoiceSTT:
-    def test_init(self) -> None:
+    def test_init_does_not_load_optional_stt_dependency(self) -> None:
+        from core.voice import stt as stt_module
         from core.voice.stt import VoiceSTT
 
-        stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
-        assert stt._model_name == "tiny"
-        assert stt._model is None  # lazy
+        with patch.object(stt_module, "_load_whisper_model_class") as load_model_class:
+            stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8", language="ja")
 
-    @patch("core.voice.stt.WhisperModel")
+        assert stt._model_name == "tiny"
+        assert stt._language == "ja"
+        assert stt._model is None
+        load_model_class.assert_not_called()
+
+    @patch("core.voice.stt._load_whisper_model_class")
     def test_transcribe_buffer(self, mock_whisper_cls: MagicMock) -> None:
         from core.voice.stt import VoiceSTT
 
@@ -170,8 +179,11 @@ class TestVoiceSTT:
         mock_info.duration = 1.0
 
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
-        mock_whisper_cls.return_value = mock_model
+        mock_whisper_cls.return_value.return_value = mock_model
 
+        from core.voice import stt as stt_module
+
+        stt_module._whisper_model = None
         stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
 
         import numpy as np
@@ -182,9 +194,25 @@ class TestVoiceSTT:
         assert "raw_text" in result
         assert result["raw_text"] == "テスト"
         assert result["language"] == "ja"
+        assert "language" not in mock_model.transcribe.call_args.kwargs
+
+    @patch("core.voice.stt._load_whisper_model_class")
+    def test_configured_language_passed_to_transcribe(self, mock_whisper_cls: MagicMock) -> None:
+        from core.voice import stt as stt_module
+        from core.voice.stt import VoiceSTT
+
+        stt_module._whisper_model = None
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = ([], MagicMock(language="ja", duration=0.0))
+        mock_whisper_cls.return_value.return_value = mock_model
+        stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8", language="ja")
+
+        stt.transcribe_buffer(np.zeros(8, dtype=np.int16).tobytes())
+
+        assert mock_model.transcribe.call_args.kwargs["language"] == "ja"
 
     @pytest.mark.asyncio
-    @patch("core.voice.stt.WhisperModel")
+    @patch("core.voice.stt._load_whisper_model_class")
     async def test_transcribe_buffer_async(self, mock_whisper_cls: MagicMock) -> None:
         from core.voice import stt
 
@@ -203,7 +231,7 @@ class TestVoiceSTT:
         mock_info.language_probability = 0.99
         mock_info.duration = 0.5
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
-        mock_whisper_cls.return_value = mock_model
+        mock_whisper_cls.return_value.return_value = mock_model
 
         stt_instance = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
 
@@ -212,6 +240,120 @@ class TestVoiceSTT:
         pcm = np.zeros(8000, dtype=np.int16).tobytes()
         result = await stt_instance.transcribe_buffer_async(pcm)
         assert result["raw_text"] == "async test"
+
+    def test_voice_config_ignores_removed_audio_format(self) -> None:
+        config = VoiceConfig.model_validate({"audio_format": "mp3", "stt_language": "ja"})
+        assert config.stt_language == "ja"
+        assert "audio_format" not in config.model_dump()
+
+    def test_concurrent_first_calls_load_whisper_model_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from core.voice import stt as stt_module
+        from core.voice.stt import VoiceSTT
+
+        monkeypatch.setattr(stt_module, "_whisper_model", None)
+        monkeypatch.setattr(stt_module, "_whisper_model_config", None, raising=False)
+        created: list[tuple[str, str, str]] = []
+        created_lock = threading.Lock()
+
+        class FakeWhisperModel:
+            def __init__(self, model_name: str, *, device: str, compute_type: str) -> None:
+                with created_lock:
+                    created.append((model_name, device, compute_type))
+                time.sleep(0.05)
+
+        monkeypatch.setattr(stt_module, "_load_whisper_model_class", lambda: FakeWhisperModel)
+        stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
+        barrier = threading.Barrier(3)
+
+        def _ensure_model():
+            barrier.wait()
+            return stt._ensure_model()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_ensure_model) for _ in range(2)]
+            barrier.wait()
+            models = [future.result(timeout=5) for future in futures]
+
+        assert created == [("tiny", "cpu", "int8")]
+        assert models[0] is models[1]
+
+    @pytest.mark.parametrize(
+        ("model_name", "device", "compute_type"),
+        [("base", "cpu", "int8"), ("tiny", "cuda", "float16"), ("tiny", "cpu", "float32")],
+    )
+    def test_changed_model_settings_reload_whisper_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        model_name: str,
+        device: str,
+        compute_type: str,
+    ) -> None:
+        from core.voice import stt as stt_module
+        from core.voice.stt import VoiceSTT
+
+        monkeypatch.setattr(stt_module, "_whisper_model", None)
+        monkeypatch.setattr(stt_module, "_whisper_model_config", None, raising=False)
+        created: list[tuple[str, str, str]] = []
+
+        class FakeWhisperModel:
+            def __init__(self, name: str, *, device: str, compute_type: str) -> None:
+                created.append((name, device, compute_type))
+
+        monkeypatch.setattr(stt_module, "_load_whisper_model_class", lambda: FakeWhisperModel)
+        VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")._ensure_model()
+        VoiceSTT(model_name=model_name, device=device, compute_type=compute_type)._ensure_model()
+
+        assert created == [("tiny", "cpu", "int8"), (model_name, device, compute_type)]
+
+    def test_get_stt_singleton_creation_is_thread_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from server.routes import voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
+        created: list[dict[str, object]] = []
+        created_lock = threading.Lock()
+
+        class FakeSTT:
+            def __init__(self, **kwargs: object) -> None:
+                with created_lock:
+                    created.append(kwargs)
+                time.sleep(0.05)
+
+        monkeypatch.setattr(voice_routes, "VoiceSTT", FakeSTT)
+        config = VoiceConfig(stt_language="ja")
+        barrier = threading.Barrier(3)
+
+        def _get_stt():
+            barrier.wait()
+            return voice_routes._get_stt(config)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_get_stt) for _ in range(2)]
+            barrier.wait()
+            instances = [future.result(timeout=5) for future in futures]
+
+        assert len(created) == 1
+        assert instances[0] is instances[1]
+
+    def test_get_stt_recreates_wrapper_when_settings_change(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from server.routes import voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
+        first = voice_routes._get_stt(VoiceConfig(stt_model="tiny"))
+        second = voice_routes._get_stt(VoiceConfig(stt_model="base"))
+
+        assert first is not second
+        assert first._model_name == "tiny"
+        assert second._model_name == "base"
+
+    def test_get_stt_passes_configured_language(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from server.routes import voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
+        instance = voice_routes._get_stt(VoiceConfig(stt_language="ja"))
+        assert instance._language == "ja"
 
 
 # ── TestSanitizeForTTS ────────────────────────────────────────────
@@ -332,9 +474,7 @@ class TestSanitizeForTTS:
     def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
         import core.voice.session as vs
 
-        (tmp_path / "voice_yomi.tsv").write_text(
-            "# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8"
-        )
+        (tmp_path / "voice_yomi.tsv").write_text("# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8")
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         monkeypatch.setattr(vs, "_yomi_cache", None)
         monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
@@ -353,13 +493,7 @@ class TestSanitizeForTTS:
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
 
-        text = (
-            "## 回答\n\n"
-            "これは**重要**なポイントです。\n"
-            "- 項目A\n"
-            "- 項目B\n\n"
-            '<!-- emotion: {"emotion": "smile"} -->'
-        )
+        text = '## 回答\n\nこれは**重要**なポイントです。\n- 項目A\n- 項目B\n\n<!-- emotion: {"emotion": "smile"} -->'
         result = sanitize_for_tts(text)
         assert "##" not in result
         assert "**" not in result
@@ -367,7 +501,6 @@ class TestSanitizeForTTS:
         assert "<!--" not in result
         assert "重要" in result
         assert "項目A" in result
-
 
     def test_strip_trailing_html_comment(self) -> None:
         from core.voice.session import sanitize_for_tts
@@ -451,9 +584,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session.handle_audio_chunk(b"\x00\x01\x02\x03")
         assert len(session._audio_buffer) == 4
 
@@ -468,9 +599,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._audio_buffer.extend(b"\x00\x01")
         await session.handle_interrupt()
         assert session._interrupted is True
@@ -487,9 +616,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session.handle_speech_end()
         ws.send_json.assert_not_called()
 
@@ -506,14 +633,10 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         result = await session._check_tts_health()
         assert result is False
-        ws.send_json.assert_called_with(
-            {"type": "error", "message": "TTS unavailable"}
-        )
+        ws.send_json.assert_called_with({"type": "error", "message": "TTS unavailable"})
         # Second call retries (failure is not cached)
         tts.health_check.reset_mock()
         ws.send_json.reset_mock()
@@ -534,9 +657,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         result = await session._check_tts_health()
         assert result is True
         ws.send_json.assert_not_called()
@@ -554,9 +675,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._check_tts_health()
         assert session._tts_available is True
         session.invalidate_tts_health()
@@ -574,9 +693,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession(
-            "test", ws, stt, tts, tts_config, supervisor, voice_config
-        )
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._processing = True
         session._audio_buffer.extend(b"\x00" * 100)
         await session.handle_speech_end()
@@ -633,15 +750,17 @@ class TestPerAnimaVoice:
         anima_dir = animas_dir / "test_anima"
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text(
-            json.dumps({
-                "enabled": True,
-                "model": "claude-sonnet-4-6",
-                "voice": {
-                    "tts_provider": "elevenlabs",
-                    "voice_id": "abc123",
-                    "speed": 1.2,
-                },
-            })
+            json.dumps(
+                {
+                    "enabled": True,
+                    "model": "claude-sonnet-4-6",
+                    "voice": {
+                        "tts_provider": "elevenlabs",
+                        "voice_id": "abc123",
+                        "speed": 1.2,
+                    },
+                }
+            )
         )
 
         tts_config = _load_per_anima_voice(animas_dir, "test_anima", VoiceConfig())
@@ -649,17 +768,13 @@ class TestPerAnimaVoice:
         assert tts_config.voice_id == "abc123"
         assert tts_config.speed == 1.2
 
-    def test_load_per_anima_voice_without_voice_section(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_per_anima_voice_without_voice_section(self, tmp_path: Path) -> None:
         from server.routes.voice import _load_per_anima_voice
 
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "test_anima"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": True, "model": "claude-sonnet-4-6"})
-        )
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True, "model": "claude-sonnet-4-6"}))
 
         tts_config = _load_per_anima_voice(animas_dir, "test_anima", VoiceConfig())
         assert tts_config.provider == "voicevox"
@@ -669,9 +784,7 @@ class TestPerAnimaVoice:
         from server.routes.voice import _load_per_anima_voice
 
         animas_dir = tmp_path / "animas"
-        tts_config = _load_per_anima_voice(
-            animas_dir, "nonexistent", VoiceConfig()
-        )
+        tts_config = _load_per_anima_voice(animas_dir, "nonexistent", VoiceConfig())
         assert tts_config.provider == "voicevox"
 
 
@@ -900,7 +1013,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._consecutive_tts_failures = 2
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 0
@@ -923,7 +1036,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 1
 
@@ -948,7 +1061,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._tts_available = True
 
         for _ in range(3):
@@ -976,11 +1089,12 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
 
         tts_error_calls = [
-            c for c in ws.send_json.call_args_list
+            c
+            for c in ws.send_json.call_args_list
             if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "tts_error"
         ]
         assert len(tts_error_calls) == 1
@@ -1006,7 +1120,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 0
 
@@ -1023,10 +1137,12 @@ class TestResponseDoneGuarantee:
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(return_value={
-            "raw_text": "test",
-            "language": "en",
-        })
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={
+                "raw_text": "test",
+                "language": "en",
+            }
+        )
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         tts_config = TTSConfig(provider="voicevox")
@@ -1039,29 +1155,33 @@ class TestResponseDoneGuarantee:
 
         supervisor.send_request_stream = mock_stream_error
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         import numpy as np
+
         pcm = np.random.randint(-1000, 1000, 16000, dtype=np.int16).tobytes()
         session._audio_buffer.extend(pcm)
         await session._do_speech_end("human")
 
         response_done_calls = [
-            c for c in ws.send_json.call_args_list
+            c
+            for c in ws.send_json.call_args_list
             if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "response_done"
         ]
         assert len(response_done_calls) >= 1
 
     @pytest.mark.asyncio
     async def test_response_done_on_interrupt(self) -> None:
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
         from core.voice.session import VoiceSession
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(return_value={
-            "raw_text": "test speech",
-            "language": "en",
-        })
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={
+                "raw_text": "test speech",
+                "language": "en",
+            }
+        )
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         tts_config = TTSConfig(provider="voicevox")
@@ -1077,15 +1197,17 @@ class TestResponseDoneGuarantee:
 
         supervisor.send_request_stream = mock_stream
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._interrupted = True
         import numpy as np
+
         pcm = np.random.randint(-1000, 1000, 16000, dtype=np.int16).tobytes()
         session._audio_buffer.extend(pcm)
         await session._do_speech_end("human")
 
         response_done_calls = [
-            c for c in ws.send_json.call_args_list
+            c
+            for c in ws.send_json.call_args_list
             if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "response_done"
         ]
         assert len(response_done_calls) == 1
@@ -1110,7 +1232,7 @@ def _make_session(*, ws=None, stt=None, tts=None, supervisor=None):
     tts_config = TTSConfig(provider="voicevox")
     supervisor = supervisor or MagicMock()
     voice_config = MagicMock(stt_refine_enabled=False)
-    return VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+    return VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
 
 
 class TestBargeProbe:
@@ -1212,13 +1334,11 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_sentences_synthesized_in_order(self) -> None:
         """Multiple sentences are synthesized and sent in enqueue order."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(
-            return_value={"raw_text": "hello there", "language": "en"}
-        )
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "hello there", "language": "en"})
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         synth_order: list[str] = []
@@ -1256,9 +1376,7 @@ class TestTTSPrefetchPipeline:
             yield IPCResponse(
                 id="4",
                 done=False,
-                chunk=json.dumps(
-                    {"type": "cycle_done", "cycle_result": {"emotion": "smile"}}
-                ),
+                chunk=json.dumps({"type": "cycle_done", "cycle_result": {"emotion": "smile"}}),
                 result=None,
             )
 
@@ -1268,11 +1386,7 @@ class TestTTSPrefetchPipeline:
         await session._do_speech_end("human")
 
         assert synth_order == ["第一文。", "第二文。", "第三文。"]
-        types = [
-            c.args[0].get("type")
-            for c in ws.send_json.call_args_list
-            if c.args and isinstance(c.args[0], dict)
-        ]
+        types = [c.args[0].get("type") for c in ws.send_json.call_args_list if c.args and isinstance(c.args[0], dict)]
         assert types.index("response_done") > types.index("tts_done")
         # last tts_done before response_done
         last_tts_done = max(i for i, t in enumerate(types) if t == "tts_done")
@@ -1282,13 +1396,11 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_producer_does_not_wait_for_synthesis(self) -> None:
         """IPC consumer enqueues sentences while first synthesis is still running."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(
-            return_value={"raw_text": "hello there", "language": "en"}
-        )
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "hello there", "language": "en"})
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         first_entered = asyncio.Event()
@@ -1334,9 +1446,7 @@ class TestTTSPrefetchPipeline:
             yield IPCResponse(
                 id="4",
                 done=False,
-                chunk=json.dumps(
-                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
-                ),
+                chunk=json.dumps({"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}),
                 result=None,
             )
 
@@ -1351,13 +1461,11 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_interrupt_discards_queued_sentences(self) -> None:
         """Barge-in clears the queue; later sentences must not be synthesized."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(
-            return_value={"raw_text": "hello there", "language": "en"}
-        )
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "hello there", "language": "en"})
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         synth_order: list[str] = []
@@ -1402,9 +1510,7 @@ class TestTTSPrefetchPipeline:
             yield IPCResponse(
                 id="4",
                 done=False,
-                chunk=json.dumps(
-                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
-                ),
+                chunk=json.dumps({"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}),
                 result=None,
             )
 
@@ -1421,13 +1527,11 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_response_done_after_all_tts(self) -> None:
         """response_done is emitted only after the TTS queue is fully drained."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(
-            return_value={"raw_text": "hello there", "language": "en"}
-        )
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "hello there", "language": "en"})
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
         timeline: list[str] = []
@@ -1466,9 +1570,7 @@ class TestTTSPrefetchPipeline:
             yield IPCResponse(
                 id="3",
                 done=False,
-                chunk=json.dumps(
-                    {"type": "cycle_done", "cycle_result": {"emotion": "laugh"}}
-                ),
+                chunk=json.dumps({"type": "cycle_done", "cycle_result": {"emotion": "laugh"}}),
                 result=None,
             )
 
@@ -1507,11 +1609,7 @@ class TestTTSPrefetchPipeline:
         await session.greet_and_speak()
 
         assert synth_order == ["こんにちは。", "元気ですか？"]
-        types = [
-            c.args[0].get("type")
-            for c in ws.send_json.call_args_list
-            if c.args and isinstance(c.args[0], dict)
-        ]
+        types = [c.args[0].get("type") for c in ws.send_json.call_args_list if c.args and isinstance(c.args[0], dict)]
         assert "response_done" in types
         assert session._tts_worker is None
         assert session._tts_queue is None
@@ -1530,14 +1628,12 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_pipeline_tts_failure_counter(self) -> None:
         """Failure counter / health invalidation still work via the worker path."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
         from core.voice.tts_base import TTSSynthesisError
 
         ws = AsyncMock()
         stt = MagicMock()
-        stt.transcribe_buffer_async = AsyncMock(
-            return_value={"raw_text": "hello there", "language": "en"}
-        )
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "hello there", "language": "en"})
         tts = AsyncMock()
         tts.health_check = AsyncMock(return_value=True)
 
@@ -1559,9 +1655,7 @@ class TestTTSPrefetchPipeline:
             yield IPCResponse(
                 id="done",
                 done=False,
-                chunk=json.dumps(
-                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
-                ),
+                chunk=json.dumps({"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}),
                 result=None,
             )
 

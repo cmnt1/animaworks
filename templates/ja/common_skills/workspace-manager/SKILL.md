@@ -38,14 +38,14 @@ Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
 }
 ```
 
-このツールは組織共有レジストリへの登録、`permissions.json.file_roots` への書き込み権限追加、必要に応じた `status.json.default_workspace` 更新をまとめて行う。
+このツールは root ホストに依頼し、組織共有レジストリと root 所有の `permissions.json` / `status.json` を更新する。Anima プロセスから設定ファイルを直接書き込まない。
 
 **注意**: ディレクトリが存在しない場合はエラーになる。
 **注意**: `read_memory_file(path="config.json")` は自分のAnimaディレクトリの `config.json` を読む。組織共有レジストリの登録には使わない。
 
 ### 一覧
 
-組織共有レジストリの一覧は `core.workspace.list_workspaces()` で確認する。`read_memory_file(path="config.json")` は使わない。
+組織共有レジストリの一覧は `core.org.workspace.list_workspaces()` で確認する。`read_memory_file(path="config.json")` は使わない。
 
 ### 削除
 

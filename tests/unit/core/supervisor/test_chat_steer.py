@@ -10,17 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import _inject_chat_message
-from core.execution.agent_sdk import AgentSDKExecutor
+from core.anima.messaging import _inject_chat_message
 from core.execution.base import BaseExecutor, ExecutionResult
-from core.memory.conversation import ConversationMemory
+from core.execution.engines.claude.executor import AgentSDKExecutor
+from core.memory.conversation.memory import ConversationMemory
 from core.schemas import ModelConfig
-from core.supervisor import task_runner
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.runner import AnimaRunner
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 class _UnsupportedExecutor(BaseExecutor):
@@ -82,7 +82,7 @@ async def test_injected_user_turn_is_persisted_once(tmp_path: Path) -> None:
         agent=agent,
         _active_chat_conversations={"default": conversation},
         _log_human_conversation=MagicMock(),
-        _activity=MagicMock(),
+        _activity=SimpleNamespace(alog=AsyncMock()),
     )
 
     assert await _inject_chat_message(owner, "steer", from_person="human", thread_id="default") is True
@@ -102,7 +102,7 @@ async def test_declined_injection_rolls_back_user_turn(tmp_path: Path) -> None:
         agent=SimpleNamespace(supports_message_injection=True, inject_message=AsyncMock(return_value=False)),
         _active_chat_conversations={"default": conversation},
         _log_human_conversation=MagicMock(),
-        _activity=MagicMock(),
+        _activity=SimpleNamespace(alog=AsyncMock()),
     )
 
     assert await _inject_chat_message(owner, "not sent", from_person="human", thread_id="default") is False
@@ -193,7 +193,6 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
         "sakura",
         tmp_path,
         task_runner_supervisor=_StreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -214,7 +213,7 @@ async def test_phase3_nonstream_chat_uses_child(tmp_path: Path) -> None:
     runner.anima = MagicMock()
     supervisor = MagicMock()
     supervisor.run_chat = AsyncMock(return_value={"response": "child"})
-    runner._scheduler_mgr = SimpleNamespace(_chat_isolated=True, _task_runner_supervisor=supervisor)
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
     result = await runner._handle_process_message({"message": "hello"})
 

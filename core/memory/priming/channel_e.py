@@ -12,14 +12,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
-from core.paths import get_animas_dir
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.priming")
@@ -84,34 +82,13 @@ def _resolved_readable_path(path: Path, denied_roots: tuple[Path, ...]) -> Path 
     return resolved if find_denied_root(resolved, denied_roots) is None else None
 
 
-def format_elapsed(started_at: str) -> str:
-    """Format elapsed time from an ISO timestamp."""
-    if not started_at:
-        return ""
-    try:
-        start = datetime.fromisoformat(started_at)
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        elapsed_s = (datetime.now(UTC) - start).total_seconds()
-        if elapsed_s < 60:
-            return f"{int(elapsed_s)}s"
-        if elapsed_s < 3600:
-            return f"{int(elapsed_s / 60)}m"
-        return f"{elapsed_s / 3600:.1f}h"
-    except (ValueError, TypeError):
-        return ""
-
-
 async def channel_e_pending_tasks(
     anima_dir: Path,
-    get_active_parallel_tasks: Callable[[], dict[str, dict]] | None,
 ) -> str:
-    """Channel E: Pending task queue summary + active parallel tasks.
+    """Channel E: Pending task queue summary.
 
     Retrieves pending tasks from the persistent task queue.
     Human-origin tasks are marked with 🔴 HIGH priority.
-    Also includes currently running parallel tasks (Level 2 format:
-    title + description summary + status + elapsed time).
     Collection is intentionally untrimmed here; the engine applies its scaled
     budget to whole task items after cross-channel consolidation.
 
@@ -126,69 +103,27 @@ async def channel_e_pending_tasks(
     if denied_roots and unresolved_queue_path.is_symlink():
         queue_path = None
 
-    from core.taskboard.store import taskboard_db_path_for_anima
-    from core.taskboard.tasks import task_database_path
+    from core.tasks.board.tasks import task_database_path
 
-    taskboard_path = _resolved_readable_path(taskboard_db_path_for_anima(anima_dir), denied_roots)
     task_store_path = _resolved_readable_path(task_database_path(anima_dir), denied_roots)
 
-    try:
-        if queue_path is None or task_store_path is None or taskboard_path is None:
-            raise PermissionError("pending task source is explicitly denied")
-        from core.taskboard.formatting import format_tasks_for_priming
-        from core.taskboard.projector import project_anima
-        from core.taskboard.store import TaskBoardStore
-
-        store = TaskBoardStore(taskboard_path)
-        board_tasks = await asyncio.to_thread(
-            project_anima,
-            anima_dir,
-            store,
-            anima_name=anima_dir.name,
-            include_missing=True,
-            include_archived=True,
-            archived_limit=0,
-        )
-        task_updates.update({task.task_id: task.queue_updated_at or "" for task in board_tasks})
-        animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
-        queue_summary = format_tasks_for_priming(board_tasks, _ITEM_COLLECTION_BUDGET, animas_dir=animas_dir)
-        if queue_summary:
-            parts.append(queue_summary)
-    except Exception:
-        logger.debug("Channel E TaskBoard projection failed; falling back to task_queue formatter", exc_info=True)
-        from core.memory.task_queue import TaskQueueManager
+    if queue_path is not None and task_store_path is not None:
+        from core.tasks.queue import TaskQueueManager
 
         try:
-            if queue_path is None or task_store_path is None:
-                raise PermissionError("task queue is explicitly denied")
-            manager = TaskQueueManager(anima_dir)
+            manager = TaskQueueManager(anima_dir, read_only=True)
 
-            def collect_fallback() -> tuple[str, dict[str, str]]:
-                fallback_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
-                updates = {task.task_id: task.updated_at or task.ts for task in fallback_tasks}
+            def collect_pending() -> tuple[str, dict[str, str]]:
+                pending_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
+                updates = {task.task_id: task.updated_at or task.ts for task in pending_tasks}
                 return manager.format_for_priming(_ITEM_COLLECTION_BUDGET), updates
 
-            queue_summary, fallback_updates = await asyncio.to_thread(collect_fallback)
-            task_updates.update(fallback_updates)
+            queue_summary, pending_updates = await asyncio.to_thread(collect_pending)
+            task_updates.update(pending_updates)
             if queue_summary:
                 parts.append(queue_summary)
         except Exception:
             logger.debug("Channel E (pending_tasks) failed", exc_info=True)
-
-    active = get_active_parallel_tasks() if get_active_parallel_tasks else {}
-    if active:
-        lines = [t("priming.active_parallel_tasks_header")]
-        for tid, info in active.items():
-            task_updates[tid] = str(info.get("started_at", "") or "")
-            elapsed = format_elapsed(info.get("started_at", ""))
-            status = info.get("status", "running")
-            deps = info.get("depends_on", [])
-            dep_str = f", depends_on: {','.join(deps)}" if deps else ""
-            lines.append(f"- [{tid}] {info.get('title', '?')} ({status} {elapsed}{dep_str})")
-            desc = info.get("description", "")
-            if desc:
-                lines.append(f"  {desc[:100]}")
-        parts.append("\n".join(lines))
 
     # ── Overflow inbox summary ──
     overflow_dir = _resolved_readable_path(anima_dir / "state" / "overflow_inbox", denied_roots)
@@ -204,17 +139,7 @@ async def channel_e_pending_tasks(
                 reverse=True,
             )
             if files:
-                names = [f.name for f in files[:5]]
-                listing = ", ".join(names)
-                remaining = f" (+{len(files) - 5})" if len(files) > 5 else ""
-                parts.append(
-                    t(
-                        "dedup.overflow_inbox_summary",
-                        count=len(files),
-                        listing=listing,
-                        remaining=remaining,
-                    )
-                )
+                parts.append(t("dedup.overflow_inbox_summary", count=len(files)))
         except Exception:
             logger.debug("Channel E: overflow_inbox read failed", exc_info=True)
 
@@ -230,9 +155,11 @@ async def channel_e_pending_tasks(
             ]
             canonical_ids: dict[Path, str] = {}
             if queue_path is not None and task_store_path is not None:
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
-                entries = await asyncio.to_thread(TaskQueueManager(anima_dir).store.read, anima_dir.name, archived=True)
+                entries = await asyncio.to_thread(
+                    TaskQueueManager(anima_dir, read_only=True).store.read, anima_dir.name, archived=True
+                )
                 for entry in entries.values():
                     token = entry.meta.get("last_attempt_token")
                     if entry.status != "done" or not isinstance(token, str):
@@ -254,7 +181,7 @@ async def channel_e_pending_tasks(
                         content = rf.read_text(encoding="utf-8").strip()
                         task_id = canonical_ids.get(rf, rf.stem)
                         task_updates[task_id] = datetime.fromtimestamp(rf.stat().st_mtime, tz=now.tzinfo).isoformat()
-                        preview = content[:150].replace("\n", " ")
+                        preview = " ".join(content.split())[:80]
                         lines.append(f"- [{task_id}] {preview}")
                     except Exception:
                         logger.debug("Channel E: failed to read %s", rf.name, exc_info=True)

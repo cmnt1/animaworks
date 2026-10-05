@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,8 +19,6 @@ import json
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-
 
 # ── Change 1: resolve_recipient exception -> RecipientResolutionError ──
 
@@ -45,7 +44,7 @@ class TestResolveRecipientError:
 
     @patch("core.config.models.load_config")
     @patch("core.paths.get_animas_dir")
-    @patch("core.outbound.resolve_recipient")
+    @patch("core.messaging.outbound.resolve_recipient")
     def test_resolve_recipient_unexpected_exception_returns_error_json(
         self, mock_resolve, mock_animas_dir, mock_config, tmp_path
     ):
@@ -68,7 +67,7 @@ class TestResolveRecipientError:
 
     @patch("core.config.models.load_config")
     @patch("core.paths.get_animas_dir")
-    @patch("core.outbound.resolve_recipient")
+    @patch("core.messaging.outbound.resolve_recipient")
     def test_resolve_recipient_value_error_returns_fallback_guidance(
         self, mock_resolve, mock_animas_dir, mock_config, tmp_path
     ):
@@ -96,7 +95,7 @@ class TestSendExternalEmptyChannel:
         """When channel is empty and no slack/chatwork IDs are set,
         send_external should return a DeliveryFailed error since no
         valid channel can be used for delivery."""
-        from core.outbound import send_external, ResolvedRecipient
+        from core.messaging.outbound import ResolvedRecipient, send_external
 
         resolved = ResolvedRecipient(
             is_internal=False,
@@ -111,11 +110,11 @@ class TestSendExternalEmptyChannel:
         assert parsed["error_type"] == "DeliveryFailed"
         assert "admin" in parsed["message"]
 
-    @patch("core.outbound._build_channel_order", return_value=[])
+    @patch("core.messaging.outbound._build_channel_order", return_value=[])
     def test_no_channels_returns_no_channel_configured(self, mock_build):
         """When _build_channel_order returns an empty list,
         send_external should return NoChannelConfigured error."""
-        from core.outbound import send_external, ResolvedRecipient
+        from core.messaging.outbound import ResolvedRecipient, send_external
 
         resolved = ResolvedRecipient(
             is_internal=False,

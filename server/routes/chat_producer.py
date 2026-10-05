@@ -15,8 +15,8 @@ from fastapi import Request
 from core.exceptions import AnimaNotFoundError
 from core.exceptions import IPCConnectionError as IPCConnError
 from core.i18n import t
-from server.events import emit, emit_direct
-from server.routes.chat_chunk_handler import _chunk_to_event, _handle_chunk
+from server.events import emit_direct
+from server.routes.chat_chunk_handler import _chunk_to_event
 from server.routes.chat_emotion import extract_emotion
 from server.routes.chat_models import ChatRequest, _to_image_data
 from server.routes.chat_ws_effects import _emit_ws_side_effects
@@ -333,44 +333,3 @@ async def _sse_tail(
             yield ": keepalive\n\n"
 
     logger.info("[SSE-TAIL] end stream=%s seq=%d", stream.response_id, seq)
-
-
-async def _stream_events(
-    anima: Any,
-    name: str,
-    body: ChatRequest,
-    request: Request,
-    *,
-    images: list[dict[str, Any]] | None = None,
-    attachment_paths: list[str] | None = None,
-) -> AsyncIterator[str]:
-    """Async generator that yields SSE frames for a streaming chat session."""
-    from server.routes.chat_chunk_handler import _format_sse
-
-    _full_response = ""
-    try:
-        await emit(request, "anima.status", {"name": name, "status": "thinking"})
-
-        async for chunk in anima.process_message_stream(
-            body.message,
-            from_person=body.from_person,
-            intent=body.intent,
-            images=images,
-            attachment_paths=attachment_paths,
-        ):
-            frame, response_text = _handle_chunk(
-                chunk,
-                request=request,
-                anima_name=name,
-            )
-            if response_text:
-                _full_response = response_text
-            if frame:
-                yield frame
-
-    except Exception:
-        logger.exception("SSE stream error for anima=%s", name)
-        yield _format_sse("error", {"code": "STREAM_ERROR", "message": "Internal server error"})
-
-    finally:
-        await emit(request, "anima.status", {"name": name, "status": "idle"})

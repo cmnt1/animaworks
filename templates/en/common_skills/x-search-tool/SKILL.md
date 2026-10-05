@@ -1,25 +1,26 @@
 ---
 name: x-search-tool
 description: >-
-  X (Twitter) search tool for keyword search and fetching tweets from a specified account.
-  Use when: searching X for topics, reading a user timeline, or tracking trends and posts.
+  X (Twitter) search tool. Performs keyword searches and retrieves tweets from specified users.
+  Use when: Use when: you need to search topics on X, retrieve posts from specific accounts, or understand trends and public opinion.
 tags: [search, x, twitter, external]
 ---
 
+
 # X Search Tool
 
-External tool for X (Twitter) search and tweet retrieval.
+An external tool for searching X (Twitter) and retrieving tweets.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool x_search <subcommand> [args]`:
+**Bash**: Run with `animaworks-tool x_search "検索クエリ" [オプション]` or `animaworks-tool x_search --user @username`
 
-### search — Keyword search
+### search — Keyword Search
 ```bash
-animaworks-tool x_search "search query" [-n 10] [--days 7]
+animaworks-tool x_search "検索クエリ" [-n 10] [--days 7]
 ```
 
-### user_tweets — Get user tweets
+### user_tweets — Retrieve User Tweets
 ```bash
 animaworks-tool x_search --user @username [-n 10]
 ```
@@ -31,16 +32,16 @@ animaworks-tool x_search --user @username [-n 10]
 | query | string | — | Search query |
 | user | string | — | Username (with @) |
 | count | integer | 10 | Number of results |
-| days | integer | 7 | Search period in days |
+| days | integer | 7 | Number of days to search |
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
-animaworks-tool x_search "search query" [-n 10] [--days 7]
+animaworks-tool x_search "検索クエリ" [-n 10] [--days 7]
 animaworks-tool x_search --user @username [-n 10]
 ```
 
 ## Notes
 
-- X API Bearer Token must be configured
-- Search results are treated as external (untrusted) data
+- Requires X API (Bearer Token) configuration
+- Search results are treated as external sources (untrusted)

@@ -20,11 +20,16 @@ const SRC_PATH = resolve(
   "../../../server/static/pages/chat/bustup-animator.js",
 );
 
-const source = readFileSync(SRC_PATH, "utf8").replace(
-  /^import\s*\{[^}]*\}\s*from\s*"\.\.\/\.\.\/modules\/avatar-resolver\.js";?\s*$/m,
-  "const assetUrl = (a, f) => `/assets/${a}/${f}`;\n" +
-    "const bustupExpressionCandidates = (e) => [`avatar_bustup_${e}.png`];",
-);
+const source = readFileSync(SRC_PATH, "utf8")
+  .replace(
+    /^import\s+\{\s*api\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    "const api = async () => ({});",
+  )
+  .replace(
+    /^import\s*\{[^}]*\}\s*from\s*"\.\.\/\.\.\/modules\/avatar-resolver\.js";?\s*$/m,
+    "const assetUrl = (a, f) => `/assets/${a}/${f}`;\n" +
+      "const bustupExpressionCandidates = (e) => [`avatar_bustup_${e}.png`];",
+  );
 const moduleUrl =
   "data:text/javascript;base64," + Buffer.from(source, "utf8").toString("base64");
 const { selectFrameKey, nextMouthState, MOUTH_THRESHOLDS, MIN_FRAME_HOLD_MS } =

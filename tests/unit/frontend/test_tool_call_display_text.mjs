@@ -25,10 +25,19 @@ const RENDER_UTILS = resolve(
   "../../../server/static/shared/chat/render-utils.js",
 );
 
-const source = readFileSync(RENDER_UTILS, "utf8").replace(
-  /^import\s+\{\s*t\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
-  "const t = (k) => k;",
-);
+const source = readFileSync(RENDER_UTILS, "utf8")
+  .replace(
+    /^import\s+\{\s*t\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    "const t = (k) => k;",
+  )
+  .replace(
+    /^import\s+\{\s*escapeAttr\s+as\s+_escapeAttr\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    "const _escapeAttr = (value) => String(value);",
+  )
+  .replace(
+    /^import\s+\{\s*api\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    "const api = async () => ({});",
+  );
 const moduleUrl =
   "data:text/javascript;base64," + Buffer.from(source, "utf8").toString("base64");
 const { renderHistoryMessage } = await import(moduleUrl);

@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,11 +20,19 @@ from server.stream_registry import StreamRegistry
 class TestCreateApp:
     """Tests for create_app factory."""
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
+    @pytest.fixture(autouse=True)
+    def _completed_setup_config(self, data_dir_at_tmp_path: Path) -> None:
+        config_path = data_dir_at_tmp_path / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["setup_complete"] = True
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        from core.config import invalidate_cache
+
+        invalidate_cache()
+
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_no_animas_dir(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
+    def test_create_app_no_animas_dir(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -31,8 +41,6 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
@@ -40,11 +48,9 @@ class TestCreateApp:
         assert app.state.animas_dir == animas_dir
         assert app.state.shared_dir == shared_dir
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_with_animas(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
+    def test_create_app_with_animas(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -58,20 +64,14 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert "alice" in app.state.anima_names
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_dirs_without_identity(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_dirs_without_identity(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -83,20 +83,14 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert app.state.anima_names == []
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_files_in_animas_dir(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_files_in_animas_dir(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -108,23 +102,15 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert app.state.anima_names == []
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_disabled_anima(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_disabled_anima(self, mock_ws_cls, mock_sup_cls, tmp_path):
         """Anima with status.json enabled:false is excluded from anima_names."""
-        import json
-
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -145,8 +131,6 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
@@ -179,23 +163,21 @@ class TestLifespan:
         mock_app.state.discord_gateway_manager = None
         mock_app.state.zoom_gateway_manager = None
         mock_app.state.github_gateway_manager = None
-        mock_app.state.usage_governor = None
-        mock_app.state.vector_worker = None
-        mock_app.state.startup_preflight_runner = lambda *, force_all_vectordb=False: None
-        mock_app.state.force_startup_repair_all_vectordb = False
+        mock_app.state.startup_preflight_runner = lambda: None
 
         mock_scheduler = MagicMock()
         mock_scheduler_cls.return_value = mock_scheduler
+        mock_supervisor.send_request.return_value = {"collections": []}
 
         async def fake_startup_animas(app, *, suppress_errors=True):
             await app.state.supervisor.start_all(app.state.anima_names)
 
         with (
-            patch("core.org_sync.sync_org_structure"),
-            patch("core.org_sync.detect_orphan_animas"),
+            patch("core.tasks.board.tasks.ensure_task_store_schema"),
+            patch("core.org.org_sync.sync_org_structure"),
+            patch("core.org.org_sync.detect_orphan_animas"),
             patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock),
-            patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
-            patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
+            patch("server.app._prepare_child_env_urls"),
             patch("server.app._startup_animas_background", new=fake_startup_animas),
             patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
         ):
@@ -203,52 +185,40 @@ class TestLifespan:
             async with lifespan(mock_app):
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
+                scheduled_ids = {call.kwargs.get("id") for call in mock_scheduler.add_job.call_args_list}
+                assert "asset_reconciliation" not in scheduled_ids
+
+                from core.memory.rag.vector_client import VectorClient
+                from core.memory.rag.vector_registry import get_vector_store
+
+                store = get_vector_store("alice")
+                assert isinstance(store, VectorClient)
+                assert await asyncio.to_thread(store.list_collections) == []
+                mock_supervisor.send_request.assert_awaited_once_with(
+                    "alice",
+                    "memory",
+                    {"method": "memory.list_collections", "params": {}},
+                )
 
         mock_supervisor.shutdown_all.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    @patch("server.app.AsyncIOScheduler")
-    async def test_lifespan_does_not_wait_for_vector_worker_start(self, mock_scheduler_cls):
-        from server.app import lifespan
+    def test_startup_asset_reconciliation_is_scheduled_once(self, tmp_path):
+        from types import SimpleNamespace
 
-        mock_app = MagicMock()
-        mock_supervisor = AsyncMock()
-        mock_ws_manager = AsyncMock()
-        mock_vector_worker = AsyncMock()
-        vector_started = asyncio.Event()
-        release_vector_start = asyncio.Event()
+        from server.app import _schedule_startup_asset_reconciliation
 
-        async def slow_vector_start():
-            vector_started.set()
-            await release_vector_start.wait()
+        app = SimpleNamespace(state=SimpleNamespace(animas_dir=tmp_path))
+        with patch("server.app.spawn") as mock_spawn:
+            _schedule_startup_asset_reconciliation(app)
+            _schedule_startup_asset_reconciliation(app)
 
-        mock_vector_worker.start.side_effect = slow_vector_start
-        mock_app.state.setup_complete = True
-        mock_app.state.supervisor = mock_supervisor
-        mock_app.state.ws_manager = mock_ws_manager
-        mock_app.state.anima_names = []
-        mock_app.state.animas_dir = MagicMock()
-        mock_app.state.shared_dir = MagicMock()
-        mock_app.state.stream_registry = StreamRegistry()
-        mock_app.state.vector_worker = mock_vector_worker
-        mock_app.state.slack_socket_manager = None
-        mock_app.state.discord_gateway_manager = None
-        mock_app.state.usage_governor = None
-
-        mock_scheduler = MagicMock()
-        mock_scheduler_cls.return_value = mock_scheduler
-
-        with (
-            patch("core.org_sync.detect_orphan_animas"),
-            patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
-        ):
-            mock_gp.return_value = MagicMock(loaded=True, check_integrity=MagicMock(return_value=True))
-            async with asyncio.timeout(1.0):
-                async with lifespan(mock_app):
-                    await asyncio.wait_for(vector_started.wait(), timeout=1.0)
-                    release_vector_start.set()
-
-        mock_vector_worker.start.assert_awaited_once()
+        mock_spawn.assert_called_once()
+        mock_spawn.assert_called_once_with(
+            mock_spawn.call_args.args[0],
+            name="startup-asset-reconciliation",
+        )
+        mock_spawn.call_args.args[0].close()
+        assert app.state._asset_reconciliation_scheduled is True
 
 
 # ── Public icon path (auth bypass regex) ────────────

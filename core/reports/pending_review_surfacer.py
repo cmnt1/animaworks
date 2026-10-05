@@ -233,8 +233,8 @@ def surface_pending_reviews(
     write_pending: bool = True,
 ) -> list[dict[str, Any]]:
     """Enqueue an idempotent urgent review task per stuck draft. Returns surfaced items."""
-    from core.memory.task_queue import TaskQueueManager
     from core.paths import get_animas_dir
+    from core.tasks.queue import TaskQueueManager
 
     products_root = products_root or DEFAULT_PRODUCT_ROOT
     animas_dir = animas_dir or get_animas_dir()

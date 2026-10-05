@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -18,6 +20,7 @@ from core.config import load_config
 from core.config.models import VoiceConfig
 from core.voice.session import VoiceSession
 from core.voice.stt import VoiceSTT
+from core.voice.transport import VoiceTransport
 from core.voice.tts_base import TTSConfig
 from core.voice.tts_factory import create_tts_provider
 
@@ -31,6 +34,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+class FastAPIWebSocketVoiceTransport:
+    """Adapt a FastAPI WebSocket to the voice transport protocol."""
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self._websocket = websocket
+
+    async def send_event(self, event: dict[str, Any]) -> None:
+        await self._websocket.send_json(event)
+
+    async def send_audio(self, data: bytes) -> None:
+        await self._websocket.send_bytes(data)
+
+
 # ── Active session tracking ─────────────────────────────────────
 
 _active_sessions: dict[str, WebSocket] = {}
@@ -38,18 +55,29 @@ _active_sessions: dict[str, WebSocket] = {}
 # ── STT singleton ───────────────────────────────────────────────
 
 _stt_instance: VoiceSTT | None = None
+_stt_instance_config: tuple[str, str, str, str | None] | None = None
+_stt_lock = threading.Lock()
 
 
 def _get_stt(voice_config: VoiceConfig) -> VoiceSTT:
-    """Lazy-load VoiceSTT singleton."""
-    global _stt_instance
-    if _stt_instance is None:
-        _stt_instance = VoiceSTT(
-            model_name=voice_config.stt_model,
-            device=voice_config.stt_device,
-            compute_type=voice_config.stt_compute_type,
-        )
-    return _stt_instance
+    """Return the thread-safe STT singleton for the current voice settings."""
+    global _stt_instance, _stt_instance_config
+    config = (
+        voice_config.stt_model,
+        voice_config.stt_device,
+        voice_config.stt_compute_type,
+        voice_config.stt_language,
+    )
+    with _stt_lock:
+        if _stt_instance is None or _stt_instance_config != config:
+            _stt_instance = VoiceSTT(
+                model_name=voice_config.stt_model,
+                device=voice_config.stt_device,
+                compute_type=voice_config.stt_compute_type,
+                language=voice_config.stt_language,
+            )
+            _stt_instance_config = config
+        return _stt_instance
 
 
 def _load_per_anima_voice(
@@ -166,7 +194,7 @@ def create_voice_router() -> APIRouter:
                 try:
                     await old_ws.close(code=4000, reason="Replaced by new session")
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
         _active_sessions[name] = ws
 
         session = None
@@ -189,9 +217,10 @@ def create_voice_router() -> APIRouter:
                 tts_config.speed,
             )
 
+            transport: VoiceTransport = FastAPIWebSocketVoiceTransport(ws)
             session = VoiceSession(
                 anima_name=name,
-                ws=ws,
+                transport=transport,
                 stt=stt,
                 tts=tts,
                 tts_config=tts_config,
@@ -239,7 +268,7 @@ def create_voice_router() -> APIRouter:
             try:
                 await ws.send_json({"type": "error", "message": str(e)})
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         finally:
             for t in running_tasks:
                 if not t.done():
@@ -250,7 +279,7 @@ def create_voice_router() -> APIRouter:
                 try:
                     await session.close()
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
             if _active_sessions.get(name) == ws:
                 _active_sessions.pop(name, None)
 

@@ -13,7 +13,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def known_names():
     with patch(
-        "server.slack_socket._known_anima_names",
+        "server.gateways.slack_socket._known_anima_names",
         return_value=frozenset({"mei", "sakura", "aoi"}),
     ):
         yield
@@ -21,7 +21,7 @@ def known_names():
 
 class TestDetectPlainAnimaMentions:
     def _detect(self, text: str) -> list[str]:
-        from server.slack_socket import _detect_plain_anima_mentions
+        from server.gateways.slack_socket import _detect_plain_anima_mentions
 
         return _detect_plain_anima_mentions(text)
 
@@ -52,12 +52,12 @@ class TestDetectPlainAnimaMentions:
 
 
 class TestPlainMentionRouting:
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_plain_mention_routes_to_named_anima(
         self,
         mock_config,
@@ -69,7 +69,7 @@ class TestPlainMentionRouting:
         tmp_path,
     ):
         """@mei in a sakura-mapped channel delivers a question to mei, not sakura."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(
             enabled=True,
@@ -121,12 +121,12 @@ class TestPlainMentionRouting:
         assert call_kwargs["source_message_id"] == "7770000001.000001#mei"
         assert call_kwargs["external_thread_ts"] == "7770000001.000001"
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_multi_mention_fanout(
         self,
         mock_config,
@@ -138,7 +138,7 @@ class TestPlainMentionRouting:
         tmp_path,
     ):
         """@mei @aoi delivers to both animas with distinct dedup ids."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(
             enabled=True,
@@ -184,12 +184,12 @@ class TestPlainMentionRouting:
         targets = [c[0][1] for c in mock_messenger_cls.call_args_list]
         assert targets == ["mei", "aoi"]
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_no_plain_mention_falls_through_to_default(
         self,
         mock_config,
@@ -201,7 +201,7 @@ class TestPlainMentionRouting:
         tmp_path,
     ):
         """Without a plain mention the channel default still gets observe."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(
             enabled=True,

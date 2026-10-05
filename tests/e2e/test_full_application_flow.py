@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.memory.conversation.finalize import finalize_session
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -19,10 +21,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory import MemoryManager
-from core.memory.consolidation import ConsolidationEngine
-from core.memory.conversation import ConversationMemory
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming import PrimingEngine, format_priming_section
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -155,7 +157,7 @@ def mock_agent_core():
     Returns:
         Mock instance with run_cycle() that returns a predefined response
     """
-    with patch("core.agent.AgentCore") as mock:
+    with patch("core.agent.agent_core.AgentCore") as mock:
         instance = mock.return_value
 
         # Mock run_cycle to return a realistic CycleResult
@@ -258,8 +260,8 @@ Combined content from both files with duplicates removed.
 
     with (
         patch("litellm.acompletion") as mock,
-        patch("core.memory.conversation_compression._call_llm", new_callable=AsyncMock) as mock_call_llm,
-        patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock) as mock_one_shot,
+        patch("core.memory.conversation.compression._call_llm", new_callable=AsyncMock) as mock_call_llm,
+        patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock) as mock_one_shot,
     ):
 
         async def async_response(*args, **kwargs):
@@ -392,7 +394,7 @@ Senior Software Engineer
     conv_memory.save()
 
     # Step 5: Finalize session (triggers encoding; min_turns=3 by default)
-    await conv_memory.finalize_session()
+    await finalize_session(conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save)
 
     # Step 6: Verify encoding to episodes
     episode_file = anima_dir / "episodes" / f"{today}.md"
@@ -418,7 +420,7 @@ Senior Software Engineer
 # NOTE: The following tests were removed because ConsolidationEngine no longer
 # drives consolidation directly (daily_consolidate / weekly_integrate methods
 # were removed). Consolidation is now Anima-driven via run_consolidation()
-# tool-call loops. See lifecycle.py and core/memory/consolidation.py.
+# tool-call loops. See lifecycle.py and core/memory/maintenance/consolidation.py.
 #
 # Removed tests:
 #   - test_consolidation_lifecycle
@@ -668,7 +670,7 @@ async def test_conversation_finalization_creates_episode(full_anima_environment,
     conv_memory.save()
 
     # Finalize session
-    await conv_memory.finalize_session()
+    await finalize_session(conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save)
 
     # Verify episode was created
     today = now_jst().date()
@@ -692,7 +694,7 @@ async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from core.schemas import ModelConfig
-    from core.supervisor.scheduler_manager import SchedulerManager
+    from core.runtime.scheduler_manager import SchedulerManager
     from core.time_utils import get_app_timezone
 
     anima = MagicMock()
@@ -704,7 +706,7 @@ async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
     mgr.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
 
     with patch(
-        "core.supervisor.scheduler_manager.load_config",
+        "core.runtime.scheduler_manager.load_config",
         return_value=SimpleNamespace(
             heartbeat=SimpleNamespace(interval_minutes=30),
             activity_level=100,

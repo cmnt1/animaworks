@@ -109,8 +109,9 @@ class DailyConsolidationGate:
     should_run: bool
     activity_count: int
     episode_count: int
-    carryover_count: int
     threshold: int
+    pending_backfill_days: int = 0
+    summary_input_entries: int | None = None
 
 
 def evaluate_daily_consolidation_gate(
@@ -119,10 +120,22 @@ def evaluate_daily_consolidation_gate(
     *,
     threshold: int,
     hours: int = 24,
+    backfill_days: int = 1,
+    model: str | None = None,
+    max_input_bytes: int = 200 * 1024,
+    exclude_noop_cron: bool = False,
+    max_backfill_days: int | None = None,
+    compaction_settings: Any | None = None,
 ) -> DailyConsolidationGate:
-    """Return whether daily consolidation should run for one anima."""
-    from core.memory.consolidation import ConsolidationEngine
+    """Return whether daily consolidation should run for one anima.
 
+    A pending unprocessed activity chunk within the configured recovery window
+    also makes the daily job eligible, even when yesterday itself was quiet.
+    """
+    from core.memory.maintenance.activity_compaction import ActivityCompactionSettings, count_rendered_activity_entries
+    from core.memory.maintenance.consolidation import ConsolidationEngine
+
+    settings = compaction_settings or ActivityCompactionSettings()
     engine = ConsolidationEngine(anima_dir, anima_name)
     episode_count = 0
     activity_count = 0
@@ -131,21 +144,59 @@ def evaluate_daily_consolidation_gate(
     except Exception:
         logger.debug("Failed to count recent episodes for %s", anima_name, exc_info=True)
     try:
-        _target_date, window_start, window_end = engine.previous_local_day_window()
+        target_date, window_start, window_end = engine.previous_local_day_window()
         activity_count = engine.count_recent_activity_entries(
             hours=hours,
             since=window_start,
             until=window_end,
         )
     except Exception:
+        target_date = None
         logger.debug("Failed to count recent activity entries for %s", anima_name, exc_info=True)
-    carryover_count = engine.count_pending_phase_b_carryover()
+
+    pending_backfill_days = 0
+    summary_input_entries: int | None = None
+    if target_date is not None and callable(getattr(engine, "local_day_window", None)):
+        try:
+            lookback = max(1, backfill_days)
+            candidate_dates = [target_date]
+            candidate_dates.extend(target_date - timedelta(days=offset) for offset in range(lookback - 1, 0, -1))
+            pending_by_date: dict[Any, list[str]] = {}
+            for candidate_date in candidate_dates:
+                pending, _filter_applied = engine.collect_pending_activity_chunks(
+                    candidate_date,
+                    model=model,
+                    max_input_bytes=max_input_bytes,
+                    exclude_noop_cron=exclude_noop_cron,
+                    compaction_settings=settings,
+                )
+                if pending:
+                    pending_by_date[candidate_date] = pending
+            if backfill_days > 1:
+                pending_backfill_days = len(pending_by_date)
+
+            older_pending = [day for day in candidate_dates[1:] if day in pending_by_date]
+            max_older = (
+                max_backfill_days
+                if max_backfill_days is not None
+                else ConsolidationConfig().episode_summary_backfill_max_days_per_run
+            )
+            selected_dates = ([target_date] if target_date in pending_by_date else []) + older_pending[
+                : max(0, max_older)
+            ]
+            summary_input_entries = sum(count_rendered_activity_entries(pending_by_date[day]) for day in selected_dates)
+        except Exception:
+            logger.debug("Failed to inspect episode backfill window for %s", anima_name, exc_info=True)
+            pending_backfill_days = 0
+            summary_input_entries = None
+
     return DailyConsolidationGate(
-        should_run=activity_count >= threshold or episode_count >= threshold or carryover_count > 0,
+        should_run=activity_count >= threshold or episode_count >= threshold or pending_backfill_days > 0,
         activity_count=activity_count,
         episode_count=episode_count,
-        carryover_count=carryover_count,
         threshold=threshold,
+        pending_backfill_days=pending_backfill_days,
+        summary_input_entries=summary_input_entries,
     )
 
 
@@ -172,10 +223,14 @@ async def run_daily_consolidation_post_processing(
     """Run framework-side daily consolidation post-processing."""
     if getattr(consolidation_cfg, "synaptic_downscaling_enabled", False) is True:
         try:
-            from core.memory.forgetting import ForgettingEngine
+            from core.memory.maintenance.forgetting import ForgettingEngine
 
             forgetter = ForgettingEngine(anima_dir, anima_name)
-            downscaling_result = forgetter.synaptic_downscaling()
+            # The ForgettingEngine uses synchronous vector operations which must run
+            # on a worker thread: inside the server process the vector store is
+            # bridged to the owner event loop, so calling it directly on the
+            # root loop raises (and silently scans 0 chunks).
+            downscaling_result = await asyncio.to_thread(forgetter.synaptic_downscaling)
             logger.info("Synaptic downscaling for %s: %s", anima_name, downscaling_result)
         except Exception:
             logger.exception("Synaptic downscaling failed for anima=%s", anima_name)
@@ -186,24 +241,6 @@ async def run_daily_consolidation_post_processing(
         consolidation_cfg,
         model=model,
     )
-
-    try:
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await asyncio.to_thread(engine._rebuild_rag_index)
-    except Exception:
-        logger.exception("RAG index rebuild failed for anima=%s", anima_name)
-
-    try:
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await engine.ingest_recent_to_backend(hours=48)
-    except Exception:
-        logger.exception("Neo4j ingest failed for anima=%s", anima_name)
-
-    await detect_communities_if_neo4j(anima_dir, anima_name)
 
 
 async def run_weekly_integration_post_processing(
@@ -217,24 +254,6 @@ async def run_weekly_integration_post_processing(
     if getattr(consolidation_cfg, "weekly_distillation_enabled", False) is True:
         await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
 
-    try:
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await asyncio.to_thread(engine._rebuild_rag_index)
-    except Exception:
-        logger.exception("RAG index rebuild failed for anima=%s", anima_name)
-
-    try:
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await engine.ingest_recent_to_backend(hours=168)
-    except Exception:
-        logger.exception("Neo4j ingest failed for anima=%s", anima_name)
-
-    await detect_communities_if_neo4j(anima_dir, anima_name)
-
 
 async def run_weekly_pattern_distillation(
     anima_dir: Path,
@@ -244,7 +263,7 @@ async def run_weekly_pattern_distillation(
 ) -> None:
     """Distill repeated activity patterns into procedures during weekly post-processing."""
     try:
-        from core.memory.distillation import ProceduralDistiller
+        from core.memory.maintenance.distillation import ProceduralDistiller
 
         distiller = ProceduralDistiller(anima_dir, anima_name)
         result = await distiller.weekly_pattern_distill(model=model, days=7)
@@ -298,323 +317,3 @@ async def run_knowledge_self_correction_if_enabled(
         logger.info("Knowledge self-correction post-processing for %s: %s", anima_name, result)
     except Exception:
         logger.exception("Knowledge self-correction failed for anima=%s", anima_name)
-
-
-async def detect_communities_if_neo4j(anima_dir: Path, anima_name: str) -> None:
-    """Run batch community detection if the anima uses the Neo4j backend."""
-    backend = None
-    try:
-        from core.memory.backend.registry import get_backend, resolve_backend_type
-
-        backend_type = resolve_backend_type(anima_dir)
-        if backend_type != "neo4j":
-            return
-
-        backend = get_backend(backend_type, anima_dir)
-        driver = await backend._ensure_driver()
-
-        from core.memory.graph.community import CommunityDetector
-
-        bg_model, _, bg_credential = backend._resolve_extraction_config()
-        detector = CommunityDetector(
-            driver,
-            backend._group_id,
-            model=bg_model,
-            locale=backend._resolve_locale(),
-            credential=bg_credential,
-        )
-        communities = await detector.detect_and_store()
-        stats = await detector.get_community_stats()
-        logger.info(
-            "Community detection for %s: detected=%d stored=%d memberships=%d",
-            anima_name,
-            len(communities),
-            stats["communities"],
-            stats["memberships"],
-        )
-    except Exception:
-        logger.exception("Community detection failed for anima=%s", anima_name)
-    finally:
-        if backend is not None:
-            try:
-                await backend.close()
-            except Exception:
-                logger.debug("Failed to close Neo4j backend after community detection", exc_info=True)
-
-
-class SystemConsolidationMixin:
-    """Mixin providing daily and weekly consolidation handlers."""
-
-    async def _handle_daily_consolidation(self, scheduled: bool = False) -> None:
-        """Run daily consolidation for all animas.
-
-        New flow: Anima-driven consolidation via run_consolidation(),
-        followed by framework-side post-processing.
-
-        When ``scheduled`` is True (called from the scheduler), skip if a
-        successful run already occurred today (manual execution already done).
-        """
-        from core.lifecycle.system_status import (
-            already_ran_within_interval,
-            build_status_payload,
-            mark_failed,
-            mark_started,
-            mark_succeeded,
-        )
-
-        if scheduled and already_ran_within_interval("daily"):
-            logger.info("Daily consolidation skipped: last success was less than 24 hours ago")
-            return
-
-        lock = self._system_job_locks["daily"]
-        if lock.locked():
-            logger.info("Daily consolidation skipped: already running")
-            return
-        async with lock:
-            mark_started("daily")
-            if self._ws_broadcast:
-                try:
-                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                await self._handle_daily_consolidation_inner()
-                mark_succeeded("daily")
-            except Exception as exc:
-                mark_failed("daily", str(exc))
-                raise
-            finally:
-                if self._ws_broadcast:
-                    try:
-                        await self._ws_broadcast(
-                            {"type": "system.consolidation_status", "data": build_status_payload()}
-                        )
-                    except Exception:
-                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-
-    async def _handle_daily_consolidation_inner(self) -> None:
-        """Inner implementation of daily consolidation."""
-        logger.info("Starting system-wide daily consolidation")
-
-        config = load_config()
-        consolidation_cfg = getattr(config, "consolidation", None)
-
-        # Default config if not present
-        enabled = True
-        min_episodes = ConsolidationConfig().min_episodes_threshold
-        model = ConsolidationConfig().llm_model
-
-        if consolidation_cfg:
-            enabled = getattr(consolidation_cfg, "daily_enabled", True)
-            min_episodes = getattr(consolidation_cfg, "min_episodes_threshold", min_episodes)
-            model = getattr(consolidation_cfg, "llm_model", model)
-        cooldown_seconds = resolve_post_processing_cooldown_seconds(consolidation_cfg)
-
-        if not enabled:
-            logger.info("Daily consolidation is disabled in config")
-            return
-
-        anima_items = list(self.animas.items())
-        for index, (anima_name, anima) in enumerate(anima_items):
-            if should_skip_inactive_consolidation(anima.memory.anima_dir, anima_name, consolidation_cfg):
-                continue
-            gate = evaluate_daily_consolidation_gate(
-                anima.memory.anima_dir,
-                anima_name,
-                threshold=min_episodes,
-                hours=24,
-            )
-            if not gate.should_run:
-                logger.info(
-                    "Daily consolidation skipped for %s: activity=%d episodes=%d carryover=%d threshold=%d",
-                    anima_name,
-                    gate.activity_count,
-                    gate.episode_count,
-                    gate.carryover_count,
-                    gate.threshold,
-                )
-                continue
-
-            result = None
-            should_retry = False
-            try:
-                result = await anima.run_consolidation(consolidation_type="daily")
-
-                if result.duration_ms < 10_000 and result.action not in {"completed", "skipped"}:
-                    logger.warning(
-                        "Daily consolidation too short for %s (%dms), scheduling retry",
-                        anima_name,
-                        result.duration_ms,
-                    )
-                    should_retry = True
-
-                logger.info(
-                    "Daily consolidation for %s: duration_ms=%d",
-                    anima_name,
-                    result.duration_ms,
-                )
-            except TimeoutError:
-                should_retry = True
-                logger.warning(
-                    "consolidation_timeout anima=%s phase=phase_b type=daily",
-                    anima_name,
-                )
-            except Exception:
-                should_retry = True
-                logger.exception("Daily consolidation failed for anima=%s", anima_name)
-            finally:
-                if result is None or result.action != "skipped":
-                    await run_daily_consolidation_post_processing(
-                        anima_name,
-                        anima.memory.anima_dir,
-                        consolidation_cfg=consolidation_cfg,
-                        model=model,
-                    )
-
-            if should_retry:
-                self._schedule_consolidation_retry(anima_name)
-
-            if self._ws_broadcast:
-                await self._ws_broadcast(
-                    {
-                        "type": "system.consolidation",
-                        "data": {
-                            "anima": anima_name,
-                            "type": "daily",
-                            "summary": result.summary[:500] if result else "",
-                            "duration_ms": result.duration_ms if result else 0,
-                        },
-                    }
-                )
-
-            if cooldown_seconds > 0 and index < len(anima_items) - 1:
-                logger.info(
-                    "Daily consolidation post-processing cooldown before next anima: %.1fs",
-                    cooldown_seconds,
-                )
-                await asyncio.sleep(cooldown_seconds)
-
-    async def _handle_weekly_integration(self, scheduled: bool = False) -> None:
-        """Run weekly integration for all animas.
-
-        New flow: Anima-driven consolidation via run_consolidation(),
-        followed by framework-side post-processing.
-
-        When ``scheduled`` is True, skip if a successful run already occurred
-        within the current ISO week.
-        """
-        from core.lifecycle.system_status import (
-            already_ran_within_interval,
-            build_status_payload,
-            mark_failed,
-            mark_started,
-            mark_succeeded,
-        )
-
-        if scheduled and already_ran_within_interval("weekly"):
-            logger.info("Weekly integration skipped: last success was less than 7 days ago")
-            return
-
-        lock = self._system_job_locks["weekly"]
-        if lock.locked():
-            logger.info("Weekly integration skipped: already running")
-            return
-        async with lock:
-            mark_started("weekly")
-            if self._ws_broadcast:
-                try:
-                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                await self._handle_weekly_integration_inner()
-                mark_succeeded("weekly")
-            except Exception as exc:
-                mark_failed("weekly", str(exc))
-                raise
-            finally:
-                if self._ws_broadcast:
-                    try:
-                        await self._ws_broadcast(
-                            {"type": "system.consolidation_status", "data": build_status_payload()}
-                        )
-                    except Exception:
-                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-
-    async def _handle_weekly_integration_inner(self) -> None:
-        """Inner implementation of weekly integration."""
-        logger.info("Starting system-wide weekly integration")
-
-        config = load_config()
-        consolidation_cfg = getattr(config, "consolidation", None)
-
-        # Default config
-        enabled = True
-        model = ConsolidationConfig().llm_model
-
-        if consolidation_cfg:
-            enabled = getattr(consolidation_cfg, "weekly_enabled", True)
-            model = getattr(consolidation_cfg, "llm_model", model)
-
-        if not enabled:
-            logger.info("Weekly integration is disabled in config")
-            return
-
-        for anima_name, anima in self.animas.items():
-            if should_skip_inactive_consolidation(anima.memory.anima_dir, anima_name, consolidation_cfg):
-                continue
-            result = None
-            try:
-                result = await anima.run_consolidation(consolidation_type="weekly")
-
-                logger.info(
-                    "Weekly integration for %s: duration_ms=%d",
-                    anima_name,
-                    result.duration_ms,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "consolidation_timeout anima=%s phase=phase_b type=weekly",
-                    anima_name,
-                )
-            except Exception:
-                logger.exception("Weekly integration failed for anima=%s", anima_name)
-            finally:
-                await run_weekly_integration_post_processing(
-                    anima_name,
-                    anima.memory.anima_dir,
-                    consolidation_cfg=consolidation_cfg,
-                    model=model,
-                )
-
-            if self._ws_broadcast:
-                await self._ws_broadcast(
-                    {
-                        "type": "system.consolidation",
-                        "data": {
-                            "anima": anima_name,
-                            "type": "weekly",
-                            "summary": result.summary[:500] if result else "",
-                            "duration_ms": result.duration_ms if result else 0,
-                        },
-                    }
-                )
-
-    async def _run_knowledge_self_correction_if_enabled(
-        anima,  # noqa: ANN001
-        anima_name: str,
-        consolidation_cfg,
-        *,
-        model: str,
-    ) -> None:
-        await run_knowledge_self_correction_if_enabled(
-            anima.memory.anima_dir,
-            anima_name,
-            consolidation_cfg,
-            model=model,
-        )
-
-    @staticmethod
-    async def _detect_communities_if_neo4j(anima) -> None:  # noqa: ANN001
-        """Run batch community detection if Neo4j backend is active."""
-        await detect_communities_if_neo4j(anima.memory.anima_dir, anima.name)

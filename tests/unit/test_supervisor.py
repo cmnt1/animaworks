@@ -17,12 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import (
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import now_jst
 
 
@@ -31,11 +31,7 @@ def temp_dirs():
     """Create temporary directories for testing."""
     with TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        yield {
-            "animas_dir": tmp / "animas",
-            "shared_dir": tmp / "shared",
-            "run_dir": tmp / "run"
-        }
+        yield {"animas_dir": tmp / "animas", "shared_dir": tmp / "shared", "run_dir": tmp / "run"}
 
 
 @pytest.fixture
@@ -45,17 +41,10 @@ def supervisor(temp_dirs):
         animas_dir=temp_dirs["animas_dir"],
         shared_dir=temp_dirs["shared_dir"],
         run_dir=temp_dirs["run_dir"],
-        restart_policy=RestartPolicy(
-            max_retries=3,
-            backoff_base_sec=0.1,
-            backoff_max_sec=1.0
-        ),
+        restart_policy=RestartPolicy(max_retries=3, backoff_base_sec=0.1, backoff_max_sec=1.0),
         health_config=HealthConfig(
-            ping_interval_sec=0.5,
-            ping_timeout_sec=0.2,
-            max_missed_pings=2,
-            startup_grace_sec=0.5
-        )
+            ping_interval_sec=0.5, ping_timeout_sec=0.2, max_missed_pings=2, startup_grace_sec=0.5
+        ),
     )
 
 
@@ -78,18 +67,12 @@ async def test_get_process_status_not_found(supervisor):
 @pytest.mark.asyncio
 async def test_restart_policy_backoff():
     """Test exponential backoff calculation."""
-    policy = RestartPolicy(
-        backoff_base_sec=2.0,
-        backoff_max_sec=60.0
-    )
+    policy = RestartPolicy(backoff_base_sec=2.0, backoff_max_sec=60.0)
 
     # Calculate backoffs for different retry counts
     backoffs = []
     for retry in range(7):
-        backoff = min(
-            policy.backoff_base_sec * (2 ** retry),
-            policy.backoff_max_sec
-        )
+        backoff = min(policy.backoff_base_sec * (2**retry), policy.backoff_max_sec)
         backoffs.append(backoff)
 
     assert backoffs == [2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
@@ -234,8 +217,9 @@ async def test_shutdown_retains_short_stop_timeout(supervisor):
 @pytest.mark.asyncio
 async def test_restart_anima_preserves_failure_state_during_shutdown(supervisor):
     """restart_anima's counter reset must not touch failure-tracking state mid-shutdown (#243)."""
-    supervisor._permanently_failed.add("test_anima")
-    supervisor._restart_counts["test_anima"] = 2
+    ctl = supervisor._restart_ctl
+    ctl.record_failure("test_anima", "e1")
+    ctl.record_failure("test_anima", "e2")
     supervisor._shutdown = True
     handle = AsyncMock(spec=ProcessHandle)
     supervisor.processes["test_anima"] = handle
@@ -243,8 +227,9 @@ async def test_restart_anima_preserves_failure_state_during_shutdown(supervisor)
 
     await supervisor.restart_anima("test_anima")
 
-    assert "test_anima" in supervisor._permanently_failed
-    assert supervisor._restart_counts["test_anima"] == 2
+    rec = ctl.get("test_anima")
+    assert rec is not None
+    assert rec.attempts == 2
 
 
 @pytest.mark.asyncio
@@ -256,8 +241,7 @@ async def test_get_process_status_starting_timeout_skips_write_during_shutdown(s
     status = supervisor.get_process_status("test_anima")
 
     assert status["status"] == "error"
-    assert "test_anima" not in supervisor._failure_reasons
-    assert "test_anima" not in supervisor._permanently_failed
+    assert supervisor._restart_ctl.get("test_anima") is None
 
 
 @pytest.mark.asyncio
@@ -279,13 +263,12 @@ async def test_get_process_status_running_timeout_skips_write_during_shutdown(su
     status = supervisor.get_process_status("test_anima")
 
     assert status["status"] == "error"
-    assert "test_anima" not in supervisor._failure_reasons
-    assert "test_anima" not in supervisor._permanently_failed
+    assert supervisor._restart_ctl.get("test_anima") is None
 
 
 @pytest.mark.asyncio
 async def test_reconcile_recovery_loop_stops_at_shutdown(supervisor):
-    """The permanently-failed recovery loop must not run once shutdown has started (#243)."""
+    """The restart-ensuring loop must not run once shutdown has started (#243)."""
     supervisor.animas_dir.mkdir(parents=True, exist_ok=True)
     anima_dir = supervisor.animas_dir / "test_anima"
     anima_dir.mkdir()
@@ -294,15 +277,17 @@ async def test_reconcile_recovery_loop_stops_at_shutdown(supervisor):
 
     handle = AsyncMock(spec=ProcessHandle)
     supervisor.processes["test_anima"] = handle
-    supervisor._permanently_failed.add("test_anima")
-    supervisor._failed_log_times["test_anima"] = 0.0
+    ctl = supervisor._restart_ctl
+    ctl.record_failure("test_anima", "e1")
+    ctl.record_failure("test_anima", "e2")
+    ctl.record_failure("test_anima", "e3")
     supervisor._shutdown = True
     supervisor.start_anima = AsyncMock()
     supervisor._reconcile_assets = AsyncMock()
 
     await supervisor._reconcile()
 
-    assert "test_anima" in supervisor._permanently_failed
+    assert ctl.get("test_anima") is not None  # record preserved during shutdown
     supervisor.start_anima.assert_not_awaited()
     supervisor._reconcile_assets.assert_not_awaited()
 

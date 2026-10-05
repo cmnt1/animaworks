@@ -103,7 +103,7 @@ class TestGlobalDefaultPropagation:
 
     def test_heartbeat_default_model_used_by_resolve_background_config(self):
         """When per-anima is unset, _resolve_background_config uses global."""
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
 
         mc = ModelConfig(model="claude-opus-4-6")
 
@@ -127,7 +127,7 @@ class TestGlobalDefaultPropagation:
     @pytest.mark.parametrize("credential_available", [False, True])
     def test_per_anima_overrides_global(self, credential_available):
         """Cross-provider priority requires its own explicitly configured auth."""
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
         from core.config.models import CredentialConfig
 
         mc = ModelConfig(
@@ -206,7 +206,7 @@ class TestCrossProviderCredential:
     """Test background_credential resolves a different provider's creds."""
 
     def test_credential_applied_to_background_config(self):
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
         from core.config.models import CredentialConfig
 
         mc = ModelConfig(
@@ -242,7 +242,7 @@ class TestCrossProviderCredential:
 
     def test_missing_credential_rejects_cross_provider_reuse(self):
         """An unknown background credential must not leak the main provider key."""
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
 
         mc = ModelConfig(
             model="claude-opus-4-6",
@@ -276,8 +276,8 @@ class TestInboxBackgroundModelResolution:
 
     def test_inbox_mixin_resolves_background_via_heartbeat_mixin(self):
         """InboxMixin + HeartbeatMixin MRO gives inbox access to background config."""
-        from core._anima_heartbeat import HeartbeatMixin
-        from core._anima_inbox import InboxMixin
+        from core.anima.heartbeat import HeartbeatMixin
+        from core.anima.inbox import InboxMixin
 
         mc = ModelConfig(
             model="claude-opus-4-6",
@@ -298,8 +298,8 @@ class TestInboxBackgroundModelResolution:
 
     def test_inbox_credential_resolution_e2e(self, tmp_path: Path):
         """Full E2E: status.json with background_model + credential → inbox resolution."""
-        from core._anima_heartbeat import HeartbeatMixin
-        from core._anima_inbox import InboxMixin
+        from core.anima.heartbeat import HeartbeatMixin
+        from core.anima.inbox import InboxMixin
         from core.config.models import CredentialConfig
 
         anima_dir = tmp_path / "animas" / "test_inbox"

@@ -6,6 +6,7 @@
 Tests the complete flow: posting a message with @all / @name to a board channel
 triggers DM delivery of board_mention messages to target Animas' inboxes.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.tooling.handler import ToolHandler
 
 
@@ -52,7 +53,8 @@ def _make_anima_dir(tmp_path: Path, name: str) -> Path:
     anima_dir = tmp_path / "animas" / name
     anima_dir.mkdir(parents=True)
     (anima_dir / "identity.md").write_text(
-        f"# {name}\n\nテスト用Anima。\n", encoding="utf-8",
+        f"# {name}\n\nテスト用Anima。\n",
+        encoding="utf-8",
     )
     (anima_dir / "status.json").write_text("{}", encoding="utf-8")
     (anima_dir / "permissions.md").write_text(
@@ -104,7 +106,10 @@ class TestBoardMentionFanout:
     """Board mention fanout: @all / @name in post_channel triggers DM delivery."""
 
     def test_e2e_post_channel_at_all_fanout(
-        self, tmp_path: Path, shared_dir: Path, sockets_dir: Path,
+        self,
+        tmp_path: Path,
+        shared_dir: Path,
+        sockets_dir: Path,
     ) -> None:
         """@all fanout delivers board_mention DMs to all running Animas except sender."""
         # Setup anima directories
@@ -123,10 +128,13 @@ class TestBoardMentionFanout:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("core.paths.get_data_dir", lambda: tmp_path)
 
-            result = handler.handle("post_channel", {
-                "channel": "general",
-                "text": "@all テスト通知です",
-            })
+            result = handler.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "@all テスト通知です",
+                },
+            )
 
         assert "Posted to #general" in result
 
@@ -151,7 +159,10 @@ class TestBoardMentionFanout:
         assert "@all テスト通知です" in bob_board[0]["content"]
 
     def test_e2e_post_channel_at_name_fanout(
-        self, tmp_path: Path, shared_dir: Path, sockets_dir: Path,
+        self,
+        tmp_path: Path,
+        shared_dir: Path,
+        sockets_dir: Path,
     ) -> None:
         """@name fanout delivers board_mention DM only to the named Anima."""
         alice_dir = _make_anima_dir(tmp_path, "alice")
@@ -168,10 +179,13 @@ class TestBoardMentionFanout:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("core.paths.get_data_dir", lambda: tmp_path)
 
-            result = handler.handle("post_channel", {
-                "channel": "ops",
-                "text": "@bob 確認お願い",
-            })
+            result = handler.handle(
+                "post_channel",
+                {
+                    "channel": "ops",
+                    "text": "@bob 確認お願い",
+                },
+            )
 
         assert "Posted to #ops" in result
 
@@ -186,7 +200,10 @@ class TestBoardMentionFanout:
         assert len(charlie_board) == 0, "Charlie should not receive @bob mention"
 
     def test_e2e_board_mention_no_ack(
-        self, tmp_path: Path, shared_dir: Path, sockets_dir: Path,
+        self,
+        tmp_path: Path,
+        shared_dir: Path,
+        sockets_dir: Path,
     ) -> None:
         """board_mention messages are excluded from ACK on receive_and_archive."""
         alice_dir = _make_anima_dir(tmp_path, "alice")
@@ -201,10 +218,13 @@ class TestBoardMentionFanout:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("core.paths.get_data_dir", lambda: tmp_path)
 
-            handler.handle("post_channel", {
-                "channel": "general",
-                "text": "@all テスト",
-            })
+            handler.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "@all テスト",
+                },
+            )
 
         # Bob has a board_mention DM in inbox
         bob_msgs = _read_inbox(shared_dir, "bob")
@@ -220,12 +240,14 @@ class TestBoardMentionFanout:
         alice_msgs = _read_inbox(shared_dir, "alice")
         alice_acks = [m for m in alice_msgs if m.get("type") == "ack"]
         assert len(alice_acks) == 0, (
-            "board_mention should not trigger ACK; "
-            f"found {len(alice_acks)} ack(s) in alice's inbox"
+            f"board_mention should not trigger ACK; found {len(alice_acks)} ack(s) in alice's inbox"
         )
 
     def test_e2e_fanout_includes_stopped_animas(
-        self, tmp_path: Path, shared_dir: Path, sockets_dir: Path,
+        self,
+        tmp_path: Path,
+        shared_dir: Path,
+        sockets_dir: Path,
     ) -> None:
         """@all fanout reaches both running and stopped Animas (inbox saved for pickup)."""
         alice_dir = _make_anima_dir(tmp_path, "alice")
@@ -242,10 +264,13 @@ class TestBoardMentionFanout:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("core.paths.get_data_dir", lambda: tmp_path)
 
-            handler.handle("post_channel", {
-                "channel": "general",
-                "text": "@all テスト",
-            })
+            handler.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "@all テスト",
+                },
+            )
 
         # Bob (running) should receive a board_mention
         bob_msgs = _read_inbox(shared_dir, "bob")

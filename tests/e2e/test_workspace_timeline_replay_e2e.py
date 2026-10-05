@@ -27,7 +27,7 @@ APP_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app.js"
 APP_WS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
 INTERACTIONS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "interactions.js"
 ACTIVITY_TYPES_JS = REPO_ROOT / "server" / "static" / "shared" / "activity-types.js"
-ACTIVITY_PY = REPO_ROOT / "core" / "memory" / "activity.py"
+ACTIVITY_PY = REPO_ROOT / "core" / "memory" / "activity" / "logger.py"
 
 
 # ── Helpers ─────────────────────────────────────────────────

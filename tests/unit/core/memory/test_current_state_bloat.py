@@ -4,25 +4,12 @@
 
 from __future__ import annotations
 
-"""Tests for current_state.md archive/reset compatibility and bloat controls.
-
-Issue: 20260326_current-state-session-boundary-archive
-Issue #143: Archive/reset compatibility remains available outside normal session boundaries.
-
-Covers:
-- archive_and_reset_state: skip, archive, reset, failure handling
-- heartbeat prompt no longer injects cleanup instructions
-- builder.py _CURRENT_STATE_MAX_CHARS still exists for prompt-side truncation
-"""
+"""Tests for current_state.md bloat controls."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.conversation import (
-    ConversationMemory,
-)
-from core.schemas import ModelConfig
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -47,100 +34,6 @@ def anima_dir(data_dir):
     return create_anima_dir(data_dir, "test-bloat")
 
 
-@pytest.fixture
-def model_config():
-    return ModelConfig(
-        model="claude-sonnet-4-6",
-        fallback_model="claude-sonnet-4-6",
-    )
-
-
-@pytest.fixture
-def conv_memory(anima_dir, model_config):
-    return ConversationMemory(anima_dir, model_config)
-
-
-# ── archive_and_reset_state ───────────────────────────────────
-
-
-class TestArchiveAndResetState:
-    """Tests for MemoryManager.archive_and_reset_state()."""
-
-    @pytest.fixture(autouse=True)
-    def _stub_rag_indexing(self):
-        """Stub RAG index_file so archiving tests never load the real embedding
-        model (which would exceed the 30s timeout on a cold CI cache)."""
-        with patch("core.memory.rag_search.RAGMemorySearch.index_file"):
-            yield
-
-    def test_skip_when_idle(self, anima_dir):
-        """No archive when current_state is just 'status: idle'."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("status: idle")
-        mm.archive_and_reset_state("new status")
-        assert mm.read_current_state().strip() == "status: idle"
-
-    def test_skip_when_empty(self, anima_dir):
-        """No archive when current_state is empty."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        (anima_dir / "state" / "current_state.md").write_text("", encoding="utf-8")
-        mm.archive_and_reset_state("new status")
-        assert mm.read_current_state() == "status: idle"
-
-    def test_archive_and_reset(self, anima_dir):
-        """Normal archive: content goes to episodes, state resets."""
-        from core.memory.manager import MemoryManager
-        from core.time_utils import today_local
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("## Working on feature X\nProgress: 50%")
-        mm.archive_and_reset_state("Implementing feature X")
-
-        assert mm.read_current_state().strip() == "Implementing feature X"
-
-        episode_path = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
-        episode_content = episode_path.read_text(encoding="utf-8")
-        assert "Working notes archived" in episode_content
-        assert "Working on feature X" in episode_content
-
-    def test_reset_to_idle_when_empty_new_status(self, anima_dir):
-        """Falls back to 'status: idle' when new_status is empty."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("some notes")
-        mm.archive_and_reset_state("")
-
-        assert mm.read_current_state().strip() == "status: idle"
-
-    def test_state_unchanged_on_episode_failure(self, anima_dir):
-        """State is left unchanged if append_episode raises."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        original = "## Important notes\nDo not lose this"
-        mm.update_state(original)
-
-        with patch.object(mm, "append_episode", side_effect=OSError("disk full")):
-            mm.archive_and_reset_state("new status")
-
-        assert mm.read_current_state().strip() == original.strip()
-
-    def test_default_new_status(self, anima_dir):
-        """Default new_status is 'status: idle'."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("some work in progress")
-        mm.archive_and_reset_state()
-
-        assert mm.read_current_state().strip() == "status: idle"
-
-
 # ── Heartbeat prompt (cleanup instruction removed) ─────────────
 
 
@@ -149,24 +42,23 @@ class TestHeartbeatPromptCleanup:
 
     @pytest.fixture
     def mock_heartbeat_mixin(self, anima_dir):
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
 
         mixin = MagicMock(spec=HeartbeatMixin)
         mixin.name = "test-bloat"
         mixin.anima_dir = anima_dir
         memory_mock = MagicMock()
         mixin.memory = memory_mock
-        # Snapshot part is optional; default to empty so it is not appended.
-        mixin._build_preobserved_heartbeat_snapshot_part = MagicMock(return_value="")
         mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
         mixin._build_heartbeat_md_cleanup_instruction = MagicMock(return_value=None)
+        mixin._build_preobserved_heartbeat_snapshot_part = MagicMock(return_value=None)
 
         return mixin
 
     @pytest.mark.asyncio
     async def test_no_cleanup_even_when_large(self, mock_heartbeat_mixin):
         """No cleanup instruction when max_chars is 0 (default disabled)."""
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
 
         big_state = "x" * 10000
         mock_heartbeat_mixin.memory.read_current_state.return_value = big_state
@@ -174,7 +66,7 @@ class TestHeartbeatPromptCleanup:
         mock_heartbeat_mixin._build_background_context_parts = MagicMock(return_value=[])
         mock_heartbeat_mixin._get_current_state_max_chars = MagicMock(return_value=0)
 
-        with patch("core._anima_heartbeat.load_prompt", return_value="heartbeat prompt"):
+        with patch("core.anima.heartbeat.load_prompt", return_value="heartbeat prompt"):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mock_heartbeat_mixin)
 
         cleanup_parts = [p for p in parts if "圧縮" in p or "cleanup" in p]
@@ -183,14 +75,14 @@ class TestHeartbeatPromptCleanup:
     @pytest.mark.asyncio
     async def test_no_cleanup_when_small(self, mock_heartbeat_mixin):
         """No cleanup instruction when current_state is below threshold."""
-        from core._anima_heartbeat import HeartbeatMixin
+        from core.anima.heartbeat import HeartbeatMixin
 
         mock_heartbeat_mixin.memory.read_current_state.return_value = "x" * 500
         mock_heartbeat_mixin.memory.read_heartbeat_config.return_value = None
         mock_heartbeat_mixin._build_background_context_parts = MagicMock(return_value=["bg context"])
         mock_heartbeat_mixin._get_current_state_max_chars = MagicMock(return_value=0)
 
-        with patch("core._anima_heartbeat.load_prompt", return_value="heartbeat prompt"):
+        with patch("core.anima.heartbeat.load_prompt", return_value="heartbeat prompt"):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mock_heartbeat_mixin)
 
         assert parts == ["heartbeat prompt", "bg context"]

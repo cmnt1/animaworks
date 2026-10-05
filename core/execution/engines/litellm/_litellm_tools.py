@@ -1,0 +1,422 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file is part of AnimaWorks core/server, licensed under Apache-2.0.
+# See LICENSE for the full license text.
+
+"""Tool processing mixin for LiteLLMExecutor.
+
+Handles tool discovery, activation, execution, and parallel/serial
+partitioning of tool calls.
+"""
+
+import asyncio
+import json as _json
+import logging
+from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Any
+
+from core.exceptions import ToolExecutionError
+from core.execution._tool_summary import make_tool_detail_chunk
+from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
+from core.execution.events import tool_end_event
+from core.tooling.policy.schemas import (
+    build_unified_tool_list,
+    to_litellm_format,
+)
+from core.trust import TRUST_RANK, resolve_tool_trust, wrap_tool_result
+
+logger = logging.getLogger("animaworks.execution.litellm_loop")
+
+_WRITE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "write_memory_file",
+        "Write",
+        "Edit",
+    }
+)
+
+_tool_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tool-quick")
+
+_bg_tool_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tool-bg")
+
+
+def shutdown_tool_executors() -> None:
+    """Stop the process-global Mode A tool pools during runner shutdown."""
+    for executor in (_tool_executor, _bg_tool_executor):
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            logger.warning("Failed to shut down Mode A tool executor", exc_info=True)
+
+
+# ── Module-level dataclass replacing dynamic _FakeTC ─────
+
+
+@dataclass
+class _ToolCallShim:
+    """Lightweight shim adapting parsed tool-call dicts into the
+    ``.id`` / ``.function.name`` / ``.function.arguments`` interface
+    expected by partitioning and execution.
+    """
+
+    @dataclass
+    class _Function:
+        name: str
+        arguments: str
+
+    id: str
+    function: _Function
+
+
+def _partition_tool_calls(
+    tool_calls: list,
+) -> tuple[list, list[list]]:
+    """Split tool_calls into parallel-safe and serial batches.
+
+    Returns:
+        (parallel_batch, serial_batches)
+        - parallel_batch: tool_calls safe to run concurrently
+        - serial_batches: groups of same-path writes that must run sequentially
+    """
+    parallel: list = []
+    serial_by_path: dict[str, list] = {}
+
+    for tc in tool_calls:
+        fn_name = tc.function.name
+        if fn_name in _WRITE_TOOLS:
+            try:
+                args = _json.loads(tc.function.arguments)
+            except _json.JSONDecodeError:
+                parallel.append(tc)
+                continue
+            path = args.get("path", "")
+            if path in serial_by_path:
+                serial_by_path[path].append(tc)
+            else:
+                serial_by_path[path] = []
+                parallel.append(tc)  # first write to each path is parallel-safe
+        else:
+            parallel.append(tc)
+
+    serial_batches = [calls for calls in serial_by_path.values() if calls]
+    return parallel, serial_batches
+
+
+def _convert_litellm_tool_calls(
+    tool_calls: list,
+) -> list[dict[str, Any]]:
+    """Convert LiteLLM iteration-level tool_call objects to parsed dict format.
+
+    Transforms objects with ``.function.name``, ``.function.arguments``,
+    ``.id`` attributes into the same dict format produced by
+    ``parse_accumulated_tool_calls()`` so that both token-level and
+    iteration-level paths can share ``_process_streaming_tool_calls()``.
+
+    Uses :func:`_repair_json_arguments` as a fallback when the
+    accumulated argument string is not valid JSON.
+    """
+    from core.execution._streaming import _repair_json_arguments
+
+    result: list[dict[str, Any]] = []
+    for tc in tool_calls:
+        fn_name = tc.function.name
+        if not fn_name:
+            logger.warning(
+                "Skipping tool call with empty/None function name (id=%s, args=%.100s)",
+                getattr(tc, "id", "?"),
+                getattr(tc.function, "arguments", ""),
+            )
+            continue
+        try:
+            args = _json.loads(tc.function.arguments)
+        except (_json.JSONDecodeError, TypeError):
+            args = _repair_json_arguments(tc.function.arguments or "")
+            if args is None:
+                logger.warning(
+                    "Unrepairable tool-call arguments for %s: %.200s",
+                    fn_name,
+                    tc.function.arguments,
+                )
+        result.append(
+            {
+                "id": tc.id,
+                "name": fn_name,
+                "arguments": args,
+                "raw_arguments": tc.function.arguments if args is None else None,
+            }
+        )
+    return result
+
+
+class ToolProcessingMixin:
+    """Mixin providing tool discovery, activation, and execution for LiteLLMExecutor."""
+
+    _BG_POOL_TOOLS = frozenset(
+        {
+            "generate_character_assets",
+            "generate_fullbody",
+            "generate_bustup",
+            "generate_icon",
+            "generate_chibi",
+            "generate_3d_model",
+            "generate_rigged_model",
+            "generate_animations",
+            "local_llm",
+            "run_command",
+        }
+    )
+
+    def _build_base_tools(self, *, trigger: str = "") -> list[dict[str, Any]]:
+        """Build the base LiteLLM-format tool list (unified 18-tool schema).
+
+        Also switches to the compact tool set when the model has only
+        ``medium`` tool_use capability, to reduce schema pressure on
+        weaker function-calling models.
+        """
+        from core.config.model_mode import resolve_tool_use_capability
+
+        compact = self._resolve_cw() <= 8_192
+        if not compact:
+            try:
+                capability = resolve_tool_use_capability(self._model_config.model)
+                if capability in ("medium", "low", "none"):
+                    compact = True
+            except Exception:
+                logger.debug(
+                    "Failed to resolve tool-use capability for %s; using context-window default",
+                    self._model_config.model,
+                    exc_info=True,
+                )
+        canonical = build_unified_tool_list(
+            include_notification_tools=self._tool_handler._human_notifier is not None,
+            include_supervisor_tools=self._has_subordinates(),
+            trigger=trigger,
+            compact=compact,
+        )
+        return to_litellm_format(canonical)
+
+    async def _execute_tool_call(self, tc, fn_args: dict[str, Any]) -> dict[str, Any]:
+        """Execute a single tool call, offloading sync work to a thread.
+
+        Long-running tools (image gen, local LLM, etc.) use a dedicated
+        background thread pool to avoid starving quick tool calls.
+        """
+        loop = asyncio.get_running_loop()
+        executor = _bg_tool_executor if tc.function.name in self._BG_POOL_TOOLS else _tool_executor
+        result = await loop.run_in_executor(
+            executor,
+            self._tool_handler.handle,
+            tc.function.name,
+            fn_args,
+            tc.id,
+        )
+
+        trust = resolve_tool_trust(tc.function.name, fn_args)
+        trust_rank = TRUST_RANK.get(trust, 0)
+        self._tool_handler._min_trust_seen = min(
+            self._tool_handler._min_trust_seen,
+            trust_rank,
+        )
+
+        return {"role": "tool", "tool_call_id": tc.id, "content": wrap_tool_result(tc.function.name, result)}
+
+    async def _process_streaming_tool_calls(
+        self,
+        parsed_calls: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        context_window: int = 128_000,
+        record_errors: bool = False,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Execute already-parsed tool calls.
+
+        Appends tool result messages to ``messages`` in place.  Yields
+        ``tool_end`` events after each individual tool completes so the
+        caller can forward them to the client in real-time.
+        """
+        pending_calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+        for tc in parsed_calls:
+            fn_name = tc["name"]
+            fn_args = tc["arguments"]
+            tc_id = tc["id"]
+
+            detail_chunk = make_tool_detail_chunk(fn_name, tc_id, fn_args or {})
+            if detail_chunk:
+                yield detail_chunk
+
+            # Handle unparseable arguments
+            if fn_args is None:
+                error_content = _json.dumps(
+                    {
+                        "status": "error",
+                        "error_type": "InvalidArguments",
+                        "message": "Failed to parse tool arguments",
+                        "context": {"raw_arguments": (tc.get("raw_arguments") or "")[:500]},
+                        "suggestion": "Ensure arguments are valid JSON",
+                    },
+                    ensure_ascii=False,
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": wrap_tool_result(fn_name, error_content),
+                    }
+                )
+                yield tool_end_event(
+                    fn_name,
+                    tc_id,
+                    record=ToolCallRecord(
+                        tool_name=fn_name,
+                        tool_id=tc_id,
+                        input_summary="(invalid arguments)",
+                        result_summary=_truncate_for_record(
+                            error_content, tool_result_save_budget(fn_name, context_window)
+                        ),
+                        is_error=record_errors,
+                    ),
+                )
+                continue
+
+            pending_calls.append((tc, fn_args))
+
+        # Execute remaining tool calls with parallelism
+        if not pending_calls:
+            return
+
+        shims = [
+            _ToolCallShim(
+                id=tc["id"],
+                function=_ToolCallShim._Function(
+                    name=tc["name"],
+                    arguments=(_json.dumps(tc["arguments"], ensure_ascii=False) if tc["arguments"] is not None else ""),
+                ),
+            )
+            for tc, _ in pending_calls
+        ]
+        args_map = {tc["id"]: fn_args for tc, fn_args in pending_calls}
+
+        parallel, serial_batches = _partition_tool_calls(shims)
+
+        if parallel:
+            coros = [self._execute_tool_call(shim, args_map[shim.id]) for shim in parallel]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+            for i, r in enumerate(results):
+                shim = parallel[i]
+                if isinstance(r, BaseException):
+                    logger.warning("Parallel tool execution error: %s", r)
+                    error_content = _json.dumps(
+                        {
+                            "status": "error",
+                            "error_type": "ExecutionError",
+                            "message": str(r),
+                        },
+                        ensure_ascii=False,
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": shim.id,
+                            "content": wrap_tool_result(shim.function.name, error_content),
+                        }
+                    )
+                    result_summary = _truncate_for_record(
+                        error_content, tool_result_save_budget(shim.function.name, context_window)
+                    )
+                elif isinstance(r, dict):
+                    messages.append(r)
+                    result_summary = _truncate_for_record(
+                        r.get("content", ""), tool_result_save_budget(shim.function.name, context_window)
+                    )
+                else:
+                    messages.append({"role": "tool", "tool_call_id": shim.id, "content": str(r)})
+                    result_summary = _truncate_for_record(
+                        str(r), tool_result_save_budget(shim.function.name, context_window)
+                    )
+                yield tool_end_event(
+                    shim.function.name,
+                    shim.id,
+                    record=ToolCallRecord(
+                        tool_name=shim.function.name,
+                        tool_id=shim.id,
+                        input_summary=_truncate_for_record(
+                            str(args_map[shim.id]), tool_input_save_budget(context_window)
+                        ),
+                        result_summary=result_summary,
+                        is_error=record_errors and isinstance(r, BaseException),
+                    ),
+                )
+
+        for batch in serial_batches:
+            for shim in batch:
+                call_failed = False
+                try:
+                    r = await self._execute_tool_call(shim, args_map[shim.id])
+                    messages.append(r)
+                    result_summary = _truncate_for_record(
+                        r.get("content", ""), tool_result_save_budget(shim.function.name, context_window)
+                    )
+                except ToolExecutionError as e:
+                    call_failed = True
+                    logger.warning("Serial tool execution error: %s", e)
+                    error_content = _json.dumps(
+                        {
+                            "status": "error",
+                            "error_type": "ToolExecutionError",
+                            "message": str(e),
+                        },
+                        ensure_ascii=False,
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": shim.id,
+                            "content": wrap_tool_result(shim.function.name, error_content),
+                        }
+                    )
+                    result_summary = _truncate_for_record(
+                        error_content, tool_result_save_budget(shim.function.name, context_window)
+                    )
+                except Exception as e:
+                    call_failed = True
+                    logger.warning("Serial tool execution error (unexpected): %s", e)
+                    error_content = _json.dumps(
+                        {
+                            "status": "error",
+                            "error_type": type(e).__name__,
+                            "message": str(e),
+                        },
+                        ensure_ascii=False,
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": shim.id,
+                            "content": wrap_tool_result(shim.function.name, error_content),
+                        }
+                    )
+                    result_summary = _truncate_for_record(
+                        error_content, tool_result_save_budget(shim.function.name, context_window)
+                    )
+                yield tool_end_event(
+                    shim.function.name,
+                    shim.id,
+                    record=ToolCallRecord(
+                        tool_name=shim.function.name,
+                        tool_id=shim.id,
+                        input_summary=_truncate_for_record(
+                            str(args_map[shim.id]), tool_input_save_budget(context_window)
+                        ),
+                        result_summary=result_summary,
+                        is_error=record_errors and call_failed,
+                    ),
+                )

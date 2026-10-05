@@ -16,8 +16,8 @@ class FakeRule:
 
 def test_action_gate_attaches_rule_body_and_passes_through(tmp_path: Path, monkeypatch) -> None:
     """ToolHandler attaches the relevant ACTION-RULE body instead of blocking."""
-    from core.memory import action_gate
     from core.tooling.handler import ToolHandler
+    from core.tooling.policy import action_gate
 
     anima_dir = tmp_path / "animas" / "mei"
     (anima_dir / "knowledge").mkdir(parents=True)

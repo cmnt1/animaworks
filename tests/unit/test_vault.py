@@ -132,77 +132,6 @@ class TestEncryptDecrypt:
 # ── Config credentials encrypt / decrypt ─────────────────────────────────────
 
 
-class TestConfigCredentials:
-    def test_encrypt_decrypt_round_trip(self, vault):
-        credentials = {
-            "anthropic": {
-                "type": "api_key",
-                "api_key": "sk-ant-xxx",
-                "keys": {},
-                "base_url": None,
-            },
-            "chatwork": {
-                "type": "api_token",
-                "api_key": "cwt-yyy",
-                "keys": {"room_id": "12345"},
-                "base_url": "https://api.chatwork.com",
-            },
-        }
-        encrypted = vault.encrypt_config_credentials(credentials)
-
-        # api_key should be encrypted (different from original)
-        assert encrypted["anthropic"]["api_key"] != "sk-ant-xxx"
-        assert encrypted["chatwork"]["api_key"] != "cwt-yyy"
-        assert encrypted["chatwork"]["keys"]["room_id"] != "12345"
-
-        # Non-sensitive fields should be preserved
-        assert encrypted["anthropic"]["type"] == "api_key"
-        assert encrypted["chatwork"]["base_url"] == "https://api.chatwork.com"
-
-        # Decrypt should restore original
-        decrypted = vault.decrypt_config_credentials(encrypted)
-        assert decrypted["anthropic"]["api_key"] == "sk-ant-xxx"
-        assert decrypted["chatwork"]["api_key"] == "cwt-yyy"
-        assert decrypted["chatwork"]["keys"]["room_id"] == "12345"
-
-    def test_encrypt_with_pydantic_model(self, vault):
-        from core.config.models import CredentialConfig
-
-        credentials = {
-            "anthropic": CredentialConfig(
-                api_key="sk-ant-xxx",
-                keys={"extra": "val"},
-            ),
-        }
-        encrypted = vault.encrypt_config_credentials(credentials)
-        assert encrypted["anthropic"]["api_key"] != "sk-ant-xxx"
-        assert encrypted["anthropic"]["keys"]["extra"] != "val"
-
-        decrypted = vault.decrypt_config_credentials(encrypted)
-        assert decrypted["anthropic"]["api_key"] == "sk-ant-xxx"
-        assert decrypted["anthropic"]["keys"]["extra"] == "val"
-
-    def test_empty_credentials(self, vault):
-        encrypted = vault.encrypt_config_credentials({})
-        assert encrypted == {}
-        decrypted = vault.decrypt_config_credentials({})
-        assert decrypted == {}
-
-    def test_empty_api_key_preserved(self, vault):
-        credentials = {
-            "empty": {
-                "type": "api_key",
-                "api_key": "",
-                "keys": {},
-                "base_url": None,
-            },
-        }
-        encrypted = vault.encrypt_config_credentials(credentials)
-        assert encrypted["empty"]["api_key"] == ""
-        decrypted = vault.decrypt_config_credentials(encrypted)
-        assert decrypted["empty"]["api_key"] == ""
-
-
 # ── vault.json CRUD ──────────────────────────────────────────────────────────
 
 
@@ -266,9 +195,7 @@ class TestMigration:
             "CHATWORK_API_TOKEN": "cwt-secret",
             "SLACK_BOT_TOKEN": "xoxb-secret",
         }
-        (shared_dir / "credentials.json").write_text(
-            json.dumps(creds), encoding="utf-8"
-        )
+        (shared_dir / "credentials.json").write_text(json.dumps(creds), encoding="utf-8")
 
         count = vault.migrate_shared_credentials()
 
@@ -304,9 +231,7 @@ class TestMigration:
         shared_dir = data_dir / "shared"
         shared_dir.mkdir(parents=True, exist_ok=True)
         creds = {"VALID_KEY": "valid-value", "INVALID": 12345, "EMPTY": ""}
-        (shared_dir / "credentials.json").write_text(
-            json.dumps(creds), encoding="utf-8"
-        )
+        (shared_dir / "credentials.json").write_text(json.dumps(creds), encoding="utf-8")
 
         count = vault.migrate_shared_credentials()
         assert count == 1
@@ -315,9 +240,7 @@ class TestMigration:
     def test_migrate_invalid_json(self, vault, data_dir: Path):
         shared_dir = data_dir / "shared"
         shared_dir.mkdir(parents=True, exist_ok=True)
-        (shared_dir / "credentials.json").write_text(
-            "not valid json", encoding="utf-8"
-        )
+        (shared_dir / "credentials.json").write_text("not valid json", encoding="utf-8")
 
         count = vault.migrate_shared_credentials()
         assert count == 0
@@ -384,27 +307,6 @@ class TestNaClNotInstalled:
             result = vm.generate_key()
             assert result is False
             assert not vm.has_key
-
-    def test_config_credentials_passthrough(self, data_dir: Path):
-        with patch("core.config.vault._HAS_NACL", False):
-            from core.config.vault import VaultManager
-
-            vm = VaultManager(data_dir)
-            credentials = {
-                "anthropic": {
-                    "type": "api_key",
-                    "api_key": "sk-ant-xxx",
-                    "keys": {"extra": "val"},
-                    "base_url": None,
-                },
-            }
-            encrypted = vm.encrypt_config_credentials(credentials)
-            # Without PyNaCl, values pass through as plaintext
-            assert encrypted["anthropic"]["api_key"] == "sk-ant-xxx"
-            assert encrypted["anthropic"]["keys"]["extra"] == "val"
-
-            decrypted = vm.decrypt_config_credentials(encrypted)
-            assert decrypted["anthropic"]["api_key"] == "sk-ant-xxx"
 
     def test_store_and_get_plaintext(self, data_dir: Path):
         with patch("core.config.vault._HAS_NACL", False):

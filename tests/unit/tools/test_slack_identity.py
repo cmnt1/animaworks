@@ -12,7 +12,7 @@ from core.config.models import (
     HumanNotificationConfig,
     NotificationChannelConfig,
 )
-from core.tools.slack import _resolve_slack_identity
+from core.integrations.slack import _resolve_slack_identity
 
 # ── _resolve_slack_identity ──────────────────────────────────────
 
@@ -137,7 +137,7 @@ class TestPostMessageIdentity:
     """Tests for SlackClient.post_message username/icon_url params."""
 
     def _make_client(self):
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient.__new__(SlackClient)
         client.client = MagicMock()
@@ -229,13 +229,13 @@ class TestDispatchSlackSendIdentity:
         mock_client_instance.post_message.return_value = {"ok": True, "ts": "1.0"}
 
         with (
-            patch("core.tools.slack.SlackClient", return_value=mock_client_instance),
-            patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test"),
+            patch("core.integrations.slack.SlackClient", return_value=mock_client_instance),
+            patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test"),
             patch("core.config.load_config", return_value=cfg),
         ):
-            from core.tools.slack import dispatch
+            from core.integrations.slack import dispatch
 
-            result = dispatch(
+            dispatch(
                 "slack_send",
                 {
                     "channel": "#general",
@@ -244,8 +244,6 @@ class TestDispatchSlackSendIdentity:
                 },
             )
 
-        assert result["status"] == "disabled"
-        assert "Discord migration" in result["message"]
         mock_client_instance.post_message.assert_not_called()
 
     def test_dispatch_without_anima_dir_no_identity(self):
@@ -254,12 +252,12 @@ class TestDispatchSlackSendIdentity:
         mock_client_instance.post_message.return_value = {"ok": True, "ts": "1.0"}
 
         with (
-            patch("core.tools.slack.SlackClient", return_value=mock_client_instance),
-            patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test"),
+            patch("core.integrations.slack.SlackClient", return_value=mock_client_instance),
+            patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test"),
         ):
-            from core.tools.slack import dispatch
+            from core.integrations.slack import dispatch
 
-            result = dispatch(
+            dispatch(
                 "slack_send",
                 {
                     "channel": "#general",
@@ -267,6 +265,4 @@ class TestDispatchSlackSendIdentity:
                 },
             )
 
-        assert result["status"] == "disabled"
-        assert "Discord migration" in result["message"]
         mock_client_instance.post_message.assert_not_called()

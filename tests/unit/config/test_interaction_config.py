@@ -14,7 +14,6 @@ class TestInteractionConfig:
 
     def test_defaults(self):
         cfg = InteractionConfig()
-        assert cfg.ttl_days == 7
         assert cfg.web_base_url == ""
         assert cfg.default_approver_ids == []
 
@@ -29,6 +28,5 @@ class TestInteractionConfig:
     def test_anima_works_config_has_interaction(self):
         root = AnimaWorksConfig()
         assert isinstance(root.interaction, InteractionConfig)
-        root.interaction = InteractionConfig(web_base_url="https://example.com", ttl_days=14)
+        root.interaction = InteractionConfig(web_base_url="https://example.com")
         assert root.interaction.web_base_url == "https://example.com"
-        assert root.interaction.ttl_days == 14

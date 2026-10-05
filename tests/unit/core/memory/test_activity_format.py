@@ -1,4 +1,4 @@
-"""Unit + golden tests for core/memory/activity_format shared helpers."""
+"""Unit + golden tests for core/activity/format shared helpers."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory._activity_models import ActivityEntry
-from core.memory.activity_format import (
+from core.activity.format import (
     EVENT_SETS,
     EntryRole,
     clip,
@@ -20,6 +19,7 @@ from core.memory.activity_format import (
     iter_entries,
     pair_tool_events,
 )
+from core.activity.models import ActivityEntry
 from core.time_utils import now_local
 
 
@@ -182,52 +182,51 @@ def test_iter_entries_reads_and_filters(log_dir: Path):
 
 def test_compaction_extraction_golden(log_dir: Path):
     """The migrated compaction path must yield identical structure."""
-    from core.session_compactor import _extract_recent_chat_context
+    from core.agent.session_compactor import _extract_recent_chat_context
 
-    today = now_local().date().isoformat()
     _write_entries(
         log_dir,
         [
             _default_row(
                 "message_received",
-                ts=f"{today}T09:00:00+09:00",
+                ts="2026-01-01T09:00:00+09:00",
                 content="user q1",
                 meta={"thread_id": "default", "from_type": "human"},
             ),
             _default_row(
-                "response_sent",
-                ts=f"{today}T09:00:30+09:00",
-                content="anima a1",
-            ),
-            _default_row(
                 "tool_use",
-                ts=f"{today}T09:00:10+09:00",
+                ts="2026-01-01T09:00:02+09:00",
                 tool="read",
                 meta={"tool_use_id": "t1", "args": {"path": "/x"}, "thread_id": "default"},
             ),
             _default_row(
                 "tool_result",
-                ts=f"{today}T09:00:20+09:00",
+                ts="2026-01-01T09:00:03+09:00",
                 content="file body",
                 meta={"tool_use_id": "t1", "thread_id": "default"},
             ),
             _default_row(
+                "response_sent",
+                ts="2026-01-01T09:00:05+09:00",
+                content="anima a1",
+            ),
+            _default_row(
                 "message_received",
-                ts=f"{today}T09:30:00+09:00",
+                ts="2026-01-01T09:30:00+09:00",
                 content="user q2",
                 meta={"thread_id": "default", "from_type": "human"},
             ),
             # A different thread must be ignored.
             _default_row(
                 "message_received",
-                ts=f"{today}T09:40:00+09:00",
+                ts="2026-01-01T09:40:00+09:00",
                 content="other thread",
                 meta={"thread_id": "other", "from_type": "human"},
             ),
             # inbox entry must be ignored.
             _default_row(
                 "message_received",
-                ts=f"{today}T09:50:00+09:00",
+                ts="2026-01-01T09:50:00+09:00",
                 content="inbox msg",
                 meta={"session_type": "inbox", "thread_id": "default", "from_type": "human"},
             ),
@@ -272,7 +271,7 @@ def test_entry_text_accepts_dict():
 
 
 def test_audit_extract_content_golden():
-    from core.memory.audit import AuditAggregator
+    from core.activity.audit import AuditAggregator
 
     fx = AuditAggregator._extract_content
     long = "x" * 400
@@ -292,8 +291,8 @@ def test_audit_extract_content_golden():
 
 
 def test_gather_activity_context_golden(log_dir: Path):
-    from core.memory.conversation_finalize import _gather_activity_context
-    from core.memory.conversation_models import ConversationTurn
+    from core.memory.conversation.finalize import _gather_activity_context
+    from core.memory.conversation.models import ConversationTurn
 
     _write_entries(
         log_dir,
@@ -322,7 +321,7 @@ def test_gather_activity_context_golden(log_dir: Path):
 
 
 def test_distillation_format_clusters_golden():
-    from core.memory.distillation import ProceduralDistiller
+    from core.memory.maintenance.distillation import ProceduralDistiller
 
     clusters = [
         [

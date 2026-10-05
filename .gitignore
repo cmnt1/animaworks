@@ -66,34 +66,25 @@ docs/*
 docs/paper/evaluation_results.md
 !docs/release/
 !docs/README.md
-!docs/README.ja.md
 !docs/api-reference.md
-!docs/api-reference.ja.md
 !docs/brain-mapping.md
-!docs/brain-mapping.ja.md
 !docs/cli-reference.md
-!docs/cli-reference.ja.md
 !docs/company-management.md
 !docs/dev-team.md
-!docs/dev-team.ja.md
 !docs/features.md
 !docs/fork-policy.md
 !docs/features.ja.md
 !docs/gpu-operations.md
 !docs/memory.md
-!docs/memory.ja.md
-!docs/process-architecture.ja.md
 !docs/security.md
-!docs/security.ja.md
 !docs/slim-runtime-migration.md
 !docs/slack-socket-mode-setup.md
-!docs/slack-socket-mode-setup.ja.md
 !docs/spec.md
-!docs/spec.ja.md
 !docs/vision.md
-!docs/vision.ja.md
-!docs/zoom-rtms-setup.ja.md
 !docs/specs/
+!docs/ja/
+!docs/en/
+!docs/ko/
 
 # Experiments
 experiments/
@@ -101,24 +92,8 @@ experiments/
 # Private-only scripts
 scripts/coverage_checker.py
 scripts/file_size_checker.py
-# scripts/publish.sh  # now public (no longer private-only)
 scripts/worktree_manager.py
-scripts/capture_org_chart.py
-scripts/inspect_org_chart.py
-scripts/verify_org_chart_v3.py
-scripts/verify_org_chart_v4.py
-scripts/verify_org_chart_v5.py
-scripts/verify_org_chart_final.py
-scripts/test_double_handler_hypothesis.py
-scripts/test_lucide_hypothesis.py
-scripts/browser_console_test.py
-scripts/check_chat_input_ui.py
-scripts/check_sidebar_screenshot.py
-scripts/check_workspace_conv_ui.py
 scripts/debug_priming.py
-scripts/test_desktop_chat_layout.py
-scripts/test_mobile_chat_screenshots.py
-scripts/test_mobile_chat_ui.py
 scripts/verify_template_placeholders.py
 
 # Skill archives

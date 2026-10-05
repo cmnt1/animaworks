@@ -7,19 +7,24 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hash
 from core.memory.rag.store import CollectionExistence
-from core.memory.rag_search import _compute_dir_hash
-from core.supervisor._mgr_scheduler import _marker_dir
+from core.memory.retrieval.rag_search import _compute_dir_hash
+from server.supervisor._mgr_scheduler import _marker_dir
+
+
+@pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Resolve runtime data paths from each test's temporary root."""
 
 
 def _make_supervisor(tmp_path: Path):
-    from core.supervisor.manager import ProcessSupervisor
+    from server.supervisor.manager import ProcessSupervisor
 
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir(parents=True, exist_ok=True)
@@ -52,13 +57,12 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
     get_vs_calls: list[str | None] = []
     mock_store = MagicMock()
 
-    def capture_get_vs(anima_name=None):
+    def capture_get_vs(anima_name=None, *_args, **_kwargs):
         get_vs_calls.append(anima_name)
         return mock_store
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=capture_get_vs),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=capture_get_vs),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -75,48 +79,6 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_daily_indexing_uses_phase3_root_memory_service(tmp_path: Path) -> None:
-    sup = _make_supervisor(tmp_path)
-    anima_dir = sup.animas_dir / "sakura"
-    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
-    (anima_dir / "status.json").write_text(
-        json.dumps({"enabled": True, "process_model": "phase3"}),
-        encoding="utf-8",
-    )
-
-    async def send_request(_anima_name, _method, payload, timeout=60.0):
-        assert timeout == 120.0
-        assert payload == {
-            "method": "memory.create_collection",
-            "params": {"collection": "sakura_knowledge"},
-        }
-        return {"ok": True}
-
-    def make_indexer(store, *_args, **_kwargs):
-        indexer = MagicMock()
-
-        def index_directory(*_args, **_kwargs):
-            assert store.create_collection("sakura_knowledge")
-            return IndexDirectoryResult(chunks_indexed=1)
-
-        indexer.index_directory.side_effect = index_directory
-        return indexer
-
-    sup.send_request = AsyncMock(side_effect=send_request)
-    with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store") as get_vector_store,
-        patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
-        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
-        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
-    ):
-        await sup._run_daily_indexing()
-
-    get_vector_store.assert_not_called()
-    sup.send_request.assert_awaited()
-
-
-@pytest.mark.asyncio
 async def test_daily_indexing_incremental(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
@@ -129,8 +91,7 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -167,8 +128,7 @@ async def test_daily_indexing_includes_facts(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -194,12 +154,11 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
@@ -213,14 +172,38 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_daily_indexing_rebuilds_entity_collection(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+    mock_store = MagicMock()
+
+    with (
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_bm25,
+        patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True) as mock_rebuild_entity,
+    ):
+        mock_indexer = MagicMock()
+        mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
+        mock_indexer.index_conversation_summary = MagicMock(return_value=0)
+        mock_indexer_cls.return_value = mock_indexer
+        mock_bm25.return_value = MagicMock(documents=1)
+
+        await sup._run_daily_indexing()
+
+    mock_rebuild_entity.assert_called_once_with(sup.animas_dir / "sakura", vector_store=mock_store)
+
+
+@pytest.mark.asyncio
 async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_vs,
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -238,8 +221,7 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -266,8 +248,7 @@ async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
@@ -300,8 +281,7 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
     mock_store = MagicMock()
     mock_store.collection_exists.return_value = CollectionExistence.UNAVAILABLE
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
@@ -330,12 +310,11 @@ async def test_daily_indexing_skips_on_model_change(tmp_path: Path) -> None:
         return MagicMock()
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
-            "core.memory.rag.singleton.get_embedding_model_name",
+            "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()
 
@@ -360,13 +339,12 @@ async def test_daily_indexing_skips_on_e5_prefix_change(tmp_path: Path) -> None:
         return MagicMock()
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
-            "core.memory.rag.singleton.get_embedding_model_name",
+            "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
-        patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
+        patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()
 

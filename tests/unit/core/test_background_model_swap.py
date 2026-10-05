@@ -22,7 +22,7 @@ from core.schemas import ModelConfig
 
 def _make_heartbeat_mixin(model_config: ModelConfig) -> object:
     """Create a minimal HeartbeatMixin-like object for testing."""
-    from core._anima_heartbeat import HeartbeatMixin
+    from core.anima.heartbeat import HeartbeatMixin
 
     class FakeMixin(HeartbeatMixin):
         pass
@@ -244,8 +244,8 @@ class TestResolveBackgroundConfig:
     def test_rate_guard_block_switches_main_config_to_fallback(self, tmp_path: Path):
         """A heartbeat with no background override preflights the main model."""
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.error_classifier import guard_key
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.error_classifier import guard_key
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         mc = ModelConfig(
             model="codex/gpt-5.3-codex",
@@ -268,7 +268,7 @@ class TestResolveBackgroundConfig:
         with (
             patch(_PATCH_LOAD_CONFIG) as mock_config,
             patch("core.config.io.load_config") as mock_io_config,
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             # CI runners have no grok CLI; without this the x: candidate is
             # skipped as unavailable and no fallback is selected.
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
@@ -336,8 +336,8 @@ class TestHeartbeatModelSwap:
 
 def _make_inbox_mixin(model_config: ModelConfig) -> object:
     """Create a minimal InboxMixin-like object that also has _resolve_background_config."""
-    from core._anima_heartbeat import HeartbeatMixin
-    from core._anima_inbox import InboxMixin
+    from core.anima.heartbeat import HeartbeatMixin
+    from core.anima.inbox import InboxMixin
 
     class FakeAnima(HeartbeatMixin, InboxMixin):
         pass

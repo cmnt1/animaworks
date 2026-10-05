@@ -1,4 +1,4 @@
-"""Unit tests for shared channel messaging in core/messenger.py."""
+"""Unit tests for shared channel messaging in core/messaging/messenger.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -15,7 +15,7 @@ from core.exceptions import (
     ChannelNotFoundError,
     RecipientNotFoundError,
 )
-from core.messenger import ChannelMeta, Messenger, save_channel_meta
+from core.messaging.messenger import ChannelMeta, Messenger, save_channel_meta
 
 
 def _ensure_channel(shared_dir: Path, name: str) -> Path:
@@ -92,9 +92,7 @@ class TestPostChannel:
         assert not (channels_dir / "typo-channel.jsonl").exists()
         assert not (channels_dir / "typo-channel.meta.json").exists()
 
-    def test_rejects_closed_tombstone_meta_only_without_creating_jsonl(
-        self, shared_dir, messenger
-    ):
+    def test_rejects_closed_tombstone_meta_only_without_creating_jsonl(self, shared_dir, messenger):
         """closed meta only (tombstone): reject and do not create jsonl."""
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True, exist_ok=True)
@@ -130,9 +128,7 @@ class TestPostChannel:
         """Existing channel post keeps ts/from/text/source entry shape."""
         _ensure_channel(shared_dir, "general")
         messenger.post_channel("general", "format check")
-        entry = json.loads(
-            (shared_dir / "channels" / "general.jsonl").read_text(encoding="utf-8").strip()
-        )
+        entry = json.loads((shared_dir / "channels" / "general.jsonl").read_text(encoding="utf-8").strip())
         assert set(entry.keys()) == {"ts", "from", "text", "source"}
         assert entry["from"] == "alice"
         assert entry["text"] == "format check"
@@ -249,9 +245,13 @@ class TestReadDmHistory:
         assert result == []
 
     def test_reads_legacy_log(self, shared_dir, messenger):
-        self._write_dm_log(shared_dir, "alice-bob", [
-            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hello Bob!", "source": "anima"},
-        ])
+        self._write_dm_log(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hello Bob!", "source": "anima"},
+            ],
+        )
         result = messenger.read_dm_history("bob")
         assert len(result) == 1
         assert result[0]["from"] == "alice"
@@ -335,14 +335,17 @@ class TestReceiveExternalChannelMirroring:
     def test_anima_at_all_no_mirror(self, shared_dir, messenger):
         """Only human messages with @all should be mirrored."""
         messenger.receive_external(
-            "@all announcement", source="anima",
+            "@all announcement",
+            source="anima",
         )
         channel_file = shared_dir / "channels" / "general.jsonl"
         assert not channel_file.exists()
 
     def test_receive_external_still_creates_inbox(self, shared_dir, messenger):
         messenger.receive_external(
-            "@all resolve notice", source="human", external_user_id="owner",
+            "@all resolve notice",
+            source="human",
+            external_user_id="owner",
         )
         # inbox should still get the message (even if #general is missing)
         messages = messenger.receive()
@@ -351,7 +354,9 @@ class TestReceiveExternalChannelMirroring:
     def test_receive_external_no_message_log(self, shared_dir, messenger):
         """receive_external() should NOT create message_log anymore."""
         messenger.receive_external(
-            "Test", source="human", external_user_id="owner",
+            "Test",
+            source="human",
+            external_user_id="owner",
         )
         assert not (shared_dir / "message_log").exists()
 

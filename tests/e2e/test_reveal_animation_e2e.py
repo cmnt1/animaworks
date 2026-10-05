@@ -9,6 +9,7 @@ verifying the contract that the frontend reveal animation relies on:
 2. The event payload includes asset filenames (avatar_*) for trigger detection
 3. The workspace HTML serves correctly with reveal overlay elements
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,13 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # ── Helpers ──────────────────────────────────────────────
 
 
 def _make_test_app(animas_dir: Path | None = None):
     """Create a test FastAPI app with mock supervisor and ws_manager."""
     from fastapi import FastAPI
+
     from server.routes.assets import create_assets_router
 
     app = FastAPI()
@@ -61,10 +62,8 @@ class TestRevealWebSocketEventE2E:
     """E2E: Verify anima.assets_updated WebSocket event structure
     that the frontend reveal animation handler depends on."""
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
-    async def test_assets_updated_event_emitted_on_generate(
-        self, mock_pipeline_cls, tmp_path
-    ):
+    @patch("core.integrations.image_gen.ImageGenPipeline")
+    async def test_assets_updated_event_emitted_on_generate(self, mock_pipeline_cls, tmp_path):
         """Asset generation should broadcast anima.assets_updated event."""
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
@@ -100,10 +99,8 @@ class TestRevealWebSocketEventE2E:
         assert event["data"]["name"] == "alice"
         assert isinstance(event["data"]["assets"], list)
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
-    async def test_assets_updated_event_contains_avatar_filenames(
-        self, mock_pipeline_cls, tmp_path
-    ):
+    @patch("core.integrations.image_gen.ImageGenPipeline")
+    async def test_assets_updated_event_contains_avatar_filenames(self, mock_pipeline_cls, tmp_path):
         """Event payload assets list should include avatar_* filenames
         so the frontend can detect when to trigger reveal animation."""
         anima_dir = tmp_path / "alice"
@@ -129,17 +126,13 @@ class TestRevealWebSocketEventE2E:
                 assets = payload["data"]["assets"]
                 # At least one avatar_* file should be in the list
                 avatar_files = [a for a in assets if a.startswith("avatar_")]
-                assert len(avatar_files) >= 1, (
-                    f"Expected avatar_* files in assets list, got: {assets}"
-                )
+                assert len(avatar_files) >= 1, f"Expected avatar_* files in assets list, got: {assets}"
                 break
         else:
             pytest.fail("anima.assets_updated event not found")
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
-    async def test_event_includes_errors_field(
-        self, mock_pipeline_cls, tmp_path
-    ):
+    @patch("core.integrations.image_gen.ImageGenPipeline")
+    async def test_event_includes_errors_field(self, mock_pipeline_cls, tmp_path):
         """Event should include errors list for frontend error handling."""
         anima_dir = tmp_path / "bob"
         anima_dir.mkdir()
@@ -175,13 +168,7 @@ class TestRevealWorkspacePageE2E:
 
     def test_workspace_html_has_reveal_overlay(self):
         """The served workspace page must contain the reveal overlay div."""
-        html_path = (
-            Path(__file__).resolve().parents[2]
-            / "server"
-            / "static"
-            / "workspace"
-            / "index.html"
-        )
+        html_path = Path(__file__).resolve().parents[2] / "server" / "static" / "workspace" / "index.html"
         html = html_path.read_text(encoding="utf-8")
 
         # Required element IDs for reveal.js
@@ -191,13 +178,7 @@ class TestRevealWorkspacePageE2E:
 
     def test_workspace_css_has_reveal_styles(self):
         """The workspace stylesheet must contain reveal animation styles."""
-        css_path = (
-            Path(__file__).resolve().parents[2]
-            / "server"
-            / "static"
-            / "workspace"
-            / "style.css"
-        )
+        css_path = Path(__file__).resolve().parents[2] / "server" / "static" / "workspace" / "style.css"
         css = css_path.read_text(encoding="utf-8")
 
         assert ".ws-reveal-overlay" in css
@@ -206,14 +187,7 @@ class TestRevealWorkspacePageE2E:
 
     def test_reveal_js_module_exists(self):
         """The reveal.js module must exist for the import in app.js."""
-        reveal_path = (
-            Path(__file__).resolve().parents[2]
-            / "server"
-            / "static"
-            / "workspace"
-            / "modules"
-            / "reveal.js"
-        )
+        reveal_path = Path(__file__).resolve().parents[2] / "server" / "static" / "workspace" / "modules" / "reveal.js"
         assert reveal_path.exists()
         content = reveal_path.read_text(encoding="utf-8")
         assert "export async function playReveal" in content
@@ -221,12 +195,7 @@ class TestRevealWorkspacePageE2E:
     def test_app_js_imports_reveal(self):
         """app-websocket.js must import playReveal from reveal.js."""
         ws_js_path = (
-            Path(__file__).resolve().parents[2]
-            / "server"
-            / "static"
-            / "workspace"
-            / "modules"
-            / "app-websocket.js"
+            Path(__file__).resolve().parents[2] / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
         )
         content = ws_js_path.read_text(encoding="utf-8")
-        assert 'playReveal' in content
+        assert "playReveal" in content

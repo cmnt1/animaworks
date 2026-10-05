@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 chromadb = pytest.importorskip(
     "chromadb",
     reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'",
@@ -45,11 +47,7 @@ def vector_store(anima_dir):
     """Create a ChromaDB vector store persisted under the anima's vectordb dir."""
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
-    yield store
-    from tests.helpers.chroma import close_chroma_store
-
-    close_chroma_store(store)
+    return ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
 
 
 @pytest.fixture

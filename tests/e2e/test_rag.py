@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.time_utils import now_jst
 
 # Skip all tests in this module if ChromaDB is not available
@@ -131,7 +132,7 @@ def temp_vector_store(temp_anima_dir):
     vectordb_dir = temp_anima_dir / "vectordb"
     vectordb_dir.mkdir()
 
-    store = ChromaVectorStore(persist_dir=vectordb_dir)
+    store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
     yield store
 
     from tests.helpers.chroma import close_chroma_store

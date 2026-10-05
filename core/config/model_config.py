@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import fnmatch
 import importlib.util
-import json
 import logging
 import shutil
 from dataclasses import dataclass
@@ -22,11 +21,25 @@ from core.config.model_mode import _match_models_json
 from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDER
 from core.config.schemas import AnimaWorksConfig
 from core.i18n import t
+from core.platform.status_store import update_status
 
 if TYPE_CHECKING:
     from core.schemas import ModelConfig
 
 logger = logging.getLogger("animaworks.config")
+
+EFFECTIVE_MODEL_FIELDS = ("model", "execution_mode", "resolved_mode", "credential")
+
+
+def effective_model_key(cfg: Any) -> tuple[Any, ...]:
+    """Return the fields that determine effective executor/model routing."""
+    return tuple(getattr(cfg, field, None) for field in EFFECTIVE_MODEL_FIELDS)
+
+
+def same_effective_model(left: Any, right: Any) -> bool:
+    """Compare configs by the fields that determine executor/model routing."""
+    return effective_model_key(left) == effective_model_key(right)
+
 
 # ---------------------------------------------------------------------------
 # load_model_config
@@ -42,11 +55,7 @@ def _credential_api_key_env(credential_name: str) -> str:
 
 
 def load_model_config(anima_dir: Path) -> ModelConfig:
-    """Build a ModelConfig for *anima_dir* from the unified config.json.
-
-    This is a standalone version of ``MemoryManager.read_model_config()``
-    for use in server routes that do not have a live DigitalAnima instance.
-    """
+    """The sole function that builds a ``ModelConfig`` for *anima_dir* from config.json."""
     from core.config.models import get_config_path, load_config, resolve_anima_config, resolve_execution_mode
     from core.schemas import ModelConfig
 
@@ -85,7 +94,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         task_compaction_tokens=resolved.task_compaction_tokens,
         task_compaction_max=resolved.task_compaction_max,
         max_session_age_hours=resolved.max_session_age_hours,
-        max_chains=resolved.max_chains,
         conversation_history_threshold=resolved.conversation_history_threshold,
         execution_mode=resolved.execution_mode,
         supervisor=resolved.supervisor,
@@ -97,7 +105,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         voice_thinking_effort=resolved.voice_thinking_effort,
         heartbeat_enabled=resolved.heartbeat_enabled,
         token_budget_monthly=resolved.token_budget_monthly,
-        llm_timeout=resolved.llm_timeout,
         extra_keys=credential.keys or {},
         mode_s_auth=resolved.mode_s_auth,
         extra_mcp_servers=resolved.extra_mcp_servers,
@@ -121,27 +128,13 @@ def _resolved_mode_for_config(model_config: ModelConfig, config: AnimaWorksConfi
 
 def _guard_key_for_model_config(model_config: ModelConfig, config: AnimaWorksConfig) -> str:
     """Build the realm-qualified rate-guard key used by an execution mode."""
-    from core.execution.error_classifier import (
-        guard_key,
-        litellm_realm_of,
-        provider_family_of,
-    )
+    from core.execution.engine_base import engine_guard_key
 
-    mode = _resolved_mode_for_config(model_config, config)
-    if mode == "C":
-        realm = "codex"
-    elif mode == "S":
-        realm = model_config.mode_s_auth or "max"
-    elif mode == "D":
-        realm = "cursor"
-    elif mode == "G":
-        realm = "gemini"
-    elif mode == "X":
-        realm = "grok"
-    else:
-        realm = litellm_realm_of(model_config.model)
-    family = {"S": "anthropic", "C": "openai", "G": "google", "X": "grok"}.get(mode)
-    return guard_key(family or provider_family_of(model_config.model), realm)
+    return engine_guard_key(
+        _resolved_mode_for_config(model_config, config),
+        model_config.model,
+        mode_s_auth=model_config.mode_s_auth,
+    )
 
 
 def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None) -> str | None:
@@ -153,7 +146,7 @@ def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None
     dedicated ``deepseek`` credential when present, else the configured
     ``background_credential`` gateway that hosts these models.
     """
-    from core.execution.error_classifier import provider_family_of
+    from core.llm.guard.error_classifier import provider_family_of
 
     entry = _match_models_json(model)
     if entry and isinstance(entry.get("credential"), str):
@@ -331,7 +324,7 @@ def resolve_effective_model_config(
 
     from core.config.io import load_config
     from core.config.model_mode import parse_fallback_entry
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = config if config is not None else load_config()
     guard = get_rate_guard()
@@ -342,6 +335,7 @@ def resolve_effective_model_config(
     earliest_config = model_config
     earliest_until = guard.blocked_until(primary_key)
     earliest_remaining = primary_remaining
+    busy_candidate: ModelConfig | None = None
 
     for entry in model_config.fallback_models:
         parsed = parse_fallback_entry(entry, config)
@@ -382,6 +376,16 @@ def resolve_effective_model_config(
                 earliest_remaining = candidate_remaining
             continue
 
+        from core.execution.busy_probe import is_model_busy
+
+        if is_model_busy(_match_models_json(model)):
+            # Congested self-hosted model: prefer a later free candidate, but
+            # keep it as the choice of last resort over a blocked one.
+            logger.info("Skipping busy fallback %s:%s", mode, model)
+            if busy_candidate is None:
+                busy_candidate = candidate
+            continue
+
         logger.warning(
             "primary %s blocked (%.0fs) \u2192 fallback %s:%s",
             model_config.model,
@@ -390,6 +394,15 @@ def resolve_effective_model_config(
             model,
         )
         return candidate
+
+    if busy_candidate is not None:
+        logger.warning(
+            "primary %s blocked (%.0fs) → busy fallback %s (no free candidate)",
+            model_config.model,
+            primary_remaining,
+            busy_candidate.model,
+        )
+        return busy_candidate
 
     if earliest_config is not model_config:
         logger.warning(
@@ -526,7 +539,7 @@ def resolve_unavailable_model_config(
 ) -> ModelConfig | None:
     """Select only explicitly configured alternatives to a missing engine."""
     from core.config.io import load_config
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = load_config()
     guard = get_rate_guard()
@@ -563,7 +576,7 @@ def fallback_event_meta(
         return None
 
     from core.config.io import load_config
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = load_config()
     guard = get_rate_guard()
@@ -670,7 +683,6 @@ def update_status_model(
     credential: str | None = None,
     background_model: str | None | object = _SENTINEL,
     background_credential: str | None | object = _SENTINEL,
-    memory_backend: str | None | object = _SENTINEL,
 ) -> None:
     """Update model/credential in an anima's status.json (atomic write).
 
@@ -680,32 +692,24 @@ def update_status_model(
     status_path = anima_dir / "status.json"
     if not status_path.is_file():
         raise FileNotFoundError(f"status.json not found: {status_path}")
-    data = json.loads(status_path.read_text(encoding="utf-8"))
-    if model is not None:
-        data["model"] = model
-    if credential is not None:
-        data["credential"] = credential
-    if background_model is not _SENTINEL:
-        if background_model:
-            data["background_model"] = background_model
-        else:
-            data.pop("background_model", None)
-    if background_credential is not _SENTINEL:
-        if background_credential:
-            data["background_credential"] = background_credential
-        else:
-            data.pop("background_credential", None)
-    if memory_backend is not _SENTINEL:
-        if memory_backend:
-            data["memory_backend"] = memory_backend
-        else:
-            data.pop("memory_backend", None)
-    tmp = status_path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(status_path)
+
+    def apply_update(data: dict[str, Any]) -> None:
+        if model is not None:
+            data["model"] = model
+        if credential is not None:
+            data["credential"] = credential
+        if background_model is not _SENTINEL:
+            if background_model:
+                data["background_model"] = background_model
+            else:
+                data.pop("background_model", None)
+        if background_credential is not _SENTINEL:
+            if background_credential:
+                data["background_credential"] = background_credential
+            else:
+                data.pop("background_credential", None)
+
+    update_status(anima_dir, apply_update)
 
 
 # ── ModelFamily ──────────────────────────────────────────────────────
@@ -794,81 +798,77 @@ def smart_update_model(
     status_path = anima_dir / "status.json"
     if not status_path.is_file():
         raise FileNotFoundError(f"status.json not found: {status_path}")
-    data: dict[str, Any] = json.loads(status_path.read_text(encoding="utf-8"))
 
     if config is None:
         from core.config.io import load_config
 
         config = load_config()
 
-    old_model = data.get("model", "")
-    old_family = _model_family(old_model)
-    new_family = _model_family(model)
-    family_changed = old_family != new_family
-
-    data["model"] = model
-
     from core.config.model_mode import resolve_execution_mode
 
+    new_family = _model_family(model)
     next_mode = resolve_execution_mode(config, model)
-    data["execution_mode"] = next_mode
+    result: dict[str, Any] = {}
 
-    # -- credential resolution --
-    if credential is not None:
-        old_cred = data.get("credential", "")
-        data["credential"] = credential
-    elif family_changed:
-        old_cred = data.get("credential", "")
-        mapped = _FAMILY_CREDENTIAL_MAP.get(new_family)
-        if mapped and mapped in config.credentials:
-            data["credential"] = mapped
-            logger.info(t("model_config.credential_auto_switch", old=old_cred, new=mapped))
-        else:
-            default_cred = getattr(config.anima_defaults, "credential", None)
-            if default_cred:
-                data["credential"] = default_cred
-                logger.info(t("model_config.credential_fallback_defaults", family=new_family, default=default_cred))
+    def apply_update(data: dict[str, Any]) -> None:
+        old_model = data.get("model", "")
+        family_changed = _model_family(old_model) != new_family
+        data["model"] = model
+        data["execution_mode"] = next_mode
+
+        # -- credential resolution --
+        if credential is not None:
+            old_cred = data.get("credential", "")
+            data["credential"] = credential
+        elif family_changed:
+            old_cred = data.get("credential", "")
+            mapped = _FAMILY_CREDENTIAL_MAP.get(new_family)
+            if mapped and mapped in config.credentials:
+                data["credential"] = mapped
+                logger.info(t("model_config.credential_auto_switch", old=old_cred, new=mapped))
             else:
-                logger.warning(t("model_config.credential_keep_current", current=old_cred))
+                default_cred = getattr(config.anima_defaults, "credential", None)
+                if default_cred:
+                    data["credential"] = default_cred
+                    logger.info(t("model_config.credential_fallback_defaults", family=new_family, default=default_cred))
+                else:
+                    logger.warning(t("model_config.credential_keep_current", current=old_cred))
 
-    # -- mode_s_auth resolution --
-    next_credential = data.get("credential", "")
-    if next_mode == "S" and next_credential:
-        inferred_auth = infer_mode_s_auth(mode=next_mode, credential_name=next_credential, config=config)
-        if inferred_auth:
-            data["mode_s_auth"] = inferred_auth
+        # -- mode_s_auth resolution --
+        next_credential = data.get("credential", "")
+        if next_mode == "S" and next_credential:
+            inferred_auth = infer_mode_s_auth(mode=next_mode, credential_name=next_credential, config=config)
+            if inferred_auth:
+                data["mode_s_auth"] = inferred_auth
+            else:
+                data.pop("mode_s_auth", None)
         else:
             data.pop("mode_s_auth", None)
-    else:
-        data.pop("mode_s_auth", None)
 
-    # -- clear stale overrides on family change --
-    cleared: list[str] = []
-    if family_changed and credential is None:
-        for field in ("thinking", "max_tokens"):
-            if field in data:
-                data.pop(field)
-                cleared.append(field)
+        # -- clear stale overrides on family change --
+        cleared: list[str] = []
+        if family_changed and credential is None:
+            for field in ("thinking", "max_tokens"):
+                if field in data:
+                    data.pop(field)
+                    cleared.append(field)
+        result.update(
+            model=model,
+            credential=data.get("credential", ""),
+            execution_mode=next_mode,
+            mode_s_auth=data.get("mode_s_auth"),
+            family_changed=family_changed,
+            cleared_fields=cleared,
+        )
 
-    # -- atomic write --
-    tmp = status_path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(status_path)
-
-    return {
-        "model": model,
-        "credential": data.get("credential", ""),
-        "execution_mode": next_mode,
-        "mode_s_auth": data.get("mode_s_auth"),
-        "family_changed": family_changed,
-        "cleared_fields": cleared,
-    }
+    update_status(anima_dir, apply_update)
+    return result
 
 
 __all__ = [
+    "EFFECTIVE_MODEL_FIELDS",
+    "effective_model_key",
+    "same_effective_model",
     "ModelSelection",
     "resolve_model_selection",
     "resolve_unavailable_model_config",

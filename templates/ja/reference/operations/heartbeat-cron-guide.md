@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 `submit_tasks` は検証後、タスクと完全な実行入力を一つの正本 TaskStore に一括保存する。
 実行権の取得と試行履歴はホストが管理する。`in_progress` は閲覧用で、エージェントは `update_task` で `done` / `pending` / `cancelled` を宣言する。中断した pending タスクは同じ ID に `resume: true` を指定して明示的に再開し、別タスクで置き換えない。
 
-**長時間 CLI ツール**（`animaworks-tool submit …`）は別経路で `state/background_tasks/pending/` に書かれ、`BackgroundTaskManager`（`core/background.py`）がバックグラウンド実行する。詳細は `operations/background-tasks.md` を参照。
+**長時間 CLI ツール**（`animaworks-tool submit …`）は `task_type="command"` として TaskStore に登録され、PendingTaskExecutor が試行を取得してバックグラウンド実行する。完了結果は `state/background_tasks/{task_id}.json` と通知から確認する。詳細は `operations/background-tasks.md` を参照。
 
 **注意**: 保存先を直接編集しない。旧 `state/task_queue.jsonl` と `state/pending/` は移行・エクスポート用の証跡として保存し、稼働中の投入先にしない。
 
@@ -55,11 +55,9 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 | 定期ハートビート | `config.json` の `heartbeat.interval_minutes` に従い、APScheduler が定期的に起動 |
 | メッセージトリガー | Inbox に未読メッセージが到着した際に即座に起動（Inbox パスとして処理） |
 
-メッセージトリガーには以下のセーフガードが組み込まれている:
-- **クールダウン**: 前回のメッセージ起動完了から一定時間以内は再起動しない（`config.json` の `heartbeat.msg_heartbeat_cooldown_s`、デフォルト300秒）
-- **カスケード検出**: 2者間で一定時間内に往復が閾値を超えるとループとみなし抑制する（`heartbeat.cascade_window_s` デフォルト30分、`heartbeat.cascade_threshold` デフォルト3）
-- **意図フィルタ**: `intent` が `heartbeat.actionable_intents`（デフォルト `report`, `question`）に含まれるメッセージがある場合のみ即時ハートビート。それ以外（例: 軽い ack 系）は定期ハートビートまで待つ
-- **往復の深さ制限**: `heartbeat.depth_window_s`（デフォルト600秒）と `heartbeat.max_depth`（デフォルト6）で、同一ペアの短期間の往復過多を抑止
+メッセージトリガーは Inbox の JSON ファイル変更通知で起動する。通知を取りこぼした場合に備え、45 秒ごとに未読を再確認する。
+同時に動く Inbox 処理は 1 本だけで、実行中に届いたメッセージは次の 1 回にまとめて処理する。Provider エラー時は `rate_guard` の回復時間を待ち、未読メッセージを残す。
+受信 intent による起動フィルタやメッセージ起点の cooldown / cascade 抑止はない。了解・感謝だけのメッセージに返信しない行動ルールは Inbox プロンプトで指示する。
 
 ## heartbeat.md の設定
 
@@ -149,9 +147,9 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 - **クラッシュ復旧**: 前回ハートビートが失敗した場合、`state/recovery_note.md` にエラー情報が保存される。次回起動時にプロンプトに注入され、復旧後にファイルは削除される。
 - **振り返り記録**: ハートビート出力に `[REFLECTION]...[/REFLECTION]` ブロックがあると、activity_log に `heartbeat_reflection` として記録され、次回以降のハートビートコンテキストに含まれる。
 - **部下チェック**: 部下を持つ Anima には、ハートビート・Cron のプロンプトに部下の状態確認指示が自動注入される。
-- **セッション時間制限**（`config.json` の `heartbeat`）: `soft_timeout_seconds`（デフォルト300秒）経過でラップアップ用のリマインダを注入、`hard_timeout_seconds`（デフォルト600秒）でセッションを強制終了。`max_turns` を設定すると、ハートビート専用のターン上限として per-anima の `max_turns` を上書きできる。
+- **セッション時間制限**（`config.json` の `heartbeat`）: `soft_timeout_seconds`（デフォルト300秒）経過でラップアップ用のリマインダを注入、`hard_timeout_seconds`（デフォルト600秒）でセッションを強制終了する。
 - **アイドル時の自動コンパクト**: `heartbeat.idle_compaction_minutes`（デフォルト10分）— ストリーム終了からこの時間経過後にアイドル自動コンパクションが走る（実行エンジン側の設定）。
-- **Board 投稿の間隔**: `heartbeat.channel_post_cooldown_s`（デフォルト300秒、0 で無制限）— 同一 Anima の `post_channel` 連投を抑止。
+- **Board 投稿**: 同一 run では同じチャネルに 1 回まで。run をまたぐ投稿間隔の制限はない。
 
 ### 定期ハートビートのスケジュール方式
 
@@ -159,9 +157,9 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 
 それ以外（例: 実効61分、または43分のように 60 を割り切れない間隔）は **1分ごとのポーリング**（`_heartbeat_check`）で「前回からの経過」により発火する。古い `IntervalTrigger` 由来の不具合回避のための実装。
 
-### バックグラウンドツールと DM ログ（core/background.py）
+### バックグラウンドツールと DM ログ（core/tasks/background.py）
 
-`core/background.py` はハートビート/Cron のスケジュールそのものではなく、**長時間ツール呼び出しのバックグラウンド実行**（状態の JSON 永続化を含む）と **レガシー共有 DM ログ（`shared/dm_logs/`）のローテーション**を担う。運用の詳細・CLI 経路は `operations/background-tasks.md` も参照。
+`core/tasks/background.py` はハートビート/Cron のスケジュールそのものではなく、**長時間ツール呼び出しのバックグラウンド実行**（状態の JSON 永続化を含む）と **レガシー共有 DM ログ（`shared/dm_logs/`）のローテーション**を担う。運用の詳細・CLI 経路は `operations/background-tasks.md` も参照。
 
 #### BackgroundTaskManager
 
@@ -173,11 +171,11 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 - **候補ツールマップの構築 `from_profiles()`**: 次の 3 層を dict の `update` でマージし、**後勝ち**で上書きする。(1) `_DEFAULT_ELIGIBLE_TOOLS`（コード既定）(2) 引数 `profiles`（`EXECUTION_PROFILE` 集約）(3) 引数 `config_eligible`（通常は `config.json` の `background_task.eligible_tools` から `threshold_s` を展開した `名前 → 秒`）。値はプロファイル連携用の期待秒（整数）。
 - **コード既定 `_DEFAULT_ELIGIBLE_TOOLS`（秒）**: `generate_character_assets` 30、`generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 各 30、`generate_3d_model` / `generate_rigged_model` / `generate_animations` 各 30、`local_llm` 60、`run_command` 60。
 - **掃除 `cleanup_old_tasks(max_age_hours=24)`**: `status` が `completed` / `failed` で `completed_at` が **引数で指定した時間（デフォルト 24 時間）より古い** JSON を削除する。加えて `running` のまま `created_at` から **48 時間超**経過したファイルはクラッシュ孤児として削除する。戻り値は削除件数。
-- **`result_retention_hours` について**: `config.json` の `background_task.result_retention_hours` はスキーマ上あるが、**`BackgroundTaskManager.cleanup_old_tasks` はこの値を読まない**（デフォルトはメソッド引数 `max_age_hours=24`）。運用で保持時間を変える場合は、呼び出し側が `max_age_hours` に合わせる想定。
+- **保持時間**: `cleanup_old_tasks` の完了タスク保持時間は引数 `max_age_hours`（デフォルト24時間）で指定する。対応する `config.json` 設定キーはない。
 
 #### rotate_dm_logs（システム Cron）
 
-- **実行タイミング**: ライフサイクル（`core/lifecycle/system_crons.py` 等）のシステム Cron で **毎日 04:30**（サーバー設定タイムゾーン）。`core/supervisor/_mgr_scheduler.py` 側でも同一 ID のジョブが登録される構成。
+- **実行タイミング**: ライフサイクル（`core/lifecycle/system_crons.py` 等）のシステム Cron で **毎日 04:30**（サーバー設定タイムゾーン）。`server/supervisor/_mgr_scheduler.py` 側でも同一 ID のジョブが登録される構成。
 - **対象**: `shared/dm_logs/*.jsonl`（ファイル名に `.archive.` を含むものはスキップ）。
 - **動作**: `core.time_utils` のローカル現在時刻基準で、各行 JSON の `ts`（ISO 形式）をパースし、**デフォルト 7 日**より古いエントリを `{stem}.{YYYYMMDD}.archive.jsonl` に追記アーカイブしたうえで、現行ファイルから除去する。`ts` の解釈に失敗した行は **現行ファイルに残す**（データ損失防止）。
 - **その他のサーバー定時ジョブ**: Anima 単位の `cron.md` とは別に、ライフサイクルがメモリ保守・RAG 等のシステム Cron を登録する（例: 日次コンソリデーション 02:00、日次インデックス 04:00）。時刻は設定タイムゾーン基準。DM ローテーションは上記 04:30。
@@ -191,7 +189,7 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 
 ### status.jsonでの設定
 
-各Animaの `status.json` に `heartbeat_interval_minutes` を設定することで、Anima個別のHeartbeat間隔を指定できます。
+root 管理者は root CLI/API で Anima 個別の `heartbeat_interval_minutes` を設定できます。値は root 所有 `status.json` に保存され、Anima プロセスからは編集しません。
 
 ```json
 {
@@ -201,7 +199,7 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 
 - 設定可能範囲: 1〜1440分（1日）
 - 未設定の場合: `config.json` の `heartbeat.interval_minutes`（デフォルト30分）にフォールバック
-- Anima自身が `write_memory_file` で `status.json` を更新して自己調整可能
+- `status.json` は root 所有です。管理者はサーバー停止中に `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>` で個別の上書きを設定できます。サーバー起動中は CLI が root API 経由で反映します。Anima プロセスはこのファイルを編集しません。
 
 ### 推奨ガイドライン
 
@@ -224,8 +222,6 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 例: ベース30分、Activity Level 200% → 実効15分
 
 - 実効間隔の下限は5分（どれだけブーストしても5分未満にはならない）
-- Activity Level 100%以下では max_turns も比例してスケールダウン（下限3ターン）
-- Activity Level 100%以上では max_turns は変更なし（間隔のみ短縮）
 
 ### Activity Schedule（時間帯別自動切替 / ナイトモード）
 
@@ -261,7 +257,7 @@ Activity Level を時間帯に応じて自動的に切り替える仕組み。
 
 - **Settings UI**: ナイトモードのチェックボックス + 時間帯・レベル設定
 - **API**: `PUT /api/settings/activity-schedule` に上記 JSON を送信
-- **設定ファイル直接編集**: `config.json` の `activity_schedule` を編集後、サーバー再起動
+- **root 設定 API**: Settings UI を使うか、上記 JSON を `PUT /api/settings/activity-schedule` に送信する。Anima プロセスから `config.json` を直接編集しない
 
 #### 注意点
 
@@ -305,7 +301,7 @@ type: llm
 今週のepisodes/を読み返し、パターンを抽出してknowledge/に統合する。
 ```
 
-旧形式（`## タスク名（毎日 9:00 JST）` のように括弧内にスケジュールを書く形式）は、`animaworks migrate-cron` で新形式に変換できる。
+旧形式（`## タスク名（毎日 9:00 JST）` のように括弧内にスケジュールを書く形式）は、サーバー起動時または `animaworks migrate` で新形式に自動変換される。
 
 ### CronTask のスキーマ
 
@@ -440,7 +436,7 @@ cron.md の `schedule:` ディレクティブには **標準5フィールド cro
 
 ### 日本語スケジュールからの移行
 
-旧形式（`## タスク名（毎日 9:00 JST）`）で書かれた cron.md は、`animaworks migrate-cron` で標準 cron 式に変換できる。変換対応表:
+旧形式（`## タスク名（毎日 9:00 JST）`）で書かれた cron.md は、サーバー起動時または `animaworks migrate` で標準 cron 式に自動変換される。変換対応表:
 
 | 日本語記法 | cron 式例 |
 |-----------|----------|
@@ -544,7 +540,7 @@ type: llm
 
 cron.md を更新すると、heartbeat.md と同様にスケジュールが自動リロードされる。
 Anima 自身が cron.md を書き換えた場合も即座に反映される（self-modify パターン）。
-配下 Anima の `cron.md` / `heartbeat.md` / `injection.md` / `status.json` を上司が編集する場合も、write memoryツールで `../{anima_name}/cron.md` のように指定する。Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等の直接ファイル操作は使わない。
+上司は配下の `cron.md` / `heartbeat.md` を write memory ツールで編集できる。許可された上司からの `injection.md` 変更依頼も root に転送・認可される。`status.json` の変更には対応する上司向けツールまたは root CLI/API を使う。root 所有ファイルを Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等で直接書き込まない。
 
 リロード時の動作:
 1. 該当 Anima の既存 cron ジョブを全て削除

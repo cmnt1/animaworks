@@ -454,10 +454,9 @@ class TestRunnerWithMockedAdapter:
             results, errors = run_benchmark(args)
 
         assert "vector" in results
-        assert "vector_graph" in results
         assert "scope_all" in results
         result_files = list((tmp_path / "results_all").glob("*.json"))
-        assert len(result_files) == 3
+        assert len(result_files) == 2
 
     def test_run_benchmark_error_recovery(self, tmp_path):
         import argparse

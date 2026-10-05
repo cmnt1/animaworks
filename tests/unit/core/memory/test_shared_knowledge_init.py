@@ -7,6 +7,7 @@ Verifies that MemoryManager._init_indexer() triggers indexing of
 ~/.animaworks/common_knowledge/ into the shared_common_knowledge
 vector store collection.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +32,7 @@ class TestSharedKnowledgeInit:
         # Invalidate path caches
         try:
             from core.config import invalidate_cache
+
             invalidate_cache()
         except Exception:
             pass
@@ -53,24 +55,11 @@ class TestSharedKnowledgeInit:
 
         from core.memory.manager import MemoryManager
 
-        class FakeArray:
-            """Minimal ndarray-like object with tolist()."""
-            def __init__(self):
-                self._data = [0.0] * 384
-            def tolist(self):
-                return self._data
-
-        mock_embedding = MagicMock()
-        mock_embedding.encode.return_value = [FakeArray()]
-
-        def _set_embedding(self_indexer):
-            self_indexer.embedding_model = mock_embedding
-
         with (
-            patch("core.memory.rag.singleton.get_vector_store") as mock_vs,
+            patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
             patch(
-                "core.memory.rag.indexer.MemoryIndexer._init_embedding_model",
-                _set_embedding,
+                "core.memory.rag.indexer.MemoryIndexer._generate_embeddings",
+                return_value=[[0.0] * 384],
             ),
         ):
             mock_store = MagicMock()
@@ -82,12 +71,9 @@ class TestSharedKnowledgeInit:
 
             # Verify create_collection was called with shared_common_knowledge
             collection_calls = [
-                c for c in mock_store.create_collection.call_args_list
-                if c[0][0] == "shared_common_knowledge"
+                c for c in mock_store.create_collection.call_args_list if c[0][0] == "shared_common_knowledge"
             ]
-            assert len(collection_calls) >= 1, (
-                "shared_common_knowledge collection should be created"
-            )
+            assert len(collection_calls) >= 1, "shared_common_knowledge collection should be created"
 
     def test_skips_when_no_common_knowledge_files(self, anima_dir: Path, data_dir: Path, caplog):
         """When common_knowledge/ is empty, indexing is skipped gracefully."""
@@ -95,8 +81,7 @@ class TestSharedKnowledgeInit:
         from core.memory.manager import MemoryManager
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
+            patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
         ):
             mock_store = MagicMock()
             mock_vs.return_value = mock_store
@@ -107,8 +92,7 @@ class TestSharedKnowledgeInit:
 
             # shared_common_knowledge should NOT be created
             shared_calls = [
-                c for c in mock_store.create_collection.call_args_list
-                if c[0][0] == "shared_common_knowledge"
+                c for c in mock_store.create_collection.call_args_list if c[0][0] == "shared_common_knowledge"
             ]
             assert len(shared_calls) == 0
 
@@ -120,8 +104,7 @@ class TestSharedKnowledgeInit:
         from core.memory.manager import MemoryManager
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
+            patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
             patch(
                 "core.memory.manager.MemoryManager._ensure_shared_knowledge_indexed",
                 side_effect=RuntimeError("indexing boom"),
@@ -148,8 +131,7 @@ class TestSharedKnowledgeInit:
         from core.memory.manager import MemoryManager
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
+            patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
         ):
             mock_store = MagicMock()
             mock_vs.return_value = mock_store

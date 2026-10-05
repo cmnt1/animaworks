@@ -191,7 +191,7 @@ def collect_servers() -> dict:
 
 def collect_tasks() -> dict:
     """各担当アニマの task_queue から FIN-047 関連のアクティブタスクを読む (read-only)."""
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     result: dict[str, list[str]] = {}
     for anima in ASSIGNEES:
@@ -344,7 +344,7 @@ def reflection_marker(directive_id: str) -> str:
 
 def seed_reflection_task(directive: dict) -> str | None:
     """オーナー指示ごとに ayane へ計画反映タスクを冪等投入する."""
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     anima_dir = get_animas_dir() / DIRECTIVE_ASSIGNEE
     if not anima_dir.is_dir():
@@ -443,7 +443,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
     完了確認は投入時刻以降に #finance へ FIN-047 言及の投稿があること。
     前日以前の未消化日次報告タスクは自動キャンセルして堆積を防ぐ。
     """
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     date_str = now.strftime("%Y-%m-%d")
     since_ts = now.isoformat()
@@ -505,7 +505,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
             # task_queue だけだと heartbeat 任せで気づかれない (2026-07-18 に全員スルーの実績)。
             # inbox にも通知を落とし、intent filter 経由の即時処理を促す。
             try:
-                from core.messenger import Messenger
+                from core.messaging.messenger import Messenger
 
                 Messenger(get_shared_dir(), "cmnt").send(
                     to=anima,
@@ -632,7 +632,7 @@ def directive_lines(fresh: list[dict], pending: list[dict]) -> list[str]:
 
 
 def post_to_discord(text: str) -> str:
-    from core.discord_webhooks import get_webhook_manager
+    from core.messaging.discord_webhooks import get_webhook_manager
 
     # 専用スレッドが登録されていればそこへ、なければ #finance トップへ
     channel_id, thread_id = DISCORD_FINANCE_CHANNEL_ID, None

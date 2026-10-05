@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
-from core._anima_heartbeat import _extract_plan_summary, _MAX_PLAN_SUMMARY_CHARS
+from core.anima.heartbeat import _MAX_PLAN_SUMMARY_CHARS, _extract_plan_summary
 
 
 class TestExtractPlanSummary:
@@ -70,10 +68,7 @@ class TestExtractPlanSummary:
         assert "Just plan" in result
 
     def test_does_not_capture_reflect_content(self):
-        text = (
-            "## Plan\nDelegate to hinata.\n\n"
-            "## Reflect\nThis should not be in plan."
-        )
+        text = "## Plan\nDelegate to hinata.\n\n## Reflect\nThis should not be in plan."
         result = _extract_plan_summary(text)
         assert "should not be in plan" not in result
         assert "Delegate to hinata" in result

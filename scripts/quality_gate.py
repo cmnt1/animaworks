@@ -77,7 +77,7 @@ def parse_json_loose(text: str) -> dict | None:
 
 
 async def score_item(anima: str, item: dict, sem: asyncio.Semaphore) -> dict:
-    from core.memory._llm_utils import one_shot_completion
+    from core.llm.oneshot import one_shot_completion
 
     kind = "通知" if item["type"] == "human_notify" else "チャット返信"
     content = str(item.get("content", ""))[:4000]

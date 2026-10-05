@@ -5,7 +5,7 @@
 
 Stands up an in-process ``asyncio`` WebSocket mock of Zoom's RTMS signaling
 and media servers (using the real :mod:`websockets` library) and drives the
-real :class:`server.zoom_gateway.ZoomRTMSManager` through the full path:
+real :class:`server.gateways.zoom_gateway.ZoomRTMSManager` through the full path:
 
     rtms_started webhook
       → signaling WS connect + HMAC-SHA256 handshake
@@ -40,15 +40,15 @@ from typing import Any
 
 import pytest
 
-import core.messenger as messenger_mod
+import core.messaging.messenger as messenger_mod
 from core.config import invalidate_cache
-from server.zoom_gateway import ZoomRTMSManager
+from server.gateways.zoom_gateway import ZoomRTMSManager
 
 websockets = pytest.importorskip("websockets")
 
 pytestmark = pytest.mark.e2e
 
-# ── RTMS protocol constants (mirror server/zoom_gateway.py) ───────────────
+# ── RTMS protocol constants (mirror server/gateways/zoom_gateway.py) ───────────────
 MSG_SIGNALING_HANDSHAKE_REQ = 1
 MSG_SIGNALING_HANDSHAKE_RESP = 2
 MSG_DATA_HANDSHAKE_REQ = 3
@@ -523,7 +523,7 @@ async def test_reconnect_recovers_and_dedup_prevents_duplicates(harness):
     # A re-delivered chunk (identical source_message_id) is dropped by the
     # dedup guard the gateway relies on — no new inbox file appears.
     before = len(_read_inbox(harness.shared_dir, "kotoha"))
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     duplicate = Messenger(get_shared_dir(), "kotoha").receive_external(

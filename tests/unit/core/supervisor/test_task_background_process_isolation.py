@@ -12,18 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.streaming_journal import StreamingJournal
-from core.platform.processing_lease import (
-    read_processing_lease,
-    write_processing_lease,
-)
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.pending_executor import PendingTaskExecutor
-from core.supervisor.task_runner_supervisor import (
+from core.memory.conversation.streaming_journal import StreamingJournal
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.task_runner_supervisor import (
     TaskRunnerError,
     TaskRunnerJob,
     TaskRunnerSupervisor,
 )
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
@@ -37,8 +33,6 @@ def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
     anima._status_slots = {"background": "idle"}
     anima._task_slots = {"background": ""}
     anima._active_background_workers = {}
-    anima._active_parallel_tasks = {}
-    anima._task_semaphore = None
     anima._keepalive_while_busy = None
     return anima
 
@@ -46,29 +40,14 @@ def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
 def _executor(
     tmp_path: Path,
     *,
-    task_isolated: bool = False,
-    background_isolated: bool = False,
+    with_supervisor: bool = False,
     pool_size: int = 1,
 ) -> tuple[PendingTaskExecutor, MagicMock, Path]:
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
-    flags: dict[str, bool] = {}
-    if task_isolated:
-        flags["task"] = True
-    if background_isolated:
-        flags["background"] = True
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": flags,
-            }
-        ),
-        encoding="utf-8",
-    )
     anima = _anima_double(tmp_path, pool_size=pool_size)
     supervisor = None
-    if task_isolated or background_isolated:
+    if with_supervisor:
         supervisor = TaskRunnerSupervisor(
             "sakura",
             anima_dir,
@@ -160,33 +139,10 @@ async def test_journal_recovery_keeps_registration_locked_until_disk_work_finish
 
 
 @pytest.mark.asyncio
-async def test_task_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
-    executor, anima, _ = _executor(tmp_path, task_isolated=False)
-    assert executor._task_isolated is False
-    assert executor._task_runner_supervisor is None
-
-    task_desc = {"task_id": "t-legacy", "title": "legacy", "description": "work", "task_type": "llm"}
-    with (
-        patch.object(executor, "_run_llm_task", new=AsyncMock(return_value="done")) as run_llm,
-        patch.object(executor, "_sync_task_queue"),
-    ):
-        await executor._execute_llm_task(task_desc)
-
-    run_llm.assert_awaited_once()
-    # No supervisor means no isolated spawn path.
-    assert executor._task_runner_supervisor is None
-
-
-@pytest.mark.asyncio
 async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, _anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_isolated is True
     assert executor._task_runner_supervisor is not None
-
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    processing_path = processing / "t-iso.json"
-    processing_path.write_text('{"task_id":"t-iso"}', encoding="utf-8")
 
     executor._task_runner_supervisor.run_task = AsyncMock(
         return_value={"task_type": "llm", "result": "child-done", "success": True}
@@ -205,7 +161,7 @@ async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path)
         patch.object(executor, "_run_llm_task", new=AsyncMock()) as run_llm,
         patch.object(executor, "_sync_task_queue") as sync,
     ):
-        await executor._execute_llm_task(task_desc, processing_path=processing_path)
+        await executor._execute_llm_task(task_desc)
 
     run_llm.assert_not_awaited()
     executor._task_runner_supervisor.run_task.assert_awaited_once()
@@ -216,7 +172,7 @@ async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
 
@@ -248,71 +204,37 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_queue_cancelled_child_is_reported_as_cancel_not_crash(tmp_path: Path, caplog) -> None:
-    from core.supervisor.pending_executor import _SENTINEL_CANCELLED
-    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
+    from core.runtime.task_runner_supervisor import TaskRunnerCancelled
 
-    executor, anima, _anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, _anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+
     executor._task_runner_supervisor.run_task = AsyncMock(
         side_effect=TaskRunnerCancelled("task runner stopped because the task was cancelled (exit=-15)")
     )
     task_desc = {"task_id": "t-cancel", "title": "cancel", "description": "work", "task_type": "llm"}
     with (
-        patch.object(executor, "_save_task_result") as save_result,
+        patch.object(executor, "_save_task_result"),
         patch.object(executor, "_record_run_ended") as record_end,
-        patch.object(executor, "_sync_task_queue") as sync,
-        caplog.at_level("INFO", logger="core.supervisor.pending_executor"),
+        patch.object(executor, "_sync_task_queue"),
+        caplog.at_level("INFO", logger="core.tasks.pending_executor"),
     ):
         await executor._execute_llm_task(task_desc)
 
+    assert not any("Isolated TaskExec child failed" in r.getMessage() for r in caplog.records)
     assert any("stopped by queue cancel" in r.getMessage() for r in caplog.records)
-    assert not any(r.levelno >= 30 for r in caplog.records)
-    save_result.assert_called_once_with("t-cancel", _SENTINEL_CANCELLED)
-    assert sync.call_args.args[:2] == ("t-cancel", "cancelled")
-    record_end.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_canonical_queue_cancel_does_not_become_crash_or_requeue(tmp_path: Path, caplog) -> None:
-    from core.memory.task_queue import TaskQueueManager
-    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
-
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
-    assert executor._task_runner_supervisor is not None
-    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
-    queue = TaskQueueManager(anima_dir)
-    task_desc = {"task_id": "t-canonical-cancel", "title": "cancel", "description": "work", "task_type": "llm"}
-    publish_tasks(anima_dir, [task_desc])
-    claim = queue.store.claim("sakura", task_desc["task_id"], process_identity())
-    assert claim is not None
-
-    async def cancelled_run(*args, **kwargs):
-        queue.update_status(task_desc["task_id"], "cancelled")
-        raise TaskRunnerCancelled("task cancelled in the queue")
-
-    executor._task_runner_supervisor.run_task = AsyncMock(side_effect=cancelled_run)
-    with caplog.at_level("INFO", logger="core.supervisor.pending_executor"):
-        await executor._execute_canonical_task(claim)
-
-    entry = queue.store.get("sakura", task_desc["task_id"])
-    assert entry.status == "cancelled"
-    assert entry.meta["last_run_stop_kind"] == "interrupted"
-    assert queue.store.active_attempts("sakura") == []
-    assert queue.store.wakeups("sakura") == []
-    assert not any(r.levelno >= 30 for r in caplog.records)
-    anima.messenger.send.assert_not_called()
+    note = str(record_end.call_args.kwargs.get("note", "")) if record_end.call_args else ""
+    assert "PARTIALLY EXECUTED" not in note
 
 
 @pytest.mark.asyncio
 async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
-    from core.memory.task_queue import TaskQueueManager
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
+    from core.tasks.queue import TaskQueueManager
 
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
 
@@ -339,7 +261,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     claim = store.claim("sakura", task_desc["task_id"], process_identity())
     assert claim is not None
     executor._shutdown_event.set()
-    with patch("core.taskboard.tasks.identity_liveness", return_value="unknown"):
+    with patch("core.tasks.board.tasks.identity_liveness", return_value="unknown"):
         await executor._execute_canonical_task(claim)
         executor._recover_task_attempts(store)
     # An owner with uncertain liveness retains its exact attempt fence.
@@ -348,7 +270,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     assert store.claim("sakura", task_desc["task_id"], process_identity()) is None
     assert store.wakeups("sakura") == []
     anima.messenger.send.assert_not_called()
-    with patch("core.taskboard.tasks.identity_liveness", return_value="dead"):
+    with patch("core.tasks.board.tasks.identity_liveness", return_value="dead"):
         executor._recover_task_attempts(store)
     # Proven death ends ownership, preserves input, and requests attention;
     # it does not automatically replay possibly completed side effects.
@@ -361,112 +283,10 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> None:
-    executor, _, anima_dir = _executor(tmp_path, task_isolated=True)
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    path = processing / "t-attempt.json"
-    path.write_text('{"task_id":"t-attempt"}', encoding="utf-8")
-
-    attempt = executor._next_attempt("t-attempt")
-    write_processing_lease(
-        path,
-        anima="sakura",
-        task_id="t-attempt",
-        pid=os.getpid(),
-        job_id="job-1",
-        task_pid=os.getpid(),
-        pgid=os.getpid(),
-        root_epoch="epoch",
-        attempt=attempt,
-        process_start_time=1.0,
-    )
-    with patch(
-        "core.supervisor.pending_executor.is_processing_lease_live",
-        return_value=True,
-    ):
-        # Force attempt tracker to same attempt as lease.
-        executor._attempt_by_task_id["t-attempt"] = attempt
-        claimed = executor._claim_processing_task(path, {"task_id": "t-attempt"})
-    assert claimed is None
-
-
-@pytest.mark.asyncio
-async def test_lease_v2_written_on_spawn_callback(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
-    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    processing_path = processing / "t-lease.json"
-    processing_path.write_text('{"task_id":"t-lease"}', encoding="utf-8")
-
-    async def _fake_run_task(task_desc, *, attempt=1, display_lane="background", on_spawned=None):
-        identity = IPCV2Identity(
-            job_id="job-lease",
-            root_epoch="epoch-lease",
-            attempt=attempt,
-            lane="task",
-            display_lane=display_lane,
-        )
-        job = SimpleNamespace(
-            identity=identity,
-            pid=4242,
-            pgid=4242,
-            process_start_time=123.45,
-        )
-        if on_spawned is not None:
-            await on_spawned(job)
-        return {"task_type": "llm", "result": "ok", "success": True}
-
-    executor._task_runner_supervisor.run_task = AsyncMock(side_effect=_fake_run_task)
-    with (
-        patch.object(executor, "_sync_task_queue"),
-    ):
-        await executor._execute_llm_task(
-            {"task_id": "t-lease", "title": "x", "description": "y", "task_type": "llm"},
-            processing_path=processing_path,
-        )
-
-    payload = read_processing_lease(processing_path)
-    assert payload is not None
-    assert payload.get("schema_version") == 2
-    assert payload.get("task_pid") == 4242
-    assert payload.get("job_id") == "job-lease"
-    assert payload.get("attempt") == 1
-
-
-@pytest.mark.asyncio
-async def test_background_flag_false_uses_legacy_command_path(tmp_path: Path) -> None:
-    executor, anima, _ = _executor(tmp_path, background_isolated=False)
-    assert executor._background_isolated is False
-
-    # Without isolation, command path needs BackgroundTaskManager.
-    bg_mgr = MagicMock()
-    bg_mgr.submit = MagicMock(return_value="bg-1")
-    bg_mgr._async_tasks = {}
-    agent = MagicMock()
-    agent.background_manager = bg_mgr
-    anima.agent = agent
-    type(anima)._agent_for_lane = None  # type: ignore[attr-defined]
-
-    result = await executor.execute_pending_task(
-        {
-            "task_id": "cmd-1",
-            "task_type": "command",
-            "tool_name": "echo",
-            "subcommand": "",
-            "raw_args": [],
-        }
-    )
-    assert result is None
-    bg_mgr.submit.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
-    from core.background import BackgroundTaskManager, TaskStatus
+    from core.tasks.background import BackgroundTaskManager, TaskStatus
 
-    executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     manager = BackgroundTaskManager(anima_dir)
     manager.on_complete = AsyncMock()
     anima.agent.background_manager = manager
@@ -504,9 +324,9 @@ async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_isolated_command_failure_is_saved_and_notified(tmp_path: Path) -> None:
-    from core.background import BackgroundTaskManager, TaskStatus
+    from core.tasks.background import BackgroundTaskManager, TaskStatus
 
-    executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     manager = BackgroundTaskManager(anima_dir)
     manager.on_complete = AsyncMock()
     anima.agent.background_manager = manager
@@ -548,7 +368,11 @@ async def test_background_pool_limit_caps_concurrent_children(tmp_path: Path) ->
         patch.object(
             TaskRunnerSupervisor,
             "_required_url_environment",
-            return_value={"ANIMAWORKS_EMBED_URL": "http://embed.test"},
+            return_value={
+                "ANIMAWORKS_EMBED_URL": "http://embed.test",
+                "ANIMAWORKS_VECTOR_URL": "http://vector.test",
+                "ANIMAWORKS_RERANK_URL": "http://rerank.test",
+            },
         ),
     ):
         first = asyncio.create_task(supervisor.run_background(kind="command", payload={"tool_name": "a"}))
@@ -563,7 +387,7 @@ async def test_background_pool_limit_caps_concurrent_children(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(os.name == "nt", reason="process groups / os.killpg are POSIX-only")
+@pytest.mark.skipif(__import__("os").name == "nt", reason="Requires POSIX process groups")
 async def test_sigkill_only_reaps_task_group_and_root_survives(tmp_path: Path) -> None:
     shared = tmp_path / "shared"
     anima_dir = tmp_path / "animas" / "sakura"

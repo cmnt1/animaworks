@@ -3,12 +3,13 @@
 Verifies that external platform source info is injected into the LLM prompt
 so the Anima knows not to attempt send_message via other channels (Issue #38).
 """
+
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from core.schemas import CycleResult, EXTERNAL_PLATFORM_SOURCES
+from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult
 from core.tooling.handler import active_session_type
 
 
@@ -22,15 +23,30 @@ def _wire_session_type(dp) -> None:
     dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
 
+def _capture_prompt_stream(captured_prompts: list[str]):
+    async def _capture_streaming(prompt, trigger="manual", **kwargs):
+        captured_prompts.append(prompt)
+        result = _make_cycle_result(
+            trigger=trigger,
+            session_type="chat",
+            thread_id=kwargs.get("thread_id", "default"),
+        )
+        yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
+
+    return _capture_streaming
+
+
 def _setup_anima(make_anima, data_dir):
     """Create a DigitalAnima with mocked dependencies."""
     anima_dir = make_anima("alice")
     shared_dir = data_dir / "shared"
 
-    with patch("core.anima.AgentCore") as MockAgent, \
-         patch("core.anima.MemoryManager") as MockMM, \
-         patch("core.anima.Messenger"), \
-         patch("core._anima_messaging.ConversationMemory") as MockConv:
+    with (
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+        patch("core.anima.messaging.ConversationMemory") as MockConv,
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
         MockConv.return_value.compress_if_needed = AsyncMock()
         MockConv.return_value.finalize_session = AsyncMock(return_value=False)
@@ -40,7 +56,8 @@ def _setup_anima(make_anima, data_dir):
         MockConv.return_value.write_transcript = MagicMock()
         MockConv.return_value.needs_compression = MagicMock(return_value=False)
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         dp = DigitalAnima(anima_dir, shared_dir)
         _wire_session_type(dp)
         return dp
@@ -53,12 +70,7 @@ class TestProcessMessageSource:
         """When source is an external platform, prompt includes platform_context."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human", source="googlechat")
 
         assert len(captured_prompts) == 1
@@ -70,12 +82,7 @@ class TestProcessMessageSource:
         """When source is empty, prompt is unchanged."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human")
 
         assert len(captured_prompts) == 1
@@ -85,12 +92,7 @@ class TestProcessMessageSource:
         """When source is not in EXTERNAL_PLATFORM_SOURCES, no injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human", source="webui")
 
         assert len(captured_prompts) == 1
@@ -100,12 +102,7 @@ class TestProcessMessageSource:
         """Slack source also triggers injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hi", from_person="human", source="slack")
 
         assert len(captured_prompts) == 1
@@ -116,12 +113,7 @@ class TestProcessMessageSource:
         """The original user message is still present in the prompt after injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("My unique message", from_person="human", source="googlechat")
 
         assert "My unique message" in captured_prompts[0]
@@ -183,14 +175,16 @@ class TestSupervisorSourcePassthrough:
     """Verify that runner/streaming_handler pass source from params."""
 
     async def test_runner_passes_source(self):
-        """_handle_process_message extracts source from params."""
-        from core.supervisor.runner import AnimaRunner
+        """_handle_process_message forwards source in the payload to the child."""
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
-        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima
+        supervisor = MagicMock()
+        supervisor.run_chat = AsyncMock(return_value={"summary": "ok", "images": []})
+        runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
         params = {
             "message": "Hello",
@@ -199,22 +193,23 @@ class TestSupervisorSourcePassthrough:
         }
         await runner._handle_process_message(params)
 
-        mock_anima.process_message.assert_called_once()
-        call_kwargs = mock_anima.process_message.call_args
-        assert call_kwargs.kwargs.get("source") == "googlechat"
+        supervisor.run_chat.assert_awaited_once_with(kind="message", payload=params)
+        mock_anima.process_message.assert_not_awaited()
 
     async def test_runner_default_source_empty(self):
-        """When source is not in params, it defaults to empty string."""
-        from core.supervisor.runner import AnimaRunner
+        """When source is not in params, payload is forwarded as-is."""
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
-        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima
+        supervisor = MagicMock()
+        supervisor.run_chat = AsyncMock(return_value={"summary": "ok", "images": []})
+        runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
         params = {"message": "Hello", "from_person": "human"}
         await runner._handle_process_message(params)
 
-        call_kwargs = mock_anima.process_message.call_args
-        assert call_kwargs.kwargs.get("source") == ""
+        supervisor.run_chat.assert_awaited_once_with(kind="message", payload=params)
+        mock_anima.process_message.assert_not_awaited()

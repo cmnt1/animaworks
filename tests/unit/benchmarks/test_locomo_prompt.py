@@ -6,13 +6,13 @@ from __future__ import annotations
 class TestAnswerPromptConstants:
     """Verify answer prompt templates contain required elements."""
 
-    def test_neo4j_adapter_has_answer_system(self) -> None:
+    def test_answer_prompt_has_system(self) -> None:
         from benchmarks.locomo.answer_prompt import ANSWER_SYSTEM
 
         assert "expert assistant" in ANSWER_SYSTEM
         assert "past conversations" in ANSWER_SYSTEM
 
-    def test_neo4j_adapter_has_answer_template(self) -> None:
+    def test_answer_prompt_has_template(self) -> None:
         from benchmarks.locomo.answer_prompt import ANSWER_TEMPLATE
 
         assert "{context}" in ANSWER_TEMPLATE
@@ -48,18 +48,6 @@ class TestAnswerPromptConstants:
         )
         assert "When did I go to the vet?" in result
         assert "event_time: 2023-05-08T13:56:00" in result
-
-
-class TestNeo4jAdapterDefaults:
-    """Verify default configuration values."""
-
-    def test_default_top_k_is_10(self) -> None:
-        import inspect
-
-        from benchmarks.locomo.neo4j_adapter import Neo4jLoCoMoAdapter
-
-        sig = inspect.signature(Neo4jLoCoMoAdapter.__init__)
-        assert sig.parameters["top_k"].default == 10
 
 
 class TestRunnerDefaults:

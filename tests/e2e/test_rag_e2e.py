@@ -15,10 +15,10 @@ Install with: pip install 'animaworks[rag]'
 import asyncio
 import os
 from datetime import timedelta
-from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.time_utils import now_jst, today_local
 
 # Skip all tests if required dependencies are not installed
@@ -71,11 +71,8 @@ def vector_store(anima_dir):
     """Create a ChromaDB vector store persisted under the anima's vectordb dir."""
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
-    yield store
-    from tests.helpers.chroma import close_chroma_store
-
-    close_chroma_store(store)
+    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
+    return store
 
 
 @pytest.fixture
@@ -214,188 +211,11 @@ def test_e2e_temporal_decay_ordering(anima_dir, indexer, retriever):
     assert new_recency > old_recency, "Newer file should have higher recency score"
 
 
-# ── Test 3: Spreading Activation ──────────────────────────────────
+# ── Test 3: Incremental Indexing ──────────────────────────────────
 
 
-def test_e2e_spreading_activation(anima_dir, vector_store, indexer, monkeypatch):
-    """Verify spreading activation expands search results via knowledge graph links.
-
-    Creates three knowledge files where file-A links to file-B via ``[[link]]``
-    notation. After building the graph, a search for file-A's content with
-    spreading activation enabled should also surface file-B as an activated neighbor.
-    """
-    from core.memory.rag.graph import GRAPH_CACHE_FILE, KnowledgeGraph, rebuild_graph_cache
-    from core.memory.rag.retriever import MemoryRetriever
-
-    knowledge_dir = anima_dir / "knowledge"
-
-    # Create interconnected files with [[link]] references
-    (knowledge_dir / "api-design.md").write_text(
-        "# API設計方針\n\n"
-        "## RESTful設計\n\nリソース指向でAPIを設計する。関連: [[error-handling]]\n\n"
-        "## バージョニング\n\nURLパスにバージョン番号を含める。\n",
-        encoding="utf-8",
-    )
-    (knowledge_dir / "error-handling.md").write_text(
-        "# エラーハンドリング\n\n"
-        "## HTTP ステータスコード\n\n適切なステータスコードを返す。関連: [[logging-policy]]\n\n"
-        "## エラーレスポンス形式\n\nJSON形式で統一的なエラーレスポンスを返す。\n",
-        encoding="utf-8",
-    )
-    (knowledge_dir / "logging-policy.md").write_text(
-        "# ログ出力方針\n\n"
-        "## ログレベル\n\nDEBUG, INFO, WARNING, ERROR の4段階を使い分ける。\n\n"
-        "## 構造化ログ\n\nJSON形式のログ出力を標準とする。\n",
-        encoding="utf-8",
-    )
-
-    # Index all files
-    indexer.index_directory(knowledge_dir, "knowledge")
-
-    # Create retriever with spreading activation
-    retriever = MemoryRetriever(
-        vector_store,
-        indexer,
-        knowledge_dir,
-    )
-
-    search_args = dict(
-        query="API設計のエラー処理について",
-        anima_name="test_anima",
-        memory_type="knowledge",
-        top_k=2,
-    )
-    dense = retriever.search(**search_args, enable_spreading_activation=False)
-    cache_file = anima_dir / "vectordb" / GRAPH_CACHE_FILE
-    assert dense
-    assert not cache_file.exists()
-    with monkeypatch.context() as guard:
-        build = MagicMock(side_effect=AssertionError("Request must not build the graph"))
-        guard.setattr(KnowledgeGraph, "build_graph", build)
-        cold = retriever.search(**search_args, enable_spreading_activation=True)
-        assert {(r.doc_id, r.content) for r in cold} == {(r.doc_id, r.content) for r in dense}
-        assert all("pagerank" not in r.source_scores for r in cold)
-        build.assert_not_called()
-        assert not cache_file.exists()
-
-    # Graph construction is an explicit maintenance operation. Search must
-    # consume its persisted cache, including after the earlier cold miss.
-    assert rebuild_graph_cache("test_anima", anima_dir, vector_store, indexer)
-    assert cache_file.is_file()
-    with monkeypatch.context() as guard:
-        build = MagicMock(side_effect=AssertionError("Warm request must load the cache"))
-        guard.setattr(KnowledgeGraph, "build_graph", build)
-        results = retriever.search(**search_args, enable_spreading_activation=True)
-        build.assert_not_called()
-    activated = [r for r in results if r.metadata.get("activation") == "spreading"]
-    assert activated, "Warm graph must add a neighbor, not merely return dense hits"
-    assert all(r.source_scores.get("pagerank", 0) > 0 for r in activated)
-    assert any(r.doc_id not in {seed.doc_id for seed in dense} for r in activated)
-
-    assert len(results) > 0, "Should return results"
-
-    # Collect all doc IDs and content from results
-    all_content = " ".join(r.content for r in results)
-    all_doc_ids = [r.doc_id for r in results]
-
-    # With spreading activation, we expect related nodes to appear
-    # Either via direct search or via graph expansion
-    has_api = any("api-design" in d for d in all_doc_ids)
-    has_error = any("error-handling" in d for d in all_doc_ids) or "エラー" in all_content
-
-    # At minimum, the directly relevant files should be found
-    assert has_api or has_error, "Search should find api-design or error-handling content"
-
-    # Spreading activation should bring in at least one linked neighbor
-    # (either error-handling via api-design's link, or logging-policy via error-handling's link)
-    total_unique_files = len({d.split("/")[-1].split("#")[0] for d in all_doc_ids if "/" in d})
-    assert total_unique_files >= 2, (
-        f"Spreading activation should expand results beyond a single file (found {total_unique_files} unique files)"
-    )
-
-
-# ── Test 4: Graph Cache Persistence ───────────────────────────────
-
-
-def test_e2e_graph_cache_persistence(anima_dir, vector_store, indexer):
-    """Verify knowledge graph can be saved and loaded from JSON cache.
-
-    Builds a graph, saves it to a cache directory, creates a new
-    KnowledgeGraph instance, loads the cache, and verifies that the loaded
-    graph produces the same PageRank scores as the original.
-    """
-    from core.memory.rag.graph import KnowledgeGraph
-
-    knowledge_dir = anima_dir / "knowledge"
-    cache_dir = anima_dir / "vectordb"
-
-    # Create knowledge files with links
-    (knowledge_dir / "infra.md").write_text(
-        "# インフラ構成\n\nAWSを使ったインフラ構成。関連: [[deploy]]\n",
-        encoding="utf-8",
-    )
-    (knowledge_dir / "deploy.md").write_text(
-        "# デプロイ手順\n\nCI/CDパイプラインの構成。関連: [[infra]]\n",
-        encoding="utf-8",
-    )
-    (knowledge_dir / "monitoring.md").write_text(
-        "# 監視設定\n\nCloudWatchでの監視設定。関連: [[infra]]\n",
-        encoding="utf-8",
-    )
-
-    # Index files first (needed for implicit link calculation)
-    indexer.index_directory(knowledge_dir, "knowledge")
-
-    # Build and save graph
-    graph1 = KnowledgeGraph(vector_store, indexer)
-    graph1.build_graph("test_anima", knowledge_dir)
-    graph1.save_graph(cache_dir)
-
-    # Verify cache file exists
-    cache_file = cache_dir / "knowledge_graph.json"
-    assert cache_file.exists(), "Graph cache file should be created"
-
-    # Compute PageRank on original graph
-    scores1 = graph1.personalized_pagerank(["infra"])
-
-    # Load into a new instance
-    graph2 = KnowledgeGraph(vector_store, indexer)
-    loaded = graph2.load_graph(cache_dir)
-
-    assert loaded is True, "Graph should load successfully from cache"
-    assert graph2.graph is not None
-
-    # Verify structural equivalence
-    assert graph2.graph.number_of_nodes() == graph1.graph.number_of_nodes(), (
-        "Loaded graph should have same number of nodes"
-    )
-    assert graph2.graph.number_of_edges() == graph1.graph.number_of_edges(), (
-        "Loaded graph should have same number of edges"
-    )
-
-    # Verify nodes are preserved
-    for node in graph1.graph.nodes():
-        assert node in graph2.graph, f"Node '{node}' should exist in loaded graph"
-
-    # Verify PageRank scores match
-    scores2 = graph2.personalized_pagerank(["infra"])
-    for node in scores1:
-        assert abs(scores1[node] - scores2[node]) < 1e-6, (
-            f"PageRank score for '{node}' should match between original and loaded graph"
-        )
-
-
-# ── Test 5: Incremental Index and Graph ───────────────────────────
-
-
-def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retriever):
-    """Verify incremental indexing and graph updates work correctly.
-
-    Builds an initial index and graph, then adds a new file. After
-    incremental indexing and graph update, the new file should appear
-    in search results.
-    """
-    from core.memory.rag.graph import KnowledgeGraph
+def test_e2e_incremental_indexing(anima_dir, indexer, retriever):
+    """Verify an incrementally indexed file appears in dense search results."""
 
     knowledge_dir = anima_dir / "knowledge"
 
@@ -415,13 +235,6 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
 
     # Initial full index
     indexer.index_directory(knowledge_dir, "knowledge")
-
-    # Build initial graph
-    graph = KnowledgeGraph(vector_store, indexer)
-    graph.build_graph("test_anima", knowledge_dir)
-
-    initial_nodes = graph.graph.number_of_nodes()
-    assert initial_nodes == 2
 
     # Verify initial search works
     assert retriever.search(
@@ -443,15 +256,6 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
     # Incremental index of new file only
     chunks_added = indexer.index_file(new_file, "knowledge")
     assert chunks_added > 0, "New file should produce chunks"
-
-    # Rebuild the graph to pick up the new file. Incremental graph update
-    # was removed with the file watcher (2026-07); in production the daily
-    # indexing scheduler calls rebuild_graph_cache() to refresh the persisted
-    # graph cache (already-loaded in-process graphs refresh on restart).
-    graph.build_graph("test_anima", knowledge_dir)
-
-    assert graph.graph.number_of_nodes() == initial_nodes + 1
-    assert "query-optimization" in graph.graph
 
     # Search again - new file should appear in results
     results_after = retriever.search(

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 @pytest.fixture
@@ -191,7 +191,7 @@ class TestCleanupZombieReap:
         handle.ipc_client = None
         handle.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
+        with patch("server.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle._cleanup()
 
         mock_terminate.assert_called_with(mock_process, force=False)
@@ -231,11 +231,11 @@ class TestCleanupZombieReap:
 
         class FakeRuntimeProcess:
             def cmdline(self) -> list[str]:
-                return ["python", "-m", "core.supervisor.runner", "--anima-name", "test-anima"]
+                return ["python", "-m", "core.runtime.runner", "--anima-name", "test-anima"]
 
         with (
-            patch("core.supervisor.process_handle.psutil.Process", return_value=FakeRuntimeProcess()),
-            patch("core.supervisor.process_handle.terminate_pid") as mock_terminate_pid,
+            patch("server.supervisor.process_handle.psutil.Process", return_value=FakeRuntimeProcess()),
+            patch("server.supervisor.process_handle.terminate_pid") as mock_terminate_pid,
         ):
             await handle._cleanup()
 
@@ -273,8 +273,8 @@ class TestStopProcess:
         handle.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
         with (
-            patch("core.supervisor.process_handle.psutil.Process") as mock_psutil_process,
-            patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate) as mock_terminate,
+            patch("server.supervisor.process_handle.psutil.Process") as mock_psutil_process,
+            patch("server.supervisor.process_handle.terminate_subprocess", side_effect=terminate) as mock_terminate,
             patch.object(handle, "kill", new_callable=AsyncMock) as mock_kill,
         ):
             mock_psutil_process.return_value.children.return_value = []
@@ -305,7 +305,7 @@ class TestStartBaseException:
         with (
             patch("subprocess.Popen") as mock_popen,
             patch.object(handle, "_wait_for_socket", new_callable=AsyncMock),
-            patch("core.supervisor.process_handle.IPCClient") as mock_client_cls,
+            patch("server.supervisor.process_handle.IPCClient") as mock_client_cls,
             patch.object(handle, "_wait_for_ready", new_callable=AsyncMock) as mock_ready,
             patch.object(handle, "_send_startup_ack", new_callable=AsyncMock) as mock_ack,
         ):

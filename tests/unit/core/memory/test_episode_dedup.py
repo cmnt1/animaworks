@@ -15,11 +15,13 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.finalize import _parse_session_summary, finalize_session
+from core.memory.conversation.memory import (
     SESSION_GAP_MINUTES,
     ConversationMemory,
     ConversationTurn,
 )
+from core.memory.conversation.state_update import _record_resolutions
 from core.schemas import ModelConfig
 from core.time_utils import now_jst, today_local
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
@@ -67,7 +69,7 @@ def conv_memory(anima_dir, model_config):
 @pytest.fixture(autouse=True)
 def no_rag_indexing():
     """Episode dedup tests do not exercise RAG indexing."""
-    with patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None):
+    with patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None):
         yield
 
 
@@ -121,7 +123,9 @@ class TestFinalizeSession:
         ]
         conv_memory.save()
 
-        result = await conv_memory.finalize_session(min_turns=3)
+        result = await finalize_session(
+            conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+        )
         assert result is False
 
     @pytest.mark.asyncio
@@ -151,7 +155,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮された要約")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
 
@@ -191,7 +197,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         assert memory_mgr.read_current_state() == original_state
@@ -218,7 +226,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         assert memory_mgr.read_current_state() == "Reviewing outbound lead quality"
@@ -237,7 +247,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮")
 
         with patch_litellm(summary_resp, compress_resp):
-            await conv_memory.finalize_session(min_turns=3)
+            await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         conv_memory._state = None
         loaded = conv_memory.load()
@@ -260,11 +272,13 @@ class TestFinalizeSession:
         with (
             patch_litellm(summary_resp),
             patch(
-                "core.memory.conversation_finalize._generate_compression_summary",
+                "core.memory.conversation.finalize._generate_compression_summary",
                 side_effect=RuntimeError("LLM API error"),
             ),
         ):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
 
@@ -298,11 +312,13 @@ class TestFinalizeSession:
         with (
             patch_litellm(summary_resp),
             patch(
-                "core.memory.conversation_finalize._generate_compression_summary",
+                "core.memory.conversation.finalize._generate_compression_summary",
                 side_effect=crashing_compress,
             ),
         ):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         assert observed["cursor_at_compress"] == 4
@@ -315,7 +331,9 @@ class TestFinalizeSession:
         # Simulate restart: the persisted cursor (4) equals the turn count, so
         # re-finalization finds no new turns and writes no duplicate episode.
         conv_memory._state = None
-        result2 = await conv_memory.finalize_session(min_turns=3)
+        result2 = await finalize_session(
+            conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+        )
         assert result2 is False
         assert episode_path.read_text(encoding="utf-8").count("— 重複防止テスト") == 1
 
@@ -346,9 +364,11 @@ class TestFinalizeSession:
 
         with (
             patch_litellm(summary_resp),
-            patch("core.memory.conversation_finalize._generate_compression_summary", side_effect=fake_compress),
+            patch("core.memory.conversation.finalize._generate_compression_summary", side_effect=fake_compress),
         ):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         assert "old msg 1" in captured["turn_text"]
@@ -375,7 +395,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮された要約テキスト")
 
         with patch_litellm(summary_resp, compress_resp):
-            await conv_memory.finalize_session(min_turns=3)
+            await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         conv_memory._state = None
         loaded = conv_memory.load()
@@ -407,7 +429,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         # Handoff state preserved, not reset to idle
@@ -439,7 +463,9 @@ class TestFinalizeSession:
         compress_resp = make_litellm_response(content="圧縮")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv_memory.finalize_session(min_turns=3)
+            result = await finalize_session(
+                conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save, min_turns=3
+            )
 
         assert result is True
         assert MemoryManager(anima_dir).read_current_state() == original_state
@@ -531,7 +557,7 @@ class TestParseSessionSummary:
             "### 現在の状態\n"
             "idle\n"
         )
-        parsed = ConversationMemory._parse_session_summary(raw)
+        parsed = _parse_session_summary(raw)
         assert parsed.title == "デバッグ作業の要約"
         assert "admin" in parsed.episode_body
         assert parsed.resolved_items == ["メモリリークバグ", "APIタイムアウト"]
@@ -542,7 +568,7 @@ class TestParseSessionSummary:
     def test_parse_no_state_section(self):
         """Falls back when no state section exists."""
         raw = "## エピソード要約\nシンプルな要約\n\n内容テスト\n"
-        parsed = ConversationMemory._parse_session_summary(raw)
+        parsed = _parse_session_summary(raw)
         assert parsed.title == "シンプルな要約"
         assert parsed.resolved_items == []
         assert parsed.new_tasks == []
@@ -557,14 +583,14 @@ class TestParseSessionSummary:
             "### 新規タスク\n- なし\n"
             "### 現在の状態\nidle\n"
         )
-        parsed = ConversationMemory._parse_session_summary(raw)
+        parsed = _parse_session_summary(raw)
         assert parsed.resolved_items == []
         assert parsed.new_tasks == []
 
     def test_parse_raw_fallback(self):
         """Plain text without expected sections becomes episode_body."""
         raw = "これは構造化されていないテキストです"
-        parsed = ConversationMemory._parse_session_summary(raw)
+        parsed = _parse_session_summary(raw)
         assert parsed.episode_body == raw
 
 
@@ -613,11 +639,11 @@ class TestResolutions:
 
     def test_record_resolutions_writes_activity(self, conv_memory, anima_dir, data_dir):
         """_record_resolutions logs issue_resolved events."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)
-        conv_memory._record_resolutions(mm, ["バグ修正完了"])
+        _record_resolutions(conv_memory.anima_dir, mm, ["バグ修正完了"])
 
         # Check activity log
         activity = ActivityLogger(anima_dir)
@@ -640,7 +666,7 @@ class TestActivityLogType:
 
     def test_issue_resolved_ascii_label(self, anima_dir):
         """issue_resolved event gets RSLV label in priming format."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log("issue_resolved", content="テスト解決", summary="解決済み: テスト")
@@ -682,24 +708,3 @@ class TestBuilderResolutionInjection:
         mm = MemoryManager(anima_dir)
         result = build_system_prompt(mm)
         assert "## 解決済み案件（組織横断）" not in result.system_prompt
-
-
-# ── Consolidation resolved events test ────────────────────────
-
-
-class TestConsolidationResolved:
-    """Tests for resolved events in consolidation."""
-
-    def test_collect_resolved_events(self, anima_dir):
-        """_collect_resolved_events returns issue_resolved entries."""
-        from core.memory.activity import ActivityLogger
-        from core.memory.consolidation import ConsolidationEngine
-
-        activity = ActivityLogger(anima_dir)
-        activity.log("issue_resolved", content="問題A解決", summary="解決済み")
-        activity.log("response_sent", content="通常応答", summary="応答")
-
-        engine = ConsolidationEngine(anima_dir, "test-dedup")
-        events = engine._collect_resolved_events(hours=24)
-        assert len(events) == 1
-        assert "問題A解決" in events[0]["content"]

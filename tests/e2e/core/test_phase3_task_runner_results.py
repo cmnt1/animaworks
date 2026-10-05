@@ -12,8 +12,9 @@ from pathlib import Path
 import pytest
 
 from core.schemas import CronTask
-from core.supervisor import ipc_v2
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime import ipc_v2
+from core.runtime.memory_service import MemoryService
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 
 class _MockEngineHandler(BaseHTTPRequestHandler):
@@ -38,8 +39,18 @@ class _MockEngineHandler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
         encoded = json.dumps(body).encode()
+        if payload.get("stream"):
+            chunks = [
+                {"id": "mock-chat", "object": "chat.completion.chunk", "created": 0, "model": "mock", "choices": [
+                    {"index": 0, "delta": {"role": "assistant", "content": "mock reply"}, "finish_reason": None}
+                ]},
+                {"id": "mock-chat", "object": "chat.completion.chunk", "created": 0, "model": "mock", "choices": [
+                    {"index": 0, "delta": {}, "finish_reason": "stop"}
+                ]},
+            ]
+            encoded = ("".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks) + "data: [DONE]\n\n").encode()
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "text/event-stream" if payload.get("stream") else "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
@@ -83,6 +94,8 @@ async def test_phase3_returns_cron_command_and_chat_results(
     status["process_model"] = "phase3"
     status_path.write_text(json.dumps(status), encoding="utf-8")
     monkeypatch.setenv("ANIMAWORKS_EMBED_URL", f"{mock_engine_url}/embed")
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", f"{mock_engine_url}/api/internal/vector")
+    monkeypatch.setenv("ANIMAWORKS_RERANK_URL", f"{mock_engine_url}/rerank")
 
     read_envelope = ipc_v2.read_ipc_v2_envelope
 
@@ -98,7 +111,7 @@ async def test_phase3_returns_cron_command_and_chat_results(
         "phase3-result",
         anima_dir,
         data_dir / "shared",
-        memory_via_root=True,
+        memory_service=MemoryService("phase3-result", anima_dir),
     )
     try:
         if lane == "cron":

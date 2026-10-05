@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.chatwork import MessageCache, cli_main
+from core.integrations.chatwork import MessageCache, cli_main
 
 
 @pytest.fixture(autouse=True)
@@ -19,13 +19,13 @@ def _mock_chatwork_env(monkeypatch, tmp_path):
     monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
     monkeypatch.setenv("CHATWORK_API_TOKEN__owner", "test-token")
     monkeypatch.setattr(
-        "core.tools._chatwork_cli.resolve_cache_db_path",
+        "core.integrations._chatwork_cli.resolve_cache_db_path",
         lambda client: tmp_path / "test.db",
     )
     mock_requests = MagicMock()
     mock_session = MagicMock()
     mock_requests.Session.return_value = mock_session
-    with patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}):
+    with patch.dict("core.integrations._chatwork_client.__dict__", {"requests": mock_requests}):
         yield mock_session
 
 
@@ -41,7 +41,7 @@ def mock_cache(tmp_path, monkeypatch):
     _real_close = cache.close
     cache.close = lambda: None  # no-op during test
     monkeypatch.setattr(
-        "core.tools._chatwork_cli.MessageCache",
+        "core.integrations._chatwork_cli.MessageCache",
         lambda db_path=None: cache,
     )
     yield cache
@@ -62,21 +62,27 @@ def _make_resp(json_data):
 
 
 class TestSyncCLI:
-    def test_sync_command_populates_cache(
-        self, _mock_chatwork_env, mock_cache, capsys
-    ):
+    def test_sync_command_populates_cache(self, _mock_chatwork_env, mock_cache, capsys):
         session = _mock_chatwork_env
-        rooms_resp = _make_resp([
-            {"room_id": 10, "name": "Room10", "type": "group", "last_update_time": 100},
-            {"room_id": 20, "name": "Room20", "type": "direct", "last_update_time": 50},
-        ])
-        msgs_resp = _make_resp([
-            {"message_id": "m1", "send_time": 1000,
-             "account": {"account_id": "a1", "name": "Alice"}, "body": "hello"},
-        ])
+        rooms_resp = _make_resp(
+            [
+                {"room_id": 10, "name": "Room10", "type": "group", "last_update_time": 100},
+                {"room_id": 20, "name": "Room20", "type": "direct", "last_update_time": 50},
+            ]
+        )
+        msgs_resp = _make_resp(
+            [
+                {
+                    "message_id": "m1",
+                    "send_time": 1000,
+                    "account": {"account_id": "a1", "name": "Alice"},
+                    "body": "hello",
+                },
+            ]
+        )
         session.request.side_effect = [rooms_resp, msgs_resp, msgs_resp]
 
-        with patch("core.tools._chatwork_cli.time.sleep"):
+        with patch("core.integrations._chatwork_cli.time.sleep"):
             cli_main(["sync", "--limit", "2"])
 
         stats = mock_cache.get_stats()
@@ -90,10 +96,11 @@ class TestSyncCLI:
         session = _mock_chatwork_env
         # resolve_room_id("42") returns immediately (numeric) — no API call.
         # Only get_messages is called.
-        msgs_resp = _make_resp([
-            {"message_id": "m1", "send_time": 100,
-             "account": {"account_id": "a1", "name": "A"}, "body": "test"},
-        ])
+        msgs_resp = _make_resp(
+            [
+                {"message_id": "m1", "send_time": 100, "account": {"account_id": "a1", "name": "A"}, "body": "test"},
+            ]
+        )
         session.request.side_effect = [msgs_resp]
 
         cli_main(["sync", "42"])
@@ -106,27 +113,32 @@ class TestSyncCLI:
 
 
 class TestUnrepliedSyncCLI:
-    def test_unreplied_with_sync_flag(
-        self, _mock_chatwork_env, mock_cache, capsys
-    ):
+    def test_unreplied_with_sync_flag(self, _mock_chatwork_env, mock_cache, capsys):
         session = _mock_chatwork_env
 
         # me() response
         me_resp = _make_resp({"account_id": 999, "name": "TestBot"})
         # rooms() for sync
-        rooms_resp = _make_resp([
-            {"room_id": 100, "name": "Office", "type": "group", "last_update_time": 1},
-        ])
+        rooms_resp = _make_resp(
+            [
+                {"room_id": 100, "name": "Office", "type": "group", "last_update_time": 1},
+            ]
+        )
         # messages for sync
-        msgs_resp = _make_resp([
-            {"message_id": "m1", "send_time": 500,
-             "account": {"account_id": "other", "name": "Other"},
-             "body": "[To:999]TestBot\nPlease review"},
-        ])
+        msgs_resp = _make_resp(
+            [
+                {
+                    "message_id": "m1",
+                    "send_time": 500,
+                    "account": {"account_id": "other", "name": "Other"},
+                    "body": "[To:999]TestBot\nPlease review",
+                },
+            ]
+        )
 
         session.request.side_effect = [me_resp, rooms_resp, msgs_resp]
 
-        with patch("core.tools._chatwork_cli.time.sleep"):
+        with patch("core.integrations._chatwork_cli.time.sleep"):
             cli_main(["unreplied", "--sync", "--sync-limit", "1"])
 
         captured = capsys.readouterr()
@@ -137,14 +149,14 @@ class TestUnrepliedSyncCLI:
 
 
 class TestRoomsCLI:
-    def test_rooms_command_caches_metadata(
-        self, _mock_chatwork_env, mock_cache, capsys
-    ):
+    def test_rooms_command_caches_metadata(self, _mock_chatwork_env, mock_cache, capsys):
         session = _mock_chatwork_env
-        session.request.return_value = _make_resp([
-            {"room_id": 1, "name": "Alpha", "type": "direct", "last_update_time": 100},
-            {"room_id": 2, "name": "Beta", "type": "group", "last_update_time": 50},
-        ])
+        session.request.return_value = _make_resp(
+            [
+                {"room_id": 1, "name": "Alpha", "type": "direct", "last_update_time": 100},
+                {"room_id": 2, "name": "Beta", "type": "group", "last_update_time": 50},
+            ]
+        )
 
         cli_main(["rooms"])
 
@@ -153,9 +165,7 @@ class TestRoomsCLI:
         assert stats["rooms"] == 2
 
         # Check type is preserved
-        row = mock_cache.conn.execute(
-            "SELECT type FROM rooms WHERE room_id = '1'"
-        ).fetchone()
+        row = mock_cache.conn.execute("SELECT type FROM rooms WHERE room_id = '1'").fetchone()
         assert row["type"] == "direct"
 
 
@@ -165,12 +175,14 @@ class TestRoomsCLI:
 class TestMeCLI:
     def test_me_command(self, _mock_chatwork_env, capsys):
         session = _mock_chatwork_env
-        session.request.return_value = _make_resp({
-            "account_id": 12345,
-            "name": "Test User",
-            "mail": "test@example.com",
-            "organization_name": "Test Org",
-        })
+        session.request.return_value = _make_resp(
+            {
+                "account_id": 12345,
+                "name": "Test User",
+                "mail": "test@example.com",
+                "organization_name": "Test Org",
+            }
+        )
 
         cli_main(["me"])
 
@@ -185,10 +197,12 @@ class TestMeCLI:
 class TestMembersCLI:
     def test_members_command(self, _mock_chatwork_env, capsys):
         session = _mock_chatwork_env
-        session.request.return_value = _make_resp([
-            {"account_id": 1, "name": "Alice", "role": "admin"},
-            {"account_id": 2, "name": "Bob", "role": "member"},
-        ])
+        session.request.return_value = _make_resp(
+            [
+                {"account_id": 1, "name": "Alice", "role": "admin"},
+                {"account_id": 2, "name": "Bob", "role": "member"},
+            ]
+        )
 
         cli_main(["members", "123"])
 
@@ -203,9 +217,11 @@ class TestMembersCLI:
 class TestContactsCLI:
     def test_contacts_command(self, _mock_chatwork_env, capsys):
         session = _mock_chatwork_env
-        session.request.return_value = _make_resp([
-            {"account_id": 10, "name": "Contact A"},
-        ])
+        session.request.return_value = _make_resp(
+            [
+                {"account_id": 10, "name": "Contact A"},
+            ]
+        )
 
         cli_main(["contacts"])
 
@@ -219,15 +235,17 @@ class TestContactsCLI:
 class TestMyTasksCLI:
     def test_mytasks_command(self, _mock_chatwork_env, capsys):
         session = _mock_chatwork_env
-        session.request.return_value = _make_resp([
-            {
-                "task_id": 1,
-                "body": "Review PR",
-                "room": {"name": "Dev"},
-                "limit_time": 0,
-                "assigned_by_account": {"name": "Manager"},
-            },
-        ])
+        session.request.return_value = _make_resp(
+            [
+                {
+                    "task_id": 1,
+                    "body": "Review PR",
+                    "room": {"name": "Dev"},
+                    "limit_time": 0,
+                    "assigned_by_account": {"name": "Manager"},
+                },
+            ]
+        )
 
         cli_main(["mytasks"])
 
@@ -250,10 +268,12 @@ class TestMyTasksCLI:
 class TestStatsCLI:
     def test_stats_command(self, _mock_chatwork_env, mock_cache, capsys):
         mock_cache.upsert_room({"room_id": 1, "name": "R"})
-        mock_cache.upsert_messages("1", [
-            {"message_id": "m1", "send_time": 1,
-             "account": {"account_id": "a", "name": "A"}, "body": "x"},
-        ])
+        mock_cache.upsert_messages(
+            "1",
+            [
+                {"message_id": "m1", "send_time": 1, "account": {"account_id": "a", "name": "A"}, "body": "x"},
+            ],
+        )
 
         cli_main(["stats"])
 
@@ -273,13 +293,17 @@ class TestMentionsCLI:
 
         # Pre-populate cache
         mock_cache.upsert_room({"room_id": 100, "name": "Office", "type": "group"})
-        mock_cache.upsert_messages("100", [
-            {
-                "message_id": "m1", "send_time": 1,
-                "account": {"account_id": "other", "name": "Other"},
-                "body": "[To:999]Bot\nPlease check",
-            },
-        ])
+        mock_cache.upsert_messages(
+            "100",
+            [
+                {
+                    "message_id": "m1",
+                    "send_time": 1,
+                    "account": {"account_id": "other", "name": "Other"},
+                    "body": "[To:999]Bot\nPlease check",
+                },
+            ],
+        )
 
         cli_main(["mentions", "--json"])
 

@@ -164,7 +164,7 @@ def capture_task_request_from_message(
         return None
 
     try:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(target_dir)
         for task in manager.list_tasks():

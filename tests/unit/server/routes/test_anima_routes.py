@@ -129,6 +129,7 @@ class TestListAnimas:
                 "department": "Finance",
                 "title": "アソシエイト",
                 "company": "",
+                "enabled": True,
             }
         ]
 

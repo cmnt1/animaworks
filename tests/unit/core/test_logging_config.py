@@ -1,4 +1,4 @@
-"""Unit tests for core/logging_config.py — structlog-based logging setup."""
+"""Unit tests for core/infra/logging_config.py — structlog-based logging setup."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import structlog
 
-from core.logging_config import (
+from core.infra.logging_config import (
     CycleContextFilter,
     DailyAnimaFileHandler,
     SecretRedactionFilter,
@@ -180,14 +180,14 @@ class TestDailyAnimaFileHandler:
         first_day = datetime(2026, 4, 30, 23, 59)
         second_day = datetime(2026, 5, 1, 0, 1)
 
-        with patch("core.logging_config.now_local", return_value=first_day):
+        with patch("core.infra.logging_config.now_local", return_value=first_day):
             handler = DailyAnimaFileHandler(tmp_path)
         handler.setFormatter(logging.Formatter("%(message)s"))
 
         try:
-            with patch("core.logging_config.now_local", return_value=first_day):
+            with patch("core.infra.logging_config.now_local", return_value=first_day):
                 handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "before", (), None))
-            with patch("core.logging_config.now_local", return_value=second_day):
+            with patch("core.infra.logging_config.now_local", return_value=second_day):
                 handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "after", (), None))
         finally:
             handler.close()
@@ -378,7 +378,7 @@ class TestSecretRedaction:
 
     def test_filter_passes_through_on_exception(self, monkeypatch):
         monkeypatch.setattr(
-            "core.logging_config._redact_secrets",
+            "core.infra.logging_config._redact_secrets",
             lambda _t: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         record = logging.getLogger("t").makeRecord(
@@ -525,15 +525,15 @@ def test_anima_daily_file_handler_switches_to_new_date_without_renaming_old_log(
     day1 = datetime(2026, 6, 11, 23, 59, tzinfo=tz)
     day2 = datetime(2026, 6, 12, 0, 1, tzinfo=tz)
 
-    with patch("core.logging_config.now_local", return_value=day1):
+    with patch("core.infra.logging_config.now_local", return_value=day1):
         handler = _AnimaDailyFileHandler(tmp_path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger = logging.getLogger("test.anima.daily")
 
     try:
-        with patch("core.logging_config.now_local", return_value=day1):
+        with patch("core.infra.logging_config.now_local", return_value=day1):
             handler.emit(logger.makeRecord(logger.name, logging.INFO, __file__, 1, "before midnight", (), None))
-        with patch("core.logging_config.now_local", return_value=day2):
+        with patch("core.infra.logging_config.now_local", return_value=day2):
             handler.emit(logger.makeRecord(logger.name, logging.INFO, __file__, 1, "after midnight", (), None))
     finally:
         handler.close()
@@ -547,7 +547,7 @@ def test_anima_daily_file_handler_switches_to_new_date_without_renaming_old_log(
 
 
 def test_replace_current_link_creates_and_replaces(tmp_path):
-    from core.logging_config import _replace_current_link
+    from core.infra.logging_config import _replace_current_link
 
     link = tmp_path / "current.log"
     (tmp_path / "a.log").write_text("a")
@@ -568,7 +568,7 @@ def test_replace_current_link_concurrent_calls(tmp_path):
     unlink+symlink_to crashed task-runner startups with FileNotFoundError)."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from core.logging_config import _replace_current_link
+    from core.infra.logging_config import _replace_current_link
 
     link = tmp_path / "current.log"
     (tmp_path / "x.log").write_text("x")

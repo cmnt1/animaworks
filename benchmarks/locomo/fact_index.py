@@ -50,7 +50,9 @@ class LocomoFactRecord:
         }
 
 
-def extract_locomo_fact_records(sample_id: str, conversation: dict[str, Any], *, source_episode: str) -> list[LocomoFactRecord]:
+def extract_locomo_fact_records(
+    sample_id: str, conversation: dict[str, Any], *, source_episode: str
+) -> list[LocomoFactRecord]:
     """Extract deterministic fact-like sentence records from a LoCoMo conversation."""
     from core.memory.rag.episode_time import apply_episode_heading_event_time
     from core.memory.retrieval.entity import extract_entities
@@ -254,7 +256,7 @@ def _render_fact_markdown(record: LocomoFactRecord) -> str:
 
 
 def _to_core_fact_json_line(record: LocomoFactRecord) -> str:
-    from core.memory.facts import FactRecord
+    from core.memory.facts.store import FactRecord
 
     entities = list(record.entities)
     speaker_key = record.speaker.casefold()

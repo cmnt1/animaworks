@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import core.execution._sanitize  # noqa: F401
+import core.trust  # noqa: F401
 from core.tooling.handler_base import _validate_skill_format
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -27,7 +27,7 @@ from core.tooling.handler_base import _validate_skill_format
 def _build_handler(tmp_path: Path):
     """Build a minimal MemoryToolsMixin-like object for write testing."""
     from core.memory import MemoryManager
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.tooling.handler import ToolHandler
 
     shared_dir = tmp_path / "shared"
@@ -67,7 +67,7 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: test-skill\ndescription: >-\n  test 「test」\n---\n\n# test\n\n## Procedure\n\n1. step\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            handler.handle(
+            result = handler.handle(
                 "write_memory_file",
                 {
                     "path": "common_skills/test-skill/SKILL.md",
@@ -106,7 +106,7 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: flat\ndescription: >-\n  flat 「flat」\n---\n\n# flat\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            handler.handle(
+            result = handler.handle(
                 "write_memory_file",
                 {
                     "path": "common_skills/flat.md",
@@ -168,6 +168,16 @@ class TestValidateSkillFormat:
         content = "---\nname: test\n---\n\n# test\n"
         result = _validate_skill_format(content)
         assert result != ""
+
+    def test_description_with_embedded_dashes_keeps_frontmatter_intact(self) -> None:
+        content = '---\nname: test\ndescription: "A---B「x」"\n---\n\n# Body\n'
+        assert _validate_skill_format(content) == ""
+
+    def test_missing_frontmatter_terminator_is_required(self) -> None:
+        from core.i18n import t
+
+        content = '---\nname: test\ndescription: "test「x」"\n'
+        assert _validate_skill_format(content) == t("handler.skill_frontmatter_required")
 
     def test_legacy_section_warns(self) -> None:
         content = '---\nname: test\ndescription: "test 「test」"\n---\n\n# test\n\n## 概要\n\nfoo\n'
@@ -272,8 +282,8 @@ class TestJapaneseSkillCreatorContent:
         content = path.read_text(encoding="utf-8")
         assert "create_skill" in content
         lines = content.splitlines()
-        checklist_lines = [line for line in lines if line.strip().startswith("- [ ]")]
-        create_skill_items = [line for line in checklist_lines if "create_skill" in line]
+        checklist_lines = [l for l in lines if l.strip().startswith("- [ ]")]
+        create_skill_items = [l for l in checklist_lines if "create_skill" in l]
         assert len(create_skill_items) >= 1
 
 

@@ -14,18 +14,42 @@ import pytest
 class TestParserCommands:
     """Test that argparse correctly parses all subcommands."""
 
+    def test_removed_memory_commands_are_invalid_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cli.parser import build_parser
+
+        parser = build_parser()
+        for arguments in (("memory", "status"), ("anima", "set-memory-backend"), ("anima", "detect-communities")):
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(list(arguments))
+            assert exc_info.value.code == 2
+            assert "invalid choice" in capsys.readouterr().err
+
+    def test_removed_anima_commands_are_invalid_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cli.parser import build_parser
+
+        parser = build_parser()
+        for command in ("codex-yolo", "repair-bootstrap"):
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(["anima", command])
+            assert exc_info.value.code == 2
+            assert "invalid choice" in capsys.readouterr().err
+
+        choices = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction)).choices
+        assert "profile" in choices
+        assert "tmp" in choices
+
     def _parse(self, *args: str) -> argparse.Namespace:
         """Parse args by calling cli_main internals directly."""
         # We can't call cli_main() directly because it calls args.func().
         # Instead, patch load_dotenv, setup_logging, and build just the parser.
         with (
             patch("cli.parser.load_dotenv", create=True),
-            patch("core.logging_config.setup_logging", create=True),
+            patch("core.infra.logging_config.setup_logging", create=True),
             patch("core.paths.get_data_dir", return_value=MagicMock()),
-            patch("core.config.cli.cmd_config_dispatch"),
-            patch("core.config.cli.cmd_config_get"),
-            patch("core.config.cli.cmd_config_set"),
-            patch("core.config.cli.cmd_config_list"),
+            patch("cli.commands.config_cmd.cmd_config_dispatch"),
+            patch("cli.commands.config_cmd.cmd_config_get"),
+            patch("cli.commands.config_cmd.cmd_config_set"),
+            patch("cli.commands.config_cmd.cmd_config_list"),
         ):
             # Build the parser by importing and parsing
             import importlib
@@ -268,33 +292,12 @@ class TestParserCommands:
         assert args.anima == "alice"
         assert args.local is False
 
-    def test_list_command(self):
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers(dest="command")
-        p_list = sub.add_parser("list")
-        p_list.add_argument("--local", action="store_true")
-
-        args = parser.parse_args(["list", "--local"])
-        assert args.local is True
-
     def test_data_dir_override(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("--data-dir", default=None)
 
         args = parser.parse_args(["--data-dir", "/custom/path"])
         assert args.data_dir == "/custom/path"
-
-    def test_create_anima_command(self):
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers(dest="command")
-        p = sub.add_parser("create-anima")
-        p.add_argument("--name", default=None)
-        p.add_argument("--template", default=None)
-        p.add_argument("--from-md", default=None)
-
-        args = parser.parse_args(["create-anima", "--name", "bob", "--template", "basic"])
-        assert args.name == "bob"
-        assert args.template == "basic"
 
     def test_stop_command(self):
         parser = argparse.ArgumentParser()
@@ -332,14 +335,6 @@ class TestLazyImportWrappers:
 
         args = MagicMock()
         _lazy_init(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.anima.cmd_create_anima")
-    def test_lazy_create_anima(self, mock_cmd):
-        from cli.parser import _lazy_create_anima
-
-        args = MagicMock()
-        _lazy_create_anima(args)
         mock_cmd.assert_called_once_with(args)
 
     @patch("cli.commands.server.cmd_start")
@@ -382,22 +377,6 @@ class TestLazyImportWrappers:
         _lazy_reset(args)
         mock_cmd.assert_called_once_with(args)
 
-    @patch("cli.commands.server.cmd_gateway")
-    def test_lazy_gateway(self, mock_cmd):
-        from cli.parser import _lazy_gateway
-
-        args = MagicMock()
-        _lazy_gateway(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.server.cmd_worker")
-    def test_lazy_worker(self, mock_cmd):
-        from cli.parser import _lazy_worker
-
-        args = MagicMock()
-        _lazy_worker(args)
-        mock_cmd.assert_called_once_with(args)
-
     @patch("cli.commands.anima.cmd_chat")
     def test_lazy_chat(self, mock_cmd):
         from cli.parser import _lazy_chat
@@ -420,14 +399,6 @@ class TestLazyImportWrappers:
 
         args = MagicMock()
         _lazy_send(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.messaging.cmd_list")
-    def test_lazy_list(self, mock_cmd):
-        from cli.parser import _lazy_list
-
-        args = MagicMock()
-        _lazy_list(args)
         mock_cmd.assert_called_once_with(args)
 
     @patch("cli.commands.messaging.cmd_status")
@@ -506,32 +477,6 @@ class TestAnimaSubcommandParsing:
         assert args.local is True
 
 
-class TestDeprecationWarnings:
-    """Test that deprecated commands show warnings."""
-
-    @patch("cli.commands.anima.cmd_create_anima")
-    def test_create_anima_deprecation(self, mock_cmd, capsys):
-        from cli.parser import _lazy_create_anima
-
-        args = MagicMock()
-        _lazy_create_anima(args)
-        captured = capsys.readouterr()
-        assert "deprecated" in captured.err
-        assert "anima create" in captured.err
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.messaging.cmd_list")
-    def test_list_deprecation(self, mock_cmd, capsys):
-        from cli.parser import _lazy_list
-
-        args = MagicMock()
-        _lazy_list(args)
-        captured = capsys.readouterr()
-        assert "deprecated" in captured.err
-        assert "anima list" in captured.err
-        mock_cmd.assert_called_once_with(args)
-
-
 class TestNewLazyWrappers:
     """Test new lazy import wrappers."""
 
@@ -589,8 +534,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "slack", "send", "#general", "hello"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 
@@ -604,8 +549,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "submit", "image_gen", "pipeline"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"image_gen": "core.tools.image_gen"}),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"image_gen": "core.integrations.image_gen"}),
         ):
             from cli.parser import cli_main
 
@@ -620,8 +565,8 @@ class TestCliMainToolFallback:
         mock_func = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "anima", "list"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 
@@ -636,8 +581,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "--help"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 

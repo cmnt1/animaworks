@@ -1,4 +1,4 @@
-"""Unit tests for core/agent.py — AgentCore orchestrator."""
+"""Unit tests for core/agent/agent_core.py — AgentCore orchestrator."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -36,15 +36,15 @@ def _make_agent(
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -79,20 +79,6 @@ class TestResolveExecutionMode:
         assert agent._resolve_execution_mode() == "a"
 
 
-class TestIsClaude:
-    def test_claude_prefix(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
-        assert agent._is_claude_model() is True
-
-    def test_anthropic_prefix(self, tmp_path):
-        agent = _make_agent(tmp_path, model="anthropic/claude-haiku-3.5")
-        assert agent._is_claude_model() is True
-
-    def test_non_claude(self, tmp_path):
-        agent = _make_agent(tmp_path, model="openai/gpt-4o")
-        assert agent._is_claude_model() is False
-
-
 # ── Mode C fallback ───────────────────────────────────────
 
 
@@ -108,11 +94,11 @@ class TestModeCFallback:
         guard.config.default_block_seconds = 60
 
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
-            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor", return_value=sentinel) as litellm,
         ):
             created = agent._create_executor()
 
@@ -126,8 +112,8 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key_env = "OPENAI_API_KEY"
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError, match="fallback_models"),
         ):
             agent._create_executor()
@@ -139,8 +125,8 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key = "sk-ant-test"
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
             agent._create_executor()
@@ -156,7 +142,7 @@ def test_missing_claude_sdk_does_not_construct_unusable_adapter(tmp_path):
 
     agent = _make_agent(tmp_path, model="claude-sonnet-4-6", resolved_mode="S")
     with (
-        patch("core.execution.agent_sdk.AgentSDKExecutor") as sdk,
+        patch("core.execution.engines.claude.executor.AgentSDKExecutor") as sdk,
         pytest.raises(ExecutorUnavailableError),
     ):
         agent._create_executor()
@@ -169,7 +155,7 @@ def test_missing_claude_sdk_uses_only_configured_fallback(tmp_path):
     with (
         patch("core.config.model_config.resolve_unavailable_model_config", return_value=fallback) as resolve,
         patch("core.execution.fallback_activity.log_model_fallback"),
-        patch("core.execution.LiteLLMExecutor") as adapter,
+        patch("core.execution.engines.litellm.executor.LiteLLMExecutor") as adapter,
     ):
         assert agent._create_executor() is adapter.return_value
     resolve.assert_called_once_with(agent.model_config, unavailable_modes=frozenset({"S"}))
@@ -187,11 +173,11 @@ class TestModeXExecutor:
         guard.config.default_block_seconds = 60
 
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.execution.engines.grok.executor.is_grok_cli_available", return_value=False),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
-            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor", return_value=sentinel) as litellm,
         ):
             created = agent._create_executor()
 
@@ -208,8 +194,8 @@ class TestModeXExecutor:
         sentinel_executor = MagicMock(name="grok_executor")
 
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=True),
-            patch("core.execution.grok_cli.GrokCLIExecutor", return_value=sentinel_executor) as mock_grok,
+            patch("core.execution.engines.grok.executor.is_grok_cli_available", return_value=True),
+            patch("core.execution.engines.grok.executor.GrokCLIExecutor", return_value=sentinel_executor) as mock_grok,
         ):
             created = agent._create_executor()
 
@@ -227,8 +213,8 @@ class TestModeXExecutor:
 
         agent = _make_agent(tmp_path, model="grok/grok-4.5", resolved_mode="X")
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.grok.executor.is_grok_cli_available", return_value=False),
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
             agent._create_executor()
@@ -292,8 +278,8 @@ class TestRunCycle:
         agent._executor.execute = AsyncMock(return_value=ExecutionResult(text="", error=True, reason="quota_exhausted"))
 
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
-            patch("core._agent_cycle.ShortTermMemory") as shortterm,
+            patch("core.agent.priming.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
+            patch("core.agent.cycle.ShortTermMemory") as shortterm,
         ):
             shortterm.return_value.has_pending.return_value = False
             result = await agent.run_cycle("Hello", trigger="cron:test")
@@ -302,24 +288,25 @@ class TestRunCycle:
         assert result.reason == "quota_exhausted"
         assert result.stop_kind == "stream_error"
 
-    async def test_mode_b_returns_result(self, tmp_path):
+    async def test_retired_b_mode_returns_result_via_mode_a(self, tmp_path):
         agent = _make_agent(tmp_path, resolved_mode="B")
         mock_result = MagicMock()
-        mock_result.text = "Assisted response"
+        mock_result.text = "Autonomous response"
         mock_result.usage = None
         agent._executor.execute = AsyncMock(return_value=mock_result)
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
+            patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()
 
             result = await agent.run_cycle("Hello", trigger="test")
             assert isinstance(result, CycleResult)
-            assert result.summary == "Assisted response"
+            assert result.summary == "Autonomous response"
             assert result.trigger == "test"
 
     async def test_mode_a2_returns_result(self, tmp_path):
@@ -331,8 +318,9 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
+            patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()
@@ -358,9 +346,10 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
-            patch("core._agent_cycle.ContextTracker") as MockCT,
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
+            patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
+            patch("core.agent.cycle.ContextTracker") as MockCT,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()
@@ -371,25 +360,3 @@ class TestRunCycle:
             assert isinstance(result, CycleResult)
             assert result.summary == "S mode response"
             assert result.total_turns == 3
-
-
-# ── Permission parsing ────────────────────────────────────
-
-
-class TestPermissionParsing:
-    def test_permission_regex(self):
-        from core.tooling.permissions import (
-            _PERMISSION_ALLOW_RE,
-            _PERMISSION_DENY_RE,
-        )
-
-        assert _PERMISSION_ALLOW_RE.match("- web_search: OK")
-        assert _PERMISSION_ALLOW_RE.match("* slack: yes")
-        assert _PERMISSION_ALLOW_RE.match("  gmail: enabled")
-        assert _PERMISSION_ALLOW_RE.match("github: true")
-        assert _PERMISSION_ALLOW_RE.match("- chatwork: 全権限")
-        assert not _PERMISSION_ALLOW_RE.match("- web_search: no")
-        assert not _PERMISSION_ALLOW_RE.match("# heading")
-        assert _PERMISSION_DENY_RE.match("- chatwork: no")
-        assert _PERMISSION_DENY_RE.match("* gmail: disabled")
-        assert not _PERMISSION_DENY_RE.match("- slack: yes")

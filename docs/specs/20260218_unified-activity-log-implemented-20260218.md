@@ -95,7 +95,7 @@ Channel B・Eが活動記録を扱っているが、データソースが別々�
 ### 2. ActivityLogger クラス
 
 ```
-core/memory/activity.py
+core/memory/activity/logger.py
 ```
 
 **責務:**
@@ -208,7 +208,7 @@ activities = activity_log から session 期間のエントリ全件
 
 ### Phase 1: ActivityLogger 基盤
 
-1. `core/memory/activity.py` — ActivityLogger クラス実装
+1. `core/memory/activity/logger.py` — ActivityLogger クラス実装
    - `ActivityEntry` データモデル（Pydantic）
    - `log()` — append-only JSONL 書き込み
    - `recent()` — 日数/件数/タイプでのフィルタ読み込み
@@ -217,11 +217,11 @@ activities = activity_log から session 期間のエントリ全件
 
 ### Phase 2: 記録ポイント組み込み
 
-3. `core/anima.py` — `process_message()` に `message_received`/`response_sent` 記録追加
-4. `core/messenger.py` — `send()`/`receive_and_archive()`/`post_channel()`/`read_channel()` に記録追加
+3. `core/anima/digital_anima.py` — `process_message()` に `message_received`/`response_sent` 記録追加
+4. `core/messaging/messenger.py` — `send()`/`receive_and_archive()`/`post_channel()`/`read_channel()` に記録追加
 5. `core/notification/notifier.py` — `human_notify` 記録追加
 6. `core/tooling/handler.py` — `tool_use` 記録追加
-7. `core/agent.py` — heartbeat/cron の記録追加
+7. `core/agent/agent_core.py` — heartbeat/cron の記録追加
 
 ### Phase 3: Priming統合
 
@@ -239,7 +239,7 @@ activities = activity_log から session 期間のエントリ全件
 
 ### Phase 5: エピソード化拡張
 
-16. `core/memory/conversation.py::finalize_session()` — 入力ソースをactivity_logに拡大
+16. `core/memory/conversation/memory.py::finalize_session()` — 入力ソースをactivity_logに拡大
 17. 統合エピソード形式の定義とテスト
 
 ## Scope

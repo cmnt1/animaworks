@@ -133,18 +133,22 @@ def create_logs_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Log file not found: {file}")
 
         async def log_stream_generator():
+            f = None
             try:
-                with open(log_path, encoding="utf-8", errors="replace") as f:
-                    # Seek to end
-                    f.seek(0, 2)
-                    while True:
-                        line = f.readline()
-                        if line:
-                            yield f"data: {json.dumps({'line': line.rstrip()})}\n\n"
-                        else:
-                            await asyncio.sleep(0.5)
+                f = await asyncio.to_thread(open, log_path, encoding="utf-8", errors="replace")
+                # Seek to end
+                await asyncio.to_thread(f.seek, 0, 2)
+                while True:
+                    line = await asyncio.to_thread(f.readline)
+                    if line:
+                        yield f"data: {json.dumps({'line': line.rstrip()})}\n\n"
+                    else:
+                        await asyncio.sleep(0.5)
             except Exception as exc:
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            finally:
+                if f is not None:
+                    await asyncio.to_thread(f.close)
 
         return StreamingResponse(
             log_stream_generator(),

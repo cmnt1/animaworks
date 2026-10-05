@@ -7,7 +7,7 @@
  * are persisted to localStorage under `aw-org-positions`.
  */
 import { createLogger } from "../../shared/logger.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { escapeHtml } from "./utils.js";
 import { getState } from "./state.js";
 import { animaHashColor } from "../../shared/avatar-utils.js";
@@ -92,7 +92,7 @@ const _CARD_VISIBLE_TYPES = new Set([
   "human_notify",
 ]);
 
-// Keep in sync with core/memory/activity.py _VISIBLE_TOOL_NAMES
+// Keep in sync with core/activity/logger.py _VISIBLE_TOOL_NAMES
 export const VISIBLE_TOOL_NAMES = new Set([
   "delegate_task", "update_task", "backlog_task",
   "submit_tasks", "call_human",
@@ -754,18 +754,12 @@ let _kpiTasks = "-";
 
 async function _loadKpiStats() {
   try {
-    const resp = await fetch(`${basePath}/api/activity/recent?hours=1&limit=200`);
-    if (resp.ok) {
-      const data = await resp.json();
-      _kpiEventsH = String((data.events ?? []).length);
-    }
+    const data = await api("/api/activity/recent?hours=1&limit=200");
+    _kpiEventsH = String((data.events ?? []).length);
   } catch { /* ignore */ }
   try {
-    const resp = await fetch(`${basePath}/api/tasks/summary`);
-    if (resp.ok) {
-      const data = await resp.json();
-      _kpiTasks = String(data.total_active || 0);
-    }
+    const data = await api("/api/task-board/summary");
+    _kpiTasks = String(data.total_active || 0);
   } catch { /* ignore */ }
   _applyKpiValues();
 }
@@ -791,9 +785,7 @@ async function _loadInitialStreams(animas) {
   const [flatResults, activeGroups] = await Promise.all([
     Promise.allSettled(
       animas.map(async (a) => {
-        const resp = await fetch(`${basePath}/api/activity/recent?hours=1&limit=5&anima=${encodeURIComponent(a.name)}`);
-        if (!resp.ok) return null;
-        const data = await resp.json();
+        const data = await api(`/api/activity/recent?hours=1&limit=5&anima=${encodeURIComponent(a.name)}`);
         const events = data.events ?? [];
         if (!events.length) return null;
         return { name: a.name, events };
@@ -845,9 +837,7 @@ async function _loadInitialStreams(animas) {
 
 async function _fetchActiveGroups() {
   try {
-    const resp = await fetch(`${basePath}/api/activity/recent?grouped=true&hours=1&group_limit=50`);
-    if (!resp.ok) return [];
-    const data = await resp.json();
+    const data = await api("/api/activity/recent?grouped=true&hours=1&group_limit=50");
     return (data.groups ?? []).filter(g => g.is_open);
   } catch {
     return [];

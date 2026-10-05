@@ -23,9 +23,9 @@
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/consolidation.py` | Direct | 再固定化トリガー + LLM Reflection + 修正版生成 |
+| `core/memory/maintenance/consolidation.py` | Direct | 再固定化トリガー + LLM Reflection + 修正版生成 |
 | `core/memory/manager.py` | Direct | バージョン管理メソッド追加 |
-| `core/memory/activity.py` | Indirect | 再固定化イベントのログ記録 |
+| `core/memory/activity/logger.py` | Indirect | 再固定化イベントのログ記録 |
 
 ## Decided Approach / 確定方針
 
@@ -53,12 +53,12 @@
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/consolidation.py` | Modify | `_reconsolidate_procedures()` メソッド追加。日次固定化のステップとして組み込み |
+| `core/memory/maintenance/consolidation.py` | Modify | `_reconsolidate_procedures()` メソッド追加。日次固定化のステップとして組み込み |
 | `core/memory/manager.py` | Modify | `archive_procedure_version()`, `update_procedure_version()` メソッド追加 |
 
 #### Change 1: 再固定化ステージ
 
-**Target**: `core/memory/consolidation.py` — `daily_consolidate()`
+**Target**: `core/memory/maintenance/consolidation.py` — `daily_consolidate()`
 
 ```python
 # 日次固定化の最終ステップとして追加
@@ -160,8 +160,8 @@ def update_procedure_version(self, path: Path, new_content: str, old_meta: dict)
 
 | # | Task | Target |
 |---|------|--------|
-| 1-1 | `_reconsolidate_procedures()` メソッド実装（トリガー判定 + エピソード収集） | `core/memory/consolidation.py` |
-| 1-2 | LLM Reflectionプロンプト + レスポンスパーサー実装 | `core/memory/consolidation.py` |
+| 1-1 | `_reconsolidate_procedures()` メソッド実装（トリガー判定 + エピソード収集） | `core/memory/maintenance/consolidation.py` |
+| 1-2 | LLM Reflectionプロンプト + レスポンスパーサー実装 | `core/memory/maintenance/consolidation.py` |
 | 1-3 | Phase 1のユニットテスト | `tests/` |
 
 **Completion condition**: 失敗が蓄積した手順に対してLLM Reflectionが実行され、修正版が生成される
@@ -171,8 +171,8 @@ def update_procedure_version(self, path: Path, new_content: str, old_meta: dict)
 | # | Task | Target |
 |---|------|--------|
 | 2-1 | `archive_procedure_version()`, `update_procedure_version()` 実装 | `core/memory/manager.py` |
-| 2-2 | `daily_consolidate()` への再固定化ステージ組み込み | `core/memory/consolidation.py` |
-| 2-3 | 再固定化イベントのactivity_log記録（`procedure_reconsolidated` イベント） | `core/memory/consolidation.py` |
+| 2-2 | `daily_consolidate()` への再固定化ステージ組み込み | `core/memory/maintenance/consolidation.py` |
+| 2-3 | 再固定化イベントのactivity_log記録（`procedure_reconsolidated` イベント） | `core/memory/maintenance/consolidation.py` |
 | 2-4 | Phase 2の統合テスト | `tests/` |
 
 **Completion condition**: 日次固定化で再固定化が自動実行され、バージョン管理が動作する
@@ -215,7 +215,7 @@ def update_procedure_version(self, path: Path, new_content: str, old_meta: dict)
 
 ## References
 
-- `core/memory/consolidation.py:53-143` — `daily_consolidate()` メインフロー
+- `core/memory/maintenance/consolidation.py:53-143` — `daily_consolidate()` メインフロー
 - `20260218_procedural-memory-foundation.md` — 前提Issue（成功/失敗メタデータ）
 - [Reconsolidation and the Dynamic Nature of Memory](https://pmc.ncbi.nlm.nih.gov/articles/PMC4588064/) — 再固定化理論
 - [Memory Reconsolidation - Nature Reviews Neuroscience](https://www.nature.com/articles/nrn2090) — 予測誤差による脱安定化

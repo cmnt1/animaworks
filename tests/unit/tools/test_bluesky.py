@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from core.tools.bluesky import (
+from core.integrations.bluesky import (
     BlueskyClient,
     _normalize_post,
     cli_main,
@@ -52,7 +52,7 @@ def _response(json_data: dict, status_code: int = 200) -> httpx.Response:
 class TestBlueskyClient:
     def test_search_posts_success(self):
         client = BlueskyClient()
-        with patch("core.tools.bluesky.httpx.get", return_value=_response({"posts": [_post()]})) as mock_get:
+        with patch("core.integrations.bluesky.httpx.get", return_value=_response({"posts": [_post()]})) as mock_get:
             posts = client.search_posts("$NVDA", limit=200, author="@market.example.com", tag="#stocks")
 
         assert len(posts) == 1
@@ -76,7 +76,7 @@ class TestBlueskyClient:
 
     def test_get_author_feed_success(self):
         client = BlueskyClient()
-        with patch("core.tools.bluesky.httpx.get", return_value=_response({"feed": [{"post": _post()}]})) as mock_get:
+        with patch("core.integrations.bluesky.httpx.get", return_value=_response({"feed": [{"post": _post()}]})) as mock_get:
             posts = client.get_author_feed("@market.example.com", include_replies=True)
 
         assert len(posts) == 1
@@ -86,14 +86,14 @@ class TestBlueskyClient:
 
     def test_rate_limit_error(self):
         client = BlueskyClient()
-        with patch("core.tools.bluesky.httpx.get", return_value=_response({}, status_code=429)), \
+        with patch("core.integrations.bluesky.httpx.get", return_value=_response({}, status_code=429)), \
              pytest.raises(RuntimeError, match="rate limit"):
             client.search_posts("market")
 
     def test_auth_required_error(self):
         client = BlueskyClient()
-        with patch("core.tools.bluesky.httpx.get", return_value=_response({}, status_code=401)), \
-             patch("core.tools.bluesky._optional_credential", return_value=None), \
+        with patch("core.integrations.bluesky.httpx.get", return_value=_response({}, status_code=401)), \
+             patch("core.integrations.bluesky._optional_credential", return_value=None), \
              pytest.raises(RuntimeError, match="requires authentication"):
             client.search_posts("market")
 
@@ -107,9 +107,9 @@ class TestBlueskyClient:
             request=httpx.Request("POST", "https://bsky.social/xrpc/com.atproto.server.createSession"),
         )
 
-        with patch("core.tools.bluesky._optional_credential", side_effect=["@alice.bsky.social", "app-pass"]), \
-             patch("core.tools.bluesky.httpx.post", return_value=session) as mock_post, \
-             patch("core.tools.bluesky.httpx.get", side_effect=[denied, authed]) as mock_get:
+        with patch("core.integrations.bluesky._optional_credential", side_effect=["@alice.bsky.social", "app-pass"]), \
+             patch("core.integrations.bluesky.httpx.post", return_value=session) as mock_post, \
+             patch("core.integrations.bluesky.httpx.get", side_effect=[denied, authed]) as mock_get:
             posts = client.search_posts("market")
 
         assert len(posts) == 1

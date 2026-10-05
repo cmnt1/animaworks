@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.extraction.extractor import FactExtractor
+from core.memory.facts.extractor import FactExtractor
 
 
 class TestExtractorCodexRouting:
@@ -25,7 +25,7 @@ class TestExtractorCodexRouting:
         extractor = FactExtractor("codex/gpt-5.4-mini", credential="openai")
         with (
             patch(
-                "core.memory._llm_utils.one_shot_completion",
+                "core.llm.oneshot.one_shot_completion",
                 new=AsyncMock(return_value='{"entities": []}'),
             ) as mock_one_shot,
             patch("litellm.acompletion", new=AsyncMock()) as mock_acompletion,
@@ -42,27 +42,28 @@ class TestExtractorCodexRouting:
         extractor = FactExtractor("codex/gpt-5.4-mini")
         with (
             patch(
-                "core.memory._llm_utils.one_shot_completion",
+                "core.llm.oneshot.one_shot_completion",
                 new=AsyncMock(return_value=None),
             ),
-            pytest.raises(RuntimeError, match="Codex one-shot"),
+            pytest.raises(RuntimeError, match="LLM returned no content"),
         ):
             await extractor._call_llm("system", "user")
 
     @pytest.mark.asyncio
-    async def test_non_codex_model_still_uses_litellm(self) -> None:
+    async def test_non_codex_model_uses_shared_one_shot_transport(self) -> None:
         extractor = FactExtractor("anthropic/claude-haiku-4-5")
         response = MagicMock()
         response.choices[0].message.content = "ok"
         with (
-            patch("core.memory._llm_utils.one_shot_completion", new=AsyncMock()) as mock_one_shot,
+            patch("core.llm.oneshot.one_shot_completion", new=AsyncMock(return_value="ok")) as mock_one_shot,
             patch("litellm.acompletion", new=AsyncMock(return_value=response)) as mock_acompletion,
             patch(
-                "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
+                "core.llm.oneshot.get_memory_llm_kwargs_for_model",
                 return_value={"model": "anthropic/claude-haiku-4-5"},
             ),
         ):
             text = await extractor._call_llm("system", "user")
         assert text == "ok"
-        mock_acompletion.assert_awaited_once()
-        mock_one_shot.assert_not_awaited()
+        mock_acompletion.assert_not_awaited()
+        mock_one_shot.assert_awaited_once()
+        assert mock_one_shot.await_args.kwargs["model"] == "anthropic/claude-haiku-4-5"

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.memory.priming.constants import _MAX_KEYWORD_INPUT_LEN, _MINIMAL_STOPWORDS, _RE_UNICODE_WORDS
-from core.prompt.tokens import truncate_to_tokens
+from core.text.tokens import truncate_to_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -72,7 +72,7 @@ class RetrieverCache:
         try:
             from core.memory.rag import MemoryRetriever
             from core.memory.rag.indexer import MemoryIndexer
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             anima_name = anima_dir.name
             vector_store = get_vector_store(anima_name)
@@ -136,7 +136,7 @@ def build_unified_searcher(
         retriever = get_retriever()
         indexer = getattr(retriever, "indexer", None) if retriever is not None else None
         if indexer is not None:
-            from core.memory.rag_search import RAGMemorySearch
+            from core.memory.retrieval.rag_search import RAGMemorySearch
             from core.paths import get_common_knowledge_dir, get_common_skills_dir
 
             rag_search = RAGMemorySearch(
@@ -192,41 +192,6 @@ def build_queries(
         if ctx and ctx != msg_query:
             queries.append(ctx)
     return queries
-
-
-def build_dual_queries(message: str, keywords: list[str]) -> list[str]:
-    """Backward-compatible alias for build_queries."""
-    return build_queries(message, keywords)
-
-
-def search_and_merge(
-    retriever: MemoryRetriever,
-    queries: list[str],
-    anima_name: str,
-    *,
-    memory_type: str,
-    top_k: int,
-    include_shared: bool = False,
-    min_score: float | None = None,
-) -> list:
-    """Execute multiple queries and merge by max-score deduplication."""
-    best: dict[str, object] = {}
-
-    for query in queries:
-        results = retriever.search(
-            query=query,
-            anima_name=anima_name,
-            memory_type=memory_type,
-            top_k=top_k,
-            include_shared=include_shared,
-            min_score=min_score,
-        )
-        for r in results:
-            existing = best.get(r.doc_id)
-            if existing is None or r.score > existing.score:  # type: ignore[union-attr]
-                best[r.doc_id] = r
-
-    return sorted(best.values(), key=lambda r: r.score, reverse=True)[:top_k]  # type: ignore[union-attr]
 
 
 # ── Keyword extraction ───────────────────────────────────────────

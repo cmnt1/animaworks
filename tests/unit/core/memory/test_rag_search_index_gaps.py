@@ -12,7 +12,7 @@ import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
 from core.memory.rag.retriever import _load_skill_document_by_signature
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.skills.curator import SkillCurator
 
 # ── Fixtures ─────────────────────────────────────────────
@@ -59,12 +59,7 @@ def _write_skill(
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
     skill_md.write_text(
-        "---\n"
-        f"name: {name}\n"
-        f"description: {body}\n"
-        f"use_when: [{use_when}]\n"
-        "---\n\n"
-        f"# {name}\n\n{body}\n",
+        f"---\nname: {name}\ndescription: {body}\nuse_when: [{use_when}]\n---\n\n# {name}\n\n{body}\n",
         encoding="utf-8",
     )
     return skill_md
@@ -104,7 +99,7 @@ class TestColdCatchupIndexing:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_vector_store,
             ),
             patch(
@@ -157,18 +152,16 @@ class TestColdCatchupIndexing:
             return True
 
         mock_store.list_collections.side_effect = _list_collections
-        mock_store.list_collections_checked.side_effect = _list_collections
         mock_store.upsert.side_effect = _upsert
 
         def _make_real_indexer(vector_store, anima_name, anima_dir_arg, **kwargs):
-            with patch.object(MemoryIndexer, "_init_embedding_model"):
-                idx = MemoryIndexer(vector_store, anima_name, anima_dir_arg)
+            idx = MemoryIndexer(vector_store, anima_name, anima_dir_arg)
             idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
             return idx
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_store,
             ),
             patch(

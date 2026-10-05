@@ -14,12 +14,12 @@ from unittest.mock import ANY, patch
 
 import pytest
 
-from core.discord_webhooks import (
+from core.messaging.discord_webhooks import (
     DISCORD_MESSAGE_LIMIT,
     DiscordWebhookManager,
     _split_message,
 )
-from core.tools._discord_client import DiscordAPIError
+from core.channels.discord import DiscordAPIError
 
 # ── _split_message ───────────────────────────────────────
 
@@ -63,7 +63,7 @@ class TestSplitMessage:
 class TestDiscordWebhookManager:
     @pytest.fixture
     def mgr(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DiscordWebhookManager:
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
         return DiscordWebhookManager()
 
     def test_thread_map_ttl_expiry(self, mgr: DiscordWebhookManager):
@@ -93,7 +93,7 @@ class TestDiscordWebhookManager:
         assert persisted["source-message"]["anima"] == "target"
 
     def test_persistence_round_trip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
 
         mgr1 = DiscordWebhookManager()
         mgr1._webhooks["ch1"] = {"id": "wh1", "token": "tok1"}
@@ -103,7 +103,7 @@ class TestDiscordWebhookManager:
         assert mgr2._webhooks.get("ch1") == {"id": "wh1", "token": "tok1"}
 
     def test_persistence_thread_map_prunes_expired(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
 
         run_dir = tmp_path / "run"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -118,8 +118,8 @@ class TestDiscordWebhookManager:
         assert "fresh" in mgr._thread_map
         assert "stale" not in mgr._thread_map
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_basic(self, MockClient, _mock_cred, mgr: DiscordWebhookManager):
         mock_client = MockClient.return_value
         mock_client.list_webhooks.return_value = [
@@ -133,8 +133,8 @@ class TestDiscordWebhookManager:
         _, kwargs = mock_client.execute_webhook.call_args
         assert kwargs.get("username") == "sakura"
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_retries_thread_id_as_parent_channel(
         self,
         MockClient,
@@ -168,8 +168,8 @@ class TestDiscordWebhookManager:
             components=None,
         )
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_skips_recent_confirmed_duplicate(
         self,
         MockClient,
@@ -192,8 +192,8 @@ class TestDiscordWebhookManager:
         assert mgr._thread_map["msg123"]["channel_id"] == "ch1"
         assert mgr._thread_map["msg123"]["content_hash"]
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_skips_thread_channel_duplicate_after_parent_resolution(
         self,
         MockClient,
@@ -223,8 +223,8 @@ class TestDiscordWebhookManager:
         assert mgr._thread_map["msg-thread"]["channel_id"] == "parent-ch"
         assert mgr._thread_map["msg-thread"]["thread_id"] == "thread-ch"
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_confirms_delivery_after_ambiguous_error(
         self,
         MockClient,

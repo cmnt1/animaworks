@@ -1,343 +1,56 @@
-"""CLI commands for memory backend management: status, migrate, rollback, backup."""
-
 from __future__ import annotations
 
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Memory maintenance commands."""
+
 import argparse
-import asyncio
-import sys
+import json
+import logging
 from pathlib import Path
 
-from cli.commands.memory_ops import (
-    attach_neo4j_diagnostics,
-    collect_anima_statuses,
-    print_status,
-    public_neo4j_config,
-    purge_restored_anima_graphs,
-    run_cleanup,
-    status_summary,
-)
+from core.i18n import t
+from core.paths import get_data_dir
+
+logger = logging.getLogger("animaworks.cli.memory")
 
 
 def register_memory_command(subparsers: argparse._SubParsersAction) -> None:
-    """Register the 'memory' command group."""
-    p = subparsers.add_parser("memory", help="Memory backend management")
-    sub = p.add_subparsers(dest="memory_command")
+    """Register memory maintenance subcommands."""
+    parser = subparsers.add_parser("memory", help=t("cli.memory_help"))
+    memory_sub = parser.add_subparsers(dest="memory_command", required=True)
 
-    # memory status
-    p_status = sub.add_parser("status", help="Show current memory backend status")
-    status_scope = p_status.add_mutually_exclusive_group()
-    status_scope.add_argument("--anima", type=str, dest="status_anima", help="Show one Anima's effective backend")
-    status_scope.add_argument("--all-animas", action="store_true", help="Show every Anima's effective backend")
-    p_status.add_argument("--json", action="store_true", dest="json_output", help="Print structured JSON")
-
-    # memory migrate
-    p_migrate = sub.add_parser("migrate", help="Migrate to new backend")
-    p_migrate.add_argument("--to", required=True, choices=["neo4j"], dest="target_backend")
-    grp = p_migrate.add_mutually_exclusive_group(required=True)
-    grp.add_argument("--all", action="store_true", dest="migrate_all")
-    grp.add_argument("--anima", type=str, dest="migrate_anima")
-    p_migrate.add_argument("--dry-run", action="store_true")
-    p_migrate.add_argument("--resume", action="store_true")
-    p_migrate.add_argument(
-        "--activate-global",
-        action="store_true",
-        help="After migration, set global memory.backend to neo4j. Neo4j is experimental; default is migration only.",
+    dry_run = memory_sub.add_parser(
+        "forgetting-dry-run",
+        help=t("cli.memory_forgetting_dry_run_help"),
     )
-
-    # memory rollback
-    p_rollback = sub.add_parser("rollback", help="Rollback to backup")
-    p_rollback.add_argument("--from-backup", required=True, dest="backup_name")
-    p_rollback.add_argument("--purge-neo4j", action="store_true")
-
-    # memory backup
-    p_backup = sub.add_parser("backup", help="Backup management")
-    backup_sub = p_backup.add_subparsers(dest="backup_command")
-    backup_sub.add_parser("list", help="List available backups")
-    backup_sub.add_parser("create", help="Create manual backup")
-
-    # memory cleanup
-    p_cleanup = sub.add_parser("cleanup", help="Clean up graph data by source prefix")
-    p_cleanup.add_argument("--anima", required=True, help="Anima name")
-    p_cleanup.add_argument(
-        "--source-prefix",
-        required=True,
-        dest="source_prefix",
-        help="Episode source prefix to match",
-    )
-    p_cleanup.add_argument(
-        "--include-orphans",
-        action="store_true",
-        dest="include_orphans",
-        help="Also delete orphaned entities",
-    )
-    p_cleanup.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="cleanup_dry_run",
-        help="Show what would be deleted without deleting",
-    )
-
-    p.set_defaults(func=_handle_memory)
+    dry_run.add_argument("--anima", required=True, help=t("cli.memory_forgetting_dry_run_anima_help"))
+    dry_run.set_defaults(func=forgetting_dry_run_command)
 
 
-def _handle_memory(args: argparse.Namespace) -> None:
-    """Dispatch memory subcommands."""
-    cmd = getattr(args, "memory_command", None)
-
-    if cmd == "status":
-        _cmd_status(args)
-    elif cmd == "migrate":
-        _cmd_migrate(args)
-    elif cmd == "rollback":
-        _cmd_rollback(args)
-    elif cmd == "backup":
-        _cmd_backup(args)
-    elif cmd == "cleanup":
-        _cmd_cleanup(args)
-    else:
-        print("Usage: animaworks memory {status|migrate|rollback|backup|cleanup}")
-        sys.exit(1)
-
-
-def _cmd_status(args: argparse.Namespace | None = None) -> None:
-    """Show memory backend status."""
-    from core.config.models import load_config
-    from core.memory.migration.backup import BackupManager
-    from core.paths import get_animas_dir, get_data_dir
-
-    if args is None:
-        args = argparse.Namespace(status_anima=None, all_animas=False, json_output=False)
-
-    cfg = load_config()
-    memory_cfg = getattr(cfg, "memory", None)
-    global_backend = str(getattr(memory_cfg, "backend", "legacy") or "legacy")
-    data_dir = get_data_dir()
-    animas_dir = get_animas_dir()
-    entries = collect_anima_statuses(animas_dir, global_backend)
-    selected = entries
-
-    status_anima = getattr(args, "status_anima", None)
-    if status_anima:
-        selected = [entry for entry in entries if entry["name"] == status_anima]
-        if not selected:
-            print(f"Error: anima '{status_anima}' not found")
-            sys.exit(1)
-
-    if status_anima or getattr(args, "all_animas", False):
-        asyncio.run(attach_neo4j_diagnostics(selected, animas_dir))
-
-    backups = BackupManager(data_dir).list_backups()
-    payload = {
-        "global_backend": global_backend,
-        "data_dir": str(data_dir),
-        "neo4j": public_neo4j_config(memory_cfg),
-        "summary": status_summary(entries),
-        "backups": backups,
-        "animas": selected,
-    }
-
-    if getattr(args, "json_output", False):
-        import json
-
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return
-
-    print(f"Memory Backend: {_backend_policy_label(global_backend)}")
-    print("Policy: legacy is stable/default; neo4j is experimental opt-in.")
-    overrides = [entry for entry in entries if entry.get("source") == "per-anima"]
-    if overrides:
-        print("\nPer-Anima Memory Backend Overrides:")
-        for entry in overrides:
-            backend = str(entry.get("effective_backend", "unknown"))
-            print(f"  {entry['name']}: {_backend_policy_label(backend)}")
-    else:
-        print("\nPer-Anima Memory Backend Overrides: None")
-
-    print_status(payload, show_animas=bool(status_anima or getattr(args, "all_animas", False)))
-
-
-def _backend_policy_label(backend: str) -> str:
-    """Return backend name plus stability policy for CLI display."""
-    if backend == "legacy":
-        return "legacy (stable/default)"
-    if backend == "neo4j":
-        return "neo4j (experimental/opt-in)"
-    return backend
-
-
-def _cmd_migrate(args: argparse.Namespace) -> None:
-    """Run migration."""
-    from core.memory.migration.backup import BackupManager
-    from core.memory.migration.migrator import MemoryMigrator
-    from core.paths import get_data_dir
-
-    data_dir = get_data_dir()
-    migrator = MemoryMigrator(data_dir)
-
-    if args.migrate_all:
-        anima_names = migrator.list_animas()
-    else:
-        anima_names = [args.migrate_anima]
-
-    if not anima_names:
-        print("No animas found to migrate.")
-        return
-
-    if args.dry_run:
-        print("=== DRY RUN ===\n")
-        total_files = 0
-        total_calls = 0
-        for name in anima_names:
-            est = migrator.estimate_cost(name)
-            files = est["estimated_files"]
-            calls = est["estimated_llm_calls"]
-            total_files += files
-            total_calls += calls
-            print(f"  {name}: {files} files, ~{calls} LLM calls")
-            for scope, cnt in est.get("file_counts", {}).items():
-                if cnt:
-                    print(f"    {scope}: {cnt}")
-        print(f"\nTotal: {total_files} files, ~{total_calls} LLM calls")
-        print(f"Estimated tokens: ~{total_files * 4000:,}")
-        return
-
-    # Lock check
-    lock_path = data_dir / "run" / "migration.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    if lock_path.exists():
-        print("ERROR: Migration already in progress (lock file exists).")
-        print(f"  Remove {lock_path} if previous migration crashed.")
-        sys.exit(1)
-
-    if not args.resume:
-        print("Creating backup...")
-        bm = BackupManager(data_dir)
-        backup_path = bm.create(label="pre-migration")
-        print(f"  Backup: {backup_path}")
-
-    try:
-        lock_path.write_text(str(asyncio.get_event_loop()), encoding="utf-8")
-
-        from core.memory.migration.checkpoint import CheckpointManager
-
-        ckpt = CheckpointManager(data_dir / "run" / "migration.ckpt")
-
-        print(f"\nMigrating {len(anima_names)} anima(s)...")
-
-        total_stats: dict[str, int] = {"files": 0, "entities": 0, "facts": 0, "skipped": 0, "errors": 0}
-
-        for name in anima_names:
-            print(f"\n  [{name}]")
-
-            def progress(path: str, status: str) -> None:
-                sym = "✓" if status == "done" else "✗"
-                print(f"    {sym} {Path(path).name}")
-
-            stats = asyncio.run(migrator.migrate_anima(name, checkpoint_manager=ckpt, on_progress=progress))
-
-            for k, v in stats.items():
-                total_stats[k] = total_stats.get(k, 0) + v
-
-        print("\n=== Migration Complete ===")
-        print(f"  Files: {total_stats['files']}")
-        print(f"  Skipped: {total_stats['skipped']}")
-        print(f"  Errors: {total_stats['errors']}")
-
-        if total_stats["errors"] == 0:
-            from core.config.models import load_config, save_config
-
-            cfg = load_config()
-            if getattr(args, "activate_global", False):
-                cfg.memory.backend = "neo4j"
-                save_config(cfg)
-                print("\n  Config updated: memory.backend = neo4j")
-                print("  WARNING: Neo4j memory backend is experimental/opt-in.")
-            else:
-                current = getattr(getattr(cfg, "memory", None), "backend", "legacy")
-                print("\n  Global config unchanged: memory.backend = " + str(current))
-                print("  Neo4j migration completed as data preparation only.")
-                print("  To use Neo4j globally, re-run with --activate-global.")
-                print("  To opt in one anima, use: animaworks anima set-memory-backend <name> neo4j")
-        else:
-            print("\n  WARNING: Errors occurred. Config NOT updated.")
-            print("  Fix errors and re-run with --resume")
-    finally:
-        if lock_path.exists():
-            lock_path.unlink()
-
-
-def _cmd_rollback(args: argparse.Namespace) -> None:
-    """Rollback from backup."""
-    from core.memory.migration.backup import BackupManager
-    from core.paths import get_data_dir
-
-    data_dir = get_data_dir()
-    bm = BackupManager(data_dir)
-
-    print(f"Restoring from backup: {args.backup_name}")
-    try:
-        bm.restore(args.backup_name)
-    except (FileNotFoundError, ValueError) as e:
-        print(f"ERROR: {e}")
-        sys.exit(1)
-
-    from core.config.models import load_config, save_config
-
-    cfg = load_config()
-    cfg.memory.backend = "legacy"
-    save_config(cfg)
-    print("Config updated: memory.backend = legacy")
-    if getattr(args, "purge_neo4j", False):
-        print("Purging Neo4j data for restored Anima groups...")
-        purged, failures = asyncio.run(purge_restored_anima_graphs(data_dir / "animas"))
-        print(f"Neo4j purge complete: {purged} group(s) purged, {len(failures)} failure(s)")
-        for name, error in failures:
-            print(f"  WARNING: {name}: {error}")
-    print("Rollback complete.")
-
-
-def _cmd_backup(args: argparse.Namespace) -> None:
-    """Backup subcommands."""
-    from core.memory.migration.backup import BackupManager
-    from core.paths import get_data_dir
-
-    data_dir = get_data_dir()
-    bm = BackupManager(data_dir)
-
-    sub = getattr(args, "backup_command", None)
-
-    if sub == "list":
-        backups = bm.list_backups()
-        if not backups:
-            print("No backups found.")
-            return
-        for b in backups:
-            print(f"  {b['name']}  ({b['size_mb']} MB)")
-    elif sub == "create":
-        path = bm.create()
-        print(f"Backup created: {path}")
-    else:
-        print("Usage: animaworks memory backup {list|create}")
-        sys.exit(1)
-
-
-def _cmd_cleanup(args: argparse.Namespace) -> None:
-    """Clean up Neo4j graph data by episode source prefix."""
-    from core.memory.backend.registry import resolve_backend_type
-    from core.paths import get_animas_dir
-
-    anima_dir = get_animas_dir() / args.anima
+def forgetting_dry_run_command(args: argparse.Namespace) -> None:
+    """Report forgetting counts using the active vector owner without writes."""
+    anima_name = args.anima
+    anima_dir = Path(get_data_dir()) / "animas" / anima_name
     if not anima_dir.is_dir():
-        print(f"Error: anima '{args.anima}' not found")
-        sys.exit(1)
+        logger.error(t("cli.memory_anima_not_found", anima=anima_name))
+        raise SystemExit(1)
 
-    backend_type = resolve_backend_type(anima_dir)
-    if backend_type != "neo4j":
-        print(
-            f"Error: anima '{args.anima}' is not using Neo4j backend (current: {backend_type})",
-        )
-        sys.exit(1)
+    from core.memory.maintenance.forgetting import ForgettingEngine
+    from core.memory.rag.cli_access import open_vector_access
+    from core.memory.rag.owner_lock import VectorOwnerBusy
 
-    asyncio.run(
-        run_cleanup(anima_dir, args.source_prefix, args.include_orphans, args.cleanup_dry_run),
-    )
+    try:
+        with open_vector_access(anima_name, anima_dir, purpose="forgetting-dry-run") as access:
+            result = ForgettingEngine(
+                anima_dir,
+                anima_name,
+                vector_store=access.store,
+            ).synaptic_downscaling(dry_run=True)
+    except VectorOwnerBusy as exc:
+        logger.error(t("cli.memory_vector_store_unavailable", anima=anima_name, error=exc))
+        raise SystemExit(1) from exc
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))

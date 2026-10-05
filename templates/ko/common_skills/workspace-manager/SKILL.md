@@ -6,16 +6,17 @@ description: >-
 tags: [workspace, directory, project, management]
 ---
 
+
 # 워크스페이스 관리
 
 Anima가 작업하는 프로젝트 디렉토리(워크스페이스)를 관리하는 스킬입니다.
 
 ## 개념
 
-Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
-프로젝트 작업을 할 때는 "직장"(워크스페이스)으로 이동하여 작업합니다.
+Anima는 평소 “자기 집”(~/.animaworks/animas/{name}/）에 있다.
+프로젝트 작업을 할 때는 “일터”(작업 공간)로 나가 작업한다.
 
-워크스페이스는 조직 공유 레지스트리(config.json의 workspaces 섹션)에 등록하고, 에일리어스#해시로 참조합니다.
+작업 공간은 조직 공유 레지스트리(config.json의 workspaces 섹션)에 등록하고 별칭#해시로 참조한다.
 
 ## 에일리어스와 해시
 
@@ -28,7 +29,7 @@ Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
 
 ### 등록
 
-인간의 명시적 지시를 받은 최상위 Anima는 `grant_workspace_access`를 사용합니다:
+인간으로부터 명시적 지침을 받은 최상위 Anima는 `grant_workspace_access` 를 사용한다:
 
 ```json
 {
@@ -38,14 +39,14 @@ Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
 }
 ```
 
-이 도구는 조직 공유 레지스트리 등록, 대상 Anima의 `permissions.json.file_roots` 쓰기 권한 추가, 필요 시 `status.json.default_workspace` 갱신을 함께 수행합니다.
+이 도구는 root 호스트에 요청하여 조직 공유 레지스트리와 root 소유의 `permissions.json` / `status.json` 를 업데이트한다. Anima 프로세스에서 설정 파일을 직접 작성하지 않는다.
 
-**주의**: 디렉토리가 존재하지 않으면 에러가 발생합니다.
-**주의**: `read_memory_file(path="config.json")`은 자신의 Anima 디렉토리에 있는 `config.json`을 읽습니다. 조직 공유 레지스트리 등록에는 사용하지 않습니다.
+**주의**: 디렉터리가 존재하지 않으면 오류가 발생한다.
+**주의**: `read_memory_file(path="config.json")` 는 자신의 Anima 디렉터리의 `config.json` 를 읽는다. 조직 공유 레지스트리의 등록에는 사용하지 않는다.
 
 ### 목록 조회
 
-조직 공유 레지스트리 목록은 `core.workspace.list_workspaces()`로 확인합니다. `read_memory_file(path="config.json")`은 사용하지 않습니다.
+조직 공유 레지스트리 목록은 `core.org.workspace.list_workspaces()`로 확인합니다. `read_memory_file(path="config.json")`은 사용하지 않습니다.
 
 ### 삭제
 

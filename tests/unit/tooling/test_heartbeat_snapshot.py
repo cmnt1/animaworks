@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 from core.tooling.heartbeat_snapshot import build_heartbeat_observe_snapshot
 

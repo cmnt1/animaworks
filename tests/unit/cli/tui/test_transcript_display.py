@@ -117,7 +117,7 @@ async def test_scrolling_up_stops_the_transcript_from_jumping_back():
         for i in range(60):
             await client.chat_queue.put(SseEvent("text_delta", {"text": f"行{i}\n"}))
         await _pump()
-        await pilot.pause()
+        await _settle(pilot)
 
         app.transcript.scroll_to(y=5, animate=False, force=True)
         await pilot.pause()
@@ -127,7 +127,7 @@ async def test_scrolling_up_stops_the_transcript_from_jumping_back():
             await client.chat_queue.put(SseEvent("text_delta", {"text": f"行{i}\n"}))
         await client.chat_queue.put(None)
         await _pump()
-        await pilot.pause()
+        await _settle(pilot)
 
         assert app.transcript.scroll_y == 5, "the reader was dragged back to the bottom"
 

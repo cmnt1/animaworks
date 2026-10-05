@@ -28,10 +28,9 @@ call_human(
 
 詳細な判断基準は `troubleshooting/escalation-flowchart.md` を参照。
 
-### 制約
+### 使い分け
 
-- `call_human` は DM レート制限（30/h, 100/day）の **対象外**
-- 緊急時でも制限を気にせず送信できる
+- `call_human` は `send_message` とは別の人間通知経路。実際に緊急対応が必要な場合に使用する
 
 ## 返信の受け取り
 

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from core.tooling.schemas import (
-    _CONSOLIDATION_BLOCKED_TOOLS,
-    build_tool_list,
-    build_unified_tool_list,
-)
+from core.tooling.policy.schemas import build_unified_tool_list
+from core.tooling.policy.surface import CONSOLIDATION_BLOCKED_TOOL_NAMES
 
 
 def _tool_names(tools: list[dict]) -> set[str]:
@@ -43,7 +40,7 @@ class TestConsolidationToolFilter:
             trigger="consolidation:daily",
         )
         names = _tool_names(tools)
-        for blocked in _CONSOLIDATION_BLOCKED_TOOLS:
+        for blocked in CONSOLIDATION_BLOCKED_TOOL_NAMES:
             assert blocked not in names, f"{blocked} should be hidden during consolidation"
 
     def test_consolidation_weekly_also_excludes(self):
@@ -79,50 +76,6 @@ class TestConsolidationToolFilter:
         assert "submit_tasks" not in names
         assert "send_message" in names
 
-    def test_build_tool_list_consolidation_filter(self):
-        """build_tool_list (Anthropic fallback) also respects consolidation."""
-        tools = build_tool_list(
-            include_supervisor_tools=True,
-            include_submit_tasks=True,
-            trigger="consolidation:daily",
-        )
-        names = _tool_names(tools)
-        for blocked in _CONSOLIDATION_BLOCKED_TOOLS:
-            assert blocked not in names, f"{blocked} should be hidden in build_tool_list"
-
-    def test_build_tool_list_submit_tasks_requires_background_trigger(self):
-        normal = build_tool_list(include_submit_tasks=True, trigger="chat")
-        background = build_tool_list(include_submit_tasks=True, trigger="background:manual")
-        assert "submit_tasks" not in _tool_names(normal)
-        assert "submit_tasks" in _tool_names(background)
-
-    def test_heartbeat_trigger_includes_submit_tasks(self):
-        """Heartbeat may enqueue a self-task for TaskExec (only durable path)."""
-        tools = build_unified_tool_list(
-            include_supervisor_tools=True,
-            include_create_skill=False,
-            trigger="heartbeat",
-        )
-        assert "submit_tasks" in _tool_names(tools)
-
-    def test_inbox_trigger_includes_submit_tasks(self):
-        """Inbox sessions are ephemeral; heavy self-work must be enqueued."""
-        tools = build_unified_tool_list(
-            include_supervisor_tools=True,
-            include_create_skill=False,
-            trigger="inbox:sakura",
-        )
-        assert "submit_tasks" in _tool_names(tools)
-
-    def test_chat_trigger_still_excludes_submit_tasks(self):
-        """Chat executes inline, so submit_tasks stays hidden there."""
-        tools = build_unified_tool_list(
-            include_supervisor_tools=True,
-            include_create_skill=False,
-            trigger="chat",
-        )
-        assert "submit_tasks" not in _tool_names(tools)
-
     def test_trust_skill_only_available_for_human_triggers(self):
         human = build_unified_tool_list(trigger="message:user")
         heartbeat = build_unified_tool_list(trigger="heartbeat")
@@ -133,8 +86,3 @@ class TestConsolidationToolFilter:
         assert "trust_skill" not in _tool_names(heartbeat)
         assert "trust_skill" not in _tool_names(cron)
         assert "trust_skill" not in _tool_names(consolidation)
-
-    def test_build_tool_list_hides_trust_skill_for_background_trigger(self):
-        tools = build_tool_list(include_create_skill=True, trigger="background:manual")
-        assert "create_skill" in _tool_names(tools)
-        assert "trust_skill" not in _tool_names(tools)

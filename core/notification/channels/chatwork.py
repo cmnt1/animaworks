@@ -15,8 +15,6 @@ from core.notification.notifier import NotificationChannel, register_channel
 
 logger = logging.getLogger("animaworks.notification.chatwork")
 
-_CHATWORK_API_URL = "https://api.chatwork.com/v2/rooms/{room_id}/messages"
-
 
 @register_channel("chatwork")
 class ChatworkChannel(NotificationChannel):
@@ -58,23 +56,17 @@ class ChatworkChannel(NotificationChannel):
             web_url = load_config().interaction.web_base_url
             body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
-        from core.tools.chatwork import md_to_chatwork
+        from core.integrations.chatwork import md_to_chatwork
 
         body = md_to_chatwork(body)
         prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""
         sender = f" (from {anima_name})" if anima_name else ""
         message = f"[info][title]{prefix}{subject}{sender}[/title]{body}[/info]"[:28000]
 
-        url = _CHATWORK_API_URL.format(room_id=room_id)
-
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    url,
-                    headers={"X-ChatWorkToken": token},
-                    data={"body": message},
-                )
-                resp.raise_for_status()
+            from core.channels.chatwork import post_message
+
+            await post_message(token, room_id, message)
             logger.info("Chatwork notification sent: %s", subject[:50])
             return "chatwork: OK"
         except httpx.HTTPStatusError as e:

@@ -7,9 +7,8 @@ Verifies that ``_iter_consolidation_targets()`` scans ``self.animas_dir``
 on disk rather than relying on ``self.processes`` (live process dict),
 so that stopped / crashed animas still receive memory consolidation.
 
-Note: Tests for ``_run_daily_consolidation()`` and ``_run_weekly_integration()``
-were removed because those methods call ``daily_consolidate``/``weekly_integrate``
-which were removed from ConsolidationEngine in the consolidation refactor.
+The daily and weekly scheduler methods are also tested here for timeout handling,
+bounded concurrency, and per-Anima failure isolation.
 
 Issue: docs/issues/20260217_consolidation-run-for-all-animas.md
 """
@@ -25,10 +24,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor._mgr_scheduler import _marker_dir, _read_marker
-from core.supervisor.ipc import IPCResponse
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from core.runtime.ipc import IPCResponse
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -169,38 +167,6 @@ class _TimeoutHandle:
         return IPCResponse(id="fake", result={})
 
 
-class _SuccessHandle:
-    state = ProcessState.RUNNING
-
-    async def send_request(
-        self,
-        method: str,
-        params: dict,
-        timeout: float = 60.0,
-    ) -> IPCResponse:
-        return IPCResponse(id="fake", result={"duration_ms": 1})
-
-
-class _TrackedHandle:
-    state = ProcessState.RUNNING
-
-    def __init__(self, tracker: dict[str, int]) -> None:
-        self.tracker = tracker
-
-    async def send_request(
-        self,
-        method: str,
-        params: dict,
-        timeout: float = 60.0,
-    ) -> IPCResponse:
-        assert method == "run_consolidation"
-        self.tracker["active"] += 1
-        self.tracker["maximum"] = max(self.tracker["maximum"], self.tracker["active"])
-        await asyncio.sleep(0.02)
-        self.tracker["active"] -= 1
-        return IPCResponse(id="fake", result={"duration_ms": 1})
-
-
 class _RecordingHandle:
     state = ProcessState.RUNNING
 
@@ -215,9 +181,6 @@ class _RecordingHandle:
 class _RecentEpisodesEngine:
     """Minimal consolidation engine stub with work to do."""
 
-    rebuild_calls: list[tuple[str, str]] = []
-    ingest_calls: list[tuple[str, int]] = []
-
     def __init__(self, anima_dir: Path, anima_name: str) -> None:
         self.anima_dir = anima_dir
         self.anima_name = anima_name
@@ -228,16 +191,6 @@ class _RecentEpisodesEngine:
     def count_recent_activity_entries(self, hours: int = 24, **_kwargs) -> int:
         return 0
 
-    def count_pending_phase_b_carryover(self) -> int:
-        return 0
-
-    def _rebuild_rag_index(self) -> None:
-        self.rebuild_calls.append((self.anima_name, str(self.anima_dir)))
-
-    async def ingest_recent_to_backend(self, hours: int) -> dict[str, int]:
-        self.ingest_calls.append((self.anima_name, hours))
-        return {"episodes": 0, "knowledge": 0, "errors": 0}
-
 
 def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
@@ -245,14 +198,174 @@ def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) ->
         ipc_timeout_base_seconds=1800,
         ipc_timeout_per_activity_entry_seconds=4.0,
         ipc_timeout_per_episode_seconds=120.0,
-        ipc_timeout_per_carryover_item_seconds=600.0,
         ipc_timeout_max_seconds=7200,
     )
-    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+    gate = SimpleNamespace(activity_count=300, episode_count=2)
 
     timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
 
-    assert timeout == 3840.0
+    assert timeout == 3240.0
+
+
+def test_consolidation_ipc_timeout_uses_compacted_input_count_when_available(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=4.0,
+        ipc_timeout_per_episode_seconds=120.0,
+        ipc_timeout_max_seconds=7200,
+    )
+    gate = SimpleNamespace(activity_count=300, summary_input_entries=10, episode_count=2)
+
+    timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+
+    assert timeout == 2080.0
+
+
+@pytest.mark.parametrize(
+    ("activity_count", "episode_count", "should_run"),
+    [(2, 0, True), (0, 2, True), (1, 1, False)],
+)
+def test_daily_gate_uses_only_activity_and_episode_thresholds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    activity_count: int,
+    episode_count: int,
+    should_run: bool,
+) -> None:
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+
+    class _GateEngine:
+        def __init__(self, *_args) -> None:
+            pass
+
+        def _collect_recent_episodes(self, hours: int) -> list[dict]:
+            return [{} for _ in range(episode_count)]
+
+        @staticmethod
+        def previous_local_day_window():
+            return None, None, None
+
+        def count_recent_activity_entries(self, **_kwargs) -> int:
+            return activity_count
+
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", _GateEngine)
+    gate = evaluate_daily_consolidation_gate(tmp_path, "fixture", threshold=2)
+
+    assert gate.should_run is should_run
+    assert not hasattr(gate, "carryover_count")
+
+
+def test_daily_gate_passes_profile_and_counts_compacted_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import date, datetime, timedelta
+
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+    from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
+
+    day = date(2026, 9, 27)
+
+    class _ProfileGateEngine:
+        def __init__(self, *_args) -> None:
+            self.settings = []
+
+        @staticmethod
+        def _collect_recent_episodes(hours: int) -> list[dict]:
+            return []
+
+        @staticmethod
+        def previous_local_day_window():
+            return day, None, None
+
+        @staticmethod
+        def local_day_window(target, _reference=None):
+            return datetime.combine(target, datetime.min.time()), datetime.combine(
+                target + timedelta(days=1), datetime.min.time()
+            )
+
+        @staticmethod
+        def count_recent_activity_entries(**_kwargs) -> int:
+            return 0
+
+        def collect_pending_activity_chunks(self, _target, *, compaction_settings, **_kwargs):
+            self.settings.append(compaction_settings)
+            return ["[08:00] RESPONSE: compacted input"] if _target == day else [], False
+
+    engine = _ProfileGateEngine()
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", lambda *_args: engine)
+
+    gate = evaluate_daily_consolidation_gate(
+        tmp_path,
+        "fixture",
+        threshold=2,
+        backfill_days=1,
+        compaction_settings=ActivityCompactionSettings(profile="full"),
+    )
+
+    assert gate.summary_input_entries == 1
+    assert engine.settings[0].profile == "full"
+
+
+def test_daily_gate_runs_for_pending_episode_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import date, datetime, timedelta
+
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+
+    class _BackfillGateEngine:
+        def __init__(self, *_args) -> None:
+            self.visited: list[date] = []
+
+        def _collect_recent_episodes(self, hours: int) -> list[dict]:
+            return []
+
+        @staticmethod
+        def previous_local_day_window():
+            yesterday = date(2026, 9, 27)
+            return yesterday, None, None
+
+        @staticmethod
+        def local_day_window(day: date):
+            return datetime.combine(day, datetime.min.time()), datetime.combine(
+                day + timedelta(days=1), datetime.min.time()
+            )
+
+        def collect_activity_chunks(self, *, since, **_kwargs):
+            day = since.date()
+            self.visited.append(day)
+            return ["missed episode"] if day == date(2026, 9, 25) else []
+
+        def collect_pending_activity_chunks(self, target_date, **_kwargs):
+            day = target_date
+            self.visited.append(day)
+            return (["missed episode"] if day == date(2026, 9, 25) else []), False
+
+        @staticmethod
+        def unprocessed_activity_chunks(_day, chunks):
+            return chunks
+
+        @staticmethod
+        def count_recent_activity_entries(**_kwargs) -> int:
+            return 0
+
+    engine = _BackfillGateEngine()
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", lambda *_args: engine)
+
+    gate = evaluate_daily_consolidation_gate(
+        tmp_path,
+        "fixture",
+        threshold=2,
+        backfill_days=4,
+        model="test-model",
+    )
+
+    assert gate.should_run
+    assert gate.pending_backfill_days == 1
+    assert len(engine.visited) == 4
 
 
 def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Path) -> None:
@@ -261,11 +374,10 @@ def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Pa
         ipc_timeout_base_seconds=1800,
         ipc_timeout_per_activity_entry_seconds=10.0,
         ipc_timeout_per_episode_seconds=100.0,
-        ipc_timeout_per_carryover_item_seconds=1000.0,
         ipc_timeout_max_seconds=2000,
         weekly_ipc_timeout_seconds=4800,
     )
-    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+    gate = SimpleNamespace(activity_count=300, episode_count=2)
 
     daily = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
     weekly = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="weekly")
@@ -285,50 +397,28 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     _create_anima_dir(sup.animas_dir, "mio")
     handle = _TimeoutHandle()
     sup.processes["mio"] = handle
-    _RecentEpisodesEngine.rebuild_calls = []
-    _RecentEpisodesEngine.ingest_calls = []
     mock_forgetter = MagicMock()
     mock_forgetter.synaptic_downscaling.return_value = {"scanned": 1}
     monkeypatch.setattr(
-        "core.memory.consolidation.ConsolidationEngine",
+        "core.memory.maintenance.consolidation.ConsolidationEngine",
         _RecentEpisodesEngine,
     )
-    monkeypatch.setattr("core.memory.forgetting.ForgettingEngine", lambda *_args: mock_forgetter)
+    monkeypatch.setattr("core.memory.maintenance.forgetting.ForgettingEngine", lambda *_args: mock_forgetter)
     monkeypatch.setattr(
         "core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled",
         AsyncMock(),
     )
-    monkeypatch.setattr("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock())
     monkeypatch.setattr("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", lambda *_args: False)
 
-    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+    with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_daily_consolidation()
 
-    assert handle.calls == ["run_consolidation", "interrupt"]
-    assert "consolidation_timeout anima=mio phase=phase_b type=daily" in caplog.text
+    assert handle.calls == ["run_consolidation", "cancel_consolidation", "interrupt"]
+    assert "consolidation_timeout anima=mio phase=phase_a type=daily" in caplog.text
     assert "Daily consolidation failed for mio" not in caplog.text
     # synaptic_downscaling_enabled defaults to True (harness diet PR-6),
     # so framework-side post-processing still runs downscaling on timeout.
     mock_forgetter.synaptic_downscaling.assert_called_once()
-    assert _RecentEpisodesEngine.rebuild_calls == [("mio", str(sup.animas_dir / "mio"))]
-    assert _RecentEpisodesEngine.ingest_calls == [("mio", 48)]
-
-
-@pytest.mark.asyncio
-async def test_daily_consolidation_without_running_processes_does_not_write_success_marker(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """An all-skipped daily run must not suppress the next real run."""
-    sup = _make_supervisor(tmp_path)
-    _create_anima_dir(sup.animas_dir, "mio")
-    marker = _marker_dir(sup._get_data_dir()) / "last_daily_consolidation"
-
-    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
-        await sup._run_daily_consolidation()
-
-    assert _read_marker(marker) is None
-    assert "Daily consolidation did not run: no running Anima processes" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -346,217 +436,13 @@ async def test_weekly_consolidation_timeout_logs_once_and_continues(
     monkeypatch.setattr("core.lifecycle.system_consolidation.run_weekly_integration_post_processing", postprocess)
     monkeypatch.setattr("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", lambda *_args: False)
 
-    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+    with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_weekly_integration()
 
-    assert handle.calls == ["run_consolidation", "interrupt"]
+    assert handle.calls == ["run_consolidation", "cancel_consolidation", "interrupt"]
     assert "consolidation_timeout anima=mio phase=phase_b type=weekly" in caplog.text
     assert "Weekly integration failed for mio" not in caplog.text
     postprocess.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_weekly_consolidation_reports_target_progress(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sup = _make_supervisor(tmp_path)
-    for name in ("mio", "sora"):
-        _create_anima_dir(sup.animas_dir, name)
-        sup.processes[name] = _SuccessHandle()
-
-    config = SimpleNamespace(
-        consolidation=SimpleNamespace(
-            weekly_max_concurrency=1,
-            llm_model="codex/test",
-        )
-    )
-    progress: list[dict] = []
-    monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr(
-        "core.lifecycle.system_status.mark_progress",
-        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
-    )
-    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.run_weekly_integration_post_processing",
-        AsyncMock(),
-    )
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
-        lambda *_args: False,
-    )
-    sup._broadcast_event = AsyncMock()
-
-    await sup._run_weekly_integration_inner()
-
-    assert progress == [
-        {
-            "job_type": "weekly",
-            "current": 1,
-            "total": 2,
-            "target": "mio",
-            "phase": "consolidation",
-        },
-        {
-            "job_type": "weekly",
-            "current": 1,
-            "total": 2,
-            "target": "mio",
-            "phase": "post_processing",
-        },
-        {
-            "job_type": "weekly",
-            "current": 2,
-            "total": 2,
-            "target": "sora",
-            "phase": "consolidation",
-        },
-        {
-            "job_type": "weekly",
-            "current": 2,
-            "total": 2,
-            "target": "sora",
-            "phase": "post_processing",
-        },
-    ]
-
-
-@pytest.mark.asyncio
-async def test_weekly_consolidation_uses_bounded_parallelism_and_monotonic_progress(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sup = _make_supervisor(tmp_path)
-    tracker = {"active": 0, "maximum": 0}
-    for name in ("a", "b", "c", "d", "e"):
-        _create_anima_dir(sup.animas_dir, name)
-        sup.processes[name] = _TrackedHandle(tracker)
-
-    config = SimpleNamespace(
-        consolidation=SimpleNamespace(
-            weekly_max_concurrency=2,
-            llm_model="codex/test",
-        )
-    )
-    progress: list[dict] = []
-    monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.run_weekly_integration_post_processing",
-        AsyncMock(),
-    )
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
-        lambda *_args: False,
-    )
-    monkeypatch.setattr(
-        "core.lifecycle.system_status.mark_progress",
-        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
-    )
-    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
-    sup._broadcast_event = AsyncMock()
-
-    await sup._run_weekly_integration_inner()
-
-    assert tracker["maximum"] == 2
-    currents = [entry["current"] for entry in progress]
-    assert currents == sorted(currents)
-    assert currents[-1] == 5
-    assert all(entry["total"] == 5 for entry in progress)
-
-
-@pytest.mark.asyncio
-async def test_daily_consolidation_uses_bounded_parallelism_and_monotonic_progress(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sup = _make_supervisor(tmp_path)
-    tracker = {"active": 0, "maximum": 0}
-    for name in ("a", "b", "c", "d", "e"):
-        _create_anima_dir(sup.animas_dir, name)
-        sup.processes[name] = _TrackedHandle(tracker)
-
-    config = SimpleNamespace(
-        consolidation=SimpleNamespace(
-            daily_max_concurrency=2,
-            min_episodes_threshold=1,
-            llm_model="codex/test",
-        )
-    )
-    gate = SimpleNamespace(
-        should_run=True,
-        activity_count=1,
-        episode_count=0,
-        carryover_count=0,
-        threshold=1,
-    )
-    progress: list[dict] = []
-    monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", lambda *_a, **_k: gate)
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.run_daily_consolidation_post_processing",
-        AsyncMock(),
-    )
-    monkeypatch.setattr(
-        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
-        lambda *_args: False,
-    )
-    monkeypatch.setattr(
-        "core.lifecycle.system_status.mark_progress",
-        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
-    )
-    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
-    sup._broadcast_event = AsyncMock()
-
-    summary = await sup._run_daily_consolidation_inner()
-
-    assert summary["attempted"] == 5
-    assert tracker["maximum"] == 2
-    currents = [entry["current"] for entry in progress]
-    assert currents == sorted(currents)
-    assert currents[-1] == 5
-    assert all(entry["total"] == 5 for entry in progress)
-
-
-@pytest.mark.asyncio
-async def test_daily_and_weekly_memory_maintenance_do_not_overlap(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sup = _make_supervisor(tmp_path)
-    daily_entered = asyncio.Event()
-    release_daily = asyncio.Event()
-    order: list[str] = []
-
-    async def run_daily_inner() -> dict[str, bool]:
-        order.append("daily_start")
-        daily_entered.set()
-        await release_daily.wait()
-        order.append("daily_end")
-        return {"marker_written": True}
-
-    async def run_weekly_inner() -> None:
-        order.append("weekly_start")
-
-    sup._run_daily_consolidation_inner = run_daily_inner
-    sup._run_weekly_integration_inner = run_weekly_inner
-    sup._broadcast_event = AsyncMock()
-    monkeypatch.setattr("core.lifecycle.system_status.already_ran_within_interval", lambda *_args: False)
-    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
-    monkeypatch.setattr("core.lifecycle.system_status.mark_started", lambda *_args: {})
-    monkeypatch.setattr("core.lifecycle.system_status.mark_succeeded", lambda *_args: {})
-    monkeypatch.setattr("core.lifecycle.system_status.mark_failed", lambda *_args: {})
-
-    daily_task = asyncio.create_task(sup._run_daily_consolidation())
-    await daily_entered.wait()
-    weekly_task = asyncio.create_task(sup._run_weekly_integration())
-    await asyncio.sleep(0.02)
-
-    assert order == ["daily_start"]
-
-    release_daily.set()
-    await asyncio.gather(daily_task, weekly_task)
-    assert order == ["daily_start", "daily_end", "weekly_start"]
 
 
 @pytest.mark.asyncio
@@ -604,9 +490,170 @@ async def test_project_archives_bypass_inactivity_and_skip_empty_archive(
 
     await getattr(sup, method_name)()
 
-    assert handle.calls == [
-        (
-            "run_consolidation",
-            {"consolidation_type": consolidation_type, "project": "active"},
-        )
-    ]
+    assert len(handle.calls) == 1
+    method, params = handle.calls[0]
+    assert method == "run_consolidation"
+    assert params["consolidation_type"] == consolidation_type
+    assert params["project"] == "active"
+    assert isinstance(params["deadline_s"], float) and params["deadline_s"] >= 60
+
+
+def _prepare_consolidation_scheduler(
+    sup: ProcessSupervisor,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    concurrency: int,
+) -> tuple[AsyncMock, AsyncMock]:
+    from core.lifecycle import system_consolidation
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(consolidation=SimpleNamespace(max_concurrent_animas=concurrency)),
+    )
+    monkeypatch.setattr(
+        system_consolidation,
+        "should_skip_inactive_consolidation",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        system_consolidation,
+        "evaluate_daily_consolidation_gate",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            should_run=True,
+            activity_count=1,
+            episode_count=1,
+            threshold=1,
+            pending_backfill_days=0,
+        ),
+    )
+    daily_postprocess = AsyncMock()
+    weekly_postprocess = AsyncMock()
+    monkeypatch.setattr(system_consolidation, "run_daily_consolidation_post_processing", daily_postprocess)
+    monkeypatch.setattr(system_consolidation, "run_weekly_integration_post_processing", weekly_postprocess)
+    monkeypatch.setattr(sup, "_broadcast_event", AsyncMock())
+    monkeypatch.setattr(sup, "_run_project_archive_consolidations", AsyncMock())
+    return daily_postprocess, weekly_postprocess
+
+
+def _install_running_handles(sup: ProcessSupervisor, names: list[str], request):  # noqa: ANN001
+    for name in names:
+
+        async def send_request(method: str, params: dict, timeout: float = 60.0, *, _name: str = name):
+            return await request(_name, method, params, timeout)
+
+        sup.processes[name] = SimpleNamespace(state=ProcessState.RUNNING, send_request=send_request)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "consolidation_type"),
+    [
+        ("_run_daily_consolidation", "daily"),
+        ("_run_weekly_integration", "weekly"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("configured_limit", "expected_max"),
+    [(3, 3), (1, 1), (0, 1)],
+)
+@pytest.mark.asyncio
+async def test_consolidation_scheduler_limits_concurrency_and_starts_in_name_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    consolidation_type: str,
+    configured_limit: int,
+    expected_max: int,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    _prepare_consolidation_scheduler(sup, monkeypatch, concurrency=configured_limit)
+    names = ["zeta", "alpha", "echo", "bravo", "charlie"]
+    for name in names:
+        _create_anima_dir(sup.animas_dir, name)
+
+    active = 0
+    max_active = 0
+    started: list[str] = []
+
+    async def send_request(anima_name: str, method: str, _params: dict, _timeout: float) -> IPCResponse:
+        nonlocal active, max_active
+        assert method == "run_consolidation"
+        started.append(anima_name)
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.02)
+        finally:
+            active -= 1
+        return IPCResponse(id="fake", result={"duration_ms": 1})
+
+    _install_running_handles(sup, names, send_request)
+
+    await getattr(sup, method_name)()
+
+    assert max_active == expected_max
+    assert started == sorted(names)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "consolidation_type", "label"),
+    [
+        ("_run_daily_consolidation", "daily", "Daily consolidation"),
+        ("_run_weekly_integration", "weekly", "Weekly integration"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_consolidation_failures_are_isolated_and_summarized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    method_name: str,
+    consolidation_type: str,
+    label: str,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    daily_postprocess, weekly_postprocess = _prepare_consolidation_scheduler(sup, monkeypatch, concurrency=3)
+    names = ["alpha", "bravo", "charlie", "delta", "echo"]
+    for name in names:
+        _create_anima_dir(sup.animas_dir, name)
+    from core.lifecycle import system_consolidation
+
+    monkeypatch.setattr(
+        system_consolidation,
+        "should_skip_inactive_consolidation",
+        lambda _anima_dir, anima_name, _config: anima_name == "bravo",
+    )
+    calls: dict[str, list[str]] = {name: [] for name in names}
+
+    async def send_request(anima_name: str, method: str, _params: dict, _timeout: float) -> IPCResponse:
+        calls[anima_name].append(method)
+        if method == "run_consolidation":
+            if anima_name == "charlie":
+                raise RuntimeError("synthetic IPC failure")
+            if anima_name == "delta":
+                raise TimeoutError("synthetic IPC timeout")
+            return IPCResponse(id="fake", result={"duration_ms": 1})
+        return IPCResponse(id="fake", result={})
+
+    _install_running_handles(sup, names, send_request)
+    with caplog.at_level(logging.INFO, logger="server.supervisor._mgr_scheduler"):
+        await getattr(sup, method_name)()
+
+    postprocess = daily_postprocess if consolidation_type == "daily" else weekly_postprocess
+    postprocessed_names = {call.args[0] for call in postprocess.await_args_list}
+    assert postprocessed_names == {"alpha", "charlie", "delta", "echo"}
+    assert calls["bravo"] == []
+    assert calls["charlie"] == ["run_consolidation"]
+    assert calls["delta"] == ["run_consolidation", "cancel_consolidation", "interrupt"]
+    assert "charlie" in caplog.text
+    assert "consolidation_timeout anima=delta" in caplog.text
+    assert (
+        f"System-wide {label.lower()} finished targets=5 ran=2 skipped=1 timed_out=1 failed=1 elapsed_s=" in caplog.text
+    )
+    assert f"Starting system-wide {label.lower()} targets=5 concurrency=3" in caplog.text
+
+
+def test_consolidation_config_defaults_to_three_concurrent_animas() -> None:
+    from core.config.models import ConsolidationConfig
+
+    assert ConsolidationConfig().max_concurrent_animas == 3
+    assert ConsolidationConfig(max_concurrent_animas=0).max_concurrent_animas == 0

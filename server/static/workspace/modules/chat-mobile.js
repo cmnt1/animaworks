@@ -63,7 +63,7 @@ export function isMobileView() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
 
-export function openMobileSidebar() {
+function openMobileSidebar() {
   const dom = _getDom();
   dom.convSidebar?.classList.add("mobile-open");
   dom.sidebarBackdrop?.classList.add("visible");
@@ -75,7 +75,7 @@ export function closeMobileSidebar() {
   dom.sidebarBackdrop?.classList.remove("visible");
 }
 
-export function toggleMobileCharacter() {
+function toggleMobileCharacter() {
   const dom = _getDom();
   dom.convCharacter?.classList.toggle("mobile-open");
 }
@@ -85,7 +85,7 @@ export function closeMobileCharacter() {
   dom.convCharacter?.classList.remove("mobile-open");
 }
 
-export function openMobileMemory() {
+function openMobileMemory() {
   const dom = _getDom();
   dom.memoryPanel?.classList.add("mobile-open");
 }
@@ -105,14 +105,14 @@ export function updateConvInputPlaceholder() {
     : t("ws.message_placeholder");
 }
 
-export function cleanupMobileResources() {
+function cleanupMobileResources() {
   if (_swiperInstance) { _swiperInstance.destroy(); _swiperInstance = null; }
   if (_mobileMediaQuery) { _mobileMediaQuery.removeEventListener("change", updateConvInputPlaceholder); _mobileMediaQuery = null; }
 }
 
 // ── Draft ──────────────────────
 
-export function wsDraftKey(animaName, threadId) {
+function wsDraftKey(animaName, threadId) {
   return getDraftKey("workspace-conv", getCurrentUser() || "guest", animaName, threadId);
 }
 

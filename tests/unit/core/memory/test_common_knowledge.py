@@ -34,14 +34,13 @@ class TestMemoryIndexerCollectionPrefix:
         """Create a MemoryIndexer with mocked embedding model."""
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            indexer = MemoryIndexer(
-                vector_store,
-                anima_name=anima_name,
-                anima_dir=anima_dir,
-                **kwargs,
-            )
-            return indexer
+        indexer = MemoryIndexer(
+            vector_store,
+            anima_name=anima_name,
+            anima_dir=anima_dir,
+            **kwargs,
+        )
+        return indexer
 
     @pytest.fixture
     def indexer_with_prefix(self, anima_dir: Path):
@@ -332,7 +331,7 @@ class TestEnsureRuntimeOnlyDirs:
     """Test that _ensure_runtime_only_dirs creates common_knowledge."""
 
     def test_creates_common_knowledge_dir(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -342,7 +341,7 @@ class TestEnsureRuntimeOnlyDirs:
         assert (data_dir / "common_knowledge").is_dir()
 
     def test_idempotent(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -353,7 +352,7 @@ class TestEnsureRuntimeOnlyDirs:
         assert (data_dir / "common_knowledge").is_dir()
 
     def test_creates_all_expected_dirs(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -376,7 +375,7 @@ class TestToolHandlerCommonKnowledgeRead:
 
     @pytest.fixture
     def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "test-anima"
+        d = tmp_path / "data" / "animas" / "test-anima"
         d.mkdir(parents=True)
         return d
 
@@ -387,6 +386,9 @@ class TestToolHandlerCommonKnowledgeRead:
         memory = MagicMock()
         memory.read_permissions.return_value = ""
         memory.search_memory_text.return_value = []
+        (anima_dir / "permissions.json").write_text(
+            __import__("json").dumps({"file_roots": [str(anima_dir.parent.parent.parent / "shared_ck")]}), encoding="utf-8"
+        )
         return ToolHandler(
             anima_dir=anima_dir,
             memory=memory,
@@ -458,7 +460,7 @@ class TestToolHandlerCommonKnowledgeWrite:
 
     @pytest.fixture
     def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "test-anima"
+        d = tmp_path / "data" / "animas" / "test-anima"
         d.mkdir(parents=True)
         return d
 
@@ -469,6 +471,9 @@ class TestToolHandlerCommonKnowledgeWrite:
         memory = MagicMock()
         memory.read_permissions.return_value = ""
         memory.search_memory_text.return_value = []
+        (anima_dir / "permissions.json").write_text(
+            __import__("json").dumps({"file_roots": [str(anima_dir.parent.parent.parent / "shared_ck")]}), encoding="utf-8"
+        )
         return ToolHandler(
             anima_dir=anima_dir,
             memory=memory,

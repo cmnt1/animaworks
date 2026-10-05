@@ -4,15 +4,13 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from core.memory.backend.base import RetrievedMemory
 from core.memory.priming.channel_a import channel_a_sender_profile
 from core.memory.priming.channel_b import channel_b_recent_activity, read_shared_channels
 from core.memory.priming.channel_e import channel_e_pending_tasks
-from core.memory.priming.channel_g import collect_graph_context
 from core.prompt.org_context import _build_org_context, _discover_other_animas
 
 
@@ -67,7 +65,7 @@ async def test_channel_b_does_not_open_denied_activity_tree(tmp_path: Path) -> N
     activity_dir.mkdir(parents=True)
     _write_permissions(anima_dir, [activity_dir])
 
-    with patch("core.memory.activity.ActivityLogger.recent", side_effect=AssertionError("must not read")):
+    with patch("core.activity.logger.ActivityLogger.recent", side_effect=AssertionError("must not read")):
         result = await channel_b_recent_activity(anima_dir, None, "human", [])
 
     assert result == ""
@@ -82,34 +80,10 @@ async def test_channel_e_omits_denied_task_result(tmp_path: Path) -> None:
     denied_result.write_text("DENIED TASK RESULT CANARY", encoding="utf-8")
     _write_permissions(anima_dir, [denied_result])
 
-    result = await channel_e_pending_tasks(anima_dir, None)
+    result = await channel_e_pending_tasks(anima_dir)
 
     assert "DENIED TASK RESULT CANARY" not in result
     assert "secret.md" not in result
-
-
-@pytest.mark.asyncio
-async def test_channel_g_filters_denied_and_unknown_graph_sources(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "animas" / "agent"
-    denied = anima_dir / "facts" / "private"
-    denied.mkdir(parents=True)
-    _write_permissions(anima_dir, [denied])
-    backend = MagicMock()
-    backend.get_community_context = AsyncMock(
-        return_value=[RetrievedMemory("UNKNOWN GRAPH CANARY", 1.0, "community:opaque")]
-    )
-    backend.get_recent_facts = AsyncMock(
-        return_value=[
-            RetrievedMemory("DENIED GRAPH CANARY", 1.0, "facts/private/secret.json"),
-            RetrievedMemory("VISIBLE GRAPH FACT", 0.8, "facts/public.json"),
-        ]
-    )
-
-    result = await collect_graph_context(backend, "test", anima_dir=anima_dir)
-
-    assert "VISIBLE GRAPH FACT" in result
-    assert "DENIED GRAPH CANARY" not in result
-    assert "UNKNOWN GRAPH CANARY" not in result
 
 
 def test_org_context_omits_denied_anima_tree_and_status(tmp_path: Path) -> None:

@@ -1,9 +1,8 @@
-"""Feature flag and crash semantics for cron process isolation."""
+"""Cron command root dispatch, follow-up isolation, and process-group cleanup."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -12,50 +11,27 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.schemas import CronTask, CycleResult
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.scheduler_manager import SchedulerManager
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.scheduler_manager import SchedulerManager
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
-def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, MagicMock]:
+def _manager(tmp_path: Path) -> tuple[SchedulerManager, MagicMock]:
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
     (tmp_path / "shared").mkdir()
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": {"cron": isolated},
-            }
-        ),
-        encoding="utf-8",
-    )
     anima = MagicMock()
     anima.shared_dir = tmp_path / "shared"
-    anima.run_cron_task = AsyncMock(
-        return_value=CycleResult(trigger="cron:daily", action="completed", summary="done")
-    )
+    anima.run_cron_task = AsyncMock(return_value=CycleResult(trigger="cron:daily", action="completed", summary="done"))
     anima.run_cron_command = AsyncMock()
     emit = MagicMock()
     manager = SchedulerManager(anima, "sakura", anima_dir, emit)
-    manager._record_cron_result = MagicMock()
     return manager, anima
 
 
 @pytest.mark.asyncio
-async def test_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=False)
-    task = CronTask(name="daily", schedule="0 9 * * *", description="daily work")
-
-    await manager._run_cron_task(task)
-
-    assert manager._task_runner_supervisor is None
-    anima.run_cron_task.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=True)
+async def test_uses_child_result_without_root_llm(tmp_path: Path) -> None:
+    manager, anima = _manager(tmp_path)
     task = CronTask(name="daily", schedule="0 9 * * *", description="daily work")
     assert manager._task_runner_supervisor is not None
     manager._task_runner_supervisor.run_cron = AsyncMock(
@@ -75,7 +51,64 @@ async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(os.name == "nt", reason="process groups / os.killpg are POSIX-only")
+async def test_command_cron_runs_in_root_without_starting_a_runner(tmp_path: Path) -> None:
+    manager, anima = _manager(tmp_path)
+    task = CronTask(
+        name="daily",
+        schedule="0 9 * * *",
+        type="command",
+        command="echo hi",
+        trigger_heartbeat=False,
+    )
+    assert manager._task_runner_supervisor is not None
+    anima.run_cron_command = AsyncMock(
+        return_value={"task": "daily", "exit_code": 0, "stdout": "hi", "stderr": "", "duration_ms": 1}
+    )
+    manager._task_runner_supervisor.run_cron = AsyncMock()
+    manager._task_runner_supervisor.run_cron_followup = AsyncMock()
+
+    await manager._run_cron_task(task)
+
+    anima.run_cron_command.assert_awaited_once()
+    assert anima.run_cron_command.await_args.args == ("daily",)
+    assert anima.run_cron_command.await_args.kwargs["command"] == "echo hi"
+    assert anima.run_cron_command.await_args.kwargs["serialize"] is False
+    assert "ANIMAWORKS_ANIMA_DIR" in anima.run_cron_command.await_args.kwargs["env"]
+    manager._task_runner_supervisor.run_cron.assert_not_awaited()
+    manager._task_runner_supervisor.run_cron_followup.assert_not_awaited()
+    manager._emit_event.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_root_command_before_closing_runners(tmp_path: Path) -> None:
+    manager, anima = _manager(tmp_path)
+    task = CronTask(
+        name="daily",
+        schedule="0 9 * * *",
+        type="command",
+        command="echo hi",
+        trigger_heartbeat=False,
+    )
+    started = asyncio.Event()
+
+    async def block_command(*_args, **_kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    anima.run_cron_command = AsyncMock(side_effect=block_command)
+    manager._task_runner_supervisor.close = AsyncMock()
+    command_task = asyncio.create_task(manager._run_cron_task(task))
+    await started.wait()
+
+    await manager.shutdown_task_runners()
+
+    assert command_task.cancelled()
+    manager._task_runner_supervisor.close.assert_awaited_once()
+    assert not manager._direct_cron_tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(__import__("os").name == "nt", reason="Requires POSIX process groups")
 async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Path) -> None:
     shared_dir = tmp_path / "shared"
     anima_dir = tmp_path / "animas" / "sakura"
@@ -116,4 +149,3 @@ async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Pat
     assert os.getpid() == root_pid
     assert supervisor._accepting is True
     assert not supervisor.jobs
-

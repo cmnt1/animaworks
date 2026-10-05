@@ -87,7 +87,7 @@ def load_status() -> dict:
 
 def _save_status(status: dict) -> None:
     """Atomically write consolidation status to disk."""
-    from core.memory._io import atomic_write_text
+    from core.memory.io import atomic_write_text
 
     with _file_lock:
         atomic_write_text(_status_path(), json.dumps(status, ensure_ascii=False, indent=2))

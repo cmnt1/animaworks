@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.extraction.extractor import FactExtractor
+from core.memory.facts.extractor import FactExtractor
 
 
 class TestExtractFactsReferenceTime:
@@ -64,7 +64,7 @@ class TestExtractFactsReferenceTime:
         with (
             patch.object(extractor, "_call_llm", side_effect=capture_llm),
             patch(
-                "core.memory.extraction.extractor.now_iso",
+                "core.memory.facts.extractor.now_iso",
                 return_value="2026-01-01T00:00:00+09:00",
             ),
         ):
@@ -95,7 +95,7 @@ class TestExtractFactsReferenceTime:
         with (
             patch.object(extractor, "_call_llm", side_effect=capture_llm),
             patch(
-                "core.memory.extraction.extractor.now_iso",
+                "core.memory.facts.extractor.now_iso",
                 return_value="2026-02-02T12:00:00+09:00",
             ),
         ):

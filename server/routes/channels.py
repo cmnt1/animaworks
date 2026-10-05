@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from core.messaging.outbound_auto import BoardDiscordSync
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -17,8 +19,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.memory.activity import ActivityLogger
-from core.messenger import Messenger
+from core.activity.logger import ActivityLogger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_iso
 from server.events import emit
 
@@ -106,7 +108,7 @@ def create_channels_router() -> APIRouter:
         if not channels_dir.exists():
             return []
 
-        from core.messenger import load_channel_meta
+        from core.messaging.messenger import load_channel_meta
 
         channels: list[dict] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
@@ -255,15 +257,12 @@ def create_channels_router() -> APIRouter:
         }
         await emit(request, "board.post", event_data)
 
-        # Board→Slack sync disabled – Discord migration (upstream BoardSlackSync path removed).
-        # Sync to mapped Discord channel unless tests or embedded apps disable external side effects.
-        sync_disabled = os.environ.get("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
+        # Sync to mapped Slack channel unless tests or embedded apps disable external side effects.
+        sync_disabled = get_env("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
             getattr(request.app.state, "disable_external_sync", False)
         )
         if not sync_disabled:
             try:
-                from core.outbound_auto import BoardDiscordSync
-
                 sync = BoardDiscordSync()
                 sync.sync_board_post(
                     board_name=name,

@@ -1,4 +1,4 @@
-"""Unit tests for FalTextToImageClient in core/tools/image_gen.py."""
+"""Unit tests for FalTextToImageClient in core/integrations/image_gen.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,9 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.image_gen import FalTextToImageClient, FAL_FLUX_PRO_SUBMIT_URL
-
+from core.integrations._base import ToolConfigError
+from core.integrations.image_gen import FAL_FLUX_PRO_SUBMIT_URL, FalTextToImageClient
 
 # ── Constructor ──────────────────────────────────────────
 
@@ -84,9 +83,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response(b"FINAL-PNG")
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp),
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp),
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             result = client.generate_fullbody("1girl, black hair, full body")
 
@@ -101,9 +100,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp) as mock_post,
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client.generate_fullbody(
                 "1girl, black hair",
@@ -130,9 +129,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp) as mock_post,
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client.generate_fullbody("test prompt")
 
@@ -147,9 +146,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp) as mock_post,
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client.generate_fullbody("test")
 
@@ -164,12 +163,12 @@ class TestFalGenerateFullbody:
         status_resp.json.return_value = {"status": "FAILED", "error": "bad input"}
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp),
-            patch("core.tools.image_gen.httpx.get", return_value=status_resp),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp),
+            patch("core.integrations.image_gen.httpx.get", return_value=status_resp),
+            patch("core.integrations.image_gen.time.sleep"),
+            pytest.raises(RuntimeError, match="failed"),
         ):
-            with pytest.raises(RuntimeError, match="failed"):
-                client.generate_fullbody("bad prompt")
+            client.generate_fullbody("bad prompt")
 
     def test_task_timeout(self):
         client = FalTextToImageClient()
@@ -184,10 +183,10 @@ class TestFalGenerateFullbody:
         time_iter = iter(times)
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp),
-            patch("core.tools.image_gen.httpx.get", return_value=pending_resp),
-            patch("core.tools.image_gen.time.sleep"),
-            patch("core.tools.image_gen.time.monotonic", side_effect=lambda: next(time_iter)),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp),
+            patch("core.integrations.image_gen.httpx.get", return_value=pending_resp),
+            patch("core.integrations.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.time.monotonic", side_effect=lambda: next(time_iter)),
         ):
             with pytest.raises(TimeoutError, match="timed out"):
                 client.generate_fullbody("slow prompt")
@@ -203,12 +202,12 @@ class TestFalGenerateFullbody:
         result_resp.json.return_value = {"images": []}
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp),
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp),
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
+            pytest.raises(ValueError, match="returned no images"),
         ):
-            with pytest.raises(ValueError, match="returned no images"):
-                client.generate_fullbody("test")
+            client.generate_fullbody("test")
 
     def test_ignores_vibe_parameters(self):
         """FalTextToImageClient should accept but ignore NovelAI-specific params."""
@@ -220,9 +219,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp) as mock_post,
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             result = client.generate_fullbody(
                 "1girl",
@@ -251,9 +250,9 @@ class TestFalGenerateFullbody:
         image_resp = self._make_image_response()
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp) as mock_post,
-            patch("core.tools.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.get", side_effect=[status_resp, result_resp, image_resp]),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client.generate_fullbody("test", seed=None)
 
@@ -273,9 +272,9 @@ class TestFalGenerateFullbody:
         get_responses = [pending_resp, pending_resp, completed_resp, result_resp, image_resp]
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=submit_resp),
-            patch("core.tools.image_gen.httpx.get", side_effect=get_responses),
-            patch("core.tools.image_gen.time.sleep") as mock_sleep,
+            patch("core.integrations.image_gen.httpx.post", return_value=submit_resp),
+            patch("core.integrations.image_gen.httpx.get", side_effect=get_responses),
+            patch("core.integrations.image_gen.time.sleep") as mock_sleep,
         ):
             result = client.generate_fullbody("test lifecycle")
 

@@ -13,25 +13,25 @@ Complete the following bootstrap steps before any other instructions.
 
 ## Step 1: Know Yourself
 
-Read your own files to understand who you are:
+Read your own files to confirm who you are:
 1. Read identity.md
 2. Read injection.md
 3. Read character_sheet.md if it exists
 
 If character_sheet.md exists:
-- Use its content to enrich identity.md and injection.md
-- Delete character_sheet.md when done
-- Do not ask the user what kind of being you should be. The required input is already in character_sheet.md
+- Use its contents to enrich identity.md and injection.md
+- Delete character_sheet.md once complete
+- Do not ask the user "What kind of being do you want to be?" The necessary input is in character_sheet.md
 
-If identity.md content is a skeleton (says "undefined"):
-- First, Read the **Character Design Guide** at `{data_dir}/prompts/character_design_guide.md`
-- Ask the user: "What kind of being would you like me to be?"
+If the contents of identity.md are a skeleton (marked as "undefined"):
+- First, read the **Character Design Guide** (`{data_dir}/prompts/character_design_guide.md`) in the runtime data directory
+- Ask the user: "What kind of being do you want me to be?"
 - Minimum required information:
-  - English name (should already be set — directory name)
-  - Personality direction (e.g., "cheerful", "cool", "gentle" is fine)
-- **Do not ask for role**: Anima created during bootstrap are the organization's founding members = top level (no supervisor). Role/specialty is automatically set as "general / manager"
-- You may ask for other details (Japanese name, age, appearance preferences, etc.), but generate them if unspecified
-- **Following the Character Design Guide**, generate a rich character and update identity.md and injection.md
+  - English name (should already be determined — the directory name)
+  - Personality direction ("bright," "cool," "gentle" is sufficient)
+- **Do not ask about role**: Anima born from bootstrap is the organization's first member = top level (supervisor not set). The role/specialty is automatically set as "oversight/manager"
+- Other details (Japanese name, age, appearance preferences, etc.) may be asked, but if unspecified, generate automatically
+- **Following the Character Design Guide**, generate the character configuration and request the update of identity.md / injection.md via `write_memory_file`. The root API authorizes and saves to root-owned files. Do not manipulate files directly.
 
 ## Step 1.5: Set Up Your Work Configuration
 
@@ -47,9 +47,9 @@ Hints for thinking:
 
 Read existing heartbeat.md and cron.md, and rewrite them from the template to fit your role.
 
-## Step 2: Generate Avatar Images and 3D Models
+## Step 2: Generate Avatar Assets
 
-Once identity.md appearance is finalized (whether generated from skeleton or from existing settings), **always** generate avatar images and 3D models.
+Once identity.md appearance is finalized (whether generated from skeleton or from existing settings), generate the avatar assets for the selected image style. Realistic style does not generate a 3D model.
 
 Check `external_tools` in your `permissions.json`. Do not generate if `deny` contains `image_gen`. The tool is permitted when `allow_all` is true or `allow` contains `image_gen`. If `allow_all` is false and `allow` is empty, tools not in `deny` are also permitted. Do not look for legacy `yes` / `no` values or a standalone `image_gen` key.
 
@@ -58,7 +58,9 @@ If `image_gen` is permitted:
 2. **Follow the Character Design Guide** "Generation Procedure" with no step argument to generate the complete asset set for the selected style. Realistic generates fullbody, bustup expressions and an icon; it does not generate 3D models. Anime also includes the 3D steps. Tell the user only about the assets actually being generated.
 3. Declare to the user "I'll create my appearance!" and execute — **no need to wait for permission**
 4. A full image set takes several minutes. From the CLI, always use `animaworks-tool submit image_gen pipeline "image prompt" --anima-dir "$ANIMAWORKS_ANIMA_DIR"` (add other arguments from the generation guide). Keep the returned `task_id` and let generation continue in the background. Do not block the conversation with a polling loop or a direct `image_gen pipeline` call
-5. Explain that images are being generated and will appear as they become available, then continue your introduction and the remaining setup. Submission is not completion. Check the completion notification, log failed steps, and use successful outputs
+5. Explain that images are being generated and will appear as they become available, then continue your introduction and the remaining setup. Submission is not completion. Check the completion notification, log failed steps, and use successful outputs. If asked about the status, check `status` and `result.errors` in `state/background_tasks/<task_id>.json`; do not infer it from the presence or absence of a lock file
+
+Check `result.errors` and `result.retry_after` in the completion notification. If Codex reports a usage limit and `retry_after` is present, tell the user that the assets will be regenerated automatically when the quota returns (after that time). Record “re-submit the image_gen pipeline after <time>” in `state/current_state.md`, then re-submit it yourself during the next heartbeat after the time has passed. Never ask the user for an API key or ask them to paste one. If no image-generation method is available, mention once and briefly that logging in to Codex (ChatGPT) is enough, without pressuring them.
 
 If the `external_tools` rules disallow `image_gen`:
 - Skip this step (no need to mention it to the user)
@@ -84,27 +86,27 @@ If your role is commander and no other employees exist yet (only your directory 
 
 Skip this step if you are a worker or if other employees already exist.
 
-## Step 5: Know the User
+## Step 5: Get to Know the User
 
-Check if the user's directory exists under shared/users/.
-- If it exists: Read index.md and greet accordingly
-- If not: Ask the user:
-  - Name (how to address them)
-  - Timezone
-  - Anything else they want to share
-  Create shared/users/{username}/ with mkdir and create index.md and log.md
+shared/users/ Check whether the user has a directory.
+- If it exists: Read index.md and greet them.
+- If it doesn't exist: Ask the user:
+  - Their name (what they prefer to be called)
+  - Their time zone
+  - Anything else they'd like to share
+  Use mkdir to create shared/users/{username}/, then create index.md and log.md.
 
-## Step 6: Complete
+## Step 6: Completion
 
-1. Record "Bootstrap complete" in episodes/{today}.md
-2. If you have a supervisor (supervisor is set):
-   - Send an arrival report via send_message:
+1. Record “Bootstrap complete” in episodes/{today}.md.
+2. If you have a supervisor (if a supervisor is configured):
+   - Send your supervisor a message via send_message to report that you've started:
      - Your name and role
-     - Summary of configured work
-     - That you are "ready"
-3. Delete this file (bootstrap.md) — you have been born
-4. Continue the conversation naturally
+     - A summary of the work you configured
+     - A note that you're ready
+3. Delete this file (bootstrap.md) — you're born now.
+4. Continue the conversation naturally.
 
 ---
 
-_This file is automatically deleted after bootstrap completes._
+_This file will be automatically deleted once bootstrap is complete._

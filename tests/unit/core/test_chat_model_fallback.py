@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import (
-    _resolve_chat_model_config,
-    _run_chat_cycle_with_fallback,
-    _run_chat_stream_with_fallback,
-)
+from core.anima.messaging import _resolve_chat_model_config, _run_chat_stream_with_fallback
 from core.exceptions import LLMAPIError
 from core.schemas import CycleResult, ModelConfig
 
@@ -36,6 +32,38 @@ def _fallback_meta() -> dict[str, object]:
     }
 
 
+def _install_stream_attempts(owner: MagicMock, attempts: list[CycleResult | Exception]) -> list[ModelConfig]:
+    seen_configs: list[ModelConfig] = []
+
+    async def _stream(*args, **kwargs):
+        config = kwargs["model_config_override"]
+        seen_configs.append(config)
+        attempt = attempts[len(seen_configs) - 1]
+        if isinstance(attempt, Exception):
+            raise attempt
+        yield {"type": "cycle_done", "cycle_result": attempt.model_dump(mode="json")}
+
+    owner.agent.run_cycle_streaming = _stream
+    return seen_configs
+
+
+async def _run_chat_fallback(owner: MagicMock, primary: ModelConfig) -> list[dict[str, object]]:
+    return [
+        chunk
+        async for chunk in _run_chat_stream_with_fallback(
+            owner,
+            prompt="hello",
+            trigger="message:human",
+            message_intent="",
+            images=None,
+            prior_messages=None,
+            thread_id="default",
+            primary_config=primary,
+            active_config=primary,
+        )
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("summary", "reason"),
@@ -47,48 +75,22 @@ def _fallback_meta() -> dict[str, object]:
 async def test_blocking_terminal_error_retries_once_with_fallback(summary: str, reason: str) -> None:
     primary, fallback = _configs()
     owner = MagicMock()
-    owner.agent.run_cycle = AsyncMock(
-        side_effect=[
-            CycleResult(
-                trigger="message:human",
-                action="error",
-                summary=summary,
-                reason=reason,
-            ),
-            CycleResult(
-                trigger="message:human",
-                action="responded",
-                summary="fallback succeeded",
-            ),
-        ]
+    seen_configs = _install_stream_attempts(
+        owner,
+        [
+            CycleResult(trigger="message:human", action="error", summary=summary, reason=reason),
+            CycleResult(trigger="message:human", action="responded", summary="fallback succeeded"),
+        ],
     )
 
     with (
-        patch(
-            "core.execution.fallback_activity.resolve_effective_model_config",
-            return_value=fallback,
-        ),
-        patch(
-            "core.execution.fallback_activity.fallback_event_meta",
-            return_value=_fallback_meta(),
-        ),
+        patch("core.anima.messaging.resolve_effective_model_config", return_value=fallback),
+        patch("core.execution.fallback_activity.fallback_event_meta", return_value=_fallback_meta()),
     ):
-        result = await _run_chat_cycle_with_fallback(
-            owner,
-            prompt="hello",
-            trigger="message:human",
-            message_intent="",
-            images=None,
-            prior_messages=None,
-            thread_id="default",
-            primary_config=primary,
-            active_config=primary,
-        )
+        chunks = await _run_chat_fallback(owner, primary)
 
-    assert result.summary == "fallback succeeded"
-    assert owner.agent.run_cycle.await_count == 2
-    overrides = [call.kwargs["model_config_override"] for call in owner.agent.run_cycle.await_args_list]
-    assert overrides == [primary, fallback]
+    assert chunks[-1]["cycle_result"]["summary"] == "fallback succeeded"
+    assert seen_configs == [primary, fallback]
     owner._activity.log.assert_called_once()
     assert owner._activity.log.call_args.args == ("model_fallback",)
     assert owner._activity.log.call_args.kwargs["meta"]["phase"] == "runtime_retry"
@@ -98,32 +100,23 @@ async def test_blocking_terminal_error_retries_once_with_fallback(summary: str, 
 async def test_blocking_content_policy_error_does_not_fallback() -> None:
     primary, fallback = _configs()
     owner = MagicMock()
-    refusal = CycleResult(
-        trigger="message:human",
-        action="error",
-        summary="This request violates our usage policies",
-        reason="content_policy",
+    seen_configs = _install_stream_attempts(
+        owner,
+        [
+            CycleResult(
+                trigger="message:human",
+                action="error",
+                summary="This request violates our usage policies",
+                reason="content_policy",
+            )
+        ],
     )
-    owner.agent.run_cycle = AsyncMock(return_value=refusal)
 
-    with patch(
-        "core.execution.fallback_activity.resolve_effective_model_config",
-        return_value=fallback,
-    ) as resolve:
-        result = await _run_chat_cycle_with_fallback(
-            owner,
-            prompt="hello",
-            trigger="message:human",
-            message_intent="",
-            images=None,
-            prior_messages=None,
-            thread_id="default",
-            primary_config=primary,
-            active_config=primary,
-        )
+    with patch("core.anima.messaging.resolve_effective_model_config", return_value=fallback) as resolve:
+        chunks = await _run_chat_fallback(owner, primary)
 
-    assert result is refusal
-    owner.agent.run_cycle.assert_awaited_once()
+    assert chunks[0]["cycle_result"]["summary"] == "This request violates our usage policies"
+    assert seen_configs == [primary]
     resolve.assert_not_called()
 
 
@@ -131,8 +124,9 @@ async def test_blocking_content_policy_error_does_not_fallback() -> None:
 async def test_blocking_unknown_structured_error_still_falls_back() -> None:
     primary, fallback = _configs()
     owner = MagicMock()
-    owner.agent.run_cycle = AsyncMock(
-        side_effect=[
+    seen_configs = _install_stream_attempts(
+        owner,
+        [
             CycleResult(
                 trigger="message:human",
                 action="error",
@@ -140,70 +134,36 @@ async def test_blocking_unknown_structured_error_still_falls_back() -> None:
                 reason="unknown",
             ),
             CycleResult(trigger="message:human", action="responded", summary="fallback succeeded"),
-        ]
+        ],
     )
 
     with (
-        patch(
-            "core.execution.fallback_activity.resolve_effective_model_config",
-            return_value=fallback,
-        ),
-        patch(
-            "core.execution.fallback_activity.fallback_event_meta",
-            return_value=_fallback_meta(),
-        ),
+        patch("core.anima.messaging.resolve_effective_model_config", return_value=fallback),
+        patch("core.execution.fallback_activity.fallback_event_meta", return_value=_fallback_meta()),
     ):
-        result = await _run_chat_cycle_with_fallback(
-            owner,
-            prompt="hello",
-            trigger="message:human",
-            message_intent="",
-            images=None,
-            prior_messages=None,
-            thread_id="default",
-            primary_config=primary,
-            active_config=primary,
-        )
+        chunks = await _run_chat_fallback(owner, primary)
 
-    assert result.summary == "fallback succeeded"
-    assert owner.agent.run_cycle.await_count == 2
+    assert chunks[-1]["cycle_result"]["summary"] == "fallback succeeded"
+    assert seen_configs == [primary, fallback]
 
 
 @pytest.mark.asyncio
 async def test_blocking_retry_failure_uses_normal_error_path_without_third_attempt() -> None:
     primary, fallback = _configs()
     owner = MagicMock()
-    owner.agent.run_cycle = AsyncMock(
-        side_effect=[
-            LLMAPIError("rate limit exceeded"),
-            LLMAPIError("fallback also failed"),
-        ]
+    seen_configs = _install_stream_attempts(
+        owner,
+        [LLMAPIError("rate limit exceeded"), LLMAPIError("fallback also failed")],
     )
 
     with (
-        patch(
-            "core.execution.fallback_activity.resolve_effective_model_config",
-            return_value=fallback,
-        ),
-        patch(
-            "core.execution.fallback_activity.fallback_event_meta",
-            return_value=_fallback_meta(),
-        ),
+        patch("core.anima.messaging.resolve_effective_model_config", return_value=fallback),
+        patch("core.execution.fallback_activity.fallback_event_meta", return_value=_fallback_meta()),
         pytest.raises(LLMAPIError, match="fallback also failed"),
     ):
-        await _run_chat_cycle_with_fallback(
-            owner,
-            prompt="hello",
-            trigger="message:human",
-            message_intent="",
-            images=None,
-            prior_messages=None,
-            thread_id="default",
-            primary_config=primary,
-            active_config=primary,
-        )
+        await _run_chat_fallback(owner, primary)
 
-    assert owner.agent.run_cycle.await_count == 2
+    assert seen_configs == [primary, fallback]
 
 
 @pytest.mark.asyncio
@@ -218,48 +178,30 @@ async def test_blocking_walks_all_fallbacks_until_one_is_alive() -> None:
         }
     )
     owner = MagicMock()
-    owner.agent.run_cycle = AsyncMock(
-        side_effect=[
+    seen_configs = _install_stream_attempts(
+        owner,
+        [
             CycleResult(
                 trigger="message:human",
                 action="responded",
                 summary="You've reached your Fable 5 limit. Switch to another model.",
             ),
             LLMAPIError("API Error: 529 Overloaded"),
-            CycleResult(
-                trigger="message:human",
-                action="responded",
-                summary="deepseek succeeded",
-            ),
-        ]
+            CycleResult(trigger="message:human", action="responded", summary="deepseek succeeded"),
+        ],
     )
 
     with (
         patch(
-            "core.execution.fallback_activity.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             side_effect=[first_fallback, second_fallback],
         ),
-        patch(
-            "core.execution.fallback_activity.fallback_event_meta",
-            return_value=_fallback_meta(),
-        ),
+        patch("core.execution.fallback_activity.fallback_event_meta", return_value=_fallback_meta()),
     ):
-        result = await _run_chat_cycle_with_fallback(
-            owner,
-            prompt="hello",
-            trigger="message:human",
-            message_intent="",
-            images=None,
-            prior_messages=None,
-            thread_id="default",
-            primary_config=primary,
-            active_config=primary,
-        )
+        chunks = await _run_chat_fallback(owner, primary)
 
-    assert result.summary == "deepseek succeeded"
-    assert owner.agent.run_cycle.await_count == 3
-    overrides = [call.kwargs["model_config_override"] for call in owner.agent.run_cycle.await_args_list]
-    assert overrides == [primary, first_fallback, second_fallback]
+    assert chunks[-1]["cycle_result"]["summary"] == "deepseek succeeded"
+    assert seen_configs == [primary, first_fallback, second_fallback]
     assert owner._activity.log.call_count == 2
 
 
@@ -299,7 +241,7 @@ async def test_stream_terminal_chunk_is_suppressed_and_retried_once(
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -345,7 +287,7 @@ async def test_stream_retry_failure_is_exposed_without_third_attempt() -> None:
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -403,7 +345,7 @@ async def test_stream_walks_multiple_fallbacks() -> None:
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             side_effect=[first_fallback, second_fallback],
         ),
         patch(
@@ -435,7 +377,7 @@ def test_preflight_fallback_records_activity_event() -> None:
     owner = MagicMock()
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -464,7 +406,12 @@ async def test_reply_mentioning_403_is_not_an_auth_failure(tmp_path) -> None:
     monkey = pytest.MonkeyPatch()
     monkey.setattr(fa, "report_capacity_block", lambda *a, **k: calls.append("blocked"))
     try:
-        cfg = ModelConfig(model="codex/gpt-5.6-luna", execution_mode="c", resolved_mode="C", fallback_models=["a:openai/deepseek-v4-flash"])
+        cfg = ModelConfig(
+            model="codex/gpt-5.6-luna",
+            execution_mode="c",
+            resolved_mode="C",
+            fallback_models=["a:openai/deepseek-v4-flash"],
+        )
         reply = CycleResult(
             trigger="cron:x",
             action="responded",

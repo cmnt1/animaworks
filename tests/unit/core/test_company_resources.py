@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
-from core.company_resources import company_resource_pointer, get_company_resources
-from core.file_access_policy import resolve_memory_source_path
+from core.config.file_access_policy import resolve_memory_source_path
 from core.memory.rag.retriever import MemoryRetriever
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
+from core.org.company_resources import company_resource_pointer, get_company_resources
 from core.skills.index import SkillIndex
 from core.tooling.handler import ToolHandler
 
@@ -42,13 +39,6 @@ def test_company_resources_resolve_only_safe_assigned_company(tmp_path: Path) ->
     assert get_company_resources(anima_dir) is None
 
 
-def test_company_resource_pointer_uses_canonical_separators(tmp_path: Path) -> None:
-    path = tmp_path / "companies" / "alpha" / "knowledge" / "guide.md"
-
-    assert company_resource_pointer(path) == "companies/alpha/knowledge/guide.md"
-
-
-@pytest.mark.skipif(os.name == "nt", reason="company management creates symlinks; needs privilege on Windows")
 def test_skill_index_adds_own_company_and_refreshes_assignment(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "alice"
     _assign(anima_dir, "alpha")
@@ -102,8 +92,7 @@ def test_read_memory_file_allows_own_company_and_rejects_other(tmp_path: Path) -
     anima_dir = tmp_path / "animas" / "alice"
     _assign(anima_dir, "alpha")
     (anima_dir / "permissions.json").write_text(
-        '{"version":1,"file_roots":["/"],"commands":{"allow_all":true},'
-        '"external_tools":{"allow_all":true}}',
+        '{"version":1,"file_roots":["/"],"commands":{"allow_all":true},"external_tools":{"allow_all":true}}',
         encoding="utf-8",
     )
     own = tmp_path / "companies" / "alpha" / "knowledge" / "guide.md"

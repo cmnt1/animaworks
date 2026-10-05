@@ -75,7 +75,7 @@ def load_registry() -> dict[str, dict[str, Any]]:
 
 
 def _save_registry(registry: dict[str, dict[str, Any]]) -> None:
-    from core.memory._io import atomic_write_text
+    from core.memory.io import atomic_write_text
 
     atomic_write_text(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=1))
 
@@ -179,7 +179,7 @@ def ensure_project_thread(
 
     thread_name = f"[{code}]{title}" if title else f"[{code}]"
     try:
-        from core.tools._discord_client import DiscordClient
+        from core.channels.discord import DiscordClient
 
         client = DiscordClient()
         try:
@@ -205,7 +205,7 @@ def ensure_project_thread(
 
 def _post_kickoff(channel_id: str, thread_id: str, kickoff_text: str, code: str) -> None:
     try:
-        from core.discord_webhooks import get_webhook_manager
+        from core.messaging.discord_webhooks import get_webhook_manager
 
         get_webhook_manager().send_as_anima(channel_id, "AnimaWorks 会議", kickoff_text, thread_id=thread_id)
     except Exception:

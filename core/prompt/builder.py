@@ -15,8 +15,8 @@ The heavy lifting is delegated to submodules:
   - :mod:`core.prompt.messaging`  — messaging & notification sections
   - :mod:`core.prompt.assembler`  — budget allocation & XML assembly
 
-This module re-exports every symbol that tests reference via
-``patch("core.prompt.builder.XXX", ...)``.
+This module keeps shared prompt-building entry points and patch targets
+while delegating implementation details to the submodules above.
 """
 
 import logging
@@ -27,43 +27,40 @@ from typing import Any, Literal
 
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.assembler import (
-    _MIN_SYSTEM_BUDGET,  # noqa: F401
     _REFERENCE_WINDOW,
-    PromptBudget,  # noqa: F401
     SectionEntry,  # noqa: F401
     _allocate_sections,
     _assemble_with_tags,
     _compute_system_budget,
-    _normalize_headings,  # noqa: F401
     _split_content_items,
 )
 from core.prompt.messaging import (
     _build_human_notification_guidance,  # noqa: F401
     _build_messaging_section,
-    _load_a_reflection,  # noqa: F401 -- compatibility export
 )
 from core.prompt.org_context import (
-    _build_full_org_tree,  # noqa: F401
     _build_org_context,
     _discover_other_animas,
-    _format_anima_entry,  # noqa: F401
     _is_mcp_mode,
 )
 from core.prompt.sections import (
     _load_fallback_strings,
     _load_section_strings,
 )
-from core.prompt.tool_content import load_guide
 from core.time_utils import now_local
+from core.tooling.policy.tool_content import load_guide
 
 logger = logging.getLogger("animaworks.prompt_builder")
 
 # Re-exported constants
 _MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
 _CURRENT_STATE_MAX_CHARS = 3000
+_IDENTITY_H2_RE = re.compile(r"^ {0,3}##(?!#)[ \t]+(?P<heading>.+?)\s*#*\s*$")
+_PRIMING_TAG_RE = re.compile(r"</?priming\b[^>]*>", re.IGNORECASE)
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+.*$", re.MULTILINE)
 
 # ── Prompt tier constants ─────────────────────────────────────
 TIER_FULL = "full"
@@ -99,7 +96,7 @@ def _build_emotion_instruction() -> str:
     from core.schemas import VALID_EMOTIONS
 
     emotion_list = ", ".join(sorted(VALID_EMOTIONS))
-    return load_prompt("builder/emotion_instruction", emotion_list=emotion_list)
+    return load_prompt("builder/emotion_instruction", emotion_list=emotion_list).strip()
 
 
 EMOTION_INSTRUCTION = _build_emotion_instruction()
@@ -107,7 +104,7 @@ EMOTION_INSTRUCTION = _build_emotion_instruction()
 
 def _read_default_workspace(anima_dir: Path) -> str:
     """Read default_workspace from status.json and resolve via workspace registry."""
-    from core.workspace import resolve_default_workspace
+    from core.org.workspace import resolve_default_workspace
 
     resolved, alias = resolve_default_workspace(anima_dir)
     if not alias:
@@ -150,17 +147,72 @@ class BuildResult:
 
 @dataclass(frozen=True)
 class _SkillCatalogRouterSettings:
-    enabled: bool = False
+    enabled: bool = True
     top_k: int = 5
     min_score: float = 1.15
     include_body: bool = True
     dense_enabled: bool = True
     dense_weight: float = 8.0
+    max_items: int = 3
 
 
 # ── Per-group section builders ────────────────────────────────
 # Private helpers — kept in builder.py so they share the same
 # ``load_prompt`` binding that tests patch.
+
+
+def _filter_identity_business_sections(identity: str, excluded_headings: list[str]) -> str:
+    """Remove configured H2 sections from identity text for non-chat triggers."""
+    exclusions = [heading.casefold() for heading in excluded_headings if heading.strip()]
+    if not identity or not exclusions:
+        return identity
+
+    sections: list[tuple[bool, str]] = []
+    current: list[str] = []
+    current_excluded = False
+    found_heading = False
+    in_fence = False
+
+    for line in identity.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+        match = _IDENTITY_H2_RE.match(line.rstrip("\r\n")) if not in_fence else None
+        if match:
+            found_heading = True
+            if current:
+                sections.append((current_excluded, "".join(current)))
+            current = [line]
+            heading = match.group("heading").casefold()
+            current_excluded = any(exclusion in heading for exclusion in exclusions)
+        else:
+            current.append(line)
+
+    if current:
+        sections.append((current_excluded, "".join(current)))
+    if not found_heading:
+        return identity
+
+    filtered = "".join(content for excluded, content in sections if not excluded)
+    return filtered if filtered.strip() else identity
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    """Return whether *path* resolves inside *root*."""
+    try:
+        return path.resolve().is_relative_to(root)
+    except (OSError, ValueError):
+        return False
+
+
+def _priming_has_content(content: str) -> bool:
+    """Return whether priming contains data beyond headings and empty wrappers."""
+    without_tags = _PRIMING_TAG_RE.sub("", content)
+    intro = t("priming.section_intro").strip()
+    if intro:
+        without_tags = without_tags.replace(intro, "")
+    without_headings = _MARKDOWN_HEADING_RE.sub("", without_tags)
+    return bool(without_headings.strip())
 
 
 def _build_group1(
@@ -174,6 +226,7 @@ def _build_group1(
     include_injection: bool = True,
     is_heartbeat: bool = False,
     is_chat: bool = False,
+    is_consolidation: bool = False,
 ) -> list[SectionEntry]:
     """Group 1: Environment, identity, injection, and behaviour rules."""
     out: list[SectionEntry] = []
@@ -202,6 +255,14 @@ def _build_group1(
 
     identity = memory.read_identity()
     if identity:
+        if not is_chat:
+            try:
+                from core.config import load_config
+
+                excluded = load_config().prompt.identity_business_exclude_headings
+                identity = _filter_identity_business_sections(identity, excluded)
+            except Exception:
+                logger.debug("Could not load identity heading exclusions", exc_info=True)
         _add(identity, "identity", 1)
 
     injection = memory.read_injection() if include_injection else ""
@@ -212,7 +273,7 @@ def _build_group1(
 
             config = load_config()
             threshold = config.prompt.injection_size_warning_chars
-            if len(injection) > threshold:
+            if is_consolidation and len(injection) > threshold:
                 _add(
                     t("builder.injection_size_warning", size=len(injection), threshold=threshold),
                     "injection_size_warning",
@@ -220,7 +281,7 @@ def _build_group1(
                 )
                 logger.warning("injection.md oversized: %d chars (threshold=%d)", len(injection), threshold)
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     if tier != TIER_MICRO:
         _br = load_prompt_text("behavior_rules")
@@ -417,6 +478,58 @@ def _collapse_superseded_notes(state: str) -> str:
     return "".join(parts)
 
 
+def _related_resolution_resolvers(anima_dir: Path) -> set[str]:
+    """Return this Anima, its supervisor, and its direct subordinates."""
+    related = {anima_dir.name}
+    try:
+        from core.config.file_access_policy import load_denied_roots
+        from core.prompt.org_context import _filter_company_visible_animas, _scan_all_animas
+
+        denied_roots = load_denied_roots(anima_dir)
+        all_animas = _scan_all_animas(anima_dir.parent, denied_roots)
+        all_animas = _filter_company_visible_animas(anima_dir.name, all_animas, anima_dir.parent)
+        current = all_animas.get(anima_dir.name)
+        if current is None:
+            return related
+        if current.supervisor:
+            related.add(current.supervisor)
+        related.update(name for name, config in all_animas.items() if config.supervisor == anima_dir.name)
+    except Exception:
+        logger.debug("Failed to determine related resolution owners", exc_info=True)
+    return related
+
+
+def _filter_relevant_resolutions(anima_dir: Path, resolutions: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep only recent resolutions owned by this Anima or its direct reports."""
+    related = _related_resolution_resolvers(anima_dir)
+    return [resolution for resolution in resolutions if resolution.get("resolver", "") in related]
+
+
+def _build_resolution_registry_section(anima_dir: Path, memory: MemoryManager) -> str:
+    """Build the recent resolution registry for this Anima's direct org scope."""
+    try:
+        resolutions = memory.read_resolutions(days=7)
+        if not resolutions:
+            return ""
+        resolutions = memory.filter_resolutions_by_company(resolutions)
+        resolutions = _filter_relevant_resolutions(anima_dir, resolutions)
+        if not resolutions:
+            return ""
+        seen: dict[str, dict[str, str]] = {}
+        for resolution in resolutions:
+            seen[resolution.get("issue", "")] = resolution
+        deduped = sorted(seen.values(), key=lambda item: item.get("ts", ""))
+        lines = [
+            f"- [{resolution.get('ts', '')[:16]}] {resolution.get('resolver', 'unknown')}: "
+            f"{resolution.get('issue', '')}"
+            for resolution in deduped[-10:]
+        ]
+        return load_prompt("builder/resolution_registry", res_lines="\n".join(lines))
+    except Exception:
+        logger.debug("Failed to inject resolution registry", exc_info=True)
+        return ""
+
+
 def _build_group3(
     pd: Path,
     memory: MemoryManager,
@@ -486,33 +599,27 @@ def _build_group3(
     except Exception:
         logger.debug("Failed to inject resolved approvals section", exc_info=True)
 
-    try:
-        resolutions = memory.read_resolutions(days=7)
-        if resolutions:
-            resolutions = memory.filter_resolutions_by_company(resolutions)
-        if resolutions:
-            seen: dict[str, dict] = {}
-            for r in resolutions:
-                seen[r.get("issue", "")] = r
-            deduped = sorted(seen.values(), key=lambda x: x.get("ts", ""))
-            lines = [
-                f"- [{r.get('ts', '')[:16]}] {r.get('resolver', 'unknown')}: {r.get('issue', '')}"
-                for r in deduped[-10:]
-            ]
-            _add(
-                load_prompt("builder/resolution_registry", res_lines="\n".join(lines)),
-                "resolution_registry",
-                2,
-                "rigid",
-            )
-    except Exception:
-        logger.debug("Failed to inject resolution registry", exc_info=True)
+    resolution_block = _build_resolution_registry_section(pd, memory)
+    if resolution_block:
+        _add(resolution_block, "resolution_registry", 2, "rigid")
 
-    if priming_section:
+    if priming_section and _priming_has_content(priming_section):
         # Explicit source contracts survive recall trimming. Never infer safety
         # importance from arbitrary memory prose or split a trust-boundary block.
         protected, recall = [], []
-        for item in _split_content_items(priming_section):
+        priming_items = _split_content_items(priming_section)
+        has_pending_task_block = any(
+            re.match(r'<priming\b[^>]*\bsource="pending_tasks"', item) for item in priming_items
+        )
+        pending_tasks_header = t("priming.pending_tasks_header").strip()
+        for item in priming_items:
+            if item.strip() == pending_tasks_header:
+                # The formatter emits this heading immediately before the
+                # protected payload. Keep them together so allocation cannot
+                # leave a heading in the optional recall section by itself.
+                if has_pending_task_block:
+                    protected.append(item)
+                continue
             if re.match(
                 r'<priming\b[^>]*\bsource="(?:resident_knowledge|pending_tasks|recent_outbound|action_rule)"', item
             ):
@@ -521,6 +628,7 @@ def _build_group3(
                 recall.append(item)
         _add("\n\n".join(protected), "priming_required_context", 1, "rigid", budget_group="recall")
         _add("\n\n".join(recall), "priming", 2, "elastic", budget_group="recall")
+    # Keep aligned with priming.outbound.HUMAN_NOTIFICATION_CHANNELS.
     if pending_human_notifications and (is_chat or is_heartbeat):
         _add(pending_human_notifications, "pending_human_notifications", 1, "rigid")
     if shortterm_text:
@@ -557,17 +665,21 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
         from core.config import load_config
 
         prompt_cfg = load_config().prompt
-        return _SkillCatalogRouterSettings(
-            enabled=bool(getattr(prompt_cfg, "skill_catalog_router_enabled", False)),
-            top_k=max(1, int(getattr(prompt_cfg, "skill_catalog_router_top_k", 5))),
-            min_score=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_min_score", 1.15))),
-            include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
-            dense_enabled=bool(getattr(prompt_cfg, "skill_catalog_router_dense_enabled", True)),
-            dense_weight=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_dense_weight", 8.0))),
-        )
     except Exception:
         logger.debug("Failed to load skill catalog router settings", exc_info=True)
-        return _SkillCatalogRouterSettings()
+        from core.config.schemas import PromptConfig
+
+        prompt_cfg = PromptConfig()
+
+    return _SkillCatalogRouterSettings(
+        enabled=bool(prompt_cfg.skill_catalog_router_enabled),
+        top_k=max(1, int(prompt_cfg.skill_catalog_router_top_k)),
+        min_score=max(0.0, float(prompt_cfg.skill_catalog_router_min_score)),
+        include_body=bool(prompt_cfg.skill_catalog_router_include_body),
+        dense_enabled=bool(prompt_cfg.skill_catalog_router_dense_enabled),
+        dense_weight=max(0.0, float(prompt_cfg.skill_catalog_router_dense_weight)),
+        max_items=max(1, int(prompt_cfg.skill_catalog_max_items)),
+    )
 
 
 def _skill_catalog_pointer(meta: Any) -> str:
@@ -575,6 +687,45 @@ def _skill_catalog_pointer(meta: Any) -> str:
     from core.skills.router import _pointer_path
 
     return _pointer_path(meta)
+
+
+def _dedupe_skill_catalog_metas(metas: list[Any]) -> list[Any]:
+    """Deduplicate catalog entries by description, preferring local skills."""
+    source_priority = {
+        "skills/": 0,
+        "procedures/": 1,
+        "common_skills/": 2,
+        "external/": 3,
+    }
+    ordered = sorted(
+        enumerate(metas),
+        key=lambda item: (
+            next(
+                (
+                    priority
+                    for prefix, priority in source_priority.items()
+                    if _skill_catalog_pointer(item[1]).startswith(prefix)
+                ),
+                len(source_priority),
+            ),
+            item[0],
+        ),
+    )
+    deduped: list[Any] = []
+    seen_descriptions: set[str] = set()
+    for _, meta in ordered:
+        description = str(getattr(meta, "description", "") or "").strip()[:60]
+        if description:
+            if description in seen_descriptions:
+                continue
+            seen_descriptions.add(description)
+        deduped.append(meta)
+    return deduped
+
+
+def _limit_skill_catalog_entries(entries: list[str], max_items: int) -> list[str]:
+    """Apply the configured catalog ceiling without changing router order."""
+    return entries[: max(1, max_items)]
 
 
 def _format_skill_catalog_line(
@@ -609,44 +760,19 @@ def _format_skill_catalog_line(
     return f"- {path}{label_text}{_format_trust_tag(meta)}{ext_tag}: {desc}"
 
 
-def _skill_catalog_sections(entries: list[str], *, mode_b: bool) -> list[SectionEntry]:
-    """Keep a bounded discovery foothold for the text-tool Mode B executor."""
-    from core.prompt.tokens import estimate_tokens
-
-    def render(lines: list[str]) -> str:
-        return "\n".join(
-            [
-                t("builder.skill_catalog_header"),
-                t("builder.skill_catalog_instruction"),
-                "",
-                "<available_skills>",
-                *lines,
-                "</available_skills>",
-            ]
-        )
-
-    protected_count = 0
-    if mode_b:
-        # Preserve the existing router ranking and permission filtering. The
-        # soft framework target must not erase every way to discover a skill;
-        # the hard ceiling can still evict this priority-2 section.
-        for count in range(1, min(3, len(entries)) + 1):
-            if estimate_tokens(render(entries[:count])) > 512:
-                break
-            protected_count = count
-    if not protected_count:
-        return [SectionEntry("skill_catalog", 2, "elastic", render(entries))]
-    sections = [SectionEntry("skill_catalog", 2, "rigid", render(entries[:protected_count]))]
-    if remaining := entries[protected_count:]:
-        sections.append(
-            SectionEntry(
-                "skill_catalog_additional",
-                2,
-                "elastic",
-                "\n".join(["<available_skills>", *remaining, "</available_skills>"]),
-            )
-        )
-    return sections
+def _skill_catalog_sections(entries: list[str]) -> list[SectionEntry]:
+    """Render the skill catalog as an elastic prompt section."""
+    content = "\n".join(
+        [
+            t("builder.skill_catalog_header"),
+            t("builder.skill_catalog_instruction"),
+            "",
+            "<available_skills>",
+            *entries,
+            "</available_skills>",
+        ]
+    )
+    return [SectionEntry("skill_catalog", 2, "elastic", content)]
 
 
 def _requires_human_approval(meta: Any) -> bool:
@@ -701,23 +827,9 @@ def _build_group4(
 
     _add(_ss.get("group4_header", "# 3. Memory and Capabilities"), "group4_header", 1)
 
-    _none = _fs.get("none", "(none)")
-    mg = load_prompt(
-        "memory_guide",
-        anima_dir=pd,
-        knowledge_count=len(memory.list_knowledge_files()),
-        procedure_count=len(memory.list_procedure_files()),
-        shared_users_list=", ".join(memory.list_shared_users()) or _none,
-    )
+    mg = load_prompt("memory_guide", anima_dir=pd.resolve()).strip()
     if mg:
         _add(mg, "memory_guide", 3)
-
-    ck_dir = data_dir / "common_knowledge"
-    if ck_dir.exists() and any(ck_dir.rglob("*.md")):
-        _add(load_prompt("builder/common_knowledge_hint"), "common_knowledge_hint", 4)
-    ref_dir = data_dir / "reference"
-    if ref_dir.exists() and any(ref_dir.rglob("*.md")):
-        _add(load_prompt("builder/reference_hint"), "reference_hint", 4)
 
     # ── Tool guides ───
     if is_heartbeat:
@@ -727,8 +839,8 @@ def _build_group4(
             hb_tool = t("builder.heartbeat_tool_fallback")
         _add(hb_tool, "tool_guides", 2)
     elif _is_mcp_mode(execution_mode):
-        sb = load_guide("s_builtin")
-        sm = load_guide("s_mcp")
+        sb = load_guide("s_builtin").strip()
+        sm = load_guide("s_mcp").strip()
         g = "\n\n".join(p for p in (sb, sm) if p)
         if g:
             host_line = _host_tool_line(execution_mode)
@@ -736,7 +848,7 @@ def _build_group4(
                 g = host_line + "\n\n" + g
             _add(g, "tool_guides", 2)
     else:
-        ns = load_guide("non_s")
+        ns = load_guide("non_s").strip()
         if ns:
             host_line = _host_tool_line(execution_mode)
             if host_line:
@@ -744,18 +856,16 @@ def _build_group4(
             _add(ns, "tool_guides", 2)
 
     if not is_heartbeat and (tool_registry or personal_tools):
-        cats = sorted(set((tool_registry or []) + list((personal_tools or {}).keys())))
-        if cats:
-            if _is_mcp_mode(execution_mode):
-                et = (
-                    f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "When a dedicated external tool is visible in your tool list, call it directly by tool name."
-                )
-            else:
-                et = (
-                    f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "Read the skill document with read_memory_file for CLI usage."
-                )
+        own_tools_dir = (pd / "tools").resolve()
+        own_tools = {name for name, path in (personal_tools or {}).items() if _is_under(Path(str(path)), own_tools_dir)}
+        cats = sorted(set((tool_registry or []) + [n for n in (personal_tools or {}) if n not in own_tools]))
+        if cats or own_tools:
+            et = t("builder.external_tools", categories=", ".join(cats)) if cats else ""
+            if own_tools:
+                own_line = t("builder.external_tools.personal_count", count=len(own_tools))
+                et = f"{et}\n{own_line}" if et else own_line
+            if _is_mcp_mode(execution_mode) or execution_mode == "a":
+                et += "\n" + t("builder.external_tools.direct")
             _add(et, "external_tools", 2)
 
     if is_chat:
@@ -773,15 +883,17 @@ def _build_group4(
     # Uses SkillIndex which excludes blocked/quarantine skills. Background
     # automation also excludes skills that need separate human approval.
     if not is_heartbeat:
-        _DESC_LIMIT = 120 if execution_mode == "b" else 250
+        _DESC_LIMIT = 250
         common_label = t("skill.label_common")
         procedure_label = t("skill.label_procedure")
         settings = _load_skill_catalog_router_settings()
-        all_skills = [
-            meta
-            for meta in skill_index.all_skills
-            if _skill_visible_in_prompt_context(meta, is_background_auto=is_background_auto)
-        ]
+        all_skills = _dedupe_skill_catalog_metas(
+            [
+                meta
+                for meta in skill_index.all_skills
+                if _skill_visible_in_prompt_context(meta, is_background_auto=is_background_auto)
+            ]
+        )
         catalog_entries: list[str] = []
 
         if settings.enabled and message.strip():
@@ -844,8 +956,9 @@ def _build_group4(
                     )
                 )
 
+        catalog_entries = _limit_skill_catalog_entries(catalog_entries, getattr(settings, "max_items", 3))
         if catalog_entries or not (settings.enabled and message.strip()):
-            out.extend(_skill_catalog_sections(catalog_entries, mode_b=execution_mode == "b"))
+            out.extend(_skill_catalog_sections(catalog_entries))
 
     return out
 
@@ -959,7 +1072,7 @@ def build_system_prompt(
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
 
-    from core.execution.session_types import (
+    from core.execution.session.session_types import (
         SESSION_TYPE_CRON,
         SESSION_TYPE_HEARTBEAT,
         SESSION_TYPE_INBOX,
@@ -1000,6 +1113,7 @@ def build_system_prompt(
         include_injection=not is_meeting_profile,
         is_heartbeat=is_heartbeat,
         is_chat=is_chat,
+        is_consolidation=is_consolidation,
     )
     if is_meeting_profile:
         group1.append(

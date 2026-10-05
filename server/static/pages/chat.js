@@ -106,6 +106,6 @@ export function splitPane() {
   return _host?.splitPane() ?? null;
 }
 
-export function getPaneHost() {
+function getPaneHost() {
   return _host;
 }

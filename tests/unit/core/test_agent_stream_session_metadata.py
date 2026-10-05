@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
 
 
 class _ToolHandlerStub:

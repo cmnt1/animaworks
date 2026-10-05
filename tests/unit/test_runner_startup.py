@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
-from core.supervisor.ipc import IPCClient, IPCRequest
+from core.activity.logger import ActivityLogger
+from core.runtime.ipc import IPCClient, IPCRequest
 
 
 @pytest.fixture(autouse=True)
@@ -26,9 +26,10 @@ def _isolate_process_global_tool_executors(monkeypatch: pytest.MonkeyPatch) -> N
     """
 
     monkeypatch.setattr(
-        "core.execution._litellm_tools.shutdown_tool_executors",
+        "core.execution.engines.litellm._litellm_tools.shutdown_tool_executors",
         MagicMock(),
     )
+
 
 # ── AnimaRunner ping readiness ───────────────────────────
 
@@ -37,7 +38,7 @@ class TestAnimaRunnerPingReadiness:
     """Verify that ping returns 'initializing' before DigitalAnima is ready."""
 
     def _make_runner(self, tmp_path: Path):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
@@ -146,11 +147,11 @@ class TestAnimaRunnerPingReadiness:
 
         with (
             patch(
-                "core.supervisor.runner.IPCServer",
+                "core.runtime.runner.IPCServer",
                 return_value=mock_ipc_server,
             ),
             patch(
-                "core.anima.DigitalAnima",
+                "core.anima.digital_anima.DigitalAnima",
                 side_effect=mock_anima_init,
             ),
         ):
@@ -200,11 +201,11 @@ class TestAnimaRunnerPingReadiness:
         mock_pending_executor.watcher_loop = long_running_loop
 
         with (
-            patch("core.supervisor.runner.IPCServer", return_value=mock_ipc_server),
-            patch("core.anima.DigitalAnima", return_value=mock_anima),
-            patch("core.supervisor.runner.SchedulerManager", return_value=mock_scheduler),
-            patch("core.supervisor.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
-            patch("core.supervisor.runner.PendingTaskExecutor", return_value=mock_pending_executor),
+            patch("core.runtime.runner.IPCServer", return_value=mock_ipc_server),
+            patch("core.anima.digital_anima.DigitalAnima", return_value=mock_anima),
+            patch("core.runtime.runner.SchedulerManager", return_value=mock_scheduler),
+            patch("core.runtime.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
+            patch("core.runtime.runner.PendingTaskExecutor", return_value=mock_pending_executor),
             patch.object(runner, "_recover_streaming_journal"),
             patch.object(runner, "_startup_idle_compress", new_callable=AsyncMock),
         ):
@@ -237,7 +238,7 @@ class TestAnimaRunnerPingReadiness:
     @pytest.mark.asyncio
     async def test_ipc_ping_stays_responsive_during_slow_startup_inbox(self, tmp_path):
         """Immediate inbox memory/RAG work must not block IPC after startup ack."""
-        from core._anima_inbox import _append_episode_off_loop
+        from core.anima.inbox import _append_episode_off_loop
 
         runner = self._make_runner(tmp_path)
         runner._expects_startup_ack = True
@@ -259,9 +260,6 @@ class TestAnimaRunnerPingReadiness:
         mock_anima._inbox_lock = asyncio.Lock()
         mock_anima._last_progress_at = None
         mock_anima._busy_since = None
-        mock_anima._active_parallel_tasks = {}
-        mock_anima._set_pending_executor_wake = MagicMock()
-        mock_anima._set_active_parallel_tasks_getter = MagicMock()
         mock_anima.set_on_lock_released = MagicMock()
         mock_anima.set_on_message_sent = MagicMock()
         mock_anima.process_inbox_message = slow_process_inbox_message
@@ -288,10 +286,10 @@ class TestAnimaRunnerPingReadiness:
         mock_pending_executor.watcher_loop = pending_watcher_loop
 
         with (
-            patch("core.anima.DigitalAnima", return_value=mock_anima),
-            patch("core.supervisor.runner.SchedulerManager", return_value=mock_scheduler),
-            patch("core.supervisor.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
-            patch("core.supervisor.runner.PendingTaskExecutor", return_value=mock_pending_executor),
+            patch("core.anima.digital_anima.DigitalAnima", return_value=mock_anima),
+            patch("core.runtime.runner.SchedulerManager", return_value=mock_scheduler),
+            patch("core.runtime.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
+            patch("core.runtime.runner.PendingTaskExecutor", return_value=mock_pending_executor),
             patch.object(runner, "_recover_streaming_journal"),
             patch.object(runner, "_startup_idle_compress", new_callable=AsyncMock),
         ):
@@ -331,7 +329,6 @@ class TestAnimaRunnerPingReadiness:
                 assert ping_during_inbox.result and ping_during_inbox.result["status"] == "ok"
                 await asyncio.wait_for(inbox_finished.wait(), timeout=1.0)
             finally:
-                await client.close()
                 runner.shutdown_event.set()
                 await asyncio.wait_for(task, timeout=5.0)
 
@@ -358,7 +355,7 @@ class TestConversationContainsRecovery:
 
     def test_clean_saved_turn_without_marker_is_deduped(self):
         from core.i18n import t
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         recovered = "完全に生成された応答"
         saved_text = recovered + "\n" + t("anima.response_interrupted")
@@ -369,7 +366,7 @@ class TestConversationContainsRecovery:
 
     def test_clean_saved_longer_final_is_deduped(self):
         from core.i18n import t
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         recovered = "部分的な応答"
         final = recovered + "、そして続きの完了テキスト"
@@ -380,7 +377,7 @@ class TestConversationContainsRecovery:
 
     def test_marked_turn_is_deduped(self):
         from core.i18n import t
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         recovered = "中断された応答"
         saved_text = recovered + "\n" + t("anima.response_interrupted")
@@ -390,7 +387,7 @@ class TestConversationContainsRecovery:
 
     def test_unrelated_turns_not_deduped(self):
         from core.i18n import t
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         recovered = "回復すべき固有の応答テキスト"
         saved_text = recovered + "\n" + t("anima.response_interrupted")

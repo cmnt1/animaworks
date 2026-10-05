@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_test_app():
@@ -78,7 +78,7 @@ def anyio_backend() -> str:
 class TestInternalDelegateTask:
     @pytest.mark.anyio
     async def test_sandbox_proxy_preserves_complete_execution_input(self, tmp_path, monkeypatch):
-        from core.tasks_dispatch import publish_delegation
+        from core.tasks.dispatch import publish_delegation
 
         animas = _setup_animas(tmp_path)
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
@@ -107,14 +107,13 @@ class TestInternalDelegateTask:
                 new_callable=PropertyMock,
                 side_effect=PermissionError(errno.EACCES, "denied"),
             ),
-            patch("httpx.post") as post,
+            patch("core.internal_api.host_api.post") as post,
             patch("core.config.model_catalog.validate_model_override", return_value=None),
         ):
             assert publish_delegation(animas / "natsume", task, delegator="rin", tracking_task_id="112233445566")
         request = post.call_args.kwargs["json"]
         assert request["execution_input"] == task
         with (
-            patch("core.tooling.handler_delegation._record_taskboard_delegation"),
             patch("core.config.model_catalog.validate_model_override", return_value=None),
         ):
             async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
@@ -158,7 +157,6 @@ class TestInternalDelegateTask:
         app = _make_test_app()
         transport = ASGITransport(app=app)
         with (
-            patch("core.tooling.handler_delegation._record_taskboard_delegation"),
             # Model availability must not depend on developer CLI logins or
             # network discovery; exercise the real validator with fixed inputs.
             patch("core.config.model_catalog.available_model_id_set", return_value={"codex/gpt-5.6-sol"}),
@@ -194,7 +192,6 @@ class TestInternalDelegateTask:
         with (
             patch("core.config.model_catalog.available_model_id_set", return_value={"codex/gpt-5.6-sol"}),
             patch("core.config.model_config.can_build_model_override", return_value=False),
-            patch("core.tooling.handler_delegation._record_taskboard_delegation") as record,
         ):
             async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
                 response = await client.post(
@@ -206,7 +203,6 @@ class TestInternalDelegateTask:
         assert TaskQueueManager(animas / "natsume").list_tasks() == []
         assert TaskQueueManager(animas / "rin").list_tasks() == []
         assert TaskQueueManager(animas / "natsume").store.get_input("natsume", "aabbccddeeff") is None
-        record.assert_not_called()
 
     @pytest.mark.anyio
     async def test_success_writes_queues_and_pending(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,12 +211,11 @@ class TestInternalDelegateTask:
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
-        with patch("core.tooling.handler_delegation._record_taskboard_delegation") as mock_tb:
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/internal/delegate-task",
-                    json=_base_payload(),
-                )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/delegate-task",
+                json=_base_payload(),
+            )
 
         assert resp.status_code == 200
         body = resp.json()
@@ -255,13 +250,6 @@ class TestInternalDelegateTask:
         assert pending_data["description"] == "fix the merge conflict on PR #3553"
         assert pending_data["acceptance_criteria"] == []
 
-        mock_tb.assert_called_once()
-        kwargs = mock_tb.call_args.kwargs
-        assert kwargs["delegated_to"] == "natsume"
-        assert kwargs["delegated_task_id"] == "aabbccddeeff"
-        assert kwargs["delegator"] == "rin"
-        assert kwargs["tracking_task_id"] == "112233445566"
-
     @pytest.mark.anyio
     async def test_legacy_partial_flags_still_publish_whole_atomic_task(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -271,12 +259,11 @@ class TestInternalDelegateTask:
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
-        with patch("core.tooling.handler_delegation._record_taskboard_delegation"):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/internal/delegate-task",
-                    json=_base_payload(persist_sub=False),
-                )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/delegate-task",
+                json=_base_payload(persist_sub=False),
+            )
 
         assert resp.status_code == 200
         sub_queue = animas / "natsume" / "state" / "task_queue.jsonl"
@@ -334,12 +321,11 @@ class TestInternalDelegateTask:
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
-        with patch("core.tooling.handler_delegation._record_taskboard_delegation"):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/internal/delegate-task",
-                    json=_base_payload(acceptance_criteria=criteria),
-                )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/delegate-task",
+                json=_base_payload(acceptance_criteria=criteria),
+            )
 
         assert resp.status_code == 200
         pending = animas / "natsume" / "state" / "pending" / "aabbccddeeff.json"
@@ -358,12 +344,11 @@ class TestInternalDelegateTask:
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
-        with patch("core.tooling.handler_delegation._record_taskboard_delegation"):
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/internal/delegate-task",
-                    json=_base_payload(deadline="not-a-deadline"),
-                )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/internal/delegate-task",
+                json=_base_payload(deadline="not-a-deadline"),
+            )
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True

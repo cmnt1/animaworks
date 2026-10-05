@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for core/tools/notebooklm.py — NotebookLM integration.
 
-We mock the notebooklm package before importing core.tools.notebooklm
+We mock the notebooklm package before importing core.integrations.notebooklm
 since it is an optional dependency.
 """
 
@@ -45,10 +45,10 @@ def _mock_notebooklm_modules():
     top.ReportFormat.STUDY_GUIDE = "study_guide"
 
     # Reload / import
-    if "core.tools.notebooklm" in sys.modules:
-        importlib.reload(sys.modules["core.tools.notebooklm"])
+    if "core.integrations.notebooklm" in sys.modules:
+        importlib.reload(sys.modules["core.integrations.notebooklm"])
     else:
-        import core.tools.notebooklm  # noqa: F401
+        import core.integrations.notebooklm  # noqa: F401
 
     yield
 
@@ -57,11 +57,11 @@ def _mock_notebooklm_modules():
             sys.modules.pop(mod_name, None)
         else:
             sys.modules[mod_name] = saved[mod_name]
-    sys.modules.pop("core.tools.notebooklm", None)
+    sys.modules.pop("core.integrations.notebooklm", None)
 
 
 def _get_mod():
-    import core.tools.notebooklm as mod
+    import core.integrations.notebooklm as mod
 
     return mod
 

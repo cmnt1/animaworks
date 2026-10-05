@@ -15,10 +15,10 @@ description: >-
 
 | ツール | 用途 |
 |--------|------|
-| `disable_subordinate` | 配下を休止（status.json `enabled: false` → プロセス停止 + 自動復帰防止） |
+| `disable_subordinate` | root に status.json `enabled: false` の設定を依頼（プロセス停止 + 自動復帰防止） |
 | `enable_subordinate` | 休止中の配下を復帰 |
-| `set_subordinate_model` | 配下のLLMモデル（メイン）を変更（status.json 更新。反映には `restart_subordinate` が必要） |
-| `set_subordinate_background_model` | 配下のバックグラウンドモデル（heartbeat/cron用）を変更（status.json 更新。反映には `restart_subordinate` が必要。空文字でクリア） |
+| `set_subordinate_model` | root に status.json のメインモデル更新と起動中プロセスの reload を依頼 |
+| `set_subordinate_background_model` | root に heartbeat/cron 用モデルの更新を依頼。次回のバックグラウンドタスクから適用（空文字でクリア） |
 | `restart_subordinate` | 配下プロセスを再起動（status.json `restart_requested` フラグ。Reconciliation が約30秒以内に再起動） |
 | `delegate_task` | 直属部下にタスクを委譲（キュー追加 + DM送信 + 自分側追跡エントリ作成） |
 | `org_dashboard` | 配下全体のプロセス状態・最終アクティビティ・現在タスク・タスク数をツリー表示 |
@@ -32,7 +32,7 @@ description: >-
 |--------|------|
 | `task_tracker` | `delegate_task` で委譲したタスクの進捗を部下側キューから追跡（`status`: all / active / completed。デフォルト: active） |
 
-**自動同期（`sync_delegated`）**: ハートビート完了後、フレームワークが部下のタスクキューを検査し、完了・失敗した委譲タスクを検出すると、上司側の追跡エントリを自動更新（done / failed）する。アーカイブ済みタスクも検索対象。手動で `task_tracker` を呼ばなくても、次回ハートビート周辺で状態が揃いやすい。
+委譲元の追跡カードは、委譲先の正本タスク記録を参照する。状態の確認には `task_tracker` を使用する。
 
 ## 重要: disable_subordinate と send_message の違い
 
@@ -53,26 +53,25 @@ enable_subordinate(name="aoi")
 
 ### モデル変更と再起動
 
-モデル変更は status.json に保存されるが、実行中プロセスへの反映には `restart_subordinate` が必要:
+これらのツールは root に root 所有 `status.json` の更新を依頼する。Anima プロセスから直接編集しない。メインモデルは起動中プロセスに reload され、停止中の Anima は次回起動時に新設定を読む:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
-restart_subordinate(name="aoi", reason="モデル変更を反映")
 ```
 
-バックグラウンドモデル（heartbeat/cron 用）を変更する場合:
+バックグラウンドモデル（heartbeat/cron 用）は次回のタスクランナー起動から適用され、実行中のタスクはそのまま完了する:
 
 ```
 set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
-restart_subordinate(name="aoi", reason="バックグラウンドモデル変更を反映")
 ```
 
 バックグラウンドモデルをクリアしてメインモデルに戻す場合:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")
-restart_subordinate(name="aoi")
 ```
+
+プロセス全体の再起動が本当に必要な場合にのみ、別途 `restart_subordinate` を使う。
 
 ### 状態確認・監査
 
@@ -98,8 +97,8 @@ animaworks anima audit --all --since 09:00  # 全Anima、今日9時以降
 ### タスク委譲
 
 ```
-delegate_task(name="aoi", instruction="週次レポートをまとめて", deadline="1d", summary="週次レポート作成")
-# name, instruction, deadline は必須。summary は省略可（instruction の先頭100文字が使われる）
+delegate_task(name="aoi", instruction="週次レポートをまとめて", summary="週次レポート作成")
+# 必須: `name`, `instruction`。任意: `summary`, `workspace`, `acceptance_criteria`, `model`
 # workspace を指定すると委譲先がそのワークスペースで作業する（workspace-manager スキル参照）
 task_tracker(status="active")      # 委譲タスクの進捗確認（status: all / active / completed）
 ```

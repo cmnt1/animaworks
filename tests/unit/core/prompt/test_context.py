@@ -13,7 +13,6 @@ import pytest
 from core.prompt.context import (
     _DEFAULT_CONTEXT_WINDOW,
     _THRESHOLD_CEILING,
-    CHARS_PER_TOKEN,
     MODEL_CONTEXT_WINDOWS,
     ContextTracker,
     _resolve_context_window,
@@ -308,59 +307,6 @@ class TestContextTrackerProperties:
     def test_threshold_exceeded_initial(self):
         ct = ContextTracker()
         assert ct.threshold_exceeded is False
-
-
-# ── estimate_from_transcript ──────────────────────────────
-
-
-class TestEstimateFromTranscript:
-    def test_empty_path(self):
-        ct = ContextTracker()
-        ratio = ct.estimate_from_transcript("")
-        assert ratio == 0.0
-
-    def test_nonexistent_file(self):
-        ct = ContextTracker()
-        ratio = ct.estimate_from_transcript("/nonexistent/path.txt")
-        assert ratio == 0.0
-
-    def test_real_file(self, tmp_path):
-        f = tmp_path / "transcript.json"
-        content = "x" * 40_000  # 40000 chars / 4 = 10000 tokens
-        f.write_text(content)
-
-        with patch(_PATCH_TARGET, return_value=None):
-            ct = ContextTracker(model="claude-sonnet-4-20250514")  # 200k hardcoded
-            ratio = ct.estimate_from_transcript(str(f))
-            expected = 10_000 / 200_000
-            assert abs(ratio - expected) < 0.01
-
-    def test_threshold_detection(self, tmp_path):
-        small = tmp_path / "start.json"
-        small.write_text("x" * 4_000)
-        big = tmp_path / "big.json"
-        big.write_text("x" * 400_000)
-
-        with patch(_PATCH_TARGET, return_value=None):
-            ct = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
-            ct.estimate_from_transcript(str(small))  # sets the session baseline
-            ratio = ct.estimate_from_transcript(str(big))
-            assert ratio >= ct.threshold
-            assert ct.threshold_exceeded is True
-
-    def test_threshold_only_triggers_once(self, tmp_path):
-        small = tmp_path / "start.json"
-        small.write_text("x" * 4_000)
-        f = tmp_path / "big.json"
-        ct = ContextTracker(threshold=0.50)
-        needed_tokens = int(ct.context_window * (ct.threshold + 0.05))
-        f.write_text("x" * (needed_tokens * CHARS_PER_TOKEN))
-
-        ct.estimate_from_transcript(str(small))
-        ct.estimate_from_transcript(str(f))
-        assert ct.threshold_exceeded is True
-        ct.estimate_from_transcript(str(f))
-        assert ct.threshold_exceeded is True
 
 
 # ── update_from_usage ─────────────────────────────────────

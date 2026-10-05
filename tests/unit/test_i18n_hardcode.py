@@ -73,82 +73,8 @@ _REGEX_METACHAR_RE = re.compile(
 # its baseline (new hardcoded string) or is absent from the baseline.
 # When you fix violations, lower the count so the ratchet tightens.
 
-KNOWN_VIOLATIONS: dict[str, int] = {
-    # bilingual empty-state placeholders for prompt injection (ja/en)
-    # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
-    "core/_anima_lifecycle.py": 4,
-    # command templates with {返信内容} — borderline (platform-specific CLI syntax)
-    "core/_anima_inbox.py": 2,
-    # MD section names used for parsing (基本情報, 人格, etc.)
-    "core/anima_factory.py": 8,
-    # error messages returned to Anima (GlobalOutboundLimitExceeded etc.)
-    "core/cascade_limiter.py": 4,
-    # deprecation warning message
-    "core/config/cli.py": 1,
-    # Japanese day-of-week names for cron migration + permissions.md section headers for migration
-    "core/config/migrate.py": 9,
-    # model catalog "note" descriptions (最高性能・推奨, etc.)
-    "core/config/model_mode.py": 58,
-    # cron instruction prompt to Anima
-    "core/prompt/messaging.py": 2,
-    "core/prompt/org_context.py": 3,
-    "core/response_normalize.py": 15,
-    # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)
-    # label "個人ツール"
-    "core/tooling/handler_memory.py": 1,
-    # tool descriptions — already have ja/en dict structure
-    # Japanese field names in schema descriptions (上司, 基本情報)
-    "core/tooling/schemas/admin.py": 2,
-    # user-facing message (バックグラウンドタスク投入)
-    "core/tools/__init__.py": 1,
-    # tool guide with Japanese content
-    "core/tools/_image_schemas.py": 1,
-    "core/tools/aws_collector.py": 1,
-    "core/tools/github.py": 1,
-    # Japanese property portal labels, search terms, and report headings
-    "core/tools/property_portal_scraper.py": 30,
-    # Japanese listing-day labels and report text for the property products
-    "core/reports/property/_listing_runs.py": 1,
-    "core/reports/property/anjo_1k_product_draft.py": 52,
-    "core/reports/property/daily_sale_product_report.py": 30,
-    # review-surfacer: ja status labels, reminder + Discord-post prompt templates
-    "core/reports/pending_review_surfacer.py": 8,
-    "core/tools/_slack_cli.py": 1,
-    # mock task data with Japanese titles
-    "server/routes/animas.py": 0,
-    # dummy Japanese text fed to the embedder/reranker at warmup (NLP input, never shown)
-    "server/app.py": 2,
-    # meeting/room feature — Japanese meeting prompts and labels
-    "server/room_manager.py": 12,
-    "server/routes/room.py": 7,
-    # project-task board: Japanese column/field labels (カテゴリ, タスク名, ステータス…)
-    "server/project_tasks.py": 11,
-    # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
-    "core/memory/extraction/prompts/ja.py": 4,
-    # diagnostic metadata rendered by the forgetting pipeline
-    "core/memory/forgetting.py": 1,
-    # auth-failure / token-expiry messages surfaced to the dashboard
-    "core/execution/agent_sdk.py": 2,
-    # Governor notification suppression messages
-    "core/notification/notifier.py": 2,
-    # outbound auto-routing prefix label
-    "core/outbound_auto.py": 1,
-    # department lookup keys (投資/不動産/アフィリエイト/総務) + Discord sender name
-    "core/project_threads.py": 5,
-    # Codex login window prompts
-    "core/platform/codex.py": 2,
-    # cron-failure title label
-    "core/taskboard/projector.py": 1,
-    # taskboard route stop/blocker labels + cron-failure diagnostic messages
-    "server/routes/taskboard.py": 26,
-    # usage route OAuth / API-disabled messages + Claude token expiry message
-    "server/routes/usage_routes.py": 4,
-    # voice front lane — ask_anima tool schema wording fed to the front LLM
-    "core/voice/front.py": 2,
-    # voice front lane — spoken ACK/error phrases voiced to the user via TTS
-    # plus the proactive silence-turn system prompt fed to the front LLM
-    "core/voice/session.py": 8,
-}
+# Fork business reports and policies intentionally retain Japanese literals.
+KNOWN_VIOLATIONS: dict[str, int] = {'cli/tool_dispatch.py': 1, 'core/anima/factory.py': 8, 'core/anima/inbox.py': 2, 'core/anima/lifecycle.py': 4, 'core/anima/response_normalize.py': 15, 'core/config/migrate.py': 2, 'core/config/model_mode.py': 59, 'core/config/schemas.py': 1, 'core/integrations/_image_schemas.py': 1, 'core/integrations/_slack_cli.py': 1, 'core/integrations/aws_collector.py': 1, 'core/integrations/github.py': 1, 'core/integrations/property_portal_scraper.py': 30, 'core/memory/facts/prompts/ja.py': 4, 'core/memory/maintenance/forgetting.py': 1, 'core/messaging/outbound_auto.py': 1, 'core/notification/notifier.py': 2, 'core/platform/codex.py': 2, 'core/project_threads.py': 5, 'core/prompt/org_context.py': 3, 'core/reports/pending_review_surfacer.py': 8, 'core/reports/property/_listing_runs.py': 1, 'core/reports/property/anjo_1k_product_draft.py': 52, 'core/reports/property/daily_sale_product_report.py': 30, 'core/tooling/handler_memory.py': 1, 'core/tooling/policy/schemas/admin.py': 2, 'core/voice/front.py': 2, 'core/voice/session.py': 8, 'server/app.py': 2, 'server/project_tasks.py': 11, 'server/room_manager.py': 12, 'server/routes/room.py': 7, 'server/routes/usage_routes.py': 4}
 
 
 # ── AST Helpers ──────────────────────────────────────────────

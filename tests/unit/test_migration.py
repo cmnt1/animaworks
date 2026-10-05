@@ -118,12 +118,6 @@ class TestMigrationRunner:
         step_results = {s.id: r for s, r in report.steps}
         assert step_results["s1"].changed == 1
 
-    def test_run_resync_db(self, tmp_path: Path) -> None:
-        runner = self._make_runner(tmp_path)
-        report = runner.run_resync_db()
-        assert len(report.steps) == 1
-        assert report.steps[0][0].id == "s3"
-
     def test_dry_run_no_side_effects(self, tmp_path: Path) -> None:
         runner = MigrationRunner(tmp_path)
         runner.register(MigrationStep("dry", "Dry test", "structural", _dry_aware_step))
@@ -167,238 +161,22 @@ class TestMigrationSteps:
         (d / "state").mkdir()
         return d
 
-    def test_step_vault_reencrypt_generates_key_and_encrypts_plaintext(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
+    def test_step_trust_state_per_session_dry_run_and_removal(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_trust_state_per_session
 
-        original = {
-            "shared": {"API_TOKEN": "plain-token"},
-            "sakura": {"SERVICE_KEY": "plain-service-key"},
-        }
-        (data_dir / "vault.json").write_text(json.dumps(original), encoding="utf-8")
+        anima = self._make_anima(data_dir, "trust-state")
+        legacy_state = anima / "run" / "min_trust_seen"
+        legacy_state.parent.mkdir()
+        legacy_state.write_text("0", encoding="utf-8")
 
-        result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
+        dry_result = step_trust_state_per_session(data_dir, dry_run=True, verbose=True)
+        assert dry_result.changed == 1
+        assert any("would remove run/min_trust_seen" in detail for detail in dry_result.details)
+        assert legacy_state.exists()
 
-        assert result.error is None
+        result = step_trust_state_per_session(data_dir, dry_run=False, verbose=True)
         assert result.changed == 1
-        assert (data_dir / "vault.key").is_file()
-        encrypted = json.loads((data_dir / "vault.json").read_text(encoding="utf-8"))
-        assert encrypted["shared"]["API_TOKEN"] != original["shared"]["API_TOKEN"]
-        assert encrypted["sakura"]["SERVICE_KEY"] != original["sakura"]["SERVICE_KEY"]
-        vault = VaultManager(data_dir)
-        assert vault.get("shared", "API_TOKEN") == original["shared"]["API_TOKEN"]
-        assert vault.get("sakura", "SERVICE_KEY") == original["sakura"]["SERVICE_KEY"]
-        assert len(list(data_dir.glob("vault.json.bak-*"))) == 1
-
-    def test_step_vault_reencrypt_rolls_back_on_verification_failure(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
-
-        original_text = json.dumps({"shared": {"API_TOKEN": "plain-token"}})
-        (data_dir / "vault.json").write_text(original_text, encoding="utf-8")
-
-        with patch.object(VaultManager, "decrypt", return_value="corrupted"):
-            result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is not None
-        assert "Round-trip verification failed" in result.error
-        assert (data_dir / "vault.json").read_text(encoding="utf-8") == original_text
-        assert not (data_dir / "vault.key").exists()
-
-    def test_step_vault_reencrypt_backs_up_existing_key(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
-
-        vault = VaultManager(data_dir)
-        vault.generate_key()
-        original_key = vault.key_path.read_bytes()
-        vault.save_vault({"shared": {"API_TOKEN": "plain-token"}})
-
-        result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        key_backups = list(data_dir.glob("vault.key.bak-*"))
-        assert len(key_backups) == 1
-        assert key_backups[0].read_bytes() == original_key
-
-    def test_step_current_task_rename(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("tasks here", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert (anima / "state" / "current_state.md").exists()
-        assert not (anima / "state" / "current_task.md").exists()
-
-    def test_step_current_task_rename_dry_run(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("tasks here", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=True, verbose=True)
-        assert result.changed == 0 or result.details
-        assert (anima / "state" / "current_task.md").exists()
-
-    def test_step_current_task_rename_skip_if_state_exists(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("old", encoding="utf-8")
-        (anima / "state" / "current_state.md").write_text("new", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 0
-
-    def test_step_pending_merge(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_pending_merge
-
-        anima = self._make_anima(data_dir, "bob")
-        (anima / "state" / "current_state.md").write_text("# State\n", encoding="utf-8")
-        (anima / "state" / "pending.md").write_text("urgent task", encoding="utf-8")
-        result = step_pending_merge(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        content = (anima / "state" / "current_state.md").read_text(encoding="utf-8")
-        assert "urgent task" in content
-        assert not (anima / "state" / "pending.md").exists()
-
-    def test_step_pending_merge_empty(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_pending_merge
-
-        anima = self._make_anima(data_dir, "bob")
-        (anima / "state" / "pending.md").write_text("", encoding="utf-8")
-        result = step_pending_merge(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert not (anima / "state" / "pending.md").exists()
-
-    def test_step_current_task_references(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_references
-
-        anima = self._make_anima(data_dir, "carol")
-        (anima / "heartbeat.md").write_text("Check current_task.md for status\nReview current_task", encoding="utf-8")
-        result = step_current_task_references(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        content = (anima / "heartbeat.md").read_text(encoding="utf-8")
-        assert "current_state.md" in content
-        assert "current_task" not in content
-
-    def test_step_current_task_references_no_match(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_references
-
-        anima = self._make_anima(data_dir, "carol")
-        (anima / "heartbeat.md").write_text("No references here", encoding="utf-8")
-        result = step_current_task_references(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 0
-
-    def test_step_person_to_anima_skip(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_person_to_anima
-
-        result = step_person_to_anima(data_dir, dry_run=False, verbose=True)
-        assert result.skipped == 1
-
-    def test_step_enable_skill_catalog_router_updates_existing_config(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text(
-            json.dumps({"prompt": {"skill_catalog_router_enabled": False}}),
-            encoding="utf-8",
-        )
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is True
-        assert raw["prompt"]["skill_catalog_router_top_k"] == 5
-        assert raw["prompt"]["skill_catalog_router_min_score"] == 1.15
-        assert raw["prompt"]["skill_catalog_router_include_body"] is True
-
-    def test_step_enable_skill_catalog_router_dry_run_keeps_config(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text('{"prompt": {"skill_catalog_router_enabled": false}}\n', encoding="utf-8")
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=True, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is False
-
-    def test_step_enable_skill_catalog_router_preserves_tuned_values(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "prompt": {
-                        "skill_catalog_router_enabled": False,
-                        "skill_catalog_router_top_k": 9,
-                        "skill_catalog_router_min_score": 2.0,
-                        "skill_catalog_router_include_body": False,
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is True
-        assert raw["prompt"]["skill_catalog_router_top_k"] == 9
-        assert raw["prompt"]["skill_catalog_router_min_score"] == 2.0
-        assert raw["prompt"]["skill_catalog_router_include_body"] is False
-
-    def test_step_models_json_create_skip_existing(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_models_json_create
-
-        (data_dir / "models.json").write_text("{}", encoding="utf-8")
-        result = step_models_json_create(data_dir, dry_run=False, verbose=True)
-        assert result.skipped == 1
-
-    def test_step_grok_models_json_adds_entries_and_preserves_existing(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_grok_models_json
-
-        models_path = data_dir / "models.json"
-        existing = {"custom/model": {"mode": "A", "context_window": 12345}}
-        models_path.write_text(json.dumps(existing), encoding="utf-8")
-
-        result = step_grok_models_json(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 2
-        raw = json.loads(models_path.read_text(encoding="utf-8"))
-        assert raw["custom/model"] == existing["custom/model"]
-        assert raw["grok/grok-4.5"] == {"mode": "X", "context_window": 500000}
-        assert raw["grok/*"] == {"mode": "X", "context_window": 500000}
-
-    def test_step_grok_models_json_preserves_existing_grok_entry(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_grok_models_json
-
-        models_path = data_dir / "models.json"
-        custom_grok = {"mode": "A", "context_window": 999999}
-        models_path.write_text(json.dumps({"grok/*": custom_grok}), encoding="utf-8")
-
-        result = step_grok_models_json(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(models_path.read_text(encoding="utf-8"))
-        assert raw["grok/*"] == custom_grok
-        assert raw["grok/grok-4.5"] == {"mode": "X", "context_window": 500000}
-
-    def test_step_shortterm_layout(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_shortterm_layout
-
-        anima = self._make_anima(data_dir, "dave")
-        shortterm = anima / "shortterm"
-        shortterm.mkdir(exist_ok=True)
-        (shortterm / "session_state.json").write_text("{}", encoding="utf-8")
-        result = step_shortterm_layout(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert (shortterm / "chat" / "session_state.json").exists()
-        assert not (shortterm / "session_state.json").exists()
+        assert not legacy_state.exists()
 
     def test_step_update_version(self, data_dir: Path) -> None:
         from core.migrations.steps import step_update_version
@@ -406,224 +184,156 @@ class TestMigrationSteps:
         result = step_update_version(data_dir, dry_run=False, verbose=True)
         assert result.changed == 1
 
-    def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
-        from core.migrations.steps import register_all_steps
+    def test_step_engine_timeout_config_cleanup_renames_and_removes_keys(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_engine_timeout_config_cleanup
 
-        runner = MigrationRunner(tmp_path)
-        register_all_steps(runner)
-        ids = [item["id"] for item in runner.list_steps()]
-
-        assert "v062_skill_removal_and_activity_log" in ids
-        assert "v063_behavior_rules_action_rules_skill_sync" in ids
-        assert ids.index("v063_behavior_rules_action_rules_skill_sync") > ids.index(
-            "v062_skill_removal_and_activity_log"
-        )
-        assert ids.index("v063_behavior_rules_action_rules_skill_sync") < ids.index("update_version")
-
-    def test_step_v063_resyncs_stale_runtime_prompts(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_v063_behavior_rules_action_rules_skill_sync
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "behavior_rules.md").write_text(
-            "stale: human instructions must be registered with `submit_tasks`",
-            encoding="utf-8",
-        )
-        result = step_v063_behavior_rules_action_rules_skill_sync(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        behavior_rules = (data_dir / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
-        action_guide = (data_dir / "common_knowledge" / "operations" / "action-rules-guide.md").read_text(
-            encoding="utf-8"
-        )
-        skill_creator = (data_dir / "common_skills" / "skill-creator" / "SKILL.md").read_text(encoding="utf-8")
-        # The resynced template is the trimmed L1 version: the stale submit_tasks
-        # rule is gone, the skill-creator pointer now lives only in the skill catalog.
-        assert "stale:" not in behavior_rules
-        assert "[IMPORTANT]" in behavior_rules
-        assert "common_skills/skill-creator/SKILL.md" not in behavior_rules
-        assert "gmail_draft" in action_guide
-        assert "slack_post" not in action_guide
-        assert "trust_level" in skill_creator
-
-    def test_step_task_delegation_to_common_knowledge(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_task_delegation_to_common_knowledge
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        stale = prompts_dir / "task_delegation_rules.md"
-        stale.write_text("old content", encoding="utf-8")
-
-        result = step_task_delegation_to_common_knowledge(data_dir, dry_run=False, verbose=True)
-        assert result.changed >= 1
-        assert not stale.exists(), "stale prompts/task_delegation_rules.md should be removed"
-
-    def test_step_task_delegation_to_common_knowledge_dry_run(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_task_delegation_to_common_knowledge
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        stale = prompts_dir / "task_delegation_rules.md"
-        stale.write_text("old content", encoding="utf-8")
-
-        result = step_task_delegation_to_common_knowledge(data_dir, dry_run=True, verbose=True)
-        assert result.changed >= 1
-        assert stale.exists(), "dry_run should not remove the file"
-
-    def test_step_task_delegation_no_stale_file(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_task_delegation_to_common_knowledge
-
-        result = step_task_delegation_to_common_knowledge(data_dir, dry_run=False, verbose=True)
-        assert result.changed >= 0
-
-    def test_step_v0120_resyncs_prompts_and_removes_stale(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_v0120_prompt_deadline_engine_neutral_resync
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "behavior_rules.md").write_text("stale: find files with `Glob` before reading", encoding="utf-8")
-        (prompts_dir / "task_delegation_rules.md").write_text("old content", encoding="utf-8")
-
-        result = step_v0120_prompt_deadline_engine_neutral_resync(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        behavior_rules = (prompts_dir / "behavior_rules.md").read_text(encoding="utf-8")
-        environment = (prompts_dir / "environment.md").read_text(encoding="utf-8")
-        assert "Glob" not in behavior_rules
-        assert "backlog_task" in behavior_rules
-        assert "search_memory" in behavior_rules
-        # Task deadlines were torn out of environment.md (A1 task-model teardown);
-        # resync should propagate the current template, not the retired section.
-        assert "タスク期限" not in environment
-        assert "file_access_policy" in environment
-        assert "AI-speed" not in environment
-        assert not (prompts_dir / "task_delegation_rules.md").exists(), (
-            "stale prompts/task_delegation_rules.md should be removed"
-        )
-
-    def test_step_v0120_dry_run_keeps_files(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_v0120_prompt_deadline_engine_neutral_resync
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "behavior_rules.md").write_text(b"stale: `Glob`".decode("utf-8"), encoding="utf-8")
-        (prompts_dir / "task_delegation_rules.md").write_text("old content", encoding="utf-8")
-
-        result = step_v0120_prompt_deadline_engine_neutral_resync(data_dir, dry_run=True, verbose=True)
-
-        assert (prompts_dir / "behavior_rules.md").exists()
-        assert (prompts_dir / "task_delegation_rules.md").exists()
-        assert any("Would remove stale prompts/task_delegation_rules.md" in d for d in result.details)
-
-    def test_step_v0120_registered_before_update_version(self, tmp_path: Path) -> None:
-        from core.migrations.steps import register_all_steps
-
-        runner = MigrationRunner(tmp_path)
-        register_all_steps(runner)
-        ids = [item["id"] for item in runner.list_steps()]
-
-        assert "v0120_prompt_deadline_engine_neutral_resync" in ids
-        assert ids.index("v0120_prompt_deadline_engine_neutral_resync") < ids.index("update_version")
-
-    def test_step_v0140_resyncs_and_drops_retired_prompts(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_v0140_harness_diet_resync
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "behavior_rules.md").write_text("stale rules", encoding="utf-8")
-        for name in ("meeting_chair.md", "hiring_context.md"):
-            (prompts_dir / name).write_text("retired", encoding="utf-8")
-        ck = data_dir / "common_knowledge"
-        ck.mkdir(parents=True, exist_ok=True)
-        (data_dir / "models.json").write_text(
-            json.dumps({"ollama/*": {"mode": "B", "context_window": 8192}, "claude-*": {"mode": "S"}}),
+        (data_dir / "config.json").write_text(
+            json.dumps({"server": {"busy_hang_threshold": 450, "max_streaming_duration": 1800}}),
             encoding="utf-8",
         )
 
-        result = step_v0140_harness_diet_resync(data_dir, dry_run=False, verbose=True)
+        result = step_engine_timeout_config_cleanup(data_dir, dry_run=False, verbose=True)
 
         assert result.error is None
-        assert (prompts_dir / "behavior_rules.md").read_text(encoding="utf-8") != "stale rules"
-        assert not (prompts_dir / "meeting_chair.md").exists()
-        assert not (prompts_dir / "hiring_context.md").exists()
-        assert any(ck.rglob("*.md"))
-        models = json.loads((data_dir / "models.json").read_text(encoding="utf-8"))
-        assert models["ollama/*"] == {"mode": "A", "context_window": 8192}
-        assert models["claude-*"]["mode"] == "S"
+        assert result.changed == 1
+        server = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))["server"]
+        assert server["runner_liveness_timeout"] == 450
+        assert "busy_hang_threshold" not in server
+        assert "max_streaming_duration" not in server
 
-    def test_step_v0140_dry_run_keeps_files(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_v0140_harness_diet_resync
+    def test_step_engine_timeout_config_cleanup_preserves_new_timeout_value(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_engine_timeout_config_cleanup
 
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "meeting_chair.md").write_text("retired", encoding="utf-8")
-        (data_dir / "models.json").write_text(json.dumps({"ollama/*": {"mode": "B"}}), encoding="utf-8")
+        (data_dir / "config.json").write_text(
+            json.dumps({"server": {"busy_hang_threshold": 450, "runner_liveness_timeout": 600}}),
+            encoding="utf-8",
+        )
 
-        result = step_v0140_harness_diet_resync(data_dir, dry_run=True, verbose=True)
+        result = step_engine_timeout_config_cleanup(data_dir, dry_run=False, verbose=True)
 
-        assert (prompts_dir / "meeting_chair.md").exists()
-        assert json.loads((data_dir / "models.json").read_text(encoding="utf-8"))["ollama/*"]["mode"] == "B"
-        assert any("Would remove stale prompts/meeting_chair.md" in d for d in result.details)
+        assert result.error is None
+        server = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))["server"]
+        assert server["runner_liveness_timeout"] == 600
+        assert "busy_hang_threshold" not in server
 
-    def test_step_v0140_registered_before_update_version(self, tmp_path: Path) -> None:
+    def test_step_priming_config_cleanup_drops_max_graph_hops(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_priming_config_cleanup_20260927
+
+        (data_dir / "config.json").write_text(
+            json.dumps({"rag": {"max_graph_hops": 2, "enable_spreading_activation": True}}),
+            encoding="utf-8",
+        )
+
+        result = step_priming_config_cleanup_20260927(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 1
+        updated = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+        assert "max_graph_hops" not in updated["rag"]
+
+    def test_step_priming_config_cleanup_skips_when_setting_missing(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_priming_config_cleanup_20260927
+
+        (data_dir / "config.json").write_text(json.dumps({"rag": {}}), encoding="utf-8")
+
+        result = step_priming_config_cleanup_20260927(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 0
+        assert result.skipped == 1
+
+    def test_priming_config_cleanup_registered_before_version(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
 
-        assert ids.index("v0120_prompt_deadline_engine_neutral_resync") < ids.index("v0140_harness_diet_resync")
-        assert ids.index("v0140_harness_diet_resync") < ids.index("update_version")
+        assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
+
+    def test_step_taskboard_metadata_retire(self, data_dir: Path) -> None:
+        import sqlite3
+
+        from core.migrations.steps import step_taskboard_metadata_retire
+
+        shared = data_dir / "shared"
+        shared.mkdir(parents=True, exist_ok=True)
+        (data_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "housekeeping": {
+                        "taskboard_suppressed_retention_days": 30,
+                        "taskboard_orphan_metadata_stale_hours": 24,
+                        "tmp_retention_days": 14,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        db_path = shared / "taskboard.sqlite3"
+        db = sqlite3.connect(db_path)
+        db.executescript(
+            """
+            CREATE TABLE tasks (anima TEXT, task_id TEXT, entry_json TEXT);
+            INSERT INTO tasks VALUES ('sakura', 't1', '{"status":"pending","meta":{}}');
+            INSERT INTO tasks VALUES ('sakura', 't2', '{"status":"done","meta":{"source_ref":"keep"}}');
+            CREATE TABLE taskboard_metadata (
+                anima_name TEXT, task_id TEXT, visibility TEXT, column TEXT, source_ref TEXT
+            );
+            INSERT INTO taskboard_metadata VALUES ('sakura','t1','expired','todo','hermes://x.json#0');
+            INSERT INTO taskboard_metadata VALUES ('sakura','t2','archived','done',NULL);
+            INSERT INTO taskboard_metadata VALUES ('sakura','t3','waiting','waiting','hermes://y.json#0');
+            CREATE TABLE taskboard_events (id INTEGER);
+            CREATE TABLE task_aliases (viewer TEXT, alias TEXT);
+            """
+        )
+        db.commit()
+        db.close()
+
+        dry = step_taskboard_metadata_retire(data_dir, dry_run=True, verbose=True)
+        assert dry.error is None
+        assert dry.changed == 1
+        db = sqlite3.connect(db_path)
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='taskboard_metadata'").fetchone()
+        db.close()
+
+        result = step_taskboard_metadata_retire(data_dir, dry_run=False, verbose=True)
+        assert result.error is None
+        assert result.changed == 1
+
+        db = sqlite3.connect(db_path)
+        row = db.execute("SELECT entry_json FROM tasks WHERE task_id='t1'").fetchone()
+        assert json.loads(row[0])["meta"]["source_ref"] == "hermes://x.json#0"
+        row2 = db.execute("SELECT entry_json FROM tasks WHERE task_id='t2'").fetchone()
+        assert json.loads(row2[0])["meta"]["source_ref"] == "keep"
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='taskboard_metadata'"
+        ).fetchone()
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='taskboard_events'"
+        ).fetchone()
+        db.close()
+
+        backups = list((shared / "backups").glob("taskboard-pre-metadata-retire-*.sqlite3"))
+        assert len(backups) == 1
+        # backups contain the pre-drop metadata table
+        bdb = sqlite3.connect(backups[0])
+        assert bdb.execute("SELECT name FROM sqlite_master WHERE name='taskboard_metadata'").fetchone()
+        bdb.close()
+
+        cfg = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+        assert "taskboard_suppressed_retention_days" not in cfg["housekeeping"]
+        assert "taskboard_orphan_metadata_stale_hours" not in cfg["housekeeping"]
+        assert cfg["housekeeping"]["tmp_retention_days"] == 14
+
+        second = step_taskboard_metadata_retire(data_dir, dry_run=False, verbose=True)
+        assert second.skipped == 1
 
     def test_shipped_models_json_has_no_mode_b(self) -> None:
         from core.paths import TEMPLATES_DIR
 
         models = json.loads((TEMPLATES_DIR / "_shared" / "config_defaults" / "models.json").read_text(encoding="utf-8"))
         assert all(str(e.get("mode", "")).upper() != "B" for e in models.values() if isinstance(e, dict))
-
-    def test_step_common_knowledge_team_design_removes_stale_machine_docs(self, data_dir: Path) -> None:
-        from core.migrations.registry import StepResult
-        from core.migrations.steps import step_common_knowledge_team_design_resync
-
-        ops = data_dir / "common_knowledge" / "operations"
-        ops.mkdir(parents=True)
-        stale = ops / "machine-tool-usage.md"
-        stale.write_text("legacy", encoding="utf-8")
-
-        with patch(
-            "core.migrations.steps.step_common_knowledge_resync",
-            return_value=StepResult(changed=0, skipped=0, details=[]),
-        ):
-            result = step_common_knowledge_team_design_resync(data_dir, dry_run=False, verbose=True)
-        assert not stale.exists()
-        assert result.changed >= 1
-        assert any("Removed stale" in d for d in result.details)
-
-    def test_step_common_knowledge_team_design_dry_run_keeps_stale(self, data_dir: Path) -> None:
-        from core.migrations.registry import StepResult
-        from core.migrations.steps import step_common_knowledge_team_design_resync
-
-        ops = data_dir / "common_knowledge" / "operations"
-        ops.mkdir(parents=True)
-        stale = ops / "machine-workflow-tester.md"
-        stale.write_text("legacy", encoding="utf-8")
-
-        with patch(
-            "core.migrations.steps.step_common_knowledge_resync",
-            return_value=StepResult(changed=0, skipped=0, details=[]),
-        ):
-            result = step_common_knowledge_team_design_resync(data_dir, dry_run=True, verbose=True)
-        assert stale.exists()
-        assert any("Would remove stale" in d for d in result.details)
-        import argparse
-
-        from cli.commands.migrate_cmd import register_migrate_command
-
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers()
-        register_migrate_command(sub)
-        args = parser.parse_args(["migrate", "--list"])
-        assert args.list is True
 
     def test_register_command_dry_run(self) -> None:
         import argparse
@@ -648,7 +358,43 @@ class TestRegisterAllSteps:
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         steps = runner.list_steps()
-        assert len(steps) >= 20
+        assert len(steps) >= 15
+
+    def test_0140_runtime_startup_ignores_retired_migration_ids(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+        from core.migrations.tracker import assert_supported_runtime_version
+
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        retired_ids = {
+            "person_to_anima",
+            "config_md_to_json",
+            "model_config_to_status",
+            "cron_format",
+            "split_board_by_company_20260720",
+            "channel_company_defaults_20260723",
+            "tool_prompts_db_to_md",
+            "legacy_flat_skill_migration",
+            "v060_resync",
+        }
+        (tmp_path / "migration_state.json").write_text(
+            json.dumps(
+                {
+                    "applied_version": "0.14.0",
+                    "steps_applied": {step_id: "2026-09-29T00:00:00" for step_id in retired_ids},
+                    "last_migrated_at": "2026-09-29T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert_supported_runtime_version(tmp_path)
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        registered_ids = {step["id"] for step in runner.list_steps()}
+
+        assert retired_ids.isdisjoint(registered_ids)
+        report = runner.run_all()
+        assert report.errors == []
+        assert retired_ids.issubset(runner.tracker.load().steps_applied)
 
     def test_all_step_ids_unique(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
@@ -657,20 +403,6 @@ class TestRegisterAllSteps:
         register_all_steps(runner)
         ids = [s["id"] for s in runner.list_steps()]
         assert len(ids) == len(set(ids))
-
-    def test_memory_hygiene_prompt_resync_has_new_migration_id(self, tmp_path: Path) -> None:
-        from core.migrations.steps import register_all_steps, step_prompt_resync
-
-        runner = MigrationRunner(tmp_path)
-        register_all_steps(runner)
-        runner.tracker.mark_applied("prompt_resync")
-
-        step = next(s for s in runner._steps if s.id == "memory_hygiene_prompt_resync_20260718")
-        assert step.category == "template_sync"
-        assert step.fn is step_prompt_resync
-        listed = {item["id"]: item for item in runner.list_steps()}
-        assert listed["prompt_resync"]["applied"] is True
-        assert listed["memory_hygiene_prompt_resync_20260718"]["applied"] is False
 
     def test_all_categories_present(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
@@ -683,72 +415,15 @@ class TestRegisterAllSteps:
         assert "template_sync" in categories
         assert "version" in categories
 
-    def test_step_v0141_resyncs_task_exec_prompt(self, data_dir: Path) -> None:
-        from core.migrations.steps import register_all_steps, step_v0141_harness_diet_r2_resync
-
-        prompts_dir = data_dir / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-        (prompts_dir / "task_exec.md").write_text("stale", encoding="utf-8")
-
-        result = step_v0141_harness_diet_r2_resync(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        assert "{submission_line}" in (prompts_dir / "task_exec.md").read_text(encoding="utf-8")
-        runner = MigrationRunner(data_dir)
-        register_all_steps(runner)
-        ids = [item["id"] for item in runner.list_steps()]
-        assert (
-            ids.index("v0140_harness_diet_resync")
-            < ids.index("v0141_harness_diet_r2_resync")
-            < ids.index("update_version")
-        )
-
-    def test_step_v0142_resyncs_heartbeat_and_task_board_guide(self, data_dir: Path) -> None:
-        from core.migrations.steps import register_all_steps, step_v0142_task_board_cli_resync
-
-        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
-        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
-        guide = data_dir / "common_knowledge" / "operations" / "task-board-guide.md"
-        guide.parent.mkdir(parents=True, exist_ok=True)
-        guide.write_text("stale", encoding="utf-8")
-
-        result = step_v0142_task_board_cli_resync(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        assert "task board" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
-        assert "task claim" in guide.read_text(encoding="utf-8")
-        runner = MigrationRunner(data_dir)
-        register_all_steps(runner)
-        ids = [item["id"] for item in runner.list_steps()]
-        assert (
-            ids.index("v0141_harness_diet_r2_resync")
-            < ids.index("v0142_task_board_cli_resync")
-            < ids.index("update_version")
-        )
-
-    def test_step_v0143_resyncs_owner_led_triage(self, data_dir: Path) -> None:
-        from core.migrations.steps import register_all_steps, step_v0143_task_board_self_triage_resync
-
-        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
-        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
-
-        result = step_v0143_task_board_self_triage_resync(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        assert "task done ID" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
-        runner = MigrationRunner(data_dir)
-        register_all_steps(runner)
-        ids = [item["id"] for item in runner.list_steps()]
-        assert (
-            ids.index("v0142_task_board_cli_resync")
-            < ids.index("v0143_task_board_self_triage_resync")
-            < ids.index("update_version")
-        )
-
-    def test_step_v0144_tool_guide_dedup_registered_last(self, tmp_path: Path) -> None:
+    def test_engine_timeout_cleanup_registered_after_tools_rename_and_before_version(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
-        assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("update_version") - 1
+        assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
+        assert ids.index("engine_timeout_config_cleanup") < ids.index("memory_maintenance_config_cleanup_20260927")
+        assert ids.index("memory_maintenance_config_cleanup_20260927") < ids.index("priming_config_cleanup_20260927")
+        assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
+        assert ids.index("engine_timeout_config_cleanup") < ids.index("taskboard_metadata_retire")
+        assert ids.index("taskboard_metadata_retire") < ids.index("update_version")

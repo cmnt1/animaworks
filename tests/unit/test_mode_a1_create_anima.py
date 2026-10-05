@@ -1,12 +1,12 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for Mode A1 create-anima feature changes.
+"""Unit tests for Mode A1 anima creation feature changes.
 
 Covers:
 1. Hiring rules in system prompt based on execution_mode (a1 vs a2)
 2. Reconciliation status.json guard in _reconcile()
-3. CLI --supervisor flag forwarding to create_from_md()
+3. anima create --supervisor flag forwarding to create_from_md()
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class TestReconciliationStatusJsonGuard:
     @pytest.fixture
     def supervisor(self, temp_dirs):
         """Create a ProcessSupervisor instance."""
-        from core.supervisor.manager import (
+        from server.supervisor.manager import (
             HealthConfig,
             ProcessSupervisor,
             RestartPolicy,
@@ -195,11 +195,10 @@ class TestCreateAnimaCLISupervisor:
 
         # Patch at the source module because cmd_create_anima uses local imports
         with (
-            patch("core.anima_factory.create_from_md") as mock_create,
-            patch("core.init.ensure_runtime_dir"),
-            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.anima.factory.create_from_md") as mock_create,
+            patch("core.infra.runtime_init.ensure_runtime_dir"),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("cli.commands.init_cmd._register_anima_in_config"),
+            patch("core.config.register_anima_in_config"),
         ):
             mock_create.return_value = data_dir / "animas" / "test-subordinate"
 
@@ -239,11 +238,10 @@ class TestCreateAnimaCLISupervisor:
 
         # Patch at the source module because cmd_create_anima uses local imports
         with (
-            patch("core.anima_factory.create_from_md") as mock_create,
-            patch("core.init.ensure_runtime_dir"),
-            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.anima.factory.create_from_md") as mock_create,
+            patch("core.infra.runtime_init.ensure_runtime_dir"),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("cli.commands.init_cmd._register_anima_in_config"),
+            patch("core.config.register_anima_in_config"),
         ):
             mock_create.return_value = data_dir / "animas" / "test-worker"
 

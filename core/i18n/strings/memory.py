@@ -10,6 +10,36 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "cli.memory_help": {
+        "ja": "記憶を確認・保守します",
+        "en": "Inspect and maintain memory",
+        "ko": "메모리를 확인하고 유지 관리합니다",
+    },
+    "cli.memory_forgetting_dry_run_help": {
+        "ja": "更新せずに低活性化と完全忘却の対象件数を表示します",
+        "en": "Show synaptic downscaling and complete-forgetting targets without updates",
+        "ko": "변경 없이 시냅스 다운스케일링 및 완전 망각 대상 수를 표시합니다",
+    },
+    "cli.memory_forgetting_dry_run_anima_help": {
+        "ja": "確認するAnima名",
+        "en": "Anima name to inspect",
+        "ko": "확인할 Anima 이름",
+    },
+    "cli.memory_anima_not_found": {
+        "ja": "Animaが見つかりません: {anima}",
+        "en": "Anima not found: {anima}",
+        "ko": "Anima를 찾을 수 없습니다: {anima}",
+    },
+    "cli.memory_vector_store_unavailable": {
+        "ja": "{anima} のベクトルストアにアクセスできません: {error}",
+        "en": "Cannot access vector store for {anima}: {error}",
+        "ko": "{anima}의 벡터 저장소에 접근할 수 없습니다: {error}",
+    },
+    "priming.peer_notes_header": {
+        "ja": "## この人についてのメモ",
+        "en": "## Notes about this person",
+        "ko": "## 이 사람에 대한 메모",
+    },
     "rag.rebuild_symlink_input": {
         "ja": "再構築の入力にシンボリックリンクは使用できません: {path}",
         "en": "A symlink is not a safe rebuild input: {path}",
@@ -70,6 +100,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{reason} Skipping daily indexing — verify provenance or perform a backed-up full rebuild.",
         "ko": "{reason} 일일 색인 갱신을 건너뜁니다. 이력 검증 또는 백업 후 전체 재구축이 필요합니다.",
     },
+    "rag.unsupported_vector_path": {
+        "ja": "このベクトル操作は root 経由では実行できません",
+        "en": "This vector operation is not supported through the root owner",
+        "ko": "이 벡터 작업은 root 소유자를 통해 실행할 수 없습니다",
+    },
     "rag.invalid_anima_name": {
         "ja": "Anima名が不正です。",
         "en": "Invalid Anima name",
@@ -85,10 +120,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Root memory operation failed",
         "ko": "루트 메모리 작업에 실패했습니다.",
     },
-    "rag.worker_operation_disabled": {
-        "ja": "phase3 Animaのvector worker操作は禁止されています: {anima}",
-        "en": "Vector worker operation disabled for phase3 anima: {anima}",
-        "ko": "phase3 Anima의 vector worker 작업이 금지되어 있습니다: {anima}",
+    "rag.owner_busy": {
+        "ja": "Anima {anima} のベクトルDBは別プロセスが所有しています。",
+        "en": "The vector DB for anima {anima} is owned by another process.",
+        "ko": "Anima {anima}의 벡터 DB를 다른 프로세스가 소유하고 있습니다.",
+    },
+    "rag.cli_root_busy": {
+        "ja": "Anima {anima} の root が停止後もベクトルDBのロックを保持しています。`animaworks stop` 後に再実行してください。",
+        "en": "The root for anima {anima} still holds the vector DB lock while the server is stopped. Run `animaworks stop` and retry.",
+        "ko": "Anima {anima}의 root가 서버 중지 후에도 벡터 DB 잠금을 보유하고 있습니다. `animaworks stop` 후 다시 실행하세요.",
+    },
+    "rag.cli_repair_timeout": {
+        "ja": "Anima {anima} のRAG修復がタイムアウトしました。修復はサーバー側で継続している可能性があります。",
+        "en": "RAG repair for anima {anima} timed out. The server may still be repairing it.",
+        "ko": "Anima {anima}의 RAG 복구 시간이 초과되었습니다. 서버에서 복구가 계속 진행 중일 수 있습니다.",
+    },
+    "rag.cli_server_required": {
+        "ja": "Anima {anima} のrootが稼働中です。サーバー経由の修復を利用できません。",
+        "en": "The root for anima {anima} is running, but server-mediated repair is unavailable.",
+        "ko": "Anima {anima}의 root가 실행 중이지만 서버 경유 복구를 사용할 수 없습니다.",
+    },
+    "rag.cli_rename_repair_queued": {
+        "ja": "Anima名変更後のRAG再構築要求を登録しました。新しいAnimaのroot起動後に実行されます。",
+        "en": "Queued a RAG rebuild after the rename. It will run when the renamed anima's root starts.",
+        "ko": "이름 변경 후 RAG 재구축 요청을 등록했습니다. 새 Anima의 root가 시작된 후 실행됩니다.",
     },
     "conversation.activity_context_header": {
         "ja": "## セッション中のその他の活動",
@@ -110,17 +165,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "上記を統合した新しい要約を作成してください。",
         "en": "Please create a new integrated summary of the above.",
     },
-    "conversation.new_task_marker": {
-        "ja": "- [ ] {task}（自動検出: {ts}）",
-        "en": "- [ ] {task} (auto-detected: {ts})",
-    },
     "conversation.new_turns_header": {
         "ja": "## 新しい会話ターン",
         "en": "## New conversation turns",
-    },
-    "conversation.pruned_auto_detected_header": {
-        "ja": "## 自動検出タスク（current_state.mdから退避）",
-        "en": "## Auto-detected tasks (pruned from current_state.md)",
     },
     "conversation.recent_conversation_header": {
         "ja": "### 直近の会話",
@@ -129,10 +176,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "conversation.resolution_summary": {
         "ja": "解決済み: {item}",
         "en": "Resolved: {item}",
-    },
-    "conversation.resolved_marker": {
-        "ja": "- ✅ {item}（自動検出: {ts}）",
-        "en": "- ✅ {item} (auto-detected: {ts})",
     },
     "conversation.role_you": {
         "ja": "あなた",
@@ -164,18 +207,8 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     # "dedup.messages_merged" removed: consolidate_messages() abolished in dedup overhaul
     "dedup.overflow_inbox_summary": {
-        "ja": (
-            "⚠️ 未処理メッセージ {count}件 (state/overflow_inbox/): "
-            "{listing}{remaining}\n"
-            'read_memory_file(path="state/overflow_inbox/<filename>") で確認可能。'
-            "処理後は archive_memory_file で移動してください。"
-        ),
-        "en": (
-            "⚠️ {count} unprocessed messages (state/overflow_inbox/): "
-            "{listing}{remaining}\n"
-            'Use read_memory_file(path="state/overflow_inbox/<filename>") to review. '
-            "After processing, use archive_memory_file to move them."
-        ),
+        "ja": "⚠️ 未処理メッセージ {count}件（state/overflow_inbox/、read_memory_file で確認・処理後 archive_memory_file）",
+        "en": "⚠️ {count} unprocessed messages (state/overflow_inbox/; review with read_memory_file and archive after processing)",
     },
     "distillation.none": {
         "ja": "(なし)",
@@ -189,13 +222,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("# {date} 行動ログ\n\n"),
         "en": ("# {date} Action log\n\n"),
     },
+    "priming.important_knowledge_header": {
+        "ja": "### [IMPORTANT] 知識（要約ポインタ）",
+        "en": "### [IMPORTANT] Knowledge (summary pointers)",
+        "ko": "### [IMPORTANT] 지식（요약 포인터）",
+    },
+    "priming.pending_human_notifications_header": {
+        "ja": "## 未処理の人間通知（直近24時間）",
+        "en": "## Pending Human Notifications (last 24h)",
+        "ko": "## 미처리 사람 알림（최근 24시간）",
+    },
     "priming.about_sender": {
         "ja": "### {sender_name} について",
         "en": "### About {sender_name}",
-    },
-    "priming.active_parallel_tasks_header": {
-        "ja": "## 実行中の並列タスク",
-        "en": "## Active Parallel Tasks",
     },
     "priming.completed_bg_tasks_header": {
         "ja": "## 完了済みバックグラウンドタスク",
@@ -217,6 +256,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "- [{time_str}] {to} にメッセージ送信済み: 「{text_preview}」",
         "en": '- [{time_str}] Message sent to {to}: "{text_preview}"',
     },
+    "priming.human_notification_summary": {
+        "ja": "[{time_str}] {summary}",
+        "en": "[{time_str}] {summary}",
+        "ko": "[{time_str}] {summary}",
+    },
     "priming.pending_tasks_header": {
         "ja": "### 未完了タスク",
         "en": "### Pending Tasks",
@@ -228,10 +272,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "priming.related_knowledge_header": {
         "ja": "### 関連する知識",
         "en": "### Related Knowledge",
-    },
-    "priming.search_before_action": {
-        "ja": "外部アクションを行う前に、search_memory で根拠を確認してください。",
-        "en": "Before taking any external action, verify the basis with search_memory.",
     },
     "priming.section_intro": {
         "ja": "以下は、この会話に関連してあなたが自然に想起した記憶です。",

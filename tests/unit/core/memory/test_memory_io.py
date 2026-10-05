@@ -6,14 +6,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Tests for core.memory._io — crash-safe I/O utilities.
-
-Tests cover:
-- Atomic write normal operation (write, read-back, overwrite)
-- Parent directory auto-creation
-- Error handling (original preserved, temp cleaned up)
-- cleanup_tmp_files removal, non-existent dir, non-tmp file safety
-"""
+"""Tests for core.memory.io — MemoryWriteError wrappers and memory I/O."""
 
 import os
 from pathlib import Path
@@ -22,7 +15,8 @@ from unittest.mock import patch
 import pytest
 
 from core.exceptions import MemoryWriteError
-from core.memory._io import atomic_write_text, cleanup_tmp_files
+from core.memory.io import atomic_write_text
+from core.platform.atomic_io import cleanup_tmp_files
 
 
 # ── TestAtomicWriteText ────────────────────────────────────────────
@@ -64,7 +58,7 @@ class TestAtomicWriteText:
         atomic_write_text(target, "original content")
 
         # Patch os.fdopen so the write inside atomic_write_text raises
-        with patch("core.memory._io.os.fdopen", side_effect=OSError("disk full")):
+        with patch("core.platform.atomic_io.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(MemoryWriteError, match="disk full"):
                 atomic_write_text(target, "should not appear")
 
@@ -74,7 +68,7 @@ class TestAtomicWriteText:
         """After a failed write, no .tmp files remain in the directory."""
         target = tmp_path / "cleanup.txt"
 
-        with patch("core.memory._io.os.fdopen", side_effect=OSError("fail")):
+        with patch("core.platform.atomic_io.os.fdopen", side_effect=OSError("fail")):
             with pytest.raises(MemoryWriteError):
                 atomic_write_text(target, "boom")
 
@@ -95,7 +89,7 @@ class TestAtomicWriteText:
         target = tmp_path / "replace_test.txt"
         target.write_text("existing", encoding="utf-8")
 
-        with patch("core.memory._io.os.replace", wraps=os.replace) as mock_replace:
+        with patch("core.platform.atomic_io.os.replace", wraps=os.replace) as mock_replace:
             atomic_write_text(target, "new content")
 
         mock_replace.assert_called_once()

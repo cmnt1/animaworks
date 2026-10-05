@@ -90,18 +90,15 @@ class TestAnimasPageIsFirstClass:
         )
 
 
-class TestProcessModelDefault:
-    """docs/fork-policy.md #1 — upstream defaults this to phase3."""
+class TestGovernorRetained:
+    """docs/fork-policy.md #1 — v0.15 retains the fork Governor."""
 
-    def test_missing_status_resolves_to_legacy(self, tmp_path: Path) -> None:
-        from core.config.resolver import resolve_process_model_config
+    def test_governor_setting_survives_config_roundtrip(self) -> None:
+        from core.config.schemas import AnimaWorksConfig
 
-        resolved = resolve_process_model_config(tmp_path / "anima")
-
-        assert resolved.valid
-        assert resolved.process_model == "legacy", (
-            "Syncing upstream must not switch a running fleet's process topology. See docs/fork-policy.md #1."
-        )
+        config = AnimaWorksConfig.model_validate({"server": {"usage_governor": {"enabled": True}}})
+        assert config.server.usage_governor.enabled
+        assert config.model_dump()["server"]["usage_governor"] == {"enabled": True}
 
 
 class TestLivenessProbeIsWindowsSafe:

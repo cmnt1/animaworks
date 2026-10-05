@@ -2,15 +2,14 @@
 // Common helpers used across workspace modules.
 
 import { basePath } from "/shared/base-path.js";
-
-/**
- * Escape HTML special characters to prevent XSS.
- */
-export function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
+import {
+  escapeAttr,
+  escapeHtml,
+  nowTimeStr,
+  smartTimestamp,
+  timeStr,
+} from "/shared/html-utils.js";
+export { escapeAttr, escapeHtml, nowTimeStr, smartTimestamp, timeStr };
 
 /**
  * Strip LLM emotion tags from text.
@@ -169,39 +168,6 @@ export function renderSimpleMarkdown(text, animaName) {
   );
 
   return math.restore(html);
-}
-
-/**
- * Format an ISO timestamp to HH:MM (ja-JP).
- */
-export function timeStr(isoOrTs) {
-  if (!isoOrTs) return "--:--";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "--:--";
-  return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-}
-
-/**
- * Format a timestamp with smart granularity:
- *  - Same day:      "HH:MM"
- *  - Same year:     "MM/DD HH:MM"
- *  - Previous year: "YYYY/MM/DD HH:MM"
- */
-export function smartTimestamp(isoOrTs) {
-  if (!isoOrTs) return "";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) return time;
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (d.getFullYear() === now.getFullYear()) return `${mm}/${dd} ${time}`;
-  return `${d.getFullYear()}/${mm}/${dd} ${time}`;
 }
 
 /**

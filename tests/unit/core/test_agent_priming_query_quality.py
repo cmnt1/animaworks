@@ -29,15 +29,15 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -65,9 +65,7 @@ class TestInboxSenderNameExtraction:
         """trigger='inbox:sakura' → sender_name should be 'sakura' (not 'human')."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -85,9 +83,7 @@ class TestInboxSenderNameExtraction:
         """trigger='inbox:sakura,hana' → sender_name should be 'sakura' (first sender)."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -105,9 +101,7 @@ class TestInboxSenderNameExtraction:
         """trigger='message:yamada' → sender_name should be 'yamada'."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -125,9 +119,7 @@ class TestInboxSenderNameExtraction:
         """trigger='inbox:' → sender_name should fallback to 'human'."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -145,9 +137,7 @@ class TestInboxSenderNameExtraction:
         """trigger='heartbeat' → sender_name should be 'human'."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -172,9 +162,7 @@ class TestHeartbeatReflectionQuery:
         """When channel is 'heartbeat', message should come from reflections, not prompt."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         with patch.object(
@@ -196,12 +184,10 @@ class TestHeartbeatReflectionQuery:
 
     @pytest.mark.asyncio
     async def test_heartbeat_no_reflections_empty_message(self, tmp_path):
-        """When no reflections exist, message should be empty string."""
+        """When no reflections and no current_state exist, message should be empty string."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         with patch.object(agent, "_get_recent_reflections_text", return_value=""):
@@ -214,6 +200,22 @@ class TestHeartbeatReflectionQuery:
         mock_engine.prime_memories.assert_called_once()
         call_args = mock_engine.prime_memories.call_args
         assert call_args.args[0] == ""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_falls_back_to_current_state(self, tmp_path):
+        """Without reflections, the head of current_state.md becomes the query."""
+        agent = _make_agent(tmp_path)
+        state_dir = agent.anima_dir / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "current_state.md").write_text("PR 123 のレビュー対応中", encoding="utf-8")
+        mock_engine = AsyncMock()
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
+        agent._priming_engine = mock_engine
+
+        with patch.object(agent, "_get_recent_reflections_text", return_value=""):
+            await agent._run_priming("Heartbeat prompt", "heartbeat", prompt_tier=TIER_FULL)
+
+        assert mock_engine.prime_memories.call_args.args[0] == "PR 123 のレビュー対応中"
 
 
 # ── Chat recent human messages ───────────────────────────
@@ -228,9 +230,7 @@ class TestChatRecentHumanMessages:
         agent = _make_agent(tmp_path)
         agent.model_config = MagicMock()
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         with patch.object(
@@ -256,9 +256,7 @@ class TestChatRecentHumanMessages:
         """When trigger is 'heartbeat', recent_human_messages should be empty list."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
         await agent._run_priming(
@@ -276,12 +274,10 @@ class TestChatRecentHumanMessages:
         """When ConversationMemory raises exception, should return empty list gracefully."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
-        mock_engine.prime_memories = AsyncMock(
-            return_value=_make_priming_result(sender_profile="")
-        )
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
         agent._priming_engine = mock_engine
 
-        with patch("core.memory.conversation.ConversationMemory") as MockConv:
+        with patch("core.memory.conversation.memory.ConversationMemory") as MockConv:
             mock_instance = MagicMock()
             mock_instance.load.side_effect = OSError("Conversation load failed")
             MockConv.return_value = mock_instance

@@ -13,16 +13,14 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.rag.indexer import MemoryIndexer
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
-from core.time_utils import now_local
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +113,6 @@ async def channel_f_episodes(
     *,
     message: str = "",
     recent_human_messages: list[str] | None = None,
-    get_memory_backend: Callable[[], Any] | None = None,
     trigger: str = "chat",
 ) -> str:
     """Channel F: Episode memory search (vector search).
@@ -127,9 +124,6 @@ async def channel_f_episodes(
 
     ``trigger`` selects the retrieval policy (rerank/pool/scopes); it is
     normalized to a ``TRIGGER_POLICIES`` key before use.
-
-    When the active memory backend is Neo4j, uses ``retrieve()`` with a
-    7-day ``time_start`` window so recent episodes are preferred.
     """
     try:
         denied_roots = load_denied_roots(anima_dir)
@@ -145,81 +139,7 @@ async def channel_f_episodes(
         except Exception:
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
 
-        if get_memory_backend is not None:
-            backend = await asyncio.to_thread(get_memory_backend)
-            if backend is not None:
-                from core.memory.backend.neo4j_graph import Neo4jGraphBackend
-
-                if isinstance(backend, Neo4jGraphBackend):
-                    time_start = (now_local() - timedelta(days=7)).isoformat()
-                    best: dict[str, Any] = {}
-                    min_score_val = float(_min_score) if _min_score is not None else 0.0
-                    for query in queries:
-                        merged_batch = await backend.retrieve(
-                            query,
-                            scope="episode",
-                            limit=5,
-                            min_score=min_score_val,
-                            trigger=normalize_trigger(trigger),
-                            time_start=time_start,
-                        )
-                        for m in merged_batch:
-                            existing = best.get(m.source)
-                            if existing is None or m.score > existing.score:
-                                best[m.source] = m
-                    merged = sorted(best.values(), key=lambda m: m.score, reverse=True)[:5]
-                    if not merged:
-                        return ""
-                    parts: list[str] = []
-                    items: list[MemoryItem] = []
-                    accessed_memories = []
-                    for position, mem in enumerate(merged):
-                        meta = mem.metadata if isinstance(mem.metadata, dict) else {}
-                        source = meta.get("source_file") or meta.get("source") or mem.source
-                        path = to_episode_memory_path(source)
-                        if not path:
-                            logger.debug("Channel F: skipping Neo4j episode without readable path: %s", mem.source)
-                            continue
-                        if MemoryIndexer.is_ragignored(anima_dir / path):
-                            logger.debug("Channel F: skipping excluded Neo4j episode: %s", path)
-                            continue
-                        if not memory_source_is_allowed(anima_dir, path, denied_roots):
-                            logger.debug("Channel F: skipping Neo4j episode from denied source: %s", path)
-                            continue
-                        accessed_memories.append(mem)
-                        text = format_episode_pointer(
-                            index=position + 1,
-                            score=mem.score,
-                            source=source,
-                            content=mem.content,
-                            path=path,
-                            show_body=position < 2,
-                        )
-                        parts.append(text)
-                        items.append(
-                            MemoryItem(
-                                source="episodes",
-                                key=path
-                                or f"{_episode_updated(meta, path)}|{extract_episode_summary(mem.content, source)}",
-                                text=text,
-                                ref=path,
-                                updated=_episode_updated(meta, path),
-                                rank=float(mem.score),
-                            )
-                        )
-                    if accessed_memories:
-                        try:
-                            await backend.record_access(accessed_memories)
-                        except Exception:
-                            logger.debug("Channel F: record_access skipped", exc_info=True)
-
-                    logger.debug(
-                        "Channel F: Neo4j episode search returned %d results",
-                        len(merged),
-                    )
-                    return ItemizedMemory(render_items(items, ""), items) if items else ""
-
-        if not episodes_dir.is_dir():
+        if not await asyncio.to_thread(episodes_dir.is_dir):
             return ""
 
         searcher = await asyncio.to_thread(build_unified_searcher, anima_dir, get_retriever, UnifiedMemorySearch)

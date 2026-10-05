@@ -18,10 +18,9 @@ backward retrieves progressively older turns.
 
 from __future__ import annotations
 
-
 import pytest
 
-from core.memory.conversation import ConversationMemory, ConversationTurn
+from core.memory.conversation.memory import ConversationMemory, ConversationTurn
 from core.schemas import ModelConfig
 
 
@@ -145,10 +144,7 @@ class TestConversationPagination:
         page2 = _paginate(state.turns, limit=30, offset=30)
 
         # page2 last message should be adjacent to page1 first message
-        assert (
-            int(page2[-1].content.split()[-1]) + 1
-            == int(page1[0].content.split()[-1])
-        )
+        assert int(page2[-1].content.split()[-1]) + 1 == int(page1[0].content.split()[-1])
 
     def test_limit_one(self, conv_mem):
         """limit=1 returns exactly one turn per page."""

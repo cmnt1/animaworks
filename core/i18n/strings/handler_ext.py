@@ -112,8 +112,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Changing {target_name}'s model to {model}",
     },
     "handler.model_changed": {
-        "ja": "'{target_name}' のモデルを '{model}' に変更しました。反映するには restart_subordinate を呼び出してください。",
-        "en": "Changed {target_name}'s model to '{model}'. Call restart_subordinate to apply.",
+        "ja": "'{target_name}' のモデルを '{model}' に変更し、稼働中プロセスへ root から再読み込みを依頼しました。停止中の場合は次回起動時に反映されます。",
+        "en": "Changed {target_name}'s model and asked root to reload the running process. Stopped Animas will use it on next start.",
     },
     "handler.model_warning": {
         "ja": "警告: '{model}' は既知のモデルカタログに含まれていません。正しいモデル名か確認してください。",
@@ -128,10 +128,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.no_delegated_tasks": {
         "ja": "委譲済みタスクはありません",
         "en": "No delegated tasks",
-    },
-    "handler.no_file_ops_paths": {
-        "ja": "No allowed paths listed under ファイル操作",
-        "en": "No allowed paths listed under file operations",
     },
     "handler.no_matching_delegated": {
         "ja": "条件に合う委譲済みタスクはありません (filter={status})",
@@ -185,10 +181,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": " 別のチャネル（{channels}）への投稿、またはsend_message（intent: question/report）は可能です。",
         "en": (" You can post to another channel ({channels}) or use send_message (intent: question/report)."),
     },
-    "handler.post_cooldown": {
-        "ja": "Error: #{channel} には {ts} に投稿済みです（{elapsed}秒前）。クールダウン {cooldown}秒が必要です。",
-        "en": ("Error: Already posted to #{channel} at {ts} ({elapsed}s ago). Cooldown of {cooldown}s required."),
-    },
     "handler.procedure_description_missing": {
         "ja": "`description` フィールドがありません。自動マッチングを有効にするために description を追加してください。",
         "en": "The `description` field is missing. Add description to enable auto-matching.",
@@ -212,6 +204,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: 既存ファイル {path} を上書きする前に read_memory_file で読み取ってください。\n\n既存内容のプレビュー:\n{existing}"
         ),
         "en": ("Error: Read {path} with read_memory_file before overwriting.\n\nExisting content preview:\n{existing}"),
+    },
+    "handler.skill_read_before_write": {
+        "ja": (
+            "Error: 既存スキル {path} は、同じセッションで read_memory_file を使って先に読み直してから書き込んでください。\n\n既存内容のプレビュー:\n{existing}"
+        ),
+        "en": (
+            "Error: Re-read existing skill {path} with read_memory_file in this session before writing it.\n\n"
+            "Existing content preview:\n{existing}"
+        ),
+        "ko": (
+            "오류: 기존 스킬 {path}을(를) 쓰기 전에 같은 세션에서 read_memory_file로 먼저 다시 읽어 주세요.\n\n"
+            "기존 내용 미리보기:\n{existing}"
+        ),
     },
     "handler.reason_prefix": {
         "ja": "理由: {reason}",
@@ -239,6 +244,16 @@ STRINGS: dict[str, dict[str, str]] = {
             "Check external_messaging.user_aliases and use call_human if needed."
         ),
     },
+    "handler.call_human_confirm_required": {
+        "ja": (
+            "まだ送信していません。送る前に、この通知の内容について、全てチャットワーク、Slackなど外部で解決済みでないか必ず調査してください。"
+            '調査して、それでも人間への通知が必要な内容だけを残し、call_human を sha="{sha}" 付きで再実行してください。'
+        ),
+        "en": (
+            "Not sent yet. Before sending, you must check whether everything in this notification has already been resolved "
+            'externally (Chatwork, Slack, etc.). Keep only what still needs a human, then call call_human again with sha="{sha}".'
+        ),
+    },
     "handler.send_msg_non_chat_hint": {
         "ja": (
             "宛先 '{to}' には send_message で送信できません。人間への連絡は call_human を使用してください。send_message は他のAnima宛てにのみ使用してください。"
@@ -258,6 +273,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.similar_knowledge_hint": {
         "ja": ("類似する既存の知識ファイル（トークン重複）:\n{files}"),
         "en": ("Similar existing knowledge files (token overlap):\n{files}"),
+    },
+    "handler.case_record_episodes_hint": {
+        "ja": "案件記録は episodes/ 向きです。記録は knowledge/ に書き込み済みです。",
+        "en": "Case-specific records are better suited to episodes/. The write to knowledge/ was completed.",
+        "ko": "사건별 기록은 episodes/에 더 적합합니다. knowledge/ 쓰기는 완료되었습니다.",
     },
     "handler.since_hours": {
         "ja": "{hours}時間{minutes}分前",
@@ -288,10 +308,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.state_none": {
         "ja": "(なし)",
         "en": "(none)",
-    },
-    "handler.state_pending": {
-        "ja": "### 保留タスク",
-        "en": "### Pending tasks",
     },
     "handler.state_read_summary": {
         "ja": "{target_name}の作業状態を読み取り",
@@ -342,11 +358,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "⚠️ Security scan: {verdict} ({count} finding(s) detected)",
     },
     "handler.tool_creation_denied": {
-        "ja": "ツール作成が許可されていません。permissions.md に「ツール作成」セクションを追加してください。",
-        "en": "Tool creation is not permitted. Add a tool creation section to permissions.md.",
-    },
-    "handler.tool_creation_keyword": {
-        "ja": "ツール作成",
-        "en": "Tool Creation",
+        "ja": "ツール作成が許可されていません。permissions.json の許可設定を確認してください。",
+        "en": "Tool creation is not permitted. Check the permissions in permissions.json.",
     },
 }

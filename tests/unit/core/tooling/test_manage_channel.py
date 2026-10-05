@@ -9,14 +9,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     load_channel_meta,
     save_channel_meta,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -52,7 +50,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "alice"):
 
     handler._session_id = uuid.uuid4().hex[:12]
 
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 
@@ -427,12 +425,7 @@ class TestHandlerPostReadACL:
         )
         assert not (shared_dir / "channels" / "tombstone.jsonl").exists()
 
-        with (
-            patch("core.messenger.is_channel_member", return_value=True),
-            patch("core.config.models.load_config") as mock_cfg,
-        ):
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 0
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             result = handler._handle_post_channel(
                 {
                     "channel": "tombstone",
