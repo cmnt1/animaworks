@@ -13,6 +13,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import contextvars
 import hashlib
 import inspect
 import logging
@@ -33,6 +34,12 @@ from core.time_utils import now_local
 from core.trust import ORIGIN_SYSTEM
 
 logger = logging.getLogger("animaworks.anima")
+
+# Monotonic time at which the running consolidation will be cancelled. Daily
+# summaries read it to avoid starting an older day that cannot finish in time.
+_CONSOLIDATION_DEADLINE_AT: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "consolidation_deadline_at", default=None
+)
 
 _CRON_COMMAND_TIMEOUT_SECONDS = 600.0
 
@@ -595,6 +602,7 @@ class LifecycleMixin:
                     else:
                         coro = self._run_weekly_consolidation(engine)
                     if deadline_s:
+                        deadline_token = _CONSOLIDATION_DEADLINE_AT.set(time.monotonic() + float(deadline_s))
                         try:
                             result = await asyncio.wait_for(coro, timeout=deadline_s)
                         except TimeoutError:
@@ -605,6 +613,8 @@ class LifecycleMixin:
                                 deadline_s,
                             )
                             raise TimeoutError(f"consolidation exceeded deadline of {deadline_s}s") from None
+                        finally:
+                            _CONSOLIDATION_DEADLINE_AT.reset(deadline_token)
                     else:
                         result = await coro
 
@@ -720,7 +730,9 @@ class LifecycleMixin:
         selected_dates: list[date] = []
         if target_date in pending_by_date:
             selected_dates.append(target_date)
-        older_pending = [day for day in dates[1:] if day in pending_by_date]
+        # Newest first: an interrupted day is redone from scratch, and the
+        # oldest days fall out of the lookback window anyway.
+        older_pending = [day for day in reversed(dates[1:]) if day in pending_by_date]
         selected_dates.extend(older_pending[:max_backfill_days])
         if not selected_dates:
             import time as _time
@@ -743,8 +755,25 @@ class LifecycleMixin:
         source_model_config = self.memory.read_model_config()
         model_configs = _episode_summary_model_configs(source_model_config, model, cfg)
         episode_summaries: list[str] = []
+        done_bytes = 0
+        done_seconds = 0.0
         for summary_date in selected_dates:
             chunks = pending_by_date[summary_date]
+            day_bytes = sum(len(chunk.encode("utf-8")) for chunk in chunks)
+            deadline_at = _CONSOLIDATION_DEADLINE_AT.get()
+            if summary_date != target_date and deadline_at is not None and done_bytes > 0:
+                remaining = deadline_at - time.monotonic()
+                estimate = done_seconds / done_bytes * day_bytes * 1.2
+                if estimate > remaining:
+                    logger.info(
+                        "[%s] Episode backfill stopped before %s: estimate=%.0fs remaining=%.0fs",
+                        self.name,
+                        summary_date.isoformat(),
+                        estimate,
+                        remaining,
+                    )
+                    break
+            day_started = time.monotonic()
             existing_episode = engine.read_episode_for_date(summary_date)
             existing_context = existing_episode.strip() or "(none)"
             context_byte_limit = min(48_000, max(256, max_input_bytes // 4))
@@ -862,6 +891,8 @@ class LifecycleMixin:
                     len(chunks),
                     reason[:240].replace("\n", " "),
                 )
+            done_bytes += day_bytes
+            done_seconds += time.monotonic() - day_started
 
         import time as _time
 

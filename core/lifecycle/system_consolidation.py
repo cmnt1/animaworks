@@ -164,7 +164,7 @@ def evaluate_daily_consolidation_gate(
             if backfill_days > 1:
                 pending_backfill_days = len(pending_by_date)
 
-            older_pending = [day for day in candidate_dates[1:] if day in pending_by_date]
+            older_pending = [day for day in reversed(candidate_dates[1:]) if day in pending_by_date]
             max_older = (
                 max_backfill_days
                 if max_backfill_days is not None

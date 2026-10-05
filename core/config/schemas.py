@@ -343,7 +343,7 @@ class ConsolidationConfig(BaseModel):
         description="Look back this many local days for unprocessed daily episode activity.",
     )
     episode_summary_backfill_max_days_per_run: int = Field(
-        default=3,
+        default=1,
         ge=0,
         description="Maximum older days to backfill during one daily consolidation (yesterday is separate).",
     )

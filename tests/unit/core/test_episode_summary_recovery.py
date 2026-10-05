@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import core.anima.lifecycle as lifecycle_module
 from core.anima.lifecycle import (
     LifecycleMixin,
     _complete_episode_prompt,
@@ -111,7 +113,18 @@ async def test_episode_summary_tries_configured_fallback_after_json_rpc_failure(
 
 
 @pytest.mark.asyncio
-async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
+@pytest.mark.parametrize(
+    ("max_days", "deadline_in", "expected_offsets"),
+    [
+        # Yesterday plus the newest missing older day.
+        (1, None, [0, 2]),
+        # Older days go newest first.
+        (3, None, [0, 2, 3]),
+        # With the deadline already gone, no older day is started.
+        (3, -1.0, [0]),
+    ],
+)
+async def test_daily_episode_summary_backfills_bounded_older_days(max_days, deadline_in, expected_offsets) -> None:
     target = date(2026, 9, 27)
     reference = datetime(2026, 9, 28, 2, 0)
     config = AnimaWorksConfig(
@@ -119,7 +132,7 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
         consolidation=ConsolidationConfig(
             llm_model="anthropic/claude-sonnet-4-6",
             episode_summary_backfill_days=5,
-            episode_summary_backfill_max_days_per_run=1,
+            episode_summary_backfill_max_days_per_run=max_days,
             episode_summary_max_input_bytes=4096,
         ),
     )
@@ -199,6 +212,9 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
     )
     owner.memory.read_model_config.return_value = ModelConfig(model="chat-model")
 
+    deadline_token = lifecycle_module._CONSOLIDATION_DEADLINE_AT.set(
+        None if deadline_in is None else time.monotonic() + deadline_in
+    )
     with (
         patch("core.anima.lifecycle.now_local", return_value=reference),
         patch(
@@ -215,10 +231,9 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
             model=config.consolidation.llm_model,
             start_mono=0.0,
         )
+    lifecycle_module._CONSOLIDATION_DEADLINE_AT.reset(deadline_token)
 
-    # Yesterday is always eligible; at most one older day is recovered, with
-    # the oldest missing day selected first so a backlog drains over time.
-    assert engine.written == [target, target - timedelta(days=3)]
+    assert engine.written == [target - timedelta(days=offset) for offset in expected_offsets]
     assert engine.recorded == engine.written
     assert result.action == "completed"
 
