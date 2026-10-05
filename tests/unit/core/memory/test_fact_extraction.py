@@ -32,6 +32,10 @@ class TestExtractedModels:
         assert ent.entity_type == "Person"
         assert ent.summary == "An engineer"
 
+    def test_entity_unknown_type_falls_back_to_concept(self):
+        ent = ExtractedEntity(name="#123", entity_type="Issue")
+        assert ent.entity_type == "Concept"
+
     def test_fact_valid_at_optional(self):
         fact = ExtractedFact(source_entity="A", target_entity="B", fact="knows")
         assert fact.valid_at is None
@@ -164,6 +168,25 @@ class TestFactExtractorExtractEntities:
         assert entities == []
         assert ext.last_failure_stage == "entity_parse"
         assert "Failed to parse entity extraction LLM JSON response" in caplog.text
+
+    @pytest.mark.asyncio
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_keeps_response_with_unknown_types(self, mock_acompletion):
+        from core.memory.facts.extractor import FactExtractor
+
+        payload = {
+            "entities": [
+                {"name": "Alice", "entity_type": "Person", "summary": "dev"},
+                {"name": "#5787", "entity_type": "PullRequest", "summary": "pr"},
+            ]
+        }
+        mock_acompletion.return_value = json.dumps(payload)
+
+        ext = FactExtractor(model="test-model", max_retries=1)
+        entities = await ext.extract_entities("テスト")
+
+        assert [(e.name, e.entity_type) for e in entities] == [("Alice", "Person"), ("#5787", "Concept")]
+        assert ext.last_failure_stage == ""
 
     @pytest.mark.asyncio
     @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)

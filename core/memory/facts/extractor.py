@@ -9,11 +9,10 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any
 
 from core.memory.facts.observability import warn_rate_limited
 from core.memory.facts.ontology import (
-    ENTITY_TYPES,
     EntityExtractionResult,
     ExtractedEntity,
     ExtractedFact,
@@ -26,7 +25,6 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
-_VALID_ENTITY_TYPES: frozenset[str] = frozenset(get_args(ENTITY_TYPES))
 # Language-agnostic fence (json / markdown / any tag / bare) so `` ```json``
 # wrapped LLM output is extracted on every path.
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
@@ -112,8 +110,6 @@ class FactExtractor:
         for ent in result.entities:
             if not ent.name or not ent.name.strip():
                 continue
-            if ent.entity_type not in _VALID_ENTITY_TYPES:
-                ent = ent.model_copy(update={"entity_type": "Concept"})
             entities.append(ent)
 
         logger.debug("Extracted %d entities from text", len(entities))
