@@ -22,7 +22,12 @@ from core.config.file_access_policy import load_denied_roots, memory_source_is_a
 from core.i18n import t
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
-from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
+from core.memory.priming.utils import (
+    build_queries,
+    build_unified_searcher,
+    get_min_retrieval_score,
+    normalize_trigger,
+)
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 from core.text.tokens import estimate_tokens
 
@@ -358,13 +363,7 @@ async def channel_c0_important_knowledge(
         # Explicit residency is opt-in and bounded; [IMPORTANT] by itself only
         # protects retention and must not inject unrelated recent knowledge.
         effective_queries = [query for query in (queries or []) if str(query).strip()]
-        _min_score: float | None = None
-        try:
-            from core.config.models import load_config as _load_cfg
-
-            _min_score = _load_cfg().rag.min_retrieval_score
-        except Exception:
-            logger.debug("Failed to load rag.min_retrieval_score from config, using default")
+        min_score = get_min_retrieval_score()
         always_results, relevant_rows, low_confidence = await asyncio.to_thread(
             _static_c0_chunks,
             get_retriever,
@@ -373,7 +372,7 @@ async def channel_c0_important_knowledge(
             anima_dir=anima_dir,
             queries=effective_queries,
             trigger=trigger,
-            min_score=float(_min_score) if _min_score is not None else 0.0,
+            min_score=min_score,
             resident_only=resident_only,
             search_cache=search_cache,
         )
@@ -513,14 +512,7 @@ async def channel_c_related_knowledge(
             logger.debug("Channel C: No keywords and no message")
             return (ItemizedMemory(""), ItemizedMemory(""))
         anima_name = anima_dir.name
-
-        _min_score: float | None = None
-        try:
-            from core.config.models import load_config as _load_cfg
-
-            _min_score = _load_cfg().rag.min_retrieval_score
-        except Exception:
-            logger.debug("Failed to load rag.min_retrieval_score from config, using default")
+        min_score = get_min_retrieval_score()
 
         searcher, results = await asyncio.to_thread(
             _search_related_knowledge,
@@ -528,7 +520,7 @@ async def channel_c_related_knowledge(
             get_retriever,
             queries,
             trigger=normalize_trigger(trigger),
-            min_score=float(_min_score) if _min_score is not None else 0.0,
+            min_score=min_score,
             search_cache=search_cache,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):

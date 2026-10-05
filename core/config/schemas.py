@@ -298,6 +298,8 @@ class PrimingConfig(BaseModel):
 
     max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
+    recent_facts_enabled: bool = True
+    recent_facts_max_tokens: int = Field(default=500, ge=0)
     compact_background_recall_enabled: bool = True
     compact_background_recall: CompactBackgroundRecallConfig = Field(default_factory=CompactBackgroundRecallConfig)
 

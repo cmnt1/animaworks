@@ -269,6 +269,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "### 直近のアクティビティ",
         "en": "### Recent Activity",
     },
+    "priming.recent_facts_header": {
+        "ja": "## Recent Facts",
+        "en": "## Recent Facts",
+    },
     "priming.related_knowledge_header": {
         "ja": "### 関連する知識",
         "en": "### Related Knowledge",
