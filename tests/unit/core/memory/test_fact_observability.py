@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from core.memory.conversation.finalize import _extract_session_facts_nonfatal
 from core.memory.facts import extraction as fact_extraction
 from core.memory.facts.extraction import FactExtractionOutcome
+from core.memory.facts.live import LiveFactRunResult, _log_run
 from core.memory.facts.observability import reset_warning_rate_limits
 from core.memory.facts.store import FactRecord
 from core.memory.maintenance.consolidation import ConsolidationEngine
@@ -22,6 +24,23 @@ def _fact() -> FactRecord:
     )
 
 
+@pytest.mark.unit
+def test_live_fact_extraction_log_includes_llm_call_counts(caplog: pytest.LogCaptureFixture) -> None:
+    now = datetime(2026, 10, 5, tzinfo=UTC)
+    result = LiveFactRunResult(
+        trigger="chat",
+        since=now,
+        until=now,
+        extract_llm_calls=3,
+        reconcile_llm_calls=2,
+    )
+
+    with caplog.at_level("INFO", logger="animaworks.memory.live_fact_extraction"):
+        _log_run(result, 0.25)
+
+    assert "extract_llm_calls=3 reconcile_llm_calls=2" in caplog.text
+
+
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_session_fact_extraction_completion_log_includes_counters(
@@ -30,7 +49,7 @@ async def test_session_fact_extraction_completion_log_includes_counters(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def fake_extract(*args, **kwargs):
-        return FactExtractionOutcome([_fact()])
+        return FactExtractionOutcome([_fact()], extract_llm_calls=2, reconcile_llm_calls=1)
 
     monkeypatch.setattr("core.memory.facts.extraction.extract_and_store_facts_with_outcome", fake_extract)
 
@@ -45,6 +64,7 @@ async def test_session_fact_extraction_completion_log_includes_counters(
 
     assert result == (1, 0)
     assert "facts_extracted=1 facts_failed=0" in caplog.text
+    assert "extract_llm_calls=2 reconcile_llm_calls=1" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -55,7 +75,14 @@ async def test_consolidation_fact_extraction_completion_log_includes_counters(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def fake_extract(*args, **kwargs):
-        return FactExtractionOutcome([], True, "extract", "failed")
+        return FactExtractionOutcome(
+            [],
+            True,
+            "extract",
+            "failed",
+            extract_llm_calls=4,
+            reconcile_llm_calls=2,
+        )
 
     monkeypatch.setattr("core.memory.facts.extraction.extract_and_store_facts_with_outcome", fake_extract)
     engine = ConsolidationEngine(tmp_path / "alice", "alice")
@@ -69,6 +96,37 @@ async def test_consolidation_fact_extraction_completion_log_includes_counters(
     assert outcome.facts_extracted == 0
     assert outcome.facts_failed == 1
     assert "facts_extracted=0 facts_failed=1" in caplog.text
+    assert "extract_llm_calls=4 reconcile_llm_calls=2" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_consolidation_sums_call_counts_across_chunks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def fake_extract(_anima_dir, text, **kwargs):
+        if text == "chunk-1":
+            return FactExtractionOutcome([], extract_llm_calls=2, reconcile_llm_calls=1)
+        return FactExtractionOutcome([], extract_llm_calls=3, reconcile_llm_calls=2)
+
+    monkeypatch.setattr("core.memory.facts.extraction.extract_and_store_facts_with_outcome", fake_extract)
+    monkeypatch.setattr(
+        "core.memory.facts.chunking.split_text_for_fact_extraction",
+        lambda _text, _max_chars: ["chunk-1", "chunk-2"],
+    )
+    engine = ConsolidationEngine(tmp_path / "alice", "alice")
+
+    with caplog.at_level("INFO", logger="animaworks.consolidation"):
+        outcome = await engine.extract_facts_from_text_outcome(
+            "long content",
+            source_episode="episodes/2026-06-03.md",
+        )
+
+    assert outcome.extract_llm_calls == 5
+    assert outcome.reconcile_llm_calls == 3
+    assert "extract_llm_calls=5 reconcile_llm_calls=3" in caplog.text
 
 
 @pytest.mark.unit

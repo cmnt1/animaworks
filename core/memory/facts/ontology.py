@@ -238,3 +238,10 @@ class FactExtractionResult(BaseModel):
     """LLM response for fact extraction."""
 
     facts: list[ExtractedFact] = Field(default_factory=list)
+
+
+class CombinedExtractionResult(BaseModel):
+    """LLM response for combined entity and fact extraction."""
+
+    entities: list[ExtractedEntity] = Field(default_factory=list)
+    facts: list[ExtractedFact] = Field(default_factory=list)

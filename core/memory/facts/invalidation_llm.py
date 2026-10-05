@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS, _c
 from core.memory.facts.store import FactRecord
 
 logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
 
 
 def classify_fact_relation(new_fact: FactRecord, candidates: list[Any], anima_dir: Path) -> str:
@@ -37,8 +39,40 @@ def classify_fact_relation(new_fact: FactRecord, candidates: list[Any], anima_di
     return text
 
 
-def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
-    candidates_json = json.dumps(
+def classify_fact_relations(new_fact: FactRecord, candidates: list[Any], anima_dir: Path) -> dict[str, str]:
+    """Classify multiple candidate relations in a single LLM call."""
+    if not candidates:
+        return {}
+
+    model, llm_extra, timeout, credential = _resolve_reconcile_llm_config(anima_dir)
+    from core.llm.oneshot import one_shot_completion_sync
+
+    text = one_shot_completion_sync(
+        _batch_user_prompt(new_fact, candidates),
+        system_prompt=_BATCH_SYSTEM_PROMPT,
+        model=model,
+        credential=credential,
+        max_tokens=32 + 40 * len(candidates),
+        temperature=0.0,
+        timeout=timeout,
+        llm_extra=llm_extra,
+        allow_agent_sdk_fallback=False,
+    )
+    if text is None:
+        raise RuntimeError("Fact relation LLM returned no content")
+
+    body = str(text).strip()
+    fence_match = _CODE_FENCE_RE.search(body)
+    if fence_match:
+        body = fence_match.group(1)
+    payload = json.loads(body)
+    if not isinstance(payload, dict) or not isinstance(payload.get("labels"), dict):
+        raise ValueError("Fact relation LLM response must contain a labels object")
+    return {str(fact_id): str(label) for fact_id, label in payload["labels"].items()}
+
+
+def _candidate_facts_json(candidates: list[Any]) -> str:
+    return json.dumps(
         [
             {
                 "fact_id": candidate.record.fact_id,
@@ -55,6 +89,10 @@ def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
         ],
         ensure_ascii=False,
     )
+
+
+def _relation_prompt_context(new_fact: FactRecord, candidates: list[Any]) -> str:
+    candidates_json = _candidate_facts_json(candidates)
     return (
         "New fact JSON:\n"
         f"{json.dumps(new_fact.to_dict(), ensure_ascii=False)}\n\n"
@@ -65,7 +103,19 @@ def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
         "- CONTRADICT: cannot both be true for the same time period.\n"
         "- COMPLEMENT: compatible additional detail should be merged into the existing fact.\n"
         "- ADD: distinct fact that should be appended.\n\n"
-        "Label:"
+    )
+
+
+def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
+    return f"{_relation_prompt_context(new_fact, candidates)}Label:"
+
+
+def _batch_user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
+    return (
+        f"{_relation_prompt_context(new_fact, candidates)}"
+        'Return exactly a JSON object of the form {"labels": {"<fact_id>": "LABEL"}} '
+        "with an entry for every candidate. LABEL must be exactly one of: "
+        "DUPLICATE, CONTRADICT, COMPLEMENT, or ADD."
     )
 
 
@@ -106,4 +156,9 @@ def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, objec
 _SYSTEM_PROMPT = (
     "You classify whether a new memory fact should be reconciled with existing active facts. "
     "Return exactly one label and no other text: CONTRADICT, COMPLEMENT, DUPLICATE, or ADD."
+)
+_BATCH_SYSTEM_PROMPT = (
+    "You classify whether a new memory fact should be reconciled with existing active facts. "
+    'Return exactly one JSON object with a "labels" mapping from every candidate fact_id to '
+    "one label: CONTRADICT, COMPLEMENT, DUPLICATE, or ADD."
 )

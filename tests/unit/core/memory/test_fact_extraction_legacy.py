@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -19,6 +20,14 @@ from core.memory.facts.extraction import (
 from core.memory.facts.observability import reset_warning_rate_limits
 from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 from core.memory.facts.store import FactRecord
+
+
+@pytest.mark.unit
+def test_single_call_extraction_config_defaults_enabled() -> None:
+    from core.config.schemas import RAGConfig
+
+    assert RAGConfig().facts_extraction_single_call is True
+    assert RAGConfig(facts_extraction_single_call=False).facts_extraction_single_call is False
 
 
 class FakeExtractor:
@@ -383,6 +392,105 @@ async def test_extract_and_store_facts_with_outcome_append_failure_is_non_fatal(
     )
     assert outcome.records == []
     assert outcome.failed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_extract_fact_records_uses_single_call_extractor_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.facts.extractor import FactExtractor
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(facts_extraction_single_call=True)),
+    )
+    completion = AsyncMock(
+        return_value=json.dumps(
+            {
+                "entities": [
+                    {"name": "Alice", "entity_type": "Person"},
+                    {"name": "LoCoMo", "entity_type": "Concept"},
+                ],
+                "facts": [
+                    {
+                        "source_entity": "Alice",
+                        "target_entity": "LoCoMo",
+                        "fact": "Alice evaluates LoCoMo.",
+                        "valid_at": "2026-06-03T10:00:00+09:00",
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", completion)
+    extractor = FactExtractor(model="test-model", max_retries=1)
+
+    outcome = await extract_fact_records_with_outcome(
+        tmp_path / "alice",
+        "Alice evaluates LoCoMo.",
+        source_episode="episodes/2026-06-03.md",
+        reference_time="2026-06-03T10:00:00+09:00",
+        extractor=extractor,
+        enabled=True,
+    )
+
+    assert len(outcome.records) == 1
+    assert completion.await_count == 1
+    assert outcome.extract_llm_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_extract_fact_records_config_can_restore_two_stage_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.facts.extractor import FactExtractor
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(facts_extraction_single_call=False)),
+    )
+    completion = AsyncMock(
+        side_effect=[
+            json.dumps(
+                {
+                    "entities": [
+                        {"name": "Alice", "entity_type": "Person"},
+                        {"name": "LoCoMo", "entity_type": "Concept"},
+                    ]
+                }
+            ),
+            json.dumps(
+                {
+                    "facts": [
+                        {
+                            "source_entity": "Alice",
+                            "target_entity": "LoCoMo",
+                            "fact": "Alice evaluates LoCoMo.",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", completion)
+    extractor = FactExtractor(model="test-model", max_retries=1)
+
+    outcome = await extract_fact_records_with_outcome(
+        tmp_path / "alice",
+        "Alice evaluates LoCoMo.",
+        source_episode="episodes/2026-06-03.md",
+        reference_time="2026-06-03T10:00:00+09:00",
+        extractor=extractor,
+        enabled=True,
+    )
+
+    assert len(outcome.records) == 1
+    assert completion.await_count == 2
+    assert outcome.extract_llm_calls == 2
 
 
 @pytest.mark.asyncio

@@ -502,6 +502,54 @@ def test_reconcile_uses_consolidation_model_and_credential_not_status_background
 
 
 @pytest.mark.unit
+def test_default_batch_classifier_parses_labels_and_sizes_tokens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "alice"
+    old_a = FactRecord(text="Alice tracks score A.", recorded_at="2026-06-03T09:00:00+09:00")
+    old_b = FactRecord(text="Alice tracks score B.", recorded_at="2026-06-03T09:05:00+09:00")
+    new = FactRecord(text="Alice tracks score C.", recorded_at="2026-06-03T10:00:00+09:00")
+    path = _store(anima_dir, old_a)
+    _store(anima_dir, old_b)
+    candidates = [
+        FactCandidate(record=old_a, score=0.98, path=path),
+        FactCandidate(record=old_b, score=0.97, path=path),
+    ]
+    captured: dict[str, object] = {}
+    consolidation = SimpleNamespace(
+        fact_reconcile_model="test-reconcile-model",
+        fact_reconcile_credential="test-credential",
+    )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=11)
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(consolidation=consolidation, rag=rag),
+    )
+
+    def fake_completion(prompt: str, **kwargs):
+        captured.update(kwargs)
+        captured["prompt"] = prompt
+        return f'```json\n{{"labels":{{"{old_a.fact_id}":"ADD","{old_b.fact_id}":"COMPLEMENT"}}}}\n```'
+
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion_sync", fake_completion)
+    result = reconcile_new_fact(
+        anima_dir,
+        new,
+        candidate_search=lambda *_args: candidates,
+        config=ReconcileConfig(enabled=True),
+    )
+
+    assert result.action == ReconcileAction.UPDATE
+    assert result.reconcile_llm_calls == 1
+    assert captured["max_tokens"] == 32 + 40 * 2
+    assert captured["model"] == "test-reconcile-model"
+    assert "- DUPLICATE: same meaning, no new durable information." in captured["prompt"]
+    assert old_a.fact_id in captured["prompt"]
+    assert captured["allow_agent_sdk_fallback"] is False
+
+
+@pytest.mark.unit
 def test_llm_helper_config_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     consolidation = SimpleNamespace(
         llm_model="",

@@ -75,6 +75,8 @@ class LiveFactRunResult:
     duplicates: int = 0
     failed: bool = False
     skipped_reason: str = ""
+    extract_llm_calls: int = 0
+    reconcile_llm_calls: int = 0
 
 
 @dataclass(frozen=True)
@@ -335,7 +337,8 @@ def _make_fact_extractor(anima_dir: Path, options: _LiveFactOptions) -> Any:
 
 def _log_run(result: LiveFactRunResult, elapsed_seconds: float) -> None:
     logger.info(
-        "Live fact extraction: trigger=%s range=%s~%s input_chars=%d facts_extracted=%d duplicates=%d elapsed=%.2fs",
+        "Live fact extraction: trigger=%s range=%s~%s input_chars=%d facts_extracted=%d duplicates=%d "
+        "elapsed=%.2fs extract_llm_calls=%d reconcile_llm_calls=%d",
         result.trigger,
         result.since.isoformat(),
         result.until.isoformat(),
@@ -343,6 +346,8 @@ def _log_run(result: LiveFactRunResult, elapsed_seconds: float) -> None:
         result.facts_extracted,
         result.duplicates,
         elapsed_seconds,
+        result.extract_llm_calls,
+        result.reconcile_llm_calls,
     )
 
 
@@ -412,7 +417,10 @@ async def run_live_fact_extraction(
         facts_extracted=outcome.facts_extracted,
         duplicates=outcome.duplicates,
         failed=outcome.failed,
+        extract_llm_calls=outcome.extract_llm_calls,
+        reconcile_llm_calls=outcome.reconcile_llm_calls,
     )
+    _log_run(result, time.monotonic() - started_mono)
     if outcome.failed:
         reason = (outcome.failure_reason or outcome.failure_stage or "extraction failed").replace("\n", " ")
         logger.warning(
@@ -425,7 +433,6 @@ async def run_live_fact_extraction(
         return result
 
     _write_checkpoint(anima_dir, end)
-    _log_run(result, time.monotonic() - started_mono)
     return result
 
 

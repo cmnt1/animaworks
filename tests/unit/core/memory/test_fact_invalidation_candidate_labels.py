@@ -67,6 +67,115 @@ def test_reconcile_only_invalidates_candidates_labeled_contradict(tmp_path: Path
 
 
 @pytest.mark.unit
+def test_default_reconcile_batches_three_candidate_labels_in_one_call(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    old_a = FactRecord(text="Alice's score was 70.", recorded_at="2026-06-03T09:00:00+09:00")
+    old_b = FactRecord(text="Alice uses rubric B.", recorded_at="2026-06-03T09:05:00+09:00")
+    old_c = FactRecord(text="Alice tracks rubric C.", recorded_at="2026-06-03T09:10:00+09:00")
+    path = _store(anima_dir, old_a)
+    _store(anima_dir, old_b)
+    _store(anima_dir, old_c)
+    new = FactRecord(text="Alice's score is 85.", recorded_at="2026-06-03T12:05:00+09:00")
+    calls: list[list[str]] = []
+
+    def batch_classify(_new, candidates, _dir):
+        calls.append([candidate.record.fact_id for candidate in candidates])
+        return {
+            old_a.fact_id: "CONTRADICT",
+            old_b.fact_id: "ADD",
+            old_c.fact_id: "ADD",
+        }
+
+    result = reconcile_new_fact(
+        anima_dir,
+        new,
+        candidate_search=lambda *_args: [
+            _candidate(old_a, path, 0.98),
+            _candidate(old_b, path, 0.97),
+            _candidate(old_c, path, 0.96),
+        ],
+        config=ReconcileConfig(enabled=True),
+        batch_classifier=batch_classify,
+    )
+
+    stored = {record.fact_id: record for record in read_fact_records(path, include_expired=True)}
+    assert calls == [[old_a.fact_id, old_b.fact_id, old_c.fact_id]]
+    assert result.action == ReconcileAction.INVALIDATE_OLD
+    assert {record.fact_id for record in result.updated_records} == {old_a.fact_id}
+    assert stored[old_a.fact_id].valid_until == "2026-06-03T12:05:00+09:00"
+    assert stored[old_b.fact_id].valid_until == ""
+    assert result.reconcile_llm_calls == 1
+
+
+@pytest.mark.unit
+def test_batched_reconcile_missing_label_falls_back_to_add(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    old_a = FactRecord(text="Alice tracks LoCoMo scores.", recorded_at="2026-06-03T09:00:00+09:00")
+    old_b = FactRecord(text="Alice uses rubric A.", recorded_at="2026-06-03T09:05:00+09:00")
+    path = _store(anima_dir, old_a)
+    _store(anima_dir, old_b)
+    new = FactRecord(text="Alice tracks new score deltas.", recorded_at="2026-06-03T10:00:00+09:00")
+
+    result = reconcile_new_fact(
+        anima_dir,
+        new,
+        candidate_search=lambda *_args: [_candidate(old_a, path), _candidate(old_b, path, 0.94)],
+        config=ReconcileConfig(enabled=True),
+        batch_classifier=lambda *_args: {old_a.fact_id: "ADD"},
+    )
+
+    assert result.action == ReconcileAction.ADD
+    assert result.should_append is True
+    assert result.reason == "invalid_label"
+    assert result.reconcile_llm_calls == 1
+
+
+@pytest.mark.unit
+def test_batched_reconcile_does_not_send_dedup_key_matches_to_classifier(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    duplicate = FactRecord(
+        text="Alice owns Project X.",
+        source_entity="Alice",
+        target_entity="Project X",
+        fact_id="old-duplicate",
+        recorded_at="2026-06-03T09:00:00+09:00",
+    )
+    new = FactRecord(
+        text="Alice owns Project X.",
+        source_entity="Alice",
+        target_entity="Project X",
+        fact_id="new-fact",
+        recorded_at="2026-06-03T10:00:00+09:00",
+    )
+    other_a = FactRecord(text="Alice uses rubric A.", recorded_at="2026-06-03T09:05:00+09:00")
+    other_b = FactRecord(text="Alice tracks metric B.", recorded_at="2026-06-03T09:10:00+09:00")
+    path = _store(anima_dir, duplicate)
+    _store(anima_dir, other_a)
+    _store(anima_dir, other_b)
+    calls: list[list[str]] = []
+
+    def batch_classify(_new, candidates, _dir):
+        calls.append([candidate.record.fact_id for candidate in candidates])
+        return {candidate.record.fact_id: "ADD" for candidate in candidates}
+
+    result = reconcile_new_fact(
+        anima_dir,
+        new,
+        candidate_search=lambda *_args: [
+            _candidate(duplicate, path, 0.99),
+            _candidate(other_a, path, 0.98),
+            _candidate(other_b, path, 0.97),
+        ],
+        config=ReconcileConfig(enabled=True),
+        batch_classifier=batch_classify,
+    )
+
+    assert calls == [[other_a.fact_id, other_b.fact_id]]
+    assert result.action == ReconcileAction.SKIP
+    assert result.reconcile_llm_calls == 1
+
+
+@pytest.mark.unit
 def test_reconcile_duplicate_does_not_mark_path_for_reindex(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     old = FactRecord(text="Alice tracks LoCoMo memory scores.", recorded_at="2026-06-03T09:00:00+09:00")

@@ -222,6 +222,7 @@ class TestFactExtractorExtractEntities:
 
         assert mock_one_shot.call_count == 3
         assert mock_sleep.await_count == 2
+        assert ext.llm_calls == 3
 
     @pytest.mark.asyncio
     @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
@@ -234,6 +235,7 @@ class TestFactExtractorExtractEntities:
 
         assert await ext._call_llm("system", "user") == "recovered response"
         assert mock_one_shot.call_count == 2
+        assert ext.llm_calls == 2
         mock_sleep.assert_awaited_once_with(0.5)
 
 
@@ -359,3 +361,115 @@ class TestFactExtractorExtractFacts:
         entities = [ExtractedEntity(name="X", entity_type="Concept", summary="x")]
         facts = await ext.extract_facts("テスト", entities)
         assert facts == []
+
+
+class TestFactExtractorCombinedExtraction:
+    @pytest.mark.asyncio
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
+    async def test_extracts_entities_and_facts_in_one_call(self, mock_acompletion):
+        from core.memory.facts.extractor import FactExtractor
+
+        payload = {
+            "entities": [
+                {"name": "Alice", "entity_type": "Person", "summary": "A person"},
+                {"name": "Project X", "entity_type": "Concept", "summary": "A project"},
+            ],
+            "facts": [
+                {
+                    "source_entity": "Alice",
+                    "target_entity": "Project X",
+                    "fact": "Alice leads Project X.",
+                    "edge_type": "RELATES_TO",
+                    "valid_at": "2026-10-05T12:00:00+09:00",
+                }
+            ],
+        }
+        mock_acompletion.return_value = json.dumps(payload)
+        ext = FactExtractor(model="test-model", max_retries=1)
+
+        entities, facts = await ext.extract_entities_and_facts(
+            "Alice leads Project X.",
+            reference_time="2026-10-05T12:00:00+09:00",
+            previous_entities=[{"name": "Known", "summary": "Existing entity"}],
+        )
+
+        assert [entity.name for entity in entities] == ["Alice", "Project X"]
+        assert len(facts) == 1
+        assert facts[0].valid_at == "2026-10-05T12:00:00+09:00"
+        assert mock_acompletion.await_count == 1
+        assert ext.llm_calls == 1
+        user_prompt = mock_acompletion.call_args.args[0]
+        assert "Known" in user_prompt
+        assert "2026-10-05T12:00:00+09:00" in user_prompt
+        assert "RELATES_TO" in user_prompt
+
+    @pytest.mark.asyncio
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
+    async def test_missing_fact_entity_is_added_as_concept(self, mock_acompletion):
+        from core.memory.facts.extractor import FactExtractor
+
+        mock_acompletion.return_value = json.dumps(
+            {
+                "entities": [{"name": "Alice", "entity_type": "Person", "summary": "A person"}],
+                "facts": [
+                    {
+                        "source_entity": "Alice",
+                        "target_entity": "Project Y",
+                        "fact": "Alice owns Project Y.",
+                    }
+                ],
+            }
+        )
+        ext = FactExtractor(model="test-model", max_retries=1)
+
+        entities, facts = await ext.extract_entities_and_facts("Alice owns Project Y.")
+
+        assert len(facts) == 1
+        missing = next(entity for entity in entities if entity.name == "Project Y")
+        assert missing.entity_type == "Concept"
+        assert missing.summary == ""
+
+    @pytest.mark.asyncio
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
+    async def test_unknown_entity_type_falls_back_without_discarding_fact(self, mock_acompletion):
+        from core.memory.facts.extractor import FactExtractor
+
+        mock_acompletion.return_value = json.dumps(
+            {
+                "entities": [{"name": "#123", "entity_type": "Issue", "summary": "A pull request"}],
+                "facts": [
+                    {"source_entity": "#123", "target_entity": "Alice", "fact": "Issue #123 is assigned to Alice."}
+                ],
+            }
+        )
+        ext = FactExtractor(model="test-model", max_retries=1)
+
+        entities, facts = await ext.extract_entities_and_facts("Issue #123 is assigned to Alice.")
+
+        issue = next(entity for entity in entities if entity.name == "#123")
+        assert issue.entity_type == "Concept"
+        assert len(facts) == 1
+        assert facts[0].source_entity == "#123"
+
+    @pytest.mark.asyncio
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
+    async def test_combined_parse_failure_sets_stage(self, mock_acompletion):
+        from core.memory.facts.extractor import FactExtractor
+
+        mock_acompletion.return_value = "not JSON"
+        ext = FactExtractor(model="test-model", max_retries=1)
+
+        entities, facts = await ext.extract_entities_and_facts("Some text")
+
+        assert entities == []
+        assert facts == []
+        assert ext.last_failure_stage == "combined_parse"
+
+
+@pytest.mark.parametrize("locale", ["ja", "en"])
+def test_combined_prompt_lists_facts_before_entities(locale):
+    import importlib
+
+    prompts = importlib.import_module(f"core.memory.facts.prompts.{locale}")
+    # Truncated output must lose entities (re-derived from facts), not facts.
+    assert prompts.COMBINED_USER.index('"facts"') < prompts.COMBINED_USER.index('"entities"')

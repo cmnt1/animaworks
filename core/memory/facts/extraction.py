@@ -35,6 +35,8 @@ class FactExtractionOutcome:
     failed_chunks: int = 0
     total_chunks: int = 1
     duplicates: int = 0
+    extract_llm_calls: int = 0
+    reconcile_llm_calls: int = 0
 
     @property
     def facts_extracted(self) -> int:
@@ -78,6 +80,23 @@ def _facts_reconcile_enabled() -> bool:
     except Exception:
         logger.debug("Failed to load facts_reconcile_enabled; defaulting to enabled", exc_info=True)
         return True
+
+
+def _facts_extraction_single_call() -> bool:
+    try:
+        from core.config import load_config
+
+        return bool(getattr(load_config().rag, "facts_extraction_single_call", True))
+    except Exception:
+        logger.debug("Failed to load facts_extraction_single_call; defaulting to enabled", exc_info=True)
+        return True
+
+
+def _extractor_llm_calls(extractor: Any) -> int:
+    try:
+        return max(0, int(getattr(extractor, "llm_calls", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def format_turns_for_fact_extraction(turns: list[Any]) -> str:
@@ -142,6 +161,7 @@ async def extract_fact_records_with_outcome(
     if enabled is False or (enabled is None and not _facts_extraction_enabled()):
         return FactExtractionOutcome([])
 
+    llm_calls_before = 0
     try:
         if extractor is None:
             from core.memory.facts.config import _resolve_extraction_max_tokens
@@ -158,19 +178,47 @@ async def extract_fact_records_with_outcome(
                 credential="" if model else credential,
                 max_tokens=max_tokens,
             )
-        entities = await extractor.extract_entities(text)
-        failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")
-        failure_reason = str(getattr(extractor, "last_failure_reason", "") or "")
-        if failure_stage:
-            return FactExtractionOutcome([], True, failure_stage, failure_reason)
         resolved_reference_time = reference_time or now_iso()
-        facts = await extractor.extract_facts(
-            text,
-            entities,
-            reference_time=resolved_reference_time,
-        )
-        failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")
-        failure_reason = str(getattr(extractor, "last_failure_reason", "") or "")
+        llm_calls_before = _extractor_llm_calls(extractor)
+        combined_extractor = getattr(extractor, "extract_entities_and_facts", None)
+        if _facts_extraction_single_call() and callable(combined_extractor):
+            entities, facts = await combined_extractor(
+                text,
+                reference_time=resolved_reference_time,
+            )
+            failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")
+            failure_reason = str(getattr(extractor, "last_failure_reason", "") or "")
+            extract_llm_calls = max(0, _extractor_llm_calls(extractor) - llm_calls_before)
+            if failure_stage:
+                return FactExtractionOutcome(
+                    [],
+                    True,
+                    failure_stage,
+                    failure_reason,
+                    extract_llm_calls=extract_llm_calls,
+                )
+        else:
+            entities = await extractor.extract_entities(text)
+            failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")
+            failure_reason = str(getattr(extractor, "last_failure_reason", "") or "")
+            if failure_stage:
+                extract_llm_calls = max(0, _extractor_llm_calls(extractor) - llm_calls_before)
+                return FactExtractionOutcome(
+                    [],
+                    True,
+                    failure_stage,
+                    failure_reason,
+                    extract_llm_calls=extract_llm_calls,
+                )
+            facts = await extractor.extract_facts(
+                text,
+                entities,
+                reference_time=resolved_reference_time,
+            )
+            failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")
+            failure_reason = str(getattr(extractor, "last_failure_reason", "") or "")
+            extract_llm_calls = max(0, _extractor_llm_calls(extractor) - llm_calls_before)
+
         records = records_from_extraction(
             entities,
             facts,
@@ -178,7 +226,13 @@ async def extract_fact_records_with_outcome(
             source_session_id=source_session_id,
             recorded_at=resolved_reference_time,
         )
-        return FactExtractionOutcome(records, bool(failure_stage), failure_stage, failure_reason)
+        return FactExtractionOutcome(
+            records,
+            bool(failure_stage),
+            failure_stage,
+            failure_reason,
+            extract_llm_calls=extract_llm_calls,
+        )
     except Exception as exc:
         warn_rate_limited(
             logger,
@@ -186,7 +240,14 @@ async def extract_fact_records_with_outcome(
             "Atomic fact extraction failed",
             exc_info=(type(exc), exc, exc.__traceback__),
         )
-        return FactExtractionOutcome([], True, "extract", f"{type(exc).__name__}: {exc}")
+        extract_llm_calls = max(0, _extractor_llm_calls(extractor) - llm_calls_before)
+        return FactExtractionOutcome(
+            [],
+            True,
+            "extract",
+            f"{type(exc).__name__}: {exc}",
+            extract_llm_calls=extract_llm_calls,
+        )
 
 
 async def extract_and_store_facts_with_outcome(
@@ -221,6 +282,7 @@ async def extract_and_store_facts_with_outcome(
         initial_failed=extraction.failed,
         initial_stage=extraction.failure_stage,
         initial_reason=extraction.failure_reason,
+        extract_llm_calls=extraction.extract_llm_calls,
     )
 
 
@@ -233,11 +295,25 @@ async def _store_fact_records(
     initial_failed: bool = False,
     initial_stage: str = "",
     initial_reason: str = "",
+    extract_llm_calls: int = 0,
 ) -> FactExtractionOutcome:
     if not records:
-        return FactExtractionOutcome(records, initial_failed, initial_stage, initial_reason)
+        return FactExtractionOutcome(
+            records,
+            initial_failed,
+            initial_stage,
+            initial_reason,
+            extract_llm_calls=extract_llm_calls,
+        )
 
-    records_to_append, reconciled_stored, affected_paths, updated_records, duplicates = await asyncio.to_thread(
+    (
+        records_to_append,
+        reconciled_stored,
+        affected_paths,
+        updated_records,
+        duplicates,
+        reconcile_llm_calls,
+    ) = await asyncio.to_thread(
         _reconcile_extracted_facts,
         anima_dir,
         records,
@@ -250,6 +326,8 @@ async def _store_fact_records(
             initial_stage,
             initial_reason,
             duplicates=duplicates,
+            extract_llm_calls=extract_llm_calls,
+            reconcile_llm_calls=reconcile_llm_calls,
         )
 
     try:
@@ -261,7 +339,15 @@ async def _store_fact_records(
             "Failed to append atomic facts",
             exc_info=(type(exc), exc, exc.__traceback__),
         )
-        return FactExtractionOutcome([], True, "append", f"{type(exc).__name__}: {exc}", duplicates=duplicates)
+        return FactExtractionOutcome(
+            [],
+            True,
+            "append",
+            f"{type(exc).__name__}: {exc}",
+            duplicates=duplicates,
+            extract_llm_calls=extract_llm_calls,
+            reconcile_llm_calls=reconcile_llm_calls,
+        )
 
     side_effect_failed = initial_failed
     failure_stage = initial_stage
@@ -297,6 +383,8 @@ async def _store_fact_records(
         failure_stage,
         failure_reason,
         duplicates=duplicates,
+        extract_llm_calls=extract_llm_calls,
+        reconcile_llm_calls=reconcile_llm_calls,
     )
 
 
@@ -305,15 +393,16 @@ def _reconcile_extracted_facts(
     records: list[FactRecord],
     *,
     as_of_time: str | None,
-) -> tuple[list[FactRecord], list[FactRecord], set[Path], list[FactRecord], int]:
+) -> tuple[list[FactRecord], list[FactRecord], set[Path], list[FactRecord], int, int]:
     if not _facts_reconcile_enabled():
-        return list(records), [], set(), [], 0
+        return list(records), [], set(), [], 0, 0
 
     to_append: list[FactRecord] = []
     stored: list[FactRecord] = []
     affected_paths: set[Path] = set()
     updated_records: list[FactRecord] = []
     duplicates = 0
+    reconcile_llm_calls = 0
 
     for record in records:
         try:
@@ -332,6 +421,7 @@ def _reconcile_extracted_facts(
                 reason="reconcile_exception",
             )
 
+        reconcile_llm_calls += result.reconcile_llm_calls
         affected_paths.update(result.affected_paths)
         updated_records.extend(result.updated_records)
         stored.extend(result.appended_records)
@@ -340,7 +430,7 @@ def _reconcile_extracted_facts(
         elif result.label == "DUPLICATE" or result.reason == "duplicate":
             duplicates += 1
 
-    return to_append, stored, affected_paths, updated_records, duplicates
+    return to_append, stored, affected_paths, updated_records, duplicates, reconcile_llm_calls
 
 
 def _upsert_fact_entities(anima_dir: Path, records: list[FactRecord]) -> dict[str, Any] | None:

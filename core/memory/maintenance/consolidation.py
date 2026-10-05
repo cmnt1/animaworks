@@ -819,6 +819,8 @@ class ConsolidationEngine:
 
             all_records: list = []
             all_duplicates = 0
+            all_extract_llm_calls = 0
+            all_reconcile_llm_calls = 0
             failed = False
             failure_stage = ""
             failure_reason = ""
@@ -854,6 +856,8 @@ class ConsolidationEngine:
 
                 all_records.extend(outcome.records)
                 all_duplicates += outcome.duplicates
+                all_extract_llm_calls += outcome.extract_llm_calls
+                all_reconcile_llm_calls += outcome.reconcile_llm_calls
                 if outcome.failed:
                     failed = True
                     failed_chunks += 1
@@ -878,18 +882,23 @@ class ConsolidationEngine:
                 failed_chunks=failed_chunks,
                 total_chunks=total_chunks,
                 duplicates=all_duplicates,
+                extract_llm_calls=all_extract_llm_calls,
+                reconcile_llm_calls=all_reconcile_llm_calls,
             )
             first_failure = f" first_failure={failure_reason[:300].replace(chr(10), ' ')}" if failed else ""
             logger.info(
                 (
                     "Consolidation atomic fact extraction complete for anima=%s: "
-                    "facts_extracted=%d facts_failed=%d chunks=%d%s"
+                    "facts_extracted=%d facts_failed=%d chunks=%d%s "
+                    "extract_llm_calls=%d reconcile_llm_calls=%d"
                 ),
                 self.anima_name,
                 outcome.facts_extracted,
                 outcome.facts_failed,
                 outcome.total_chunks,
                 first_failure,
+                outcome.extract_llm_calls,
+                outcome.reconcile_llm_calls,
             )
             return outcome
         except Exception as exc:
@@ -907,7 +916,8 @@ class ConsolidationEngine:
             logger.info(
                 (
                     "Consolidation atomic fact extraction complete for anima=%s: "
-                    "facts_extracted=0 facts_failed=1 chunks=1 first_failure=%s"
+                    "facts_extracted=0 facts_failed=1 chunks=1 first_failure=%s "
+                    "extract_llm_calls=0 reconcile_llm_calls=0"
                 ),
                 self.anima_name,
                 reason[:300].replace(chr(10), " "),

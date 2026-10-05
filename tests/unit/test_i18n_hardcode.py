@@ -114,7 +114,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/room.py": 4,
     # LLM extraction + community prompt templates — intentionally Japanese for ja locale
     # (dedupe/invalidation prompts removed in harness diet PR-6)
-    "core/memory/facts/prompts/ja.py": 4,
+    "core/memory/facts/prompts/ja.py": 5,
     # forgetting candidate reason string fed to the weekly consolidation prompt
     # ("N日間低活性・参照M回", plan-specified wording)
     "core/memory/maintenance/forgetting.py": 1,

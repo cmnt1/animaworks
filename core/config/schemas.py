@@ -201,6 +201,10 @@ class RAGConfig(BaseModel):
         ge=1024,
         description="Maximum output tokens for legacy atomic fact extraction LLM calls.",
     )
+    facts_extraction_single_call: bool = Field(
+        default=True,
+        description="Extract legacy atomic facts and their entities in one LLM call when supported.",
+    )
     facts_reconcile_enabled: bool = Field(
         default=True,
         description="Enable legacy atomic fact reconciliation before append; failures fall back to ADD.",

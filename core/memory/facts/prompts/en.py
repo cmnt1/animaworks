@@ -69,6 +69,55 @@ Extract relationships (facts) between the entities above and return them in the 
 }}
 ```"""
 
+# ── Combined entity / fact extraction ─────────────────────
+
+COMBINED_SYSTEM = (
+    "You are an information extraction agent. In one pass, extract durable facts "
+    "from the given text and the entities directly used by those facts in JSON format."
+)
+
+COMBINED_USER = """## Text
+{content}
+
+## Known Entities (reference)
+{previous_entities}
+
+## Edge Types (edge_type)
+Choose the most appropriate type from the list below. Use "RELATES_TO" if none fits.
+{edge_types_list}
+
+## Reference time (reference_time)
+{reference_time}
+
+## Instructions
+For each fact, estimate when that fact became valid in the real world (valid_at):
+- If the text states an explicit date or time, use it
+- Resolve relative phrases like "yesterday" or "last week" using reference_time as the anchor
+- If unclear, use reference_time unchanged (output as ISO 8601)
+
+## What counts as a fact
+Ask: "Will this be useful as knowledge a month from now?" When in doubt, leave it out.
+- Extract: new information about people or projects, decisions, requests and promises with owner and deadline, causes/fixes/conclusions of incidents, changes to settings or operating rules, where deliverables (PRs, issues, documents) live and their gist
+- Do not extract: routine cron/patrol boilerplate (where logs go, followed the procedure, ran at a time, state transitions, nothing changed), component listings (e.g. "CI includes X"), lists of paths or commands, raw numbers from command output, transient states, play-by-play of what was received or checked when, general tool usage
+- Do not split one fact into paraphrased duplicates. Output at most about 15 facts per text, most important first.
+
+## Entity guidelines
+Output only entities used as a subject or object of a fact. The entities array must contain only names that appear in a fact's source_entity or target_entity; do not enumerate every name in the text (about 30 at most).
+Choose entity_type from these seven types: Person, Place, Organization, Concept, Event, Object, or Time. Classify issues, PRs, and deliverables as Object; projects and decisions as Concept or Event.
+
+Write facts first, then list in entities only the names that appear in those facts, in the following JSON format. If no facts are found, return an empty facts list and an empty entities list.
+
+```json
+{{
+  "facts": [
+    {{"source_entity": "EntityA", "target_entity": "EntityB", "fact": "natural language description of relationship", "edge_type": "WORKS_AT", "valid_at": "YYYY-MM-DDTHH:MM:SS or null"}}
+  ],
+  "entities": [
+    {{"name": "canonical name", "entity_type": "Person|Place|Organization|Concept|Event|Object|Time", "summary": "1-2 sentence description"}}
+  ]
+}}
+```"""
+
 # ── Community summarization ───────────────────────────────
 
 COMMUNITY_SYSTEM = "You are a group analysis agent. Assign a name and summary to a group of related entities."
