@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 87e2dd2362cb331a477d91f85c5d5d62def8bd8df98373de9dc5a5c16e76497c -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 4a4ff6564b8c628276647b3a7232fdc1c07c7f3551715e6c02ef77238e0cfe82 -->
 
 # モジュール一覧
 
@@ -16,8 +16,8 @@
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
-| `cli.parser` | 846 | — |
-| `cli.tool_dispatch` | 368 | CLI dispatch for external tools, submit tasks, and command aliases. |
+| `cli.parser` | 849 | — |
+| `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
 
@@ -26,7 +26,7 @@
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `cli.commands` | 5 | — |
-| `cli.commands.anima` | 262 | — |
+| `cli.commands.anima` | 303 | — |
 | `cli.commands.anima_mgmt` | 1172 | CLI commands for anima process management. |
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 272 | — |
@@ -62,7 +62,7 @@
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `cli.tui` | 207 | — |
-| `cli.tui.app` | 1820 | — |
+| `cli.tui.app` | 1936 | — |
 | `cli.tui.client` | 394 | — |
 | `cli.tui.commands` | 251 | — |
 | `cli.tui.keybindings` | 90 | Keybinding configuration for the TUI. |
@@ -78,7 +78,7 @@
 | `cli.tui.widgets.status_bar` | 160 | — |
 | `cli.tui.widgets.thinking` | 98 | — |
 | `cli.tui.widgets.tool_card` | 140 | — |
-| `cli.tui.widgets.transcript` | 291 | — |
+| `cli.tui.widgets.transcript` | 293 | — |
 
 ## `cli.tui.widgets`
 
@@ -143,19 +143,19 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima._mixin_protocols（非公開）` | 128 | Structural host protocols for the compositional mixins. |
+| `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 573 | — |
-| `core.anima.digital_anima` | 674 | — |
+| `core.anima.digital_anima` | 693 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 825 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 987 | — |
+| `core.anima.inbox` | 998 | — |
 | `core.anima.inbox_overflow` | 100 | — |
-| `core.anima.lifecycle` | 1410 | — |
-| `core.anima.messaging` | 1369 | — |
+| `core.anima.lifecycle` | 1609 | — |
+| `core.anima.messaging` | 1384 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -201,10 +201,10 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 94 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1340 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1415 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -231,7 +231,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.engines.claude.executor` | 867 | — |
 | `core.execution.engines.codex.events` | 664 | — |
 | `core.execution.engines.codex.executor` | 844 | — |
-| `core.execution.engines.codex.setup` | 971 | — |
+| `core.execution.engines.codex.setup` | 943 | — |
 | `core.execution.engines.cursor.executor` | 652 | — |
 | `core.execution.engines.gemini.executor` | 458 | — |
 | `core.execution.engines.grok.executor` | 1030 | — |
@@ -333,10 +333,11 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 364 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
-| `core.i18n.strings.memory` | 414 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
 | `core.i18n.strings.misc` | 426 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 17 | Domain-specific i18n strings (legacy route modules). |
+| `core.i18n.strings.phone` | 88 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
@@ -352,7 +353,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.i18n.strings` | 61 | Merge all domain string modules into a single dict. |
+| `core.i18n.strings` | 63 | Merge all domain string modules into a single dict. |
 
 ## `core.infra`
 
@@ -365,7 +366,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.infra.execution_sdk_preflight` | 126 | — |
 | `core.infra.gpu` | 173 | — |
 | `core.infra.logging_config` | 530 | Centralized logging configuration for AnimaWorks. |
-| `core.infra.runtime_init` | 422 | First-launch initialization: copy templates to runtime data directory. |
+| `core.infra.runtime_init` | 427 | First-launch initialization: copy templates to runtime data directory. |
 | `core.infra.startup_progress` | 191 | — |
 | `core.infra.tmp_cleanup` | 254 | — |
 
@@ -402,7 +403,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._slack_cli（非公開）` | 308 | Standalone CLI entry point for Slack tools. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack markdown conversion and formatting utilities. |
 | `core.integrations.aws_collector` | 408 | AnimaWorks AWS collector tool — ECS status, CloudWatch logs & metrics. |
-| `core.integrations.call_human` | 400 | — |
+| `core.integrations.call_human` | 435 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
@@ -422,7 +423,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
 | `core.integrations.notion` | 862 | Notion integration for AnimaWorks. |
-| `core.integrations.slack` | 261 | Slack integration for AnimaWorks. |
+| `core.integrations.slack` | 262 | Slack integration for AnimaWorks. |
 | `core.integrations.transcribe` | 429 | AnimaWorks transcribe tool -- Whisper speech-to-text with LLM refinement. |
 | `core.integrations.web_search` | 408 | Web Search tool for AnimaWorks. |
 | `core.integrations.x_search` | 348 | X (Twitter) Search tool for AnimaWorks. |
@@ -443,7 +444,7 @@ anima の起動、停止、初期化のライフサイクル。
 |---|---:|---|
 | `core.lifecycle` | 17 | — |
 | `core.lifecycle.knowledge_correction` | 127 | — |
-| `core.lifecycle.system_consolidation` | 284 | — |
+| `core.lifecycle.system_consolidation` | 308 | — |
 
 ## `core.llm`
 
@@ -455,7 +456,7 @@ LLM エラー分類、レート制御、リトライの共通機能。
 | `core.llm.guard.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
-| `core.llm.oneshot` | 879 | Shared LLM helper utilities for memory-management modules. |
+| `core.llm.oneshot` | 927 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
 
@@ -484,29 +485,33 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 324 | Compression logic for conversation memory. |
-| `core.memory.conversation.finalize` | 484 | Session finalization for conversation memory. |
+| `core.memory.conversation.finalize` | 490 | Session finalization for conversation memory. |
 | `core.memory.conversation.memory` | 348 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
 | `core.memory.conversation.shortterm` | 313 | Short-term memory (短期記憶) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
-| `core.memory.facts.config` | 110 | — |
+| `core.memory.facts.chunking` | 91 | — |
+| `core.memory.facts.config` | 127 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 406 | — |
-| `core.memory.facts.extractor` | 328 | LLM-based entity and fact extraction pipeline. |
-| `core.memory.facts.invalidation` | 497 | — |
-| `core.memory.facts.invalidation_llm` | 109 | — |
+| `core.memory.facts.extraction` | 521 | — |
+| `core.memory.facts.extractor` | 411 | LLM-based entity and fact extraction pipeline. |
+| `core.memory.facts.invalidation` | 515 | — |
+| `core.memory.facts.invalidation_llm` | 164 | — |
+| `core.memory.facts.live` | 580 | — |
 | `core.memory.facts.observability` | 41 | — |
-| `core.memory.facts.ontology` | 231 | Pydantic models for entity / fact extraction results. |
-| `core.memory.facts.prompts.en` | 77 | English prompts for entity / fact extraction. |
-| `core.memory.facts.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
+| `core.memory.facts.ontology` | 247 | Pydantic models for entity / fact extraction results. |
+| `core.memory.facts.prompts.en` | 133 | English prompts for entity / fact extraction. |
+| `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
 | `core.memory.io` | 59 | — |
+| `core.memory.maintenance.activity_compaction` | 479 | — |
 | `core.memory.maintenance.background_review` | 554 | — |
-| `core.memory.maintenance.consolidation` | 929 | — |
+| `core.memory.maintenance.consolidation` | 1188 | — |
 | `core.memory.maintenance.cron_logger` | 159 | — |
+| `core.memory.maintenance.cron_noop` | 241 | — |
 | `core.memory.maintenance.distillation` | 546 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
 | `core.memory.maintenance.housekeeping` | 1471 | — |
@@ -517,17 +522,18 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.peer_profiles` | 37 | — |
 | `core.memory.priming.channel_a` | 70 | — |
 | `core.memory.priming.channel_b` | 534 | — |
-| `core.memory.priming.channel_c` | 618 | — |
+| `core.memory.priming.channel_c` | 610 | — |
 | `core.memory.priming.channel_e` | 205 | — |
 | `core.memory.priming.channel_f` | 215 | — |
+| `core.memory.priming.channel_g` | 113 | — |
 | `core.memory.priming.constants` | 92 | — |
-| `core.memory.priming.engine` | 444 | — |
-| `core.memory.priming.format` | 119 | — |
+| `core.memory.priming.engine` | 503 | — |
+| `core.memory.priming.format` | 124 | — |
 | `core.memory.priming.items` | 59 | — |
 | `core.memory.priming.outbound` | 142 | — |
 | `core.memory.priming.policy` | 25 | — |
-| `core.memory.priming.result` | 72 | — |
-| `core.memory.priming.utils` | 273 | — |
+| `core.memory.priming.result` | 76 | — |
+| `core.memory.priming.utils` | 284 | — |
 | `core.memory.rag.cli_access` | 232 | CLI access to phase3 vector stores through the active owner or server. |
 | `core.memory.rag.contextual_header` | 163 | — |
 | `core.memory.rag.direct_access` | 24 | — |
@@ -606,7 +612,7 @@ Model Context Protocol サーバーとクライアント。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.memory.priming` | 50 | Priming layer - automatic memory retrieval (自動想起). |
+| `core.memory.priming` | 54 | Priming layer - automatic memory retrieval (自動想起). |
 
 ## `core.memory.rag`
 
@@ -641,9 +647,10 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging` | 6 | — |
 | `core.messaging.discord_webhooks` | 296 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
-| `core.messaging.messenger` | 1058 | — |
+| `core.messaging.messenger` | 1082 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
+| `core.messaging.reply_grants` | 253 | — |
 | `core.messaging.sender` | 32 | — |
 
 ## `core.migrations`
@@ -655,7 +662,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 1 | Runtime migration framework; import specific modules directly. |
 | `core.migrations.registry` | 149 | — |
 | `core.migrations.steps` | 1228 | Migration step implementations for AnimaWorks runtime data. |
-| `core.migrations.template_sync` | 133 | — |
+| `core.migrations.template_sync` | 137 | — |
 | `core.migrations.tracker` | 143 | — |
 
 ## `core.notification`
@@ -697,6 +704,19 @@ anima 間および外部とのメッセージ配送。
 | `core.org.org_sync` | 482 | — |
 | `core.org.workspace` | 232 | — |
 
+## `core.phone`
+
+Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.phone` | 7 | — |
+| `core.phone.alert` | 212 | — |
+| `core.phone.audio_store` | 81 | — |
+| `core.phone.session` | 72 | — |
+| `core.phone.speech` | 94 | — |
+| `core.phone.twilio_client` | 194 | — |
+
 ## `core.platform`
 
 実行エンジンや OS ごとの差異を吸収する連携層。
@@ -706,7 +726,7 @@ anima 間および外部とのメッセージ配送。
 | `core.platform` | 4 | — |
 | `core.platform.atomic_io` | 207 | — |
 | `core.platform.claude_code` | 194 | — |
-| `core.platform.codex` | 216 | — |
+| `core.platform.codex` | 245 | — |
 | `core.platform.cursor` | 60 | — |
 | `core.platform.env` | 84 | — |
 | `core.platform.fd_limits` | 60 | — |
@@ -750,13 +770,13 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.runtime.ipc_v2` | 414 | Persistent duplex IPC v2 used between an Anima main and task runners. |
 | `core.runtime.memory_service` | 774 | Anima-main-owned vector memory service. |
 | `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
-| `core.runtime.runner` | 1379 | Child process entry point for Anima subprocess. |
+| `core.runtime.runner` | 1389 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
 | `core.runtime.scheduler_manager` | 827 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
-| `core.runtime.task_runner` | 1039 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1323 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner` | 1042 | Disposable task runner entry point. |
+| `core.runtime.task_runner_supervisor` | 1386 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
@@ -825,7 +845,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
-| `core.tasks.background` | 613 | — |
+| `core.tasks.background` | 618 | — |
 | `core.tasks.board.board_actions` | 239 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
 | `core.tasks.board.models` | 37 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
@@ -841,7 +861,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1552 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1565 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 485 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
@@ -887,8 +907,8 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
 | `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
-| `core.tooling.dispatch` | 252 | — |
-| `core.tooling.handler` | 878 | — |
+| `core.tooling.dispatch` | 255 | — |
+| `core.tooling.handler` | 880 | — |
 | `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 872 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
@@ -903,7 +923,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
-| `core.tooling.permissions` | 330 | — |
+| `core.tooling.permissions` | 336 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 455 | — |
 | `core.tooling.policy.registry` | 30 | — |
@@ -973,6 +993,7 @@ LLM 利用量とコストの記録・集計。
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
+| `core.voice.voice_config` | 51 | — |
 
 ## `server`
 
@@ -1011,7 +1032,7 @@ LLM 利用量とコストの記録・集計。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `server.routes` | 61 | — |
+| `server.routes` | 63 | — |
 | `server.routes.animas` | 1160 | — |
 | `server.routes.approve` | 89 | — |
 | `server.routes.assets` | 1456 | — |
@@ -1028,10 +1049,11 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 447 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1455 | — |
+| `server.routes.internal` | 1488 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
+| `server.routes.phone` | 597 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
@@ -1040,7 +1062,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 286 | Voice chat WebSocket endpoint. |
+| `server.routes.voice` | 250 | Voice chat WebSocket endpoint. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
@@ -1064,7 +1086,7 @@ LLM 利用量とコストの記録・集計。
 | `server.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_rag_repair（非公開）` | 268 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_reconcile（非公開）` | 320 | Reconciliation mixin for ProcessSupervisor. |
-| `server.supervisor._mgr_scheduler（非公開）` | 1071 | System scheduler mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_scheduler（非公開）` | 1247 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
 | `server.supervisor.manager` | 1120 | Process Supervisor - Manages lifecycle of Anima child processes. |

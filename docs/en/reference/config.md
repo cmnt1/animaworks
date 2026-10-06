@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=7a3d377a1ffbd3d18bf5f4291d6c807e1fe92401a5c33b0812d55d233bb6c89c generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=6f9b108585560699618ec6b98b3532a0cd8ea765b7708cbeb1efbf02ca584760 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Configuration Reference
 
@@ -7,23 +7,65 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ## `config.json`
 
+### `version`
+
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | `int` | `1` | Version of the configuration file format. |
-| `setup_complete` | `bool` | `false` | Whether the initial setup has been completed. |
-| `locale` | `str` | `"ja"` | Default language used across the system. |
-| `system` | `SystemConfig` | `{SystemConfig}` | Settings for the runtime environment, timezone, and basic behavior. |
+| `version` | `int` | `1` | Configuration file format version. |
+
+### `setup_complete`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `setup_complete` | `bool` | `false` | Whether initial setup has been completed. |
+
+### `locale`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `locale` | `str` | `"ja"` | Default language used throughout the system. |
+
+### `system`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `system` | `SystemConfig` | `{SystemConfig}` | Settings for the runtime environment, time zone, and basic behavior. |
 | `system.mode` | `str` | `"server"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
-| `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | Authentication information for external models and services. |
+
+### `credentials`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | Authentication credentials for external model services. |
 | `credentials.type` | `str` | `"api_key"` | — |
 | `credentials.api_key` | `str` | `""` | — |
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
-| `model_modes` | `dict[str, str]` | `{}` | Mapping of model name patterns to execution modes. |
-| `model_context_windows` | `dict[str, int]` | `{}` | Compatibility settings for context length per model. models.json is recommended. |
-| `model_max_tokens` | `dict[str, int]` | `{}` | Default output token count for each model name pattern. |
-| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and execution settings applied to each anima. |
+
+### `model_modes`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model_modes` | `dict[str, str]` | `{}` | Mapping between model name patterns and runtime modes. |
+
+### `model_context_windows`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model_context_windows` | `dict[str, int]` | `{}` | Compatibility settings for context length per model. Use models.json is recommended. |
+
+### `model_max_tokens`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model_max_tokens` | `dict[str, int]` | `{}` | Default number of output tokens for each model name pattern. |
+
+### `anima_defaults`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and runtime settings applied to each Anima. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
@@ -48,9 +90,14 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. If false, only disables periodic heartbeat. Message-triggered HB and cron are unaffected. |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Defaults to true. Set to false to disable only periodic heartbeats. Message-triggered HB and cron are unaffected. |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
-| `animas` | `dict[str, AnimaModelConfig]` | `{}` | Model configuration overrides per anima. |
+
+### `animas`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `animas` | `dict[str, AnimaModelConfig]` | `{}` | Per-Anima model configuration overrides. |
 | `animas.supervisor` | `str \| None` | `null` | — |
 | `animas.company` | `str \| None` | `null` | — |
 | `animas.speciality` | `str \| None` | `null` | — |
@@ -59,7 +106,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
-| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | Behavior and schedule of consolidation. |
+
+### `consolidation`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | Consolidation behavior and schedule. |
 | `consolidation.daily_enabled` | `bool` | `true` | — |
 | `consolidation.weekly_distillation_enabled` | `bool` | `true` | — |
 | `consolidation.synaptic_downscaling_enabled` | `bool` | `true` | — |
@@ -69,14 +121,22 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
 | `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
+| `consolidation.weekly_llm_model` | `str \| None` | `null` | — |
+| `consolidation.weekly_llm_credential` | `str \| None` | `null` | — |
+| `consolidation.llm_fallback_model` | `str \| None` | `null` | — |
+| `consolidation.llm_fallback_credential` | `str \| None` | `null` | — |
+| `consolidation.fact_reconcile_model` | `str \| None` | `null` | — |
+| `consolidation.fact_reconcile_credential` | `str \| None` | `null` | — |
 | `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | Maximum UTF-8 prompt size for each daily episode-summary LLM call. |
 | `consolidation.episode_summary_backfill_days` | `int` | `7` | Look back this many local days for unprocessed daily episode activity. |
-| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `1` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
+| `consolidation.episode_summary_exclude_noop_cron` | `bool` | `true` | Exclude 'did nothing' cron executions from daily episode-summary input. |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
 | `consolidation.ipc_timeout_max_seconds` | `int` | `7200` | — |
 | `consolidation.weekly_ipc_timeout_seconds` | `int` | `3600` | — |
+| `consolidation.max_concurrent_animas` | `int` | `3` | Maximum number of Anima daily/weekly consolidations to run concurrently. |
 | `consolidation.weekly_enabled` | `bool` | `false` | — |
 | `consolidation.weekly_time` | `str` | `"sun:03:00"` | Format: day:HH:MM |
 | `consolidation.indexing_enabled` | `bool` | `true` | Daily RAG indexing toggle |
@@ -84,10 +144,29 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.knowledge_self_correction_enabled` | `bool` | `true` | — |
 | `consolidation.knowledge_self_correction_max_reconsolidation_files` | `int` | `5` | — |
 | `consolidation.knowledge_self_correction_timeout_seconds` | `int` | `300` | — |
+| `consolidation.fact_extraction_chunk_chars` | `int` | `12000` | Maximum characters per atomic-fact-extraction chunk during consolidation. 0 (or negative) disables splitting. |
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
-| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | Settings for asynchronous post-session reflection and persona updates. |
+| `consolidation.episode_summary_input_profile` | `Literal['full', 'compact']` | `"compact"` | — |
+| `consolidation.episode_summary_cron_digest_min_runs` | `int` | `6` | — |
+| `consolidation.episode_summary_cron_digest_max_notable_runs` | `int` | `5` | — |
+| `consolidation.episode_summary_tool_use_max_bytes` | `int` | `300` | — |
+| `consolidation.episode_summary_bash_tool_use_max_bytes` | `int` | `120` | — |
+| `consolidation.episode_summary_error_tail_bytes` | `int` | `300` | — |
+| `consolidation.episode_summary_max_output_tokens` | `int` | `4096` | — |
+| `consolidation.live_fact_extraction_enabled` | `bool` | `true` | — |
+| `consolidation.live_fact_model` | `str \| None` | `null` | — |
+| `consolidation.live_fact_credential` | `str \| None` | `null` | — |
+| `consolidation.live_fact_min_input_chars` | `int` | `200` | — |
+| `consolidation.live_fact_max_input_chars` | `int` | `24000` | — |
+| `consolidation.live_fact_debounce_seconds` | `int` | `120` | — |
+
+### `background_review`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | Configuration for asynchronous post-session reflection and persona updates. |
 | `background_review.enabled` | `bool` | `true` | — |
 | `background_review.chat_every_user_turns` | `int` | `10` | — |
 | `background_review.min_interval_minutes` | `int` | `10` | — |
@@ -95,7 +174,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_review.max_input_bytes` | `int` | `61440` | — |
 | `background_review.max_writes` | `int` | `3` | — |
 | `background_review.peer_profile_max_chars` | `int` | `1500` | — |
-| `rag` | `RAGConfig` | `{RAGConfig}` | Settings for retrieval-augmented generation and memory search. |
+
+### `rag`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `rag` | `RAGConfig` | `{RAGConfig}` | Configuration for retrieval-augmented generation and memory search. |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
 | `rag.embedding_e5_prefix_enabled` | `bool` | `false` | When enabled, prefix query embeddings with embedding_query_prefix and indexed document embeddings with embedding_document_prefix. This is intended for E5-family ablations and requires re-indexing for document-prefix changes to take effect. |
@@ -124,20 +208,37 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `rag.rrf_confidence_threshold` | `float` | `0.02` | — |
 | `rag.facts_extraction_enabled` | `bool` | `true` | — |
 | `rag.fact_extraction_timeout_seconds` | `int` | `120` | Default timeout in seconds for LLM calls used by legacy atomic fact extraction; per-Anima status.json extraction_timeout overrides this value. |
+| `rag.fact_extraction_max_tokens` | `int` | `8192` | Maximum output tokens for legacy atomic fact extraction LLM calls. |
+| `rag.facts_extraction_single_call` | `bool` | `true` | Extract legacy atomic facts and their entities in one LLM call when supported. |
 | `rag.facts_reconcile_enabled` | `bool` | `true` | Enable legacy atomic fact reconciliation before append; failures fall back to ADD. |
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
-| `gpu` | `GPUConfig` | `{GPUConfig}` | Settings for GPU usage and device selection. |
+
+### `gpu`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `gpu` | `GPUConfig` | `{GPUConfig}` | Configuration for GPU usage and device selection. |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
 | `gpu.embedding_batch_size` | `int` | `32` | — |
 | `gpu.embedding_bulk_yield_batches` | `int` | `5` | Maximum consecutive embedding batches bulk work may yield to waiting interactive work. |
-| `memory` | `MemoryConfig` | `{MemoryConfig}` | Common settings for memory storage and search. |
+
+### `memory`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `memory` | `MemoryConfig` | `{MemoryConfig}` | Common configuration for memory storage and search. |
 | `memory.fact_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
 | `memory.fact_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
 | `memory.fact_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
-| `skills` | `SkillsConfig` | `{SkillsConfig}` | Settings for skill loading and management. |
+
+### `skills`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `skills` | `SkillsConfig` | `{SkillsConfig}` | Configuration for skill loading and management. |
 | `skills.promotion` | `SkillPromotionConfig` | `{SkillPromotionConfig}` | — |
 | `skills.promotion.success_count_threshold` | `int` | `3` | — |
 | `skills.promotion.confidence_threshold` | `float` | `0.8` | — |
@@ -154,9 +255,19 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `skills.external_roots.engine` | `str` | `"—"` | matches ^[a-z][a-z0-9-]*$ |
 | `skills.external_roots.trust_level` | `str` | `"trusted"` | — |
 | `skills.external_roots.enabled` | `bool` | `true` | — |
-| `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Permission settings for Chatwork tools. |
+
+### `chatwork_tool`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork tool permission configuration. |
 | `chatwork_tool.grants` | `dict[str, dict[str, str]]` | `{}` | — |
-| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompts and prompt construction. |
+
+### `prompt`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `prompt` | `PromptConfig` | `{PromptConfig}` | Configuration for the system prompt and prompt construction. |
 | `prompt.injection_size_warning_chars` | `int` | `2000` | — |
 | `prompt.identity_business_exclude_headings` | `list[str]` | `["外見","基本プロフィール","Appearance","Basic Profile"]` | — |
 | `prompt.system_prompt_target_tokens` | `int` | `6000` | — |
@@ -168,9 +279,16 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `prompt.skill_catalog_router_dense_enabled` | `bool` | `true` | — |
 | `prompt.skill_catalog_router_dense_weight` | `float` | `8.0` | — |
 | `prompt.skill_catalog_max_items` | `int` | `3` | — |
-| `priming` | `PrimingConfig` | `{PrimingConfig}` | Settings for information loaded at anima startup. |
+
+### `priming`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `priming` | `PrimingConfig` | `{PrimingConfig}` | Configuration for information loaded at Anima startup. |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
+| `priming.recent_facts_enabled` | `bool` | `true` | — |
+| `priming.recent_facts_max_tokens` | `int` | `500` | — |
 | `priming.compact_background_recall_enabled` | `bool` | `true` | — |
 | `priming.compact_background_recall` | `CompactBackgroundRecallConfig` | `{CompactBackgroundRecallConfig}` | — |
 | `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
@@ -179,10 +297,15 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
 | `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
 | `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
-| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation providers and default parameters. |
+
+### `image_gen`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation provider and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
-| `image_gen.prefer_codex` | `bool` | `true` | If codex CLI is available, use it with top priority for image generation |
+| `image_gen.prefer_codex` | `bool` | `true` | Use codex CLI first for image generation if available |
 | `image_gen.style_reference` | `str \| None` | `null` | Path to organization-wide style reference image |
 | `image_gen.style_prefix` | `str` | `""` | Common style tags prepended to character prompt |
 | `image_gen.style_suffix` | `str` | `""` | Common style tags appended to character prompt |
@@ -201,16 +324,31 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.diffusers_img2img_strength` | `float` | `0.55` | — |
 | `image_gen.ip_adapter_model` | `str` | `"h94/IP-Adapter"` | — |
 | `image_gen.ip_adapter_scale` | `float` | `0.6` | IP-Adapter face reference blend weight (0.0-1.0) |
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Methods and destinations for notifying humans. |
+
+### `human_notification`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Notification methods and destinations for people. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
-| `interaction` | `InteractionConfig` | `{InteractionConfig}` | Inter-anima dialogue and message processing. |
+
+### `interaction`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `interaction` | `InteractionConfig` | `{InteractionConfig}` | Interactions and message handling between anima. |
 | `interaction.default_approver_ids` | `list[str]` | `[]` | Default Slack user IDs merged with per-call call_human allowed_users. |
 | `interaction.web_base_url` | `str` | `""` | — |
-| `server` | `ServerConfig` | `{ServerConfig}` | Settings for the HTTP server, authentication, and usage control. |
+
+### `server`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `server` | `ServerConfig` | `{ServerConfig}` | HTTP server, authentication, and usage control configuration. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
@@ -240,15 +378,30 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
 | `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
-| `llm_rate_guard` | `LlmRateGuardConfig` | `{LlmRateGuardConfig}` | Control of LLM call frequency and concurrency. |
+
+### `llm_rate_guard`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `llm_rate_guard` | `LlmRateGuardConfig` | `{LlmRateGuardConfig}` | Controls for LLM call frequency and concurrency. |
 | `llm_rate_guard.enabled` | `bool` | `true` | — |
 | `llm_rate_guard.default_block_seconds` | `int` | `60` | — |
 | `llm_rate_guard.max_block_seconds` | `int` | `600` | — |
 | `llm_rate_guard.quota_block_seconds` | `int` | `1800` | — |
 | `llm_rate_guard.max_quota_block_seconds` | `int` | `14400` | — |
-| `mcp` | `MCPConfig` | `{MCPConfig}` | Settings for MCP server connections and tool exposure. |
+
+### `mcp`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mcp` | `MCPConfig` | `{MCPConfig}` | MCP server connection and tool exposure configuration. |
 | `mcp.trigger_scoped_tools` | `bool` | `true` | — |
-| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | External messaging integration such as Slack. |
+
+### `external_messaging`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | External messaging integrations such as Slack. |
 | `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
 | `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
 | `external_messaging.user_aliases.slack_user_id` | `str` | `""` | — |
@@ -301,6 +454,11 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
 | `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | flush interval for buffered transcript |
 | `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | max chars per chunk (flush on whichever comes first) |
+
+### `external_tasks`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `external_tasks` | `ExternalTasksConfig` | `{ExternalTasksConfig}` | Integration with external task systems. |
 | `external_tasks.enabled` | `bool` | `true` | — |
 | `external_tasks.interval_minutes` | `int` | `5` | — |
@@ -309,7 +467,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_tasks.sources.slack` | `bool` | `true` | — |
 | `external_tasks.sources.chatwork` | `bool` | `true` | — |
 | `external_tasks.sources.gmail` | `bool` | `true` | — |
-| `github_webhook` | `GitHubWebhookConfig` | `{GitHubWebhookConfig}` | Receiving and validation of GitHub webhooks. |
+
+### `github_webhook`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `github_webhook` | `GitHubWebhookConfig` | `{GitHubWebhookConfig}` | Receive and validate GitHub webhooks. |
 | `github_webhook.enabled` | `bool` | `false` | — |
 | `github_webhook.repos` | `list[str]` | `[]` | — |
 | `github_webhook.dispatcher_anima` | `str` | `"rin"` | — |
@@ -317,7 +480,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `github_webhook.reviewer_login` | `str` | `""` | — |
 | `github_webhook.quiet_seconds` | `float` | `180` | — |
 | `github_webhook.drop_bot_noise` | `bool` | `true` | — |
-| `event_export` | `EventExportConfig` | `{EventExportConfig}` | Export of event data. |
+
+### `event_export`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `event_export` | `EventExportConfig` | `{EventExportConfig}` | Export event data. |
 | `event_export.url` | `str \| None` | `null` | — |
 | `event_export.headers` | `dict[str, str]` | `{}` | — |
 | `event_export.event_types` | `list[str] \| None` | `null` | — |
@@ -325,7 +493,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `event_export.max_retries` | `int` | `8` | — |
 | `event_export.backoff_base_seconds` | `float` | `2.0` | — |
 | `event_export.spool_max_mb` | `int` | `64` | — |
-| `background_task` | `BackgroundTaskConfig` | `{BackgroundTaskConfig}` | Settings for tools targeted for background execution. |
+
+### `background_task`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `background_task` | `BackgroundTaskConfig` | `{BackgroundTaskConfig}` | Configure tools to run in the background. |
 | `background_task.enabled` | `bool` | `true` | — |
 | `background_task.shutdown_drain_seconds` | `float` | `600.0` | — |
 | `background_task.eligible_tools` | `dict[str, BackgroundToolConfig]` | `…` | — |
@@ -333,16 +506,31 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
-| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for storing operation and activity logs. |
+
+### `activity_log`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Operation and activity log storage configuration. |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
 | `activity_log.max_size_mb` | `int` | `1024` | per-anima total, default 1GB |
 | `activity_log.max_file_size_mb` | `int` | `100` | per-file bloat trigger; 0 disables |
-| `activity_log.max_age_days` | `int` | `7` | mode="time"\|"both" で使用 |
+| `activity_log.max_age_days` | `int` | `7` | Used with mode="time"\|"both" |
 | `activity_log.rotation_time` | `str` | `"05:00"` | Execution time (configured TZ) |
-| `logging` | `LoggingConfig` | `{LoggingConfig}` | Log level, output destination, and masking of sensitive information. |
+
+### `logging`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `logging` | `LoggingConfig` | `{LoggingConfig}` | Log level, output destination, and sensitive information masking. |
 | `logging.redaction_enabled` | `bool` | `true` | Mask secrets in log output; disable for raw-log debugging. |
-| `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | Settings for periodic heartbeat execution. |
+
+### `heartbeat`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | Periodic heartbeat execution configuration. |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
 | `heartbeat.current_state_max_chars` | `int` | `8000` | Max chars for current_state.md before trim; 0 = disabled |
 | `heartbeat.current_state_cleanup_chars` | `int` | `2000` | Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars |
@@ -355,7 +543,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | Minutes after last stream end to trigger idle auto-compaction |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section |
-| `voice` | `VoiceConfig` | `{VoiceConfig}` | Voice input/output and voice providers. |
+
+### `voice`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voice` | `VoiceConfig` | `{VoiceConfig}` | Audio input/output and audio providers. |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |
 | `voice.stt_compute_type` | `str` | `"default"` | — |
@@ -381,6 +574,30 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `voice.gemini.api_key_env` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.vault_key` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.chunk_seconds` | `float` | `1.0` | — |
+
+### `phone`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Anima-exclusive phone conversations and emergency notifications using Twilio. |
+| `phone.enabled` | `bool` | `false` | — |
+| `phone.anima` | `str` | `"aoi"` | — |
+| `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
+| `phone.from_number` | `str` | `"+16073257655"` | — |
+| `phone.owner_numbers` | `list[str]` | `["+819060943763"]` | — |
+| `phone.from_person` | `str` | `"human"` | — |
+| `phone.thread_id` | `str` | `"phone"` | — |
+| `phone.pin_vault_key` | `str` | `"AOI_PHONE_PIN"` | — |
+| `phone.account_sid_vault_key` | `str` | `"TWILIO_ACCOUNT_SID"` | — |
+| `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
+| `phone.alert_max_attempts` | `int` | `3` | — |
+| `phone.alert_retry_interval_sec` | `float` | `120` | — |
+| `phone.turn_timeout_sec` | `float` | `300` | — |
+
+### `housekeeping`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | Periodic cleanup of runtime data. |
 | `housekeeping.enabled` | `bool` | `true` | — |
 | `housekeeping.run_time` | `str` | `"05:30"` | — |
@@ -413,29 +630,76 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.sdk_bash_injection_max_size_mb` | `int` | `10` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |
 | `housekeeping.archive_versions_keep_per_file` | `int` | `5` | — |
-| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima inbox and notification display. |
+
+### `inbox`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima's inbox and notification display. |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |
 | `inbox.quarantine_retention_days` | `int` | `30` | — |
-| `local_llm` | `LocalLLMConfig` | `{LocalLLMConfig}` | Local LLM endpoint and model settings. |
+
+### `local_llm`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `local_llm` | `LocalLLMConfig` | `{LocalLLMConfig}` | Local LLM endpoint and model configuration. |
 | `local_llm.base_url` | `str` | `"http://127.0.0.1:11434"` | — |
 | `local_llm.default_model` | `str` | `"ollama/qwen2.5-coder:14b"` | — |
 | `local_llm.credential` | `str` | `""` | — |
 | `local_llm.auto_apply_presets` | `bool` | `false` | — |
 | `local_llm.presets` | `dict[str, str]` | `{"coding":"ollama/qwen2.5-coder:14b","general":"ollama/glm4:9b","reasoning":"ollama/deepseek-r1:8b"}` | — |
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
+
+### `workspaces`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `workspaces` | `dict[str, str]` | `{}` | Mapping of named workspace paths. |
+
+### `github_identities`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `github_identities` | `dict[str, str]` | `{}` | Mapping of company slugs to GitHub accounts. |
-| `activity_level` | `int` | `100` | Multiplier to adjust overall activity frequency. |
+
+### `activity_level`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `activity_level` | `int` | `100` | Multiplier that adjusts the overall activity frequency. |
+
+### `activity_schedule`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | Activity frequency by time period. |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |
 | `activity_schedule.end` | `str` | `"—"` | End time in HH:MM format (may wrap past midnight) |
 | `activity_schedule.level` | `int` | `"—"` | Activity level percentage for this period |
+
+### `icon_url_template`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `icon_url_template` | `str` | `""` | Template for anima icon URLs. |
-| `ui` | `UIConfig` | `{UIConfig}` | Display settings for the Web UI. |
+
+### `ui`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `ui` | `UIConfig` | `{UIConfig}` | Web UI display configuration. |
 | `ui.theme` | `str` | `"default"` | — |
 | `ui.demo_mode` | `bool` | `false` | — |
+
+### `cli`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `cli` | `CLIConfig` | `{CLIConfig}` | CLI client configuration. default_anima is the anima opened by animaworks / animaworks chat when no arguments are provided (if empty, uses the only enabled anima with no supervisor, if there is exactly one). |
+| `cli.default_anima` | `str` | `""` | — |
 
 ## Per-anima `status.json`
 

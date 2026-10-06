@@ -135,27 +135,27 @@ Roles of each section:
 #### AnimaWorksConfig Top Level
 
 | Section | Description |
-|---------|-------------|
+|-----------|------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
 | `locale` | Locale configuration |
-| `system` | System configuration (mode, log level) |
-| `credentials` | API authentication information |
+| `system` | System settings (mode, log level) |
+| `credentials` | API credentials |
 | `model_modes` | Model name → execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
-| `anima_defaults` | Anima configuration default values |
+| `anima_defaults` | Anima configuration defaults |
 | `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation configuration |
+| `consolidation` | Consolidation settings |
 | `background_review` |  |
-| `rag` | RAG (search-augmented generation) configuration |
+| `rag` | RAG (retrieval-augmented generation) settings |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | Priming (automatic memory recall) configuration |
-| `image_gen` | Image generation configuration |
+| `priming` | Priming (automatic memory recall) settings |
+| `image_gen` | Image generation settings |
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |
@@ -170,6 +170,7 @@ Roles of each section:
 | `logging` |  |
 | `heartbeat` |  |
 | `voice` |  |
+| `phone` |  |
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
@@ -179,6 +180,7 @@ Roles of each section:
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |
+| `cli` |  |
 
 <!-- AUTO-GENERATED:END -->
 
