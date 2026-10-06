@@ -335,6 +335,17 @@ def _make_fact_extractor(anima_dir: Path, options: _LiveFactOptions) -> Any:
     )
 
 
+def build_background_fact_extractor(anima_dir: Path) -> Any:
+    """Build the extractor used outside the conversation lanes.
+
+    Daily consolidation shares the live model chain
+    (``live_fact_model`` → ``fact_reconcile_model`` → ``llm_model``) so atomic
+    fact extraction does not compete with episode summaries for the
+    consolidation model's quota.
+    """
+    return _make_fact_extractor(anima_dir, _load_options())
+
+
 def _log_run(result: LiveFactRunResult, elapsed_seconds: float) -> None:
     logger.info(
         "Live fact extraction: trigger=%s range=%s~%s input_chars=%d facts_extracted=%d duplicates=%d "

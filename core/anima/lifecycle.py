@@ -757,142 +757,166 @@ class LifecycleMixin:
         episode_summaries: list[str] = []
         done_bytes = 0
         done_seconds = 0.0
-        for summary_date in selected_dates:
-            chunks = pending_by_date[summary_date]
-            day_bytes = sum(len(chunk.encode("utf-8")) for chunk in chunks)
-            deadline_at = _CONSOLIDATION_DEADLINE_AT.get()
-            if summary_date != target_date and deadline_at is not None and done_bytes > 0:
-                remaining = deadline_at - time.monotonic()
-                estimate = done_seconds / done_bytes * day_bytes * 1.2
-                if estimate > remaining:
-                    logger.info(
-                        "[%s] Episode backfill stopped before %s: estimate=%.0fs remaining=%.0fs",
-                        self.name,
-                        summary_date.isoformat(),
-                        estimate,
-                        remaining,
-                    )
-                    break
-            day_started = time.monotonic()
-            existing_episode = engine.read_episode_for_date(summary_date)
-            existing_context = existing_episode.strip() or "(none)"
-            context_byte_limit = min(48_000, max(256, max_input_bytes // 4))
-            existing_context = engine._truncate_utf8(existing_context, context_byte_limit)
+        # Fact extraction runs on the background fact model (DeepSeek) while the
+        # next chunk is summarised; the lock keeps fact-store writes sequential.
+        fact_lock = asyncio.Lock()
+        fact_tasks: list[asyncio.Task[Any]] = []
 
-            logger.info(
-                "[%s] Phase A: extracting episodes for %s from %d chunk(s) with model=%s",
-                self.name,
-                summary_date.isoformat(),
-                len(chunks),
-                model,
-            )
-            episode_parts: list[str] = []
-            completed_chunks: list[str] = []
-            facts_extracted = 0
-            facts_failed = 0
-            failed_chunks = 0
-            failure_reason = ""
+        async def extract_chunk_facts(text: str, source_episode: str) -> Any:
+            from core.memory.facts.live import build_background_fact_extractor
 
-            for chunk_index, chunk in enumerate(chunks):
-                time_range = f"{summary_date.isoformat()} chunk {chunk_index + 1}/{len(chunks)}"
-
-                def build_prompt(
-                    activity_chunk: str,
-                    time_range: str = time_range,
-                    existing_context: str = existing_context,
-                ) -> str:
-                    return load_prompt(
-                        "memory/episode_extraction",
-                        anima_name=self.name,
-                        time_range=time_range,
-                        activity_chunk=activity_chunk,
-                        existing_episode=existing_context,
-                    )
-
-                prompt_parts, split_error = _split_episode_prompt_to_limit(
-                    chunk,
-                    build_prompt,
-                    max_input_bytes,
+            async with fact_lock:
+                return await engine.extract_facts_from_text_outcome(
+                    text,
+                    source_episode=source_episode,
+                    source_session_id="consolidation:daily",
+                    extractor=build_background_fact_extractor(engine.anima_dir),
                 )
-                if split_error:
-                    failed_chunks += 1
-                    failure_reason = split_error
-                    continue
 
-                chunk_summaries: list[str] = []
-                for _activity_part, prompt in prompt_parts:
-                    raw, reason = await _complete_episode_prompt(
-                        prompt,
-                        model_configs,
-                        max_output_tokens=max_output_tokens,
-                    )
-                    if not raw:
-                        failure_reason = reason
+        try:
+            for summary_date in selected_dates:
+                chunks = pending_by_date[summary_date]
+                day_bytes = sum(len(chunk.encode("utf-8")) for chunk in chunks)
+                deadline_at = _CONSOLIDATION_DEADLINE_AT.get()
+                if summary_date != target_date and deadline_at is not None and done_bytes > 0:
+                    remaining = deadline_at - time.monotonic()
+                    estimate = done_seconds / done_bytes * day_bytes * 1.2
+                    if estimate > remaining:
+                        logger.info(
+                            "[%s] Episode backfill stopped before %s: estimate=%.0fs remaining=%.0fs",
+                            self.name,
+                            summary_date.isoformat(),
+                            estimate,
+                            remaining,
+                        )
                         break
-                    sanitized = engine._sanitize_llm_output(raw)
-                    if not sanitized.strip():
-                        failure_reason = "empty sanitized summary"
-                        break
-                    chunk_summaries.append(sanitized)
+                day_started = time.monotonic()
+                existing_episode = engine.read_episode_for_date(summary_date)
+                existing_context = existing_episode.strip() or "(none)"
+                context_byte_limit = min(48_000, max(256, max_input_bytes // 4))
+                existing_context = engine._truncate_utf8(existing_context, context_byte_limit)
 
-                if len(chunk_summaries) != len(prompt_parts):
-                    failed_chunks += 1
-                    continue
-                episode_parts.extend(chunk_summaries)
-                completed_chunks.append(chunk)
-                chunk_summary = engine.merge_timeline_parts(chunk_summaries)
-                try:
-                    fact_outcome = await engine.extract_facts_from_text_outcome(
-                        chunk_summary,
-                        source_episode=f"episodes/{summary_date.isoformat()}.md",
-                        source_session_id="consolidation:daily",
+                logger.info(
+                    "[%s] Phase A: extracting episodes for %s from %d chunk(s) with model=%s",
+                    self.name,
+                    summary_date.isoformat(),
+                    len(chunks),
+                    model,
+                )
+                episode_parts: list[str] = []
+                completed_chunks: list[str] = []
+                facts_extracted = 0
+                facts_failed = 0
+                failed_chunks = 0
+                failure_reason = ""
+                day_fact_tasks: list[asyncio.Task[Any]] = []
+
+                for chunk_index, chunk in enumerate(chunks):
+                    time_range = f"{summary_date.isoformat()} chunk {chunk_index + 1}/{len(chunks)}"
+
+                    def build_prompt(
+                        activity_chunk: str,
+                        time_range: str = time_range,
+                        existing_context: str = existing_context,
+                    ) -> str:
+                        return load_prompt(
+                            "memory/episode_extraction",
+                            anima_name=self.name,
+                            time_range=time_range,
+                            activity_chunk=activity_chunk,
+                            existing_episode=existing_context,
+                        )
+
+                    prompt_parts, split_error = _split_episode_prompt_to_limit(
+                        chunk,
+                        build_prompt,
+                        max_input_bytes,
                     )
+                    if split_error:
+                        failed_chunks += 1
+                        failure_reason = split_error
+                        continue
+
+                    chunk_summaries: list[str] = []
+                    for _activity_part, prompt in prompt_parts:
+                        raw, reason = await _complete_episode_prompt(
+                            prompt,
+                            model_configs,
+                            max_output_tokens=max_output_tokens,
+                        )
+                        if not raw:
+                            failure_reason = reason
+                            break
+                        sanitized = engine._sanitize_llm_output(raw)
+                        if not sanitized.strip():
+                            failure_reason = "empty sanitized summary"
+                            break
+                        chunk_summaries.append(sanitized)
+
+                    if len(chunk_summaries) != len(prompt_parts):
+                        failed_chunks += 1
+                        continue
+                    episode_parts.extend(chunk_summaries)
+                    completed_chunks.append(chunk)
+                    chunk_summary = engine.merge_timeline_parts(chunk_summaries)
+                    fact_task = asyncio.create_task(
+                        extract_chunk_facts(chunk_summary, f"episodes/{summary_date.isoformat()}.md")
+                    )
+                    day_fact_tasks.append(fact_task)
+                    fact_tasks.append(fact_task)
+
+                for fact_outcome in await asyncio.gather(*day_fact_tasks, return_exceptions=True):
+                    if isinstance(fact_outcome, BaseException):
+                        from core.memory.facts.observability import warn_rate_limited
+
+                        warn_rate_limited(
+                            logger,
+                            "fact_extraction.phase_a",
+                            "[%s] Phase A atomic fact extraction failed",
+                            self.name,
+                            exc_info=(type(fact_outcome), fact_outcome, fact_outcome.__traceback__),
+                        )
+                        facts_failed += 1
+                        continue
                     facts_extracted += int(getattr(fact_outcome, "facts_extracted", 0) or 0)
                     facts_failed += int(getattr(fact_outcome, "facts_failed", 0) or 0)
-                except Exception as exc:
-                    from core.memory.facts.observability import warn_rate_limited
 
-                    warn_rate_limited(
-                        logger,
-                        "fact_extraction.phase_a",
-                        "[%s] Phase A atomic fact extraction failed",
-                        self.name,
-                        exc_info=(type(exc), exc, exc.__traceback__),
+                if episode_parts:
+                    merged_episodes = engine.merge_timeline_parts(episode_parts)
+                    episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
+                    engine.record_consolidated_chunks(
+                        summary_date,
+                        completed_chunks,
+                        noop_cron_filtered=filtered_by_date.get(summary_date, False),
+                        input_profile=input_profile_by_date.get(summary_date, compaction_settings.profile),
                     )
-                    facts_failed += 1
+                    logger.info(
+                        "[%s] Phase A complete: date=%s wrote=%d chars to %s facts_extracted=%d facts_failed=%d",
+                        self.name,
+                        summary_date.isoformat(),
+                        len(merged_episodes),
+                        episode_path.name,
+                        facts_extracted,
+                        facts_failed,
+                    )
+                    episode_summaries.append(f"## {summary_date.isoformat()}\n\n{merged_episodes}")
 
-            if episode_parts:
-                merged_episodes = engine.merge_timeline_parts(episode_parts)
-                episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
-                engine.record_consolidated_chunks(
-                    summary_date,
-                    completed_chunks,
-                    noop_cron_filtered=filtered_by_date.get(summary_date, False),
-                    input_profile=input_profile_by_date.get(summary_date, compaction_settings.profile),
-                )
-                logger.info(
-                    "[%s] Phase A complete: date=%s wrote=%d chars to %s facts_extracted=%d facts_failed=%d",
-                    self.name,
-                    summary_date.isoformat(),
-                    len(merged_episodes),
-                    episode_path.name,
-                    facts_extracted,
-                    facts_failed,
-                )
-                episode_summaries.append(f"## {summary_date.isoformat()}\n\n{merged_episodes}")
-
-            if failed_chunks:
-                reason = failure_reason or "one or more chunk prompts failed"
-                logger.warning(
-                    "[%s] Episode summary failed date=%s failed_chunks=%d/%d reason=%s",
-                    self.name,
-                    summary_date.isoformat(),
-                    failed_chunks,
-                    len(chunks),
-                    reason[:240].replace("\n", " "),
-                )
-            done_bytes += day_bytes
-            done_seconds += time.monotonic() - day_started
+                if failed_chunks:
+                    reason = failure_reason or "one or more chunk prompts failed"
+                    logger.warning(
+                        "[%s] Episode summary failed date=%s failed_chunks=%d/%d reason=%s",
+                        self.name,
+                        summary_date.isoformat(),
+                        failed_chunks,
+                        len(chunks),
+                        reason[:240].replace("\n", " "),
+                    )
+                done_bytes += day_bytes
+                done_seconds += time.monotonic() - day_started
+        finally:
+            for task in fact_tasks:
+                if not task.done():
+                    task.cancel()
 
         import time as _time
 
