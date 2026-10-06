@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 2b6b606ff3fb560b6944970636ce5227109a97adbcc11fb2be9e58754e88bc80 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 23937aaf212b3992f35dd4f929dfb5667b67718c7509facf98d35034085cc089 -->
 
 # モジュール一覧
 
@@ -1018,7 +1018,7 @@ LLM 利用量とコストの記録・集計。
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front` | 373 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
 | `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |

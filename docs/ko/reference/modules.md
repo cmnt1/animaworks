@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7b8569e30c6ab95335bdb1e86f17c51df3e1f481b1c43a640228d0aaf0b17d54 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=a368e28c37f797bc0d17def7febcead79423faecdb5c94e4b7cc2728aa0cd50b generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -1011,29 +1011,29 @@ LLM 사용량과 비용의 기록·집계.
 
 ## `core.voice`
 
-음성 입출력 및 음성 대화.
+음성 입출력과 음성 대화.
 
-| 모듈 | 행 수 | 독스트링 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.voice` | 7 | 음성 채팅 하위 시스템 — STT, TTS 및 세션 오케스트레이션. |
+| `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 368 | 음성 프런트 레인 — 로컬 LLM을 통한 경량 음성 우선 채팅 경로. |
-| `core.voice.front_conversation` | 656 | 전송 방식에 구애받지 않는 프런트 레인 대화 및 위임 처리. |
-| `core.voice.sentence_splitter` | 73 | 스트리밍 TTS를 위한 일본어 특성 반영 문장 분할. |
-| `core.voice.session` | 1426 | 음성 세션 — STT -> 채팅 -> TTS 오케스트레이션. |
+| `core.voice.front` | 373 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
+| `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
+| `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.session_factory` | 66 | — |
 | `core.voice.speech_text` | 332 | — |
-| `core.voice.stt` | 145 | 음성 STT — faster-whisper를 사용한 메모리 내 PCM 전사. |
-| `core.voice.stt_stream` | 300 | 스트리밍 STT — 롤링 버퍼 + LocalAgreement-2 접두사 확정. |
-| `core.voice.transport` | 21 | 음성 세션 출력용 전송 프로토콜. |
-| `core.voice.tts_base` | 61 | TTS 추상 기반 클래스 — 공급자 인터페이스 및 설정. |
-| `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS 공급자 — REST API 스트리밍. |
-| `core.voice.tts_factory` | 47 | TTS 공급자 팩토리. |
-| `core.voice.tts_gemini` | 183 | Gemini TTS 공급자 — Gemini API Interactions 엔드포인트(SSE 스트리밍). |
-| `core.voice.tts_irodori` | 79 | Irodori-TTS 공급자 — HTTP API. |
-| `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS 공급자. |
-| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS 공급자 — 엔진 HTTP API. |
+| `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
+| `core.voice.stt_stream` | 300 | Streaming STT — rolling buffer + LocalAgreement-2 prefix commitment. |
+| `core.voice.transport` | 21 | Transport protocol for voice-session output. |
+| `core.voice.tts_base` | 61 | TTS abstract base — provider interface and config. |
+| `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
+| `core.voice.tts_factory` | 47 | TTS provider factory. |
+| `core.voice.tts_gemini` | 183 | Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming). |
+| `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
+| `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
+| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
 | `core.voice.turn_detector` | 383 | — |
 | `core.voice.voice_config` | 76 | — |
 

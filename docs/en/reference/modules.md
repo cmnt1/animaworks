@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7b8569e30c6ab95335bdb1e86f17c51df3e1f481b1c43a640228d0aaf0b17d54 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=a368e28c37f797bc0d17def7febcead79423faecdb5c94e4b7cc2728aa0cd50b generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -1011,14 +1011,14 @@ LLM usage and cost recording and aggregation.
 
 ## `core.voice`
 
-Audio input/output and voice conversations.
+Audio I/O and voice conversations.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front` | 373 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
 | `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
