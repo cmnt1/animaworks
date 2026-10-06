@@ -50,6 +50,8 @@ dependencies = [
     # and breaks core/mcp integration + test_mcp_server; pin until migrated.
     # [tool.uv].constraint-dependencies is uv-only; this direct dep also constrains pip.
     "mcp>=1,<2",
+    # Inbox watcher wakes on file events (core/runtime/inbox_rate_limiter.py).
+    "watchdog>=6.0.0",
 ]
 
 [project.urls]
