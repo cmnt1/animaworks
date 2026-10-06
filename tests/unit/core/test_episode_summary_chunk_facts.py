@@ -218,3 +218,78 @@ async def test_daily_episode_summarises_next_chunk_while_facts_are_extracted() -
     assert result.action == "completed"
     assert events.index("summary-two") < events.index("extract-end:summary one")
     assert events.index("extract-end:summary one") < events.index("extract-start:summary two")
+
+
+@pytest.mark.asyncio
+async def test_daily_episode_writes_finished_chunks_when_next_chunk_cannot_meet_deadline() -> None:
+    from core.anima.lifecycle import _CONSOLIDATION_DEADLINE_AT
+
+    target = date(2026, 10, 2)
+    reference = datetime(2026, 10, 3, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    config = AnimaWorksConfig(
+        credentials={"anthropic": CredentialConfig(api_key="test")},
+        consolidation=ConsolidationConfig(
+            llm_model="anthropic/claude-sonnet-4-6",
+            llm_credential="anthropic",
+            episode_summary_backfill_days=1,
+            episode_summary_max_input_bytes=4096,
+        ),
+    )
+    clock = [10_000.0]
+
+    async def complete(prompt, **_kwargs):
+        clock[0] += 1000.0
+        return f"summary of {prompt}"
+
+    engine = MagicMock()
+    engine.anima_dir = Path("/nonexistent/test-anima")
+    engine.previous_local_day_window.return_value = (target, None, None)
+    engine.collect_pending_activity_chunks.return_value = (["chunk one", "chunk two"], False)
+    engine.resolve_input_profile_for_date.side_effect = lambda _day, requested: requested
+    engine.read_episode_for_date.return_value = ""
+    engine._truncate_utf8.side_effect = lambda text, _limit: text
+    engine._sanitize_llm_output.side_effect = lambda text: text
+    engine.merge_timeline_parts.side_effect = lambda parts: "\n\n".join(parts)
+    engine.write_consolidated_episode.return_value = Path(f"{target}.md")
+    engine.extract_facts_from_text_outcome = AsyncMock(return_value=SimpleNamespace(facts_extracted=1, facts_failed=0))
+
+    class FakeAnima(LifecycleMixin):
+        pass
+
+    owner = FakeAnima.__new__(FakeAnima)
+    owner.name = "test-anima"
+    owner.memory = MagicMock()
+    owner.memory.read_model_config.return_value = ModelConfig(
+        model="anthropic/claude-sonnet-4-6",
+        credential="anthropic",
+        resolved_mode="A",
+    )
+    info = MagicMock()
+    token = _CONSOLIDATION_DEADLINE_AT.set(clock[0] + 1500.0)
+    try:
+        with (
+            patch("core.anima.lifecycle.now_local", return_value=reference),
+            patch("core.anima.lifecycle.time", SimpleNamespace(monotonic=lambda: clock[0])),
+            patch(
+                "core.anima.lifecycle.load_prompt",
+                side_effect=lambda _name, **kwargs: kwargs["activity_chunk"],
+            ),
+            patch("core.config.load_config", return_value=config),
+            patch("core.llm.oneshot.one_shot_completion", new=AsyncMock(side_effect=complete)),
+            patch("core.memory.facts.live.build_background_fact_extractor", return_value=object()),
+            patch("core.anima.lifecycle.logger.info", new=info),
+        ):
+            result = await LifecycleMixin._run_daily_episode_summaries(
+                owner,
+                engine,
+                cfg=config,
+                model=config.consolidation.llm_model,
+                start_mono=0.0,
+            )
+    finally:
+        _CONSOLIDATION_DEADLINE_AT.reset(token)
+
+    assert result.action == "completed"
+    engine.write_consolidated_episode.assert_called_once_with(target, "summary of chunk one")
+    assert engine.record_consolidated_chunks.call_args.args[1] == ["chunk one"]
+    assert any("Episode summary stopped before" in call.args[0] for call in info.call_args_list)

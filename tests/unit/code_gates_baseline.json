@@ -1,6 +1,7 @@
 {
   "write_text_json_dumps": {},
   "status_json_literal_files": [
+    "cli/commands/anima.py",
     "cli/commands/anima_mgmt.py",
     "core/activity/audit.py",
     "core/agent/agent_core.py",
