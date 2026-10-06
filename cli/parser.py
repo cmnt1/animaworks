@@ -657,10 +657,13 @@ def cli_main() -> None:
     if args.data_dir:
         os.environ["ANIMAWORKS_DATA_DIR"] = args.data_dir
 
-    if hasattr(args, "func"):
-        args.func(args)
-    else:
-        parser.print_help()
+    if not hasattr(args, "func"):
+        # Bare ``animaworks`` opens a chat with the default (head) anima.
+        args = parser.parse_args([*_sys.argv[1:], "chat"])
+        if args.data_dir:
+            os.environ["ANIMAWORKS_DATA_DIR"] = args.data_dir
+
+    args.func(args)
 
 
 # ── Lazy import wrappers ──────────────────────────────────

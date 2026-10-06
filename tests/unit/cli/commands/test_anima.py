@@ -396,3 +396,51 @@ class TestCmdHeartbeat:
         )
         with pytest.raises(SystemExit):
             cmd_heartbeat(args)
+
+
+# ── resolve_default_anima ───────────────────────────────
+
+
+class TestResolveDefaultAnima:
+    def _anima(self, animas_dir: Path, name: str, status: str) -> None:
+        (animas_dir / name).mkdir(parents=True)
+        (animas_dir / name / "status.json").write_text(status, encoding="utf-8")
+
+    def test_configured_default_wins(self, tmp_path):
+        from cli.commands.anima import resolve_default_anima
+
+        cfg = MagicMock()
+        cfg.cli.default_anima = "mei"
+        with (
+            patch("core.config.load_config", return_value=cfg),
+            patch("core.paths.get_animas_dir", return_value=tmp_path),
+        ):
+            assert resolve_default_anima() == "mei"
+
+    def test_single_enabled_top_level(self, tmp_path):
+        from cli.commands.anima import resolve_default_anima
+
+        self._anima(tmp_path, "boss", '{"supervisor": null}')
+        self._anima(tmp_path, "worker", '{"supervisor": "boss"}')
+        self._anima(tmp_path, "off", '{"supervisor": null, "enabled": false}')
+        cfg = MagicMock()
+        cfg.cli.default_anima = ""
+        with (
+            patch("core.config.load_config", return_value=cfg),
+            patch("core.paths.get_animas_dir", return_value=tmp_path),
+        ):
+            assert resolve_default_anima() == "boss"
+
+    def test_ambiguous_returns_none(self, tmp_path, capsys):
+        from cli.commands.anima import resolve_default_anima
+
+        self._anima(tmp_path, "a", '{"supervisor": null}')
+        self._anima(tmp_path, "b", '{"supervisor": null}')
+        cfg = MagicMock()
+        cfg.cli.default_anima = ""
+        with (
+            patch("core.config.load_config", return_value=cfg),
+            patch("core.paths.get_animas_dir", return_value=tmp_path),
+        ):
+            assert resolve_default_anima() is None
+        assert "a, b" in capsys.readouterr().err

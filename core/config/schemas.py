@@ -973,6 +973,14 @@ class UIConfig(BaseModel):
     demo_mode: bool = False
 
 
+class CLIConfig(BaseModel):
+    """Command-line client settings."""
+
+    # Anima opened by a bare ``animaworks`` / ``animaworks chat``.
+    # Empty = the single enabled top-level anima, if there is exactly one.
+    default_anima: str = ""
+
+
 # ── Activity Schedule ───────────────────────────────────────────────────────
 
 
@@ -1323,6 +1331,7 @@ class AnimaWorksConfig(BaseModel):
     )
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
+    cli: CLIConfig = CLIConfig()
 
 
 __all__ = [
@@ -1334,6 +1343,7 @@ __all__ = [
     "BackgroundReviewConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
+    "CLIConfig",
     "ChatworkToolConfig",
     "ConsolidationConfig",
     "CompactBackgroundRecallConfig",
