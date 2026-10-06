@@ -38,6 +38,7 @@ def _base_config() -> dict:
         "github_webhook": {"enabled": False},
         "phone": {"enabled": False},
         "human_notification": {"enabled": False},
+        "external_tasks": {"enabled": False},
         "event_export": {"url": None},
     }
 
@@ -247,6 +248,12 @@ def test_guard5_empty_allowlist(data_dir: Path) -> None:
     _prepare_data_dir(data_dir)
     config = _make_config(enclave=_enclave(allowed_llm_credentials=[]))
     assert _has(_violations(config, data_dir), "allowed_llm_credentials")
+
+
+def test_guard3_external_tasks_enabled(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    config = _make_config(enclave=_enclave(), external_tasks={"enabled": True})
+    assert _has(_violations(config, data_dir), "external_tasks")
 
 
 def test_guard5_unallowed_credential(data_dir: Path) -> None:

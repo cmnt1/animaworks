@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 
 def check_gateway_health(socket_path: str, *, timeout: float = 2.0) -> bool:
     """Return whether a Unix-socket gateway answers its health endpoint."""
-    if not socket_path or not Path(socket_path).is_socket():
+    if not socket_path:
+        return False
+    try:
+        if not Path(socket_path).is_socket():
+            return False
+    except OSError:  # e.g. the socket directory is not accessible to this user
         return False
 
     try:

@@ -77,8 +77,9 @@ _IDENTIFIER_PATTERNS = [
         "[MASK-EMAIL]",
     ),
     (
-        r"(?<!\d)(?:\+81[- ]?(?:0)?|0)\d{1,4}[- ]?\d{1,4}[- ]?\d{3,4}(?!\d)",
-        "[MASK-PHONE]",
+        # Not glued to letters (record IDs such as TK000001); digit count is checked in _phone_repl.
+        r"(?<![\dA-Za-z])(?:\+81[- ]?(?:0)?|0)\d{1,4}[- ]?\d{1,4}[- ]?\d{3,4}(?![\dA-Za-z])",
+        lambda m: _phone_repl(m),
     ),
     (r"(?:〒\s*)?\d{3}[-ー]\d{4}", "[MASK-POSTAL]"),
     (
@@ -109,6 +110,18 @@ _FACILITY_RE = re.compile(
     r"(^|[\s、。・「」（）()\nはをにへでの])"
     r"([" + _KANJI + r"ぁ-んァ-ヶーA-Za-z0-9０-９第]{1,40}?" + _FACILITY_SUFFIX + _DEPARTMENT_SUFFIX + r")"
 )
+
+def _phone_repl(match: re.Match[str]) -> str:
+    """Mask only plausible phone numbers: 10-11 digits, or +81 with 9-10 national digits."""
+    raw = match.group(0)
+    digits = re.sub(r"\D", "", raw)
+    if raw.startswith("+81"):
+        national = digits[2:].removeprefix("0")
+        plausible = 9 <= len(national) <= 10
+    else:
+        plausible = 10 <= len(digits) <= 11
+    return "[MASK-PHONE]" if plausible else raw
+
 
 _IDENTIFIER_COMPILED = [(re.compile(p, re.IGNORECASE), r) for p, r in _IDENTIFIER_PATTERNS]
 _DATE_COMPILED = [re.compile(p) for p in _DATE_PATTERNS]

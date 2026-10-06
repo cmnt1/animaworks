@@ -649,7 +649,12 @@ def cli_main() -> None:
     if _first_arg and not _first_arg.startswith("-"):
         from core.integrations import TOOL_MODULES
 
-        if _first_arg in TOOL_MODULES or _first_arg == "submit":
+        # Real subcommands win over same-named tool modules (e.g. "enclave").
+        _subcommands = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            {},
+        )
+        if _first_arg not in _subcommands and (_first_arg in TOOL_MODULES or _first_arg == "submit"):
             _sys.argv[0] = "animaworks-tool"
             from cli.tool_dispatch import cli_dispatch
 
