@@ -47,7 +47,18 @@ def test_body_uses_voice_id_and_style() -> None:
     tts = GeminiTTS(VoiceConfig())
     assert tts.prefers_whole_reply is True
     body = tts._body("こんにちは", TTSConfig(provider="gemini", voice_id="voice_abc", extra={"style": "明るく"}))
-    assert body["model"] == "gemini-3.8-flash-tts" and body["stream"] is True
-    assert body["generation_config"]["speech_config"][0]["voice"] == "voice_abc"
-    assert body["input"][0]["content"][0]["annotations"][0]["style"] == "明るく"
-    assert "generation_config" not in tts._body("x", TTSConfig(provider="gemini"))
+    part = body["contents"][0]["parts"][0]
+    assert part["text"] == "こんにちは" and part["speech_metadata"]["style"] == "明るく"
+    assert body["generationConfig"]["responseModalities"] == ["AUDIO"]
+    assert body["generationConfig"]["speechConfig"]["voiceConfig"]["voice"] == "voice_abc"
+    assert "speechConfig" not in tts._body("x", TTSConfig(provider="gemini"))["generationConfig"]
+    assert tts._model_for(TTSConfig(provider="gemini")) == "gemini-3.8-flash-tts"
+
+
+def test_parse_sse_audio_generate_content_chunk() -> None:
+    def part(data: bytes) -> dict:
+        return {"inlineData": {"mimeType": "audio/L16;codec=pcm;rate=24000", "data": base64.b64encode(data).decode()}}
+
+    line = "data: " + json.dumps({"candidates": [{"content": {"parts": [part(b"\x01\x00"), part(b"\x02\x00")]}}]})
+    assert parse_sse_audio(line) == (b"\x01\x00\x02\x00", 24000)
+    assert parse_sse_audio("data: " + json.dumps({"candidates": [{"content": {"parts": [{"text": "x"}]}}]})) is None

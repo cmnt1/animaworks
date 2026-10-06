@@ -198,6 +198,7 @@ class FrontConversation:
         self._delegation_jobs: dict[int, asyncio.Task[Any]] = {}
         self._delegation_job_counter = 0
         self._delegation_requests: dict[int, str] = {}
+        self._withdrawn_jobs: set[int] = set()
         self._delegation_results: asyncio.Queue[tuple[int, str]] | None = None
         self._delegation_done: asyncio.Queue[None] | None = None
         self._unreported_delegation_results: dict[int, str] = {}
@@ -528,12 +529,37 @@ class FrontConversation:
         finally:
             self._delegation_jobs.pop(job, None)
             self._delegation_requests.pop(job, None)
+            if job in self._withdrawn_jobs:
+                self._withdrawn_jobs.discard(job)
+                return  # noqa: B012 -- a withdrawn request has no result to report
             message = f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
             self._unreported_delegation_results[job] = message
             if self._delegation_results is not None:
                 await self._delegation_results.put((job, message))
             if self._delegation_done is not None:
                 await self._delegation_done.put(None)
+
+    @property
+    def delegation_job_counter(self) -> int:
+        """Number of delegation jobs created so far in this conversation."""
+        return self._delegation_job_counter
+
+    def withdraw_delegations_after(self, job_counter: int) -> list[int]:
+        """Cancel running jobs created after *job_counter*, without reporting them.
+
+        Used when the turn that requested them was abandoned before the caller
+        heard any reply, so the request is re-made from the merged utterance.
+        """
+        withdrawn: list[int] = []
+        for job, task in list(self._delegation_jobs.items()):
+            if job <= job_counter or task.done():
+                continue
+            self._withdrawn_jobs.add(job)
+            task.cancel()
+            self._delegation_jobs.pop(job, None)
+            self._delegation_requests.pop(job, None)
+            withdrawn.append(job)
+        return withdrawn
 
     @property
     def last_drained_delegation_ids(self) -> tuple[int, ...]:

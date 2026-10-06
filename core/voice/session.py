@@ -89,6 +89,9 @@ SILENCE_RMS_THRESHOLD = 0.008
 TTS_QUEUE_MAXSIZE = 8
 WHOLE_REPLY_FALLBACK_CHARS = 300
 PROBE_TIMEOUT_SEC = 1.5
+# An utterance cut off before it was answered joins the next one only if the
+# caller continues soon; older words belong to a finished exchange.
+CARRY_TRANSCRIPT_TTL_SEC = 10.0
 ECHO_SIMILARITY_THRESHOLD = 0.5
 PROBE_MIN_CHARS = 3
 _BACKGROUND_DELEGATION_REPORT_TASKS: set[asyncio.Task[None]] = set()
@@ -105,6 +108,8 @@ class _VoiceTurnTiming:
     first_audio_at: float | None = None
     reply_chars: int = 0
     ask_anima_called: bool = False
+    delegation_counter_at_start: int = 0
+    filler: str = ""
 
 
 # Silence-triggered monologue. Modelled on AI-VTuber solo-talk routines:
@@ -361,6 +366,14 @@ class VoiceSession:
         self._probe_task: asyncio.Task[None] | None = None
         self._probe_followup_pending = False
         self._probe_speech_end_at: float | None = None
+        self._deferred_speech_end = False
+        # Phone: words of a turn whose reply never finished are prepended to the
+        # next utterance, so an early end-of-turn or a barge-in does not split
+        # one thought into two unrelated questions.
+        self._carry_transcript = ""
+        self._carry_at = 0.0
+        self._last_turn_text = ""
+        self._last_turn_at = 0.0
         self._tts_available: bool | None = None
         self._splitter = StreamingSentenceSplitter()
         self._consecutive_tts_failures: int = 0
@@ -424,6 +437,55 @@ class VoiceSession:
                     name=f"voice-filler-cache-{self._anima_name}",
                 )
 
+    def _reply_still_playing(self) -> bool:
+        """Whether the caller can still hear our audio.
+
+        Twilio acknowledges each played segment with a mark, which is exact;
+        the send-time estimate runs late by the synthesis time.
+        """
+        pending = getattr(self._transport, "pending_marks", None)
+        if pending is not None:
+            return bool(pending)
+        return time.monotonic() < self._playback_end_at
+
+    async def _cut_off_playing_reply(self) -> None:
+        """Stop our still-playing reply when the caller has just talked over it.
+
+        The caller's words are answered together with the utterance that
+        reply was for, so a thought split by a pause is not answered twice.
+        """
+        if not self._last_turn_text or not self._reply_still_playing():
+            return
+        if not self._audio_buffer or _normalized_rms_from_pcm16(bytes(self._audio_buffer)) < SILENCE_RMS_THRESHOLD:
+            return
+        await self._transport.send_event({"type": "barge_verdict", "interrupt": True})
+        self._playback_end_at = 0.0
+        lane = self._front_conversation.existing_lane
+        if time.monotonic() - self._last_turn_at <= CARRY_TRANSCRIPT_TTL_SEC and lane is not None:
+            self._carry_unanswered(self._last_turn_text, lane)
+        self._last_turn_text = ""
+        logger.info("reply cut off by caller anima=%s channel=%s", self._anima_name, self._channel)
+
+    def _carry_unanswered(self, text: str, lane: Any) -> None:
+        """Keep an unanswered (cut-off) utterance for the next phone turn.
+
+        A reply that finished generating already sits in the lane history;
+        drop that pair so the merged utterance is not answered twice.
+        """
+        self._carry_transcript = text
+        self._carry_at = time.monotonic()
+        turn = self._active_turn
+        if turn is not None and turn.first_audio_at is None:
+            withdrawn = self._front_conversation.withdraw_delegations_after(turn.delegation_counter_at_start)
+            if withdrawn:
+                logger.info("ask_anima withdrawn (reply unheard) anima=%s jobs=%s", self._anima_name, withdrawn)
+        history = getattr(lane, "history", None)
+        if not isinstance(history, list) or len(history) < 2 or not callable(getattr(lane, "set_history", None)):
+            return
+        if history[-2].get("role") == "user" and history[-1].get("role") == "assistant":
+            if history[-2].get("content", "").endswith(text):
+                lane.set_history(history[:-2])
+
     @property
     def _prefers_whole_reply(self) -> bool:
         """Whether this TTS provider has high fixed latency per request."""
@@ -476,7 +538,9 @@ class VoiceSession:
         # We are talking: whatever the mic hears is our own TTS leaking through
         # the speakers. The client suppresses it too, but its playback flag can
         # lag a frame or two — dropping here makes self-transcription impossible.
-        if self._tts_playing and not self._probe_active:
+        # Phone echo is gated upstream by TurnDetector (playback marks), so audio
+        # reaching here while a reply is being prepared is the caller speaking.
+        if self._tts_playing and not self._probe_active and self._channel != "phone":
             return
         if len(self._audio_buffer) + len(data) > MAX_AUDIO_BUFFER_BYTES:
             self._audio_buffer.clear()
@@ -549,6 +613,12 @@ class VoiceSession:
             while self._processing and time.monotonic() < deadline:  # noqa: ASYNC110 -- polls external or transient state with no corresponding asyncio.Event
                 await asyncio.sleep(0.02)
             if self._processing:
+                if self._channel == "phone":
+                    # Run it right after the cut-off turn unwinds instead of
+                    # dropping the caller's words.
+                    self._deferred_speech_end = True
+                    logger.info("probe follow-up deferred (processing) anima=%s", self._anima_name)
+                    return
                 logger.warning("Probe follow-up still waiting for current turn (%s)", self._anima_name)
                 return
             self._probe_followup_pending = False
@@ -558,16 +628,41 @@ class VoiceSession:
             self._streamer.reset()
         if self._processing:
             self._probe_speech_end_at = None
-            logger.info("speech_end ignored (processing) anima=%s channel=%s", self._anima_name, self._channel)
+            if self._channel == "phone":
+                self._deferred_speech_end = True
+                current = self._active_turn
+                reply_audible = current is not None and current.first_audio_at is not None
+                loud = bool(self._audio_buffer) and (
+                    _normalized_rms_from_pcm16(bytes(self._audio_buffer)) >= SILENCE_RMS_THRESHOLD
+                )
+                abandon = current is not None and not self._interrupted and (not reply_audible or loud)
+                if abandon:
+                    # The caller kept talking: drop (or cut off) our reply and
+                    # answer the whole utterance instead.
+                    self._interrupted = True
+                    self._clear_tts_queue()
+                    if reply_audible:
+                        await self._transport.send_event({"type": "barge_verdict", "interrupt": True})
+                logger.info(
+                    "speech_end deferred (processing) anima=%s channel=%s abandon_reply=%s",
+                    self._anima_name,
+                    self._channel,
+                    str(abandon).lower(),
+                )
+            else:
+                logger.info("speech_end ignored (processing) anima=%s channel=%s", self._anima_name, self._channel)
             return
         # A real user turn resets the proactive state so the next silence
         # period begins with the conversational first prompt again.
         self._proactive_count = 0
         self._proactive_delay = float(getattr(self._voice_config, "proactive_initial_delay_sec", 10.0))
+        if self._channel == "phone":
+            await self._cut_off_playing_reply()
         turn = _VoiceTurnTiming(
             speech_end_at=speech_end_at if self._probe_speech_end_at is None else self._probe_speech_end_at
         )
         self._probe_speech_end_at = None
+        turn.delegation_counter_at_start = self._front_conversation.delegation_job_counter
         self._active_turn = turn
         self._processing = True
         try:
@@ -581,6 +676,9 @@ class VoiceSession:
                 self._log_voice_turn(turn)
             if self._active_turn is turn:
                 self._active_turn = None
+        if self._deferred_speech_end and not self._closed:
+            self._deferred_speech_end = False
+            await self.handle_speech_end(from_person)
 
     async def _check_tts_health(self) -> bool:
         """Check TTS availability. Only caches positive results; retries on failure."""
@@ -643,7 +741,10 @@ class VoiceSession:
         # 1. STT
         streaming_used = False
         try:
-            if self._streamer.has_content():
+            # Phone has no live captions, and its turns overlap our playback,
+            # which resets the rolling decoder mid-utterance; decode the whole
+            # buffer instead.
+            if self._streamer.has_content() and self._channel != "phone":
                 # Streaming path: finalize the rolling decode. The committed
                 # prefix was shown live via transcript_partial; the remainder
                 # is decoded here. Decode runs off the event loop.
@@ -687,6 +788,10 @@ class VoiceSession:
             except Exception as e:
                 logger.warning("STT refine failed, using raw: %s", e)
 
+        if self._channel == "phone" and self._carry_transcript:
+            if time.monotonic() - self._carry_at <= CARRY_TRANSCRIPT_TTL_SEC:
+                text = f"{self._carry_transcript} {text}"
+            self._carry_transcript = ""
         turn = self._active_turn
         if turn is not None:
             turn.transcript = text
@@ -729,6 +834,11 @@ class VoiceSession:
                 front_ok = await self._front_conversation.check_health()
                 if front_ok:
                     response_done_sent = await self._run_front_turn(lane, text, from_person, tts_ok)
+                    if self._channel == "phone" and (self._interrupted or not self._front_conversation.last_completed):
+                        self._carry_unanswered(text, lane)
+                    elif self._channel == "phone":
+                        self._last_turn_text = text
+                        self._last_turn_at = time.monotonic()
                     return
                 logger.warning(
                     "voice front unavailable (%s) — falling back to process_message",
@@ -886,6 +996,23 @@ class VoiceSession:
         if not sentence or queue is None or self._interrupted:
             return
         await queue.put(sentence)
+
+    def _without_repeated_filler(self, text: str) -> str:
+        """Drop a leading interjection that repeats the filler we just played.
+
+        The model often opens with the same "うん、" / "なるほど、" the caller
+        already heard as the filler, which sounds like a stutter.
+        """
+        turn = self._active_turn
+        filler = turn.filler if turn is not None else ""
+        core = filler.strip().rstrip("、,。.!！?？ ")
+        if not core:
+            return text
+        stripped = text.lstrip()
+        if not stripped.startswith(core):
+            return text
+        rest = stripped[len(core) :].lstrip("、,。.!！?？ ")
+        return rest or text
 
     async def _enqueue_reply_tts(self, text: str) -> None:
         """Enqueue one whole short reply for fixed-latency TTS, or sentence chunks."""
@@ -1176,7 +1303,7 @@ class VoiceSession:
             if self._prefers_whole_reply:
                 self._splitter.flush()
                 if tts_ok:
-                    await self._enqueue_reply_tts(full_text)
+                    await self._enqueue_reply_tts(self._without_repeated_filler(full_text))
             else:
                 remaining = self._splitter.flush()
                 if remaining and tts_ok:
@@ -1416,6 +1543,8 @@ class VoiceSession:
             return
 
         text, audio, seconds = random.choice(available)
+        if self._active_turn is not None:
+            self._active_turn.filler = text
         self._recent_tts_text.append(text)
         try:
             await self._transport.send_audio(audio)
@@ -1566,8 +1695,21 @@ class VoiceSession:
     async def _probe_timeout(self) -> None:
         try:
             await asyncio.sleep(PROBE_TIMEOUT_SEC)
+            if not self._probe_active:
+                return
+            # Streaming partials commit only after two decodes agree, which can
+            # take longer than the timeout. Decode what we have rather than
+            # discarding real speech as "too short".
+            text = ""
+            audio_data = bytes(self._audio_buffer)
+            if audio_data:
+                try:
+                    result = await self._stt.transcribe_buffer_async(audio_data)
+                    text = str(result.get("raw_text", "") or "").strip()
+                except Exception:
+                    logger.debug("Probe timeout STT failed (%s)", self._anima_name, exc_info=True)
             if self._probe_active:
-                await self._judge_probe("")
+                await self._judge_probe(text)
         except asyncio.CancelledError:
             pass
 
@@ -1621,14 +1763,33 @@ class VoiceSession:
             return False
         self._probe_active = False
         self._cancel_probe_timeout()
+        probe_text = json.dumps(text[:40], ensure_ascii=False)
+        # Faint audio is our own reply leaking back (no echo canceller on the
+        # line); a caller talking over us is far louder than the silence floor.
+        if (
+            self._channel == "phone"
+            and self._audio_buffer
+            and _normalized_rms_from_pcm16(bytes(self._audio_buffer)) < SILENCE_RMS_THRESHOLD
+        ):
+            self._audio_buffer.clear()
+            self._streamer.reset()
+            await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
+            logger.info(
+                "barge_probe verdict interrupt=false reason=quiet anima=%s channel=%s text=%s",
+                self._anima_name,
+                self._channel,
+                probe_text,
+            )
+            return False
         if len(normalized) < PROBE_MIN_CHARS:
             self._audio_buffer.clear()
             self._streamer.reset()
             await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
             logger.info(
-                "barge_probe verdict interrupt=false reason=too_short anima=%s channel=%s",
+                "barge_probe verdict interrupt=false reason=too_short anima=%s channel=%s text=%s",
                 self._anima_name,
                 self._channel,
+                probe_text,
             )
             return False
         if _is_self_echo(text, self._recent_tts_text):
@@ -1636,9 +1797,10 @@ class VoiceSession:
             self._streamer.reset()
             await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
             logger.info(
-                "barge_probe verdict interrupt=false reason=self_echo anima=%s channel=%s",
+                "barge_probe verdict interrupt=false reason=self_echo anima=%s channel=%s text=%s",
                 self._anima_name,
                 self._channel,
+                probe_text,
             )
             return False
 
@@ -1648,9 +1810,10 @@ class VoiceSession:
         self._probe_followup_pending = True
         await self._transport.send_event({"type": "barge_verdict", "interrupt": True})
         logger.info(
-            "barge_probe verdict interrupt=true reason=recognized_speech anima=%s channel=%s",
+            "barge_probe verdict interrupt=true reason=recognized_speech anima=%s channel=%s text=%s",
             self._anima_name,
             self._channel,
+            probe_text,
         )
         return True
 

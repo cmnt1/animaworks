@@ -927,7 +927,7 @@ class PhoneConfig(BaseModel):
         gt=0,
         description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
     )
-    turn_end_silence_ms: int = Field(default=2000, ge=300, le=5000)
+    turn_end_silence_ms: int = Field(default=1200, ge=300, le=5000)
 
 
 class VoicevoxConfig(BaseModel):
