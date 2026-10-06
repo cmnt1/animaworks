@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=d3b14ff1655f4a27245c65eb4af42026070a17314f80539da7aa8e37ff08bee6 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=87b5de437e4469bc9ff7937e96bf349a204a339ee12ad42b1a9eea3e3243ce61 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -16,7 +16,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
-| `cli.parser` | 849 | — |
+| `cli.parser` | 859 | — |
 | `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
@@ -32,6 +32,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
 | `cli.commands.cost_cmd` | 232 | — |
+| `cli.commands.enclave_cmd` | 237 | Operational commands for enclave runtimes. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
@@ -185,7 +186,7 @@ Common send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Schema, loading, validation, and migration for application configuration.
+Application configuration schema, loading, validation, and migration.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -204,7 +205,7 @@ Schema, loading, validation, and migration for application configuration.
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1425 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1426 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -213,14 +214,14 @@ Configuration model and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
-| `core.enclave` | 43 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 41 | Configuration models for enclave mode. |
+| `core.enclave` | 44 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 59 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
 | `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
 | `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.facts` | 155 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
@@ -228,7 +229,8 @@ Configuration model and startup security guards for isolated enclave mode.
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
 | `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
-| `core.enclave.guards` | 236 | Startup guards for enclave mode. |
+| `core.enclave.guards` | 237 | Startup guards for enclave mode. |
+| `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 
 ## `core.enclave.egress`
 
@@ -366,7 +368,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 438 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 498 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -374,9 +376,9 @@ Translation catalog and language selection.
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 467 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
-| `core.i18n.strings.phone` | 112 | — |
+| `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
@@ -415,7 +417,7 @@ External service integrations and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
-| `core.integrations` | 72 | Core integration tool discovery and registry. |
+| `core.integrations` | 79 | Core integration tool discovery and registry. |
 | `core.integrations._anima_icon_url（非公開）` | 322 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
 | `core.integrations._base（非公開）` | 158 | — |
@@ -446,6 +448,7 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
+| `core.integrations.enclave_records` | 230 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -949,8 +952,8 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
 | `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
-| `core.tooling.dispatch` | 255 | — |
-| `core.tooling.handler` | 880 | — |
+| `core.tooling.dispatch` | 256 | — |
+| `core.tooling.handler` | 881 | — |
 | `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 872 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
@@ -965,15 +968,15 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
-| `core.tooling.permissions` | 336 | — |
+| `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 455 | — |
-| `core.tooling.policy.registry` | 30 | — |
+| `core.tooling.policy.registry` | 60 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
 | `core.tooling.policy.schemas.channel` | 118 | — |
 | `core.tooling.policy.schemas.converters` | 27 | — |
-| `core.tooling.policy.schemas.loader` | 100 | — |
+| `core.tooling.policy.schemas.loader` | 101 | — |
 | `core.tooling.policy.schemas.memory` | 228 | — |
 | `core.tooling.policy.schemas.notification` | 67 | — |
 | `core.tooling.policy.schemas.session_todo` | 62 | — |
@@ -1017,30 +1020,30 @@ LLM usage and cost recording and aggregation.
 
 ## `core.voice`
 
-Audio I/O and voice conversations.
+Audio input/output and voice conversations.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 373 | Voice front lane — lightweight speech-first chat path via a local LLM. |
-| `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
+| `core.voice.front` | 385 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front_conversation` | 668 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
-| `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session` | 1680 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.session_factory` | 66 | — |
 | `core.voice.speech_text` | 332 | — |
 | `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
 | `core.voice.stt_stream` | 300 | Streaming STT — rolling buffer + LocalAgreement-2 prefix commitment. |
 | `core.voice.transport` | 21 | Transport protocol for voice-session output. |
-| `core.voice.tts_base` | 61 | TTS abstract base — provider interface and config. |
+| `core.voice.tts_base` | 63 | TTS abstract base — provider interface and config. |
 | `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
 | `core.voice.tts_factory` | 47 | TTS provider factory. |
-| `core.voice.tts_gemini` | 183 | Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming). |
+| `core.voice.tts_gemini` | 185 | Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming). |
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
-| `core.voice.turn_detector` | 383 | — |
+| `core.voice.turn_detector` | 385 | — |
 | `core.voice.voice_config` | 76 | — |
 
 ## `server`
@@ -1050,7 +1053,7 @@ Audio I/O and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1409 | — |
+| `server.app` | 1433 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
@@ -1107,7 +1110,7 @@ Audio I/O and voice conversations.
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1109 | — |
+| `server.routes.system` | 1156 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |

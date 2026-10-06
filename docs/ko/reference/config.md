@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=d16c16c03c4df80aab2151b660a8d8ee5a09a78af60410acab816e8336bc2430 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5518a1484e6f3fab520c25e31e0b4041770f2802f862663bcbaf0438e5365858 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -580,7 +580,7 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio를 이용한 Anima 전용 전화 대화 및 긴급 알림. |
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio를 이용한 Anima 전용 전화 대화와 긴급 알림. |
 | `phone.enabled` | `bool` | `false` | — |
 | `phone.anima` | `str` | `"aoi"` | — |
 | `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
@@ -593,7 +593,8 @@
 | `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
-| `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; Media Streams 전화 대화에서는 사용되지 않습니다. |
+| `phone.turn_timeout_sec` | `float` | `300` | 레거시 Gather/poll 시간 초과. Media Streams 전화 대화에서는 사용되지 않음. |
+| `phone.turn_end_silence_ms` | `int` | `2000` | — |
 
 ### `housekeeping`
 
@@ -706,26 +707,31 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 enclave 모드의 서버 설정. 활성화하면 시작 시 보안 가드를 검사한다. |
-| `enclave.enabled` | `bool` | `false` | — |
-| `enclave.name` | `str` | `""` | — |
-| `enclave.socket_path` | `str` | `""` | — |
-| `enclave.socket_group` | `str` | `""` | — |
-| `enclave.entry_anima` | `str` | `""` | — |
-| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
-| `enclave.max_concurrency` | `int` | `2` | — |
-| `enclave.request_timeout_s` | `int` | `900` | — |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
-| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 enclave 모드의 서버 설정. 활성화하면 시작 시 보안 가드를 검사함. |
+| `enclave.enabled` | `bool` | `false` | 이 실행 환경을 격리된 enclave로 시작함. |
+| `enclave.name` | `str` | `""` | enclave gateway가 반환하는 식별 이름. |
+| `enclave.socket_path` | `str` | `""` | gateway가 수신 대기하는 Unix 도메인 소켓 경로. |
+| `enclave.socket_group` | `str` | `""` | gateway 소켓에 설정할 OS 그룹. |
+| `enclave.entry_anima` | `str` | `""` | enclave 내에서 질문을 처리하는 entry anima. |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | gateway 연결이 허용되는 OS 사용자 UID. |
+| `enclave.max_concurrency` | `int` | `2` | gateway가 동시에 처리하는 질문의 최대 개수. |
+| `enclave.request_timeout_s` | `int` | `900` | 질문 처리 및 gateway 응답의 시간 초과(초). |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 내 anima가 사용할 수 있는 인증 정보 이름. |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 내 anima가 참조할 수 있는 JSONL 데이터 세트. |
+| `enclave.datasets.path` | `str` | `"—"` | data directory 내 JSONL 파일의 상대 경로. |
+| `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 가져오기 위한 ID 필드. |
+| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 반환 전에 알려진 값 원장에 등록할 필드. |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 부분 일치 검색을 허용하는 필드. |
+| `enclave.egress` | `dict[str, Any]` | `{}` | 외부로 반환할 사실을 처리하는 egress 단계 설정. |
 
 ### `enclaves`
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | 외부 enclave 인스턴스에 연결하는 클라이언트 측 설정. |
-| `enclaves.socket_path` | `str` | `"—"` | — |
-| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
-| `enclaves.timeout_s` | `int` | `900` | — |
+| `enclaves.socket_path` | `str` | `"—"` | 연결할 enclave의 Unix 도메인 소켓. |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | 해당 enclave에 질문하는 것이 허용된 본체 측 anima. |
+| `enclaves.timeout_s` | `int` | `900` | enclave gateway 연결 시간 초과(초). |
 
 ## anima별 `status.json`
 

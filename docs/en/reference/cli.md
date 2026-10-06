@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-10-06 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=d8272fbb5aee3a5e64abc8871d3235c5a79788096c41b0af5ca0de434e568d29 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -429,6 +429,36 @@ Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged i
 | --port | option | 18501 | — | — |
 | --host | option | "0.0.0.0" | — | — |
 | --reset | flag | false | — | — |
+
+## `enclave`
+
+Check the status of the isolated enclave and aggregate audit data.
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+Inspect the enclave’s startup guards, sockets, and egress configuration.
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| --json | flag | false | — | Output in machine-readable JSON format |
+
+## `enclave status`
+
+Display the number of successful and blocked egress requests today.
+
+`usage: animaworks enclave status [-h]`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| — | — | — | — | — |
 
 ## `heartbeat`
 

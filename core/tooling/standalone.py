@@ -48,9 +48,9 @@ def _build_background_manager(anima_dir: Path) -> Any:
 
         from core.integrations._base import load_execution_profiles
         from core.tasks.background import BackgroundTaskManager
-        from core.tooling.policy.registry import TOOL_MODULES
+        from core.tooling.policy.registry import get_tool_modules
 
-        profiles = load_execution_profiles(TOOL_MODULES)
+        profiles = load_execution_profiles(get_tool_modules())
         config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
 
         mgr = BackgroundTaskManager.from_profiles(

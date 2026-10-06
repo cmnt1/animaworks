@@ -379,6 +379,66 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "- {text}（根拠: {evidence}）",
         "en": "- {text} (evidence: {evidence})",
     },
+    "enclave.records.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.records.dataset_required": {
+        "ja": "データセット名を指定してください。",
+        "en": "A dataset name is required.",
+    },
+    "enclave.records.query_required": {
+        "ja": "検索語を指定してください。",
+        "en": "A search query is required.",
+    },
+    "enclave.records.limit_integer": {
+        "ja": "limit は整数で指定してください。",
+        "en": "limit must be an integer.",
+    },
+    "enclave.records.id_required": {
+        "ja": "record_id を指定してください。",
+        "en": "record_id is required.",
+    },
+    "enclave.records.dataset_not_configured": {
+        "ja": "データセット '{dataset}' は enclave に設定されていません。",
+        "en": "Dataset '{dataset}' is not configured in the enclave.",
+    },
+    "enclave.records.not_found": {
+        "ja": "ID '{record_id}' のレコードは見つかりません。",
+        "en": "No record was found for ID '{record_id}'.",
+    },
+    "enclave.records.unavailable": {
+        "ja": "データセットを安全に参照できません。設定とファイルを確認してください。",
+        "en": "The dataset could not be read safely. Check its configuration and file.",
+    },
+    "enclave.records.schema_search": {
+        "ja": "隔離 enclave 内の設定済み JSONL データを、検索可能な項目から検索します。",
+        "en": "Search configured JSONL datasets using their searchable fields inside the enclave.",
+    },
+    "enclave.records.schema_get": {
+        "ja": "隔離 enclave 内の設定済み JSONL データから、ID を指定して 1 件取得します。",
+        "en": "Fetch one configured JSONL record by ID from inside the enclave.",
+    },
+    "enclave.records.schema_dataset": {
+        "ja": "設定済みデータセット名",
+        "en": "Configured dataset name",
+    },
+    "enclave.records.schema_query": {
+        "ja": "検索する文字列",
+        "en": "Text to search for",
+    },
+    "enclave.records.schema_limit": {
+        "ja": "返すレコードの最大件数（1〜100）",
+        "en": "Maximum records to return (1-100)",
+    },
+    "enclave.records.schema_record_id": {
+        "ja": "データセットの ID フィールド値",
+        "en": "Value of the dataset's ID field",
+    },
+    "enclave.cli.doctor_json": {
+        "ja": "機械可読な JSON 形式で出力する",
+        "en": "Output in machine-readable JSON format",
+    },
     "enclave.guard.entry_anima_missing": {
         "ja": "entry_anima '{anima}' のディレクトリが存在しません",
         "en": "entry_anima '{anima}' directory does not exist",

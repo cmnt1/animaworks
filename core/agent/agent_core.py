@@ -264,10 +264,10 @@ class AgentCore(
             if not config.background_task.enabled:
                 return None
 
-            from core.integrations import TOOL_MODULES
+            from core.integrations import get_tool_modules
             from core.integrations._base import load_execution_profiles
 
-            profiles = load_execution_profiles(TOOL_MODULES)
+            profiles = load_execution_profiles(get_tool_modules())
             config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
 
             return BackgroundTaskManager.from_profiles(

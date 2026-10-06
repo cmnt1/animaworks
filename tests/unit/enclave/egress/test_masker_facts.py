@@ -57,3 +57,13 @@ def test_masks_honorific_person_name_while_keeping_context() -> None:
 
 def test_masks_site_name() -> None:
     assert mask_record_facts("受注は名古屋営業所で完了した") == "[MASK-LOC]で完了した"
+
+
+def test_phone_pattern_keeps_record_ids_and_short_numbers() -> None:
+    from core.enclave.egress.masker.facts import mask_record_facts
+
+    assert mask_record_facts("record:TK000001") == "record:TK000001"
+    assert mask_record_facts("注文番号 012345") == "注文番号 012345"
+    assert mask_record_facts("連絡先 090-1234-5678") == "連絡先 [MASK-PHONE]"
+    assert mask_record_facts("0312345678") == "[MASK-PHONE]"
+    assert mask_record_facts("+81 90 1234 5678") == "[MASK-PHONE]"

@@ -91,6 +91,7 @@ def collect_enclave_violations(
         ("github_webhook", config.github_webhook),
         ("phone", config.phone),
         ("human_notification", config.human_notification),
+        ("external_tasks", config.external_tasks),
     ):
         if getattr(cfg, "enabled", False):
             violations.append(t("enclave.guard.external_enabled", locale=locale, channel=label))

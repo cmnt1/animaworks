@@ -512,130 +512,148 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         # Reconcile missing anima assets once as a fallback for failed bootstrap.
         _schedule_startup_asset_reconciliation(app)
 
-        # ── Slack: ensure .env slots + warn about missing tokens ──
+        # Enclave mode never starts outward channels (Slack/Discord/Zoom/GitHub).
         try:
-            from core.config.env_slots import ensure_all_anima_slots
-            from core.credentials import check_missing_slack_tokens
+            _enclave_mode = load_config().enclave.enabled
+        except Exception:
+            logger.warning("Could not read enclave mode; starting no external gateways", exc_info=True)
+            _enclave_mode = True
+        if _enclave_mode:
+            logger.info("Enclave mode: external gateways are not started")
+            for _attr in (
+                "slack_socket_manager",
+                "discord_gateway_manager",
+                "discord_channel_sync",
+                "zoom_gateway_manager",
+                "github_gateway_manager",
+                "slack_channel_sync",
+            ):
+                setattr(app.state, _attr, None)
+        else:
+            # ── Slack: ensure .env slots + warn about missing tokens ──
+            try:
+                from core.config.env_slots import ensure_all_anima_slots
+                from core.credentials import check_missing_slack_tokens
 
-            ensure_all_anima_slots()
-            missing = check_missing_slack_tokens()
-            if missing:
-                logger.warning(
-                    "Slack tokens missing for: %s — edit .env and restart",
-                    ", ".join(missing),
+                ensure_all_anima_slots()
+                missing = check_missing_slack_tokens()
+                if missing:
+                    logger.warning(
+                        "Slack tokens missing for: %s — edit .env and restart",
+                        ", ".join(missing),
+                    )
+            except Exception:
+                logger.debug("Slack env slot check failed", exc_info=True)
+
+            # ── Slack Socket Mode ─────────────────────────────────
+            _slack_enabled = False
+            try:
+                _slack_enabled = load_config().external_messaging.slack.enabled
+            except Exception:
+                logger.debug("Best-effort operation failed", exc_info=True)
+
+            try:
+                from server.gateways.slack_socket import SlackSocketModeManager
+
+                socket_manager = SlackSocketModeManager()
+                await asyncio.wait_for(socket_manager.start(), timeout=30)
+                app.state.slack_socket_manager = socket_manager
+            except TimeoutError:
+                logger.error("Slack Socket Mode startup timed out (30s)")
+                app.state.slack_socket_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Slack Socket Mode startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
                 )
-        except Exception:
-            logger.debug("Slack env slot check failed", exc_info=True)
+                app.state.slack_socket_manager = None
 
-        # ── Slack Socket Mode ─────────────────────────────────
-        _slack_enabled = False
-        try:
-            _slack_enabled = load_config().external_messaging.slack.enabled
-        except Exception:
-            logger.debug("Best-effort operation failed", exc_info=True)
+            if _slack_enabled and app.state.slack_socket_manager is None:
+                logger.critical(
+                    "Slack is enabled but Socket Mode failed to start — "
+                    "Slack replies will NOT be received. "
+                    "Install slack-bolt: pip install 'animaworks[communication]'"
+                )
 
-        try:
-            from server.gateways.slack_socket import SlackSocketModeManager
-
-            socket_manager = SlackSocketModeManager()
-            await asyncio.wait_for(socket_manager.start(), timeout=30)
-            app.state.slack_socket_manager = socket_manager
-        except TimeoutError:
-            logger.error("Slack Socket Mode startup timed out (30s)")
-            app.state.slack_socket_manager = None
-        except Exception as exc:
-            logger.error(
-                "Slack Socket Mode startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.slack_socket_manager = None
-
-        if _slack_enabled and app.state.slack_socket_manager is None:
-            logger.critical(
-                "Slack is enabled but Socket Mode failed to start — "
-                "Slack replies will NOT be received. "
-                "Install slack-bolt: pip install 'animaworks[communication]'"
-            )
-
-        # ── Discord Gateway ────────────────────────────────────
-        try:
-            from server.gateways.discord_gateway import DiscordGatewayManager
-
-            discord_manager = DiscordGatewayManager()
-            await asyncio.wait_for(discord_manager.start(), timeout=35)
-            app.state.discord_gateway_manager = discord_manager
-        except TimeoutError:
-            logger.error("Discord Gateway startup timed out (35s)")
-            app.state.discord_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Discord Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.discord_gateway_manager = None
-
-        # ── Discord channel → board sync (initial) ───────────
-        if app.state.discord_gateway_manager is not None:
+            # ── Discord Gateway ────────────────────────────────────
             try:
-                from server.gateways.discord_channel_sync import DiscordChannelSync
+                from server.gateways.discord_gateway import DiscordGatewayManager
 
-                discord_sync = DiscordChannelSync()
-                await discord_sync.sync(app.state.discord_gateway_manager)
-                app.state.discord_channel_sync = discord_sync
-            except Exception:
-                logger.warning("Initial Discord channel sync failed", exc_info=True)
+                discord_manager = DiscordGatewayManager()
+                await asyncio.wait_for(discord_manager.start(), timeout=35)
+                app.state.discord_gateway_manager = discord_manager
+            except TimeoutError:
+                logger.error("Discord Gateway startup timed out (35s)")
+                app.state.discord_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Discord Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.discord_gateway_manager = None
+
+            # ── Discord channel → board sync (initial) ───────────
+            if app.state.discord_gateway_manager is not None:
+                try:
+                    from server.gateways.discord_channel_sync import DiscordChannelSync
+
+                    discord_sync = DiscordChannelSync()
+                    await discord_sync.sync(app.state.discord_gateway_manager)
+                    app.state.discord_channel_sync = discord_sync
+                except Exception:
+                    logger.warning("Initial Discord channel sync failed", exc_info=True)
+                    app.state.discord_channel_sync = None
+            else:
                 app.state.discord_channel_sync = None
-        else:
-            app.state.discord_channel_sync = None
 
-        # ── Zoom RTMS Gateway ──────────────────────────────────
-        try:
-            from server.gateways.zoom_gateway import ZoomRTMSManager
-
-            zoom_manager = ZoomRTMSManager()
-            await asyncio.wait_for(zoom_manager.start(), timeout=35)
-            app.state.zoom_gateway_manager = zoom_manager
-        except TimeoutError:
-            logger.error("Zoom RTMS Gateway startup timed out (35s)")
-            app.state.zoom_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Zoom RTMS Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.zoom_gateway_manager = None
-
-        # ── GitHub Webhook Gateway ─────────────────────────────
-        try:
-            from server.gateways.github_gateway import GitHubWebhookManager
-
-            github_manager = GitHubWebhookManager()
-            await github_manager.start()
-            app.state.github_gateway_manager = github_manager
-        except Exception as exc:
-            logger.error(
-                "GitHub Webhook Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.github_gateway_manager = None
-
-        # ── Slack channel → board sync (initial) ──────────────
-        if app.state.slack_socket_manager is not None:
+            # ── Zoom RTMS Gateway ──────────────────────────────────
             try:
-                from server.gateways.slack_channel_sync import SlackChannelSync
+                from server.gateways.zoom_gateway import ZoomRTMSManager
 
-                channel_sync = SlackChannelSync()
-                await channel_sync.sync(app.state.slack_socket_manager)
-                app.state.slack_channel_sync = channel_sync
-            except Exception:
-                logger.warning("Initial Slack channel sync failed", exc_info=True)
+                zoom_manager = ZoomRTMSManager()
+                await asyncio.wait_for(zoom_manager.start(), timeout=35)
+                app.state.zoom_gateway_manager = zoom_manager
+            except TimeoutError:
+                logger.error("Zoom RTMS Gateway startup timed out (35s)")
+                app.state.zoom_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Zoom RTMS Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.zoom_gateway_manager = None
+
+            # ── GitHub Webhook Gateway ─────────────────────────────
+            try:
+                from server.gateways.github_gateway import GitHubWebhookManager
+
+                github_manager = GitHubWebhookManager()
+                await github_manager.start()
+                app.state.github_gateway_manager = github_manager
+            except Exception as exc:
+                logger.error(
+                    "GitHub Webhook Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.github_gateway_manager = None
+
+            # ── Slack channel → board sync (initial) ──────────────
+            if app.state.slack_socket_manager is not None:
+                try:
+                    from server.gateways.slack_channel_sync import SlackChannelSync
+
+                    channel_sync = SlackChannelSync()
+                    await channel_sync.sync(app.state.slack_socket_manager)
+                    app.state.slack_channel_sync = channel_sync
+                except Exception:
+                    logger.warning("Initial Slack channel sync failed", exc_info=True)
+                    app.state.slack_channel_sync = None
+            else:
                 app.state.slack_channel_sync = None
-        else:
-            app.state.slack_channel_sync = None
 
         # ── ConfigReloadManager ───────────────────────────────
         from server.reload_manager import ConfigReloadManager

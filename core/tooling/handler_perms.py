@@ -61,9 +61,9 @@ class PermissionsMixin:
         external_enabled: list[str] = []
         external_available: list[str] = []
         try:
-            from core.tooling.policy.registry import TOOL_MODULES
+            from core.tooling.policy.registry import get_tool_modules
 
-            all_categories = sorted(TOOL_MODULES.keys())
+            all_categories = sorted(get_tool_modules().keys())
             for cat in all_categories:
                 if cat in (self._external.registry if self._external else []):
                     external_enabled.append(cat)
