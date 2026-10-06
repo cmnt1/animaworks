@@ -38,8 +38,8 @@
       <div class="ws-header-center" id="wsAnimaSelector"></div>
       <div class="ws-header-right">
         <button class="ws-view-toggle" id="wsViewToggle" title="Toggle view" data-i18n-title="ws.view_toggle_title">
-          <span class="ws-view-toggle-3d">🏢 3D</span>
-          <span class="ws-view-toggle-org">📊 Dashboard</span>
+          <span class="ws-view-toggle-office" data-i18n="ws.view_office">🏢 Office</span>
+          <span class="ws-view-toggle-org" data-i18n="ws.view_dashboard">📊 Dashboard</span>
         </button>
         <div class="ws-system-status" id="wsSystemStatus">
           <span class="status-dot status-offline"></span>
@@ -53,7 +53,7 @@
     <!-- Main Layout -->
     <div class="ws-layout">
 
-      <!-- 3D Office (always visible) -->
+      <!-- Replaceable office renderer (always visible in office view) -->
       <div class="ws-office-panel" id="wsOfficePanel">
         <div class="ws-office-canvas" id="wsOfficeCanvas"></div>
       </div>

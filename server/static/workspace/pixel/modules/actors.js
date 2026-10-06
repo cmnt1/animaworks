@@ -957,6 +957,7 @@ export class ActorManager {
     this.scene = scene;
     this.assets = assets;
     this.tile = scene.canvas.tile;
+    this.disposed = false;
     this.blocked = buildBlocked(scene);
     this.actors = new Map();
     this.destinationReservations = new Map();
@@ -1112,7 +1113,20 @@ export class ActorManager {
     return [...selected];
   }
 
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const actor of this.actors.values()) {
+      const resolve = actor.motion?.resolve;
+      actor.motion = null;
+      resolve?.(false);
+    }
+    this.destinationReservations.clear();
+    this.actorReservations.clear();
+  }
+
   async walkTo(id, targetTile, options = {}) {
+    if (this.disposed) return false;
     const actor = this.get(id);
     if (!actor) return false;
     const finalTarget = options.reserveDestination === false
@@ -1151,6 +1165,7 @@ export class ActorManager {
   }
 
   async returnHome(id, options = {}) {
+    if (this.disposed) return false;
     const actor = this.get(id);
     if (!actor) return false;
     this.releaseDestination(id);

@@ -9,7 +9,8 @@ import { initLogin, getCurrentUser, logout } from "./login.js";
 import { initAnima, loadAnimas, selectAnima } from "./anima.js";
 import { initMemory, loadMemoryTab } from "./memory.js";
 import { initSession, loadSessions } from "./session.js";
-import { disposeOffice, highlightDesk } from "./office3d.js";
+import { mountOffice, disposeOfficeRenderer, highlightAnima } from "./office-renderer.js";
+import { normalizeWorkspaceView } from "./office-renderer-selection.js";
 import { initOrgDashboard, disposeOrgDashboard, startReplay, stopReplay, isReplayMode } from "./org-dashboard.js";
 import { isVisible as isMessagePopupVisible, hide as hideMessagePopup } from "./message-popup.js";
 import { initActivity } from "./activity.js";
@@ -18,7 +19,7 @@ import { initBoard, initBoardTab } from "./board.js";
 import { initChatController, openConversation, closeConversation } from "./chat-controller.js";
 
 import { setupWebSocket } from "./app-websocket.js";
-import { initOfficeIfNeeded, loadSystemStatus, updateStatusDisplay } from "./app-system.js";
+import { initOfficeShell, loadSystemStatus, updateStatusDisplay } from "./app-system.js";
 import { initViewportHeightFallback, initTimelineCollapseToggle, initMobileKeyboard } from "./app-mobile.js";
 
 // ── DOM References ──────────────────────
@@ -43,7 +44,7 @@ function cacheDom() {
   dom.memoryPanel = document.getElementById("wsMemoryPanel");
   dom.logoutBtn = document.getElementById("wsLogoutBtn");
 
-  // 3D Office
+  // Replaceable office renderer and dashboard
   dom.officePanel = document.getElementById("wsOfficePanel");
   dom.officeCanvas = document.getElementById("wsOfficeCanvas");
   dom.orgPanel = document.getElementById("wsOrgPanel");
@@ -80,24 +81,28 @@ function cacheDom() {
 
 // ── View Switching ──────────────────────
 
-let _currentView = null; // '3d' | 'org'
+let _currentView = null; // 'office' | 'org'
 
 function getDefaultView() {
   const mode = localStorage.getItem("aw-display-mode") || "realistic";
-  return mode === "realistic" ? "org" : "3d";
+  return mode === "realistic" ? "org" : "office";
 }
 
 function getCurrentView() {
-  return localStorage.getItem("aw-workspace-view") || getDefaultView();
+  return normalizeWorkspaceView(
+    localStorage.getItem("aw-workspace-view"),
+    getDefaultView(),
+  );
 }
 
 async function switchView(view) {
-  if (_currentView === view) return;
-  _currentView = view;
-  localStorage.setItem("aw-workspace-view", view);
+  const nextView = normalizeWorkspaceView(view, getDefaultView());
+  if (_currentView === nextView) return;
+  _currentView = nextView;
+  localStorage.setItem("aw-workspace-view", nextView);
 
-  if (view === "org") {
-    disposeOffice();
+  if (nextView === "org") {
+    disposeOfficeRenderer();
     setState({ officeInitialized: false });
 
     dom.officePanel.classList.add("hidden");
@@ -112,7 +117,9 @@ async function switchView(view) {
     dom.officePanel.classList.remove("hidden");
     disposeOrgDashboard();
 
-    await initOfficeIfNeeded(dom);
+    initOfficeShell(dom);
+    await mountOffice(dom);
+    if (_currentView !== nextView) disposeOfficeRenderer();
   }
 
   updateViewToggle();
@@ -120,9 +127,11 @@ async function switchView(view) {
 
 function updateViewToggle() {
   if (!dom.viewToggle) return;
-  const is3d = _currentView === "3d";
-  dom.viewToggle.querySelector(".ws-view-toggle-3d").style.fontWeight = is3d ? "700" : "400";
-  dom.viewToggle.querySelector(".ws-view-toggle-org").style.fontWeight = is3d ? "400" : "700";
+  const isOffice = _currentView === "office";
+  const officeToggle = dom.viewToggle.querySelector(".ws-view-toggle-office");
+  const orgToggle = dom.viewToggle.querySelector(".ws-view-toggle-org");
+  if (officeToggle) officeToggle.style.fontWeight = isOffice ? "700" : "400";
+  if (orgToggle) orgToggle.style.fontWeight = isOffice ? "400" : "700";
 
   let replayBtn = dom.viewToggle.querySelector(".ws-replay-btn");
   if (_currentView === "org" && !replayBtn) {
@@ -222,7 +231,7 @@ async function startDashboard() {
 
   if (dom.viewToggle) {
     dom.viewToggle.addEventListener("click", () => {
-      const next = _currentView === "3d" ? "org" : "3d";
+      const next = _currentView === "office" ? "org" : "office";
       switchView(next);
     });
   }
@@ -235,9 +244,7 @@ async function startDashboard() {
 // ── Anima Selection Callback ──────────────────────
 
 async function onAnimaSelected(name) {
-  if (getState().officeInitialized) {
-    highlightDesk(name);
-  }
+  highlightAnima(name);
 
   await Promise.all([
     openConversation(name),

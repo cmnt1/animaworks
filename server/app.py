@@ -1357,11 +1357,15 @@ def create_app(
     if _pixel_workspace_html_raw:
 
         @app.get("/workspace/pixel", include_in_schema=False)
-        async def _redirect_pixel_workspace():
-            return RedirectResponse(_base_prefixed("/workspace/pixel/"))
+        async def _redirect_pixel_workspace(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
+            return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
         @app.get("/workspace/pixel/", include_in_schema=False)
-        async def _serve_pixel_workspace_index():
+        async def _serve_pixel_workspace_index(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
             return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
     battle_index = static_dir / "battle" / "index.html"

@@ -43,6 +43,6 @@ async def test_battle_routes_and_assets(tmp_path, monkeypatch, prefix):
                 asset = await client.get(prefix + path)
                 assert asset.status_code == 200
                 assert asset.headers["content-type"] == "image/png"
-            pixel = await client.get(prefix + "/workspace/pixel/")
+            pixel = await client.get(prefix + "/workspace/pixel/?mock=1")
             assert pixel.status_code == 200
             assert "workspace" in pixel.text
