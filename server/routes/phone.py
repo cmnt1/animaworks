@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 _MAX_PIN_FAILURES = 3
 _MAX_SILENT_TURNS = 2
-_POLL_WAIT_SEC = 10.0
+# Twilio abandons a webhook after 15 s; keep every handler well under it.
+_POLL_WAIT_SEC = 6.0
 _THINKING_NOTICE_INTERVAL_SEC = 20.0
 
 
@@ -158,6 +159,50 @@ async def _play_key(
         text,
         cache_key=f"{app_config.locale}:{key}:{text}",
     )
+
+
+_WARM_KEYS = (
+    "phone.pin_prompt",
+    "phone.pin_invalid",
+    "phone.pin_locked",
+    "phone.greeting",
+    "phone.wait",
+    "phone.still_thinking",
+    "phone.silence_retry",
+    "phone.goodbye",
+    "phone.turn_timeout",
+    "phone.turn_error",
+)
+_warm_task: asyncio.Task[None] | None = None
+
+
+def _start_warmup(request: Request, app_config: AnimaWorksConfig, phone_config: PhoneConfig) -> None:
+    """Synthesize the fixed prompts in the background so later webhooks only replay them."""
+    global _warm_task
+    if _warm_task is not None and not _warm_task.done():
+        return
+
+    async def _warm() -> None:
+        for key in _WARM_KEYS:
+            await _play_key(request, app_config, phone_config, key)
+
+    _warm_task = asyncio.create_task(_warm(), name="phone-warm-prompts")
+
+
+async def _turn_and_speak(
+    request: Request,
+    app_config: AnimaWorksConfig,
+    phone_config: PhoneConfig,
+    supervisor: Any,
+    session: PhoneSession,
+    speech: str,
+) -> str:
+    """Run one Anima turn and synthesize the reply, returning the TwiML to play."""
+    text = await _run_turn(supervisor, session, speech, phone_config, app_config.locale)
+    clean_text, _ = _extract_emotion(text)
+    if not clean_text.strip():
+        clean_text = _localized("phone.turn_error", app_config.locale)
+    return await _play_text(request, app_config, phone_config, session.anima, clean_text)
 
 
 def _pin_gather(phone_config: PhoneConfig, prompt: str) -> str:
@@ -312,6 +357,7 @@ def create_phone_router() -> APIRouter:
         if not call_sid:
             return _twiml(_hangup())
 
+        _start_warmup(request, app_config, phone_config)
         alert_id = request.query_params.get("alert", "")
         phase = request.query_params.get("phase", "")
         if alert_id:
@@ -442,21 +488,11 @@ def create_phone_router() -> APIRouter:
                 still_thinking = await _play_key(request, app_config, phone_config, "phone.still_thinking")
                 return _twiml(still_thinking, _poll_redirect(phone_config))
             # Do not overwrite a completed but not-yet-played response.
-            try:
-                completed_text = existing_task.result()
-            except asyncio.CancelledError:
-                completed_text = _localized("phone.turn_error", app_config.locale)
-            except Exception:
-                completed_text = _localized("phone.turn_error", app_config.locale)
             session.turn_task = None
-            clean_text, _ = _extract_emotion(completed_text)
-            response_audio = await _play_text(
-                request,
-                app_config,
-                phone_config,
-                session.anima,
-                clean_text,
-            )
+            try:
+                response_audio = existing_task.result()
+            except (asyncio.CancelledError, Exception):
+                response_audio = await _play_key(request, app_config, phone_config, "phone.turn_error")
             return _twiml(response_audio, _speech_gather(phone_config))
 
         supervisor = getattr(request.app.state, "supervisor", None)
@@ -468,7 +504,7 @@ def create_phone_router() -> APIRouter:
         session.last_thinking_at = 0.0
         session.timed_out = False
         session.turn_task = asyncio.create_task(
-            _run_turn(supervisor, session, speech, phone_config, app_config.locale),
+            _turn_and_speak(request, app_config, phone_config, supervisor, session, speech),
             name=f"phone-turn-{session.call_sid}",
         )
         wait_audio = await _play_key(request, app_config, phone_config, "phone.wait")
@@ -490,23 +526,13 @@ def create_phone_router() -> APIRouter:
 
         if task.done():
             try:
-                response_text = task.result()
+                response_audio = task.result()
             except asyncio.CancelledError:
                 return _twiml(_hangup())
             except Exception:
-                response_text = ""
+                response_audio = await _play_key(request, app_config, phone_config, "phone.turn_error")
             session.turn_task = None
             session.turn_started_at = 0.0
-            clean_text, _ = _extract_emotion(response_text)
-            if not clean_text.strip():
-                clean_text = _localized("phone.turn_error", app_config.locale)
-            response_audio = await _play_text(
-                request,
-                app_config,
-                phone_config,
-                session.anima,
-                clean_text,
-            )
             return _twiml(response_audio, _speech_gather(phone_config))
 
         elapsed = max(0.0, time.monotonic() - session.turn_started_at)
