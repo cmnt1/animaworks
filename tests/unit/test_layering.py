@@ -34,6 +34,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.tooling.handler", 5),
     ("core.lifecycle", 5),
     ("core.voice", 5),
+    ("core.phone", 5),  # Phone channel built on the voice stack (TTS, voice config).
     ("core.mcp", 5),
     ("core.execution.session.session_types", 2),
     ("core.execution.session.session_context", 2),
