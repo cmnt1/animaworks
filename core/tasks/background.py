@@ -597,6 +597,11 @@ def _rotate_dm_logs_sync(
                     path,
                     "\n".join(recent_lines) + ("\n" if recent_lines else ""),
                 )
+                for written in (archive_path, path):
+                    try:
+                        written.chmod(0o600)
+                    except OSError:
+                        logger.debug("Failed to restrict dm_log mode: %s", written, exc_info=True)
                 results[path.name] = {
                     "archived": len(archive_lines),
                     "kept": len(recent_lines),
