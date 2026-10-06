@@ -745,18 +745,30 @@ class CommsToolsMixin:
 
     # ── Human notification handler ────────────────────────────
 
+    def _urgent_phone_context(self: _CommsToolsHost, args: dict[str, Any]) -> dict[str, Any] | None:
+        """Still ring the phone for urgent calls when the other channels fail."""
+        subject = args.get("subject", "")
+        body = args.get("body", "")
+        if args.get("priority") != "urgent" or not subject or not body:
+            return None
+        from core.phone.urgent import request_phone_alert
+
+        return {"phone": request_phone_alert(subject, body, self._anima_name)}
+
     def _handle_call_human(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         self._last_call_human_denied = False
         if not self._human_notifier:
             return _error_result(
                 "NotConfigured",
                 "Human notification is not configured",
+                context=self._urgent_phone_context(args),
                 suggestion="Enable human_notification in config.json",
             )
         if self._human_notifier.channel_count == 0:
             return _error_result(
                 "NotConfigured",
                 "No notification channels configured",
+                context=self._urgent_phone_context(args),
                 suggestion="Add channels to human_notification.channels in config.json",
             )
 
@@ -858,7 +870,16 @@ class CommsToolsMixin:
             else:
                 results = asyncio.run(coro)
         except Exception as e:
-            return _error_result("NotificationError", f"Failed to send notification: {e}")
+            return _error_result(
+                "NotificationError",
+                f"Failed to send notification: {e}",
+                context=self._urgent_phone_context(args),
+            )
+
+        if priority == "urgent":
+            from core.phone.urgent import request_phone_alert
+
+            results = [*results, request_phone_alert(subject, body, self._anima_name)]
 
         # The Web UI channel already pushed it to the browser; queuing it for the
         # chat stream as well would show the same notification twice.

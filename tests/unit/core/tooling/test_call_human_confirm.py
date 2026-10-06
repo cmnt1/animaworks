@@ -114,3 +114,52 @@ def test_cli_fails_open_when_server_unreachable(monkeypatch):
 
     monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://127.0.0.1:9")
     assert cli._check_confirm_key_via_server("mei", "sess1", "") == ""
+
+
+def _phone_api(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    from types import SimpleNamespace
+
+    response = MagicMock()
+    response.json.return_value = {"status": "calling"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr("core.internal_api.host_api", SimpleNamespace(post=post))
+    return post
+
+
+def test_urgent_tool_call_rings_phone_like_the_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, notifier = _make_handler(tmp_path)
+    post = _phone_api(monkeypatch)
+    args = {"subject": "Outage", "body": "API is down", "priority": "urgent"}
+    key = _issued_key(handler._handle_call_human(args))
+    post.assert_not_called()
+
+    result = json.loads(handler._handle_call_human({**args, "sha": key}))
+
+    assert result["results"] == ["ok", "phone: calling"]
+    notifier.notify.assert_awaited_once()
+    post.assert_called_once_with(
+        "/api/internal/phone/alert",
+        json={"anima": handler._anima_name, "subject": "Outage", "body": "API is down"},
+        timeout=10.0,
+    )
+
+
+def test_nonurgent_tool_call_does_not_ring_phone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, _ = _make_handler(tmp_path)
+    post = _phone_api(monkeypatch)
+    args = {"subject": "s", "body": "b", "priority": "high"}
+    key = _issued_key(handler._handle_call_human(args))
+    handler._handle_call_human({**args, "sha": key})
+    post.assert_not_called()
+
+
+def test_urgent_tool_call_rings_phone_without_other_channels(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, notifier = _make_handler(tmp_path)
+    notifier.channel_count = 0
+    post = _phone_api(monkeypatch)
+
+    result = json.loads(handler._handle_call_human({"subject": "s", "body": "b", "priority": "urgent"}))
+
+    assert result["error_type"] == "NotConfigured"
+    assert result["context"] == {"phone": "phone: calling"}
+    post.assert_called_once()
