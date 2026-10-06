@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="__AW_BASE__/styles/tokens.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.44/dist/katex.min.css">
   <link rel="stylesheet" href="style.css?v=20260308d">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/battle/style.css">
   <link rel="stylesheet" href="__AW_BASE__/styles/voice.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.44/dist/katex.min.js"></script>
   <link rel="icon" type="image/svg+xml" href="__AW_BASE__/shared/favicon.svg">
@@ -37,10 +38,11 @@
       </div>
       <div class="ws-header-center" id="wsAnimaSelector"></div>
       <div class="ws-header-right">
-        <button class="ws-view-toggle" id="wsViewToggle" title="Toggle view" data-i18n-title="ws.view_toggle_title">
-          <span class="ws-view-toggle-office" data-i18n="ws.view_office">🏢 Office</span>
-          <span class="ws-view-toggle-org" data-i18n="ws.view_dashboard">📊 Dashboard</span>
-        </button>
+        <div class="ws-view-toggle" id="wsViewToggle" role="group" title="Toggle view" data-i18n-title="ws.view_toggle_title">
+          <button class="ws-view-toggle-option ws-view-toggle-office" type="button" data-view="office" aria-pressed="false" data-i18n="ws.view_office">🏢 Office</button>
+          <button class="ws-view-toggle-option ws-view-toggle-org" type="button" data-view="org" aria-pressed="false" data-i18n="ws.view_dashboard">📊 Dashboard</button>
+          <button class="ws-view-toggle-option ws-view-toggle-battle" type="button" data-view="battle" aria-pressed="false" data-i18n="ws.view_battle">⚔️ Battle</button>
+        </div>
         <div class="ws-system-status" id="wsSystemStatus">
           <span class="status-dot status-offline"></span>
           <span class="status-text" data-i18n="ws.connecting">Connecting...</span>
@@ -58,10 +60,13 @@
         <div class="ws-office-canvas" id="wsOfficeCanvas"></div>
       </div>
 
-      <!-- Org Dashboard (alternative to 3D) -->
+      <!-- Org Dashboard (alternative to the office) -->
       <div class="ws-org-panel hidden" id="wsOrgPanel"></div>
 
-      <!-- Conversation Overlay (appears on top of office) -->
+      <!-- Battle theater is mounted on demand by the workspace shell -->
+      <div class="ws-battle-panel hidden" id="wsBattlePanel"></div>
+
+      <!-- Conversation Overlay (appears above the active view) -->
       <div class="ws-conv-overlay hidden" id="wsConvOverlay">
         <div class="ws-conv-layout" id="wsConvLayout">
 

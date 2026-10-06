@@ -826,6 +826,7 @@
   "ws.view_dashboard": "📊 대시보드",
   "ws.view_office": "🏢 오피스",
   "ws.view_toggle_title": "뷰 전환",
+  "ws.view_battle": "⚔️ 배틀",
   "ws.login_loading_users": "사용자 불러오는 중...",
   "ws.login_guest": "게스트로 입장",
   "ws.login_no_users": "등록된 사용자가 없습니다",

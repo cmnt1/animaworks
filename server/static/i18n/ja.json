@@ -880,6 +880,7 @@
   "ws.view_dashboard": "📊 ダッシュボード",
   "ws.view_office": "🏢 オフィス",
   "ws.view_toggle_title": "ビュー切替",
+  "ws.view_battle": "⚔️ バトル",
   "ws.login_loading_users": "ユーザーを読み込み中...",
   "ws.login_guest": "ゲストとして入る",
   "ws.login_no_users": "登録ユーザーがいません",

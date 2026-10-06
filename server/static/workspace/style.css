@@ -4216,12 +4216,11 @@ html, body {
 /* ── View Toggle ──────────────────────── */
 .ws-view-toggle {
   display: flex;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 3px;
+  padding: 3px;
   background: var(--aw-color-bg-secondary, #f5f5f5);
   border: 1px solid var(--aw-color-border, #e5e5e5);
   border-radius: 6px;
-  cursor: pointer;
   font-size: 12px;
   align-items: center;
 }
@@ -4230,17 +4229,51 @@ html, body {
   background: var(--aw-color-bg-hover, #f0f0f0);
 }
 
+.ws-view-toggle-option,
 .ws-view-toggle-office,
-.ws-view-toggle-org {
+.ws-view-toggle-org,
+.ws-view-toggle-battle {
   padding: 2px 6px;
+  border: 0;
   border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
   transition: all 0.15s;
+}
+
+.ws-view-toggle-option--active {
+  background: var(--aw-color-bg-primary, #fff);
+}
+
+.ws-view-toggle-option:hover,
+.ws-view-toggle-option:active {
+  color: var(--aw-color-text-primary, #1a1a1a);
 }
 
 .ws-org-panel {
   position: absolute;
   inset: 0;
   z-index: 1;
+}
+
+.ws-battle-panel {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: #0b111d;
+}
+
+/* The workspace header already provides navigation. */
+.ws-battle-panel .aw-battle .masthead .brand,
+.ws-battle-panel .aw-battle .masthead nav,
+.ws-battle-panel .aw-battle footer {
+  display: none;
 }
 
 /* ── Message Line Animation ─────────────────────── */

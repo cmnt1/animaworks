@@ -2,7 +2,7 @@
 // Initialization, screen switching, and event delegation.
 // Chat/Board/Activity/Sidebar logic extracted to separate modules.
 
-import { initI18n, applyTranslations } from "/shared/i18n.js";
+import { initI18n, applyTranslations, t } from "/shared/i18n.js";
 import { api } from "../../modules/api.js";
 import { getState, setState } from "./state.js";
 import { initLogin, getCurrentUser, logout } from "./login.js";
@@ -10,7 +10,8 @@ import { initAnima, loadAnimas, selectAnima } from "./anima.js";
 import { initMemory, loadMemoryTab } from "./memory.js";
 import { initSession, loadSessions } from "./session.js";
 import { mountOffice, disposeOfficeRenderer, highlightAnima } from "./office-renderer.js";
-import { normalizeWorkspaceView } from "./office-renderer-selection.js";
+import { normalizeWorkspaceView, selectWorkspaceView } from "./office-renderer-selection.js";
+import { createBattleView } from "../../battle/modules/view.js";
 import { initOrgDashboard, disposeOrgDashboard, startReplay, stopReplay, isReplayMode } from "./org-dashboard.js";
 import { isVisible as isMessagePopupVisible, hide as hideMessagePopup } from "./message-popup.js";
 import { initActivity } from "./activity.js";
@@ -48,6 +49,7 @@ function cacheDom() {
   dom.officePanel = document.getElementById("wsOfficePanel");
   dom.officeCanvas = document.getElementById("wsOfficeCanvas");
   dom.orgPanel = document.getElementById("wsOrgPanel");
+  dom.battlePanel = document.getElementById("wsBattlePanel");
   dom.viewToggle = document.getElementById("wsViewToggle");
 
   // Conversation overlay (3-column)
@@ -81,7 +83,9 @@ function cacheDom() {
 
 // ── View Switching ──────────────────────
 
-let _currentView = null; // 'office' | 'org'
+let _currentView = null; // 'office' | 'org' | 'battle'
+let _battleView = null;
+let _viewSwitchGeneration = 0;
 
 function getDefaultView() {
   const mode = localStorage.getItem("aw-display-mode") || "realistic";
@@ -89,49 +93,75 @@ function getDefaultView() {
 }
 
 function getCurrentView() {
-  return normalizeWorkspaceView(
-    localStorage.getItem("aw-workspace-view"),
-    getDefaultView(),
-  );
+  let storedView = null;
+  try {
+    storedView = localStorage.getItem("aw-workspace-view");
+  } catch { /* use the URL/default when storage is unavailable */ }
+
+  const preference = selectWorkspaceView(window.location.search, storedView, getDefaultView());
+  if (preference.source === "url" || (preference.source === "localStorage" && storedView !== preference.view)) {
+    try {
+      localStorage.setItem("aw-workspace-view", preference.view);
+    } catch { /* the selected view still works without storage */ }
+  }
+  return preference.view;
 }
 
 async function switchView(view) {
   const nextView = normalizeWorkspaceView(view, getDefaultView());
-  if (_currentView === nextView) return;
-  _currentView = nextView;
-  localStorage.setItem("aw-workspace-view", nextView);
+  if (_currentView === nextView) {
+    updateViewToggle();
+    return;
+  }
 
-  if (nextView === "org") {
+  const generation = ++_viewSwitchGeneration;
+  _currentView = nextView;
+  try {
+    localStorage.setItem("aw-workspace-view", nextView);
+  } catch { /* the current session can still switch views */ }
+
+  if (nextView !== "office") {
     disposeOfficeRenderer();
     setState({ officeInitialized: false });
+  }
+  if (nextView !== "org") disposeOrgDashboard();
+  if (nextView !== "battle") {
+    _battleView?.dispose();
+    _battleView = null;
+  }
 
-    dom.officePanel.classList.add("hidden");
-    dom.orgPanel.classList.remove("hidden");
+  dom.officePanel.classList.toggle("hidden", nextView !== "office");
+  dom.orgPanel.classList.toggle("hidden", nextView !== "org");
+  dom.battlePanel.classList.toggle("hidden", nextView !== "battle");
+  updateViewToggle();
 
+  if (nextView === "battle") {
+    _battleView = createBattleView({
+      root: dom.battlePanel,
+      onAnimaClick: (name) => selectAnima(name),
+    });
+  } else if (nextView === "org") {
     const { animas } = getState();
     await initOrgDashboard(dom.orgPanel, animas, {
       onNodeClick: (name) => selectAnima(name),
     });
+    if (generation !== _viewSwitchGeneration) return;
   } else {
-    dom.orgPanel.classList.add("hidden");
-    dom.officePanel.classList.remove("hidden");
-    disposeOrgDashboard();
-
     initOfficeShell(dom);
     await mountOffice(dom);
-    if (_currentView !== nextView) disposeOfficeRenderer();
+    if (generation !== _viewSwitchGeneration) return;
   }
-
-  updateViewToggle();
 }
 
 function updateViewToggle() {
   if (!dom.viewToggle) return;
-  const isOffice = _currentView === "office";
-  const officeToggle = dom.viewToggle.querySelector(".ws-view-toggle-office");
-  const orgToggle = dom.viewToggle.querySelector(".ws-view-toggle-org");
-  if (officeToggle) officeToggle.style.fontWeight = isOffice ? "700" : "400";
-  if (orgToggle) orgToggle.style.fontWeight = isOffice ? "400" : "700";
+  dom.viewToggle.setAttribute("aria-label", t("ws.view_toggle_title"));
+  for (const button of dom.viewToggle.querySelectorAll("[data-view]")) {
+    const selected = button.dataset.view === _currentView;
+    button.classList.toggle("ws-view-toggle-option--active", selected);
+    button.style.fontWeight = selected ? "700" : "400";
+    button.setAttribute("aria-pressed", String(selected));
+  }
 
   let replayBtn = dom.viewToggle.querySelector(".ws-replay-btn");
   if (_currentView === "org" && !replayBtn) {
@@ -230,9 +260,10 @@ async function startDashboard() {
   await switchView(initialView);
 
   if (dom.viewToggle) {
-    dom.viewToggle.addEventListener("click", () => {
-      const next = _currentView === "office" ? "org" : "office";
-      switchView(next);
+    dom.viewToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-view]");
+      if (!button || !dom.viewToggle.contains(button)) return;
+      void switchView(button.dataset.view);
     });
   }
 

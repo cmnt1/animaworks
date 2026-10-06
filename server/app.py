@@ -1374,7 +1374,9 @@ def create_app(
 
         @app.get("/battle", include_in_schema=False)
         @app.get("/battle/", include_in_schema=False)
-        async def _serve_battle_index():
+        async def _serve_battle_index(request: Request):
+            if "demo" not in request.query_params and "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?view=battle"))
             return HTMLResponse(_inject_html(battle_html), headers={"Cache-Control": "no-store"})
 
     if setup_static_dir.exists():
