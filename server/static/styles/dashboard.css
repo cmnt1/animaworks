@@ -727,6 +727,13 @@
   gap: 12px;
 }
 
+.usage-panel-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--aw-color-text-primary);
+}
+
 .usage-panel-actions {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@
 // Chat/Board/Activity/Sidebar logic extracted to separate modules.
 
 import { initI18n, applyTranslations } from "/shared/i18n.js";
+import { api } from "../../modules/api.js";
 import { getState, setState } from "./state.js";
 import { initLogin, getCurrentUser, logout } from "./login.js";
 import { initAnima, loadAnimas, selectAnima } from "./anima.js";
@@ -274,7 +275,19 @@ export async function init() {
   applyTheme();
   cacheDom();
 
-  const savedUser = getCurrentUser();
+  let savedUser = getCurrentUser();
+  if (!savedUser) {
+    // Arriving from the dashboard with a session: reuse that identity
+    // instead of asking the same person to pick a user again.
+    try {
+      const me = await api("/api/auth/me", { redirectOnUnauthorized: false, logErrors: false });
+      if (me?.username) {
+        savedUser = me.username;
+        setState({ currentUser: savedUser });
+        localStorage.setItem("animaworks_user", savedUser);
+      }
+    } catch { /* not authenticated: fall through to the picker */ }
+  }
   if (savedUser) {
     initLogin(dom.loginContainer, onLoginSuccess);
     startDashboard();

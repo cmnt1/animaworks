@@ -8,7 +8,13 @@ function _positionDropdown(menu, trigger, { align = "right" } = {}) {
   menu.style.top = `${rect.bottom + gap}px`;
   menu.style.bottom = "auto";
 
-  if (align === "right") {
+  if (align === "beside") {
+    // Open next to a rail button (left column) instead of over the sidebar.
+    menu.style.right = "auto";
+    menu.style.left = `${rect.right + gap}px`;
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.max(8, window.innerHeight - rect.bottom)}px`;
+  } else if (align === "right") {
     menu.style.left = "auto";
     menu.style.right = `${window.innerWidth - rect.right}px`;
   } else {
@@ -26,7 +32,11 @@ function _positionDropdown(menu, trigger, { align = "right" } = {}) {
       menu.style.right = "auto";
       menu.style.left = "8px";
     }
-    if (mRect.bottom > window.innerHeight - 8) {
+    if (align === "beside" && mRect.top < 8) {
+      menu.style.bottom = "auto";
+      menu.style.top = `${rect.bottom + gap}px`;
+    }
+    if (align !== "beside" && mRect.bottom > window.innerHeight - 8) {
       menu.style.top = "auto";
       menu.style.bottom = `${window.innerHeight - rect.top + gap}px`;
     }
@@ -66,7 +76,7 @@ export function createEventsController(ctx) {
         ctx.controllers.anima.renderAddConversationMenu();
         const menu = $("chatAddConversationMenu");
         const btn = $("chatAddConversationBtn");
-        if (menu && btn) _positionDropdown(menu, btn);
+        if (menu && btn) _positionDropdown(menu, btn, { align: "beside" });
       }
     });
     const closeMenu = e => {

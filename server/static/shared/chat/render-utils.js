@@ -385,7 +385,9 @@ function _renderMessageMeta(msg, escapeHtml) {
   if (msg.to_person) {
     parts.push(`${escapeHtml(t("chat.meta_to"))}: ${escapeHtml(msg.to_person)}`);
   }
-  if (msg.source_key) {
+  // A reply in the chat pane obviously came from chat; label only the
+  // other origins (heartbeat, cron, inbox, ...).
+  if (msg.source_key && msg.source_key !== "chat") {
     parts.push(`${escapeHtml(t("chat.meta_source"))}: ${escapeHtml(_sourceLabel(msg.source_key))}`);
   }
   if (!parts.length) return "";

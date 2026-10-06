@@ -52,8 +52,9 @@ export function render(container) {
     </div>
 
     <div class="usage-panel-header">
+      <h3 class="usage-panel-title">${t("home.usage_title")}</h3>
       <div class="usage-panel-actions">
-        <button class="btn-secondary usage-refresh-btn" id="usageRefreshBtn">&#x21BB; Refresh</button>
+        <button class="btn-secondary usage-refresh-btn" id="usageRefreshBtn">&#x21BB; ${t("home.usage_refresh")}</button>
         <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
       </div>
     </div>
@@ -609,8 +610,9 @@ function _usageCanRelogin(errorCode) {
 }
 
 function _renderUsageError(provider, data, msg) {
-  const showButton = _usageCanRelogin(data.error);
-  const buttonLabel = provider === "claude" ? "Claude 再認証" : "Codex ログイン";
+  // Only Claude and OpenAI (Codex) have a relogin flow.
+  const showButton = (provider === "claude" || provider === "openai") && _usageCanRelogin(data.error);
+  const buttonLabel = provider === "claude" ? t("home.usage_relogin_claude") : t("home.usage_relogin_codex");
   return `
     <div class="usage-error">${escapeHtml(msg)}</div>
     ${showButton ? `
@@ -718,6 +720,9 @@ function _renderOpenaiUsage(data) {
 function _renderNanogptUsage(data) {
   const el = document.getElementById("usageNanogptBody");
   if (!el) return;
+  // nanoGPT is optional: without credentials it is simply not in use.
+  const card = document.getElementById("usageCardNanogpt");
+  if (card) card.style.display = data.error === "no_credentials" ? "none" : "";
 
   if (data.error) {
     const msg = data.error === "no_credentials"
@@ -869,12 +874,15 @@ async function _loadOrgChart() {
       const color = companyColor(key);
       if (color) group.style.setProperty("--company-color", color);
 
-      const label = document.createElement("div");
-      label.className = "org-company-label";
-      label.textContent = key
-        ? (companiesMeta[key]?.display_name || key)
-        : t("home.org_unassigned");
-      group.appendChild(label);
+      // A single org without companies needs no "unassigned" heading.
+      if (key || groups.size > 1) {
+        const label = document.createElement("div");
+        label.className = "org-company-label";
+        label.textContent = key
+          ? (companiesMeta[key]?.display_name || key)
+          : t("home.org_unassigned");
+        group.appendChild(label);
+      }
 
       const groupRow = document.createElement("div");
       groupRow.className = "org-tree-top-row";

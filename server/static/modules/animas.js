@@ -2,6 +2,7 @@
 
 import { state, dom, escapeHtml } from "./state.js";
 import { t } from "/shared/i18n.js";
+import { animaStatusLabel } from "/shared/anima-status.js";
 import { api } from "./api.js";
 import { loadMemoryTab } from "./memory.js";
 import { animaHashColor } from "../shared/avatar-utils.js";
@@ -158,7 +159,7 @@ export function buildAnimaListStatusHtml(p) {
   const missedPings = p.missed_pings || 0;
   const health = healthIndicatorHtml(status, missedPings);
   const uptime = p.uptime_sec ? formatUptime(p.uptime_sec) : "";
-  const parts = [status];
+  const parts = [animaStatusLabel(status)];
   if (uptime && uptime !== "--") parts.push(uptime);
   const subprocesses = Array.isArray(p.subprocesses) ? p.subprocesses : [];
   const processCount = p.process_count || (subprocesses.length ? 1 + subprocesses.length : 0);
@@ -445,7 +446,7 @@ export function renderAnimaDropdown() {
     } else if (p.status === "not_found" || p.status === "stopped") {
       html += `<option value="${escapeHtml(p.name)}"${selected}>${statusIndicator('\uD83D\uDCA4', 'moon')} ${escapeHtml(p.name)} (${t("animas.stopped")})</option>`;
     } else {
-      const statusLabel = p.status ? ` (${p.status})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
       html += `<option value="${escapeHtml(p.name)}"${selected}>${escapeHtml(p.name)}${statusLabel}</option>`;
     }
   }

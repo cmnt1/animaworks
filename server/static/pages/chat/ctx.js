@@ -244,4 +244,11 @@ export function syncModelSelect(ctx) {
     ? (modelByThread[modelKey(selectedAnima, selectedThreadId)] || "")
     : "";
   select.value = value;
+  updateModelSelectTitle(select);
+}
+
+// The select is narrow in the composer, so expose the full model name on hover.
+export function updateModelSelectTitle(select) {
+  const label = select.selectedOptions?.[0]?.textContent || "";
+  select.title = label ? `${t("chat.model_selector")}: ${label}` : t("chat.model_selector");
 }

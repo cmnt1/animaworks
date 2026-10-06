@@ -113,6 +113,40 @@ export function createChatRenderer(ctx) {
     }
   }
 
+  async function repairBootstrap(container, anima, action) {
+    const buttons = container.querySelectorAll("[data-bootstrap-repair]");
+    const errorEl = container.querySelector(".bootstrap-repair-error");
+    buttons.forEach((b) => { b.disabled = true; });
+    if (errorEl) errorEl.hidden = true;
+    try {
+      const result = await api(`/api/animas/${encodeURIComponent(anima.name)}/bootstrap/repair`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      anima.needs_repair = false;
+      anima._bootstrapFailed = null;
+      anima.bootstrap_state = result?.bootstrap_state || null;
+      if (action === "complete") {
+        // The server already broadcast anima.bootstrap=completed (possibly
+        // before this response); the restarted process reports idle.
+        anima.status = "idle";
+        anima.bootstrapping = false;
+      } else {
+        anima.status = "bootstrapping";
+        anima.bootstrapping = true;
+        anima._bootstrapStartedAt = Date.now();
+      }
+      renderChat();
+    } catch (error) {
+      buttons.forEach((b) => { b.disabled = false; });
+      if (errorEl) {
+        errorEl.textContent = error?.message || t("chat.bootstrap_repair_failed");
+        errorEl.hidden = false;
+      }
+    }
+  }
+
   function renderBootstrapProgress(container, anima) {
     const status = anima?.status;
 
@@ -121,7 +155,16 @@ export function createChatRenderer(ctx) {
         <div class="bootstrap-progress bootstrap-progress--error">
           <div class="bootstrap-progress-avatar">${_avatarHtml(anima)}</div>
           <div class="bootstrap-progress-step">${t("chat.bootstrap_needs_repair")}</div>
+          <p class="bootstrap-repair-hint">${t("chat.bootstrap_repair_hint")}</p>
+          <div class="bootstrap-repair-actions">
+            <button type="button" class="btn-primary" data-bootstrap-repair="complete">${t("chat.bootstrap_repair_complete")}</button>
+            <button type="button" class="btn-secondary" data-bootstrap-repair="retry">${t("chat.bootstrap_repair_retry")}</button>
+          </div>
+          <div class="bootstrap-repair-error" hidden></div>
         </div>`;
+      container.querySelectorAll("[data-bootstrap-repair]").forEach((btn) => {
+        btn.addEventListener("click", () => repairBootstrap(container, anima, btn.dataset.bootstrapRepair));
+      });
       _clearBootstrapInterval();
       return;
     }
@@ -385,10 +428,21 @@ export function createChatRenderer(ctx) {
       const liveIsNewer = hasStreaming || !lastSessionLastTs
         || new Date(lastLiveTs).getTime() > new Date(lastSessionLastTs).getTime();
       if (liveIsNewer) {
-        if (hs.sessions.length > 0) {
+        // While a reply streams, the server has usually persisted the user's
+        // message already; skip live bubbles the recent history already shows.
+        const recentKeys = new Set();
+        for (const session of hs.sessions.slice(-2)) {
+          for (const m of session.messages || []) {
+            const role = m.role === "human" ? "user" : m.role;
+            recentKeys.add(`${role}\u0000${String(m.content ?? "").trim()}`);
+          }
+        }
+        const liveToRender = history.filter(m => m.streaming || m.role === "thinking"
+          || !recentKeys.has(`${m.role}\u0000${String(m.text ?? "").trim()}`));
+        if (liveToRender.length > 0 && hs.sessions.length > 0) {
           liveHtml += `<div class="session-divider"><span class="session-divider-label">${t("chat.current_session")}</span></div>`;
         }
-        liveHtml += history.map(m => renderLiveBubble(m, opts)).join("");
+        liveHtml += liveToRender.map(m => renderLiveBubble(m, opts)).join("");
       }
     }
 

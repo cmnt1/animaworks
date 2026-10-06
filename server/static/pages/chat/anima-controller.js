@@ -5,6 +5,7 @@ import {
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
   syncModelSelect,
 } from "./ctx.js";
+import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
 import { openVoicePopup } from "./voice-popup.js";
@@ -110,7 +111,7 @@ export function createAnimaController(ctx) {
 
     let html = "";
     for (const p of sorted) {
-      const statusLabel = p.status ? ` (${p.status})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
       const openLabel = isTabOpen(ctx, p.name) ? t("animas.tab_viewing") : "";
       const disabled = p.status === "bootstrapping" || p.bootstrapping;
       const sleepBadge = p.status === "not_found" || p.status === "stopped" ? "\uD83D\uDCA4 " : "";

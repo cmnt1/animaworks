@@ -76,6 +76,7 @@ def list_board(
                 column=_status_to_column(status, waiting),
                 visibility="archived" if status in _TERMINAL_STATUSES else "active",
                 waiting=waiting,
+                delegated_by=row.get("alias_viewer") if waiting else None,
                 lease=row.get("lease"),
             )
         )

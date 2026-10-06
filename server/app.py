@@ -721,6 +721,9 @@ async def _run_model_warmup() -> None:
         # 1s of 16kHz mono PCM16 silence — enough to force the model load.
         await stt.transcribe_buffer_async(b"\x00\x00" * 16000)
         logger.info("Model warmup complete: stt")
+    except ImportError as exc:
+        # Voice input is an optional extra; say so once instead of a traceback.
+        logger.info("Voice STT warmup skipped: %s", exc)
     except Exception:
         logger.exception("Model warmup failed: stt")
 
@@ -1083,12 +1086,14 @@ def create_app(
         if not setup_complete:
             # During setup: only setup API and the static assets needed by
             # the setup wizard are accessible.  The setup HTML imports shared
-            # modules through the versioned static route.
+            # modules through the versioned static route, and the wizard steps
+            # import the same-origin fetch wrapper from /modules/api.js.
             if (
                 path.startswith("/api/setup")
                 or path.startswith("/setup")
                 or path.startswith("/_v/")
                 or path.startswith("/shared/")
+                or path == "/modules/api.js"
             ):
                 response = await call_next(request)
                 # Prevent browser caching of setup static files so code

@@ -181,6 +181,7 @@ function loadAnimasHelpers() {
     const animaHashColor = () => "#000";
     const bustupCandidates = () => [];
     const resolveCachedAvatar = async () => null;
+    const animaStatusLabel = (s) => s;
     export function __setApi(fn) { _apiImpl = fn; }
   `;
   source = preamble + "\n" + source;

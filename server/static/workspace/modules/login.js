@@ -4,6 +4,7 @@
 import { getState, setState } from "./state.js";
 import { fetchSharedUsers } from "./api.js";
 import { escapeHtml } from "./utils.js";
+import { t } from "/shared/i18n.js";
 
 // ── Private State ──────────────────────
 
@@ -20,10 +21,10 @@ function renderLoginScreen() {
         <div class="login-title">AnimaWorks</div>
         <div class="login-subtitle">Digital Anima Workspace</div>
         <div class="user-list" id="wsUserList">
-          <div class="loading-placeholder">Loading users...</div>
+          <div class="loading-placeholder">${t("ws.login_loading_users")}</div>
         </div>
         <div class="login-guest">
-          <button class="btn-guest" id="wsGuestLoginBtn">Login as Guest</button>
+          <button class="btn-guest" id="wsGuestLoginBtn">${t("ws.login_guest")}</button>
         </div>
       </div>
     </div>
@@ -46,7 +47,7 @@ async function loadUsers() {
   try {
     const users = await fetchSharedUsers();
     if (!users || users.length === 0) {
-      userListEl.innerHTML = '<p style="color:#999;font-size:0.85rem;">No registered users</p>';
+      userListEl.innerHTML = `<p style="color:#999;font-size:0.85rem;">${t("ws.login_no_users")}</p>`;
       return;
     }
 
@@ -64,7 +65,7 @@ async function loadUsers() {
   } catch (err) {
     console.error("Failed to load shared users:", err);
     userListEl.innerHTML =
-      '<p style="color:#ef4444;font-size:0.85rem;">Failed to load users</p>';
+      `<p style="color:#ef4444;font-size:0.85rem;">${t("ws.login_load_failed")}</p>`;
   }
 }
 

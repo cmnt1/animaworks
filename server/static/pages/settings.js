@@ -234,7 +234,7 @@ function _renderGeneral(container) {
       <div class="settings-mode-cards">
         <button class="settings-mode-card ${currentMode === "anime" ? "active" : ""}" data-mode="anime">
           <div class="settings-mode-icon">
-            <span class="nav-emoji">&#x1F338;</span>
+            <span class="settings-mode-emoji" aria-hidden="true">&#x1F338;</span>
           </div>
           <div class="settings-mode-info">
             <strong>${t("settings.mode.anime")}</strong>

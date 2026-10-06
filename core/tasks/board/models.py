@@ -34,4 +34,6 @@ class BoardRow(BaseModel):
     column: BoardColumn
     visibility: Literal["active", "archived"]
     waiting: bool = False
+    # For WAITING rows: the Anima that delegated the task and is waiting on it.
+    delegated_by: str | None = None
     lease: dict | None = None

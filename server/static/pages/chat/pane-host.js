@@ -1,6 +1,6 @@
 // ── Pane Host — manages multiple independent Chat pane instances ──
 import { t } from "/shared/i18n.js";
-import { createChatContext, CONSTANTS, modelKey, syncModelSelect, scheduleSaveChatUiState } from "./ctx.js";
+import { createChatContext, CONSTANTS, modelKey, syncModelSelect, updateModelSelectTitle, scheduleSaveChatUiState } from "./ctx.js";
 import { fetchModelCatalog, populateModelSelect } from "../../shared/chat/model-picker.js";
 import { createAnimaController } from "./anima-controller.js";
 import { createThreadController } from "./thread-controller.js";
@@ -105,7 +105,7 @@ function paneHtml() {
             <select class="chat-model-select" data-chat-id="chatPageModel" data-i18n-title="chat.model_selector" title="${t("chat.model_selector")}">
               <option value=""></option>
             </select>
-            <div class="context-ring-wrap" data-chat-id="chatContextRing" title="">
+            <div class="context-ring-wrap" data-chat-id="chatContextRing" title="${t("chat.context_ring_title")}">
               <svg class="context-ring" viewBox="0 0 36 36" aria-hidden="true">
                 <circle class="context-ring-bg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"/>
                 <circle class="context-ring-fg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"
@@ -194,6 +194,13 @@ export function createPaneHost(rootContainer) {
     ctx.controllers.events.bindPaneEvents();
     ctx.controllers.meeting.init();
     ctx.controllers.anima.loadAnimas();
+
+    // Right after server start the Anima processes may not be registered yet;
+    // keep re-fetching until the list is populated instead of staying empty.
+    const emptyListRetry = setInterval(() => {
+      if (ctx.state.animas.length === 0) ctx.controllers.anima.loadAnimas();
+    }, 5000);
+    pane.intervals.push(emptyListRetry);
 
     const chatInterval = setInterval(
       () => ctx.controllers.renderer.pollSelectedChat(),
@@ -308,6 +315,7 @@ export function createPaneHost(rootContainer) {
       const { selectedAnima, selectedThreadId } = ctx.state;
       if (!selectedAnima) return;
       ctx.state.modelByThread[modelKey(selectedAnima, selectedThreadId)] = select.value;
+      updateModelSelectTitle(select);
       scheduleSaveChatUiState(ctx);
     });
   }

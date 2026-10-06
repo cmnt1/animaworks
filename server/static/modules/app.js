@@ -127,6 +127,11 @@ function showAuthBannerIfNeeded() {
   if (existing) existing.remove();
 
   if (state.authMode !== "local_trust") return;
+  // The demo runs on a throwaway data dir; a closed banner stays closed.
+  if (state.demoMode) return;
+  try {
+    if (localStorage.getItem("aw-auth-banner-dismissed")) return;
+  } catch { /* storage unavailable: show the banner */ }
 
   const banner = document.createElement("div");
   banner.id = "authBanner";
@@ -135,7 +140,10 @@ function showAuthBannerIfNeeded() {
     <span>${t("app.auth_banner")}</span>
     <button class="auth-banner-close" aria-label="${t("common.aria_close")}">&times;</button>
   `;
-  banner.querySelector(".auth-banner-close").addEventListener("click", () => banner.remove());
+  banner.querySelector(".auth-banner-close").addEventListener("click", () => {
+    banner.remove();
+    try { localStorage.setItem("aw-auth-banner-dismissed", "1"); } catch { /* ignore */ }
+  });
 
   const shell = document.querySelector(".app-shell");
   if (shell) shell.parentElement.insertBefore(banner, shell);

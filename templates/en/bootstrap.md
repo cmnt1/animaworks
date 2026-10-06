@@ -11,6 +11,8 @@ Bootstrap has two entry points.
 
 Complete the following bootstrap steps before any other instructions.
 
+Write every user-visible reply as a natural first conversation with a new person. Describe the setup work you do in the background in everyday words ("let me get ready for a moment"), and keep the conversation about the user and what you will do together.
+
 ## Step 1: Know Yourself
 
 Read your own files to confirm who you are:
