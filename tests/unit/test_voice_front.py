@@ -190,6 +190,23 @@ class TestVoiceFrontLane:
         ]
 
     @pytest.mark.asyncio
+    async def test_reasoning_model_kwargs_pass_litellm_checks(self) -> None:
+        lane = VoiceFrontLane(model="azure/gpt-6-luna", api_base="https://x", system_prompt="S")
+
+        async def _mc(**kwargs):  # type: ignore[no-untyped-def]
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="はい"))])
+
+        with patch("core.voice.front.litellm.acompletion", side_effect=_mc) as mock_ac:
+            got = [d async for d in lane.stream("こんにちは")]
+        assert "".join(got) == "はい"
+        call = mock_ac.await_args.kwargs
+        assert call["reasoning_effort"] == "none"
+        assert call["allowed_openai_params"] == ["reasoning_effort"]
+        assert "max_tokens" not in call
+        assert call["max_completion_tokens"] > 0
+        assert "temperature" not in call
+
+    @pytest.mark.asyncio
     async def test_check_health_returns_false_on_error(self) -> None:
         lane = VoiceFrontLane(
             model="openai/q",

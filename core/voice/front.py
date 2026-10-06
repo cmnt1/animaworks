@@ -247,6 +247,11 @@ class VoiceFrontLane:
             kwargs.pop("temperature")
             kwargs.pop("extra_body")
             kwargs["reasoning_effort"] = "none"
+            # LiteLLM does not know newer deployments (e.g. azure/gpt-6-luna)
+            # are reasoning models: it rejects reasoning_effort client-side and
+            # forwards max_tokens, which the API refuses.
+            kwargs["allowed_openai_params"] = ["reasoning_effort"]
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         if tools:
             kwargs["tools"] = tools
 
