@@ -18,26 +18,26 @@ description: >-
 
 ### 1. Interview (minimal is fine)
 
-Gather the following information from the requester. **Only the bold items are required**; anything else left unspecified will be auto-generated:
+Gather the following information from the requester. **Only the bold items are required**; if others are not specified, they will be auto-generated:
 
 **Required:**
 - **English name** (lowercase alphanumeric only. This becomes the directory name)
-- **Role / specialty area**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
-- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If the organization already has two cool types, don't choose that
-- **Face type**: One from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
+- **Role/specialty**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
+- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If there are already 2 cool types in the organization, don't choose that
+- **Face type**: Choose 1 from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
 
-**Optional (use if specified, otherwise auto-generate):**
+**Optional (reflected if specified, auto-generated if not):**
 - Japanese name
 - Age
 - Any other preferences
 
-**Technical configuration (use defaults if not specified):**
+**Technical configuration (defaults used if not specified):**
 - Role: `commander` (can delegate to other employees) or `worker` (receives delegation)
-- supervisor: The English name of the Anima that is the supervisor (required for worker; if unspecified, use self)
+- supervisor: English name of the Anima who is the supervisor (required for worker; if not specified, self)
 
 **Brain (LLM model) configuration:**
 
-Do not show the model table to the user to choose from (since unusable models are mixed in). Only when the user specifies a model, use the table below as a reference. If not specified, omit the model row in the character sheet and proceed with the default model:
+Do not show the model table to the user to choose from (since unusable models are mixed in). Only when the user specifies a model, configure it with reference to the table below. If not specified, omit the model row in the character sheet and proceed with the default model:
 
 | Level | Execution mode | Example models | Features | credential |
 |--------|-----------|-------------|------|------------|
@@ -59,7 +59,7 @@ Don't associate a cool beauty with the role. Don't make hobbies an extension of 
 
 ### 3. Create the character sheet and batch-create via CLI
 
-Write the character sheet to a file according to the **character sheet specification** based on the interview and design results, then create it with the CLI command:
+Write the character sheet to a file according to the **character sheet specification** based on the interview and design results, then create it with a CLI command:
 
 1. Write the character sheet to a file (e.g., `/tmp/{english_name}.md`)
 2. Run the following command:
@@ -68,7 +68,7 @@ Write the character sheet to a file according to the **character sheet specifica
 animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} --supervisor {supervisor_english_name}
 ```
 
-**Supervisor configuration:**
+**supervisor configuration:**
 - Explicitly specify via the `supervisor` parameter (recommended)
 - If omitted: Get from the `| 上司 |` field of the character sheet
 - If neither exists: Self (the calling Anima) becomes the supervisor
@@ -156,13 +156,13 @@ Report the completion of hiring:
 - The new employee's name and role
 - The configured technical stack (model, execution mode)
 
-- They will start on their first small task immediately upon arrival, and you will report the results in a summary
+- Upon arrival, they should immediately start on the first small task, and you should report the results in a summary
 
-⚠️ Do not report avatar image generation (the new Anima itself generates it during bootstrap)
+⚠️ Do not report avatar image generation (the new Anima itself generates it via bootstrap)
 
 ### From here on, the new Anima executes autonomously:
-- Enriching identity.md / injection.md
-- Self-designing heartbeat.md / cron.md
-- Generating the avatar image (with supervisor reference)
-- Reporting arrival to the supervisor
-- Starting the first small task (something useful to the user) and reporting the results to the supervisor
+- Enrichment of identity.md / injection.md
+- Self-design of heartbeat.md / cron.md
+- Avatar image generation (with supervisor reference)
+- Arrival report to the supervisor
+- Start the first small task (something useful to the user) and report the results to the supervisor

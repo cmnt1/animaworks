@@ -39,7 +39,7 @@ animaworks anima enable <name>
 animaworks anima delete <name>
 ```
 
-### 자주 쓰이는 용법
+### 자주 쓰는 사용법
 
 ```bash
 # config.json変更後に特定Animaだけリスタート
@@ -49,9 +49,9 @@ animaworks anima restart aoi
 animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
-## API 참조(CLI를 사용할 수 없는 경우)
+## API 참조 (CLI를 사용할 수 없는 경우)
 
-기본 URL: `$ANIMAWORKS_SERVER_URL`(설정되지 않은 경우 `http://localhost:18500`)
+기본 URL: `$ANIMAWORKS_SERVER_URL` (설정되지 않았다면 `http://localhost:18500`)
 
 | 엔드포인트 | 메서드 | 용도 |
 |--------------|---------|------|
@@ -65,16 +65,16 @@ animaworks anima set-model aoi claude-sonnet-5-5
 | `/api/animas/{name}/chat` | POST | 메시지 전송 |
 | `/api/animas/{name}/trigger` | POST | 하트비트 즉시 실행 |
 
-## 리로드 절차(프로그램 업데이트 후)
+## 리로드 절차 (프로그램 업데이트 후)
 
 ```bash
 curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload | python3 -m json.tool
 ```
 
 - `added`: 새로 감지된 anima
-- `refreshed`: 다시 로드된 anima(파일 변경이 반영됨)
+- `refreshed`: 다시 로드된 anima (파일 변경이 반영됨)
 - `removed`: 디스크에서 삭제된 anima
-- **서버 재시작은 필요 없음. 이 엔드포인트에서 설정·프롬프트 변경이 즉시 반영됨**
+- **서버 재시작은 필요 없음. 이 엔드포인트로 설정·프롬프트 변경이 즉시 반영됨**
 
 ## 주의사항
 

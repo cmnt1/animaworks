@@ -54,13 +54,13 @@ enable_subordinate(name="aoi")
 
 ### Model Change and Restart
 
-These tools request an update owned by root from root `status.json`. Do not edit directly from the Anima process. The main model is reloaded into the running process, and a stopped Anima reads the new configuration at the next startup:
+These tools request root-owned updates from root `status.json`. Do not edit directly from the Anima process. The main model is reloaded into the running process, and a stopped Anima reads the new configuration at next startup:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分散のため")
 ```
 
-The background model (for heartbeat/cron) is applied from the next task runner startup, and running tasks are allowed to complete as is:
+The background model (for heartbeat/cron) takes effect from the next task runner startup, and running tasks complete as-is:
 
 ```
 set_subordinate_background_model(name="aoi", model="claude-sonnet-5-5", reason="heartbeat負荷軽減")

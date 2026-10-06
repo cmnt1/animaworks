@@ -80,7 +80,7 @@ Role of each section:
 | `model_modes` | Model name → execution mode override map |
 | `anima_defaults` | Default settings common to all Anima |
 | `animas` | Anima organization layout (supervisor, speciality). Model settings are in status.json |
-| `consolidation` | Consolidation settings (daily/weekly) |
+| `consolidation` | Consolidation (daily/weekly) settings |
 | `rag` | RAG (embedding vector search) settings |
 | `priming` | Token budget for priming (automatic memory retrieval) |
 | `image_gen` | Image generation style settings |

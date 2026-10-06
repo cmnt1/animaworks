@@ -145,7 +145,7 @@ injection.md은 당신의 **가변 행동 지침**. 허가된 상급자나 인�
 
 ### status.json — 설정 정보
 
-당신의 실행 파라미터에 대한 **Single Source of Truth (SSoT)**.
+실행 파라미터의 **Single Source of Truth（SSoT）**.
 
 ```json
 {
@@ -161,12 +161,12 @@ injection.md은 당신의 **가변 행동 지침**. 허가된 상급자나 인�
 | 필드 | 설명 |
 |-----------|------|
 | `enabled` | 활성/비활성 |
-| `role` | 역할 (engineer, manager, writer, researcher, ops, general) |
+| `role` | 역할（engineer, manager, writer, researcher, ops, general） |
 | `model` | 사용할 LLM 모델 |
 | `credential` | API 인증 정보의 이름 |
 | `max_tokens` | 1회 응답의 최대 토큰 |
-| `supervisor` | 상급자의 Anima 이름 (null = 최상위) |
-| `background_model` | Heartbeat/Cron 용 경량 모델 (미설정 시 메인 모델) |
+| `supervisor` | 상급자의 Anima 이름（null = 최상위） |
+| `background_model` | Heartbeat/Cron 용 경량 모델（미설정 시 메인 모델） |
 
 | 항목 | 값 |
 |------|-----|

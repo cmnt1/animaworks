@@ -54,7 +54,7 @@ enable_subordinate(name="aoi")
 
 ### 모델 변경 및 재시작
 
-이 도구들은 root에게 root 소유 `status.json`의 업데이트를 요청한다. Anima 프로세스에서 직접 편집하지 않는다. 메인 모델은 시작 중인 프로세스에 reload되며, 종료된 Anima는 다음 시작 시 새 설정을 읽는다:
+이 도구들은 root에게 root 소유 `status.json`의 업데이트를 요청한다. Anima 프로세스에서 직접 편집하지 않는다. 메인 모델은 시작 중 프로세스에 reload되며, 종료 중인 Anima는 다음 시작 시 새 설정을 읽는다:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分散のため")
@@ -66,7 +66,7 @@ set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分�
 set_subordinate_background_model(name="aoi", model="claude-sonnet-5-5", reason="heartbeat負荷軽減")
 ```
 
-백그라운드 모델을 지우고 메인 모델로 되돌리는 경우:
+백그라운드 모델을 클리어하고 메인 모델로 되돌리는 경우:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")

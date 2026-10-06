@@ -233,7 +233,7 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 
 ### 사용 가능한 역할 (`defaults.json`의 실제 값)
 
-모델·실행 파라미터:
+모델 · 실행 파라미터:
 
 | 역할 | model | background_model | context_threshold | conversation_history_threshold |
 |--------|-------|------------------|-------------------|----------------------------------|
@@ -244,7 +244,7 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
-`--role` 미지정의 `create_from_md`에서는 `general`이 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿에 포함된 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`이 실행 모드 **A** (LiteLLM + tool 루프)에 매치된다. vLLM 등을 사용하는 경우에는 `animaworks anima set-model`에서 `model` / `credential`를 설정하고, 백그라운드 모델은 `animaworks anima set-background-model`을 사용한다. 서버 가동 중에는 root API, 종료 시에는 오프라인 설정 스토어를 통해 root 소유의 `status.json`에 반영된다. Anima 프로세스에서 직접 편집하지 않는다.
+`--role` 미지정의 `create_from_md`에서는 `general`이 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿에 포함된 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`이 실행 모드 **A** (LiteLLM + tool 루프)에 매치된다. vLLM 등을 사용하는 경우에는 `animaworks anima set-model`에서 `model` / `credential`를 설정하고, 백그라운드 모델은 `animaworks anima set-background-model`을 사용한다. 서버 가동 중에는 root API, 종료 중에는 오프라인 설정 스토어를 통해 root 소유의 `status.json`에 반영된다. Anima 프로세스에서 직접 편집하지 않는다.
 
 ### 적용 플로우
 

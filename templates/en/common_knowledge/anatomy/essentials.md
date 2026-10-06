@@ -193,7 +193,7 @@ There are two ways to put tasks into execution.
 
 ### background_model
 
-Heartbeat / Cron can use an explicitly configured background_model. The Inbox uses the main model, and task-specific model specifications take priority for that task. Do not automatically select a model simply because it is cheaper.
+Heartbeat / Cron can use an explicitly configured background_model. Inbox uses the main model, and task-specific model specifications take precedence for that task. Do not automatically select based solely on cost.
 
 | Category | Model Used | Target |
 |----------|-----------|--------|

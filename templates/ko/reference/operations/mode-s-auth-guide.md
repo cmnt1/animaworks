@@ -44,7 +44,7 @@ Anthropic API에 직접 연결한다. 스트리밍이 가장 원활하다.
 ```
 
 - `api_key`: Anthropic API 키. 비어 있으면 환경 변수 `ANTHROPIC_API_KEY`로 폴백
-- `base_url`: 커스텀 엔드포인트(선택). 지정 시 `ANTHROPIC_BASE_URL`로 하위 프로세스에 전달됨(프록시 또는 온프레미스 사용 시)
+- `base_url`: 커스텀 엔드포인트(선택). 지정 시 `ANTHROPIC_BASE_URL`로 자식 프로세스에 전달됨(프록시 또는 온프레미스 사용 시)
 
 **status.json(Anima 개별):**
 
@@ -169,7 +169,7 @@ Claude Code의 구독 인증(Max plan 등)을 사용한다.
 }
 ```
 
-`mode_s_auth`를 생략하거나 `"max"`으로 하면 Max plan이 된다.
+`mode_s_auth`를 생략하거나 `"max"`로 하면 Max plan이 된다.
 
 ## Anima별 용도 구분 예
 

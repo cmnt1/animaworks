@@ -1,6 +1,6 @@
 # Injection: {name}
 
-(Undefined - set at bootstrap time)
+(Undefined - set during bootstrap)
 
 ## Hiring rules (commander only)
 

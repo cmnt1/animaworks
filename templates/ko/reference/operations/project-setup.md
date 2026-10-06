@@ -80,8 +80,8 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `model_modes` | 모델 이름→실행 모드의 오버라이드 맵 |
 | `anima_defaults` | 모든 Anima 공통의 기본 설정 |
 | `animas` | Anima의 조직 레이아웃(supervisor, speciality). 모델 설정은 status.json |
-| `consolidation` | 기억 통합(일일/주간) 설정 |
-| `rag` | RAG(임베딩 벡터 검색) 설정 |
+| `consolidation` | 기억 통합(일일/주간)의 설정 |
+| `rag` | RAG(임베딩 벡터 검색)의 설정 |
 | `priming` | 프라이밍(자동 기억 획득)의 토큰 예산 |
 | `image_gen` | 이미지 생성의 스타일 설정 |
 

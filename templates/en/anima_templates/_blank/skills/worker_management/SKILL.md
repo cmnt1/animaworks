@@ -49,7 +49,7 @@ animaworks anima restart aoi
 animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
-## API Reference (when CLI is unavailable)
+## API Reference (When CLI Is Unavailable)
 
 Base URL: `$ANIMAWORKS_SERVER_URL` (if not set, `http://localhost:18500`)
 
@@ -61,11 +61,11 @@ Base URL: `$ANIMAWORKS_SERVER_URL` (if not set, `http://localhost:18500`)
 | `/api/animas/{name}` | GET | Anima details |
 | `/api/animas/{name}/restart` | POST | Restart individual anima |
 | `/api/animas/{name}/stop` | POST | Stop individual anima |
-| `/api/animas/{name}/start` | POST | Start a stopped anima |
+| `/api/animas/{name}/start` | POST | Start stopped anima |
 | `/api/animas/{name}/chat` | POST | Send message |
 | `/api/animas/{name}/trigger` | POST | Execute heartbeat immediately |
 
-## Reload Procedure (after program update)
+## Reload Procedure (After Program Update)
 
 ```bash
 curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload | python3 -m json.tool

@@ -333,7 +333,7 @@ Heartbeat / Inbox / Cron are primarily for "judgment and triage," with execution
 2. `heartbeat.default_model` in `config.json` (global default)
 3. Fallback to main model (`model`)
 
-### Configuration Method
+### Configuration
 
 ```bash
 # 特定Animaにbackground_model を設定

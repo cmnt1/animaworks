@@ -89,7 +89,7 @@ Connects via AWS Bedrock. The credential's `keys` is passed to ModelConfig as `e
 | aws_session_token | AWS_SESSION_TOKEN | Temporary authentication (optional) |
 | aws_profile | AWS_PROFILE | Profile name (optional) |
 
-Items with no value in `keys` fall back to the corresponding environment variables above. In production, it is possible to set only `AWS_PROFILE` and not write keys in the config.
+Items without a value in `keys` fall back to the corresponding environment variables above. In production, it is possible to set only `AWS_PROFILE` and not write keys in the config.
 
 **status.json (Anima-specific):**
 
@@ -131,7 +131,7 @@ Connects via Google Vertex AI. The credential's `keys` is passed to ModelConfig 
 | vertex_location | CLOUD_ML_REGION | Region (e.g., us-central1) |
 | vertex_credentials | GOOGLE_APPLICATION_CREDENTIALS | Service account JSON path |
 
-Items with no value in `keys` fall back to the corresponding environment variables above. When using ADC (Application Default Credentials), `vertex_credentials` can be omitted.
+Items without a value in `keys` fall back to the corresponding environment variables above. When using ADC (Application Default Credentials), `vertex_credentials` can be omitted.
 
 **status.json (Anima-specific):**
 
@@ -144,7 +144,7 @@ Items with no value in `keys` fall back to the corresponding environment variabl
 }
 ```
 
-### 4. Max plan Mode (default)
+### 4. Max Plan Mode (Default)
 
 Uses Claude Code's subscription authentication (Max plan, etc.).
 

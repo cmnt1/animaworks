@@ -243,7 +243,7 @@ Model and execution parameters:
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
-For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the template's bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). If using vLLM or similar, set `model` / `credential` via `animaworks anima set-model`, and use `animaworks anima set-background-model` for the background model. While the server is running, changes are reflected in the root-owned `status.json` via the root API; during shutdown, they are applied through the offline configuration store. Do not edit directly from the Anima process.
+For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the template's bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM, etc., set `model` / `credential` via `animaworks anima set-model`, and use `animaworks anima set-background-model` for the background model. While the server is running, changes are reflected to the root-owned `status.json` via the root API; during shutdown, they are applied through the offline configuration store. Do not edit directly from the Anima process.
 
 ### Application Flow
 
