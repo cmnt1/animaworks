@@ -378,3 +378,5 @@ def test_start_foreground_exits_without_uvicorn(data_dir: Path, monkeypatch: pyt
         server_cmd._start_foreground(args)
     assert exc_info.value.code == 2
     assert called["uvicorn"] is False
+    # Refused before any side effects (PID file, watchdog).
+    assert not (data_dir / "server.pid").exists()

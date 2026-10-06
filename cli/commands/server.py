@@ -476,6 +476,19 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     raise_fd_soft_limit(logger=logger, process_label="server")
 
+    # Enclave mode must refuse to start before touching PID files, orphan
+    # runners, or the PID watchdog.
+    from core.config import load_config
+    from core.enclave import EnclaveViolationError, enforce_enclave_runtime
+    from core.paths import get_data_dir
+
+    config = load_config()
+    try:
+        enforce_enclave_runtime(config, get_data_dir(), host=args.host)
+    except EnclaveViolationError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
+
     existing_pid = read_server_pid()
     if existing_pid is not None and is_pid_alive(existing_pid):
         print(f"Error: Server is already running (pid={existing_pid}).")
@@ -504,20 +517,10 @@ def _start_foreground(args: argparse.Namespace) -> None:
     atexit.register(_remove_pid_file)
     _start_pid_watchdog()
 
-    from core.config import load_config
     from core.time_utils import configure_timezone
 
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
-    config = load_config()
-
-    from core.enclave import EnclaveViolationError, enforce_enclave_runtime
-    from core.paths import get_data_dir
-
-    try:
-        enforce_enclave_runtime(config, get_data_dir(), host=args.host)
-    except EnclaveViolationError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(2)
+    config = load_config()  # reload: runtime init may have migrated config.json
 
     configure_timezone(config.system.timezone)
     if not config.setup_complete:
