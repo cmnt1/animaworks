@@ -321,6 +321,64 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "enclave に entry_anima が設定されていません",
         "en": "enclave has no entry_anima set",
     },
+    "enclave.guard.egress_invalid": {
+        "ja": "enclave の egress 設定が不正です（stages を1つ以上、既知の type で設定する必要があります）",
+        "en": "enclave egress config is invalid (at least one stage of a known type is required)",
+    },
+    "enclave.guard.peer_uids_required": {
+        "ja": "enclave の allowed_peer_uids が空です（少なくとも1つ設定する必要があります）",
+        "en": "enclave allowed_peer_uids is empty (at least one must be set)",
+    },
+    "enclave.guard.socket_group_missing": {
+        "ja": "enclave の socket_group '{group}' が存在しません",
+        "en": "enclave socket_group '{group}' does not exist",
+    },
+    "enclave.gateway.answer_instruction": {
+        "ja": (
+            '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
+            "根拠ID を必ず付ける。個人を特定できる値は書かない"
+        ),
+        "en": (
+            'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
+            "Always attach evidence IDs. Do not write values that identify a specific person."
+        ),
+    },
+    "enclave.tool.unknown_enclave": {
+        "ja": "エラー: enclave '{enclave}' が設定に存在しません",
+        "en": "error: enclave '{enclave}' is not configured",
+    },
+    "enclave.tool.anima_not_allowed": {
+        "ja": "エラー: この anima は enclave へのアクセスを許可されていません",
+        "en": "error: this anima is not allowed to access the enclave",
+    },
+    "enclave.tool.unreachable": {
+        "ja": "エラー: enclave に接続できません",
+        "en": "error: could not reach the enclave",
+    },
+    "enclave.tool.failed": {
+        "ja": "エラー: enclave が応答を返しませんでした (code={code})",
+        "en": "error: enclave returned an error (code={code})",
+    },
+    "enclave.tool.schema_description": {
+        "ja": "隔離された enclave に質問し、事実と根拠IDだけの回答を得る",
+        "en": "Ask an isolated enclave a question and get a fact-only answer with evidence IDs",
+    },
+    "enclave.tool.schema_enclave": {
+        "ja": "接続する enclave の設定名",
+        "en": "name of the enclave config to connect to",
+    },
+    "enclave.tool.schema_question": {
+        "ja": "隔離インスタンスに送る質問",
+        "en": "the question to send to the isolated instance",
+    },
+    "enclave.tool.schema_case_id": {
+        "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",
+        "en": "optional case identifier (defaults to anima name plus date)",
+    },
+    "enclave.tool.fact_line": {
+        "ja": "- {text}（根拠: {evidence}）",
+        "en": "- {text} (evidence: {evidence})",
+    },
     "enclave.guard.entry_anima_missing": {
         "ja": "entry_anima '{anima}' のディレクトリが存在しません",
         "en": "entry_anima '{anima}' directory does not exist",

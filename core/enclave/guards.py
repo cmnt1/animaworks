@@ -56,6 +56,16 @@ def collect_enclave_violations(
         violations.append(t("enclave.guard.name_required", locale=locale))
     if not enclave.socket_path:
         violations.append(t("enclave.guard.socket_path_required", locale=locale))
+    if not enclave.allowed_peer_uids:
+        violations.append(t("enclave.guard.peer_uids_required", locale=locale))
+    try:
+        from core.enclave.egress.config import load_egress_config
+
+        load_egress_config(enclave.egress)
+    except Exception:
+        violations.append(t("enclave.guard.egress_invalid", locale=locale))
+    if enclave.socket_group and not _group_exists(enclave.socket_group):
+        violations.append(t("enclave.guard.socket_group_missing", locale=locale, group=enclave.socket_group))
     if not enclave.entry_anima:
         violations.append(t("enclave.guard.entry_anima_required", locale=locale))
     else:
@@ -149,6 +159,17 @@ def enforce_enclave_runtime(
     violations = collect_enclave_violations(config, data_dir, host=host)
     if violations:
         raise EnclaveViolationError("\n".join(violations))
+
+
+def _group_exists(group: str) -> bool:
+    """Return whether the named system group exists."""
+    import grp
+
+    try:
+        grp.getgrnam(group)
+        return True
+    except KeyError:
+        return False
 
 
 def _guard_dirs(data_dir: Path) -> Iterable[Path]:

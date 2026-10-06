@@ -54,7 +54,9 @@ def _enclave(**overrides: object) -> dict:
         "name": "primary",
         "socket_path": "/run/animaworks/enclave.sock",
         "entry_anima": "main",
+        "allowed_peer_uids": [1000, 2000],
         "allowed_llm_credentials": ["anthropic"],
+        "egress": {"stages": [{"type": "regex_denylist", "patterns": [{"regex": "x", "action": "redact"}]}]},
     }
     data.update(overrides)
     return data
@@ -142,6 +144,24 @@ def test_guard1_entry_anima_missing(data_dir: Path) -> None:
     config = _make_config(enclave=_enclave(entry_anima="main"))
     violations = _violations(config, data_dir)
     assert _has(violations, "main")
+
+
+def test_guard1_empty_peer_uids(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    config = _make_config(enclave=_enclave(allowed_peer_uids=[]))
+    assert _has(_violations(config, data_dir), "allowed_peer_uids")
+
+
+def test_guard1_invalid_egress(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    config = _make_config(enclave=_enclave(egress={}))
+    assert _has(_violations(config, data_dir), "egress")
+
+
+def test_guard1_missing_socket_group(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    config = _make_config(enclave=_enclave(socket_group="__no_such_group__"))
+    assert _has(_violations(config, data_dir), "socket_group")
 
 
 # ---------------------------------------------------------------------------

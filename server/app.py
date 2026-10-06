@@ -926,6 +926,11 @@ async def lifespan(app: FastAPI):
     else:
         startup_progress.set_phase("ready", detail=t("startup.detail_setup_mode"), reset_counts=True)
         logger.info("Server started in setup mode (setup not yet complete)")
+    # Enclave gateway: start only when enclave mode is enabled (fail-closed on
+    # socket-rebinding errors).
+    from core.enclave.gateway_server import start_gateway
+
+    await start_gateway(app)
     yield
     # Shutdown
     if app.state.setup_complete:
@@ -956,6 +961,9 @@ async def lifespan(app: FastAPI):
             await app.state.zoom_gateway_manager.stop()
         if getattr(app.state, "github_gateway_manager", None):
             await app.state.github_gateway_manager.stop()
+        from core.enclave.gateway_server import stop_gateway
+
+        await stop_gateway(app)
         await app.state.supervisor.shutdown_all()
         from core.memory.rag.vector_registry import configure_server_vector_access
 

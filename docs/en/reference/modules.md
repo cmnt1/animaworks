@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=5543f366b64d47d37c8b310e9c59c7f858d8c249e0cecb29c95fd6a2b756cbfd generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d3b14ff1655f4a27245c65eb4af42026070a17314f80539da7aa8e37ff08bee6 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -209,7 +209,7 @@ Schema, loading, validation, and migration for application configuration.
 
 ## `core.enclave`
 
-Configuration models and startup security guards for isolated enclave mode.
+Configuration model and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -226,7 +226,9 @@ Configuration models and startup security guards for isolated enclave mode.
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
-| `core.enclave.guards` | 215 | Startup guards for enclave mode. |
+| `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.guards` | 236 | Startup guards for enclave mode. |
 
 ## `core.enclave.egress`
 
@@ -364,7 +366,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 380 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 438 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -409,7 +411,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-Implementation of external service integrations and animaworks-tool.
+External service integrations and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -443,6 +445,7 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.call_human` | 435 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
+| `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -1047,7 +1050,7 @@ Audio I/O and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1401 | — |
+| `server.app` | 1409 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

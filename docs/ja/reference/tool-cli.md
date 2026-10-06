@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py tool-cli -->
-<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: 59025b6d1aec3b8d5ab07d6d1b6a17c85906b593b8d018cb21ba9f60b9316684 -->
+<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: 531d130e0394fc6f886d37c2e29331f077729647ef144702c55f7b931fe183a1 -->
 
 # ツール CLI リファレンス: `animaworks-tool`
 
@@ -26,6 +26,16 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 |---|---|---|---|
 | `channel_id` | string | いいえ | Discord channel ID to search (optional — searches all cached channels if omitted) |
 | `limit` | integer | いいえ | Maximum number of results (default: 10) |
+
+## `enclave_ask`
+
+隔離された enclave に質問し、事実と根拠IDだけの回答を得る
+
+| 引数 | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `case_id` | string | いいえ | 省略可なケース識別子（省略時は anima 名と日付から生成） |
+| `enclave` | string | はい | 接続する enclave の設定名 |
+| `question` | string | はい | 隔離インスタンスに送る質問 |
 
 ## `google_sheets_append_values`
 

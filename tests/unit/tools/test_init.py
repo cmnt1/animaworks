@@ -48,6 +48,7 @@ class TestToolModules:
             "google_sheets",
             "notion",
             "discord",
+            "enclave",
         }
         assert expected == set(TOOL_MODULES.keys())
 
