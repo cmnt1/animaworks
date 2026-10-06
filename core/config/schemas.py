@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from core.enclave.config import EnclaveClientConfig, EnclaveConfig
+
 logger = logging.getLogger("animaworks.config")
 
 # ---------------------------------------------------------------------------
@@ -1359,6 +1361,8 @@ class AnimaWorksConfig(BaseModel):
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
     cli: CLIConfig = CLIConfig()
+    enclave: EnclaveConfig = EnclaveConfig()
+    enclaves: dict[str, EnclaveClientConfig] = Field(default_factory=dict)
 
 
 __all__ = [

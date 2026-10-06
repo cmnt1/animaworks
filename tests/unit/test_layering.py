@@ -51,6 +51,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.paths", 0),
     ("core.i18n", 0),
     ("core.config", 1),
+    ("core.enclave", 1),  # Config-level enclave models + guards, used by core.config.
     ("core.auth", 1),
     ("core.schemas", 1),
     ("core.memory", 3),

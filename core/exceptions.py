@@ -122,6 +122,10 @@ class ConfigNotFoundError(ConfigError):
     """Configuration file not found."""
 
 
+class EnclaveViolationError(ConfigError):
+    """Raised when an enclave-enabled server fails a startup guard."""
+
+
 # ── Messaging ────────────────────────────────────────────────
 
 

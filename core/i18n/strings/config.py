@@ -309,4 +309,72 @@ STRINGS: dict[str, dict[str, str]] = {
             "작업 디렉터리를 data_dir 밖에 두거나 companies/<회사>/shared를 사용하세요."
         ),
     },
+    "enclave.guard.name_required": {
+        "ja": "enclave に name が設定されていません",
+        "en": "enclave has no name set",
+    },
+    "enclave.guard.socket_path_required": {
+        "ja": "enclave に socket_path が設定されていません",
+        "en": "enclave has no socket_path set",
+    },
+    "enclave.guard.entry_anima_required": {
+        "ja": "enclave に entry_anima が設定されていません",
+        "en": "enclave has no entry_anima set",
+    },
+    "enclave.guard.entry_anima_missing": {
+        "ja": "entry_anima '{anima}' のディレクトリが存在しません",
+        "en": "entry_anima '{anima}' directory does not exist",
+    },
+    "enclave.guard.event_export_url": {
+        "ja": "event_export.url が設定されています（enclave では外部送信を無効にする必要があります）",
+        "en": "event_export.url is set (external export must be disabled in an enclave)",
+    },
+    "enclave.guard.external_enabled": {
+        "ja": "外部連携 {channel} が有効になっています（enclave では無効にする必要があります）",
+        "en": "external integration {channel} is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.dir_owner": {
+        "ja": "ディレクトリ {path} の所有者が現在のユーザーではありません",
+        "en": "directory {path} is not owned by the current user",
+    },
+    "enclave.guard.dir_mode": {
+        "ja": "ディレクトリ {path} に group/other のパーミッションビットがあります",
+        "en": "directory {path} has group/other permission bits set",
+    },
+    "enclave.guard.llm_credentials_required": {
+        "ja": "allowed_llm_credentials が空です（少なくとも1つ設定する必要があります）",
+        "en": "allowed_llm_credentials is empty (at least one must be set)",
+    },
+    "enclave.guard.llm_credential_not_allowed": {
+        "ja": "LLM クレデンシャル '{credential}' が許可リストに含まれていません",
+        "en": "LLM credential '{credential}' is not in the allow-list",
+    },
+    "enclave.guard.status_unreadable": {
+        "ja": "anima {anima} の status.json を読み込めません",
+        "en": "could not read status.json for anima {anima}",
+    },
+    "enclave.guard.file_root_unreadable": {
+        "ja": "anima {anima} の permissions を読み込めません",
+        "en": "could not read permissions for anima {anima}",
+    },
+    "enclave.guard.file_root_full_access": {
+        "ja": 'anima {anima} の file_roots に "/" があります（danger-full-access）',
+        "en": 'anima {anima} has "/" in file_roots (danger-full-access)',
+    },
+    "enclave.guard.auth_unreadable": {
+        "ja": "認証設定 (auth) を読み込めません",
+        "en": "could not read authentication config (auth)",
+    },
+    "enclave.guard.auth_mode": {
+        "ja": "auth_mode が '{mode}' です（password または multi_user が必要です）",
+        "en": "auth_mode is '{mode}' (password or multi_user required)",
+    },
+    "enclave.guard.auth_trust_localhost": {
+        "ja": "trust_localhost が有効です（enclave では無効にする必要があります）",
+        "en": "trust_localhost is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.host": {
+        "ja": "bind host '{host}' が loopback アドレスではありません",
+        "en": "bind host '{host}' is not a loopback address",
+    },
 }

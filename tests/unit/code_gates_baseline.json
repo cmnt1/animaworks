@@ -13,6 +13,7 @@
     "core/config/file_access_policy.py",
     "core/config/model_config.py",
     "core/config/schemas.py",
+    "core/enclave/guards.py",
     "core/execution/engines/claude/_sdk_hooks.py",
     "core/execution/engines/claude/_sdk_session.py",
     "core/infra/execution_sdk_preflight.py",

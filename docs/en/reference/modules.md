@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=57e6f0d34fff442cf297362cd89d5e1d2c77fb3c135e342c12dca6cc96d82926 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5543f366b64d47d37c8b310e9c59c7f858d8c249e0cecb29c95fd6a2b756cbfd generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -47,7 +47,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 835 | — |
+| `cli.commands.server` | 848 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 110 | — |
 | `cli.commands.task_cmd` | 569 | — |
@@ -92,11 +92,11 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core` | 7 | — |
 | `core.credentials` | 276 | — |
-| `core.exceptions` | 145 | — |
+| `core.exceptions` | 149 | — |
 | `core.host_api` | 88 | — |
 | `core.internal_api` | 51 | — |
 | `core.paths` | 218 | Centralized path resolution for AnimaWorks. |
@@ -185,7 +185,7 @@ Common send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Application configuration schemas, loading, validation, and migration.
+Schema, loading, validation, and migration for application configuration.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -204,15 +204,17 @@ Application configuration schemas, loading, validation, and migration.
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1421 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1425 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
-—
+Configuration models and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
+| `core.enclave` | 43 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 41 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -224,6 +226,7 @@ Application configuration schemas, loading, validation, and migration.
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+| `core.enclave.guards` | 215 | Startup guards for enclave mode. |
 
 ## `core.enclave.egress`
 
@@ -361,7 +364,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 312 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 380 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -1044,7 +1047,7 @@ Audio I/O and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1396 | — |
+| `server.app` | 1401 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
