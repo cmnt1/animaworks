@@ -276,7 +276,7 @@ def test_e2e_incremental_indexing(anima_dir, indexer, retriever):
 # ── Test 6: Priming Integration ──────────────────────────────────
 
 
-def test_e2e_priming_integration(anima_dir, vector_store, indexer):
+def test_e2e_priming_integration(anima_dir, vector_store, indexer, retriever):
     """Verify PrimingEngine retrieves memories and formats them for system prompt.
 
     Creates an Anima directory with knowledge, episodes, and skills,
@@ -321,8 +321,9 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     # Index knowledge for vector search
     indexer.index_directory(knowledge_dir, "knowledge")
 
-    # Create PrimingEngine and prime memories
+    # RAG access is owner-routed; inject this test's local retriever (f63dcad5).
     engine = PrimingEngine(anima_dir)
+    engine._retriever = retriever
 
     result = asyncio.run(
         engine.prime_memories(

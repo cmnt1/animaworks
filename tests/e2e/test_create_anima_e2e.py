@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -83,6 +83,14 @@ def _write_character_sheet(directory: Path, content: str, filename: str = "sheet
     path = directory / filename
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _root_api_response(anima_dir: Path, *, status_code: int = 200, detail: str = "") -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = {"anima_dir": str(anima_dir)} if status_code < 400 else {"detail": detail}
+    response.text = detail
+    return response
 
 
 # ── Tests ────────────────────────────────────────────────────
@@ -347,7 +355,9 @@ class TestRollbackOnFailure:
 
 
 class TestCreateAnimaToolHandler:
-    """Test create_anima through the ToolHandler dispatch (tool integration)."""
+    """Test the ToolHandler's root-API create_anima contract."""
+
+    # Anima creation became root-owned with S2b (72e47cf4).
 
     def test_create_anima_via_tool_handler(self, data_dir: Path, tmp_path: Path):
         """ToolHandler.handle('create_anima', ...) should create an anima."""
@@ -367,8 +377,11 @@ class TestCreateAnimaToolHandler:
         # Write the character sheet file
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        # Mock the config registration (imported inline in the handler method)
-        with patch("core.config.register_anima_in_config"):
+        expected_anima_dir = animas_dir / "testanima"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -376,13 +389,16 @@ class TestCreateAnimaToolHandler:
 
         assert "testanima" in result
         assert "created successfully" in result
-
-        # Verify the anima was actually created
-        new_anima_dir = animas_dir / "testanima"
-        assert new_anima_dir.exists()
-        assert (new_anima_dir / "character_sheet.md").exists()
-        assert (new_anima_dir / "status.json").exists()
-        assert (new_anima_dir / "identity.md").exists()
+        mock_post.assert_called_once_with(
+            "/api/internal/anima/create",
+            json={
+                "calling_anima": "caller",
+                "character_sheet_content": FULL_CHARACTER_SHEET,
+            },
+            timeout=60.0,
+        )
+        # The worker sends creation to the root; it must not write the anima locally.
+        assert not expected_anima_dir.exists()
 
     def test_create_anima_tool_missing_sheet(self, data_dir: Path, tmp_path: Path):
         """ToolHandler should return error when character sheet path doesn't exist."""
@@ -421,22 +437,28 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        # First creation succeeds
-        with patch("core.config.register_anima_in_config"):
+        expected_anima_dir = animas_dir / "testanima"
+        responses = [
+            _root_api_response(expected_anima_dir),
+            _root_api_response(expected_anima_dir, status_code=409, detail="Anima already exists"),
+        ]
+        with patch("core.host_api.host_api.post", side_effect=responses) as mock_post:
             result1 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
             )
-        assert "created successfully" in result1
+            assert "created successfully" in result1
 
-        # Second creation should return an error string, not raise
-        sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
-        with patch("core.config.register_anima_in_config"):
+            # A root-side duplicate is translated to an AnimaExists tool error.
+            sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
             result2 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path2)},
             )
+
         assert "AnimaExists" in result2 or "already exists" in result2.lower()
+        assert mock_post.call_count == 2
+        assert not expected_anima_dir.exists()
 
     def test_create_anima_tool_with_explicit_name(self, data_dir: Path, tmp_path: Path):
         """ToolHandler should support the optional 'name' parameter."""
@@ -454,14 +476,19 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch("core.config.register_anima_in_config"):
+        expected_anima_dir = animas_dir / "custom-worker"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path), "name": "custom-worker"},
             )
 
         assert "custom-worker" in result
-        assert (animas_dir / "custom-worker").exists()
+        assert mock_post.call_args.kwargs["json"]["name"] == "custom-worker"
+        assert not expected_anima_dir.exists()
 
     def test_create_anima_tool_relative_path_resolved(self, data_dir: Path, tmp_path: Path):
         """Relative character_sheet_path should be resolved relative to anima_dir."""
@@ -481,7 +508,11 @@ class TestCreateAnimaToolHandler:
         memory = MemoryManager(caller_dir)
         handler = ToolHandler(anima_dir=caller_dir, memory=memory)
 
-        with patch("core.config.register_anima_in_config"):
+        expected_anima_dir = animas_dir / "minimal"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": "new_hire.md"},
@@ -489,7 +520,11 @@ class TestCreateAnimaToolHandler:
 
         assert "minimal" in result
         assert "created successfully" in result
-        assert (animas_dir / "minimal").exists()
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["character_sheet_content"] == MINIMAL_CHARACTER_SHEET
+        assert payload["calling_anima"] == "caller"
+        assert "character_sheet_path" not in payload
+        assert not expected_anima_dir.exists()
 
 
 class TestCharacterSheetValidation:

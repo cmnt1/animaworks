@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 2b6b606ff3fb560b6944970636ce5227109a97adbcc11fb2be9e58754e88bc80 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: f1ee43d757e09264e3cc84ec9e5079c9936ab6fa6f1290a7e62478b02db05b4e -->
 
 # モジュール一覧
 
@@ -47,7 +47,7 @@
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 833 | — |
+| `cli.commands.server` | 835 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 110 | — |
 | `cli.commands.task_cmd` | 569 | — |
@@ -146,7 +146,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 790 | — |
-| `core.anima.bootstrap_state` | 573 | — |
+| `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 693 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 825 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
@@ -197,9 +197,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.io` | 317 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 201 | — |
-| `core.config.model_catalog` | 171 | Static model catalog and per-request model override validation. |
+| `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
-| `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
+| `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
@@ -370,13 +370,13 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
 | `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
-| `core.i18n.strings.misc_routes` | 17 | Domain-specific i18n strings (legacy route modules). |
+| `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.phone` | 112 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 121 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 476 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 132 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
@@ -400,7 +400,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.infra.execution_sdk_preflight` | 126 | — |
 | `core.infra.gpu` | 173 | — |
 | `core.infra.logging_config` | 530 | Centralized logging configuration for AnimaWorks. |
-| `core.infra.runtime_init` | 427 | First-launch initialization: copy templates to runtime data directory. |
+| `core.infra.runtime_init` | 429 | First-launch initialization: copy templates to runtime data directory. |
 | `core.infra.startup_progress` | 191 | — |
 | `core.infra.tmp_cleanup` | 254 | — |
 
@@ -429,7 +429,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
-| `core.integrations._image_pipeline（非公開）` | 809 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – orchestrates the full character asset generation. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 435 | SQLite message cache for Slack (offline search, unreplied detection). |
@@ -446,7 +446,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
-| `core.integrations.image.codex` | 319 | Codex CLI image generation client (image_gen tool via local codex). |
+| `core.integrations.image.codex` | 327 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
 | `core.integrations.image.diffusers_local` | 905 | Local Diffusers-backed image generation helpers. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext and Flux Pro text-to-image API clients. |
@@ -884,13 +884,13 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.background` | 618 | — |
 | `core.tasks.board.board_actions` | 239 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
-| `core.tasks.board.models` | 37 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
+| `core.tasks.board.models` | 39 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 120 | — |
 | `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
 | `core.tasks.board.tasks` | 1321 | Durable execution records; the single source of truth for the TaskBoard. |
-| `core.tasks.board.view` | 118 | Single TaskBoard view built directly from the canonical TaskStore. |
+| `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
 | `core.tasks.dispatch` | 346 | — |
-| `core.tasks.external.collector` | 209 | Multi-source external tasks collector with per-source fault isolation. |
+| `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
 | `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
 | `core.tasks.external.sources.chatwork` | 228 | Chatwork external tasks collector (open my-tasks + unreplied To). |
 | `core.tasks.external.sources.github` | 182 | GitHub external tasks collector via ``gh`` CLI. |
@@ -1018,7 +1018,7 @@ LLM 利用量とコストの記録・集計。
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front` | 373 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
 | `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
@@ -1044,7 +1044,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1386 | — |
+| `server.app` | 1396 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
@@ -1075,11 +1075,11 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server.routes` | 63 | — |
-| `server.routes.animas` | 1160 | — |
+| `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
 | `server.routes.assets` | 1456 | — |
 | `server.routes.auth` | 133 | — |
-| `server.routes.channels` | 494 | — |
+| `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
@@ -1089,7 +1089,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
-| `server.routes.config_routes` | 447 | — |
+| `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
 | `server.routes.internal` | 1488 | — |
 | `server.routes.logs_routes` | 217 | — |

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -83,7 +83,8 @@ async def test_taskexec_runs_on_background_lane_while_chat_session_lock_is_held(
         patch("core.paths.load_prompt", return_value="task prompt"),
         patch("core.activity.logger.ActivityLogger") as mock_activity,
     ):
-        mock_activity.return_value.log = MagicMock()
+        # ActivityLogger's awaited write API is alog (1da8e2e8).
+        mock_activity.return_value.alog = AsyncMock()
         async with anima._agent_session_context("chat"):
             result = await asyncio.wait_for(executor._run_llm_task(task_desc), timeout=1.0)
 

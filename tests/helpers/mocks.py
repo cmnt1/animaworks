@@ -74,6 +74,44 @@ def make_tool_call(
     return tc
 
 
+def _litellm_response_stream(response: MagicMock):
+    """Convert a completion mock into a minimal LiteLLM token stream."""
+
+    async def _stream():
+        content = response.choices[0].message.content or ""
+        if content:
+            yield {"choices": [{"delta": {"content": content}, "finish_reason": None}]}
+        usage = response.usage
+        yield {
+            "choices": [{"delta": {}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+            },
+        }
+
+    return _stream()
+
+
+@contextmanager
+def patch_litellm_streaming(*responses: MagicMock):
+    """Patch ``litellm.acompletion`` with async token streams for streaming tests."""
+    mock_fn = AsyncMock(side_effect=[_litellm_response_stream(response) for response in responses])
+    mock_module = MagicMock()
+    mock_module.acompletion = mock_fn
+    mock_module.token_counter = MagicMock(return_value=100)
+
+    saved = sys.modules.get("litellm")
+    try:
+        sys.modules["litellm"] = mock_module
+        yield mock_fn
+    finally:
+        if saved is None:
+            sys.modules.pop("litellm", None)
+        else:
+            sys.modules["litellm"] = saved
+
+
 @contextmanager
 def patch_litellm(*responses: MagicMock):
     """Patch ``litellm.acompletion`` with a sequence of mock responses.

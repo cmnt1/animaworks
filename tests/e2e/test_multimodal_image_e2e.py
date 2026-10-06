@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import json
 
-from tests.helpers.mocks import make_litellm_response, patch_litellm
-
+from tests.helpers.mocks import make_litellm_response, patch_litellm, patch_litellm_streaming
 
 # ── Mode B (assisted) ────────────────────────────────────────
 
@@ -61,7 +60,8 @@ class TestMultimodalModeA2:
 
         resp = make_litellm_response(content="I can see a test image.")
 
-        with patch_litellm(resp) as mock_fn:
+        # process_message now drains the streaming cycle path (18b30d5c).
+        with patch_litellm_streaming(resp) as mock_fn:
             result = await dp.process_message(
                 "describe this",
                 from_person="human",
@@ -79,9 +79,7 @@ class TestMultimodalModeA2:
         # When images are present, content should be a list
         assert isinstance(user_msg["content"], list)
         # Check for image_url block
-        image_blocks = [
-            b for b in user_msg["content"] if b.get("type") == "image_url"
-        ]
+        image_blocks = [b for b in user_msg["content"] if b.get("type") == "image_url"]
         assert len(image_blocks) == 1
         assert "data:image/png;base64," in image_blocks[0]["image_url"]["url"]
 
@@ -119,9 +117,7 @@ class TestMultimodalConversationMemory:
         # First turn should be human with attachments
         human_turn = turns[0]
         assert human_turn["role"] == "human"
-        assert human_turn.get("attachments") == [
-            "attachments/20260217_120000_0.png"
-        ]
+        assert human_turn.get("attachments") == ["attachments/20260217_120000_0.png"]
 
 
 # ── Backward compatibility ───────────────────────────────────
