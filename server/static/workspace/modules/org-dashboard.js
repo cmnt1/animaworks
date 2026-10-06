@@ -7,6 +7,8 @@
  * are persisted to localStorage under `aw-org-positions`.
  */
 import { createLogger } from "../../shared/logger.js";
+import { t } from "/shared/i18n.js";
+import { animaStatusLabel } from "/shared/anima-status.js";
 import { api } from "../../modules/api.js";
 import { escapeHtml } from "./utils.js";
 import { getState } from "./state.js";
@@ -173,9 +175,7 @@ function getStatusDotClass(status) {
 function getStatusLabel(status) {
   if (!status) return "unknown";
   const s = typeof status === "object" ? (status.state || status.status || "unknown") : String(status);
-  const lower = s.toLowerCase();
-  if (lower === "running") return "Running";
-  return lower;
+  return animaStatusLabel(s.toLowerCase());
 }
 
 function getStatusAttr(status) {
@@ -508,19 +508,19 @@ function _renderKpiBar() {
   _kpiBar.innerHTML = `
     <div class="org-kpi-card">
       <span class="org-kpi-value">${active}</span>
-      <span class="org-kpi-label">Active / ${total}</span>
+      <span class="org-kpi-label">${t("ws.kpi_active", { total })}</span>
     </div>
     <div class="org-kpi-card">
       <span class="org-kpi-value" id="orgKpiEventsH">-</span>
-      <span class="org-kpi-label">events/h</span>
+      <span class="org-kpi-label">${t("ws.kpi_events_per_hour")}</span>
     </div>
     <div class="org-kpi-card">
       <span class="org-kpi-value" id="orgKpiTasks">-</span>
-      <span class="org-kpi-label">Tasks</span>
+      <span class="org-kpi-label">${t("ws.kpi_tasks")}</span>
     </div>
     <div class="org-kpi-card org-kpi-card--error" style="display:${errors > 0 ? "flex" : "none"}">
       <span class="org-kpi-value">${errors}</span>
-      <span class="org-kpi-label">Errors</span>
+      <span class="org-kpi-label">${t("ws.kpi_errors")}</span>
     </div>
   `;
   _applyKpiValues();

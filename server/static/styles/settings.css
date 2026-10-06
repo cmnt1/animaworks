@@ -379,3 +379,44 @@
   color: var(--aw-color-text-muted, #666);
   font-size: 0.85rem;
 }
+
+/* ── Users tab forms ── */
+.users-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 360px;
+}
+
+.settings-auth-form {
+  max-width: 420px;
+}
+
+.settings-auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.users-form input,
+.users-form select {
+  height: 36px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--aw-color-text-primary);
+  background: var(--aw-color-bg-primary);
+  border: 1px solid var(--aw-color-border-medium);
+  border-radius: 6px;
+}
+
+.users-form input:focus,
+.users-form select:focus {
+  outline: 2px solid var(--aw-color-accent);
+  outline-offset: -1px;
+}
+
+.users-form button[type="submit"] {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}

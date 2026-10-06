@@ -23,6 +23,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "later",
         "ko": "나중에",
     },
+    "image_generation.codex_failed": {
+        "ja": "{step}: Codex での画像生成に失敗しました（{reason}）。しばらくして再試行するか、画像生成 API キーを設定してください。",
+        "en": "{step}: Image generation with Codex failed ({reason}). Retry later or configure an image generation API key.",
+    },
     "image_generation.no_backend": {
         "ja": "{step}: 画像生成には Codex（ChatGPT）へのログイン、または画像生成 API キーの設定が必要です。",
         "en": "{step}: Image generation requires logging in to Codex (ChatGPT) or configuring an image-generation API key.",

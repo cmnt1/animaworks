@@ -261,12 +261,20 @@ class CodexImageClient:
             except subprocess.TimeoutExpired as exc:
                 raise RuntimeError(f"codex image generation timed out after {_CODEX_TIMEOUT}s") from exc
 
+            out_path = tmp_path / "out.png"
+            has_output = out_path.exists() and out_path.stat().st_size > 0
             if completed.returncode != 0:
+                # codex can save a valid image and still exit non-zero when a
+                # leftover shell step fails afterwards; keep a decodable image.
+                if has_output:
+                    try:
+                        return _cover_crop_resize(out_path.read_bytes(), target_size)
+                    except Exception:
+                        logger.debug("codex out.png unusable after rc=%s", completed.returncode, exc_info=True)
                 reason = _codex_stderr_reason(completed.stderr or b"")
                 raise RuntimeError(f"codex image generation failed (rc={completed.returncode}): {reason}")
 
-            out_path = tmp_path / "out.png"
-            if not out_path.exists() or out_path.stat().st_size == 0:
+            if not has_output:
                 reason = _codex_stderr_reason(completed.stderr or b"")
                 raise RuntimeError(f"codex did not produce out.png: {reason}")
 

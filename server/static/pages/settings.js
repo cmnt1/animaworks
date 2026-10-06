@@ -672,13 +672,21 @@ async function _loadApiKeys() {
     }
     flattenConfig(config);
 
-    const keyEntries = rows.filter(r => /key|api_key|token/i.test(r.key));
+    // Only credentials belong here: "max_tokens" or "token_budget_monthly"
+    // are tuning knobs, not keys, and an unset optional key is not an error.
+    const isCredential = (fullKey) => {
+      const leaf = fullKey.split(".").pop() || "";
+      // *_env / *_vault_key only name where a secret is looked up.
+      if (/tokens|budget|^max_|_max_|_env$|vault_key$/i.test(leaf)) return false;
+      return /(^|_)(api_key|key|secret|password|token)$/i.test(leaf);
+    };
+    const keyEntries = rows.filter(r => isCredential(r.key));
     if (keyEntries.length > 0) {
       keysEl.innerHTML = keyEntries.map(k => {
         const configured = k.val && k.val !== "null" && k.val !== "None" && k.val !== "";
         return `
           <div class="settings-auth-row">
-            <span class="settings-auth-icon">${configured ? "\u2705" : "\u274C"}</span>
+            <span class="settings-auth-icon">${configured ? "\u2705" : "\u2796"}</span>
             <span class="settings-auth-label">${escapeHtml(k.key)}</span>
             <code class="settings-auth-value">${escapeHtml(k.val)}</code>
           </div>
@@ -765,7 +773,7 @@ async function _loadAnthropicAuthSettings() {
         `).join("")}
       </div>
 
-      <form id="anthropicAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+      <form id="anthropicAuthForm" class="users-form settings-auth-form">
         <label style="display:flex; flex-direction:column; gap:0.35rem;">
           <span>${t("settings.api_auth.anthropic_mode_label")}</span>
           <select id="anthropicAuthMode">
@@ -779,7 +787,7 @@ async function _loadAnthropicAuthSettings() {
           <small style="color:var(--text-secondary, #666);">${t("settings.api_auth.anthropic_api_key_hint")}</small>
         </label>
         <div id="anthropicAuthResult" class="login-error hidden"></div>
-        <button type="submit" class="btn-login" style="width:auto;">${t("settings.api_auth.anthropic_save")}</button>
+        <button type="submit" class="btn-primary">${t("settings.api_auth.anthropic_save")}</button>
       </form>
     `;
 
@@ -910,7 +918,7 @@ async function _loadOpenAIAuthSettings() {
         `).join("")}
       </div>
 
-      <form id="openaiAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+      <form id="openaiAuthForm" class="users-form settings-auth-form">
         <label style="display:flex; flex-direction:column; gap:0.35rem;">
           <span>${t("settings.api_auth.openai_mode_label")}</span>
           <select id="openaiAuthMode">
@@ -924,7 +932,7 @@ async function _loadOpenAIAuthSettings() {
           <small style="color:var(--text-secondary, #666);">${t("settings.api_auth.openai_api_key_hint")}</small>
         </label>
         <div id="openaiAuthResult" class="login-error hidden"></div>
-        <button type="submit" class="btn-login" style="width:auto;">${t("settings.api_auth.openai_save")}</button>
+        <button type="submit" class="btn-primary">${t("settings.api_auth.openai_save")}</button>
       </form>
     `;
 
