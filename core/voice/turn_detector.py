@@ -56,9 +56,11 @@ class TurnDetector:
         probability_fn: Callable[[bytes], float] | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        redemption_ms: int = REDEMPTION_MS,
     ) -> None:
         self._probability_fn = probability_fn
         self._clock = clock
+        self._redemption_ms = redemption_ms
         self._pcm_buffer = bytearray()
         self._pre_speech_frames: deque[bytes] = deque(maxlen=_PRE_SPEECH_PAD_FRAMES)
         self._speech_active = False
@@ -231,7 +233,7 @@ class TurnDetector:
             pending_audio.extend(frame)
 
         self._pre_speech_frames.append(frame)
-        if self._silence_ms < REDEMPTION_MS:
+        if self._silence_ms < self._redemption_ms:
             return
 
         if self._playback_candidate and not self._barge_probe_sent:

@@ -45,6 +45,7 @@ def test_pcm_to_wav_roundtrip() -> None:
 
 def test_body_uses_voice_id_and_style() -> None:
     tts = GeminiTTS(VoiceConfig())
+    assert tts.prefers_whole_reply is True
     body = tts._body("こんにちは", TTSConfig(provider="gemini", voice_id="voice_abc", extra={"style": "明るく"}))
     assert body["model"] == "gemini-3.8-flash-tts" and body["stream"] is True
     assert body["generation_config"]["speech_config"][0]["voice"] == "voice_abc"

@@ -127,14 +127,18 @@ def test_media_stream_start_media_reaches_speech_end_and_returns_media_mark(stre
     app, config = stream_app
     sessions, options = _install_fake_session(monkeypatch)
     detector_instances: list[TurnDetector] = []
+    detector_redemptions: list[int] = []
     detector_time = [0.0]
+    config.phone.turn_end_silence_ms = 2300
 
-    def detector_factory():
+    def detector_factory(*, redemption_ms: int):
         detector = TurnDetector(
             lambda frame: 0.9 if np.max(np.abs(np.frombuffer(frame, dtype="<i2"))) > 500 else 0.0,
             clock=lambda: detector_time[0],
+            redemption_ms=redemption_ms,
         )
         detector_instances.append(detector)
+        detector_redemptions.append(redemption_ms)
         return detector
 
     monkeypatch.setattr(phone_stream, "TurnDetector", detector_factory)
@@ -167,7 +171,7 @@ def test_media_stream_start_media_reaches_speech_end_and_returns_media_mark(stre
         silence = _media_packet(speech=False)
         for _ in range(30):
             websocket.send_text(voice)
-        for _ in range(75):
+        for _ in range(125):
             websocket.send_text(silence)
 
         response_messages = []
@@ -179,6 +183,8 @@ def test_media_stream_start_media_reaches_speech_end_and_returns_media_mark(stre
                 break
         websocket.send_text(json.dumps({"event": "stop"}))
 
+    assert detector_redemptions == [2300]
+    assert detector_instances[0]._redemption_ms == 2300
     assert sessions[0].greeting
     assert sessions[0].speech_ends == ["taka"]
     assert sessions[0].audio_bytes > 0
@@ -336,10 +342,11 @@ def test_stream_drives_real_voice_session_with_mocked_stt_and_tts(stream_app, mo
     clock = [0.0]
     detectors: list[TurnDetector] = []
 
-    def detector_factory() -> TurnDetector:
+    def detector_factory(*, redemption_ms: int) -> TurnDetector:
         detector = TurnDetector(
             lambda frame: 0.9 if np.max(np.abs(np.frombuffer(frame, dtype="<i2"))) > 500 else 0.0,
             clock=lambda: clock[0],
+            redemption_ms=redemption_ms,
         )
         detectors.append(detector)
         return detector
@@ -370,7 +377,7 @@ def test_stream_drives_real_voice_session_with_mocked_stt_and_tts(stream_app, mo
         silence = _media_packet(speech=False)
         for _ in range(30):
             websocket.send_text(voice)
-        for _ in range(75):
+        for _ in range(110):
             websocket.send_text(silence)
 
         response_messages = []

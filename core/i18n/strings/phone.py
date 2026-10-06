@@ -61,6 +61,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "認証しました。何でも話してください。",
         "en": "You are authenticated. What would you like to talk about?",
     },
+    "phone.voice_filler_1": {
+        "ja": "うん、",
+        "en": "Mm-hmm,",
+        "ko": "응,",
+    },
+    "phone.voice_filler_2": {
+        "ja": "えっとね、",
+        "en": "Let me think,",
+        "ko": "음,",
+    },
+    "phone.voice_filler_3": {
+        "ja": "なるほど、",
+        "en": "I see,",
+        "ko": "그렇구나,",
+    },
     "phone.alert_choice": {
         "ja": "確認したら1を、{anima}と話したいことがあれば2を押してください。",
         "en": "Press 1 to acknowledge this alert, or press 2 to speak with {anima}.",
