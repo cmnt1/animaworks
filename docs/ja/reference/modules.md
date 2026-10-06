@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: f1ee43d757e09264e3cc84ec9e5079c9936ab6fa6f1290a7e62478b02db05b4e -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 6d0fda9cfac2dea35d44d7c096376064088e3032ac7ac114a55b8e31f1920ad2 -->
 
 # モジュール一覧
 
@@ -47,7 +47,7 @@
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 835 | — |
+| `cli.commands.server` | 848 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 110 | — |
 | `cli.commands.task_cmd` | 569 | — |
@@ -96,7 +96,7 @@
 |---|---:|---|
 | `core` | 7 | — |
 | `core.credentials` | 276 | — |
-| `core.exceptions` | 145 | — |
+| `core.exceptions` | 149 | — |
 | `core.host_api` | 88 | — |
 | `core.internal_api` | 51 | — |
 | `core.paths` | 218 | Centralized path resolution for AnimaWorks. |
@@ -204,15 +204,17 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1421 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1425 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
-—
+隔離された enclave モードの設定モデルと起動時セキュリティガード。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
+| `core.enclave` | 43 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 41 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -224,6 +226,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+| `core.enclave.guards` | 215 | Startup guards for enclave mode. |
 
 ## `core.enclave.egress`
 
@@ -361,7 +364,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 312 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 380 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -1044,7 +1047,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1396 | — |
+| `server.app` | 1401 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

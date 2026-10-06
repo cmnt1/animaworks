@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=abb8933f43c7ff196f3802c524247c3cfe0ac2445043b91ebdd2a064692f41c3 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d16c16c03c4df80aab2151b660a8d8ee5a09a78af60410acab816e8336bc2430 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -701,6 +701,31 @@
 |---|---|---|---|
 | `cli` | `CLIConfig` | `{CLIConfig}` | CLI 클라이언트 설정. default_anima는 인수 없이 animaworks / animaworks chat을 실행할 때 열리는 anima를 지정합니다(비어 있으면 상급자 없이 활성화된 anima가 하나뿐일 때 해당 anima를 사용). |
 | `cli.default_anima` | `str` | `""` | — |
+
+### `enclave`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 enclave 모드의 서버 설정. 활성화하면 시작 시 보안 가드를 검사한다. |
+| `enclave.enabled` | `bool` | `false` | — |
+| `enclave.name` | `str` | `""` | — |
+| `enclave.socket_path` | `str` | `""` | — |
+| `enclave.socket_group` | `str` | `""` | — |
+| `enclave.entry_anima` | `str` | `""` | — |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
+| `enclave.max_concurrency` | `int` | `2` | — |
+| `enclave.request_timeout_s` | `int` | `900` | — |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
+| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+
+### `enclaves`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | 외부 enclave 인스턴스에 연결하는 클라이언트 측 설정. |
+| `enclaves.socket_path` | `str` | `"—"` | — |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
+| `enclaves.timeout_s` | `int` | `900` | — |
 
 ## anima별 `status.json`
 

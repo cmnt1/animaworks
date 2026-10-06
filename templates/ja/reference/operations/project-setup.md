@@ -181,6 +181,8 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `icon_url_template` |  |
 | `ui` |  |
 | `cli` |  |
+| `enclave` |  |
+| `enclaves` |  |
 
 <!-- AUTO-GENERATED:END -->
 

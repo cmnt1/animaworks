@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=57e6f0d34fff442cf297362cd89d5e1d2c77fb3c135e342c12dca6cc96d82926 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5543f366b64d47d37c8b310e9c59c7f858d8c249e0cecb29c95fd6a2b756cbfd generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -27,31 +27,31 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
-| `cli.commands.anima_mgmt` | 1172 | Anima 프로세스 관리를 위한 CLI 명령 |
+| `cli.commands.anima_mgmt` | 1172 | CLI commands for anima process management. |
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 272 | — |
-| `cli.commands.config_cmd` | 238 | ``animaworks config``용 CLI 핸들러 및 대화형 마법사 |
+| `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
 | `cli.commands.cost_cmd` | 232 | — |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
 | `cli.commands.internal_cmd` | 349 | — |
-| `cli.commands.logs` | 209 | Anima 로그 조회를 위한 CLI 명령 |
+| `cli.commands.logs` | 209 | CLI commands for viewing anima logs. |
 | `cli.commands.mcp_cmd` | 66 | — |
 | `cli.commands.memory_cmd` | 56 | — |
 | `cli.commands.messaging` | 144 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
-| `cli.commands.models_cmd` | 219 | 모델 정보 및 관리를 위한 CLI 명령 |
+| `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
-| `cli.commands.rag_repair_status` | 147 | 영구 RAG 복구 상태 보고 |
+| `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 835 | — |
+| `cli.commands.server` | 848 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 110 | — |
 | `cli.commands.task_cmd` | 569 | — |
-| `cli.commands.task_store_cmd` | 258 | 운영자 전용, 코호트 범위 작업 마이그레이션 및 현재 상태 내보내기 |
+| `cli.commands.task_store_cmd` | 258 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 248 | — |
 
@@ -92,14 +92,14 @@
 
 —
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core` | 7 | — |
 | `core.credentials` | 276 | — |
-| `core.exceptions` | 145 | — |
+| `core.exceptions` | 149 | — |
 | `core.host_api` | 88 | — |
 | `core.internal_api` | 51 | — |
-| `core.paths` | 218 | AnimaWorks용 중앙 경로 해석. |
+| `core.paths` | 218 | Centralized path resolution for AnimaWorks. |
 | `core.schemas` | 240 | — |
 | `core.time_utils` | 103 | — |
 | `core.trust` | 433 | — |
@@ -190,40 +190,43 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.config` | 36 | — |
-| `core.config.anima_registry` | 313 | config.json의 Anima 등록: 등록, 등록 해제, 이름 변경 |
+| `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
-| `core.config.io` | 317 | 설정 I/O: 싱글턴 캐시, 로드 및 저장 |
-| `core.config.local_llm` | 69 | 로컬 Ollama 기반 모델 기본값 및 역할 프리셋을 위한 헬퍼 |
+| `core.config.io` | 317 | Configuration I/O: singleton cache, load, and save. |
+| `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 201 | — |
-| `core.config.model_catalog` | 194 | 정적 모델 카탈로그 및 요청별 모델 재정의 검증 |
-| `core.config.model_config` | 879 | 모델 설정 확인: load_model_config, penalties, max_tokens |
-| `core.config.model_discovery` | 530 | 설치된 CLI에서 "모드 + 모델" 카탈로그를 동적으로 검색 |
-| `core.config.model_mode` | 446 | 표준 S/C/D/G/X/A 모드에 대한 모델 실행 모드 확인 |
-| `core.config.models` | 95 | 중앙 설정 모듈 — 분할된 모듈을 재내보내는 파사드 |
-| `core.config.ops` | 203 | AnimaWorks 설정을 읽고 업데이트하는 애플리케이션 작업 |
-| `core.config.resolver` | 159 | 설정 확인: anima_defaults와 status.json 병합 |
-| `core.config.schemas` | 1421 | AnimaWorks용 Pydantic 설정 스키마 |
-| `core.config.vault` | 409 | PyNaCl SealedBox 암호화를 사용하는 자격 증명 보관소 |
+| `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
+| `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
+| `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
+| `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
+| `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
+| `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1425 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
-—
+격리된 enclave 모드의 설정 모델과 시작 시 보안 가드.
 
-| 모듈 | 행 수 | 독스트링 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로그 기록. |
-| `core.enclave.egress.config` | 107 | 이그레스 파이프라인의 설정 모델. |
-| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 간단한 파일 시스템 헬퍼. |
-| `core.enclave.egress.ledger` | 86 | 이그레스 파이프라인의 알려진 값 장부. |
-| `core.enclave.egress.masker.dispatch` | 36 | 기본 마스커의 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 141 | 규칙 기반 레코드 사실 마스킹. |
-| `core.enclave.egress.masker.log_pii` | 115 | log/audit 개인정보 마스킹. |
-| `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 기반 마스킹. |
-| `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 안전하게 차단. |
-| `core.enclave.egress.stages` | 419 | 이그레스 파이프라인의 단계 구현. |
+| `core.enclave` | 43 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 41 | Configuration models for enclave mode. |
+| `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
+| `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
+| `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
+| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
+| `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
+| `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
+| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+| `core.enclave.guards` | 215 | Startup guards for enclave mode. |
 
 ## `core.enclave.egress`
 
@@ -358,27 +361,27 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원 |
-| `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화 문자열 |
-| `core.i18n.strings.config` | 312 | 도메인별 i18n 문자열 |
+| `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
+| `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
+| `core.i18n.strings.company` | 14 | Localized strings for company management. |
+| `core.i18n.strings.config` | 380 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.handler` | 382 | 도메인별 i18n 문자열(핸들러 파트 1) |
-| `core.i18n.strings.handler_ext` | 364 | 도메인별 i18n 문자열(핸들러 파트 2) |
-| `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
+| `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 364 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 434 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 라우트 모듈) |
+| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.phone` | 112 | — |
-| `core.i18n.strings.room_manager` | 29 | 회의실 관리자용 i18n 문자열 |
-| `core.i18n.strings.server` | 241 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.supervisor` | 91 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
+| `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
+| `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능) |
-| `core.i18n.strings.tooling_schema` | 476 | 도메인별 i18n 문자열(schema.*) |
-| `core.i18n.strings.tooling_schema_ext` | 132 | 도메인별 i18n 문자열(schema.* 파트 2) |
+| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling_schema` | 476 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 132 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -1044,12 +1047,12 @@ LLM 사용량과 비용의 기록·집계.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1396 | — |
+| `server.app` | 1401 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
 | `server.reload_manager` | 115 | — |
-| `server.room_manager` | 541 | 회의실 수명 주기, 오케스트레이션 및 회의록 생성. |
+| `server.room_manager` | 541 | Meeting room lifecycle, orchestration, and minutes generation. |
 | `server.stream_registry` | 489 | — |
 | `server.websocket` | 165 | — |
 
