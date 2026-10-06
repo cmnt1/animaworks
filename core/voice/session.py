@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import inspect
 import io
 import json
 import logging
@@ -17,10 +16,28 @@ import time
 import unicodedata
 import wave
 from collections import deque
-from pathlib import Path
 from typing import Any
 
 from core.i18n import t
+from core.voice.front_conversation import (
+    ASK_ANIMA_DELEGATION_NOTE as ASK_ANIMA_DELEGATION_NOTE,
+)
+from core.voice.front_conversation import (
+    ASK_ANIMA_MAX_RESULT_CHARS as ASK_ANIMA_MAX_RESULT_CHARS,
+)
+from core.voice.front_conversation import (
+    IPC_STREAM_TIMEOUT,
+    FrontConversation,
+)
+from core.voice.front_conversation import (
+    MAX_ASK_ANIMA_CONCURRENT as MAX_ASK_ANIMA_CONCURRENT,
+)
+from core.voice.front_conversation import (
+    VOICE_MODE_SUFFIX as VOICE_MODE_SUFFIX,
+)
+from core.voice.front_conversation import (
+    read_memory_snippets as read_memory_snippets,
+)
 from core.voice.sentence_splitter import StreamingSentenceSplitter
 from core.voice.stt import VoiceSTT
 from core.voice.stt_stream import StreamingTranscriber
@@ -29,7 +46,6 @@ from core.voice.tts_base import BaseTTSProvider, TTSConfig, TTSSynthesisError
 
 logger = logging.getLogger(__name__)
 
-IPC_STREAM_TIMEOUT = 300.0  # chat/streamと同水準。ツール往復する応答が60sを超えるため
 MAX_AUDIO_BUFFER_BYTES = 60 * 16_000 * 2  # 60 seconds of 16kHz 16-bit mono PCM
 PCM16_SAMPLE_RATE = 16_000
 PCM16_BYTES_PER_SAMPLE = 2
@@ -43,14 +59,6 @@ PROBE_TIMEOUT_SEC = 1.5
 ECHO_SIMILARITY_THRESHOLD = 0.5
 PROBE_MIN_CHARS = 3
 
-# Concurrency cap for fire-and-forget ``ask_anima`` delegation. When this
-# many jobs are still running, further requests get a "please wait" ACK.
-MAX_ASK_ANIMA_CONCURRENT = 2
-# Truncation length for the result text surfaced back to the front lane.
-ASK_ANIMA_MAX_RESULT_CHARS = 1000
-# Marker prepended to the delegated request so the full-agent loop knows the
-# message came from the voice front lane.
-ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
 
 # Silence-triggered monologue. Modelled on AI-VTuber solo-talk routines:
 # rotate through fixed "corners" so consecutive turns differ in kind, and
@@ -155,152 +163,6 @@ def build_proactive_prompt(count: int, recent: list[str] | tuple[str, ...] = ())
     blocklist = _MONOLOGUE_FRAME_JA[1].format(topics=topics) if topics else ""
     return _MONOLOGUE_FRAME_JA[0].format(corner=corner, blocklist=blocklist)
 
-
-_MEMORY_TEXT_JA = (
-    "## 最近の出来事 ({filename})\n{body}",
-    "## 知っていること ({filename})\n{body}",
-    "（記憶はまだない）",
-    "（「{query}」に関する記憶は見つからなかった）",
-    "（記憶の読み取りに失敗した）",
-)
-
-
-_EPISODE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
-_NOISE_LINE_RE = re.compile(r"^#+ Raw notes.*$\n?", re.MULTILINE)
-
-
-def _read_memory_file(path: Path) -> str:
-    """Read a memory file safely, limiting large files to their final 200 KiB."""
-    if path.stat().st_size > 1024 * 1024:
-        with path.open("rb") as file_handle:
-            file_handle.seek(-200 * 1024, 2)
-            text = file_handle.read().decode("utf-8", errors="replace")
-    else:
-        text = path.read_text(encoding="utf-8")
-
-    if text.startswith("---"):
-        frontmatter_end = re.search(r"\n---(?:\r?\n|$)", text[3:])
-        if frontmatter_end is not None:
-            text = text[3 + frontmatter_end.end() :]
-    return text.strip()
-
-
-def _memory_files(anima_dir: Path) -> list[Path]:
-    """Return searchable memory files, excluding archived knowledge."""
-    files: list[Path] = []
-    for scope in ("knowledge", "episodes", "procedures"):
-        scope_dir = anima_dir / scope
-        if not scope_dir.is_dir():
-            continue
-        for path in scope_dir.rglob("*.md"):
-            relative_parts = path.relative_to(scope_dir).parts
-            if scope == "knowledge" and "archive" in relative_parts:
-                continue
-            files.append(path)
-    return files
-
-
-def read_memory_snippets(anima_dir: Path, query: str, *, max_chars: int = 1800, page: int = 0) -> str:
-    """Read recent or keyword-matched memory snippets without using the RAG DB.
-
-    ``page`` (empty query only) walks backwards through the latest episode and
-    rotates the knowledge picks, so repeated "what happened lately" reads do not
-    hand a monologue the same material every time.
-    """
-    try:
-        clean_query = (query or "").strip()
-        if not clean_query:
-            sections: list[str] = []
-            episodes_dir = anima_dir / "episodes"
-            # Date-named files first (``recovered_*`` sorts after digits).
-            episodes = sorted(
-                episodes_dir.rglob("*.md") if episodes_dir.is_dir() else [],
-                key=lambda path: (bool(_EPISODE_DATE_RE.match(path.name)), path.name),
-                reverse=True,
-            )
-            if episodes:
-                episode = episodes[0]
-                episode_text = _read_memory_file(episode)
-                episode_limit = int(max_chars * 0.6)
-                windows = max(1, -(-len(episode_text) // episode_limit))
-                end = len(episode_text) - (page % windows) * episode_limit
-                sections.append(
-                    _MEMORY_TEXT_JA[0].format(
-                        filename=episode.name,
-                        body=episode_text[max(0, end - episode_limit) : end],
-                    )
-                )
-
-            knowledge_dir = anima_dir / "knowledge"
-            knowledge_files = []
-            if knowledge_dir.is_dir():
-                knowledge_files = [
-                    path
-                    for path in knowledge_dir.rglob("*.md")
-                    if "archive" not in path.relative_to(knowledge_dir).parts
-                ]
-                knowledge_files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-            if knowledge_files:
-                offset = (page * 3) % len(knowledge_files)
-                knowledge_files = knowledge_files[offset:] + knowledge_files[:offset]
-            for knowledge in knowledge_files[:3]:
-                sections.append(
-                    _MEMORY_TEXT_JA[1].format(
-                        filename=knowledge.name,
-                        body=_read_memory_file(knowledge)[:200],
-                    )
-                )
-            result = "\n\n".join(sections) or _MEMORY_TEXT_JA[2]
-            return result[:max_chars]
-
-        # ponytail: keyword match only; switch to MemoryManager.search_memory_text if recall quality falls short
-        terms = clean_query.casefold().split()
-        matches: list[tuple[int, Path, str, int]] = []
-        for path in _memory_files(anima_dir):
-            text = _NOISE_LINE_RE.sub("", _read_memory_file(path))
-            folded = text.casefold()
-            positions = [folded.find(term) for term in terms if folded.find(term) >= 0]
-            if not positions:
-                continue
-            match_count = sum(folded.count(term) for term in terms)
-            matches.append((match_count, path, text, min(positions)))
-
-        if not matches:
-            return _MEMORY_TEXT_JA[3].format(query=clean_query)[:max_chars]
-        # Newest files first, match count second — old daily logs are huge
-        # and would otherwise always win on raw hit count.
-        matches.sort(key=lambda match: (-match[1].stat().st_mtime, -match[0]))
-        sections = []
-        for _count, path, text, position in matches[:4]:
-            start = max(0, position - 300)
-            end = min(len(text), position + 300)
-            sections.append(f"## {path.relative_to(anima_dir)}\n{text[start:end]}")
-        return "\n\n".join(sections)[:max_chars]
-    except Exception:
-        logger.debug("Failed to read voice memory snippets from %s", anima_dir, exc_info=True)
-        return _MEMORY_TEXT_JA[4][:max_chars]
-
-
-VOICE_MODE_SUFFIX = (
-    "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
-    "感情を表す絵文字を必ず入れてください（TTSの感情表現の精度が上がります）。"
-    "絵文字はTTSが演技指示として解釈する次の中から選ぶこと: "
-    "😊😆🫶😌🤭😏😎🤔😲😮😟😠🙄😪🥱😖😰😱😭🥺🫣🙏💪💥⏸️🐢⏩👂📢📖。"
-    "これ以外（😃😀😅❤️✨等）は読みを乱すので使わない。"
-    "感情を乗せたい短い文の先頭に同じ絵文字を2〜3個重ねると効果的です。"
-    "大きい数字・年号は読み上げられる形（「三千八百億」等）で書いてください。"
-    "アルファベット表記の語（英単語・略語・製品名・サービス名・人名・コマンド名など）は"
-    "例外なく直後に全角丸括弧でカタカナの読みを付けてください: "
-    "GitHub（ギットハブ）、API（エーピーアイ）、PR（ピーアール）、Claude Code（クロードコード）。"
-    "読みは音声にだけ使われ字幕には出ません。"
-    "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
-    "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
-    "『タスクに積んでやっておきますね』のように短く返答してください。"
-    "毎応答の最後の行に必ず感情タグを1つ付けてください:"
-    ' <!-- emotion: {"emotion": "<感情名>"} -->'
-    "（感情名: neutral/smile/laugh/troubled/surprised/thinking/embarrassed。"
-    "neutral以外を優先）]"
-)
 
 # ── TTS output sanitization ──────────────────────────────────
 
@@ -675,12 +537,8 @@ class VoiceSession:
         self._tts_queue: asyncio.Queue[str] | None = None
         self._tts_worker: asyncio.Task[None] | None = None
 
-        # ask_anima delegation state (PR-3). Queues/task are created lazily
-        # on first use (inside the running event loop).
-        self._delegation_jobs: dict[int, asyncio.Task] = {}
-        self._delegation_job_counter: int = 0
-        self._delegation_results: asyncio.Queue[str] | None = None
-        self._delegation_done: asyncio.Queue[None] | None = None
+        # The watcher owns transport-specific self-turn guards. Delegation
+        # queues and jobs live in FrontConversation.
         self._delegation_watcher: asyncio.Task | None = None
 
         # Proactive (silence-triggered) self-speech state. ``_last_activity``
@@ -705,7 +563,15 @@ class VoiceSession:
             front_api_base = getattr(voice_config, "front_api_base", None) or None
         self._front_model = front_model or None
         self._front_api_base = front_api_base or None
-        self._front_lane: Any | None = None
+        self._front_conversation = FrontConversation(
+            anima_name=self._anima_name,
+            supervisor=self._supervisor,
+            front_model=self._front_model,
+            front_api_base=self._front_api_base,
+            ipc_timeout=IPC_STREAM_TIMEOUT,
+            max_concurrent_delegations=MAX_ASK_ANIMA_CONCURRENT,
+            on_delegation=self._ensure_delegation_watcher,
+        )
 
     async def handle_audio_chunk(self, data: bytes) -> None:
         """Receive audio chunk from browser, accumulate in buffer and feed the
@@ -927,10 +793,7 @@ class VoiceSession:
             # here and skip the full agent loop (fallback on health failure).
             if self._front_model:
                 lane = self._get_or_create_front_lane()
-                try:
-                    front_ok = await lane.check_health()
-                except Exception:
-                    front_ok = False
+                front_ok = await self._front_conversation.check_health()
                 if front_ok:
                     response_done_sent = await self._run_front_turn(lane, text, from_person, tts_ok)
                     return
@@ -939,19 +802,11 @@ class VoiceSession:
                     self._front_model,
                 )
 
-            async for ipc_response in self._supervisor.send_request_stream(
-                anima_name=self._anima_name,
-                method="process_message",
-                params={
-                    "message": text + VOICE_MODE_SUFFIX,
-                    "from_person": from_person,
-                    "intent": "",
-                    "stream": True,
-                    "voice_mode": True,
-                    "images": [],
-                    "attachment_paths": [],
-                },
-                timeout=timeout,
+            self._front_conversation.supervisor = self._supervisor
+            async for ipc_response in self._front_conversation.stream_full_agent(
+                text,
+                from_person=from_person,
+                ipc_timeout=timeout,
             ):
                 if self._interrupted:
                     break
@@ -1134,37 +989,27 @@ class VoiceSession:
 
     # ── voice front lane ───────────────────────────────────────────
 
+    @property
+    def _front_lane(self) -> Any | None:
+        """Compatibility access to the lane now owned by FrontConversation."""
+        return self._front_conversation.existing_lane
+
+    @_front_lane.setter
+    def _front_lane(self, lane: Any | None) -> None:
+        self._front_conversation.set_lane(lane)
+
+    @property
+    def _delegation_jobs(self) -> dict[int, asyncio.Task[Any]]:
+        """Compatibility view; delegation job state is owned by FrontConversation."""
+        return self._front_conversation.delegation_jobs
+
+    @_delegation_jobs.setter
+    def _delegation_jobs(self, jobs: dict[int, asyncio.Task[Any]]) -> None:
+        self._front_conversation.replace_delegation_jobs(jobs)
+
     def _get_or_create_front_lane(self) -> Any:
-        """Lazily build and cache the single per-session voice front lane."""
-        if self._front_lane is None:
-            from core.paths import get_animas_dir
-            from core.prompt.builder import build_voice_front_prompt
-            from core.voice.front import VoiceFrontLane
-
-            anima_dir = get_animas_dir() / self._anima_name
-            system_prompt = build_voice_front_prompt(
-                anima_dir,
-                anima_name=self._anima_name,
-            )
-            api_base, api_key, api_version = self._front_api_base or "", "local", None
-            if not api_base and "/" in self._front_model:
-                # No explicit endpoint: use the provider credential from
-                # config.json (e.g. ``azure/<deployment>``).
-                from core.config import load_config
-
-                cred = load_config().credentials.get(self._front_model.split("/", 1)[0])
-                if cred is not None:
-                    api_base = cred.base_url or ""
-                    api_key = cred.api_key or "local"
-                    api_version = cred.keys.get("api_version")
-            self._front_lane = VoiceFrontLane(
-                model=self._front_model,
-                api_base=api_base,
-                api_key=api_key,
-                api_version=api_version,
-                system_prompt=system_prompt,
-            )
-        return self._front_lane
+        """Compatibility wrapper for the FrontConversation lane factory."""
+        return self._front_conversation.lane()
 
     # ── proactive silence-triggered self-speech ───────────────────
 
@@ -1209,11 +1054,11 @@ class VoiceSession:
         # has some. Only a pending decode or already-recognized speech is.
         if self._streamer.ready() or self._streamer.committed or self._streaming_busy:
             return False
-        if self._delegation_jobs:
+        if self._front_conversation.has_pending_delegations():
             return False
         # Pending ask_anima results are surfaced by a dedicated delegation
         # self-turn / the next user turn, not by a silence turn (M2).
-        if self._delegation_results is not None and not self._delegation_results.empty():
+        if self._front_conversation.has_delegation_results():
             return False
         busy = self._processing if processing is None else processing
         return not busy
@@ -1238,10 +1083,7 @@ class VoiceSession:
             self._processing = True
             try:
                 lane = self._get_or_create_front_lane()
-                try:
-                    ok = await lane.check_health()
-                except Exception:
-                    ok = False
+                ok = await self._front_conversation.check_health()
                 if not ok:
                     # Back off a full delay window instead of poking a down
                     # lane on every tick (M3).
@@ -1273,7 +1115,7 @@ class VoiceSession:
                     turn_ok = False
                 if turn_ok:
                     self._proactive_count += 1
-                    spoken = lane.last_full_text if isinstance(lane.last_full_text, str) else ""
+                    spoken = self._front_conversation.last_full_text
                     said = re.sub(r"<!--.*?-->", "", spoken, flags=re.DOTALL).strip()
                     if said:
                         self._monologue_log.append(said[:60])
@@ -1302,60 +1144,14 @@ class VoiceSession:
         *,
         record_user: bool = True,
     ) -> None:
-        """Persist the front turn into the anima's default conversation.
-
-        ``record_user=False`` (used by proactive self-turns) records only the
-        assistant reply so the synthetic instruction never pollutes the history.
-
-        Reuses the existing ``ConversationMemory`` record path so the turn is
-        visible from the text chat; failures are non-fatal (front chat must
-        stay available even if recording is unavailable).  The user turn uses
-        ``from_person`` as the role, matching the existing chat path.
-
-        When the Anima main is running, the turns are sent through its IPC
-        handler so this server-side voice lane never writes managed conversation
-        state concurrently with task runners. Offline recording remains a local
-        fallback only when no live Anima process can be writing.
-        """
-        from core.memory.conversation.memory import ConversationMemory
-
-        try:
-            processes = getattr(self._supervisor, "processes", None)
-            handle = processes.get(self._anima_name) if isinstance(processes, dict) else None
-            if handle is not None:
-                alive_check = getattr(handle, "is_alive", None)
-                alive = bool(alive_check()) if callable(alive_check) else False
-                state = getattr(getattr(handle, "state", None), "value", None)
-                if alive and state == "running":
-                    turns = []
-                    if record_user:
-                        turns.append({"role": from_person or "human", "content": user_text})
-                    turns.append({"role": "assistant", "content": response_text})
-                    await self._supervisor.send_request(
-                        self._anima_name,
-                        "append_conversation_turns",
-                        {"thread_id": "default", "turns": turns},
-                    )
-                    return
-                if alive:
-                    logger.info(
-                        "Skipping offline voice conversation write while Anima is stopping (%s)", self._anima_name
-                    )
-                    return
-
-            from core.paths import get_animas_dir
-
-            conversation = ConversationMemory(get_animas_dir() / self._anima_name, None)
-            if record_user:
-                conversation.append_turn(from_person or "human", user_text)
-            conversation.append_turn("assistant", response_text)
-            saved = conversation.asave()
-            if inspect.isawaitable(saved):
-                await saved
-            else:
-                await asyncio.to_thread(conversation.save)
-        except Exception:
-            logger.debug("Failed to persist front conversation (%s)", self._anima_name, exc_info=True)
+        """Compatibility wrapper; FrontConversation owns conversation recording."""
+        self._front_conversation.supervisor = self._supervisor
+        await self._front_conversation.record_conversation(
+            user_text,
+            response_text,
+            from_person,
+            record_user=record_user,
+        )
 
     async def _run_front_turn(
         self,
@@ -1373,33 +1169,9 @@ class VoiceSession:
         temperature: float | None = None,
         drain_results: bool = True,
     ) -> bool:
-        """Stream one front-lane turn into TTS + WebSocket, then finish.
-
-        ``record=False`` keeps proactive monologues out of conversation.json.
-        ``record_user=False`` remains available to omit a synthetic user turn.
-        ``drain_results=False`` keeps a silence turn from snatching pending
-        delegation results (M2).
-
-        Self-turns (proactive / delegation watcher) reach here without a live
-        TTS worker; they own the full terminal-frame contract here (a leading
-        ``response_start`` plus a guaranteed trailing ``response_done``), so the
-        client never hangs and the subtitle starts a fresh bubble (H1/H2).
-        User turns keep the worker and terminal frames that ``_do_speech_end``
-        already owns.
-
-        Returns ``True`` when the terminal response frames were emitted.
-        """
-        from core.voice.front import ASK_ANIMA_TOOL, READ_MEMORY_TOOL, extract_emotion
-
-        if drain_results:
-            results = self._drain_delegation_results()
-            if results:
-                text = f"{results}\n\n{text}"
-
-        # Self-turns call this without a live TTS worker — without one
-        # _enqueue_tts drops every sentence silently. Own the worker
-        # lifecycle and the response_start/terminal frames here in that case;
-        # user turns keep the worker (and frames) _do_speech_end started.
+        """Adapt FrontConversation deltas to WebSocket, subtitles, and TTS."""
+        self._front_conversation.supervisor = self._supervisor
+        self._front_conversation.set_lane(lane)
         owns_tts_worker = tts_ok and self._tts_queue is None
         if owns_tts_worker:
             await self._transport.send_event({"type": "response_start"})
@@ -1407,61 +1179,51 @@ class VoiceSession:
             await self._start_tts_worker()
             self._tts_playing = True
 
-        if tools is None:
-            tools = [ASK_ANIMA_TOOL, READ_MEMORY_TOOL]
-
-        lane.reset_turn()
-        full: list[str] = []
         response_done_sent = False
         try:
             try:
-                async for delta in lane.stream(
+                async for delta in self._front_conversation.stream_turn(
                     text,
+                    from_person=from_person,
+                    record_user=record_user,
+                    record=record,
                     tools=tools,
-                    tool_executor=self._ask_anima,
-                    tool_executors={
-                        "ask_anima": lambda args: self._ask_anima(str(args.get("request", ""))),
-                        "read_memory": self._read_memory,
-                    },
                     tool_choice=tool_choice,
                     keep_history=keep_history,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    drain_results=drain_results,
+                    should_stop=lambda: self._interrupted,
+                    memory_page=self._proactive_count // len(_MONOLOGUE_CORNERS_JA),
+                    defer_record=True,
                 ):
-                    if self._interrupted:
-                        return False
-                    await self._emit_text_delta(delta, tts_ok)
-                    full.append(delta)
+                    if not self._interrupted:
+                        await self._emit_text_delta(delta, tts_ok)
             except Exception as e:
                 logger.exception("Voice front stream error: %s", e)
                 await self._send_error(str(e))
                 return False
-            if self._interrupted:
+
+            if self._interrupted or not self._front_conversation.last_completed:
                 return False
             remaining = self._splitter.flush()
             if remaining and tts_ok:
                 await self._enqueue_tts(remaining)
-            full_text = "".join(full)
+            await self._front_conversation.record_pending_turn()
+            full_text = self._front_conversation.last_full_text
             if not full_text.strip():
-                # Nothing was said (e.g. a thinking model spent the whole token
-                # budget reasoning). Don't persist an empty turn or let a
-                # proactive turn count it as a spoken one.
                 logger.warning("Voice front turn produced no text (%s)", self._anima_name)
                 return False
-            if record:
-                await self._record_front_conversation(text, full_text, from_person, record_user=record_user)
             self._last_activity = time.monotonic()
-            emotion = extract_emotion(full_text)
-            await self._finish_tts_and_response_done(emotion)
+            await self._finish_tts_and_response_done(self._front_conversation.last_emotion)
             response_done_sent = True
             return True
         finally:
             if owns_tts_worker:
                 if not response_done_sent:
                     # A self-turn must always terminate cleanly (barge-in / a
-                    # stream failure): drop any partial splitter content and
-                    # emit neutral terminal frames so the client state never
-                    # hangs on a half-spoken turn.
+                    # stream failure): drop partial splitter content and emit
+                    # neutral terminal frames so the client cannot hang.
                     self._splitter.flush()
                     try:
                         await self._transport.send_event({"type": "emotion", "emotion": "neutral"})
@@ -1471,124 +1233,43 @@ class VoiceSession:
                 await self._stop_tts_worker()
                 self._tts_playing = False
 
-    # ── ask_anima async delegation (PR-3) ─────────────────────────
+    # ── front conversation compatibility wrappers ─────────────────
 
     def _read_memory(self, args: dict) -> str:
-        """Read this Anima's file-backed memory for the front lane."""
-        from core.paths import get_animas_dir
-
-        return read_memory_snippets(
-            get_animas_dir() / self._anima_name,
-            str(args.get("query", "")),
+        """Compatibility wrapper for the FrontConversation read_memory tool."""
+        return self._front_conversation.read_memory(
+            args,
             page=self._proactive_count // len(_MONOLOGUE_CORNERS_JA),
         )
 
-    def _ensure_delegation_state(self) -> None:
-        """Create delegation queues and start the result watcher once."""
-        if self._delegation_results is None:
-            self._delegation_results = asyncio.Queue()
-            self._delegation_done = asyncio.Queue()
+    def _ask_anima(self, request: str) -> str:
+        """Compatibility wrapper for the FrontConversation ask_anima tool."""
+        self._front_conversation.supervisor = self._supervisor
+        return self._front_conversation.ask_anima(request)
+
+    async def _run_ask_anima_job(self, job: int, request: str) -> None:
+        """Compatibility wrapper for delegated job execution."""
+        await self._front_conversation._run_ask_anima_job(job, request)
+
+    def _drain_delegation_results(self) -> str:
+        """Compatibility wrapper for draining queued delegation results."""
+        return self._front_conversation.drain_delegation_results()
+
+    def _ensure_delegation_watcher(self) -> None:
+        """Start the transport-specific result watcher after the first ask."""
+        if self._closed:
+            return
         if self._delegation_watcher is None or self._delegation_watcher.done():
             self._delegation_watcher = asyncio.create_task(
                 self._delegation_watcher_loop(),
                 name=f"ask-anima-watcher-{self._anima_name}",
             )
 
-    def _ask_anima(self, request: str) -> str:
-        """Handle ``ask_anima`` from the front lane (synchronous tool).
-
-        Matches the ``tool_executor`` interface ``(request_text) -> str``.
-        Fires a fire-and-forget ``asyncio.Task`` that runs the request through
-        the full agent loop (``process_message``) and returns an ACK string
-        immediately so the front conversation is not blocked. At most
-        ``MAX_ASK_ANIMA_CONCURRENT`` jobs run at once.
-        """
-        request = (request or "").strip()
-        if not request:
-            request = "（依頼内容が指定されていません）"
-        if len(self._delegation_jobs) >= MAX_ASK_ANIMA_CONCURRENT:
-            return f"実行中の依頼が{MAX_ASK_ANIMA_CONCURRENT}件ある。完了を待ってほしい"
-        self._ensure_delegation_state()
-        self._delegation_job_counter += 1
-        job = self._delegation_job_counter
-        task = asyncio.create_task(
-            self._run_ask_anima_job(job, request),
-            name=f"ask-anima-{self._anima_name}-{job}",
-        )
-        self._delegation_jobs[job] = task
-        return f"受理しました (job {job})。完了したら知らせます"
-
-    async def _run_ask_anima_job(self, job: int, request: str) -> None:
-        """Consume the full-agent stream for one delegated request and surface
-        the result back to the front lane's reflow queue."""
-        result_text = ""
-        try:
-            async for resp in self._supervisor.send_request_stream(
-                anima_name=self._anima_name,
-                method="process_message",
-                params={
-                    "message": request + ASK_ANIMA_DELEGATION_NOTE,
-                    "from_person": "human",
-                    "intent": "",
-                    "stream": True,
-                    # Full-capability lane: the delegated job must NOT be
-                    # downgraded by voice_mode (voice_thinking_effort etc.).
-                    "voice_mode": False,
-                    "images": [],
-                    "attachment_paths": [],
-                },
-                timeout=IPC_STREAM_TIMEOUT,
-            ):
-                if getattr(resp, "done", False):
-                    result_data = getattr(resp, "result", None) or {}
-                    cycle_result = result_data.get("cycle_result", {}) or {}
-                    summary = str(cycle_result.get("summary", "") or "")
-                    if summary:
-                        result_text = summary
-                elif getattr(resp, "chunk", None):
-                    try:
-                        cd = json.loads(resp.chunk)
-                    except (json.JSONDecodeError, TypeError):
-                        cd = {}
-                    if cd.get("type") == "cycle_done":
-                        cycle_result = cd.get("cycle_result", {}) or {}
-                        summary = str(cycle_result.get("summary", "") or "")
-                        if summary:
-                            result_text = summary
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # surface the failure so front can report it
-            logger.exception("ask_anima job %s failed (%s): %s", job, self._anima_name, exc)
-            result_text = "処理に失敗しました。詳細はログを確認してほしい"
-        finally:
-            self._delegation_jobs.pop(job, None)
-            message = f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
-            if self._delegation_results is not None:
-                await self._delegation_results.put(message)
-            if self._delegation_done is not None:
-                await self._delegation_done.put(None)
-
-    def _drain_delegation_results(self) -> str:
-        """Collect all completed ask_anima results for injection into the next
-        user turn. Returns an empty string when nothing is pending."""
-        if self._delegation_results is None:
-            return ""
-        parts: list[str] = []
-        while True:
-            try:
-                parts.append(self._delegation_results.get_nowait())
-            except asyncio.QueueEmpty:
-                break
-        return "\n".join(parts)
-
     async def _delegation_watcher_loop(self) -> None:
-        """Proactively run a self-turn when an ask_anima result completes while
-        no user turn / TTS playback is in progress, so the front reports the
-        outcome in its own words. If a user turn is active, results stay in
-        the queue for the next user turn instead (no double-reporting)."""
+        """Run a guarded self-turn to report completed delegation results."""
         while not self._closed:
             try:
-                await self._delegation_done.get()
+                await self._front_conversation.wait_delegation_done()
             except asyncio.CancelledError:
                 return
             # Let a queued user turn (which also drains results) win if it is
@@ -1596,21 +1277,17 @@ class VoiceSession:
             await asyncio.sleep(0.05)
             if self._processing or self._tts_playing:
                 continue
-            if self._closed or self._front_lane is None or not self._front_model:
+            lane = self._front_conversation.existing_lane
+            if self._closed or lane is None or not self._front_model:
                 continue
-            pref = self._drain_delegation_results()
-            if not pref:
+            results = self._front_conversation.drain_delegation_results()
+            if not results:
                 continue
-            lane = self._front_lane
+            if not await self._front_conversation.check_health():
+                continue
+            prompt = self._front_conversation.delegation_report_prompt(results)
             try:
-                ok = await lane.check_health()
-            except Exception:
-                ok = False
-            if not ok:
-                continue
-            synthetic = f"{pref} この結果を自分の言葉で短く報告して"
-            try:
-                await self._run_front_turn(lane, synthetic, "human", await self._check_tts_health())
+                await self._run_front_turn(lane, prompt, "human", await self._check_tts_health())
             except Exception:
                 logger.exception("ask_anima self-turn failed (%s)", self._anima_name)
 
@@ -1655,6 +1332,7 @@ class VoiceSession:
                 await task
             except asyncio.CancelledError:
                 pass
+        await self._front_conversation.aclose()
 
     def _note_playback(self, seconds: float) -> None:
         """Extend the estimated client playback end by *seconds* of audio just sent."""
