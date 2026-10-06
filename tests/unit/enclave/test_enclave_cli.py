@@ -10,6 +10,7 @@ import grp
 import json
 import os
 import socket
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,7 +64,9 @@ def test_doctor_passes_when_checks_are_healthy(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    socket_path = Path.cwd() / ".venv" / "s.sock"
+    # Short path: AF_UNIX paths are limited to ~108 bytes, so avoid tmp_path.
+    socket_dir = Path(tempfile.mkdtemp(prefix="aw-enc-", dir="/tmp"))
+    socket_path = socket_dir / "s.sock"
     server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         server_socket.bind(str(socket_path))
@@ -86,6 +89,7 @@ def test_doctor_passes_when_checks_are_healthy(
     finally:
         server_socket.close()
         socket_path.unlink(missing_ok=True)
+        socket_dir.rmdir()
 
 
 def test_status_prints_counts_without_audit_body(data_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
