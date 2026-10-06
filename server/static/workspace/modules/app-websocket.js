@@ -2,7 +2,7 @@
 // All WS event subscriptions for the workspace dashboard.
 
 import { getState, setState, subscribe } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { mapAnimaStatusToAnim } from "./anima-status.js";
 import { getActiveRenderer } from "./office-renderer.js";
 export { mapAnimaStatusToAnim } from "./anima-status.js";

@@ -82,7 +82,7 @@ function createHud(parent) {
 function resolveAnimaName(id) {
   return getState().animas.find((anima) =>
     String(anima.name || "").toLowerCase() === String(id || "").toLowerCase(),
-  )?.name || id;
+  )?.name || null;
 }
 
 /** Mount the pixel office in the existing workspace shell. */
@@ -99,7 +99,11 @@ export function mountOfficePixel(dom) {
   const office = createPixelOffice({
     canvas,
     hud: { ...hud, fitContainer: stage },
-    onAnimaClick: (name) => selectAnima(resolveAnimaName(name)),
+    onAnimaClick: (id) => {
+      // The human actor and other non-Anima sprites are not chat targets.
+      const name = resolveAnimaName(id);
+      if (name) selectAnima(name);
+    },
   });
 
   let disposed = false;

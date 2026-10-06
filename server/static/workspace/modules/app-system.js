@@ -3,7 +3,7 @@
 // replaceable office renderer so they remain available for pixel and 3D views.
 
 import { getState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { fetchSystemStatus } from "./api.js";
 import { initTimeline, loadHistory } from "./timeline.js";
 import { initMessagePopup } from "./message-popup.js";
