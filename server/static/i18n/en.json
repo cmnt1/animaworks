@@ -996,7 +996,6 @@
   "battle.status_expired": "EXPIRED",
   "battle.status_budget_skipped": "SKIPPED",
   "battle.status_undeclared": "UNDECLARED",
-  "battle.nav": "Battle",
   "battle.monster_name": "{epithet} {species}",
   "battle.species_0": "Slime",
   "battle.species_1": "Evil Eye",

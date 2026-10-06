@@ -942,7 +942,6 @@
   "battle.status_expired": "만료",
   "battle.status_budget_skipped": "건너뜀",
   "battle.status_undeclared": "미신고",
-  "battle.nav": "전투",
   "battle.monster_name": "{epithet} {species}",
   "battle.species_0": "슬라임",
   "battle.species_1": "이블 아이",
