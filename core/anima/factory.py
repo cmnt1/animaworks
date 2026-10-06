@@ -619,7 +619,7 @@ def _create_status_json(
     if sheet_cred:
         status["credential"] = sheet_cred
     # Shown on org charts instead of the bare role ("General").
-    sheet_speciality = info.get("speciality") or info.get("役職/専門", "")
+    sheet_speciality = info.get("speciality") or info.get(FIELD_NAMES["ja"]["speciality"], "")
     if sheet_speciality and sheet_speciality not in NONE_VALUES:
         status["speciality"] = sheet_speciality
 
