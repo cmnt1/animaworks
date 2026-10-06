@@ -33,6 +33,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.infra.runtime_init", 6),
     ("core.tooling.handler", 5),
     ("core.lifecycle", 5),
+    ("core.voice.emotion_style", 4),  # Shared prompt policy used by the lower-level prompt builder.
     ("core.voice", 5),
     ("core.phone", 5),  # Phone channel built on the voice stack (TTS, voice config).
     ("core.mcp", 5),

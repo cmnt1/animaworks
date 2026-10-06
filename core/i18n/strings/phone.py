@@ -29,6 +29,22 @@ STRINGS: dict[str, dict[str, str]] = {
             'You may append the usual final emotion tag: <!-- emotion: {"emotion": "..."} -->.]'
         ),
     },
+    "phone.link_placeholder": {
+        "ja": "リンク",
+        "en": "link",
+    },
+    "phone.delegation_note": {
+        "ja": (
+            "\n\n[電話の前さばきからの委譲] taka が電話で頼んだ内容（音声認識の結果）。"
+            "送金と削除は電話だけでは実行せず、Slack で taka に確認を取る。"
+            "結果は電話で読み上げるので要点を短く返す。"
+        ),
+        "en": (
+            "\n\n[Delegated from the phone voice front] This is taka's phone request (speech-recognition output). "
+            "Do not make transfers or deletions based only on the call; confirm with taka in Slack. "
+            "The result will be read aloud, so keep the summary brief."
+        ),
+    },
     "phone.pin_prompt": {
         "ja": "暗証番号を入力してください。",
         "en": "Please enter your PIN.",

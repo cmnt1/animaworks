@@ -25,8 +25,10 @@ from core.config.vault import get_vault_manager
 from core.phone.alert import acknowledge_alert, get_alert, notify_call_status
 from core.phone.audio_store import phone_audio_store
 from core.phone.session import PhoneSession, phone_sessions
-from core.phone.speech import clean_for_speech, synthesize_speech
+from core.phone.speech import synthesize_speech
 from core.phone.twilio_client import build_webhook_url, get_twilio_credentials, validate_signature
+from core.voice.emotion_style import EmotionStyle, emotion_style_for, voice_mode_suffix
+from core.voice.speech_text import prepare_speech
 
 logger = logging.getLogger(__name__)
 
@@ -117,16 +119,25 @@ async def _play_text(
     *,
     cache_key: str | None = None,
 ) -> str:
+    from core.i18n import t
+
+    link_placeholder = t("phone.link_placeholder", locale=app_config.locale)
+    tts_provider = app_config.voice.default_tts_provider
     try:
         from core.paths import get_animas_dir
+        from core.voice.voice_config import load_per_anima_voice
 
         animas_dir = getattr(request.app.state, "animas_dir", None) or get_animas_dir()
+        tts_config = load_per_anima_voice(animas_dir, anima, app_config.voice)
+        tts_provider = tts_config.provider
         audio = await synthesize_speech(
             anima,
             text,
             animas_dir=animas_dir,
             voice_config=app_config.voice,
             cache_key=cache_key,
+            link_placeholder=link_placeholder,
+            max_chars=400,
         )
         token = phone_audio_store.put(audio)
         url = build_webhook_url(
@@ -136,7 +147,7 @@ async def _play_text(
         return _tag("Play", escape(url))
     except Exception:
         logger.warning("Phone speech synthesis failed for anima=%s", anima)
-        spoken = clean_for_speech(text)
+        spoken = prepare_speech(text, provider=tts_provider, link_placeholder=link_placeholder, max_chars=400).spoken
         language = "en-US" if app_config.locale == "en" else "ja-JP"
         return _tag("Say", escape(spoken), language=language)
 
@@ -198,7 +209,13 @@ async def _turn_and_speak(
     speech: str,
 ) -> str:
     """Run one Anima turn and synthesize the reply, returning the TwiML to play."""
-    text = await _run_turn(supervisor, session, speech, phone_config, app_config.locale)
+    from core.paths import get_animas_dir
+    from core.voice.voice_config import load_per_anima_voice
+
+    animas_dir = getattr(request.app.state, "animas_dir", None) or get_animas_dir()
+    tts_config = load_per_anima_voice(animas_dir, session.anima, app_config.voice)
+    style = emotion_style_for(tts_config.provider)
+    text = await _run_turn(supervisor, session, speech, phone_config, app_config.locale, style)
     clean_text, _ = _extract_emotion(text)
     if not clean_text.strip():
         clean_text = _localized("phone.turn_error", app_config.locale)
@@ -289,11 +306,12 @@ async def _run_turn(
     speech: str,
     phone_config: PhoneConfig,
     locale: str,
+    emotion_style: EmotionStyle,
 ) -> str:
     from core.i18n import t
 
     params = {
-        "message": speech + t("phone.mode_suffix", locale=locale),
+        "message": speech + voice_mode_suffix(channel="phone", emotion_style=emotion_style),
         "from_person": phone_config.from_person,
         "intent": "",
         "stream": True,

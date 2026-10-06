@@ -120,11 +120,14 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/memory/maintenance/forgetting.py": 1,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
+    # provider/channel-specific prompt templates and pronunciation rules are LLM/TTS instruction data
+    "core/voice/emotion_style.py": 6,
+    "core/voice/speech_text.py": 3,
     # voice front lane — spoken ACK/error phrases and report prompt now live
     # with the extracted FrontConversation implementation
     "core/voice/front_conversation.py": 5,
     # proactive silence-turn system prompt fed to the front LLM
-    "core/voice/session.py": 3,
+    "core/voice/session.py": 0,
 }
 
 

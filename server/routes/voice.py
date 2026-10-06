@@ -18,6 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from core.auth.manager import load_auth, validate_session
 from core.config import load_config
 from core.config.models import VoiceConfig
+from core.voice.emotion_style import emotion_style_for
 from core.voice.session import VoiceSession
 from core.voice.stt import VoiceSTT
 from core.voice.transport import VoiceTransport
@@ -165,6 +166,8 @@ def create_voice_router() -> APIRouter:
                 voice_config=voice_config,
                 front_model=front_model,
                 front_api_base=front_api_base,
+                channel="web",
+                emotion_style=emotion_style_for(tts_config.provider),
             )
 
             await ws.send_json({"type": "status", "state": "ready"})

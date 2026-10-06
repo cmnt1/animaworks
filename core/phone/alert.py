@@ -87,7 +87,13 @@ async def _run_alert(alert: PhoneAlert, subject: str, body: str, *, voice_config
 
     try:
         alert_text = t("phone.alert_intro", locale=locale, anima=alert.anima, subject=subject, body=body)
-        audio = await synthesize_speech(alert.anima, alert_text, voice_config=voice_config)
+        audio = await synthesize_speech(
+            alert.anima,
+            alert_text,
+            voice_config=voice_config,
+            link_placeholder=t("phone.link_placeholder", locale=locale),
+            max_chars=400,
+        )
         alert.audio_token = phone_audio_store.put(audio)
 
         max_attempts = alert.config.alert_max_attempts

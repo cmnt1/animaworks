@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
+from core.voice.emotion_style import EmotionStyle, VoiceChannel, voice_mode_suffix
 from core.voice.front import ASK_ANIMA_TOOL, READ_MEMORY_TOOL, VoiceFrontLane, extract_emotion
 
 logger = logging.getLogger(__name__)
@@ -24,26 +25,7 @@ MAX_ASK_ANIMA_CONCURRENT = 2
 ASK_ANIMA_MAX_RESULT_CHARS = 1000
 ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
 
-VOICE_MODE_SUFFIX = (
-    "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
-    "感情を表す絵文字を必ず入れてください（TTSの感情表現の精度が上がります）。"
-    "絵文字はTTSが演技指示として解釈する次の中から選ぶこと: "
-    "😊😆🫶😌🤭😏😎🤔😲😮😟😠🙄😪🥱😖😰😱😭🥺🫣🙏💪💥⏸️🐢⏩👂📢📖。"
-    "これ以外（😃😀😅❤️✨等）は読みを乱すので使わない。"
-    "感情を乗せたい短い文の先頭に同じ絵文字を2〜3個重ねると効果的です。"
-    "大きい数字・年号は読み上げられる形（「三千八百億」等）で書いてください。"
-    "アルファベット表記の語（英単語・略語・製品名・サービス名・人名・コマンド名など）は"
-    "例外なく直後に全角丸括弧でカタカナの読みを付けてください: "
-    "GitHub（ギットハブ）、API（エーピーアイ）、PR（ピーアール）、Claude Code（クロードコード）。"
-    "読みは音声にだけ使われ字幕には出ません。"
-    "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
-    "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
-    "『タスクに積んでやっておきますね』のように短く返答してください。"
-    "毎応答の最後の行に必ず感情タグを1つ付けてください:"
-    ' <!-- emotion: {"emotion": "<感情名>"} -->'
-    "（感情名: neutral/smile/laugh/troubled/surprised/thinking/embarrassed。"
-    "neutral以外を優先）]"
-)
+VOICE_MODE_SUFFIX = voice_mode_suffix()
 
 _MEMORY_TEXT_JA = (
     "## 最近の出来事 ({filename})\n{body}",
@@ -185,7 +167,9 @@ class FrontConversation:
         front_api_base: str | None,
         animas_dir: Path | None = None,
         prompt_style: str = "web",
-        delegation_note: str = ASK_ANIMA_DELEGATION_NOTE,
+        channel: VoiceChannel = "web",
+        emotion_style: EmotionStyle = "emoji",
+        delegation_note: str | None = None,
         ipc_timeout: float = IPC_STREAM_TIMEOUT,
         max_concurrent_delegations: int = MAX_ASK_ANIMA_CONCURRENT,
         on_delegation: Callable[[], None] | None = None,
@@ -196,7 +180,13 @@ class FrontConversation:
         self.front_api_base = front_api_base or None
         self.animas_dir = animas_dir
         self.prompt_style = prompt_style
-        self.delegation_note = delegation_note
+        self.channel = channel
+        self.emotion_style = emotion_style
+        if delegation_note is None and channel == "phone":
+            from core.i18n import t
+
+            delegation_note = t("phone.delegation_note")
+        self.delegation_note = ASK_ANIMA_DELEGATION_NOTE if delegation_note is None else delegation_note
         self.ipc_timeout = ipc_timeout
         self.max_concurrent_delegations = max_concurrent_delegations
         self._on_delegation = on_delegation
@@ -260,7 +250,12 @@ class FrontConversation:
         from core.prompt.builder import build_voice_front_prompt
 
         anima_dir = (self.animas_dir or get_animas_dir()) / self.anima_name
-        system_prompt = build_voice_front_prompt(anima_dir, anima_name=self.anima_name)
+        system_prompt = build_voice_front_prompt(
+            anima_dir,
+            anima_name=self.anima_name,
+            channel=self.channel,
+            emotion_style=self.emotion_style,
+        )
         api_base, api_key, api_version = self.front_api_base or "", "local", None
         if not api_base and "/" in self.front_model:
             # No explicit endpoint: use the provider credential from config.json
@@ -552,7 +547,7 @@ class FrontConversation:
     ) -> AsyncIterator[Any]:
         """Yield the full agent's process_message stream for a voice turn."""
         params: dict[str, Any] = {
-            "message": text + VOICE_MODE_SUFFIX,
+            "message": text + voice_mode_suffix(channel=self.channel, emotion_style=self.emotion_style),
             "from_person": from_person,
             "intent": "",
             "stream": True,

@@ -472,23 +472,23 @@ class TestSanitizeForTTS:
         assert strip_ruby("GitHub（設定）") == "GitHub（設定）"
 
     def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
-        import core.voice.session as vs
+        import core.voice.speech_text as speech_text
 
         (tmp_path / "voice_yomi.tsv").write_text("# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8")
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-        monkeypatch.setattr(vs, "_yomi_cache", None)
-        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
-        assert vs.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
+        monkeypatch.setattr(speech_text, "_yomi_cache", None)
+        monkeypatch.setattr(speech_text, "_yomi_mtime", 0.0)
+        assert speech_text.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
         # Display copy stays untouched.
-        assert vs.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
+        assert speech_text.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
 
     def test_yomi_dict_missing_is_noop(self, tmp_path, monkeypatch) -> None:
-        import core.voice.session as vs
+        import core.voice.speech_text as speech_text
 
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-        monkeypatch.setattr(vs, "_yomi_cache", None)
-        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
-        assert vs.apply_reading_rules("そのまま") == "そのまま"
+        monkeypatch.setattr(speech_text, "_yomi_cache", None)
+        monkeypatch.setattr(speech_text, "_yomi_mtime", 0.0)
+        assert speech_text.apply_reading_rules("そのまま") == "そのまま"
 
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
