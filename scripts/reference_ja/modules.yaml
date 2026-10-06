@@ -18,6 +18,7 @@ core.migrations: 実行時データ形式の段階的な移行。
 core.notification: 通知の生成と配送。
 core.org: 会社、部署、役割などの組織モデル。
 core.platform: 実行エンジンや OS ごとの差異を吸収する連携層。
+core.phone: Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 core.prompt: システムプロンプトとコンテキストの構築。
 core.skills: スキルの発見、読み込み、実行支援。
 core.runtime: anima メインの実行時コンポーネント、プロセス間通信、タスク実行。

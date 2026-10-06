@@ -21,8 +21,8 @@ from core.config.models import VoiceConfig
 from core.voice.session import VoiceSession
 from core.voice.stt import VoiceSTT
 from core.voice.transport import VoiceTransport
-from core.voice.tts_base import TTSConfig
 from core.voice.tts_factory import create_tts_provider
+from core.voice.voice_config import load_per_anima_voice as _load_per_anima_voice
 
 try:
     from server.localhost import _is_safe_localhost_request
@@ -78,42 +78,6 @@ def _get_stt(voice_config: VoiceConfig) -> VoiceSTT:
             )
             _stt_instance_config = config
         return _stt_instance
-
-
-def _load_per_anima_voice(
-    animas_dir: Path,
-    name: str,
-    voice_config: VoiceConfig,
-) -> TTSConfig:
-    """Load per-anima voice settings from status.json."""
-    status_path = animas_dir / name / "status.json"
-    if not status_path.is_file():
-        return TTSConfig(
-            provider=voice_config.default_tts_provider,
-            voice_id="",
-            speed=1.0,
-            pitch=0.0,
-        )
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return TTSConfig(
-            provider=voice_config.default_tts_provider,
-            voice_id="",
-            speed=1.0,
-            pitch=0.0,
-        )
-    voice_section = data.get("voice") or {}
-    if not isinstance(voice_section, dict):
-        voice_section = {}
-    provider = voice_section.get("tts_provider", voice_config.default_tts_provider)
-    return TTSConfig(
-        provider=provider,
-        voice_id=voice_section.get("voice_id", ""),
-        speed=float(voice_section.get("speed", 1.0)),
-        pitch=float(voice_section.get("pitch", 0.0)),
-        extra=voice_section.get("extra", {}),
-    )
 
 
 def _load_per_anima_voice_front(

@@ -902,6 +902,24 @@ class HeartbeatConfig(BaseModel):
 # ── Voice Chat Config ───────────────────────────────────────────────────────
 
 
+class PhoneConfig(BaseModel):
+    """Twilio-backed phone channel for one Anima."""
+
+    enabled: bool = False
+    anima: str = "aoi"
+    public_base_url: str = "https://zoomhook.kk-a.jp"
+    from_number: str = "+16073257655"
+    owner_numbers: list[str] = Field(default_factory=lambda: ["+819060943763"])
+    from_person: str = "human"
+    thread_id: str = "phone"
+    pin_vault_key: str = "AOI_PHONE_PIN"
+    account_sid_vault_key: str = "TWILIO_ACCOUNT_SID"
+    auth_token_vault_key: str = "TWILIO_AUTH_TOKEN"
+    alert_max_attempts: int = Field(default=3, ge=1)
+    alert_retry_interval_sec: float = Field(default=120, ge=0)
+    turn_timeout_sec: float = Field(default=300, gt=0)
+
+
 class VoicevoxConfig(BaseModel):
     """VOICEVOX Engine connection settings."""
 
@@ -1312,6 +1330,7 @@ class AnimaWorksConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
+    phone: PhoneConfig = PhoneConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
@@ -1378,6 +1397,7 @@ __all__ = [
     "MemoryConfig",
     "FactEdgeTypeConfig",
     "NotificationChannelConfig",
+    "PhoneConfig",
     "PrimingConfig",
     "PromptConfig",
     "RAGConfig",
