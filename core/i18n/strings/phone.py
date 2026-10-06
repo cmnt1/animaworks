@@ -101,4 +101,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ごめんなさい、うまく答えられませんでした。",
         "en": "Sorry, I could not prepare an answer this time.",
     },
+    "phone.delegation_report_subject": {
+        "ja": "電話で頼まれた件の結果（{anima}）",
+        "en": "Results of the phone request ({anima})",
+    },
+    "phone.delegation_still_running": {
+        "ja": "[ask_anima job {job}: 30分以内に完了を確認できませんでした。依頼: {request}]",
+        "en": "[ask_anima job {job}: still running after 30 minutes. Request: {request}]",
+    },
 }

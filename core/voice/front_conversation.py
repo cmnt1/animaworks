@@ -166,6 +166,7 @@ class FrontConversation:
         front_model: str | None,
         front_api_base: str | None,
         animas_dir: Path | None = None,
+        thread_id: str | None = None,
         prompt_style: str = "web",
         channel: VoiceChannel = "web",
         emotion_style: EmotionStyle = "emoji",
@@ -179,6 +180,7 @@ class FrontConversation:
         self.front_model = front_model or None
         self.front_api_base = front_api_base or None
         self.animas_dir = animas_dir
+        self.thread_id = thread_id or "default"
         self.prompt_style = prompt_style
         self.channel = channel
         self.emotion_style = emotion_style
@@ -194,8 +196,12 @@ class FrontConversation:
         self._lane: Any | None = None
         self._delegation_jobs: dict[int, asyncio.Task[Any]] = {}
         self._delegation_job_counter = 0
-        self._delegation_results: asyncio.Queue[str] | None = None
+        self._delegation_requests: dict[int, str] = {}
+        self._delegation_results: asyncio.Queue[tuple[int, str]] | None = None
         self._delegation_done: asyncio.Queue[None] | None = None
+        self._unreported_delegation_results: dict[int, str] = {}
+        self._last_drained_delegation_ids: tuple[int, ...] = ()
+        self._delegation_notification_started = False
         self._last_full_text = ""
         self._last_emotion = "neutral"
         self._last_completed = False
@@ -308,9 +314,11 @@ class FrontConversation:
         self._last_emotion = "neutral"
         self._last_completed = False
         self._pending_record = None
+        self._last_drained_delegation_ids = ()
         turn_text = text
         if drain_results:
-            results = self.drain_delegation_results()
+            results, result_ids = self._take_delegation_results()
+            self._last_drained_delegation_ids = result_ids
             if results:
                 turn_text = f"{results}\n\n{text}"
 
@@ -364,6 +372,11 @@ class FrontConversation:
         finally:
             if not self._last_completed:
                 self._last_full_text = "".join(full)
+                if self._delegation_results is not None:
+                    for job in self._last_drained_delegation_ids:
+                        message = self._unreported_delegation_results.get(job)
+                        if message:
+                            self._delegation_results.put_nowait((job, message))
 
     async def record_pending_turn(self) -> None:
         """Persist a completed turn deferred until the transport queued its output."""
@@ -406,7 +419,7 @@ class FrontConversation:
                     await self.supervisor.send_request(
                         self.anima_name,
                         "append_conversation_turns",
-                        {"thread_id": "default", "turns": turns},
+                        {"thread_id": self.thread_id, "turns": turns},
                     )
                     return
                 if alive:
@@ -447,6 +460,7 @@ class FrontConversation:
         self._ensure_delegation_state()
         self._delegation_job_counter += 1
         job = self._delegation_job_counter
+        self._delegation_requests[job] = request
         task = asyncio.create_task(
             self._run_ask_anima_job(job, request),
             name=f"ask-anima-{self.anima_name}-{job}",
@@ -501,23 +515,47 @@ class FrontConversation:
             result_text = "処理に失敗しました。詳細はログを確認してほしい"
         finally:
             self._delegation_jobs.pop(job, None)
+            self._delegation_requests.pop(job, None)
             message = f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
+            self._unreported_delegation_results[job] = message
             if self._delegation_results is not None:
-                await self._delegation_results.put(message)
+                await self._delegation_results.put((job, message))
             if self._delegation_done is not None:
                 await self._delegation_done.put(None)
 
-    def drain_delegation_results(self) -> str:
-        """Collect completed delegation results, returning an empty string if none."""
+    @property
+    def last_drained_delegation_ids(self) -> tuple[int, ...]:
+        """Job IDs included in the latest drained result text."""
+        return self._last_drained_delegation_ids
+
+    def _take_delegation_results(self) -> tuple[str, tuple[int, ...]]:
+        """Collect completed result text together with the associated job IDs."""
         if self._delegation_results is None:
-            return ""
+            return "", ()
         parts: list[str] = []
+        job_ids: list[int] = []
         while True:
             try:
-                parts.append(self._delegation_results.get_nowait())
+                job, message = self._delegation_results.get_nowait()
             except asyncio.QueueEmpty:
                 break
-        return "\n".join(parts)
+            parts.append(message)
+            job_ids.append(job)
+        self._last_drained_delegation_ids = tuple(job_ids)
+        return "\n".join(parts), self._last_drained_delegation_ids
+
+    def drain_delegation_results(self) -> str:
+        """Collect completed delegation results, returning an empty string if none."""
+        return self._take_delegation_results()[0]
+
+    def mark_delegation_results_reported(self, job_ids: tuple[int, ...] | list[int]) -> None:
+        """Mark results as reported after the voice response has been delivered."""
+        for job in job_ids:
+            self._unreported_delegation_results.pop(job, None)
+
+    def has_unreported_delegations(self) -> bool:
+        """Whether any active or completed delegation remains unreported."""
+        return bool(self._delegation_jobs or self._unreported_delegation_results)
 
     def has_pending_delegations(self) -> bool:
         """Whether any delegated full-agent jobs are still running."""
@@ -537,6 +575,51 @@ class FrontConversation:
         """Build the self-turn prompt used to report completed delegation results."""
         return f"{results} この結果を自分の言葉で短く報告して"
 
+    async def notify_unreported_delegations(
+        self,
+        human_notification_config: Any,
+        *,
+        channel: VoiceChannel | None = None,
+        wait_timeout: float = 30 * 60,
+    ) -> None:
+        """Wait at most 30 minutes, then notify humans about unreported work."""
+        if self._delegation_notification_started or not self.has_unreported_delegations():
+            return
+        if not getattr(human_notification_config, "enabled", False):
+            return
+
+        self._delegation_notification_started = True
+        tasks = tuple(self._delegation_jobs.values())
+        if tasks and wait_timeout > 0:
+            await asyncio.wait(
+                tasks,
+                timeout=min(float(wait_timeout), 30 * 60),
+                return_when=asyncio.ALL_COMPLETED,
+            )
+
+        from core.i18n import t
+
+        notification_channel = channel or self.channel
+        string_prefix = "phone" if notification_channel == "phone" else "voice"
+        messages = list(self._unreported_delegation_results.values())
+        for job, request in self._delegation_requests.items():
+            messages.append(t(f"{string_prefix}.delegation_still_running", job=job, request=request[:200]))
+        if not messages:
+            return
+
+        from core.notification.notifier import HumanNotifier
+
+        subject = t(f"{string_prefix}.delegation_report_subject", anima=self.anima_name)
+        try:
+            notifier = HumanNotifier.from_config(human_notification_config)
+            await notifier.notify(
+                subject,
+                "\n".join(messages),
+                anima_name=self.anima_name,
+            )
+        except Exception:
+            logger.warning("Voice delegation result notification failed (%s)", self.anima_name)
+
     async def stream_full_agent(
         self,
         text: str,
@@ -555,6 +638,8 @@ class FrontConversation:
             "images": [],
             "attachment_paths": [],
         }
+        if self.thread_id != "default":
+            params["thread_id"] = self.thread_id
         if extra_params:
             params.update(extra_params)
         async for response in self.supervisor.send_request_stream(

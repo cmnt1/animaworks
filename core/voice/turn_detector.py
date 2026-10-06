@@ -338,13 +338,24 @@ class TurnDetector:
         return np.zeros(dimensions, dtype=np.float32)
 
 
-async def drive_session(events: Iterable[TurnDetectorEvent], session: VoiceSession) -> None:
-    """Forward detector output to the existing VoiceSession input handlers."""
+async def drive_session(
+    events: Iterable[TurnDetectorEvent],
+    session: VoiceSession,
+    *,
+    from_person: str | None = None,
+    on_speech_end: Callable[[], None] | None = None,
+) -> None:
+    """Forward detector output to VoiceSession, optionally scheduling end-of-turn work."""
     for event in events:
         if event.type == "audio":
             await session.handle_audio_chunk(event.audio or b"")
         elif event.type == "speech_end":
-            await session.handle_speech_end()
+            if on_speech_end is not None:
+                on_speech_end()
+            elif from_person is None:
+                await session.handle_speech_end()
+            else:
+                await session.handle_speech_end(from_person=from_person)
         elif event.type == "misfire":
             await session.handle_discard_audio()
         elif event.type == "barge_probe":

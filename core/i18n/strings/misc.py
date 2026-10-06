@@ -423,4 +423,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "音声認識に失敗しました",
         "en": "Speech recognition failed",
     },
+    "voice.delegation_report_subject": {
+        "ja": "音声で頼まれた件の結果（{anima}）",
+        "en": "Results of the voice request ({anima})",
+    },
+    "voice.delegation_still_running": {
+        "ja": "[ask_anima job {job}: 30分以内に完了を確認できませんでした。依頼: {request}]",
+        "en": "[ask_anima job {job}: still running after 30 minutes. Request: {request}]",
+    },
 }

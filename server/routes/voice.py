@@ -18,8 +18,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from core.auth.manager import load_auth, validate_session
 from core.config import load_config
 from core.config.models import VoiceConfig
-from core.voice.emotion_style import emotion_style_for
-from core.voice.session import VoiceSession
+from core.voice.session import VoiceSession  # noqa: F401 -- compatibility seam used by route tests
+from core.voice.session_factory import build_voice_session
 from core.voice.stt import VoiceSTT
 from core.voice.transport import VoiceTransport
 from core.voice.tts_factory import create_tts_provider
@@ -143,31 +143,28 @@ def create_voice_router() -> APIRouter:
             await ws.send_json({"type": "status", "state": "loading"})
 
             stt = _get_stt(voice_config)
-            tts_config = _load_per_anima_voice(animas_dir, name, voice_config)
-            tts = create_tts_provider(tts_config.provider, voice_config)
             logger.debug("Resolving per-Anima front voice settings from %s", animas_dir / name / "status.json")
-            front_model, front_api_base = _load_per_anima_voice_front(animas_dir, name, voice_config)
+            transport: VoiceTransport = FastAPIWebSocketVoiceTransport(ws)
+            session = build_voice_session(
+                anima_name=name,
+                transport=transport,
+                stt=stt,
+                supervisor=supervisor,
+                animas_dir=animas_dir,
+                voice_config=voice_config,
+                channel="web",
+                human_notification_config=config.human_notification,
+                tts_factory=create_tts_provider,
+                tts_config_loader=_load_per_anima_voice,
+                front_settings_loader=_load_per_anima_voice_front,
+            )
+            tts_config = session._tts_config
             logger.info(
                 "Voice session created: anima=%s provider=%s voice_id=%s speed=%.1f",
                 name,
                 tts_config.provider,
                 tts_config.voice_id,
                 tts_config.speed,
-            )
-
-            transport: VoiceTransport = FastAPIWebSocketVoiceTransport(ws)
-            session = VoiceSession(
-                anima_name=name,
-                transport=transport,
-                stt=stt,
-                tts=tts,
-                tts_config=tts_config,
-                supervisor=supervisor,
-                voice_config=voice_config,
-                front_model=front_model,
-                front_api_base=front_api_base,
-                channel="web",
-                emotion_style=emotion_style_for(tts_config.provider),
             )
 
             await ws.send_json({"type": "status", "state": "ready"})

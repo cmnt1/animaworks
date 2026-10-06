@@ -919,7 +919,11 @@ class PhoneConfig(BaseModel):
     auth_token_vault_key: str = "TWILIO_AUTH_TOKEN"
     alert_max_attempts: int = Field(default=3, ge=1)
     alert_retry_interval_sec: float = Field(default=120, ge=0)
-    turn_timeout_sec: float = Field(default=300, gt=0)
+    turn_timeout_sec: float = Field(
+        default=300,
+        gt=0,
+        description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
+    )
 
 
 class VoicevoxConfig(BaseModel):
@@ -976,6 +980,8 @@ class VoiceConfig(BaseModel):
     proactive_lead_sec: float = 5.0
     """Start the next monologue this many seconds before the current playback ends
     (so speech is continuous but never more than one utterance is queued)."""
+    notify_delegations_on_web_disconnect: bool = False
+    """Send pending voice-front delegation results to humans when a Web voice session closes."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()

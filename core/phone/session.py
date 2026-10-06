@@ -6,7 +6,6 @@ from __future__ import annotations
 
 """In-memory call state for Twilio phone conversations."""
 
-import asyncio
 from dataclasses import dataclass
 from typing import Literal
 
@@ -19,15 +18,10 @@ class PhoneSession:
     anima: str
     authenticated: bool = False
     pin_failures: int = 0
-    turn_task: asyncio.Task[str] | None = None
     kind: Literal["inbound", "alert"] = "inbound"
     alert_id: str | None = None
     acknowledged: bool = False
-    silence_count: int = 0
     alert_repeat_done: bool = False
-    turn_started_at: float = 0.0
-    last_thinking_at: float = 0.0
-    timed_out: bool = False
 
 
 class PhoneSessionStore:

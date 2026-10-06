@@ -16,6 +16,7 @@ import time
 import unicodedata
 import wave
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 from core.i18n import t
@@ -86,6 +87,7 @@ TTS_QUEUE_MAXSIZE = 8
 PROBE_TIMEOUT_SEC = 1.5
 ECHO_SIMILARITY_THRESHOLD = 0.5
 PROBE_MIN_CHARS = 3
+_BACKGROUND_DELEGATION_REPORT_TASKS: set[asyncio.Task[None]] = set()
 
 
 # Silence-triggered monologue. Modelled on AI-VTuber solo-talk routines:
@@ -266,6 +268,13 @@ class VoiceSession:
         front_api_base: str | None = None,
         channel: VoiceChannel = "web",
         emotion_style: EmotionStyle | None = None,
+        from_person: str = "human",
+        thread_id: str | None = None,
+        animas_dir: Path | None = None,
+        proactive_enabled: bool | None = None,
+        human_notification_config: Any | None = None,
+        report_delegations_on_close: bool | None = None,
+        delegation_report_wait_sec: float = 30 * 60,
     ) -> None:
         """Initialize voice session.
 
@@ -283,6 +292,13 @@ class VoiceSession:
                 lane. Falls back to ``front_api_base`` on *voice_config*.
             channel: Voice channel used to select channel-specific prompts.
             emotion_style: TTS emotion syntax. Defaults to the configured TTS provider.
+            from_person: Conversation role used for recognized speech.
+            thread_id: Optional conversation thread to use for phone calls.
+            animas_dir: Data directory for resolving per-Anima voice-front prompts.
+            proactive_enabled: Override silence-triggered speech for this session.
+            human_notification_config: Notification channels for unreported delegations.
+            report_delegations_on_close: Enable post-close delegation reporting.
+            delegation_report_wait_sec: Maximum time to wait for delegation results.
         """
         self._anima_name = anima_name
         self._transport = transport
@@ -291,8 +307,24 @@ class VoiceSession:
         self._tts_config = tts_config
         self._channel = channel
         self._emotion_style = emotion_style or emotion_style_for(getattr(tts_config, "provider", None))
+        self._from_person = from_person or "human"
+        self._thread_id = thread_id
         self._supervisor = supervisor
         self._voice_config = voice_config
+        self._animas_dir = animas_dir
+        self._proactive_enabled = (
+            channel == "web" and bool(getattr(voice_config, "proactive_enabled", False))
+            if proactive_enabled is None
+            else bool(proactive_enabled)
+        )
+        self._human_notification_config = human_notification_config
+        if report_delegations_on_close is None:
+            self._report_delegations_on_close = channel == "phone" or (
+                channel == "web" and bool(getattr(voice_config, "notify_delegations_on_web_disconnect", False))
+            )
+        else:
+            self._report_delegations_on_close = bool(report_delegations_on_close)
+        self._delegation_report_wait_sec = min(max(float(delegation_report_wait_sec), 0.0), 30 * 60)
         self._audio_buffer: bytearray = bytearray()
         # Streaming STT: rolling re-decode with LocalAgreement-2. Decode is
         # synchronous; it is sheduled through run_in_executor so the event loop
@@ -320,6 +352,7 @@ class VoiceSession:
         # The watcher owns transport-specific self-turn guards. Delegation
         # queues and jobs live in FrontConversation.
         self._delegation_watcher: asyncio.Task | None = None
+        self._delegation_report_task: asyncio.Task[None] | None = None
 
         # Proactive (silence-triggered) self-speech state. ``_last_activity``
         # tracks the newest user / session activity via ``time.monotonic()``;
@@ -348,6 +381,8 @@ class VoiceSession:
             supervisor=self._supervisor,
             front_model=self._front_model,
             front_api_base=self._front_api_base,
+            animas_dir=self._animas_dir,
+            thread_id=self._thread_id,
             channel=self._channel,
             emotion_style=self._emotion_style,
             ipc_timeout=IPC_STREAM_TIMEOUT,
@@ -419,8 +454,9 @@ class VoiceSession:
             if not self._streamer.ready():
                 break
 
-    async def handle_speech_end(self, from_person: str = "human") -> None:
+    async def handle_speech_end(self, from_person: str | None = None) -> None:
         """Process accumulated audio: STT -> optional refine -> Chat -> TTS."""
+        from_person = from_person or self._from_person
         if self._probe_active:
             await self._finish_probe()
             return
@@ -801,7 +837,7 @@ class VoiceSession:
         Requires ``proactive_enabled`` and a configured front lane; otherwise
         the task is never created.
         """
-        if not getattr(self._voice_config, "proactive_enabled", False):
+        if not self._proactive_enabled:
             return
         if not self._front_model:
             return
@@ -820,7 +856,7 @@ class VoiceSession:
         has already taken the processing lock itself (pass ``False`` then, so
         the lock it holds is not treated as a blocker).
         """
-        if not getattr(self._voice_config, "proactive_enabled", False):
+        if not self._proactive_enabled:
             return False
         if not self._front_model:
             return False
@@ -998,6 +1034,10 @@ class VoiceSession:
                 return False
             self._last_activity = time.monotonic()
             await self._finish_tts_and_response_done(self._front_conversation.last_emotion)
+            if tts_ok or self._channel != "phone":
+                self._front_conversation.mark_delegation_results_reported(
+                    self._front_conversation.last_drained_delegation_ids
+                )
             response_done_sent = True
             return True
         finally:
@@ -1062,14 +1102,18 @@ class VoiceSession:
             lane = self._front_conversation.existing_lane
             if self._closed or lane is None or not self._front_model:
                 continue
-            results = self._front_conversation.drain_delegation_results()
-            if not results:
-                continue
             if not await self._front_conversation.check_health():
+                continue
+            results = self._front_conversation.drain_delegation_results()
+            result_ids = self._front_conversation.last_drained_delegation_ids
+            if not results:
                 continue
             prompt = self._front_conversation.delegation_report_prompt(results)
             try:
-                await self._run_front_turn(lane, prompt, "human", await self._check_tts_health())
+                tts_ok = await self._check_tts_health()
+                reported = await self._run_front_turn(lane, prompt, self._from_person, tts_ok)
+                if reported and (tts_ok or self._channel != "phone"):
+                    self._front_conversation.mark_delegation_results_reported(result_ids)
             except Exception:
                 logger.exception("ask_anima self-turn failed (%s)", self._anima_name)
 
@@ -1081,6 +1125,8 @@ class VoiceSession:
         conversation by ``process_message`` itself. The watcher (self-turn)
         is stopped because the WS is gone.
         """
+        if self._closed:
+            return
         self._closed = True
         self._cancel_probe_timeout()
         watcher = self._delegation_watcher
@@ -1114,7 +1160,32 @@ class VoiceSession:
                 await task
             except asyncio.CancelledError:
                 pass
+        if (
+            self._report_delegations_on_close
+            and self._human_notification_config is not None
+            and self._front_conversation.has_unreported_delegations()
+        ):
+            self._delegation_report_task = asyncio.create_task(
+                self._front_conversation.notify_unreported_delegations(
+                    self._human_notification_config,
+                    channel=self._channel,
+                    wait_timeout=self._delegation_report_wait_sec,
+                ),
+                name=f"voice-delegation-report-{self._anima_name}",
+            )
+            _BACKGROUND_DELEGATION_REPORT_TASKS.add(self._delegation_report_task)
+            self._delegation_report_task.add_done_callback(self._delegation_report_done)
         await self._front_conversation.aclose()
+
+    def _delegation_report_done(self, task: asyncio.Task[None]) -> None:
+        """Consume unexpected failures from the detached post-close notifier."""
+        _BACKGROUND_DELEGATION_REPORT_TASKS.discard(task)
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.warning("Voice delegation report task failed (%s)", self._anima_name)
 
     def _note_playback(self, seconds: float) -> None:
         """Extend the estimated client playback end by *seconds* of audio just sent."""
@@ -1160,6 +1231,35 @@ class VoiceSession:
                 await self._transport.send_event({"type": "tts_done"})
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
+
+    async def speak_text(self, text: str) -> bool:
+        """Speak fixed text through the shared VoiceSession TTS pipeline, without an LLM turn."""
+        if self._closed or not text.strip() or self._tts_playing:
+            return False
+        if not await self._check_tts_health():
+            return False
+
+        from core.voice.sentence_splitter import split_sentences
+
+        self._interrupted = False
+        self._tts_playing = True
+        try:
+            await self._transport.send_event({"type": "response_start"})
+            await self._transport.send_event({"type": "response_text", "text": text})
+            await self._start_tts_worker()
+            for sentence in split_sentences(text):
+                if self._interrupted:
+                    break
+                await self._enqueue_tts(sentence)
+            await self._finish_tts_and_response_done("neutral")
+            return not self._interrupted
+        except Exception:
+            logger.debug("Fixed voice text delivery failed (%s)", self._anima_name, exc_info=True)
+            return False
+        finally:
+            await self._stop_tts_worker()
+            self._tts_playing = False
+            self._last_activity = time.monotonic()
 
     async def greet_and_speak(self) -> None:
         """Greet on connect — generate a fresh greeting every time.
