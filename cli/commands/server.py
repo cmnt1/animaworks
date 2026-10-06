@@ -293,7 +293,9 @@ def _kill_orphan_runners() -> int:
     """
     from core.paths import get_data_dir
 
-    data_prefix = str(get_data_dir())
+    # Trailing separator: "~/.animaworks" must not match the runners of a
+    # sibling instance such as "~/.animaworks-demo/run/sockets/...".
+    data_prefix = str(get_data_dir()).rstrip(os.sep) + os.sep
     killed = terminate_matching_processes(
         _RUNNER_CMD_MARKER,
         path_contains=data_prefix,

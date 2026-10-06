@@ -365,6 +365,11 @@ def _render_startup_progress_html(snapshot: dict[str, object]) -> str:
     {error_html}
     <div class="bar" aria-hidden="true"><span></span></div>
   </main>
+  <script>
+    // meta refresh to the same URL is a same-document navigation when the URL
+    // has a fragment (e.g. /#/chat), so it never reloads; force a real reload.
+    setTimeout(function () {{ location.reload(); }}, 3000);
+  </script>
 </body>
 </html>
 """

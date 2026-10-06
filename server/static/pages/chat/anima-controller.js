@@ -419,7 +419,9 @@ export function createAnimaController(ctx) {
         openOrSelectAnima(paneState.anima);
       } else if (state.animas.length > 0 && !state.selectedAnima) {
         const firstTab = state.animaTabs[0]?.name;
-        openOrSelectAnima(firstTab || state.animas[0].name);
+        // With nothing remembered, start with the organization's leader.
+        const leader = state.animas.find(a => !a.supervisor && a.enabled !== false);
+        openOrSelectAnima(firstTab || leader?.name || state.animas[0].name);
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }

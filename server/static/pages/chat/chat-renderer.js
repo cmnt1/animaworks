@@ -260,7 +260,7 @@ export function createChatRenderer(ctx) {
 
   // ── Demo Suggested Prompt Cards ──
 
-  function renderDemoSuggestedCards(animaName) {
+  function renderDemoSuggestedCards(animaName, { inline = false } = {}) {
     const name = animaName.toLowerCase();
     const prompts = [];
     for (let i = 1; i <= 4; i++) {
@@ -275,7 +275,7 @@ export function createChatRenderer(ctx) {
     ).join("");
 
     return `
-      <div class="demo-suggest-container">
+      <div class="demo-suggest-container${inline ? " demo-suggest-container--inline" : ""}">
         <div class="demo-suggest-header">
           <h3>${t("demo.suggest_card_title")}</h3>
           <p>${t("demo.suggest_card_subtitle")}</p>
@@ -379,6 +379,7 @@ export function createChatRenderer(ctx) {
     let sessionsHtml = "";
     let si = 0;
     let hasRenderedTimelineItem = false;
+    let hasRenderedConversation = false;
     let activityRun = [];
 
     const flushActivityRun = () => {
@@ -412,12 +413,19 @@ export function createChatRenderer(ctx) {
             }
             sessionsHtml += renderHistoryMessage(msg);
             hasRenderedTimelineItem = true;
+            hasRenderedConversation = true;
           }
         }
         si++;
       }
     }
     flushActivityRun();
+
+    // Demo data ships only background activity; without a conversation the
+    // visitor has no hint what to ask, so offer the suggestion cards below it.
+    if (state.demoMode && !isMeeting && state.selectedAnima && !hasRenderedConversation && history.length === 0) {
+      sessionsHtml += renderDemoSuggestedCards(state.selectedAnima, { inline: true });
+    }
 
     let liveHtml = "";
     if (history.length > 0) {

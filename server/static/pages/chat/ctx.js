@@ -1,7 +1,7 @@
 // ── Chat Context Factory ──────────────────────
 import { t } from "/shared/i18n.js";
 import { api } from "../../modules/api.js";
-import { escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp } from "../../modules/state.js";
+import { state as appState, escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp } from "../../modules/state.js";
 import { streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress } from "../../shared/chat-stream.js";
 import { createLogger } from "../../shared/logger.js";
 import { createImageInput, initLightbox, renderChatImages } from "../../shared/image-input.js";
@@ -45,6 +45,8 @@ export function createChatContext() {
 
   const state = {
     container: null,
+    // Demo mode is detected once at dashboard start (modules/app.js).
+    get demoMode() { return appState.demoMode === true; },
     animas: [],
     users: [],
     selectedAnima: null,

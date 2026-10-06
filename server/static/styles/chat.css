@@ -3365,6 +3365,12 @@
   gap: 1.5rem;
 }
 
+/* Below existing activity: flow with the timeline instead of filling the pane. */
+.demo-suggest-container--inline {
+  height: auto;
+  padding-top: 1.5rem;
+}
+
 .demo-suggest-header {
   text-align: center;
 }
