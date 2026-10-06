@@ -74,6 +74,8 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 KNOWN_VIOLATIONS: dict[str, int] = {
+    # Japanese character classes in egress masker regexes (NLP data, not UI text)
+    "core/enclave/egress/masker/facts.py": 2,
     # bilingual empty-state placeholders for prompt injection (ja/en)
     # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
     "core/anima/lifecycle.py": 4,
