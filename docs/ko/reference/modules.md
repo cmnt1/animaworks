@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=de1550251a5f2ab3b868016ed2ca081feec451565e07a888300d446be7f2696c generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=87b5de437e4469bc9ff7937e96bf349a204a339ee12ad42b1a9eea3e3243ce61 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -9,15 +9,15 @@
 
 —
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `cli` | 9 | — |
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 93 | — |
-| `cli.codex_command_hook` | 64 | Codex의 ``PreToolUse`` 명령 정책 훅용 CLI 어댑터. |
+| `cli.codex_command_hook` | 64 | Codex의 ``PreToolUse`` 명령 정책 후크를 위한 CLI 어댑터. |
 | `cli.demo` | 407 | 네이티브 ``animaworks demo`` 명령. |
-| `cli.parser` | 854 | — |
-| `cli.tool_dispatch` | 412 | 외부 도구, 작업 제출, 명령 별칭을 위한 CLI 디스패치. |
+| `cli.parser` | 859 | — |
+| `cli.tool_dispatch` | 412 | 외부 도구, 작업 제출 및 명령 별칭을 위한 CLI 디스패치. |
 
 ## `cli.commands`
 
@@ -212,25 +212,25 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 격리된 enclave 모드의 설정 모델과 시작 시 보안 가드.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.enclave` | 44 | enclave 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
-| `core.enclave.config` | 59 | enclave 모드용 설정 모델. |
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로그 기록. |
-| `core.enclave.egress.config` | 107 | 이그레스 파이프라인용 설정 모델. |
-| `core.enclave.egress.fs` | 38 | enclave file/directory 권한을 적용하는 간단한 파일 시스템 헬퍼. |
+| `core.enclave.config` | 59 | enclave 모드의 설정 모델. |
+| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로깅. |
+| `core.enclave.egress.config` | 107 | 이그레스 파이프라인의 설정 모델. |
+| `core.enclave.egress.fs` | 38 | enclave file/directory 권한을 적용하는 간단한 파일 시스템 도우미. |
 | `core.enclave.egress.ledger` | 86 | 이그레스 파이프라인의 알려진 값 원장. |
-| `core.enclave.egress.masker.dispatch` | 36 | 내장 마스커용 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 141 | 기록된 사실의 규칙 기반 마스킹. |
-| `core.enclave.egress.masker.log_pii` | 115 | log/audit 개인정보 마스킹. |
+| `core.enclave.egress.masker.dispatch` | 36 | 기본 제공 마스커의 프로필 디스패치. |
+| `core.enclave.egress.masker.facts` | 155 | 규칙 기반 레코드 사실 마스킹. |
+| `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
 | `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
-| `core.enclave.egress.models` | 57 | 이그레스 파이프라인용 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 안전하게 차단. |
+| `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
+| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 폐쇄 상태를 유지합니다. |
 | `core.enclave.egress.stages` | 419 | 이그레스 파이프라인의 단계 구현. |
-| `core.enclave.gateway` | 288 | 게이트웨이: enclave 인스턴스의 진입점. |
-| `core.enclave.gateway_server` | 186 | enclave 게이트웨이의 수명 주기 및 Unix 소켓 연결 구성. |
-| `core.enclave.guards` | 236 | enclave 모드용 시작 가드. |
-| `core.enclave.ops` | 73 | enclave 상태 점검 및 감사 요약용 운영 헬퍼. |
+| `core.enclave.gateway` | 288 | 게이트웨이: enclave 인스턴스의 인그레스 지점. |
+| `core.enclave.gateway_server` | 186 | enclave 게이트웨이의 수명 주기 및 유닉스 소켓 연결. |
+| `core.enclave.guards` | 237 | enclave 모드의 시작 시 가드. |
+| `core.enclave.ops` | 78 | enclave 상태 확인 및 감사 요약을 위한 운영 도우미. |
 
 ## `core.enclave.egress`
 
@@ -1053,12 +1053,12 @@ LLM 사용량과 비용의 기록·집계.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1409 | — |
+| `server.app` | 1433 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
 | `server.reload_manager` | 115 | — |
-| `server.room_manager` | 541 | Meeting room lifecycle, orchestration, and minutes generation. |
+| `server.room_manager` | 541 | 회의실 수명 주기, 오케스트레이션 및 회의록 생성. |
 | `server.stream_registry` | 489 | — |
 | `server.websocket` | 165 | — |
 

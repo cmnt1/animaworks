@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: a0a42bac340f94b28b534f86f21a0a691c0b144edd0c0180676415dfa8f31939 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: f08dc715e28a565aad65ed687def58ba67fb5c84f85a7a01039a8ecfb88eef99 -->
 
 # モジュール一覧
 
@@ -16,7 +16,7 @@
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
-| `cli.parser` | 854 | — |
+| `cli.parser` | 859 | — |
 | `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
@@ -221,7 +221,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
 | `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
 | `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.facts` | 155 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
@@ -229,8 +229,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
 | `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
-| `core.enclave.guards` | 236 | Startup guards for enclave mode. |
-| `core.enclave.ops` | 73 | Operational helpers for enclave health checks and audit summaries. |
+| `core.enclave.guards` | 237 | Startup guards for enclave mode. |
+| `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 
 ## `core.enclave.egress`
 
@@ -1053,7 +1053,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1409 | — |
+| `server.app` | 1433 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

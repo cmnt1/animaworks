@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=de1550251a5f2ab3b868016ed2ca081feec451565e07a888300d446be7f2696c generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=87b5de437e4469bc9ff7937e96bf349a204a339ee12ad42b1a9eea3e3243ce61 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -16,7 +16,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
-| `cli.parser` | 854 | — |
+| `cli.parser` | 859 | — |
 | `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
@@ -210,7 +210,7 @@ Application configuration schema, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration models and startup security guards for isolated enclave mode.
+Configuration model and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -221,7 +221,7 @@ Configuration models and startup security guards for isolated enclave mode.
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
 | `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
 | `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.facts` | 155 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
@@ -229,8 +229,8 @@ Configuration models and startup security guards for isolated enclave mode.
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
 | `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
-| `core.enclave.guards` | 236 | Startup guards for enclave mode. |
-| `core.enclave.ops` | 73 | Operational helpers for enclave health checks and audit summaries. |
+| `core.enclave.guards` | 237 | Startup guards for enclave mode. |
+| `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 
 ## `core.enclave.egress`
 
@@ -1053,7 +1053,7 @@ Audio input/output and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1409 | — |
+| `server.app` | 1433 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

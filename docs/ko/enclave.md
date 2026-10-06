@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=9f04baee8a23d43c10fa9c736f0253fc1d08123b29d7fac8305ba216ece27395 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=7b3f837620dd32802c843289512bc027ee16b6ba55c1ccb5f815352959df9e07 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 > 확인한 커밋: f448d7b0
 
@@ -47,7 +47,7 @@ id -u "$HOST_USER"
 
 ## 격리 측 설정
 
-격리 사용자 계정의 `~/.animaworks/config.json`에 `enclave`을 설정한다. `datasets.<name>.path`는 data directory 기준 상대 경로이며, `.jsonl` 파일을 지정한다. `searchable_fields`에 없는 항목은 검색 대상이 되지 않는다.
+격리 사용자의 `~/.animaworks/config.json`에 `enclave`을 설정한다. `datasets.<name>.path`는 data directory를 기준으로 한 상대 경로이며, `.jsonl` 파일을 지정한다. `searchable_fields`에 없는 항목은 검색 대상이 되지 않는다.
 
 ```json
 {
@@ -85,9 +85,9 @@ id -u "$HOST_USER"
 }
 ```
 
-`allowed_llm_credentials`에는 격리 측 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. 다른 시작 시 가드도 충족해야 하므로 이벤트 내보내기나 외부 메시지 연동을 활성화하지 말고, 각 anima의 `permissions.json`에서 파일 접근 범위를 필요한 만큼으로 제한한다. entry anima의 외부 도구를 제한하는 경우에는 `enclave_records`를 허용한다.
+`allowed_llm_credentials`에는 격리 측의 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. `external_tasks.enabled`은 초기값이 `true`이므로 격리 측에서는 `false`으로 설정한다. 새로 만든 anima의 `permissions.json`은 `file_roots`가 `["/"]`으로 설정되어 있으므로 anima 자체의 디렉터리 등 필요한 범위로 변경한다. 그대로 두면 시작 시 가드가 시작을 거부한다. 격리 모드에서는 Slack·Discord·Zoom·GitHub Webhook 게이트웨이를 시작하지 않는다. 다른 시작 시 가드도 충족해야 하므로 이벤트 내보내기나 외부 메시지 연계를 활성화하지 말고, 각 anima의 `permissions.json`에서 파일 액세스를 필요한 범위로 제한한다. entry anima의 외부 도구를 제한하는 경우에는 `enclave_records`를 허용한다.
 
-인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호 평문은 저장하지 말고, `password_hash`에는 앱에서 생성한 Argon2id 해시를 설정한다.
+인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호 평문은 저장하지 않고, `password_hash`에는 앱이 생성한 Argon2id 해시를 설정한다.
 
 ```json
 {
