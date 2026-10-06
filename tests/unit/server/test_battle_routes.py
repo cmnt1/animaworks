@@ -27,22 +27,30 @@ async def test_battle_routes_and_assets(tmp_path, monkeypatch, prefix):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             for path in ["/battle", "/battle/"]:
                 response = await client.get(prefix + path)
+                assert response.status_code in {302, 307}
+                assert response.headers["location"] == prefix + "/workspace/?view=battle"
+
+            for path in ["/battle/?demo=1", "/battle/?mock=1", "/battle/?demo=0"]:
+                response = await client.get(prefix + path)
                 assert response.status_code == 200
                 assert response.headers["cache-control"] == "no-store"
                 assert f'content="{prefix}"' in response.text
                 assert "__AW_BASE__" not in response.text
                 assert "__AW_VERSION__" not in response.text
-                assert 'id="battle"' in response.text
+                assert 'class="aw-battle"' in response.text
                 import re
 
                 script = re.search(r'src="([^"]+/battle/modules/app.js)"', response.text).group(1)
                 asset = await client.get(script)
                 assert asset.status_code == 200
-                assert "BattleLiveClient" in asset.text
+                assert "createBattleView" in asset.text
+                view_asset = await client.get(script.removesuffix("app.js") + "view.js")
+                assert view_asset.status_code == 200
+                assert "BattleLiveClient" in view_asset.text
             for path in ["/battle/assets/moonlit-ruins.png", "/battle/assets/combatants.png"]:
                 asset = await client.get(prefix + path)
                 assert asset.status_code == 200
                 assert asset.headers["content-type"] == "image/png"
-            pixel = await client.get(prefix + "/workspace/pixel/")
+            pixel = await client.get(prefix + "/workspace/pixel/?mock=1")
             assert pixel.status_code == 200
             assert "workspace" in pixel.text

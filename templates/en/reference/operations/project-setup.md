@@ -140,7 +140,7 @@ Role of each section:
 | `setup_complete` | Setup completion flag |
 | `locale` | Locale configuration |
 | `system` | System settings (mode, log level) |
-| `credentials` | API credentials |
+| `credentials` | API authentication credentials |
 | `model_modes` | Model name → execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
@@ -181,6 +181,8 @@ Role of each section:
 | `icon_url_template` |  |
 | `ui` |  |
 | `cli` |  |
+| `enclave` |  |
+| `enclaves` |  |
 
 <!-- AUTO-GENERATED:END -->
 

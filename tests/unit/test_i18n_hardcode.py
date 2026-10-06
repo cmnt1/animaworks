@@ -127,7 +127,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/voice/speech_text.py": 3,
     # voice front lane — spoken ACK/error phrases and report prompt now live
     # with the extracted FrontConversation implementation
-    "core/voice/front_conversation.py": 5,
+    "core/voice/front_conversation.py": 4,
     # proactive silence-turn system prompt fed to the front LLM
     "core/voice/session.py": 0,
 }

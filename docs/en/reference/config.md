@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=abb8933f43c7ff196f3802c524247c3cfe0ac2445043b91ebdd2a064692f41c3 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d16c16c03c4df80aab2151b660a8d8ee5a09a78af60410acab816e8336bc2430 generated=2026-10-06 engine=luna model=gpt-6-luna translator=2 -->
 
 # Configuration Reference
 
@@ -701,6 +701,31 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 |---|---|---|---|
 | `cli` | `CLIConfig` | `{CLIConfig}` | CLI client configuration. default_anima is the anima opened by animaworks / animaworks chat when no arguments are provided (if empty, uses the only enabled anima with no supervisor, if there is exactly one). |
 | `cli.default_anima` | `str` | `""` | — |
+
+### `enclave`
+
+| Key | Type | Default value | Description |
+|---|---|---|---|
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, security guards are checked at startup. |
+| `enclave.enabled` | `bool` | `false` | — |
+| `enclave.name` | `str` | `""` | — |
+| `enclave.socket_path` | `str` | `""` | — |
+| `enclave.socket_group` | `str` | `""` | — |
+| `enclave.entry_anima` | `str` | `""` | — |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
+| `enclave.max_concurrency` | `int` | `2` | — |
+| `enclave.request_timeout_s` | `int` | `900` | — |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
+| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+
+### `enclaves`
+
+| Key | Type | Default value | Description |
+|---|---|---|---|
+| `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | Client-side configuration for connecting to an external enclave instance. |
+| `enclaves.socket_path` | `str` | `"—"` | — |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
+| `enclaves.timeout_s` | `int` | `900` | — |
 
 ## Per-anima `status.json`
 

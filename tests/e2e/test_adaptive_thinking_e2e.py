@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -23,7 +24,9 @@ class TestAdaptiveThinkingModeB:
     """Mode B (assisted) adaptive thinking tests via mocked LLM calls."""
 
     async def test_claude_46_thinking_true_gets_adaptive(
-        self, make_agent_core, data_dir,
+        self,
+        make_agent_core,
+        data_dir,
     ):
         """Claude 4.6 + thinking=True → adaptive thinking params in LLM call."""
         agent = make_agent_core(
@@ -39,8 +42,10 @@ class TestAdaptiveThinkingModeB:
         status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
         from core.memory import MemoryManager
+
         memory = MemoryManager(agent.anima_dir)
         model_config = memory.read_model_config()
         agent._model_config = model_config
@@ -56,7 +61,8 @@ class TestAdaptiveThinkingModeB:
         first_kwargs = mock_fn.call_args_list[0].kwargs
         assert first_kwargs.get("thinking") == {"type": "adaptive"}
         assert first_kwargs.get("reasoning_effort") == "medium"
-        assert first_kwargs.get("temperature") == 1
+        # Claude adaptive thinking rejects sampling parameters (fccc9237).
+        assert "temperature" not in first_kwargs
 
     async def test_ollama_thinking_true_gets_think_param(self, make_agent_core):
         """Ollama + thinking=True → think=True (not adaptive)."""
@@ -72,8 +78,10 @@ class TestAdaptiveThinkingModeB:
         status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
         from core.memory import MemoryManager
+
         memory = MemoryManager(agent.anima_dir)
         model_config = memory.read_model_config()
         agent._model_config = model_config
@@ -103,8 +111,10 @@ class TestAdaptiveThinkingModeB:
         status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
         from core.memory import MemoryManager
+
         memory = MemoryManager(agent.anima_dir)
         model_config = memory.read_model_config()
         agent._model_config = model_config
@@ -137,14 +147,19 @@ class TestAdaptiveThinkingModeB:
         status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
         from core.memory import MemoryManager
+
         memory = MemoryManager(agent.anima_dir)
         model_config = memory.read_model_config()
 
         from core.config.models import resolve_max_tokens
+
         effective = resolve_max_tokens(
-            model_config.model, model_config.max_tokens, model_config.thinking,
+            model_config.model,
+            model_config.max_tokens,
+            model_config.thinking,
         )
         assert effective >= 16384
 
@@ -181,8 +196,10 @@ class TestAdaptiveThinkingModeB:
         status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
 
         from core.config import invalidate_cache
+
         invalidate_cache()
         from core.memory import MemoryManager
+
         memory = MemoryManager(agent.anima_dir)
         model_config = memory.read_model_config()
         agent._model_config = model_config

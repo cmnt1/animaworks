@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 import io
 import json
 import logging
+import random
 import re
 import time
 import unicodedata
 import wave
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -84,10 +87,24 @@ SILENCE_RMS_THRESHOLD = 0.008
 # Prefetch depth for sentence TTS. TTS backend is serial; larger values only
 # buffer more text when synthesis is faster than realtime.
 TTS_QUEUE_MAXSIZE = 8
+WHOLE_REPLY_FALLBACK_CHARS = 300
 PROBE_TIMEOUT_SEC = 1.5
 ECHO_SIMILARITY_THRESHOLD = 0.5
 PROBE_MIN_CHARS = 3
 _BACKGROUND_DELEGATION_REPORT_TASKS: set[asyncio.Task[None]] = set()
+
+
+@dataclass(slots=True)
+class _VoiceTurnTiming:
+    """Timing and text captured for one recognized user turn."""
+
+    speech_end_at: float
+    transcript: str = ""
+    stt_confirmed_at: float | None = None
+    first_token_at: float | None = None
+    first_audio_at: float | None = None
+    reply_chars: int = 0
+    ask_anima_called: bool = False
 
 
 # Silence-triggered monologue. Modelled on AI-VTuber solo-talk routines:
@@ -343,11 +360,17 @@ class VoiceSession:
         self._probe_started = 0.0
         self._probe_task: asyncio.Task[None] | None = None
         self._probe_followup_pending = False
+        self._probe_speech_end_at: float | None = None
         self._tts_available: bool | None = None
         self._splitter = StreamingSentenceSplitter()
         self._consecutive_tts_failures: int = 0
         self._tts_queue: asyncio.Queue[str] | None = None
         self._tts_worker: asyncio.Task[None] | None = None
+        self._active_turn: _VoiceTurnTiming | None = None
+        self._voice_filler_phrases: tuple[str, ...] = ()
+        self._voice_filler_cache_task: asyncio.Task[None] | None = None
+        if channel == "phone" and self._prefers_whole_reply:
+            self._voice_filler_phrases = tuple(t(f"phone.voice_filler_{index}") for index in range(1, 4))
 
         # The watcher owns transport-specific self-turn guards. Delegation
         # queues and jobs live in FrontConversation.
@@ -388,6 +411,63 @@ class VoiceSession:
             ipc_timeout=IPC_STREAM_TIMEOUT,
             max_concurrent_delegations=MAX_ASK_ANIMA_CONCURRENT,
             on_delegation=self._ensure_delegation_watcher,
+            on_ask_anima=self._note_ask_anima_call,
+        )
+        if self._voice_filler_phrases:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                self._voice_filler_cache_task = loop.create_task(
+                    self._prepare_voice_filler_cache(),
+                    name=f"voice-filler-cache-{self._anima_name}",
+                )
+
+    @property
+    def _prefers_whole_reply(self) -> bool:
+        """Whether this TTS provider has high fixed latency per request."""
+        return getattr(self._tts, "prefers_whole_reply", False) is True
+
+    def _note_ask_anima_call(self) -> None:
+        """Record whether the current user turn invoked the delegation tool."""
+        if self._active_turn is not None:
+            self._active_turn.ask_anima_called = True
+
+    def _record_llm_delta(self, delta: str) -> None:
+        """Capture the first LLM output time and the text for turn diagnostics."""
+        turn = self._active_turn
+        if turn is None or not delta:
+            return
+        if turn.first_token_at is None:
+            turn.first_token_at = time.monotonic()
+        turn.reply_chars += len(delta)
+
+    def _note_first_audio(self) -> None:
+        """Record when generated reply audio is first handed to the transport."""
+        turn = self._active_turn
+        if turn is not None and turn.first_audio_at is None:
+            turn.first_audio_at = time.monotonic()
+
+    @staticmethod
+    def _elapsed_seconds(start: float | None, end: float | None) -> str:
+        if start is None or end is None:
+            return "n/a"
+        return f"{max(0.0, end - start):.3f}"
+
+    def _log_voice_turn(self, turn: _VoiceTurnTiming) -> None:
+        transcript = json.dumps(turn.transcript[:60], ensure_ascii=False)
+        logger.info(
+            "voice_turn anima=%s channel=%s transcript=%s speech_end_to_stt_sec=%s "
+            "stt_to_first_token_sec=%s first_token_to_audio_sec=%s reply_chars=%s ask_anima=%s",
+            self._anima_name,
+            self._channel,
+            transcript,
+            self._elapsed_seconds(turn.speech_end_at, turn.stt_confirmed_at),
+            self._elapsed_seconds(turn.stt_confirmed_at, turn.first_token_at),
+            self._elapsed_seconds(turn.first_token_at, turn.first_audio_at),
+            turn.reply_chars,
+            str(turn.ask_anima_called).lower(),
         )
 
     async def handle_audio_chunk(self, data: bytes) -> None:
@@ -457,8 +537,12 @@ class VoiceSession:
     async def handle_speech_end(self, from_person: str | None = None) -> None:
         """Process accumulated audio: STT -> optional refine -> Chat -> TTS."""
         from_person = from_person or self._from_person
+        speech_end_at = time.monotonic()
         if self._probe_active:
+            self._probe_speech_end_at = speech_end_at
             await self._finish_probe()
+            if not self._probe_followup_pending:
+                self._probe_speech_end_at = None
             return
         if self._probe_followup_pending:
             deadline = time.monotonic() + 2.0
@@ -473,12 +557,18 @@ class VoiceSession:
             # beginning.
             self._streamer.reset()
         if self._processing:
-            logger.debug("speech_end ignored — already processing (%s)", self._anima_name)
+            self._probe_speech_end_at = None
+            logger.info("speech_end ignored (processing) anima=%s channel=%s", self._anima_name, self._channel)
             return
         # A real user turn resets the proactive state so the next silence
         # period begins with the conversational first prompt again.
         self._proactive_count = 0
         self._proactive_delay = float(getattr(self._voice_config, "proactive_initial_delay_sec", 10.0))
+        turn = _VoiceTurnTiming(
+            speech_end_at=speech_end_at if self._probe_speech_end_at is None else self._probe_speech_end_at
+        )
+        self._probe_speech_end_at = None
+        self._active_turn = turn
         self._processing = True
         try:
             await self._do_speech_end(from_person)
@@ -487,6 +577,10 @@ class VoiceSession:
             self._finalizing = False
             self._streamer.reset()
             self._last_activity = time.monotonic()
+            if turn.stt_confirmed_at is not None:
+                self._log_voice_turn(turn)
+            if self._active_turn is turn:
+                self._active_turn = None
 
     async def _check_tts_health(self) -> bool:
         """Check TTS availability. Only caches positive results; retries on failure."""
@@ -517,13 +611,25 @@ class VoiceSession:
         self._audio_buffer.clear()
 
         if not audio_data:
+            logger.info("speech_end ignored (empty audio) anima=%s channel=%s", self._anima_name, self._channel)
             return
         if len(audio_data) < MIN_SPEECH_BYTES:
-            logger.debug("Ignore short voice chunk: bytes=%s", len(audio_data))
+            logger.info(
+                "speech_end ignored (short chunk) anima=%s channel=%s bytes=%s",
+                self._anima_name,
+                self._channel,
+                len(audio_data),
+            )
             return
         rms = _normalized_rms_from_pcm16(audio_data)
         if rms < SILENCE_RMS_THRESHOLD:
-            logger.debug("Ignore likely silence: rms=%.5f bytes=%s", rms, len(audio_data))
+            logger.info(
+                "speech_end ignored (silence) anima=%s channel=%s rms=%.5f bytes=%s",
+                self._anima_name,
+                self._channel,
+                rms,
+                len(audio_data),
+            )
             return
 
         # Stop live streaming so finalize sees a stable buffer.
@@ -560,6 +666,7 @@ class VoiceSession:
             return
 
         if not text:
+            logger.info("speech_end ignored (STT empty) anima=%s channel=%s", self._anima_name, self._channel)
             return
 
         # 2. Optional LLM refine (skipped on the streaming path so the
@@ -579,6 +686,11 @@ class VoiceSession:
                 text = refined.get("refined_text", text)
             except Exception as e:
                 logger.warning("STT refine failed, using raw: %s", e)
+
+        turn = self._active_turn
+        if turn is not None:
+            turn.transcript = text
+            turn.stt_confirmed_at = time.monotonic()
 
         # 3. Send transcript to client
         await self._transport.send_event({"type": "transcript", "text": text})
@@ -604,7 +716,10 @@ class VoiceSession:
             pass
 
         response_done_sent = False
+        whole_reply_tts = self._prefers_whole_reply
+        response_chunks: list[str] | None = [] if tts_ok and whole_reply_tts else None
         if tts_ok:
+            await self._maybe_send_voice_filler()
             await self._start_tts_worker()
         try:
             # Voice front lane: when configured and reachable, handle the turn
@@ -633,9 +748,16 @@ class VoiceSession:
                     result_data = ipc_response.result or {}
                     cycle_result = result_data.get("cycle_result", {})
                     emotion = cycle_result.get("emotion", "neutral")
-                    remaining = self._splitter.flush()
-                    if remaining and tts_ok:
-                        await self._enqueue_tts(remaining)
+                    if tts_ok:
+                        if whole_reply_tts:
+                            self._splitter.flush()
+                            await self._enqueue_reply_tts("".join(response_chunks or []))
+                        else:
+                            remaining = self._splitter.flush()
+                            if remaining:
+                                await self._enqueue_tts(remaining)
+                    else:
+                        self._splitter.flush()
                     await self._finish_tts_and_response_done(emotion)
                     response_done_sent = True
                     break
@@ -652,6 +774,9 @@ class VoiceSession:
                     if chunk_data.get("type") == "text_delta":
                         delta = chunk_data.get("text", "")
                         if delta:
+                            if response_chunks is not None:
+                                response_chunks.append(delta)
+                            self._record_llm_delta(delta)
                             await self._transport.send_event(
                                 {
                                     "type": "response_text",
@@ -659,7 +784,7 @@ class VoiceSession:
                                     "done": False,
                                 }
                             )
-                            if tts_ok:
+                            if tts_ok and not whole_reply_tts:
                                 sentences = self._splitter.feed(delta)
                                 for sentence in sentences:
                                     if self._interrupted:
@@ -683,9 +808,16 @@ class VoiceSession:
                     elif chunk_data.get("type") == "cycle_done":
                         cycle_result = chunk_data.get("cycle_result", {})
                         emotion = cycle_result.get("emotion", "neutral")
-                        remaining = self._splitter.flush()
-                        if remaining and tts_ok:
-                            await self._enqueue_tts(remaining)
+                        if tts_ok:
+                            if whole_reply_tts:
+                                self._splitter.flush()
+                                await self._enqueue_reply_tts("".join(response_chunks or []))
+                            else:
+                                remaining = self._splitter.flush()
+                                if remaining:
+                                    await self._enqueue_tts(remaining)
+                        else:
+                            self._splitter.flush()
                         await self._finish_tts_and_response_done(emotion)
                         response_done_sent = True
                         break
@@ -729,7 +861,7 @@ class VoiceSession:
         )
 
     async def _tts_consumer_loop(self) -> None:
-        """Pull sentences in order and synthesize. One consumer preserves order."""
+        """Pull queued speech text in order and synthesize. One consumer preserves order."""
         queue = self._tts_queue
         if queue is None:
             return
@@ -749,11 +881,26 @@ class VoiceSession:
             raise
 
     async def _enqueue_tts(self, sentence: str) -> None:
-        """Producer side: enqueue a sentence without waiting for synthesis."""
+        """Producer side: enqueue speech text without waiting for synthesis."""
         queue = self._tts_queue
         if not sentence or queue is None or self._interrupted:
             return
         await queue.put(sentence)
+
+    async def _enqueue_reply_tts(self, text: str) -> None:
+        """Enqueue one whole short reply for fixed-latency TTS, or sentence chunks."""
+        if not text or self._interrupted:
+            return
+        if self._prefers_whole_reply and len(text) <= WHOLE_REPLY_FALLBACK_CHARS:
+            await self._enqueue_tts(text)
+            return
+
+        from core.voice.sentence_splitter import split_sentences
+
+        for sentence in split_sentences(text):
+            if self._interrupted:
+                break
+            await self._enqueue_tts(sentence)
 
     async def _drain_tts_queue(self) -> None:
         """Wait until the consumer finishes every enqueued sentence."""
@@ -945,9 +1092,10 @@ class VoiceSession:
                 self._processing = False
 
     async def _emit_text_delta(self, delta: str, tts_ok: bool) -> None:
-        """Send a text delta to the client and feed the TTS sentence splitter."""
+        """Send a text delta and queue sentence TTS when whole-reply synthesis is not preferred."""
+        self._record_llm_delta(delta)
         await self._transport.send_event({"type": "response_text", "text": delta, "done": False})
-        if tts_ok:
+        if tts_ok and not self._prefers_whole_reply:
             sentences = self._splitter.feed(delta)
             for sentence in sentences:
                 if self._interrupted:
@@ -1024,11 +1172,16 @@ class VoiceSession:
 
             if self._interrupted or not self._front_conversation.last_completed:
                 return False
-            remaining = self._splitter.flush()
-            if remaining and tts_ok:
-                await self._enqueue_tts(remaining)
-            await self._front_conversation.record_pending_turn()
             full_text = self._front_conversation.last_full_text
+            if self._prefers_whole_reply:
+                self._splitter.flush()
+                if tts_ok:
+                    await self._enqueue_reply_tts(full_text)
+            else:
+                remaining = self._splitter.flush()
+                if remaining and tts_ok:
+                    await self._enqueue_tts(remaining)
+            await self._front_conversation.record_pending_turn()
             if not full_text.strip():
                 logger.warning("Voice front turn produced no text (%s)", self._anima_name)
                 return False
@@ -1149,6 +1302,16 @@ class VoiceSession:
                 pass  # noqa: S110 -- cancellation is expected during watcher shutdown
             except Exception:
                 logger.debug("Voice idle watcher failed during shutdown", exc_info=True)
+        filler_task = self._voice_filler_cache_task
+        self._voice_filler_cache_task = None
+        if filler_task is not None and not filler_task.done():
+            filler_task.cancel()
+            try:
+                await filler_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug("Voice filler cache task stop error", exc_info=True)
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()
@@ -1192,8 +1355,78 @@ class VoiceSession:
         now = time.monotonic()
         self._playback_end_at = max(self._playback_end_at, now) + max(seconds, 0.0)
 
+    def _voice_filler_cache_path(self, text: str) -> Path:
+        """Build the per-provider/voice/text WAV cache path for one filler."""
+        from core.paths import get_data_dir
+
+        provider = str(getattr(self._tts_config, "provider", ""))
+        voice_id = str(getattr(self._tts_config, "voice_id", ""))
+        key = hashlib.sha256(f"{provider}\0{voice_id}\0{text}".encode()).hexdigest()
+        return get_data_dir() / "cache" / "voice_fillers" / f"{key}.wav"
+
+    async def _prepare_voice_filler_cache(self) -> None:
+        """Pre-synthesize uncached phone fillers without blocking session startup."""
+        for text in self._voice_filler_phrases:
+            try:
+                path = self._voice_filler_cache_path(text)
+                if path.is_file():
+                    try:
+                        cached_audio = path.read_bytes()
+                    except OSError:
+                        cached_audio = b""
+                    if _wav_seconds(cached_audio) is not None:
+                        continue
+                spoken = prepare_speech(text, provider=getattr(self._tts_config, "provider", None)).spoken
+                if not spoken:
+                    continue
+                audio = await self._tts.synthesize_full(spoken, self._tts_config)
+                if not audio or _wav_seconds(audio) is None:
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary_path = path.with_name(f"{path.name}.{id(self)}.tmp")
+                try:
+                    temporary_path.write_bytes(audio)
+                    temporary_path.replace(path)
+                finally:
+                    temporary_path.unlink(missing_ok=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("Voice filler synthesis/cache failed (%s)", self._anima_name, exc_info=True)
+
+    async def _maybe_send_voice_filler(self) -> None:
+        """Send one already-cached phone filler, never waiting for synthesis."""
+        if self._channel != "phone" or not self._prefers_whole_reply or not self._voice_filler_phrases:
+            return
+
+        available: list[tuple[str, bytes, float]] = []
+        try:
+            for text in self._voice_filler_phrases:
+                try:
+                    audio = self._voice_filler_cache_path(text).read_bytes()
+                except OSError:
+                    continue
+                seconds = _wav_seconds(audio)
+                if seconds is not None:
+                    available.append((text, audio, seconds))
+        except Exception:
+            logger.debug("Voice filler cache lookup failed (%s)", self._anima_name, exc_info=True)
+            return
+        if not available:
+            return
+
+        text, audio, seconds = random.choice(available)
+        self._recent_tts_text.append(text)
+        try:
+            await self._transport.send_audio(audio)
+        except Exception:
+            logger.debug("Voice filler send failed (%s)", self._anima_name, exc_info=True)
+            return
+        self._note_playback(seconds or len(text) / 6.0)
+        logger.info("voice_filler anima=%s text=%r cached=true", self._anima_name, text)
+
     async def _synthesize_and_send(self, text: str) -> None:
-        """TTS synthesize a sentence and send audio to client."""
+        """Synthesize queued speech text and send its audio to the client."""
         speech_text = prepare_speech(text, provider=getattr(self._tts_config, "provider", None))
         text = speech_text.display
         if not text:
@@ -1209,6 +1442,7 @@ class VoiceSession:
             async for audio_chunk in self._tts.synthesize(spoken, self._tts_config):
                 if self._interrupted:
                     break
+                self._note_first_audio()
                 await self._transport.send_audio(audio_chunk)
                 secs += _wav_seconds(audio_chunk) or 0.0
             # ponytail: non-WAV (mp3 stream) falls back to ~6 chars/sec
@@ -1239,18 +1473,13 @@ class VoiceSession:
         if not await self._check_tts_health():
             return False
 
-        from core.voice.sentence_splitter import split_sentences
-
         self._interrupted = False
         self._tts_playing = True
         try:
             await self._transport.send_event({"type": "response_start"})
             await self._transport.send_event({"type": "response_text", "text": text})
             await self._start_tts_worker()
-            for sentence in split_sentences(text):
-                if self._interrupted:
-                    break
-                await self._enqueue_tts(sentence)
+            await self._enqueue_reply_tts(text)
             await self._finish_tts_and_response_done("neutral")
             return not self._interrupted
         except Exception:
@@ -1288,15 +1517,11 @@ class VoiceSession:
             await self._transport.send_event({"type": "emotion", "emotion": emotion})
             if tts_ok:
                 self._tts_playing = True
-                # Same prefetch worker as speech replies — first audio still
-                # arrives after the first sentence synthesizes, later ones pipeline.
-                from core.voice.sentence_splitter import split_sentences
-
+                # Use the same whole-reply policy as speech replies for providers
+                # with a high fixed per-request startup latency.
                 await self._start_tts_worker()
-                for sentence in split_sentences(text):
-                    if self._interrupted or self._processing:
-                        break
-                    await self._enqueue_tts(sentence)
+                if not self._interrupted and not self._processing:
+                    await self._enqueue_reply_tts(text)
                 if not self._interrupted and not self._processing:
                     await self._drain_tts_queue()
             await self._transport.send_event({"type": "response_done", "emotion": emotion})
@@ -1330,6 +1555,7 @@ class VoiceSession:
         self._probe_active = True
         self._probe_started = time.monotonic()
         self._probe_followup_pending = False
+        self._probe_speech_end_at = None
         self._audio_buffer.clear()
         self._streamer.reset()
         self._probe_task = asyncio.create_task(
@@ -1395,10 +1621,25 @@ class VoiceSession:
             return False
         self._probe_active = False
         self._cancel_probe_timeout()
-        if len(normalized) < PROBE_MIN_CHARS or _is_self_echo(text, self._recent_tts_text):
+        if len(normalized) < PROBE_MIN_CHARS:
             self._audio_buffer.clear()
             self._streamer.reset()
             await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
+            logger.info(
+                "barge_probe verdict interrupt=false reason=too_short anima=%s channel=%s",
+                self._anima_name,
+                self._channel,
+            )
+            return False
+        if _is_self_echo(text, self._recent_tts_text):
+            self._audio_buffer.clear()
+            self._streamer.reset()
+            await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
+            logger.info(
+                "barge_probe verdict interrupt=false reason=self_echo anima=%s channel=%s",
+                self._anima_name,
+                self._channel,
+            )
             return False
 
         preserved_audio = bytes(self._audio_buffer)
@@ -1406,6 +1647,11 @@ class VoiceSession:
         self._audio_buffer.extend(preserved_audio)
         self._probe_followup_pending = True
         await self._transport.send_event({"type": "barge_verdict", "interrupt": True})
+        logger.info(
+            "barge_probe verdict interrupt=true reason=recognized_speech anima=%s channel=%s",
+            self._anima_name,
+            self._channel,
+        )
         return True
 
     async def handle_discard_audio(self) -> None:
@@ -1415,6 +1661,14 @@ class VoiceSession:
         into the next utterance, but an in-flight reply must keep streaming
         (that is what ``handle_interrupt`` is for).
         """
+        discarded_bytes = len(self._audio_buffer)
+        if discarded_bytes:
+            logger.info(
+                "speech discarded (vad misfire) anima=%s channel=%s bytes=%s",
+                self._anima_name,
+                self._channel,
+                discarded_bytes,
+            )
         self._audio_buffer.clear()
         self._streamer.reset()
 

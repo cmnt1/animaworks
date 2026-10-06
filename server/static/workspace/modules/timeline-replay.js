@@ -1,63 +1,67 @@
 /**
- * timeline-replay.js — 3D scene replay for timeline events.
- *
- * Replays a selected event by highlighting desks, showing message
- * effects, or opening message popups in the office3d scene.
+ * timeline-replay.js — replay timeline events through the active office
+ * renderer, or show them in the shared message popup.
  */
 
 import { showMessage as showMessagePopup } from "./message-popup.js";
 import { resolvePersons } from "./timeline-dom.js";
 
-// ── Highlight helper (imported lazily from office3d) ──
-
-let _highlightDesk = null;
-let _clearHighlight = null;
+let _highlightAnima = null;
+let _getActiveRenderer = null;
+let _highlightImport = null;
+let _clearHighlightTimer = null;
 
 export function ensureHighlightFns() {
-  if (_highlightDesk) return;
-  try {
-    import("./office3d.js").then((mod) => {
-      _highlightDesk = mod.highlightDesk;
-      _clearHighlight = mod.clearHighlight;
-    });
-  } catch {
-    // Will operate without highlight capability
+  if (_highlightAnima) return Promise.resolve();
+  if (!_highlightImport) {
+    _highlightImport = import("./office-renderer.js")
+      .then((mod) => {
+        _highlightAnima = mod.highlightAnima;
+        _getActiveRenderer = mod.getActiveRenderer;
+      })
+      .catch(() => {
+        // Timeline replay can still open shared message details without a renderer.
+      });
   }
+  return _highlightImport;
 }
 
-// ── Replay ─────────────────────────────────────────
+function highlightTemporarily(name) {
+  if (!_highlightAnima || !name) return;
+  if (_clearHighlightTimer) clearTimeout(_clearHighlightTimer);
+  _highlightAnima(name);
+  _clearHighlightTimer = setTimeout(() => {
+    _highlightAnima?.(null);
+    _clearHighlightTimer = null;
+  }, 3000);
+}
 
 /**
- * Replay a timeline event in the 3D scene.
+ * Replay a timeline event in the currently selected office renderer.
  *
- * @param {object} event  — the timeline event
- * @param {HTMLElement} el — the clicked DOM element (for visual feedback)
+ * @param {object} event
+ * @param {HTMLElement} el
  * @param {{ interactionManager: object|null }} ctx
  */
-export function replayEvent(event, el, ctx) {
+export async function replayEvent(event, el, ctx) {
   const { type, anima, meta } = event;
   const { interactionManager } = ctx;
 
-  // Visual feedback
   el.classList.add("replaying");
   setTimeout(() => el.classList.remove("replaying"), 2000);
-
-  ensureHighlightFns();
+  await ensureHighlightFns();
 
   switch (type) {
     case "message":
     case "dm_received":
     case "dm_sent": {
-      const p = resolvePersons(event);
-      if (interactionManager && p.from && p.to) {
-        interactionManager.showMessageEffect(p.from, p.to, p.text);
-      } else if (_highlightDesk && (p.from || p.to)) {
-        _highlightDesk(p.from || p.to);
-        setTimeout(() => { if (_clearHighlight) _clearHighlight(); }, 3000);
+      const persons = resolvePersons(event);
+      if (_getActiveRenderer?.() === "3d" && interactionManager && persons.from && persons.to) {
+        interactionManager.showMessageEffect(persons.from, persons.to, persons.text);
+      } else if (persons.from || persons.to) {
+        highlightTemporarily(persons.from || persons.to);
       }
-      if (meta && meta.message_id) {
-        showMessagePopup(meta.message_id);
-      }
+      if (meta?.message_id) showMessagePopup(meta.message_id);
       break;
     }
 
@@ -67,29 +71,14 @@ export function replayEvent(event, el, ctx) {
     case "board":
     case "channel_read":
     case "channel_post":
-      if (_highlightDesk && anima) {
-        _highlightDesk(anima);
-        setTimeout(() => { if (_clearHighlight) _clearHighlight(); }, 3000);
-      }
-      break;
-
     case "heartbeat":
     case "heartbeat_start":
     case "heartbeat_end":
     case "heartbeat_reflection":
     case "cron":
     case "cron_executed":
-      if (_highlightDesk && anima) {
-        _highlightDesk(anima);
-        setTimeout(() => { if (_clearHighlight) _clearHighlight(); }, 3000);
-      }
-      break;
-
     default:
-      if (_highlightDesk && anima) {
-        _highlightDesk(anima);
-        setTimeout(() => { if (_clearHighlight) _clearHighlight(); }, 3000);
-      }
+      highlightTemporarily(anima);
       break;
   }
 }

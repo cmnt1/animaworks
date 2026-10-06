@@ -31,10 +31,10 @@ class TestSettingSourcesE2E:
         options_src = inspect.getsource(AgentSDKExecutor._build_sdk_options)
         assert "setting_sources=[]" in options_src, "_build_sdk_options() missing setting_sources=[]"
 
-        # Verify both execute() and execute_streaming() use _build_sdk_options
+        # execute() now aggregates execute_streaming() (2c9ae785).
         execute_src = inspect.getsource(AgentSDKExecutor.execute)
         streaming_src = inspect.getsource(AgentSDKExecutor.execute_streaming)
-        assert "_build_sdk_options" in execute_src, "execute() must call _build_sdk_options()"
+        assert "execute_streaming" in execute_src, "execute() must delegate to execute_streaming()"
         assert "_build_sdk_options" in streaming_src, "execute_streaming() must call _build_sdk_options()"
 
 

@@ -2,7 +2,7 @@
 // Extracted from app.js: Board channel/DM read + post
 
 import { escapeHtml, smartTimestamp } from "./utils.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { api } from "../../modules/api.js";
 import { getCurrentUser } from "./login.js";
 import { createLogger } from "../../shared/logger.js";

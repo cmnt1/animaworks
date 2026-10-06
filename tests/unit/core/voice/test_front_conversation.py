@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.i18n import t
 from core.voice.front_conversation import (
     ASK_ANIMA_DELEGATION_NOTE,
     VOICE_MODE_SUFFIX,
@@ -97,7 +98,7 @@ async def test_ask_anima_returns_ack_then_queues_and_drains_result() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ask_anima_enforces_concurrency_limit() -> None:
+async def test_ask_anima_allows_only_one_running_delegation() -> None:
     release = asyncio.Event()
     started = asyncio.Event()
 
@@ -108,16 +109,21 @@ async def test_ask_anima_enforces_concurrency_limit() -> None:
 
     supervisor = MagicMock()
     supervisor.send_request_stream = MagicMock(side_effect=stream)
-    conversation = _make_conversation(supervisor, max_concurrent_delegations=1)
+    conversation = _make_conversation(supervisor, max_concurrent_delegations=2)
 
     assert conversation.ask_anima("first") == "受理しました (job 1)。完了したら知らせます"
     await asyncio.wait_for(started.wait(), timeout=1)
-    assert conversation.ask_anima("second") == "実行中の依頼が1件ある。完了を待ってほしい"
+    assert conversation.ask_anima("second") == t("voice.ask_anima_in_progress", job=1, request="first")
     assert conversation.has_pending_delegations()
+    supervisor.send_request_stream.assert_called_once()
 
     release.set()
     await asyncio.wait_for(conversation.wait_delegation_done(), timeout=1)
     assert not conversation.has_pending_delegations()
+
+    assert conversation.ask_anima("after completion") == "受理しました (job 2)。完了したら知らせます"
+    await asyncio.wait_for(conversation.wait_delegation_done(), timeout=1)
+    assert supervisor.send_request_stream.call_count == 2
 
 
 @pytest.mark.asyncio

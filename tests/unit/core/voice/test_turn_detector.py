@@ -12,6 +12,7 @@ from core.voice.turn_detector import (
     BARGE_MIN_MS,
     ECHO_TAIL_MS,
     FRAME_BYTES,
+    REDEMPTION_MS,
     TurnDetector,
     TurnDetectorEvent,
     drive_session,
@@ -50,6 +51,20 @@ def test_speech_shorter_than_minimum_emits_misfire_for_discard() -> None:
     events = detector.feed(_pcm([1] * 46))
 
     assert _event_types(events) == ["speech_start", "audio", "misfire"]
+
+
+def test_custom_redemption_ms_keeps_phone_turn_open_longer() -> None:
+    probabilities = iter([0.9] * 13 + [0.0] * 100)
+    detector = TurnDetector(lambda _frame: next(probabilities, 0.0), redemption_ms=2000)
+
+    after_1400ms = detector.feed(_pcm([1] * 13 + [0] * 44))
+    assert "speech_end" not in _event_types(after_1400ms)
+
+    after_2000ms = detector.feed(_pcm([0] * 19))
+    assert "speech_end" in _event_types(after_2000ms)
+    assert detector._redemption_ms == 2000
+    assert REDEMPTION_MS == 1400
+    assert TurnDetector()._redemption_ms == 1400
 
 
 def test_silence_does_not_emit_turn_events() -> None:

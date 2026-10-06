@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from core.enclave.config import EnclaveClientConfig, EnclaveConfig
+
 logger = logging.getLogger("animaworks.config")
 
 # ---------------------------------------------------------------------------
@@ -925,6 +927,7 @@ class PhoneConfig(BaseModel):
         gt=0,
         description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
     )
+    turn_end_silence_ms: int = Field(default=2000, ge=300, le=5000)
 
 
 class VoicevoxConfig(BaseModel):
@@ -1360,6 +1363,8 @@ class AnimaWorksConfig(BaseModel):
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
     cli: CLIConfig = CLIConfig()
+    enclave: EnclaveConfig = EnclaveConfig()
+    enclaves: dict[str, EnclaveClientConfig] = Field(default_factory=dict)
 
 
 __all__ = [

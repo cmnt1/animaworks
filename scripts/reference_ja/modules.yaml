@@ -5,6 +5,7 @@ core.anima: Digital Anima のライフサイクルと実行時オブジェクト
 core.auth: ユーザー認証、セッション、認証情報の管理。
 core.channels: Slack、Discord、Chatwork の共通送信クライアントとトークン解決。
 core.config: アプリケーション設定のスキーマ、読み込み、検証、移行。
+core.enclave: 隔離された enclave モードの設定モデルと起動時セキュリティガード。
 core.execution: ツール実行、コマンド実行、安全制御。
 core.i18n: 翻訳カタログと言語選択。
 core.infra: ログ、データベース、キャッシュなどの基盤機能。

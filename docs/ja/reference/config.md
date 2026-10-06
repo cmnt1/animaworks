@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: b7e3307862c2b48ff81f32b8563000402deabef0900845ad7ed1988e1b8edb99 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 51a2bac64ff95cd54b86ab12dd0de0619639b862f739b3cb6efeda88c5993558 -->
 
 # 設定リファレンス
 
@@ -701,6 +701,31 @@
 |---|---|---|---|
 | `cli` | `CLIConfig` | `{CLIConfig}` | CLI クライアントの設定。default_anima は引数なしの animaworks / animaworks chat で開く anima（空なら上司なしの有効な anima が1体だけの時それを使う）。 |
 | `cli.default_anima` | `str` | `""` | — |
+
+### `enclave`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。 |
+| `enclave.enabled` | `bool` | `false` | — |
+| `enclave.name` | `str` | `""` | — |
+| `enclave.socket_path` | `str` | `""` | — |
+| `enclave.socket_group` | `str` | `""` | — |
+| `enclave.entry_anima` | `str` | `""` | — |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
+| `enclave.max_concurrency` | `int` | `2` | — |
+| `enclave.request_timeout_s` | `int` | `900` | — |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
+| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+
+### `enclaves`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | 外部の enclave インスタンスに接続するクライアント側の設定。 |
+| `enclaves.socket_path` | `str` | `"—"` | — |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
+| `enclaves.timeout_s` | `int` | `900` | — |
 
 ## anima ごとの `status.json`
 

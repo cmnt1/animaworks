@@ -16,6 +16,8 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
+
 from core.execution.base import (
     _BUDGET_FLOOR,
     _BUDGET_SCALE_MAX,
@@ -327,7 +329,8 @@ class TestPromptLogExtendedFields:
     """_save_prompt_log writes entries with context_window, prior_messages,
     tool_schemas, and type fields."""
 
-    def test_prompt_log_contains_extended_fields(self, tmp_path: Path):
+    # Prompt-log persistence moved to async StateWriter (169aca61).
+    async def test_prompt_log_contains_extended_fields(self, tmp_path: Path):
         """Written JSONL entry includes all extended fields."""
         from core.agent.agent_core import _save_prompt_log
 
@@ -337,7 +340,7 @@ class TestPromptLogExtendedFields:
         prior = [{"role": "user", "content": "Hello"}]
         schemas = [{"name": "Read", "description": "Read a file"}]
 
-        _save_prompt_log(
+        await _save_prompt_log(
             anima_dir,
             trigger="user_message",
             sender="admin",
@@ -377,7 +380,7 @@ class TestPromptLogExtendedFields:
         assert entry["session_id"] == "sess-log-001"
         assert "ts" in entry
 
-    def test_prompt_log_handles_none_optional_fields(self, tmp_path: Path):
+    async def test_prompt_log_handles_none_optional_fields(self, tmp_path: Path):
         """When prior_messages and tool_schemas are None, the entry still
         contains the fields with None/0 values."""
         from core.agent.agent_core import _save_prompt_log
@@ -385,7 +388,7 @@ class TestPromptLogExtendedFields:
         anima_dir = tmp_path / "animas" / "log-none"
         (anima_dir / "prompt_logs").mkdir(parents=True, exist_ok=True)
 
-        _save_prompt_log(
+        await _save_prompt_log(
             anima_dir,
             trigger="heartbeat",
             sender="system",
@@ -419,6 +422,16 @@ class TestPromptLogExtendedFields:
 
 class TestPromptLogRotation:
     """_rotate_prompt_logs deletes files older than 3 days and keeps recent ones."""
+
+    # StateWriter took ownership of the rotation-date cache in 169aca61.
+    @pytest.fixture(autouse=True)
+    def _reset_state_writer_rotation_date(self):
+        import core.platform.state_writer as state_writer
+
+        original_date = state_writer._PROMPT_ROTATION_DATE
+        state_writer._PROMPT_ROTATION_DATE = None
+        yield
+        state_writer._PROMPT_ROTATION_DATE = original_date
 
     def test_old_files_deleted_recent_kept(self, tmp_path: Path):
         """Log files older than _PROMPT_LOG_RETENTION_DAYS are deleted."""

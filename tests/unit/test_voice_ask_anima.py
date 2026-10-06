@@ -7,7 +7,7 @@
 Covers:
   - front lane tool-call stream → tool_executor → follow-up completion → text
   - ``_ask_anima`` immediate ACK / task firing / result reflow into the queue
-  - concurrent-cap (2) with rejection ACK on the 3rd
+  - one-active-job delegation guard with an in-progress ACK
   - result prefixing into the next user turn (system prompt unchanged)
   - WS close does NOT cancel running delegation tasks
 """
@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.config.schemas import VoiceConfig
+from core.i18n import t
 from core.voice.front import ASK_ANIMA_TOOL, VoiceFrontLane
 from core.voice.session import MAX_ASK_ANIMA_CONCURRENT, VoiceSession
 from core.voice.tts_base import TTSConfig
@@ -81,6 +82,14 @@ def _blocked_supervisor() -> tuple[MagicMock, asyncio.Event, asyncio.Event]:
     supervisor = MagicMock()
     supervisor.send_request_stream = MagicMock(side_effect=_stream)
     return supervisor, started, release
+
+
+def test_ask_anima_tool_description_and_rejection_are_localized() -> None:
+    description = ASK_ANIMA_TOOL["function"]["description"]
+    assert "実行中の依頼がある間は新しい依頼をせず" in description
+    assert "Do not submit a new request" in t("voice.ask_anima_tool_description", locale="en")
+    assert "새 요청" in t("voice.ask_anima_tool_description", locale="ko")
+    assert "完了後に改めて依頼" in t("voice.ask_anima_in_progress", locale="ja", job=1, request="作業")
 
 
 # ── Front lane tool-call stream ──────────────────────────────────
@@ -168,9 +177,7 @@ class TestFrontLaneToolCall:
             )
 
         executor = MagicMock()
-        with patch(
-            "core.voice.front.litellm.acompletion", side_effect=[_plain_response()]
-        ):
+        with patch("core.voice.front.litellm.acompletion", side_effect=[_plain_response()]):
             got = [d async for d in lane.stream("hi", tool_executor=executor)]
         assert "".join(got) == "こんにちは"
         executor.assert_not_called()
@@ -192,17 +199,19 @@ class TestAskAnimaDelegation:
         assert "[ask_anima完了 job 1: 完了しました]" in drained
 
     @pytest.mark.asyncio
-    async def test_concurrent_cap_rejects_third(self) -> None:
+    async def test_running_delegation_rejects_another_request(self) -> None:
         supervisor, started, release = _blocked_supervisor()
         sess = _make_session(supervisor)
         ack1 = sess._ask_anima("a")
-        ack2 = sess._ask_anima("b")
         assert "受理しました" in ack1
-        assert "受理しました" in ack2
-        ack3 = sess._ask_anima("c")
-        assert f"実行中の依頼が{MAX_ASK_ANIMA_CONCURRENT}件ある" in ack3
-        # the rejected one did NOT create a new job task
-        assert len(sess._delegation_jobs) == 2
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        ack2 = sess._ask_anima("b")
+        assert ack2 == t("voice.ask_anima_in_progress", job=1, request="a")
+        assert MAX_ASK_ANIMA_CONCURRENT == 1
+        assert len(sess._delegation_jobs) == 1
+        supervisor.send_request_stream.assert_called_once()
+
         release.set()
         await asyncio.gather(*list(sess._delegation_jobs.values()))
 
@@ -218,7 +227,7 @@ class TestAskAnimaDelegation:
         async def _stream(user_text: str, **kwargs):  # type: ignore[no-untyped-def]
             captured["text"] = user_text
             captured["tools"] = kwargs.get("tools")
-            yield "了解しました。 <!-- emotion: {\"emotion\": \"smile\"} -->"
+            yield '了解しました。 <!-- emotion: {"emotion": "smile"} -->'
 
         lane = AsyncMock()
         lane.check_health = AsyncMock(return_value=True)

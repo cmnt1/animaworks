@@ -138,7 +138,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 |-----------|------|
 | `version` | 설정 파일 버전 |
 | `setup_complete` | 설정 완료 플래그 |
-| `locale` | 로캘 설정 |
+| `locale` | 로케일 설정 |
 | `system` | 시스템 설정(모드, 로그 수준) |
 | `credentials` | API 인증 정보 |
 | `model_modes` | 모델명→실행 모드 매핑 |
@@ -181,6 +181,8 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `icon_url_template` |  |
 | `ui` |  |
 | `cli` |  |
+| `enclave` |  |
+| `enclaves` |  |
 
 <!-- AUTO-GENERATED:END -->
 
