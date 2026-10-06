@@ -22,10 +22,10 @@ import pytest
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 from core.memory.retrieval.rag_search import RAGMemorySearch
-from core.schemas import CronTask
 from core.runtime.memory_service import MemoryService
-from server.supervisor.process_handle import ProcessHandle
 from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
+from core.schemas import CronTask
+from server.supervisor.process_handle import ProcessHandle
 
 pytestmark = [
     pytest.mark.timeout(90),
@@ -381,6 +381,9 @@ async def test_phase3_task_runner_process_smoke(
 ) -> None:
     embed_url, _ = fake_embed_url
     monkeypatch.setenv("ANIMAWORKS_EMBED_URL", embed_url)
+    # Task runners require explicit vector and rerank URLs after the service split (a2f29ea0).
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://127.0.0.1:9")
     supervisor = TaskRunnerSupervisor(
         "cascade-a",
         phase3_animas["cascade-a"],

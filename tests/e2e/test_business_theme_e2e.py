@@ -6,6 +6,7 @@
 Validates the full theme pipeline: config API, static file serving,
 CSS variables, and HTML structure for dashboard and workspace.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from httpx import ASGITransport, AsyncClient
-
 
 # ── Test App Factory ─────────────────────────────────────────────
 
@@ -195,16 +195,14 @@ class TestConfigAPIIncludesUITheme:
 
     async def test_config_api_includes_ui_theme(self, tmp_path: Path, monkeypatch) -> None:
         """GET /api/system/config includes ui.theme when config exists."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
         config_dir = tmp_path / ".animaworks"
         config_dir.mkdir()
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(config_dir))
         config = {
             "setup_complete": True,
             "ui": {"theme": "business"},
         }
-        (config_dir / "config.json").write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (config_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
 
         app = _create_test_app(tmp_path)
         async with _client(app) as c:

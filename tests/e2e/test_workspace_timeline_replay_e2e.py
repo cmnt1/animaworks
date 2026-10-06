@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ── File paths ──────────────────────────────────────────────
@@ -27,7 +26,8 @@ APP_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app.js"
 APP_WS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
 INTERACTIONS_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "interactions.js"
 ACTIVITY_TYPES_JS = REPO_ROOT / "server" / "static" / "shared" / "activity-types.js"
-ACTIVITY_PY = REPO_ROOT / "core" / "memory" / "activity" / "logger.py"
+# ActivityLogger moved into core.activity (1da8e2e8).
+ACTIVITY_PY = REPO_ROOT / "core" / "activity" / "logger.py"
 
 
 # ── Helpers ─────────────────────────────────────────────────
@@ -62,10 +62,9 @@ def _extract_filter_types(source: str) -> list[str]:
     m = re.search(r"const\s+filterDefs\s*=\s*\[(.*?)\];", source, re.DOTALL)
     assert m, "filterDefs not found in timeline.js"
     block = m.group(1)
-    types = re.findall(r'"(\w+)"', block)
     # Exclude labels like "All" that appear as label values
     # filterDefs types are inside `types: [...]` arrays
-    type_arrays = re.findall(r'types:\s*\[(.*?)\]', block)
+    type_arrays = re.findall(r"types:\s*\[(.*?)\]", block)
     all_types: list[str] = []
     for arr in type_arrays:
         all_types.extend(re.findall(r'"(\w+)"', arr))
@@ -80,9 +79,18 @@ class TestReplayEventCoversAllActivityTypes:
 
     # Types that are not user-actionable and do NOT need replay handling
     NON_ACTIONABLE_TYPES = {
-        "status", "system", "session", "notification", "error",
-        "issue_resolved", "human_notify", "tool_use", "tool_result",
-        "memory_write", "heartbeat_reflection", "tool",
+        "status",
+        "system",
+        "session",
+        "notification",
+        "error",
+        "issue_resolved",
+        "human_notify",
+        "tool_use",
+        "tool_result",
+        "memory_write",
+        "heartbeat_reflection",
+        "tool",
     }
 
     def test_all_activity_types_handled_in_switch(self) -> None:
@@ -101,8 +109,7 @@ class TestReplayEventCoversAllActivityTypes:
 
         missing = [t for t in actionable if t not in switch_set]
         assert missing == [], (
-            f"Actionable types missing from _replayEvent switch: {missing}. "
-            f"Switch has: {sorted(switch_set)}"
+            f"Actionable types missing from _replayEvent switch: {missing}. Switch has: {sorted(switch_set)}"
         )
 
     def test_filter_types_all_have_replay_support(self) -> None:
@@ -121,15 +128,12 @@ class TestReplayEventCoversAllActivityTypes:
         switch_cases = _extract_switch_cases(replay_src)
         switch_set = set(switch_cases)
 
-        actionable_filter_types = [
-            t for t in filter_types if t not in self.NON_ACTIONABLE_TYPES
-        ]
+        actionable_filter_types = [t for t in filter_types if t not in self.NON_ACTIONABLE_TYPES]
         assert len(actionable_filter_types) > 0, "Should have actionable filter types"
 
         missing = [t for t in actionable_filter_types if t not in switch_set]
         assert missing == [], (
-            f"Actionable filter types missing from _replayEvent switch: {missing}. "
-            f"Switch has: {sorted(switch_set)}"
+            f"Actionable filter types missing from _replayEvent switch: {missing}. Switch has: {sorted(switch_set)}"
         )
 
 
@@ -142,26 +146,20 @@ class TestWSToReplayDataFlow:
     def test_ws_message_event_has_meta_from_person(self) -> None:
         """app-websocket.js anima.interaction handler should put from_person in meta."""
         src = _read(APP_WS_JS)
-        assert 'onEvent("anima.interaction"' in src or 'anima.interaction' in src, (
+        assert 'onEvent("anima.interaction"' in src or "anima.interaction" in src, (
             "anima.interaction handler not found in app-websocket.js"
         )
-        assert "from_person" in src, (
-            "anima.interaction handler should include from_person"
-        )
+        assert "from_person" in src, "anima.interaction handler should include from_person"
 
     def test_ws_message_event_has_meta_to_person(self) -> None:
         """app-websocket.js anima.interaction handler should put to_person in meta."""
         src = _read(APP_WS_JS)
-        assert "to_person" in src, (
-            "anima.interaction handler should include to_person"
-        )
+        assert "to_person" in src, "anima.interaction handler should include to_person"
 
     def test_replay_reads_meta_from_person(self) -> None:
         """resolvePersons in timeline-dom.js should read meta.from_person."""
         src = _read(TIMELINE_DOM_JS)
-        assert "meta.from_person" in src or "from_person" in src, (
-            "resolvePersons should access from_person"
-        )
+        assert "meta.from_person" in src or "from_person" in src, "resolvePersons should access from_person"
 
     def test_showMessageEffect_signature_matches(self) -> None:
         """interactions.js showMessageEffect should take (fromName, toName, text)."""
@@ -187,29 +185,19 @@ class TestAPIEventReplayDataFlow:
     def test_api_activity_logger_exports_from_person(self) -> None:
         """activity.py should include from_person in API output."""
         src = _read(ACTIVITY_PY)
-        assert "from_person" in src or '"from"' in src, (
-            "activity.py should export from_person or from in API output"
-        )
-        assert "to_person" in src or '"to"' in src, (
-            "activity.py should export to_person or to in API output"
-        )
-        assert "content" in src, (
-            "activity.py should export content in API output"
-        )
+        assert "from_person" in src or '"from"' in src, "activity.py should export from_person or from in API output"
+        assert "to_person" in src or '"to"' in src, "activity.py should export to_person or to in API output"
+        assert "content" in src, "activity.py should export content in API output"
 
     def test_resolvePersons_handles_toplevel_from(self) -> None:
         """resolvePersons should fall back to event.from_person (API format)."""
         src = _read(TIMELINE_DOM_JS)
-        assert "from_person" in src, (
-            "resolvePersons should reference from_person"
-        )
+        assert "from_person" in src, "resolvePersons should reference from_person"
 
     def test_resolvePersons_handles_toplevel_content(self) -> None:
         """resolvePersons should reference event.content (API format)."""
         src = _read(TIMELINE_DOM_JS)
-        assert "content" in src, (
-            "resolvePersons should reference content"
-        )
+        assert "content" in src, "resolvePersons should reference content"
 
 
 # ── TestNoRegressionExistingWSEvents ────────────────────────
@@ -221,16 +209,12 @@ class TestNoRegressionExistingWSEvents:
     def test_heartbeat_handler_still_exists_in_app_js(self) -> None:
         """anima.heartbeat handler should still exist in app-websocket.js."""
         src = _read(APP_WS_JS)
-        assert 'anima.heartbeat' in src, (
-            "anima.heartbeat handler not found in app-websocket.js"
-        )
+        assert "anima.heartbeat" in src, "anima.heartbeat handler not found in app-websocket.js"
 
     def test_cron_handler_still_exists_in_app_js(self) -> None:
         """anima.cron handler should still exist in app-websocket.js."""
         src = _read(APP_WS_JS)
-        assert 'anima.cron' in src, (
-            "anima.cron handler not found in app-websocket.js"
-        )
+        assert "anima.cron" in src, "anima.cron handler not found in app-websocket.js"
 
     def test_existing_ws_types_still_in_switch(self) -> None:
         """Core WS types (message, heartbeat, cron, chat, board) must remain in the switch."""
@@ -240,9 +224,7 @@ class TestNoRegressionExistingWSEvents:
 
         required = {"message", "heartbeat", "cron", "chat", "board"}
         missing = required - switch_set
-        assert missing == set(), (
-            f"Core WS types missing from _replayEvent switch: {missing}"
-        )
+        assert missing == set(), f"Core WS types missing from _replayEvent switch: {missing}"
 
 
 # ── TestBugFixVerification ──────────────────────────────────
@@ -260,9 +242,7 @@ class TestBugFixVerification:
         assert "showMessageEffect(anima," not in src, (
             "Bug regression: showMessageEffect should NOT be called with raw 'anima' field."
         )
-        assert "showMessageEffect" in src, (
-            "showMessageEffect should be called in timeline-replay.js"
-        )
+        assert "showMessageEffect" in src, "showMessageEffect should be called in timeline-replay.js"
 
     def test_anima_concatenation_exists_in_app_js(self) -> None:
         """app-websocket.js uses from_person/to_person for the anima field."""
@@ -274,6 +254,4 @@ class TestBugFixVerification:
     def test_resolvePersons_bypasses_concatenated_anima(self) -> None:
         """resolvePersons should prioritise from_person over event.anima."""
         src = _read(TIMELINE_DOM_JS)
-        assert "from_person" in src, (
-            "resolvePersons should reference from_person"
-        )
+        assert "from_person" in src, "resolvePersons should reference from_person"
