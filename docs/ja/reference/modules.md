@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6d0fda9cfac2dea35d44d7c096376064088e3032ac7ac114a55b8e31f1920ad2 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 551910392e41e9ca4af5c6742a9e66e91589304aed6fe0e36df176c3582a6e51 -->
 
 # モジュール一覧
 
@@ -226,7 +226,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
-| `core.enclave.guards` | 215 | Startup guards for enclave mode. |
+| `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.guards` | 236 | Startup guards for enclave mode. |
 
 ## `core.enclave.egress`
 
@@ -364,7 +366,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 380 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 438 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -443,6 +445,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.call_human` | 435 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
+| `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -1047,7 +1050,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1401 | — |
+| `server.app` | 1409 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
