@@ -344,6 +344,35 @@ def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any)
     return candidates
 
 
+# Time kept back from the consolidation deadline for the last chunk's fact
+# extraction and the episode write when deciding whether to start a chunk.
+_PARTIAL_WRITE_RESERVE_S = 180.0
+_FACT_WAIT_RESERVE_S = 30.0
+
+
+async def _gather_fact_tasks(tasks: list[asyncio.Task[Any]], deadline_at: float | None) -> list[Any]:
+    """Await fact tasks, cancelling those still running near the deadline."""
+    if not tasks:
+        return []
+    timeout = None
+    if deadline_at is not None:
+        timeout = max(1.0, deadline_at - time.monotonic() - _FACT_WAIT_RESERVE_S)
+    _done, pending = await asyncio.wait(tasks, timeout=timeout)
+    for task in pending:
+        task.cancel()
+    outcomes: list[Any] = []
+    for task in tasks:
+        if task in pending:
+            outcomes.append(TimeoutError("fact extraction did not finish before the consolidation deadline"))
+        elif task.cancelled():
+            outcomes.append(asyncio.CancelledError())
+        elif task.exception() is not None:
+            outcomes.append(task.exception())
+        else:
+            outcomes.append(task.result())
+    return outcomes
+
+
 async def _complete_episode_prompt(
     prompt: str,
     model_configs: list[Any],
@@ -757,6 +786,9 @@ class LifecycleMixin:
         episode_summaries: list[str] = []
         done_bytes = 0
         done_seconds = 0.0
+        run_chunk_bytes = 0
+        run_chunk_seconds = 0.0
+        stopped_early = False
         # Fact extraction runs on the background fact model (DeepSeek) while the
         # next chunk is summarised; the lock keeps fact-store writes sequential.
         fact_lock = asyncio.Lock()
@@ -813,6 +845,23 @@ class LifecycleMixin:
 
                 for chunk_index, chunk in enumerate(chunks):
                     time_range = f"{summary_date.isoformat()} chunk {chunk_index + 1}/{len(chunks)}"
+                    chunk_bytes = len(chunk.encode("utf-8"))
+                    if deadline_at is not None and run_chunk_bytes > 0:
+                        # Stop before a chunk that cannot finish so the chunks
+                        # already summarised are written instead of discarded.
+                        remaining = deadline_at - time.monotonic() - _PARTIAL_WRITE_RESERVE_S
+                        estimate = run_chunk_seconds / run_chunk_bytes * chunk_bytes * 1.2
+                        if estimate > remaining:
+                            logger.info(
+                                "[%s] Episode summary stopped before %s: estimate=%.0fs remaining=%.0fs",
+                                self.name,
+                                time_range,
+                                estimate,
+                                remaining,
+                            )
+                            stopped_early = True
+                            break
+                    chunk_started = time.monotonic()
 
                     def build_prompt(
                         activity_chunk: str,
@@ -852,6 +901,8 @@ class LifecycleMixin:
                             failure_reason = "empty sanitized summary"
                             break
                         chunk_summaries.append(sanitized)
+                    run_chunk_bytes += chunk_bytes
+                    run_chunk_seconds += time.monotonic() - chunk_started
 
                     if len(chunk_summaries) != len(prompt_parts):
                         failed_chunks += 1
@@ -865,7 +916,7 @@ class LifecycleMixin:
                     day_fact_tasks.append(fact_task)
                     fact_tasks.append(fact_task)
 
-                for fact_outcome in await asyncio.gather(*day_fact_tasks, return_exceptions=True):
+                for fact_outcome in await _gather_fact_tasks(day_fact_tasks, deadline_at):
                     if isinstance(fact_outcome, BaseException):
                         from core.memory.facts.observability import warn_rate_limited
 
@@ -913,6 +964,8 @@ class LifecycleMixin:
                     )
                 done_bytes += day_bytes
                 done_seconds += time.monotonic() - day_started
+                if stopped_early:
+                    break
         finally:
             for task in fact_tasks:
                 if not task.done():

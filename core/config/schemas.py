@@ -382,6 +382,8 @@ class ConsolidationConfig(BaseModel):
     episode_summary_cron_digest_min_runs: int = Field(default=6, ge=1)
     episode_summary_cron_digest_max_notable_runs: int = Field(default=5, ge=0)
     episode_summary_tool_use_max_bytes: int = Field(default=300, ge=0)
+    # Bash tool_use bodies are cut further for dates summarised with compact_v2.
+    episode_summary_bash_tool_use_max_bytes: int = Field(default=120, ge=0)
     episode_summary_error_tail_bytes: int = Field(default=300, ge=0)
     episode_summary_max_output_tokens: int = Field(default=4096, ge=1)
     live_fact_extraction_enabled: bool = True
