@@ -66,6 +66,7 @@ core.notification.channels.discord -> core.integrations._anima_icon_url
 core.notification.channels.discord -> core.integrations._discord_markdown
 core.notification.channels.slack -> core.integrations._anima_icon_url
 core.notification.channels.slack -> core.integrations.slack
+core.notification.channels.web -> core.internal_api
 core.notification.interactive -> core.internal_api
 core.notification.interactive -> core.internal_api
 core.notification.reply_routing -> core.integrations._slack_markdown

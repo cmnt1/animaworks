@@ -549,7 +549,7 @@ def test_llm_helper_config_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr("core.config.load_config", lambda: (_ for _ in ()).throw(RuntimeError("config failed")))
     assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
-        "claude-sonnet-4-6",
+        "claude-sonnet-5-5",
         {},
         DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
         "",

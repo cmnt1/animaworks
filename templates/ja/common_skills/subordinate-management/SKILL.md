@@ -56,13 +56,13 @@ enable_subordinate(name="aoi")
 これらのツールは root に root 所有 `status.json` の更新を依頼する。Anima プロセスから直接編集しない。メインモデルは起動中プロセスに reload され、停止中の Anima は次回起動時に新設定を読む:
 
 ```
-set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
+set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分散のため")
 ```
 
 バックグラウンドモデル（heartbeat/cron 用）は次回のタスクランナー起動から適用され、実行中のタスクはそのまま完了する:
 
 ```
-set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
+set_subordinate_background_model(name="aoi", model="claude-sonnet-5-5", reason="heartbeat負荷軽減")
 ```
 
 バックグラウンドモデルをクリアしてメインモデルに戻す場合:

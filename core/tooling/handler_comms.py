@@ -785,7 +785,12 @@ class CommsToolsMixin:
                 "subject and body are required",
             )
 
-        issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
+        # The confirm step asks the Anima to check Slack/Chatwork first; with only
+        # the built-in Web UI channel there is nothing outside to check.
+        if getattr(self._human_notifier, "has_external_channels", True) is False:
+            issued_key = None
+        else:
+            issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
         self._last_call_human_denied = issued_key is not None
         if issued_key is not None:
             return _error_result(
@@ -855,14 +860,17 @@ class CommsToolsMixin:
         except Exception as e:
             return _error_result("NotificationError", f"Failed to send notification: {e}")
 
-        notif_data = {
-            "anima": self._anima_name,
-            "subject": subject,
-            "body": body,
-            "priority": priority,
-            "timestamp": now_iso(),
-        }
-        self._pending_notifications.append(notif_data)
+        # The Web UI channel already pushed it to the browser; queuing it for the
+        # chat stream as well would show the same notification twice.
+        if getattr(self._human_notifier, "delivers_to_web", False) is not True:
+            notif_data = {
+                "anima": self._anima_name,
+                "subject": subject,
+                "body": body,
+                "priority": priority,
+                "timestamp": now_iso(),
+            }
+            self._pending_notifications.append(notif_data)
 
         payload: dict[str, Any] = {"status": "sent", "results": results}
         if interactive and interaction_req is not None:

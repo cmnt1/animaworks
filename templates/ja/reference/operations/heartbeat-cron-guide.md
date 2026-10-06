@@ -139,7 +139,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 Heartbeat / Inbox / Cron は `background_model` が設定されている場合、メインモデルの代わりにそのモデルで実行される。
 Chat（人間との対話）と TaskExec（実作業）はメインモデルを維持する。
 
-設定方法: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
+設定方法: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
 詳細は `reference/operations/model-guide.md` の「バックグラウンドモデル」セクションを参照。
 
 ### ハートビートの内部動作

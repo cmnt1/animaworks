@@ -137,6 +137,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._restart_ctl: RestartController | None = None
         self._bootstrap_retry_counts: dict[str, int] = {}
         self._bootstrap_max_retries: int = 3
+        self._bootstrap_retry_delay_s: float = 60.0
         self._bootstrap_retries_file = self.animas_dir / ".bootstrap_retries.json"
         self._load_bootstrap_retries()
 
@@ -436,6 +437,15 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                             and status.get("status") != "bootstrapping"
                         ):
                             needs_background = True
+                        # A failed background setup resumes on the next start;
+                        # _run_bootstrap enforces the retry limit.
+                        if (
+                            not needs_background
+                            and bootstrap_state.get("state") == "failed"
+                            and bootstrap_state.get("mode") == "character_sheet"
+                            and (self.animas_dir / anima_name / "bootstrap.md").exists()
+                        ):
+                            needs_background = True
                         if needs_background:
                             logger.info(
                                 "Bootstrap needed for %s, launching background task",
@@ -660,6 +670,13 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 self._bootstrap_retry_counts.pop(anima_name, None)
             else:
                 self._bootstrap_retry_counts[anima_name] = retry_count + 1
+                # The UI tells the user a failed setup is retried; do it, with a
+                # pause so a transient error (rate limit, network) can clear.
+                # _run_bootstrap stops at _bootstrap_max_retries.
+                spawn(
+                    self._retry_bootstrap_later(anima_name),
+                    name=f"bootstrap-retry-{anima_name}",
+                )
             self._save_bootstrap_retries()
             if was_bootstrapping:
                 handle = self.processes.get(anima_name)
@@ -668,6 +685,17 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                         "Bootstrap for %s ended with process not running (possible reconciliation interference)",
                         anima_name,
                     )
+
+    async def _retry_bootstrap_later(self, anima_name: str) -> None:
+        """Re-run a failed background bootstrap after a short pause."""
+        await asyncio.sleep(self._bootstrap_retry_delay_s)
+        anima_dir = self.animas_dir / anima_name
+        if anima_name in self._bootstrapping or not (anima_dir / "bootstrap.md").exists():
+            return
+        handle = self.processes.get(anima_name)
+        if not handle or handle.state != ProcessState.RUNNING:
+            return
+        await self._run_bootstrap(anima_name)
 
     async def _broadcast_event(
         self,

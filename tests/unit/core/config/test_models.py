@@ -88,7 +88,7 @@ class TestAnimaModelConfig:
 class TestAnimaDefaults:
     def test_defaults(self):
         pd = AnimaDefaults()
-        assert pd.model == "claude-sonnet-4-6"
+        assert pd.model == "claude-sonnet-5-5"
         assert pd.max_tokens == 8192
         assert pd.credential == "anthropic"
         assert pd.context_threshold == 0.50
@@ -674,7 +674,7 @@ class TestResolveAnimaConfig:
     def test_defaults_when_no_anima_entry(self):
         config = AnimaWorksConfig()
         resolved, cred = resolve_anima_config(config, "unknown")
-        assert resolved.model == "claude-sonnet-4-6"
+        assert resolved.model == "claude-sonnet-5-5"
         assert resolved.credential == "anthropic"
         assert cred.api_key == ""
 
@@ -997,7 +997,7 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert isinstance(mc, ModelConfig)
         # Should use default model from anima_defaults
-        assert mc.model == "claude-sonnet-4-6"
+        assert mc.model == "claude-sonnet-5-5"
 
     def test_inherits_defaults(self, data_dir):
         anima_dir = data_dir / "animas" / "unknown"

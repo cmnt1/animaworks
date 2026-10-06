@@ -54,7 +54,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
     "openai": { "api_key": "sk-..." }
   },
   "model_modes": {},
-  "anima_defaults": { "model": "claude-sonnet-4-6", "max_tokens": 8192 },
+  "anima_defaults": { "model": "claude-sonnet-5-5", "max_tokens": 8192 },
   "animas": {
     "aoi": { "supervisor": null, "speciality": null },
     "taro": { "supervisor": "aoi", "speciality": null }
@@ -105,7 +105,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 
 | フィールド | 型 | デフォルト | 説明 |
 |-----------|-----|----------|------|
-| `model` | `str` | `"claude-sonnet-4-6"` |  |
+| `model` | `str` | `"claude-sonnet-5-5"` |  |
 | `fallback_model` | `str | None` | None |  |
 | `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
@@ -277,7 +277,7 @@ AnimaWorks は **6** つの実行モードを持つ。モデル名から自動�
 
 Claude モデル専用。Claude Code サブプロセスを使い、最もリッチなツール実行が可能。
 
-- **対象モデル**: `claude-*`（例: `claude-sonnet-4-6`, `claude-opus-4-6`）
+- **対象モデル**: `claude-*`（例: `claude-sonnet-5-5`, `claude-opus-5-5`）
 - **特徴**: ファイル操作、Bash 実行、記憶の自律検索を全て Claude Agent SDK 経由で行う
 - **credential**: `anthropic` を使用（MUST）
 
@@ -435,7 +435,7 @@ Anima のモデル設定は **`status.json` が Single Source of Truth（SSoT）
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "context_threshold": 0.80,
@@ -481,7 +481,7 @@ Anima プロセスから `status.json` を直接編集しない。root 所有 CL
 
 | フィールド | デフォルト値 | 説明 |
 |-----------|-------------|------|
-| `model` | `claude-sonnet-4-6` | 使用するLLMモデル |
+| `model` | `claude-sonnet-5-5` | 使用するLLMモデル |
 | `max_tokens` | `8192` | 1回の応答の最大トークン数 |
 | `credential` | `"anthropic"` | 使用する credential 名 |
 | `context_threshold` | `0.50` | コンテキスト使用率がこの閾値を超えると短期記憶を外部化 |

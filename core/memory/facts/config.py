@@ -98,7 +98,7 @@ def _resolve_extraction_config(anima_dir: Path) -> tuple[str, dict[str, object],
         credential = cfg.anima_defaults.background_credential or cfg.anima_defaults.credential or ""
         return model, llm_extra, locale, timeout, credential
     except Exception:
-        return "claude-sonnet-4-6", llm_extra, "ja", timeout, ""
+        return "claude-sonnet-5-5", llm_extra, "ja", timeout, ""
 
 
 def _resolve_extraction_max_tokens() -> int:

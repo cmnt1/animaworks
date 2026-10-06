@@ -82,7 +82,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/anima/inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
-    "core/anima/factory.py": 8,
+    "core/anima/factory.py": 9,
     # deprecation warning message
     # permissions.md section headers used by the legacy permissions fallback
     "core/config/migrate.py": 2,

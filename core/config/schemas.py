@@ -54,7 +54,7 @@ class AnimaModelConfig(BaseModel):
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
-DEFAULT_ANIMA_MODEL: str = "claude-sonnet-4-6"
+DEFAULT_ANIMA_MODEL: str = "claude-sonnet-5-5"
 DEFAULT_CONSOLIDATION_MODEL: str = DEFAULT_ANIMA_MODEL
 
 
@@ -440,6 +440,7 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+    web_ui: bool = True  # built-in channel: push call_human into the Web UI chat
 
 
 class InteractionConfig(BaseModel):

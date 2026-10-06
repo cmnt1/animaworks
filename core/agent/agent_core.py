@@ -221,15 +221,16 @@ class AgentCore(
             from core.notification.notifier import HumanNotifier
 
             config = load_config()
-            if not config.human_notification.enabled:
-                return None
 
             # Only top-level animas (no supervisor) get the notifier
             anima_cfg = config.animas.get(self.anima_dir.name)
             if anima_cfg is not None and anima_cfg.supervisor is not None:
                 return None
 
-            notifier = HumanNotifier.from_config(config.human_notification)
+            notifier = HumanNotifier.from_config(
+                config.human_notification,
+                include_external=config.human_notification.enabled,
+            )
             if notifier.channel_count == 0:
                 return None
 

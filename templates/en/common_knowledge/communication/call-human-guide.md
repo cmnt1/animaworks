@@ -2,7 +2,7 @@
 
 ## Overview
 
-`call_human` is a tool for sending notifications to human administrators. It is **not one-way** — when a human replies in a Slack thread, that reply is automatically delivered to the sending Anima's Inbox.
+`call_human` is a tool for sending notifications to human administrators. Notifications always arrive in the Web UI chat screen and as toast notifications, and if a notification channel such as Slack is configured, they are also delivered there. **It is not one-way** — when a human replies in a Slack thread, that reply is automatically delivered to the originating Anima's Inbox.
 
 ## Sending
 
@@ -28,17 +28,17 @@ call_human(
 
 See `troubleshooting/escalation-flowchart.md` for detailed decision criteria.
 
-### Usage
+### Use when:
 
-- `call_human` is a separate human notification route from `send_message`. Use when: actual emergency response is required.
+- `call_human` is a separate human notification path from `send_message`. Use it when urgent response is needed, as well as when a top-level Anima wants to briefly inform users of team results.
 
 ## Receiving Replies
 
-### How It Works
+### How it works
 
-1. When you send a notification with `call_human`, a message is posted to Slack
+1. When a notification is sent via `call_human`, it arrives in the Web UI chat, and if Slack is configured, a message is also posted to Slack
 2. A human replies in the **thread** of that message
-3. The reply is automatically routed to the sending Anima's Inbox
+3. The reply is automatically routed to the originating Anima's Inbox
 4. The reply is processed in the next Inbox processing cycle (typically detected within 2 seconds)
 
 ### Characteristics of Reply Messages

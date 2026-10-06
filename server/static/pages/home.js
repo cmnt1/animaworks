@@ -178,14 +178,14 @@ async function _loadAll() {
  * @param {object|null|undefined} summary - TaskBoard summary payload with pending and in_progress counts
  * @param {number} [extCount=0] - External resource open/in_progress count
  * @param {(key: string, params?: object) => string} [translate]
- * @returns {Array<{ key: string, label: string, count: number, href: string, emphasis: boolean }>}
+ * @returns {Array<{ key: string, label: string, title?: string, count: number, href: string, emphasis: boolean }>}
  */
 export function attentionSummaryChips(summary, extCount = 0, translate = t) {
   const s = summary && typeof summary === "object" ? summary : {};
   const pending = Number(s.pending) || 0;
   const inProgress = Number(s.in_progress) || 0;
   const ext = Number(extCount) || 0;
-  return [
+  const chips = [
     {
       key: "pending",
       label: translate("home.attention_pending", { count: pending }),
@@ -200,14 +200,20 @@ export function attentionSummaryChips(summary, extCount = 0, translate = t) {
       href: "#/task-board",
       emphasis: false,
     },
-    {
+  ];
+  // Open items from connected services (GitHub, Slack, Gmail...). A fresh
+  // install has none, and a bare "External 0" only raises questions.
+  if (ext > 0) {
+    chips.push({
       key: "external",
       label: translate("home.attention_external", { count: ext }),
+      title: translate("home.attention_external_hint"),
       count: ext,
       href: "#homeExternalTasksCard",
       emphasis: false,
-    },
-  ];
+    });
+  }
+  return chips;
 }
 
 /**
@@ -221,7 +227,8 @@ export function attentionChipsHtml(chips) {
   return chips
     .map((c) => {
       const cls = c.emphasis ? "home-chip home-chip--danger" : "home-chip";
-      return `<a class="${cls}" href="${escapeAttr(c.href)}" data-attention="${escapeAttr(c.key)}">${escapeHtml(c.label)}</a>`;
+      const title = c.title ? ` title="${escapeAttr(c.title)}"` : "";
+      return `<a class="${cls}" href="${escapeAttr(c.href)}" data-attention="${escapeAttr(c.key)}"${title}>${escapeHtml(c.label)}</a>`;
     })
     .join("");
 }

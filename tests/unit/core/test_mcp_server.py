@@ -182,6 +182,7 @@ class TestListToolsHandler:
         with (
             patch.object(mcp_mod, "_is_supervisor", False),
             patch.object(mcp_mod, "_has_newstaff", True),
+            patch.object(mcp_mod, "_has_notification_channels_for_anima", return_value=False),
         ):
             result = await list_tools()
 

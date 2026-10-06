@@ -38,10 +38,10 @@ AnimaWorks의 설정 구조와 Anima 추가 절차에 대한 참조.
 
 시작할 때마다 `common_skills`와 `common_knowledge`은 템플릿에서 증분 동기화되며, 새 항목만 추가된다(기존 파일은 유지).
 
-## config.json 전체 구조
+## config.json의 전체 구조
 
-AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
-모든 설정은 `AnimaWorksConfig` 모델로 정의되며, 다음 최상위 필드를 가진다.
+AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
+모든 설정은 `AnimaWorksConfig` 모델로 정의되어 있으며, 다음과 같은 최상위 필드를 가진다.
 
 ```json
 {
@@ -54,7 +54,7 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
     "openai": { "api_key": "sk-..." }
   },
   "model_modes": {},
-  "anima_defaults": { "model": "claude-sonnet-4-6", "max_tokens": 8192 },
+  "anima_defaults": { "model": "claude-sonnet-5-5", "max_tokens": 8192 },
   "animas": {
     "aoi": { "supervisor": null, "speciality": null },
     "taro": { "supervisor": "aoi", "speciality": null }
@@ -66,7 +66,7 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 }
 ```
 
-**주의**: `animas` 섹션에는 조직 레이아웃(`supervisor`, `speciality`)만 저장된다. 모델명, 자격 증명 등의 모델 설정은 각 Anima의 `status.json`에 기록된다(아래의 「Anima 설정 확인」 참조).
+**주의**: `animas` 섹션은 조직 레이아웃(`supervisor`, `speciality`)만 보유한다. 모델 이름·credential 등의 모델 설정은 각 Anima의 `status.json`에 기록된다(후술의 「Anima 설정의 해결」 참조).
 
 각 섹션의 역할:
 
@@ -75,15 +75,15 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 | `version` | 설정 스키마 버전(현재 `1`) |
 | `setup_complete` | 최초 설정 완료 플래그 |
 | `locale` | UI 언어(`"ja"` / `"en"`) |
-| `system` | 서버 모드·시간대 |
+| `system` | 서버 모드·타임존 |
 | `credentials` | API 키·엔드포인트(이름 지정) |
-| `model_modes` | 모델명→실행 모드 재정의 맵 |
-| `anima_defaults` | 모든 Anima에 공통으로 적용되는 기본 설정 |
-| `animas` | Anima의 조직 레이아웃(supervisor, 전문 분야). 모델 설정은 status.json |
-| `consolidation` | 기억 통합(일간/주간) 설정 |
-| `rag` | RAG(임베딩 벡터 검색) 설정 |
-| `priming` | 프라이밍(자동 기억 검색) 토큰 예산 |
-| `image_gen` | 이미지 생성 스타일 설정 |
+| `model_modes` | 모델 이름→실행 모드의 오버라이드 맵 |
+| `anima_defaults` | 모든 Anima 공통의 기본 설정 |
+| `animas` | Anima의 조직 레이아웃(supervisor, speciality). 모델 설정은 status.json |
+| `consolidation` | 기억 통합(일일/주간)의 설정 |
+| `rag` | RAG(임베딩 벡터 검색)의 설정 |
+| `priming` | 프라이밍(자동 기억 획득)의 토큰 예산 |
+| `image_gen` | 이미지 생성의 스타일 설정 |
 
 <!-- AUTO-GENERATED:START config_fields -->
 ### 설정 항목 참조(자동 생성)
@@ -103,9 +103,9 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 
 #### 기본값 (anima_defaults)
 
-| 필드 | 유형 | 기본값 | 설명 |
+| 필드 | 타입 | 기본값 | 설명 |
 |-----------|-----|----------|------|
-| `model` | `str` | `"claude-sonnet-4-6"` |  |
+| `model` | `str` | `"claude-sonnet-5-5"` |  |
 | `fallback_model` | `str | None` | None |  |
 | `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
@@ -275,10 +275,10 @@ AnimaWorks는 **6**개의 실행 모드를 가진다. 모델명에서 자동 판
 
 ### Mode S (SDK): Claude Agent SDK
 
-Claude 모델 전용. Claude Code 서브프로세스를 사용하며, 가장 풍부한 도구 실행이 가능하다.
+Claude 모델 전용. Claude Code 서브프로세스를 사용하여 가장 풍부한 도구 실행이 가능.
 
-- **대상 모델**: `claude-*`(예: `claude-sonnet-4-6`, `claude-opus-4-6`)
-- **특징**: 파일 조작, Bash 실행, 기억의 자율 검색을 모두 Claude Agent SDK 경유로 수행
+- **대상 모델**: `claude-*`(예: `claude-sonnet-5-5`, `claude-opus-5-5`)
+- **특징**: 파일 조작, Bash 실행, 기억의 자율 검색을 모두 Claude Agent SDK를 통해 수행
 - **credential**: `anthropic` 사용(MUST)
 
 ### Mode C (Codex): Codex CLI
@@ -435,7 +435,7 @@ Anima의 모델 설정은 **`status.json`가 Single Source of Truth (SSoT)** 입
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "context_threshold": 0.80,
@@ -481,7 +481,7 @@ Anima 프로세스에서 `status.json`을 직접 편집하지 않는다. root �
 
 | 필드 | 기본값 | 설명 |
 |-----------|-------------|------|
-| `model` | `claude-sonnet-4-6` | 사용할 LLM 모델 |
+| `model` | `claude-sonnet-5-5` | 사용할 LLM 모델 |
 | `max_tokens` | `8192` | 1회 응답의 최대 토큰 수 |
 | `credential` | `"anthropic"` | 사용할 credential 이름 |
 | `context_threshold` | `0.50` | 컨텍스트 사용률이 이 임계값을 초과하면 단기 기억을 외부화 |

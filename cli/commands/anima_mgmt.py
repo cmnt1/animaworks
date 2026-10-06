@@ -631,7 +631,7 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
         if args.all:
             model = args.model or args.anima
             if not model:
-                print("Error: model is required (e.g. animaworks anima set-model claude-sonnet-4-6 --all)")
+                print("Error: model is required (e.g. animaworks anima set-model claude-sonnet-5-5 --all)")
                 sys.exit(1)
             credential = args.credential
             updated = 0
@@ -666,7 +666,7 @@ def cmd_anima_set_model(args: argparse.Namespace) -> None:
         else:
             if not args.anima or not args.model:
                 print(
-                    "Error: anima name and model are required (e.g. animaworks anima set-model hinata claude-sonnet-4-6)"
+                    "Error: anima name and model are required (e.g. animaworks anima set-model hinata claude-sonnet-5-5)"
                 )
                 sys.exit(1)
             anima_dir = animas_dir / args.anima
@@ -783,7 +783,7 @@ def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
         elif args.all:
             model = args.model or args.anima
             if not model:
-                print("Error: model is required (e.g. animaworks anima set-background-model claude-sonnet-4-6 --all)")
+                print("Error: model is required (e.g. animaworks anima set-background-model claude-sonnet-5-5 --all)")
                 sys.exit(1)
             credential = args.credential
             updated = 0
@@ -819,7 +819,7 @@ def cmd_anima_set_background_model(args: argparse.Namespace) -> None:
             if not args.anima or not args.model:
                 print(
                     "Error: anima name and model are required "
-                    "(e.g. animaworks anima set-background-model hinata claude-sonnet-4-6)"
+                    "(e.g. animaworks anima set-background-model hinata claude-sonnet-5-5)"
                 )
                 sys.exit(1)
             anima_dir = animas_dir / args.anima
