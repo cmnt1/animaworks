@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 8018b4f8cba4e63d8bb51092228bdda8f7631a40495b0da01dfe66792b783d54 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 0e041a0dab3b597b3172bc5d9ec9e104ebf319a7cf515a6d6e84a8e2c6f031a9 -->
 
 # API リファレンス
 
@@ -143,6 +143,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/interaction/message-ts` | 内部 | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | 内部 | Notify the server that a message was sent via CLI. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | 内部 | — | `server/routes/internal.py:internal_notification_mapping` |
+| POST | `/api/internal/phone/alert` | 内部 | Start an urgent phone alert for the configured Anima. | `server/routes/internal.py:internal_phone_alert` |
 | POST | `/api/internal/post-channel` | 内部 | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 内部 | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | 内部 | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
@@ -186,6 +187,15 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/memory/stats` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_procedures` |
 | GET | `/api/animas/{name}/procedures/{proc}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_procedure` |
+
+## `server/routes/phone.py`
+
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | 不要（除外一覧） | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | 不要（除外一覧） | Validate the vault PIN and transition to the speech turn loop. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/poll` | 不要（除外一覧） | Wait briefly for the current turn and play its result when ready. | `server/routes/phone.py:poll` |
+| POST | `/api/webhooks/twilio/status` | 不要（除外一覧） | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/turn` | 不要（除外一覧） | Receive one speech-recognized utterance and start its IPC task. | `server/routes/phone.py:turn` |
+| POST | `/api/webhooks/twilio/voice` | 不要（除外一覧） | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
 
 ## `server/routes/room.py`
 

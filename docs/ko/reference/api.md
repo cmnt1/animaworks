@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=ffd4e55c9f710d5db03d871b019afd3e778e6580f0cb290e834db1891e4ac029 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=b5b330b69296bdc306ec06c047b8ee0ce1414120d0d561a48b02910700330d82 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -130,27 +130,28 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/internal.py`
 
-| POST | `/api/internal/anima/create` | 내부 | 샌드박스 EROFS 제약 외부에서 아니마를 생성합니다. | `server/routes/internal.py:internal_anima_create` |
-| POST | `/api/internal/animas/{target}/control` | 내부 | 토큰 소유자를 확인한 후 하위 제어 설정을 저장합니다. | `server/routes/internal.py:internal_anima_control` |
+| POST | `/api/internal/anima/create` | 내부 | 샌드박스 EROFS 제약을 피해 Anima를 생성합니다. | `server/routes/internal.py:internal_anima_create` |
+| POST | `/api/internal/animas/{target}/control` | 내부 | 토큰 소유자를 확인한 뒤 하위 제어 설정을 저장합니다. | `server/routes/internal.py:internal_anima_control` |
 | POST | `/api/internal/animas/{target}/prompt-settings` | 내부 | 루트 소유자를 통해 승인된 identity/injection 변경을 적용합니다. | `server/routes/internal.py:internal_update_anima_prompt_setting` |
-| POST | `/api/internal/call-human/confirm` | 내부 | CLI ``call_human`` 확인 키를 확인합니다. 키는 서버 메모리에만 존재합니다. | `server/routes/internal.py:internal_call_human_confirm` |
+| POST | `/api/internal/call-human/confirm` | 내부 | CLI ``call_human`` 확인 키를 검사합니다. 키는 서버 메모리에만 저장됩니다. | `server/routes/internal.py:internal_call_human_confirm` |
 | POST | `/api/internal/company/assign` | 내부 | 루트 소유 상태 기록기를 통해 CLI 회사 할당을 적용합니다. | `server/routes/internal.py:internal_company_assign` |
-| GET | `/api/internal/company/boundary` | 내부 | 샌드박스 처리기를 위해 호스트에서 회사 멤버십을 확인합니다. | `server/routes/internal.py:internal_company_boundary` |
-| POST | `/api/internal/company/split` | 내부 | status/settings.을 변경할 때 루트에서 CLI 회사 분할을 실행합니다. | `server/routes/internal.py:internal_company_split` |
-| POST | `/api/internal/delegate-task` | 내부 | 샌드박스 EROFS 제약 외부에서 위임된 작업을 저장합니다. | `server/routes/internal.py:internal_delegate_task` |
-| POST | `/api/internal/embed` | 내부 | 하위 프로세스를 위한 중앙 집중식 임베딩 추론. | `server/routes/internal.py:internal_embed` |
+| GET | `/api/internal/company/boundary` | 내부 | 샌드박스 처리기에서 사용할 회사 소속 정보를 호스트에서 확인합니다. | `server/routes/internal.py:internal_company_boundary` |
+| POST | `/api/internal/company/split` | 내부 | status/settings.을 변경하는 CLI 회사 분할 작업을 루트에서 실행합니다. | `server/routes/internal.py:internal_company_split` |
+| POST | `/api/internal/delegate-task` | 내부 | 샌드박스 EROFS 제약을 피해 위임된 작업을 저장합니다. | `server/routes/internal.py:internal_delegate_task` |
+| POST | `/api/internal/embed` | 내부 | 자식 프로세스를 위한 중앙 집중식 임베딩 추론입니다. | `server/routes/internal.py:internal_embed` |
 | POST | `/api/internal/interaction/create` | 내부 | — | `server/routes/internal.py:internal_interaction_create` |
 | POST | `/api/internal/interaction/message-ts` | 내부 | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | 내부 | CLI를 통해 메시지가 전송되었음을 서버에 알립니다. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | 내부 | — | `server/routes/internal.py:internal_notification_mapping` |
-| POST | `/api/internal/post-channel` | 내부 | 샌드박스 EROFS 제약 외부에서 채널 게시물을 추가합니다. | `server/routes/internal.py:internal_post_channel` |
-| POST | `/api/internal/rerank` | 내부 | 하위 프로세스를 위한 중앙 집중식 크로스 인코더 재순위화. | `server/routes/internal.py:internal_rerank` |
-| POST | `/api/internal/send-message` | 내부 | 샌드박스 EROFS 제약 외부에서 DM을 저장합니다. | `server/routes/internal.py:internal_send_message` |
-| POST | `/api/internal/settings/anima-icon-template` | 내부 | 인증된 작업자를 대신하여 아이콘 템플릿 기본값을 저장합니다. | `server/routes/internal.py:internal_persist_anima_icon_template` |
-| POST | `/api/internal/submit-tasks` | 내부 | 호스트에서 전체 배치를 게시합니다. 샌드박스 DB 권한이 필요 없습니다. | `server/routes/internal.py:internal_submit_tasks` |
-| POST | `/api/internal/task-board-action` | 내부 | 샌드박스 아니마 CLI를 위해 임대 보호 작업 보드 쓰기를 실행합니다. | `server/routes/internal.py:internal_task_board_action` |
-| GET | `/api/internal/tasks` | 내부 | 직접 데이터베이스 접근이 없는 작업자를 위해 작업 스냅샷을 읽습니다. | `server/routes/internal.py:internal_tasks` |
-| POST | `/api/internal/update-task` | 내부 | 샌드박스 EROFS 제약 외부에서 작업 업데이트를 저장합니다. | `server/routes/internal.py:internal_update_task` |
+| POST | `/api/internal/phone/alert` | 내부 | 설정된 Anima에 긴급 전화 알림을 시작합니다. | `server/routes/internal.py:internal_phone_alert` |
+| POST | `/api/internal/post-channel` | 내부 | 샌드박스 EROFS 제약을 피해 채널 게시물을 추가합니다. | `server/routes/internal.py:internal_post_channel` |
+| POST | `/api/internal/rerank` | 내부 | 자식 프로세스를 위한 중앙 집중식 크로스 인코더 재순위화입니다. | `server/routes/internal.py:internal_rerank` |
+| POST | `/api/internal/send-message` | 내부 | 샌드박스 EROFS 제약을 피해 DM을 저장합니다. | `server/routes/internal.py:internal_send_message` |
+| POST | `/api/internal/settings/anima-icon-template` | 내부 | 인증된 작업자를 대신해 아이콘 템플릿 기본값을 저장합니다. | `server/routes/internal.py:internal_persist_anima_icon_template` |
+| POST | `/api/internal/submit-tasks` | 내부 | 호스트에서 전체 배치를 게시합니다. 샌드박스 DB 권한은 필요하지 않습니다. | `server/routes/internal.py:internal_submit_tasks` |
+| POST | `/api/internal/task-board-action` | 내부 | 샌드박스 처리된 Anima CLI를 위해 리스 가드가 적용된 태스크 보드 쓰기 작업을 실행합니다. | `server/routes/internal.py:internal_task_board_action` |
+| GET | `/api/internal/tasks` | 내부 | 데이터베이스에 직접 접근할 수 없는 작업자를 위해 태스크 스냅샷을 읽습니다. | `server/routes/internal.py:internal_tasks` |
+| POST | `/api/internal/update-task` | 내부 | 샌드박스 EROFS 제약을 피해 태스크 업데이트를 저장합니다. | `server/routes/internal.py:internal_update_task` |
 | POST | `/api/internal/vector/count` | 내부 | — | `server/routes/internal.py:vector_count` |
 | POST | `/api/internal/vector/create-collection` | 내부 | — | `server/routes/internal.py:vector_create_collection` |
 | POST | `/api/internal/vector/delete-collection` | 내부 | — | `server/routes/internal.py:vector_delete_collection` |
@@ -159,11 +160,11 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 | POST | `/api/internal/vector/get-by-ids` | 내부 | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | 내부 | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | 내부 | — | `server/routes/internal.py:vector_list_collections` |
-| POST | `/api/internal/vector/query` | 내부 | 내부 서비스용 벡터 검색을 실행합니다. | `server/routes/internal.py:vector_query` |
+| POST | `/api/internal/vector/query` | 내부 | 내부 서비스를 위한 벡터 검색을 실행합니다. | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | 내부 | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | 내부 | — | `server/routes/internal.py:vector_upsert` |
-| POST | `/api/internal/workspace/grant` | 내부 | 루트 소유 기록기를 통해 인간 기원 작업공간 권한을 적용합니다. | `server/routes/internal.py:internal_workspace_grant` |
-| GET | `/api/messages/{message_id}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 저장된 메시지의 전체 JSON을 ID로 반환합니다. | `server/routes/internal.py:get_message` |
+| POST | `/api/internal/workspace/grant` | 내부 | 루트 소유 기록기를 통해 사람을 출처로 하는 워크스페이스 권한을 적용합니다. | `server/routes/internal.py:internal_workspace_grant` |
+| GET | `/api/messages/{message_id}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | ID로 저장된 메시지의 전체 JSON을 반환합니다. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
 
@@ -186,6 +187,15 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 | GET | `/api/animas/{name}/memory/stats` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_procedures` |
 | GET | `/api/animas/{name}/procedures/{proc}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_procedure` |
+
+## `server/routes/phone.py`
+
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | 불필요(제외 목록) | 추측할 수 없는 토큰으로 만료되지 않은 합성 WAV를 제공합니다. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | 불필요(제외 목록) | 볼트 PIN을 검증하고 음성 턴 루프로 전환합니다. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/poll` | 불필요(제외 목록) | 현재 턴이 끝날 때까지 잠시 기다린 뒤 준비되면 결과를 재생합니다. | `server/routes/phone.py:poll` |
+| POST | `/api/webhooks/twilio/status` | 불필요(제외 목록) | Twilio 통화 상태 콜백을 처리하고 종료된 세션을 해제합니다. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/turn` | 불필요(제외 목록) | 음성 인식된 발화 하나를 수신하고 IPC 작업을 시작합니다. | `server/routes/phone.py:turn` |
+| POST | `/api/webhooks/twilio/voice` | 불필요(제외 목록) | 수신 통화, 알림 재생 및 알림 DTMF 응답을 처리합니다. | `server/routes/phone.py:voice` |
 
 ## `server/routes/room.py`
 

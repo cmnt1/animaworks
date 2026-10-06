@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=ffd4e55c9f710d5db03d871b019afd3e778e6580f0cb290e834db1891e4ac029 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=b5b330b69296bdc306ec06c047b8ee0ce1414120d0d561a48b02910700330d82 generated=2026-10-06 engine=luna model=gpt-6-luna translator=2 -->
 
 # API Reference
 
@@ -143,6 +143,7 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | POST | `/api/internal/interaction/message-ts` | Internal | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | Internal | Notify the server that a message was sent via CLI. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | Internal | — | `server/routes/internal.py:internal_notification_mapping` |
+| POST | `/api/internal/phone/alert` | Internal | Start an urgent phone alert for the configured Anima. | `server/routes/internal.py:internal_phone_alert` |
 | POST | `/api/internal/post-channel` | Internal | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | Internal | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | Internal | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
@@ -159,11 +160,11 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | POST | `/api/internal/vector/get-by-ids` | Internal | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | Internal | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | Internal | — | `server/routes/internal.py:vector_list_collections` |
-| POST | `/api/internal/vector/query` | Internal | Run vector search for internal services. | `server/routes/internal.py:vector_query` |
+| POST | `/api/internal/vector/query` | Internal | Perform vector search for internal services. | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | Internal | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | Internal | — | `server/routes/internal.py:vector_upsert` |
 | POST | `/api/internal/workspace/grant` | Internal | Apply a human-origin workspace grant through root-owned writers. | `server/routes/internal.py:internal_workspace_grant` |
-| GET | `/api/messages/{message_id}` | Session required (optional in local_trust mode, or when localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
+| GET | `/api/messages/{message_id}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
 
@@ -186,6 +187,15 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | GET | `/api/animas/{name}/memory/stats` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_procedures` |
 | GET | `/api/animas/{name}/procedures/{proc}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_procedure` |
+
+## `server/routes/phone.py`
+
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | Not required (exclusion list) | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | Not required (exclusion list) | Validate the vault PIN and transition to the speech turn loop. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/poll` | Not required (exclusion list) | Wait briefly for the current turn and play its result when ready. | `server/routes/phone.py:poll` |
+| POST | `/api/webhooks/twilio/status` | Not required (exclusion list) | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/turn` | Not required (exclusion list) | Receive one speech-recognized utterance and start its IPC task. | `server/routes/phone.py:turn` |
+| POST | `/api/webhooks/twilio/voice` | Not required (exclusion list) | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
 
 ## `server/routes/room.py`
 

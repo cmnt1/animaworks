@@ -132,29 +132,29 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig 최상위 레벨
+#### AnimaWorksConfig 최상위
 
 | 섹션 | 설명 |
 |-----------|------|
 | `version` | 설정 파일 버전 |
 | `setup_complete` | 설정 완료 플래그 |
-| `locale` | 로케일 설정 |
-| `system` | 시스템 설정 (모드, 로그 레벨) |
+| `locale` | 로캘 설정 |
+| `system` | 시스템 설정(모드, 로그 수준) |
 | `credentials` | API 인증 정보 |
-| `model_modes` | 모델 이름 → 실행 모드 매핑 |
+| `model_modes` | 모델명→실행 모드 매핑 |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima 설정 기본값 |
 | `animas` | Anima별 설정 오버라이드 |
 | `consolidation` | 기억 통합 설정 |
 | `background_review` |  |
-| `rag` | RAG (검색 확장 생성) 설정 |
+| `rag` | RAG(검색 증강 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | 프라이밍 (자동 기억 회상) 설정 |
+| `priming` | 프라이밍(자동 기억 회상) 설정 |
 | `image_gen` | 이미지 생성 설정 |
 | `human_notification` |  |
 | `interaction` |  |
@@ -170,6 +170,7 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 | `logging` |  |
 | `heartbeat` |  |
 | `voice` |  |
+| `phone` |  |
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
@@ -179,6 +180,7 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |
+| `cli` |  |
 
 <!-- AUTO-GENERATED:END -->
 

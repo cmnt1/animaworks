@@ -170,6 +170,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `logging` |  |
 | `heartbeat` |  |
 | `voice` |  |
+| `phone` |  |
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
@@ -179,6 +180,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |
+| `cli` |  |
 
 <!-- AUTO-GENERATED:END -->
 
