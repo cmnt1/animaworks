@@ -89,6 +89,8 @@ class FactExtractor:
         anima_dir: Path | None = None,
         credential: str = "",
         max_tokens: int = 8192,
+        allow_agent_sdk_fallback: bool = False,
+        helper_model: Any | None = None,
     ) -> None:
         self._model = model
         self._locale = locale
@@ -98,6 +100,8 @@ class FactExtractor:
         self._anima_dir = Path(anima_dir) if anima_dir is not None else None
         self._credential = credential
         self._max_tokens = max_tokens
+        self._allow_agent_sdk_fallback = allow_agent_sdk_fallback
+        self._helper_model = helper_model
         self.llm_calls = 0
         self.last_failure_stage = ""
         self.last_failure_reason = ""
@@ -270,18 +274,34 @@ class FactExtractor:
         for attempt in range(self._max_retries):
             try:
                 self.llm_calls += 1
-                text = await one_shot_completion(
-                    user_prompt,
-                    system_prompt=system_prompt,
-                    model=self._model,
-                    credential=self._credential,
-                    max_tokens=self._max_tokens,
-                    structured_output=True,
-                    temperature=0.0,
-                    timeout=self._timeout,
-                    llm_extra=self._llm_extra,
-                    allow_agent_sdk_fallback=False,
-                )
+                if self._helper_model is not None:
+                    from core.llm.helper_completion import one_shot_helper_completion
+
+                    text = await one_shot_helper_completion(
+                        user_prompt,
+                        role="fact_extraction",
+                        anima_dir=self._anima_dir,
+                        resolved=self._helper_model,
+                        system_prompt=system_prompt,
+                        max_tokens=self._max_tokens,
+                        structured_output=True,
+                        temperature=0.0,
+                        timeout=self._timeout,
+                        llm_extra=self._llm_extra,
+                    )
+                else:
+                    text = await one_shot_completion(
+                        user_prompt,
+                        system_prompt=system_prompt,
+                        model=self._model,
+                        credential=self._credential,
+                        max_tokens=self._max_tokens,
+                        structured_output=True,
+                        temperature=0.0,
+                        timeout=self._timeout,
+                        llm_extra=self._llm_extra,
+                        allow_agent_sdk_fallback=self._allow_agent_sdk_fallback,
+                    )
                 if text is None:
                     raise RuntimeError("LLM returned no content")
                 return text

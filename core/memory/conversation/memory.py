@@ -102,12 +102,11 @@ class ConversationMemory:
             self.__class__._class_locks[_key] = asyncio.Lock()
         self._finalize_lock = self.__class__._class_locks[_key]
 
-    @staticmethod
-    async def _call_llm(system: str, user_content: str, max_tokens: int = 1000) -> str:
-        """Delegate to standalone _call_llm for backward compat."""
+    async def _call_llm(self, system: str, user_content: str, max_tokens: int = 1000) -> str:
+        """Call the episode-summary helper role for session finalization."""
         from core.memory.conversation.compression import _call_llm
 
-        return await _call_llm(system, user_content, max_tokens=max_tokens)
+        return await _call_llm(system, user_content, max_tokens=max_tokens, anima_dir=self.anima_dir)
 
     def _load_context_window_overrides(self) -> dict[str, int] | None:
         try:
@@ -299,7 +298,7 @@ class ConversationMemory:
         return _build_structured_messages(state, content, fmt, self.model_config)
 
     async def _compress(self) -> CompressionResult:
-        return await _compress_fn(self.load(), self.model_config, self.asave, self.anima_name)
+        return await _compress_fn(self.load(), self.model_config, self.asave, self.anima_name, self.anima_dir)
 
     def needs_compression(self) -> bool:
         state = self.load()
@@ -312,6 +311,7 @@ class ConversationMemory:
             self._load_context_window_overrides,
             self.asave,
             self.anima_name,
+            self.anima_dir,
         )
 
     async def compress_if_needed_detailed(self) -> CompressionResult:
@@ -321,13 +321,14 @@ class ConversationMemory:
             self._load_context_window_overrides,
             self.asave,
             self.anima_name,
+            self.anima_dir,
         )
 
     async def finalize_if_session_ended(self) -> bool:
         async def _compress_inner() -> CompressionResult:
             from core.memory.conversation.compression import _compress
 
-            return await _compress(self.load(), self.model_config, self.asave, self.anima_name)
+            return await _compress(self.load(), self.model_config, self.asave, self.anima_name, self.anima_dir)
 
         async def _finalize_inner() -> bool:
             return await _finalize_session(

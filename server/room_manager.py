@@ -368,7 +368,7 @@ class RoomManager:
 
     async def _call_summary_llm(self, entries: list[dict]) -> str:
         """Summarize conversation entries using the consolidation LLM."""
-        from core.llm.oneshot import one_shot_completion
+        from core.llm.helper_completion import one_shot_helper_completion
 
         formatted = self._format_entries(entries)
         system = (
@@ -377,8 +377,9 @@ class RoomManager:
             "Preserve key decisions, action items, and important opinions. "
             "Keep the summary under 500 characters."
         )
-        result = await one_shot_completion(
+        result = await one_shot_helper_completion(
             formatted,
+            role="meeting_summary",
             system_prompt=system,
             max_tokens=500,
         )

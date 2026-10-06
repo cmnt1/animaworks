@@ -1,6 +1,7 @@
 {
   "write_text_json_dumps": {},
   "status_json_literal_files": [
+    "cli/commands/anima.py",
     "cli/commands/anima_mgmt.py",
     "core/activity/audit.py",
     "core/agent/agent_core.py",
@@ -10,6 +11,7 @@
     "core/anima/settings_store.py",
     "core/config/anima_registry.py",
     "core/config/file_access_policy.py",
+    "core/config/helper_models.py",
     "core/config/model_config.py",
     "core/config/schemas.py",
     "core/execution/engines/claude/_sdk_hooks.py",
@@ -17,7 +19,6 @@
     "core/infra/execution_sdk_preflight.py",
     "core/integrations/_anima_icon_url.py",
     "core/lifecycle/system_consolidation.py",
-    "core/memory/facts/config.py",
     "core/memory/facts/ontology.py",
     "core/memory/rag/repair/detect.py",
     "core/memory/rag/repair/rebuild.py",

@@ -130,6 +130,84 @@ def _resolve_source(model_name: str) -> str:
 # ── models show ───────────────────────────────────────────
 
 
+def cmd_models_helpers(args: argparse.Namespace) -> None:
+    """Show the resolved model and credential names for every helper role."""
+    from core.config.helper_models import HELPER_MODEL_ROLES, resolve_helper_model
+    from core.config.models import load_config
+    from core.i18n import t
+    from core.paths import get_animas_dir
+
+    config = load_config()
+    anima_name = getattr(args, "anima", None)
+    anima_dir = None
+    if anima_name:
+        anima_dir = get_animas_dir() / anima_name
+        if not anima_dir.is_dir():
+            print(t("models.helpers.anima_not_found", anima=anima_name), file=sys.stderr)
+            raise SystemExit(1)
+
+    rows: list[dict[str, object]] = []
+    for role in HELPER_MODEL_ROLES:
+        resolved = resolve_helper_model(role, anima_dir, config=config)
+        rows.append(
+            {
+                "role": role,
+                "model": resolved.model,
+                "credential": resolved.credential,
+                "fallbacks": [
+                    {"model": fallback.model, "credential": fallback.credential} for fallback in resolved.fallbacks
+                ],
+                "allow_agent_sdk_fallback": resolved.allow_agent_sdk_fallback,
+                "max_output_tokens": resolved.max_output_tokens,
+                "source": resolved.source,
+            }
+        )
+
+    if getattr(args, "json_output", False):
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+
+    print(t("models.helpers.title"))
+    if anima_name:
+        print(t("models.helpers.anima", anima=anima_name))
+    headers = [
+        t("models.helpers.role"),
+        t("models.helpers.model"),
+        t("models.helpers.credential"),
+        t("models.helpers.fallbacks"),
+        t("models.helpers.source"),
+    ]
+    widths = [
+        max(len(header), *(len(str(row[key])) for row in rows))
+        for header, key in zip(headers, ("role", "model", "credential", "fallbacks", "source"), strict=True)
+    ]
+    print("  ".join(f"{header:<{width}}" for header, width in zip(headers, widths, strict=True)))
+    print("  ".join("-" * width for width in widths))
+    for row in rows:
+        fallback_text = ", ".join(
+            f"{fallback['model']} ({fallback['credential'] or t('models.helpers.unset')})"
+            for fallback in row["fallbacks"]
+        ) or t("models.helpers.none")
+        values = (
+            str(row["role"]),
+            str(row["model"]),
+            str(row["credential"] or t("models.helpers.unset")),
+            fallback_text,
+            str(row["source"]),
+        )
+        print("  ".join(f"{value:<{width}}" for value, width in zip(values, widths, strict=True)))
+        if row["allow_agent_sdk_fallback"] or row["max_output_tokens"] is not None:
+            details: list[str] = []
+            if row["allow_agent_sdk_fallback"]:
+                details.append(t("models.helpers.sdk_fallback"))
+            if row["max_output_tokens"] is not None:
+                details.append(f"{t('models.helpers.max_output_tokens')}: {row['max_output_tokens']}")
+            print(f"  {'; '.join(details)}")
+
+
+# ── models show ───────────────────────────────────────────
+
+
 def cmd_models_show(args: argparse.Namespace) -> None:
     """Show current models.json contents."""
     from core.paths import get_data_dir
@@ -202,6 +280,12 @@ def register_models_command(subparsers: argparse._SubParsersAction) -> None:
     )
     p_info.add_argument("model", help="Model name (e.g. claude-sonnet-4-6)")
     p_info.set_defaults(func=cmd_models_info)
+
+    # models helpers
+    p_helpers = models_sub.add_parser("helpers", help="Show resolved helper models")
+    p_helpers.add_argument("--anima", default=None, help="Resolve per-anima helper overrides for this Anima")
+    p_helpers.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+    p_helpers.set_defaults(func=cmd_models_helpers)
 
     # models show
     p_show = models_sub.add_parser(

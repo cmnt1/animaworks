@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 1dc92c9a2c2347be99e2cb76fa553b62b74e267fef6c8cb2e36276550224dabc -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 3adc10a670a57664a4463359f35ad2e65176aa6caf30e0979e7e79fd1f43dc28 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -653,11 +653,22 @@ Run a stdio MCP server for an anima
 
 Model information and catalog
 
-`usage: animaworks models [-h] {list,info,show} ...`
+`usage: animaworks models [-h] {list,info,helpers,show} ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | — | — | — | — | — |
+
+## `models helpers`
+
+補助モデルの役割ごとに、解決されたモデル、認証情報名、代替候補、解決元を表示します。
+
+`usage: animaworks models helpers [-h] [--anima ANIMA] [--json]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --anima | option | — | — | Resolve per-anima helper overrides for this Anima |
+| --json | flag | false | — | Output as JSON |
 
 ## `models info`
 

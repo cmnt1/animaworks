@@ -479,13 +479,11 @@ class SchedulerMixin:
 
         defaults = ConsolidationConfig()
         min_entries = defaults.min_episodes_threshold
-        model = defaults.llm_model
         backfill_days = defaults.episode_summary_backfill_days
         max_backfill_days = defaults.episode_summary_backfill_max_days_per_run
         max_input_bytes = defaults.episode_summary_max_input_bytes
         if consolidation_cfg:
             min_entries = getattr(consolidation_cfg, "min_episodes_threshold", min_entries)
-            model = getattr(consolidation_cfg, "llm_model", model)
             backfill_days = getattr(consolidation_cfg, "episode_summary_backfill_days", backfill_days)
             max_backfill_days = getattr(
                 consolidation_cfg,
@@ -529,6 +527,9 @@ class SchedulerMixin:
                 )
                 return "skipped"
 
+            from core.config.helper_models import resolve_helper_model
+
+            episode_summary_model = resolve_helper_model("episode_summary", anima_dir).model
             gate = evaluate_daily_consolidation_gate(
                 anima_dir,
                 anima_name,
@@ -536,7 +537,7 @@ class SchedulerMixin:
                 hours=24,
                 backfill_days=backfill_days,
                 max_backfill_days=max_backfill_days,
-                model=model,
+                model=episode_summary_model,
                 max_input_bytes=max_input_bytes,
                 compaction_settings=ActivityCompactionSettings.from_config(consolidation_cfg, defaults),
                 exclude_noop_cron=getattr(
@@ -625,7 +626,7 @@ class SchedulerMixin:
                             anima_name,
                             anima_dir,
                             consolidation_cfg=consolidation_cfg,
-                            model=model,
+                            model="",
                         )
                     except Exception:
                         logger.exception("Daily consolidation post-processing failed for %s", anima_name)
@@ -700,9 +701,6 @@ class SchedulerMixin:
         )
 
         defaults = ConsolidationConfig()
-        model = defaults.llm_model
-        if consolidation_cfg:
-            model = getattr(consolidation_cfg, "llm_model", model)
 
         targets = self._iter_consolidation_targets()
         concurrency = _resolve_consolidation_concurrency(consolidation_cfg, defaults.max_concurrent_animas)
@@ -794,7 +792,7 @@ class SchedulerMixin:
                         anima_name,
                         anima_dir,
                         consolidation_cfg=consolidation_cfg,
-                        model=model,
+                        model="",
                     )
                 except Exception:
                     logger.exception("Weekly integration post-processing failed for %s", anima_name)

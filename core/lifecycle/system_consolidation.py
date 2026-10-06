@@ -228,7 +228,7 @@ async def run_daily_consolidation_post_processing(
         anima_dir,
         anima_name,
         consolidation_cfg,
-        model=model,
+        model="",
     )
 
 
@@ -241,7 +241,7 @@ async def run_weekly_integration_post_processing(
 ) -> None:
     """Run framework-side weekly integration post-processing."""
     if getattr(consolidation_cfg, "weekly_distillation_enabled", False) is True:
-        await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
+        await run_weekly_pattern_distillation(anima_dir, anima_name, model="")
 
 
 async def run_weekly_pattern_distillation(
@@ -300,7 +300,7 @@ async def run_knowledge_self_correction_if_enabled(
         result = await run_post_consolidation_knowledge_correction(
             anima_dir,
             anima_name,
-            model=model,
+            model="",
             limits=limits,
         )
         logger.info("Knowledge self-correction post-processing for %s: %s", anima_name, result)

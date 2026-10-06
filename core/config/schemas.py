@@ -392,6 +392,46 @@ class ConsolidationConfig(BaseModel):
     live_fact_debounce_seconds: int = Field(default=120, ge=0)
 
 
+class HelperModelFallback(BaseModel):
+    """A fallback model and its optional named credential for one helper role."""
+
+    model: str = Field(..., min_length=1, description="Fallback model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the fallback model.")
+
+
+class HelperModelRole(BaseModel):
+    """Model selection and one-shot policy for a single helper role."""
+
+    model: str | None = Field(default=None, description="Primary helper model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the primary model.")
+    fallbacks: list[HelperModelFallback] = Field(default_factory=list, description="Ordered explicit fallback models.")
+    allow_agent_sdk_fallback: bool = Field(
+        default=False,
+        description="Allow one-shot calls for this role to fall back to the Claude Agent SDK.",
+    )
+    max_output_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum output tokens for one-shot calls made by this role.",
+    )
+
+
+class HelperModelsConfig(BaseModel):
+    """Named helper-model roles plus a shared fallback role configuration."""
+
+    episode_summary: HelperModelRole | None = None
+    fact_extraction: HelperModelRole | None = None
+    fact_reconcile: HelperModelRole | None = None
+    weekly_consolidation: HelperModelRole | None = None
+    project_consolidation: HelperModelRole | None = None
+    conversation_compression: HelperModelRole | None = None
+    distillation: HelperModelRole | None = None
+    reconsolidation: HelperModelRole | None = None
+    asset_reconcile: HelperModelRole | None = None
+    meeting_summary: HelperModelRole | None = None
+    default: HelperModelRole = Field(default_factory=HelperModelRole)
+
+
 class ImageGenConfig(BaseModel):
     """Configuration for image generation and style consistency."""
 
@@ -1289,6 +1329,10 @@ class AnimaWorksConfig(BaseModel):
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
+    helper_models: HelperModelsConfig = Field(
+        default_factory=HelperModelsConfig,
+        description="Resolved model, credential, fallbacks, and one-shot policy for each helper role.",
+    )
     background_review: BackgroundReviewConfig = BackgroundReviewConfig()
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
@@ -1363,6 +1407,9 @@ __all__ = [
     "GitHubWebhookConfig",
     "GPUConfig",
     "HeartbeatConfig",
+    "HelperModelFallback",
+    "HelperModelRole",
+    "HelperModelsConfig",
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",

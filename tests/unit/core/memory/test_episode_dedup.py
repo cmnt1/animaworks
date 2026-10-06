@@ -296,7 +296,7 @@ class TestFinalizeSession:
 
         observed: dict[str, int] = {}
 
-        async def crashing_compress(old_summary, turn_text, turns, model_config=None):
+        async def crashing_compress(old_summary, turn_text, turns, model_config=None, *, anima_dir=None):
             # By the time compression runs, the cursor must already be on disk.
             reloaded = ConversationMemory(anima_dir, conv_memory.model_config).load()
             observed["cursor_at_compress"] = reloaded.last_finalized_turn_index
@@ -351,7 +351,14 @@ class TestFinalizeSession:
         )
         captured: dict[str, str] = {}
 
-        async def fake_compress(old_summary: str, turn_text: str, turns, model_config=None) -> tuple:
+        async def fake_compress(
+            old_summary: str,
+            turn_text: str,
+            turns,
+            model_config=None,
+            *,
+            anima_dir=None,
+        ) -> tuple:
             captured["turn_text"] = turn_text
             return ("全turn圧縮", "llm_primary", "", "")
 

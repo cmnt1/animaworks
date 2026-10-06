@@ -122,7 +122,7 @@ def test_resolve_extraction_config_ignores_status_endpoint_fields(tmp_path: Path
 
 
 @pytest.mark.unit
-def test_resolve_extraction_config_uses_background_model_and_handles_invalid_status(tmp_path: Path) -> None:
+def test_resolve_extraction_config_ignores_background_model_and_handles_invalid_status(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
     (anima_dir / "status.json").write_text(
@@ -138,11 +138,11 @@ def test_resolve_extraction_config_uses_background_model_and_handles_invalid_sta
 
     model, llm_extra, locale, timeout, credential = _resolve_extraction_config(anima_dir)
 
-    assert model == "background-safe-model"
+    assert model == "claude-sonnet-4-6"
     assert llm_extra == {}
     assert locale
     assert timeout == 11
-    assert credential == "background-cred"
+    assert credential == "anthropic"
 
     (anima_dir / "status.json").write_text("{invalid json", encoding="utf-8")
     fallback_model, fallback_extra, fallback_locale, fallback_timeout, fallback_credential = _resolve_extraction_config(
@@ -184,7 +184,7 @@ def test_resolve_extraction_config_defaults_to_consolidation_llm(
 
 
 @pytest.mark.unit
-def test_resolve_extraction_config_uncredentialed_background_model_falls_back_to_consolidation(
+def test_resolve_extraction_config_ignores_background_model_and_uses_legacy_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

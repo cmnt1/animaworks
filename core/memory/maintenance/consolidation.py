@@ -601,7 +601,9 @@ class ConsolidationEngine:
                 if model is None:
                     raise
         if model is None:
-            model = cfg.consolidation.llm_model
+            from core.config.helper_models import resolve_helper_model
+
+            model = resolve_helper_model("episode_summary", self.anima_dir, config=cfg).model
         if settings is None:
             settings = (
                 ActivityCompactionSettings.from_config(getattr(cfg, "consolidation", None))

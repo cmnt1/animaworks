@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -164,19 +164,24 @@ async def extract_fact_records_with_outcome(
     llm_calls_before = 0
     try:
         if extractor is None:
-            from core.memory.facts.config import _resolve_extraction_max_tokens
+            from core.memory.facts.config import _resolve_extraction_helper_model, _resolve_extraction_max_tokens
             from core.memory.facts.extractor import FactExtractor
 
             resolved_model, resolved_extra, resolved_locale, timeout, credential = _resolve_extraction_config(anima_dir)
-            max_tokens = _resolve_extraction_max_tokens()
+            _config, helper_model = _resolve_extraction_helper_model(anima_dir)
+            if model and model != helper_model.model:
+                helper_model = replace(helper_model, model=model, credential=None)
+            max_tokens = helper_model.max_output_tokens or _resolve_extraction_max_tokens()
             extractor = FactExtractor(
                 model=model or resolved_model,
                 locale=locale or resolved_locale,
                 timeout=timeout,
                 llm_extra=llm_extra or resolved_extra,
                 anima_dir=anima_dir,
-                credential="" if model else credential,
+                credential=credential if not model else "",
                 max_tokens=max_tokens,
+                allow_agent_sdk_fallback=helper_model.allow_agent_sdk_fallback,
+                helper_model=helper_model,
             )
         resolved_reference_time = reference_time or now_iso()
         llm_calls_before = _extractor_llm_calls(extractor)

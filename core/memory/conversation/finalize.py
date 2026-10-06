@@ -95,6 +95,8 @@ def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> 
 async def _summarize_session_with_state(
     turns: list[ConversationTurn],
     activity_context: str = "",
+    *,
+    anima_dir: Path | None = None,
 ) -> str:
     """Summarize a conversation session with state change extraction."""
     conversation_text = _format_turns_for_compression(turns)
@@ -105,7 +107,7 @@ async def _summarize_session_with_state(
     if activity_context:
         user_content += f"\n\n{activity_context}"
 
-    return await _call_llm(system, user_content)
+    return await _call_llm(system, user_content, helper_role="episode_summary", anima_dir=anima_dir)
 
 
 async def _extract_session_facts_nonfatal(
@@ -336,7 +338,7 @@ async def finalize_session(
     activity_context = _gather_activity_context(anima_dir, new_turns)
 
     try:
-        raw_summary = await _summarize_session_with_state(new_turns, activity_context)
+        raw_summary = await _summarize_session_with_state(new_turns, activity_context, anima_dir=anima_dir)
     except Exception:
         logger.exception("Failed to summarize session; skipping episode write")
         return False
@@ -388,6 +390,7 @@ async def finalize_session(
             turn_text,
             turns_to_compress,
             model_config,
+            anima_dir=anima_dir,
         )
         state.compressed_summary = compressed
         # Finalized turns are now in compressed_summary; clear to prevent

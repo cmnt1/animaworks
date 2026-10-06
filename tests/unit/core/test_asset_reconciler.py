@@ -339,71 +339,54 @@ class TestExtractPrompt:
             result = await _extract_prompt(anima_dir)
         assert result is None
 
-    def test_prompt_synthesis_model_prefers_local_llm(self, tmp_path: Path) -> None:
+    def test_prompt_synthesis_model_ignores_local_and_anima_models(self, tmp_path: Path) -> None:
         from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate(
+            {
+                "anima_defaults": {
+                    "model": "codex/gpt-5.4-mini",
+                    "credential": "openai",
+                },
+                "local_llm": {"default_model": "ollama/qwen2.5-coder:14b"},
+            }
+        )
 
-        cfg = MagicMock()
-        cfg.anima_defaults.credential = "ollama"
-        cfg.local_llm.default_model = "ollama/qwen2.5-coder:14b"
-        cfg.local_llm.base_url = "http://127.0.0.1:11434"
-        cfg.local_llm.credential = ""
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("ollama/qwen2.5-coder:14b", "")
+        assert result == ("claude-sonnet-4-6", "anthropic")
 
-    def test_prompt_synthesis_model_uses_gateway_credential(self, tmp_path: Path) -> None:
-        """A LiteLLM/vLLM gateway model resolves only via its named credential.
-
-        Without one the ``openai/`` prefix would send local-GPU traffic to the
-        real OpenAI API (or fail for lack of a key).
-        """
+    def test_prompt_synthesis_model_uses_legacy_helper_model_and_credential(self, tmp_path: Path) -> None:
         from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate(
+            {"consolidation": {"llm_model": "openai/qwen3.6-35b-a3b", "llm_credential": "vllm-lb"}}
+        )
 
-        cfg = MagicMock()
-        cfg.local_llm.default_model = "openai/qwen3.6-35b-a3b"
-        cfg.local_llm.base_url = ""
-        cfg.local_llm.credential = "vllm-lb"
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
         assert result == ("openai/qwen3.6-35b-a3b", "vllm-lb")
 
-    def test_prompt_synthesis_model_falls_back_to_anima_model(self, tmp_path: Path) -> None:
+    def test_prompt_synthesis_model_falls_back_to_registry_code_default(self, tmp_path: Path) -> None:
         from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate({"anima_defaults": {"model": "codex/gpt-5.4-mini"}})
 
-        cfg = MagicMock()
-        cfg.local_llm.default_model = ""
-        cfg.local_llm.base_url = ""
-        cfg.local_llm.credential = ""
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("codex/gpt-5.4-mini", "")
+        assert result == ("claude-sonnet-4-6", "anthropic")
 
 
 # ── reconcile_anima_assets ──────────────────────────────────────
@@ -708,18 +691,12 @@ async def test_first_profile_wait_does_not_record_asset_failure(tmp_path):
     assert _asset_failure_records == {}
 
 
-def test_unconfigured_ollama_does_not_override_codex_image_prompt_model(tmp_path, monkeypatch):
+def test_asset_helper_ignores_codex_anima_model(tmp_path):
     from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
     from core.config import AnimaWorksConfig
-    from core.schemas import ModelConfig
 
-    monkeypatch.delenv("OLLAMA_SERVERS", raising=False)
     config = AnimaWorksConfig()
     config.anima_defaults.model = "codex/account-model"
     config.anima_defaults.credential = "openai"
-    resolved = ModelConfig(model="codex/account-model", credential="openai")
-    with (
-        patch("core.config.models.load_config", return_value=config),
-        patch("core.config.models.load_model_config", return_value=resolved),
-    ):
-        assert _resolve_prompt_synthesis_model(tmp_path) == ("codex/account-model", "openai")
+    with patch("core.config.io.load_config", return_value=config):
+        assert _resolve_prompt_synthesis_model(tmp_path) == ("claude-sonnet-4-6", "anthropic")

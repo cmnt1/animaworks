@@ -1,5 +1,6 @@
 # Japanese overrides keyed by the canonical argparse command path.
 init: runtime ディレクトリを初期化し、必要に応じて anima を作成します。
 anima set-model: 指定した anima の主モデルを変更します。
+models helpers: 補助モデルの役割ごとに、解決されたモデル、認証情報名、代替候補、解決元を表示します。
 task board: タスクボードの項目を確認・操作します。
 migrate: 実行時データに必要なマイグレーションを実行します。

@@ -14,6 +14,16 @@ import pytest
 class TestParserCommands:
     """Test that argparse correctly parses all subcommands."""
 
+    def test_models_helpers_options(self) -> None:
+        from cli.parser import build_parser
+
+        args = build_parser().parse_args(["models", "helpers", "--anima", "mei", "--json"])
+
+        assert args.command == "models"
+        assert args.models_command == "helpers"
+        assert args.anima == "mei"
+        assert args.json_output is True
+
     def test_removed_memory_commands_are_invalid_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
         from cli.parser import build_parser
 

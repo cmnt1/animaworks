@@ -477,15 +477,26 @@ def _apply_operations(
 
 async def _run_model(prompt: str, anima_dir: Path, memory: Any, config: Any) -> tuple[str | None, str]:
     from core.anima.lifecycle import _complete_episode_prompt, _episode_summary_model_configs
-    from core.config.model_config import resolve_model_selection
+    from core.config.helper_models import resolve_helper_model
 
     base_config = memory.read_model_config()
-    selection = resolve_model_selection(base_config, lane="background", config=config, apply_fallback=False)
-    primary = selection.primary
-    fallback_configs = _episode_summary_model_configs(primary, primary.model, config)
-    model_configs = [primary, *fallback_configs[1:]]
-    raw, _reason = await _complete_episode_prompt(prompt, model_configs)
-    return raw, primary.model
+    helper_model = resolve_helper_model("episode_summary", anima_dir, config=config)
+    model_configs = _episode_summary_model_configs(
+        base_config,
+        helper_model.model,
+        config,
+        anima_dir=anima_dir,
+        helper_model=helper_model,
+    )
+    consolidation = getattr(config, "consolidation", None)
+    legacy_max_tokens = getattr(consolidation, "episode_summary_max_output_tokens", 4096)
+    raw, _reason = await _complete_episode_prompt(
+        prompt,
+        model_configs,
+        max_output_tokens=helper_model.max_output_tokens or legacy_max_tokens,
+        allow_agent_sdk_fallback=helper_model.allow_agent_sdk_fallback,
+    )
+    return raw, helper_model.model
 
 
 async def perform_background_review(
