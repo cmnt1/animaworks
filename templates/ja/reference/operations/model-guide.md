@@ -11,7 +11,7 @@ AnimaWorks はモデル名から実行モードを自動判定する。6種類�
 
 | モード | 名称 | 概要 | 対象モデル例 |
 |--------|------|------|-------------|
-| **S** | SDK | Claude Agent SDK経由。最も高機能 | `claude-opus-4-6`, `claude-sonnet-4-6` |
+| **S** | SDK | Claude Agent SDK経由。最も高機能 | `claude-opus-5-5`, `claude-sonnet-5-5` |
 | **C** | Codex | Codex CLI経由 | `codex/o4-mini`, `codex/gpt-4.1` |
 | **D** | Cursor Agent | Cursor Agent CLI（`cursor-agent`）経由。MCP 統合 | `cursor/*` |
 | **G** | Gemini CLI | Gemini CLI 経由。MCP 統合 | `gemini/*` |
@@ -38,8 +38,8 @@ Mode X の利用前に `grok` CLI をインストールし、`grok login` で認
 
 | モデル | 説明 |
 |--------|------|
-| `claude-opus-4-6` | 最高性能・推奨 |
-| `claude-sonnet-4-6` | バランス型・推奨 |
+| `claude-opus-5-5` | 最高性能・推奨 |
+| `claude-sonnet-5-5` | バランス型・推奨 |
 | `claude-haiku-4-5-20251001` | 軽量・高速 |
 
 ### OpenAI（Mode A）
@@ -177,8 +177,8 @@ fnmatch ワイルドカードパターンが使用可能。
 
 ```json
 {
-  "claude-opus-4-6":    { "mode": "S", "context_window": 1000000 },
-  "claude-sonnet-4-6":  { "mode": "S", "context_window": 1000000 },
+  "claude-opus-5-5":    { "mode": "S", "context_window": 1000000 },
+  "claude-sonnet-5-5":  { "mode": "S", "context_window": 1000000 },
   "claude-*":           { "mode": "S", "context_window": 200000 },
   "grok/*":             { "mode": "X", "context_window": 500000 },
   "openai/gpt-4.1*":   { "mode": "A", "context_window": 1000000 },
@@ -187,7 +187,7 @@ fnmatch ワイルドカードパターンが使用可能。
 }
 ```
 
-具体的なパターンが優先。`claude-opus-4-6` は `claude-*` より先にマッチする。
+具体的なパターンが優先。`claude-opus-5-5` は `claude-*` より先にマッチする。
 
 ### 確認コマンド
 
@@ -337,13 +337,13 @@ Heartbeat / Inbox / Cron は「判断・トリアージ」が主目的で、実�
 
 ```bash
 # 特定Animaにbackground_model を設定
-animaworks anima set-background-model {名前} claude-sonnet-4-6
+animaworks anima set-background-model {名前} claude-sonnet-5-5
 
 # credential が異なるプロバイダの場合
 animaworks anima set-background-model {名前} azure/gpt-4.1-mini --credential azure
 
 # 全Animaに一括設定
-animaworks anima set-background-model --all claude-sonnet-4-6
+animaworks anima set-background-model --all claude-sonnet-5-5
 
 # background_model を削除（メインモデルにフォールバック）
 animaworks anima set-background-model {名前} --clear
@@ -356,8 +356,8 @@ animaworks anima restart {名前}
 
 ```json
 {
-  "model": "claude-opus-4-6",
-  "background_model": "claude-sonnet-4-6",
+  "model": "claude-opus-5-5",
+  "background_model": "claude-sonnet-5-5",
   "background_credential": null
 }
 ```
@@ -372,12 +372,12 @@ animaworks anima restart {名前}
 
 | ロール | デフォルトモデル | background_model | context_threshold | conversation_history_threshold |
 |--------|---------------|-----------------|-------------------|----------------------------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| engineer | claude-opus-5-5 | claude-sonnet-5-5 | 0.80 | 0.40 |
+| manager | claude-opus-5-5 | claude-sonnet-5-5 | 0.60 | 0.30 |
+| writer | claude-sonnet-5-5 | — | 0.70 | 0.30 |
+| researcher | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
 Opus 系ロール（engineer, manager）は `background_model` として Sonnet が自動設定される。
 Sonnet 以下のロールは既にコスト効率が良いため、`background_model` は未設定。
@@ -400,8 +400,8 @@ models.json はファイルの mtime で自動リロードされる。`anima rel
 
 ### どのモデルを選べばよいかわからない
 
-- **高品質・自律実行が必要** → `claude-opus-4-6`（Mode S）
-- **バランス・コスト重視** → `claude-sonnet-4-6`（Mode S）
+- **高品質・自律実行が必要** → `claude-opus-5-5`（Mode S）
+- **バランス・コスト重視** → `claude-sonnet-5-5`（Mode S）
 - **低コスト・大量処理** → `openai/gpt-4.1-mini`（Mode A）
 - **ローカルGPU・コスト$0** → `openai/qwen3.5-35b-a3b`（Mode A, vLLM）**推奨**
 - **ローカル・軽量** → `ollama/qwen3:14b`（Mode A）

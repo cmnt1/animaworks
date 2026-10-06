@@ -31,7 +31,7 @@ credential의 내용에서 자동 판정되지 않는다. 명시적으로 `mode_
 
 Anthropic API에 직접 연결한다. 스트리밍이 가장 원활하다.
 
-**config.json 의 credential 설정:**
+**config.json의 credential 설정:**
 
 ```json
 {
@@ -43,26 +43,26 @@ Anthropic API에 직접 연결한다. 스트리밍이 가장 원활하다.
 }
 ```
 
-- `api_key`: Anthropic API 키. 비어 있는 경우 환경 변수 `ANTHROPIC_API_KEY` 으로 폴백
-- `base_url`: 커스텀 엔드포인트(선택). 지정 시 `ANTHROPIC_BASE_URL` 로서 자식 프로세스에 전달됨(프록시나 온프레미스 이용 시)
+- `api_key`: Anthropic API 키. 비어 있으면 환경 변수 `ANTHROPIC_API_KEY`로 폴백
+- `base_url`: 커스텀 엔드포인트(선택). 지정 시 `ANTHROPIC_BASE_URL`로 하위 프로세스에 전달됨(프록시 또는 온프레미스 사용 시)
 
 **status.json(Anima 개별):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "anthropic",
   "mode_s_auth": "api"
 }
 ```
 
-`mode_s_auth` 이 `"api"` 이고 credential에 `api_key` 이 없으며 환경 변수에도 없는 경우, Max plan으로 폴백한다.
+`mode_s_auth`이 `"api"`에서 credential에 `api_key`이 없고 환경 변수에도 없으면 Max plan으로 폴백한다.
 
 ### 2. Bedrock 모드
 
-AWS Bedrock 경유로 연결한다. credential의 `keys` 가 `extra_keys` 으로서 ModelConfig에 전달되고, 환경 변수에 매핑된다.
+AWS Bedrock을 통해 연결한다. credential의 `keys`가 `extra_keys`로 ModelConfig에 전달되고, 환경 변수에 매핑된다.
 
-**config.json 의 credential 설정:**
+**config.json의 credential 설정:**
 
 ```json
 {
@@ -89,26 +89,26 @@ AWS Bedrock 경유로 연결한다. credential의 `keys` 가 `extra_keys` 으로
 | aws_session_token | AWS_SESSION_TOKEN | 임시 인증(선택) |
 | aws_profile | AWS_PROFILE | 프로필 이름(선택) |
 
-`keys` 에 값이 없는 항목은 위의 대응하는 환경 변수로 폴백한다. 프로덕션에서는 `AWS_PROFILE` 만 설정하고 키를 config에 쓰지 않는 운영도 가능.
+`keys`에 값이 없는 항목은 위의 해당 환경 변수로 폴백한다. 프로덕션에서는 `AWS_PROFILE`만 설정하고 키를 config에 쓰지 않는 운영도 가능하다.
 
 **status.json(Anima 개별):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "bedrock",
   "execution_mode": "S",
   "mode_s_auth": "bedrock"
 }
 ```
 
-Bedrock을 Mode S에서 사용하는 경우 `execution_mode: "S"` 과 `mode_s_auth: "bedrock"` 을 모두 지정한다.
+Bedrock을 Mode S로 사용할 경우 `execution_mode: "S"`과 `mode_s_auth: "bedrock"`을 모두 지정한다.
 
 ### 3. Vertex AI 모드
 
-Google Vertex AI 경유로 연결한다. credential의 `keys` 가 `extra_keys` 으로서 ModelConfig에 전달되고, 환경 변수에 매핑된다.
+Google Vertex AI를 통해 연결한다. credential의 `keys`가 `extra_keys`로 ModelConfig에 전달되고, 환경 변수에 매핑된다.
 
-**config.json 의 credential 설정:**
+**config.json의 credential 설정:**
 
 ```json
 {
@@ -131,13 +131,13 @@ Google Vertex AI 경유로 연결한다. credential의 `keys` 가 `extra_keys` �
 | vertex_location | CLOUD_ML_REGION | 리전(예: us-central1) |
 | vertex_credentials | GOOGLE_APPLICATION_CREDENTIALS | 서비스 계정 JSON 경로 |
 
-`keys` 에 값이 없는 항목은 위의 대응하는 환경 변수로 폴백한다. ADC(Application Default Credentials) 이용 시 `vertex_credentials` 를 생략 가능.
+`keys`에 값이 없는 항목은 위의 해당 환경 변수로 폴백한다. ADC(Application Default Credentials) 사용 시 `vertex_credentials`를 생략할 수 있다.
 
 **status.json(Anima 개별):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "vertex",
   "execution_mode": "S",
   "mode_s_auth": "vertex"
@@ -148,7 +148,7 @@ Google Vertex AI 경유로 연결한다. credential의 `keys` 가 `extra_keys` �
 
 Claude Code의 구독 인증(Max plan 등)을 사용한다.
 
-**config.json 의 credential 설정:**
+**config.json의 credential 설정:**
 
 ```json
 {
@@ -164,12 +164,12 @@ Claude Code의 구독 인증(Max plan 등)을 사용한다.
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "max"
 }
 ```
 
-`mode_s_auth` 를 생략하거나 `"max"` 으로 하면 Max plan이 된다.
+`mode_s_auth`를 생략하거나 `"max"`으로 하면 Max plan이 된다.
 
 ## Anima별 용도 구분 예
 

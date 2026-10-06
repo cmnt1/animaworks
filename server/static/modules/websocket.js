@@ -170,6 +170,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_start"));
+          window.dispatchEvent(new CustomEvent("aw:animas-changed"));
         } else if (bsStatus === "completed") {
           const existing = state.animas.find((p) => p.name === animaName);
           if (existing) {

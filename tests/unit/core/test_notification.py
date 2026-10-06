@@ -514,3 +514,17 @@ def test_web_delivered_notification_is_not_queued_again(tmp_path):
 
     assert json.loads(result)["status"] == "sent"
     assert handler._pending_notifications == []
+
+
+def test_web_only_notifier_sends_without_confirm_step(tmp_path):
+    """No external channel means nothing to cross-check; send on the first call."""
+    notifier = _make_mock_notifier(notify_result=["web: OK"])
+    notifier.has_external_channels = False
+    notifier.delivers_to_web = True
+    handler = _make_tool_handler(tmp_path, notifier=notifier)
+    handler._call_human_keys = MagicMock()
+
+    result = handler.handle("call_human", {"subject": "Team update", "body": "hinata joined"})
+
+    assert json.loads(result)["status"] == "sent"
+    handler._call_human_keys.check.assert_not_called()

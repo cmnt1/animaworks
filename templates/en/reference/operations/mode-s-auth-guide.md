@@ -43,20 +43,20 @@ Connects directly to the Anthropic API. Streaming is the smoothest.
 }
 ```
 
-- `api_key`: Anthropic API key. Falls back to environment variable `ANTHROPIC_API_KEY` if empty
+- `api_key`: Anthropic API key. If empty, falls back to the environment variable `ANTHROPIC_API_KEY`
 - `base_url`: Custom endpoint (optional). When specified, it is passed to the child process as `ANTHROPIC_BASE_URL` (for proxy or on-premises use)
 
-**status.json (per-Anima):**
+**status.json (Anima-specific):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "anthropic",
   "mode_s_auth": "api"
 }
 ```
 
-If `mode_s_auth` is `"api"` and the credential has no `api_key` and the environment variable is also absent, it falls back to Max plan.
+If `mode_s_auth` is `"api"` and the credential has no `api_key` and it is not in the environment variables either, it falls back to Max plan.
 
 ### 2. Bedrock Mode
 
@@ -81,7 +81,7 @@ Connects via AWS Bedrock. The credential's `keys` is passed to ModelConfig as `e
 }
 ```
 
-| keys Key | Environment Variable | Description |
+| keys key | Environment variable | Description |
 |-----------|----------|------|
 | aws_access_key_id | AWS_ACCESS_KEY_ID | Required |
 | aws_secret_access_key | AWS_SECRET_ACCESS_KEY | Required |
@@ -89,20 +89,20 @@ Connects via AWS Bedrock. The credential's `keys` is passed to ModelConfig as `e
 | aws_session_token | AWS_SESSION_TOKEN | Temporary authentication (optional) |
 | aws_profile | AWS_PROFILE | Profile name (optional) |
 
-Items without values in `keys` fall back to the corresponding environment variables above. In production, it is possible to set only `AWS_PROFILE` and not write keys in the config.
+Items with no value in `keys` fall back to the corresponding environment variables above. In production, it is possible to set only `AWS_PROFILE` and not write keys in the config.
 
-**status.json (per-Anima):**
+**status.json (Anima-specific):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "bedrock",
   "execution_mode": "S",
   "mode_s_auth": "bedrock"
 }
 ```
 
-When using Bedrock with Mode S, specify both `execution_mode: "S"` and `mode_s_auth: "bedrock"`.
+When using Bedrock in Mode S, specify both `execution_mode: "S"` and `mode_s_auth: "bedrock"`.
 
 ### 3. Vertex AI Mode
 
@@ -125,26 +125,26 @@ Connects via Google Vertex AI. The credential's `keys` is passed to ModelConfig 
 }
 ```
 
-| keys Key | Environment Variable | Description |
+| keys key | Environment variable | Description |
 |-----------|----------|------|
 | vertex_project | CLOUD_ML_PROJECT_ID | GCP project ID |
 | vertex_location | CLOUD_ML_REGION | Region (e.g., us-central1) |
 | vertex_credentials | GOOGLE_APPLICATION_CREDENTIALS | Service account JSON path |
 
-Items without values in `keys` fall back to the corresponding environment variables above. When using ADC (Application Default Credentials), `vertex_credentials` can be omitted.
+Items with no value in `keys` fall back to the corresponding environment variables above. When using ADC (Application Default Credentials), `vertex_credentials` can be omitted.
 
-**status.json (per-Anima):**
+**status.json (Anima-specific):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "vertex",
   "execution_mode": "S",
   "mode_s_auth": "vertex"
 }
 ```
 
-### 4. Max Plan Mode (Default)
+### 4. Max plan Mode (default)
 
 Uses Claude Code's subscription authentication (Max plan, etc.).
 
@@ -160,16 +160,16 @@ Uses Claude Code's subscription authentication (Max plan, etc.).
 }
 ```
 
-**status.json (per-Anima):**
+**status.json (Anima-specific):**
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "max"
 }
 ```
 
-Omitting `mode_s_auth` or setting it to `"max"` results in Max plan.
+If `mode_s_auth` is omitted or set to `"max"`, it becomes Max plan.
 
 ## Example of Per-Anima Usage
 

@@ -649,7 +649,7 @@ function _isKnownUserName(name, opts) {
  *
  * @param {object} msg
  * @param {object} opts
- * @returns {"dm"|null}
+ * @returns {"dm"|"notice"|null}
  */
 export function getMessageActivityType(msg, opts = {}) {
   if (!msg) return null;
@@ -657,6 +657,9 @@ export function getMessageActivityType(msg, opts = {}) {
   const to = msg.to_person || "";
   const selfName = opts.animaName || "";
   if (_isKnownUserName(from, opts) || _isKnownUserName(to, opts)) return null;
+  // Notes the Anima's own runtime sends to itself (task failure / not-closed
+  // notices) are bookkeeping, not conversation with the user.
+  if (from && from === to && from === selfName) return "notice";
   if (from && from !== selfName && _isKnownAnimaName(from, opts)) return "dm";
   if (to && to !== selfName && _isKnownAnimaName(to, opts)) return "dm";
   return null;
@@ -690,6 +693,7 @@ function _activityTypeLabel(type, count) {
   if (type === "cron") return t("chat.bg_tasks_count", { count });
   if (type === "task") return _activityCountLabel(t("chat.task_exec_activity"), count);
   if (type === "dm") return _activityCountLabel(t("chat.dm_activity"), count);
+  if (type === "notice") return _activityCountLabel(t("chat.notice_activity"), count);
   return _activityCountLabel(type, count);
 }
 
@@ -793,7 +797,7 @@ function _renderActivityEntry(item, type, opts, index) {
 }
 
 function _sortActivityTypes(types) {
-  const order = ["heartbeat", "cron", "task", "dm"];
+  const order = ["heartbeat", "cron", "task", "dm", "notice"];
   return types.sort((a, b) => order.indexOf(a) - order.indexOf(b));
 }
 

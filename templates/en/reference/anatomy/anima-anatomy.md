@@ -143,15 +143,15 @@ Definition of available tools, accessible paths, and executable commands.
 | Modification permission | Supervisor or administrator |
 | Modification frequency | Rare |
 
-### status.json — Configuration Information
+### status.json — Configuration
 
-The **Single Source of Truth (SSoT)** for your execution parameters.
+Your **Single Source of Truth (SSoT)** for execution parameters.
 
 ```json
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "supervisor": "aoi"
@@ -163,15 +163,15 @@ The **Single Source of Truth (SSoT)** for your execution parameters.
 | `enabled` | Enabled/disabled |
 | `role` | Role (engineer, manager, writer, researcher, ops, general) |
 | `model` | LLM model to use |
-| `credential` | Name of API authentication information |
+| `credential` | Name of API authentication credentials |
 | `max_tokens` | Maximum tokens per response |
 | `supervisor` | Supervisor's Anima name (null = top level) |
 | `background_model` | Lightweight model for Heartbeat/Cron (main model if not set) |
 
 | Item | Value |
 |------|-----|
-| Modification permission | CLI command or administrator. Supervisor can change via `set_subordinate_model` |
-| Modification frequency | As needed |
+| Change permission | CLI command or administrator. Supervisor can change via `set_subordinate_model` |
+| Change frequency | Anytime |
 
 ### bootstrap.md — Initial Startup Instruction
 

@@ -200,7 +200,7 @@ def register_models_command(subparsers: argparse._SubParsersAction) -> None:
         "info",
         help="Show resolved mode and context for a model",
     )
-    p_info.add_argument("model", help="Model name (e.g. claude-sonnet-4-6)")
+    p_info.add_argument("model", help="Model name (e.g. claude-sonnet-5-5)")
     p_info.set_defaults(func=cmd_models_info)
 
     # models show

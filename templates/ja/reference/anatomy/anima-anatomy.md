@@ -151,7 +151,7 @@ injection.md はあなたの**可変の行動指針**。許可された上司や
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "supervisor": "aoi"

@@ -33,7 +33,7 @@ AVAILABLE_PROVIDERS = [
     {
         "id": "anthropic",
         "name": "Anthropic",
-        "models": ["claude-opus-4-6", "claude-sonnet-4-6"],
+        "models": ["claude-opus-5-5", "claude-sonnet-5-5"],
         "env_key": "ANTHROPIC_API_KEY",
     },
     {
@@ -499,7 +499,7 @@ async def _validate_anthropic_key(api_key: str) -> dict[str, Any]:
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-6",
+                    "model": "claude-haiku-4-5",
                     "max_tokens": 1,
                     "messages": [{"role": "user", "content": "hi"}],
                 },

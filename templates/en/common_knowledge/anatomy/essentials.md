@@ -193,14 +193,14 @@ There are two ways to put tasks into execution.
 
 ### background_model
 
-Heartbeat / Cron can use an explicitly configured background_model. Inbox uses the main model, and task-specific model specifications take priority for that task. Do not auto-select just because it is cheaper.
+Heartbeat / Cron can use an explicitly configured background_model. The Inbox uses the main model, and task-specific model specifications take priority for that task. Do not automatically select a model simply because it is cheaper.
 
-| Category | Model used | Target |
-|------|-----------|------|
-| foreground | Main model, or an explicitly specified task-specific model | Chat, Inbox, TaskExec |
-| background | Explicitly configured background_model, or the main model if not set | Heartbeat, Cron |
+| Category | Model Used | Target |
+|----------|-----------|--------|
+| foreground | Main model, or explicitly specified task-specific model | Chat, Inbox, TaskExec |
+| background | Explicitly configured background_model; if not set, the main model | Heartbeat, Cron |
 
-Configuration: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
+Configuration: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
 
 ### Activity Level
 

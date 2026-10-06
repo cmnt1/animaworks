@@ -145,13 +145,13 @@ injection.md은 당신의 **가변 행동 지침**. 허가된 상급자나 인�
 
 ### status.json — 설정 정보
 
-당신의 실행 파라미터의 **Single Source of Truth(SSoT)**.
+당신의 실행 파라미터에 대한 **Single Source of Truth (SSoT)**.
 
 ```json
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "supervisor": "aoi"
@@ -160,17 +160,17 @@ injection.md은 당신의 **가변 행동 지침**. 허가된 상급자나 인�
 
 | 필드 | 설명 |
 |-----------|------|
-| `enabled` | 유효/무효 |
-| `role` | 역할(engineer, manager, writer, researcher, ops, general) |
-| `model` | 사용하는 LLM 모델 |
+| `enabled` | 활성/비활성 |
+| `role` | 역할 (engineer, manager, writer, researcher, ops, general) |
+| `model` | 사용할 LLM 모델 |
 | `credential` | API 인증 정보의 이름 |
 | `max_tokens` | 1회 응답의 최대 토큰 |
-| `supervisor` | 상급자의 Anima 이름(null = 톱레벨) |
-| `background_model` | Heartbeat/Cron용 경량 모델(미설정 시 메인 모델) |
+| `supervisor` | 상급자의 Anima 이름 (null = 최상위) |
+| `background_model` | Heartbeat/Cron 용 경량 모델 (미설정 시 메인 모델) |
 
 | 항목 | 값 |
 |------|-----|
-| 변경 권한 | CLI 명령 또는 관리자. 상급자가 `set_subordinate_model`로 변경 가능 |
+| 변경 권한 | CLI 명령 또는 관리자. 상급자가 `set_subordinate_model` 에서 변경 가능 |
 | 변경 빈도 | 수시 |
 
 ### bootstrap.md — 최초 시작 지침

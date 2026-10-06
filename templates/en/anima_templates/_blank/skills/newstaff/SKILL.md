@@ -18,30 +18,30 @@ description: >-
 
 ### 1. Interview (minimal is fine)
 
-Gather the following information from the requester. **Only the bold items are required**; if others are not specified, they will be auto-generated:
+Gather the following information from the requester. **Only the bold items are required**; anything else left unspecified will be auto-generated:
 
 **Required:**
 - **English name** (lowercase alphanumeric only. This becomes the directory name)
-- **Role/specialty**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
-- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If there are already 2 cool types in the organization, don't choose that
-- **Face type**: Choose 1 from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
+- **Role / specialty area**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
+- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If the organization already has two cool types, don't choose that
+- **Face type**: One from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
 
-**Optional (reflected if specified, auto-generated if not):**
+**Optional (use if specified, otherwise auto-generate):**
 - Japanese name
 - Age
 - Any other preferences
 
-**Technical configuration (defaults used if not specified):**
+**Technical configuration (use defaults if not specified):**
 - Role: `commander` (can delegate to other employees) or `worker` (receives delegation)
-- supervisor: English name of the Anima who is the supervisor (required for worker; defaults to self if not specified)
+- supervisor: The English name of the Anima that is the supervisor (required for worker; if unspecified, use self)
 
 **Brain (LLM model) configuration:**
 
-Do not show the model table to the user to choose from (since unusable models would be mixed in). Only when the user specifies a model, configure it with reference to the table below. If not specified, omit the model row in the character sheet and proceed with the default model:
+Do not show the model table to the user to choose from (since unusable models are mixed in). Only when the user specifies a model, use the table below as a reference. If not specified, omit the model row in the character sheet and proceed with the default model:
 
 | Level | Execution mode | Example models | Features | credential |
 |--------|-----------|-------------|------|------------|
-| S | autonomous | `claude-opus-4-6`, `claude-sonnet-4-6` | Claude Agent SDK. Most capable | anthropic |
+| S | autonomous | `claude-opus-5-5`, `claude-sonnet-5-5` | Claude Agent SDK. Most capable | anthropic |
 | A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | Via LiteLLM. Tool use available | openai / google / azure / vertex |
 | B | assisted | `ollama/gemma3:27b`, `ollama/qwen2.5-coder:32b` | No tools. Local execution, low cost | ollama |
 

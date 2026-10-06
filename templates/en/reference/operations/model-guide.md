@@ -10,8 +10,8 @@ Explains execution modes, supported models, configuration methods, and how the c
 AnimaWorks automatically determines the execution mode from the model name. There are 6 execution modes:
 
 | Mode | Name | Overview | Example Models |
-|--------|------|-------------|-------------|
-| **S** | SDK | Via Claude Agent SDK. Most feature-rich | `claude-opus-4-6`, `claude-sonnet-4-6` |
+|--------|------|------|-------------|
+| **S** | SDK | Via Claude Agent SDK. Most feature-rich | `claude-opus-5-5`, `claude-sonnet-5-5` |
 | **C** | Codex | Via Codex CLI | `codex/o4-mini`, `codex/gpt-4.1` |
 | **D** | Cursor Agent | Via Cursor Agent CLI (`cursor-agent`). MCP integration | `cursor/*` |
 | **G** | Gemini CLI | Via Gemini CLI. MCP integration | `gemini/*` |
@@ -38,8 +38,8 @@ Use `animaworks models list` to display the latest list. Main models:
 
 | Model | Description |
 |--------|------|
-| `claude-opus-4-6` | Highest performance, recommended |
-| `claude-sonnet-4-6` | Balanced, recommended |
+| `claude-opus-5-5` | Highest performance, recommended |
+| `claude-sonnet-5-5` | Balanced, recommended |
 | `claude-haiku-4-5-20251001` | Lightweight, fast |
 
 ### OpenAI (Mode A)
@@ -173,12 +173,12 @@ fnmatch wildcard patterns are supported.
 }
 ```
 
-### Example
+### Examples
 
 ```json
 {
-  "claude-opus-4-6":    { "mode": "S", "context_window": 1000000 },
-  "claude-sonnet-4-6":  { "mode": "S", "context_window": 1000000 },
+  "claude-opus-5-5":    { "mode": "S", "context_window": 1000000 },
+  "claude-sonnet-5-5":  { "mode": "S", "context_window": 1000000 },
   "claude-*":           { "mode": "S", "context_window": 200000 },
   "grok/*":             { "mode": "X", "context_window": 500000 },
   "openai/gpt-4.1*":   { "mode": "A", "context_window": 1000000 },
@@ -187,7 +187,7 @@ fnmatch wildcard patterns are supported.
 }
 ```
 
-Specific patterns take priority. `claude-opus-4-6` matches before `claude-*`.
+Specific patterns take priority. `claude-opus-5-5` matches before `claude-*`.
 
 ### Verification Command
 
@@ -337,13 +337,13 @@ Heartbeat / Inbox / Cron are primarily for "judgment and triage," with execution
 
 ```bash
 # 特定Animaにbackground_model を設定
-animaworks anima set-background-model {名前} claude-sonnet-4-6
+animaworks anima set-background-model {名前} claude-sonnet-5-5
 
 # credential が異なるプロバイダの場合
 animaworks anima set-background-model {名前} azure/gpt-4.1-mini --credential azure
 
 # 全Animaに一括設定
-animaworks anima set-background-model --all claude-sonnet-4-6
+animaworks anima set-background-model --all claude-sonnet-5-5
 
 # background_model を削除（メインモデルにフォールバック）
 animaworks anima set-background-model {名前} --clear
@@ -356,8 +356,8 @@ animaworks anima restart {名前}
 
 ```json
 {
-  "model": "claude-opus-4-6",
-  "background_model": "claude-sonnet-4-6",
+  "model": "claude-opus-5-5",
+  "background_model": "claude-sonnet-5-5",
   "background_credential": null
 }
 ```
@@ -372,14 +372,14 @@ Changing the role with `animaworks anima set-role` also changes the default mode
 
 | Role | Default Model | background_model | context_threshold | conversation_history_threshold |
 |--------|---------------|-----------------|-------------------|----------------------------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| engineer | claude-opus-5-5 | claude-sonnet-5-5 | 0.80 | 0.40 |
+| manager | claude-opus-5-5 | claude-sonnet-5-5 | 0.60 | 0.30 |
+| writer | claude-sonnet-5-5 | — | 0.70 | 0.30 |
+| researcher | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
-For Opus-class roles (engineer, manager), Sonnet is automatically set as `background_model`.
+For Opus-class roles (engineer, manager), Sonnet is automatically configured as `background_model`.
 Roles at or below Sonnet are already cost-efficient, so `background_model` is not set.
 
 ---
@@ -398,10 +398,10 @@ models.json is automatically reloaded based on the file's mtime. It can also be 
 
 Change `context_window` in `models.json`, or override with `model_context_windows` in `config.json`.
 
-### I don't know which model to choose
+### Not sure which model to choose
 
-- **High quality, autonomous execution required** → `claude-opus-4-6` (Mode S)
-- **Balance, cost-focused** → `claude-sonnet-4-6` (Mode S)
+- **High quality, autonomous execution needed** → `claude-opus-5-5` (Mode S)
+- **Balanced, cost-focused** → `claude-sonnet-5-5` (Mode S)
 - **Low cost, high volume** → `openai/gpt-4.1-mini` (Mode A)
 - **Local GPU, $0 cost** → `openai/qwen3.5-35b-a3b` (Mode A, vLLM) **Recommended**
 - **Local, lightweight** → `ollama/qwen3:14b` (Mode A)

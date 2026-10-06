@@ -52,27 +52,27 @@ disable_subordinate(name="taro", reason="業務縮小のため一時休止")
 enable_subordinate(name="aoi")
 ```
 
-### 모델 변경과 재시작
+### 모델 변경 및 재시작
 
-이 도구들은 root에 root 소유 `status.json`의 업데이트를 요청한다. Anima 프로세스에서 직접 편집하지 않는다. 메인 모델은 실행 중 프로세스에 reload되고, 종료 중인 Anima는 다음 시작 시 새 설정을 읽는다:
+이 도구들은 root에게 root 소유 `status.json`의 업데이트를 요청한다. Anima 프로세스에서 직접 편집하지 않는다. 메인 모델은 시작 중인 프로세스에 reload되며, 종료된 Anima는 다음 시작 시 새 설정을 읽는다:
 
 ```
-set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
+set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分散のため")
 ```
 
 백그라운드 모델(heartbeat/cron용)은 다음 작업 러너 시작부터 적용되며, 실행 중인 작업은 그대로 완료된다:
 
 ```
-set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
+set_subordinate_background_model(name="aoi", model="claude-sonnet-5-5", reason="heartbeat負荷軽減")
 ```
 
-백그라운드 모델을 클리어하고 메인 모델로 되돌리는 경우:
+백그라운드 모델을 지우고 메인 모델로 되돌리는 경우:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")
 ```
 
-프로세스 전체의 재시작이 정말 필요한 경우에만, 별도로 `restart_subordinate`를 사용한다.
+프로세스 전체의 재시작이 정말로 필요한 경우에만, 별도로 `restart_subordinate`를 사용한다.
 
 ### 상태 확인・감사
 

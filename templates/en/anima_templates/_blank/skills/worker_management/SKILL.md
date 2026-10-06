@@ -46,7 +46,7 @@ animaworks anima delete <name>
 animaworks anima restart aoi
 
 # モデルを変更して起動中プロセスに自動reload
-animaworks anima set-model aoi claude-sonnet-4-6
+animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
 ## API Reference (when CLI is unavailable)

@@ -79,3 +79,18 @@ def test_i18n_contains_activity_collapse_labels() -> None:
         assert data["chat.activity_bundle_count"]
         assert data["chat.activity_category_count"]
         assert data["chat.dm_activity"]
+
+
+def test_self_addressed_runtime_notices_fold_into_activity() -> None:
+    js = _read(RENDER_UTILS_JS)
+    assert 'if (from && from === to && from === selfName) return "notice";' in js
+    for lang in ("ja", "en", "ko"):
+        data = json.loads(_read(I18N_DIR / f"{lang}.json"))
+        assert data.get("chat.notice_activity")
+
+
+def test_chat_refreshes_known_animas_when_a_member_is_hired() -> None:
+    pane_host = _read(CHAT_RENDERER_JS.parent / "pane-host.js")
+    websocket = _read(PROJECT_ROOT / "server" / "static" / "modules" / "websocket.js")
+    assert '"aw:animas-changed"' in pane_host
+    assert 'new CustomEvent("aw:animas-changed")' in websocket

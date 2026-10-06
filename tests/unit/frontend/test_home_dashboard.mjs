@@ -133,6 +133,8 @@ describe("attentionSummaryChips", () => {
     const home = await loadHomeHelpers();
     const chips = home.attentionSummaryChips(null, 0);
     assert.equal(chips.every((c) => c.count === 0), true);
+    // No connected-service items: the external chip is not shown at all.
+    assert.equal(chips.some((c) => c.key === "external"), false);
     assert.equal(chips.every((chip) => !chip.emphasis), true);
   });
 

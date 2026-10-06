@@ -231,7 +231,7 @@ class TestContextTrackerInit:
         entry = {"mode": "S", "context_window": 200_000}
         with patch(_PATCH_TARGET, return_value=entry):
             ct = ContextTracker()
-            assert ct.model == "claude-sonnet-4-6"
+            assert ct.model == "claude-sonnet-5-5"
             assert ct.threshold == 0.50
             assert ct.context_window_overrides == {}
 

@@ -39,14 +39,14 @@ animaworks anima enable <name>
 animaworks anima delete <name>
 ```
 
-### 자주 쓰는 사용법
+### 자주 쓰이는 용법
 
 ```bash
 # config.json変更後に特定Animaだけリスタート
 animaworks anima restart aoi
 
 # モデルを変更して起動中プロセスに自動reload
-animaworks anima set-model aoi claude-sonnet-4-6
+animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
 ## API 참조(CLI를 사용할 수 없는 경우)

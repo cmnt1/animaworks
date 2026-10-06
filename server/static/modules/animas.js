@@ -163,7 +163,6 @@ export function buildAnimaListStatusHtml(p) {
   if (uptime && uptime !== "--") parts.push(uptime);
   const subprocesses = Array.isArray(p.subprocesses) ? p.subprocesses : [];
   const processCount = p.process_count || (subprocesses.length ? 1 + subprocesses.length : 0);
-  if (processCount > 1) parts.push(t("processes.count_short", { count: processCount }));
 
   let tone = "neutral";
   if (status === "error" || status === "down") tone = "error";
@@ -176,6 +175,8 @@ export function buildAnimaListStatusHtml(p) {
   if (subprocesses.length) {
     pidTitle += ` · ${subprocesses.map((s) => `${s.kind || "?"}: ${s.pid ?? "--"}`).join(", ")}`;
   }
+  // Process counts are an operator detail; keep them in the tooltip.
+  if (processCount > 1) pidTitle += ` · ${t("processes.count_short", { count: processCount })}`;
   return `<span class="anima-list-status anima-list-status--${tone}" title="${escapeHtml(pidTitle)}">${health}<span class="anima-list-status-text">${escapeHtml(parts.join(" · "))}</span></span>`;
 }
 

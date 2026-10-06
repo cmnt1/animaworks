@@ -246,3 +246,15 @@ class TestFromConfig:
         notifier = HumanNotifier.from_config(HumanNotificationConfig(web_ui=False))
         assert notifier.channel_count == 0
         assert notifier.delivers_to_web is False
+
+
+def test_has_external_channels_reflects_configured_channels():
+    web_only = HumanNotifier.from_config(HumanNotificationConfig())
+    assert web_only.has_external_channels is False
+    with_ntfy = HumanNotifier.from_config(
+        HumanNotificationConfig(
+            enabled=True,
+            channels=[NotificationChannelConfig(type="ntfy", config={"server_url": "https://ntfy.sh", "topic": "t"})],
+        )
+    )
+    assert with_ntfy.has_external_channels is True

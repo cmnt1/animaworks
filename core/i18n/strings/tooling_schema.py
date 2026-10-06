@@ -218,9 +218,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "검증 가능한 수락 조건. 부하의 실행 프롬프트에 포함된다",
     },
     "schema.delegate_task.model": {
-        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-4-6' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
-        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
-        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-4-6' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
+        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
+        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
+        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
     },
     "schema.submit_tasks.resume": {
         "ja": "終了したpendingタスクを保存済みの実行入力で再開する。trueの場合はtask_idとresumeのみ指定。新規タスクにはtitleとdescriptionが必須。",
@@ -228,9 +228,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "저장된 실행 입력으로 종료된 pending 작업을 재개합니다. true이면 task_id와 resume만 지정합니다. 새 작업에는 title과 description이 필요합니다.",
     },
     "schema.submit_tasks.task_model": {
-        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-4-6' や 'c:codex/gpt-5.6-sol'）。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
-        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). Leave empty to use the Anima default model",
-        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-4-6' 또는 'c:codex/gpt-5.6-sol'). 보통은 미지정(기본 모델 사용)",
+        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
+        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). Leave empty to use the Anima default model",
+        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 보통은 미지정(기본 모델 사용)",
     },
     "schema.disable_subordinate.desc": {
         "ja": "配下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の配下であれば操作可能。",
@@ -450,15 +450,15 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.set_subordinate_model.desc": {
         "ja": (
-            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-4-6            最高性能・推奨\n  claude-sonnet-4-6          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
+            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-5-5            最高性能・推奨\n  claude-sonnet-5-5          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
         ),
         "en": (
-            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to status.json immediately and root asks running processes to reload them. Stopped Animas use the new model on next start.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-4-6            Highest performance, recommended\n  claude-sonnet-4-6          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
+            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to status.json immediately and root asks running processes to reload them. Stopped Animas use the new model on next start.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-5-5            Highest performance, recommended\n  claude-sonnet-5-5          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
         ),
     },
     "schema.set_subordinate_model.model": {
-        "ja": "新しいモデル名（例: claude-sonnet-4-6, openai/gpt-4.1）",
-        "en": "New model name (e.g. claude-sonnet-4-6, openai/gpt-4.1)",
+        "ja": "新しいモデル名（例: claude-sonnet-5-5, openai/gpt-4.1）",
+        "en": "New model name (e.g. claude-sonnet-5-5, openai/gpt-4.1)",
     },
     "schema.set_subordinate_model.name": {
         "ja": "変更する部下のAnima名",

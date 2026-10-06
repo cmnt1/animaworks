@@ -40,8 +40,8 @@ At every startup, `common_skills` and `common_knowledge` are incrementally synch
 
 ## Overall Structure of config.json
 
-AnimaWorks’ integrated configuration file is located at `~/.animaworks/config.json`.
-All configuration is defined using the `AnimaWorksConfig` model, which has the following top-level fields.
+The AnimaWorks integration configuration file is located at `~/.animaworks/config.json`.
+All settings are defined using the `AnimaWorksConfig` model and have the following top-level fields.
 
 ```json
 {
@@ -54,7 +54,7 @@ All configuration is defined using the `AnimaWorksConfig` model, which has the f
     "openai": { "api_key": "sk-..." }
   },
   "model_modes": {},
-  "anima_defaults": { "model": "claude-sonnet-4-6", "max_tokens": 8192 },
+  "anima_defaults": { "model": "claude-sonnet-5-5", "max_tokens": 8192 },
   "animas": {
     "aoi": { "supervisor": null, "speciality": null },
     "taro": { "supervisor": "aoi", "speciality": null }
@@ -66,23 +66,23 @@ All configuration is defined using the `AnimaWorksConfig` model, which has the f
 }
 ```
 
-**Note**: The `animas` section contains only the organization layout (`supervisor`, `speciality`). Model settings such as model names and credentials are recorded in each Anima’s `status.json` (see “Resolving Anima Settings” below).
+**Note**: The `animas` section only holds the organization layout (`supervisor`, `speciality`). Model names, credentials, and other model settings are recorded in each Anima's `status.json` (see "Anima Configuration Resolution" below).
 
-Roles of each section:
+Role of each section:
 
 | Section | Description |
 |-----------|------|
 | `version` | Configuration schema version (currently `1`) |
 | `setup_complete` | Initial setup completion flag |
 | `locale` | UI language (`"ja"` / `"en"`) |
-| `system` | Server mode and time zone |
-| `credentials` | Named API keys and endpoints |
-| `model_modes` | Override map from model names to execution modes |
-| `anima_defaults` | Default settings shared by all Anima |
+| `system` | Server mode and timezone |
+| `credentials` | API keys and endpoints (named) |
+| `model_modes` | Model name → execution mode override map |
+| `anima_defaults` | Default settings common to all Anima |
 | `animas` | Anima organization layout (supervisor, speciality). Model settings are in status.json |
-| `consolidation` | Daily/weekly consolidation settings |
+| `consolidation` | Consolidation settings (daily/weekly) |
 | `rag` | RAG (embedding vector search) settings |
-| `priming` | Priming (automatic memory retrieval) token budget |
+| `priming` | Token budget for priming (automatic memory retrieval) |
 | `image_gen` | Image generation style settings |
 
 <!-- AUTO-GENERATED:START config_fields -->
@@ -105,7 +105,7 @@ Roles of each section:
 
 | Field | Type | Default | Description |
 |-----------|-----|----------|------|
-| `model` | `str` | `"claude-sonnet-4-6"` |  |
+| `model` | `str` | `"claude-sonnet-5-5"` |  |
 | `fallback_model` | `str | None` | None |  |
 | `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
@@ -273,11 +273,11 @@ AnimaWorks has **6** execution modes. They are automatically determined from the
 
 ### Mode S (SDK): Claude Agent SDK
 
-For Claude models only. Uses a Claude Code subprocess and enables the richest tool execution.
+For Claude models only. Uses a Claude Code subprocess, enabling the richest tool execution.
 
-- **Target models**: `claude-*` (e.g., `claude-sonnet-4-6`, `claude-opus-4-6`)
-- **Features**: File operations, Bash execution, and autonomous memory search are all done via the Claude Agent SDK
-- **credential**: Use `anthropic` (MUST)
+- **Target models**: `claude-*` (e.g., `claude-sonnet-5-5`, `claude-opus-5-5`)
+- **Features**: File operations, Bash execution, and autonomous memory search are all performed via the Claude Agent SDK
+- **credential**: Uses `anthropic` (MUST)
 
 ### Mode C (Codex): Codex CLI
 
@@ -433,7 +433,7 @@ File path: `~/.animaworks/animas/{name}/status.json`
 {
   "enabled": true,
   "role": "engineer",
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-5-5",
   "credential": "anthropic",
   "max_tokens": 16384,
   "context_threshold": 0.80,
@@ -475,14 +475,14 @@ The reload is applied immediately via IPC (no downtime). Running sessions comple
 
 Do not edit `status.json` directly from the Anima process. Use the root-owned CLI/API operation.
 
-### Default values list (anima_defaults)
+### Default Value List (anima_defaults)
 
-| Field | Default value | Description |
+| Field | Default Value | Description |
 |-----------|-------------|------|
-| `model` | `claude-sonnet-4-6` | LLM model to use |
-| `max_tokens` | `8192` | Maximum tokens per response |
+| `model` | `claude-sonnet-5-5` | LLM model to use |
+| `max_tokens` | `8192` | Maximum number of tokens per response |
 | `credential` | `"anthropic"` | Credential name to use |
-| `context_threshold` | `0.50` | Externalizes short-term memory when context usage exceeds this threshold |
+| `context_threshold` | `0.50` | When context usage exceeds this threshold, short-term memory is externalized |
 
 ### Hierarchy structure
 

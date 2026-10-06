@@ -149,6 +149,11 @@ class HumanNotifier:
         return cls(channels)
 
     @property
+    def has_external_channels(self) -> bool:
+        """Whether any channel besides the built-in Web UI is configured."""
+        return any(ch.channel_type != "web" for ch in self._channels)
+
+    @property
     def delivers_to_web(self) -> bool:
         """Whether the Web UI already receives notifications from this notifier."""
         return any(ch.channel_type == "web" for ch in self._channels)
