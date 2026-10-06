@@ -83,6 +83,8 @@ def parse_sse_audio(line: str) -> tuple[bytes, int] | None:
 class GeminiTTS(BaseTTSProvider):
     """Gemini API TTS provider (streaming via Interactions API)."""
 
+    prefers_whole_reply = True
+
     def __init__(self, voice_config: Any) -> None:
         self._model = _cfg(voice_config, "model", DEFAULT_MODEL)
         self._api_key_env = _cfg(voice_config, "api_key_env", "GEMINI_API_KEY")

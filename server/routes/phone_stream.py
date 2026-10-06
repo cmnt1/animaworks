@@ -159,7 +159,7 @@ def register_phone_stream_route(router: APIRouter) -> None:
                     from core.paths import get_animas_dir
 
                     animas_dir = getattr(websocket.app.state, "animas_dir", None) or get_animas_dir()
-                    detector = TurnDetector()
+                    detector = TurnDetector(redemption_ms=phone_config.turn_end_silence_ms)
                     transport = TwilioMediaStreamTransport(websocket, detector, stream_sid)
                     voice_transport: VoiceTransport = transport
                     session = build_voice_session(

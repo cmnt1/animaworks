@@ -15,13 +15,14 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
 from core.voice.emotion_style import EmotionStyle, VoiceChannel, voice_mode_suffix
-from core.voice.front import ASK_ANIMA_TOOL, READ_MEMORY_TOOL, VoiceFrontLane, extract_emotion
+from core.voice.front import READ_MEMORY_TOOL, VoiceFrontLane, extract_emotion, localized_ask_anima_tool
 
 logger = logging.getLogger(__name__)
 
 IPC_STREAM_TIMEOUT = 300.0  # chat/streamと同水準。ツール往復する応答が60sを超えるため
-MAX_ASK_ANIMA_CONCURRENT = 2
+MAX_ASK_ANIMA_CONCURRENT = 1
 ASK_ANIMA_MAX_RESULT_CHARS = 1000
 ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
 
@@ -174,6 +175,7 @@ class FrontConversation:
         ipc_timeout: float = IPC_STREAM_TIMEOUT,
         max_concurrent_delegations: int = MAX_ASK_ANIMA_CONCURRENT,
         on_delegation: Callable[[], None] | None = None,
+        on_ask_anima: Callable[[], None] | None = None,
     ) -> None:
         self.anima_name = anima_name
         self.supervisor = supervisor
@@ -185,13 +187,12 @@ class FrontConversation:
         self.channel = channel
         self.emotion_style = emotion_style
         if delegation_note is None and channel == "phone":
-            from core.i18n import t
-
             delegation_note = t("phone.delegation_note")
         self.delegation_note = ASK_ANIMA_DELEGATION_NOTE if delegation_note is None else delegation_note
         self.ipc_timeout = ipc_timeout
         self.max_concurrent_delegations = max_concurrent_delegations
         self._on_delegation = on_delegation
+        self._on_ask_anima = on_ask_anima
 
         self._lane: Any | None = None
         self._delegation_jobs: dict[int, asyncio.Task[Any]] = {}
@@ -328,7 +329,7 @@ class FrontConversation:
         completed = False
         try:
             if tools is None:
-                tools = [ASK_ANIMA_TOOL, READ_MEMORY_TOOL]
+                tools = [localized_ask_anima_tool(), READ_MEMORY_TOOL]
             async for delta in lane.stream(
                 turn_text,
                 tools=tools,
@@ -452,11 +453,22 @@ class FrontConversation:
 
     def ask_anima(self, request: str) -> str:
         """Schedule a full-agent request and immediately return its ACK."""
+        if self._on_ask_anima is not None:
+            try:
+                self._on_ask_anima()
+            except Exception:
+                logger.debug("Failed to record ask_anima call (%s)", self.anima_name, exc_info=True)
+
         request = (request or "").strip()
         if not request:
             request = "（依頼内容が指定されていません）"
-        if len(self._delegation_jobs) >= self.max_concurrent_delegations:
-            return f"実行中の依頼が{self.max_concurrent_delegations}件ある。完了を待ってほしい"
+        if self._delegation_jobs:
+            job = next(iter(self._delegation_jobs))
+            running_request = self._delegation_requests.get(job, "")
+            summary = running_request[:80]
+            if len(running_request) > 80:
+                summary += "…"
+            return t("voice.ask_anima_in_progress", job=job, request=summary)
         self._ensure_delegation_state()
         self._delegation_job_counter += 1
         job = self._delegation_job_counter
