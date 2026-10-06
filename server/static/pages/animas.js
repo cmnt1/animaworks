@@ -26,7 +26,7 @@ const ANIMAS_SORT_STORAGE_KEY = "animaworks-animas-sort";
 const DEFAULT_ANIMAS_SORT = "org";
 const DEPARTMENT_ORDER = ["全社", "Administration", "Property", "Finance", "Affiliate"];
 const TITLE_ORDER = ["COO", "グループリーダー", "アソシエイト"];
-const EXECUTION_ROUTE_ORDER = ["S", "A", "C", "D", "G", "B"];
+const EXECUTION_ROUTE_ORDER = ["S", "A", "C", "D", "G", "X", "B"];
 let _listSortKey = _loadListSortKey();
 let _listFilterField = "";
 let _listFilterValue = "";
@@ -87,10 +87,27 @@ function _modelMetaFromId(modelId, option = {}) {
   if (id.startsWith("ollama/")) {
     return { route: explicitRoute || "B", provider: explicitProvider || "Ollama", modelName: explicitModelName || id.replace(/^ollama\//, "") };
   }
+  if (id.startsWith("grok/")) {
+    return { route: explicitRoute || "X", provider: explicitProvider || "xAI", modelName: explicitModelName || id.replace(/^grok\//, "") };
+  }
+  if (explicitRoute === "S") {
+    return { route: "S", provider: explicitProvider || "Anthropic", modelName: explicitModelName || id };
+  }
   return { route: explicitRoute || "A", provider: explicitProvider || "Custom", modelName: explicitModelName || id };
 }
 
 function _normaliseModelOption(option) {
+  // Discovery catalog entries look like {id: "s:claude-opus-5-5", mode: "s",
+  // model: "claude-opus-5-5"}.  status.json and PUT /model use the bare model
+  // id, so unwrap it; credential is left empty so the server infers it.
+  if (option.mode && option.model && !option.route) {
+    option = {
+      ...option,
+      id: option.model,
+      route: String(option.mode).toUpperCase(),
+      credential: "",
+    };
+  }
   const meta = _modelMetaFromId(option.id, option);
   return {
     ...option,
@@ -102,7 +119,13 @@ function _normaliseModelOption(option) {
 }
 
 function _modelsWithCurrent(models, currentModel) {
-  const normalised = (models || []).map(_normaliseModelOption);
+  const seen = new Set();
+  const normalised = (models || []).map(_normaliseModelOption).filter(m => {
+    const key = `${m.route}\u0000${m.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   if (currentModel && !normalised.find(m => m.id === currentModel)) {
     const meta = _modelMetaFromId(currentModel);
     normalised.push({

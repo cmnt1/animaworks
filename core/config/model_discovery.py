@@ -32,6 +32,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -239,6 +240,8 @@ def _probe_codex() -> list[DiscoveredModel]:
             [executable, "debug", "models"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=CLI_TIMEOUT,
             stdin=subprocess.DEVNULL,
         )
@@ -269,6 +272,8 @@ def _probe_grok() -> list[DiscoveredModel]:
             [executable, "models"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=CLI_TIMEOUT,
             stdin=subprocess.DEVNULL,
         )
@@ -290,13 +295,18 @@ def _probe_grok() -> list[DiscoveredModel]:
 
 
 def _probe_claude() -> list[DiscoveredModel]:
-    if shutil.which("claude") is None:
+    # Run the resolved path: on Windows "claude" is claude.CMD, which
+    # CreateProcess cannot find by bare name.
+    executable = shutil.which("claude")
+    if executable is None:
         return []
     try:
         result = subprocess.run(
-            ["claude", "--help"],
+            [executable, "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=CLI_TIMEOUT,
             stdin=subprocess.DEVNULL,
         )
@@ -347,6 +357,100 @@ def _probe_openai_compatible(config: Any) -> list[DiscoveredModel]:
     return newline_models
 
 
+# Shared with the Daily Ops model page (http://127.0.0.1:8787/models), which
+# reads this file and appends verified ids to it.  Keys are provider names.
+SHARED_CACHE_FILENAME = "model_catalog_cache.json"
+_SHARED_CACHE_PROVIDERS = {
+    "claude_code": "Claude",
+    "codex": "Codex",
+    "nanogpt": "nanogpt",
+    "google": "google",
+    "opencode_go": "opencode_go",
+}
+
+
+def _shared_cache_path() -> Path:
+    from core.paths import get_data_dir
+
+    return get_data_dir() / SHARED_CACHE_FILENAME
+
+
+def _read_shared_cache() -> dict[str, Any]:
+    try:
+        data = json.loads(_shared_cache_path().read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _probe_shared_cache(config: Any) -> list[DiscoveredModel]:
+    """Models recorded in the shared catalog cache by earlier refreshes."""
+    providers = _read_shared_cache().get("providers", {})
+    if not isinstance(providers, dict):
+        return []
+    results: list[DiscoveredModel] = []
+    for provider, group in _SHARED_CACHE_PROVIDERS.items():
+        entry = providers.get(provider)
+        models = entry.get("models", []) if isinstance(entry, dict) else []
+        for model in models if isinstance(models, list) else []:
+            if not isinstance(model, str) or not model.strip():
+                continue
+            model = model.strip().removeprefix("anthropic/") if provider == "claude_code" else model.strip()
+            try:
+                mode = resolve_execution_mode(config, model).lower()
+            except Exception:  # noqa: BLE001 - skip ids the resolver rejects
+                continue
+            results.append(
+                DiscoveredModel(
+                    id=f"{mode}:{model}",
+                    mode=mode,
+                    model=model,
+                    label=model.split("/", 1)[-1] if provider != "claude_code" else model,
+                    group=group,
+                    source="shared-cache",
+                )
+            )
+    return results
+
+
+def write_shared_cache(models: list[DiscoveredModel]) -> list[dict[str, Any]]:
+    """Merge freshly probed ids into the shared cache; return per-provider status rows."""
+    by_provider: dict[str, list[str]] = {"claude_code": [], "codex": [], "nanogpt": []}
+    for m in models:
+        if m.source == "codex-cli":
+            by_provider["codex"].append(m.model)
+        elif m.source == "openai-compatible" and m.model.startswith("nanogpt/"):
+            by_provider["nanogpt"].append(m.model)
+        elif m.mode == "s" and m.model.startswith("claude-"):
+            by_provider["claude_code"].append(m.model)
+
+    document = _read_shared_cache()
+    providers = document.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        providers = document["providers"] = {}
+    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    rows: list[dict[str, Any]] = []
+    for provider, fresh in by_provider.items():
+        entry = providers.get(provider) if isinstance(providers.get(provider), dict) else {}
+        old = [v for v in entry.get("models", []) if isinstance(v, str)]
+        merged = list(dict.fromkeys([*fresh, *old]))
+        status = "ok" if fresh else "cached"
+        providers[provider] = {
+            **entry,
+            "models": merged,
+            "status": status,
+            "updated_at": now if fresh else entry.get("updated_at", ""),
+        }
+        rows.append({"provider": provider, "status": status, "count": len(merged), "source": "animaworks"})
+    document.setdefault("version", 1)
+
+    path = _shared_cache_path()
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return rows
+
+
 def _probe_ollama(config: Any) -> list[DiscoveredModel]:
     try:
         local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
@@ -372,7 +476,7 @@ def _probe_ollama(config: Any) -> list[DiscoveredModel]:
 
 
 def _static_fallback(config: Any) -> list[DiscoveredModel]:
-    """Fall back to the static catalog when every dynamic probe came up empty."""
+    """Return the static (KNOWN_MODELS + configured) catalog as DiscoveredModels."""
     from core.config.model_catalog import _build_static_model_catalog  # local import to avoid cycle
 
     results: list[DiscoveredModel] = []
@@ -435,7 +539,7 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
 
     result = _dedupe_and_sort(merged)
     if not result:
-        result = _dedupe_and_sort(_static_fallback(config))
+        result = _dedupe_and_sort([*_static_fallback(config), *_probe_shared_cache(config)])
     else:
         from core.config.model_catalog import _configured_model_entries
 
@@ -453,7 +557,10 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
                     source="configured",
                 )
             )
-        result = _dedupe_and_sort([*result, *configured])
+        # One successful probe (e.g. nanoGPT) must not hide the curated
+        # KNOWN_MODELS, which carry the full Claude/Codex ids that the CLI
+        # probes only expose as aliases or not at all.
+        result = _dedupe_and_sort([*result, *configured, *_static_fallback(config), *_probe_shared_cache(config)])
     return result
 
 

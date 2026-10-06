@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from core.config.io import get_config_path
 from core.config.model_catalog import validate_chat_model  # noqa: F401
-from core.config.model_discovery import discover_models
+from core.config.model_discovery import discover_models, write_shared_cache
 from core.config.models import CredentialConfig, load_config, update_config
 from core.i18n import t
 from core.platform.claude_code import is_claude_code_available
@@ -279,6 +279,20 @@ def create_config_router() -> APIRouter:
         return {
             "models": payload,
             "groups": groups,
+            "generated_at": datetime.now(UTC).astimezone().isoformat(),
+        }
+
+    @router.post("/system/available-models/refresh")
+    def refresh_available_models(request: Request):
+        """Re-probe the catalog and record it in the shared cache.
+
+        Called by the Daily Ops model page before it syncs other apps.
+        """
+        models = discover_models(refresh=True)
+        providers = write_shared_cache(models)
+        return {
+            "providers": providers,
+            "models": [{"id": m.id, "mode": m.mode, "model": m.model, "group": m.group} for m in models],
             "generated_at": datetime.now(UTC).astimezone().isoformat(),
         }
 
