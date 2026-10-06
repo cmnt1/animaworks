@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import core.integrations.call_human as call_human
+from core.phone.urgent import request_phone_alert
 
 
 def _host_api(monkeypatch: pytest.MonkeyPatch, post: MagicMock) -> None:
@@ -21,8 +22,8 @@ def test_phone_alert_helper_maps_calling_and_skipped_statuses(monkeypatch: pytes
     post = MagicMock(return_value=response)
     _host_api(monkeypatch, post)
 
-    assert call_human._send_phone_alert("Subject", "Body", "aoi") == "phone: calling"
-    assert call_human._send_phone_alert("Subject", "Body", "aoi") == "phone: skipped (disabled)"
+    assert request_phone_alert("Subject", "Body", "aoi") == "phone: calling"
+    assert request_phone_alert("Subject", "Body", "aoi") == "phone: skipped (disabled)"
     assert post.call_count == 2
     assert post.call_args.kwargs["json"] == {"anima": "aoi", "subject": "Subject", "body": "Body"}
     assert post.call_args.kwargs["timeout"] == 10.0
@@ -32,7 +33,7 @@ def test_phone_alert_helper_does_not_expose_exception_details(monkeypatch: pytes
     post = MagicMock(side_effect=RuntimeError("contains-a-secret-value"))
     _host_api(monkeypatch, post)
 
-    result = call_human._send_phone_alert("Subject", "Body", "aoi")
+    result = request_phone_alert("Subject", "Body", "aoi")
 
     assert result == "phone: ERROR - RuntimeError"
     assert "contains-a-secret-value" not in result
