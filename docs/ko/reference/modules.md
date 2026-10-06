@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=07f5f0feb0972aaba3e2e02bc559425cc2eba9ace9ba1530063fc3f0e4c4fd36 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=7b8569e30c6ab95335bdb1e86f17c51df3e1f481b1c43a640228d0aaf0b17d54 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -185,27 +185,61 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.config`
 
-애플리케이션 설정의 스키마, 로드, 검증 및 마이그레이션.
+애플리케이션 설정 스키마, 로드, 검증 및 마이그레이션.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.config` | 36 | — |
-| `core.config.anima_registry` | 313 | config.json에서 Anima 등록: 등록, 등록 해제, 이름 변경. |
+| `core.config.anima_registry` | 313 | config.json의 Anima 등록: 등록, 등록 해제, 이름 변경. |
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
 | `core.config.io` | 317 | 설정 I/O: 싱글턴 캐시, 로드 및 저장. |
-| `core.config.local_llm` | 69 | 로컬 Ollama 기반 모델 기본값 및 역할 프리셋용 헬퍼. |
+| `core.config.local_llm` | 69 | 로컬 Ollama 기반 모델 기본값 및 역할 프리셋을 위한 헬퍼. |
 | `core.config.migrate` | 201 | — |
 | `core.config.model_catalog` | 171 | 정적 모델 카탈로그 및 요청별 모델 재정의 검증. |
-| `core.config.model_config` | 879 | 모델 설정 해석: load_model_config, penalties, max_tokens. |
-| `core.config.model_discovery` | 521 | 설치된 CLI에서 "mode + model" 카탈로그를 동적으로 탐색. |
-| `core.config.model_mode` | 446 | 정규 S/C/D/G/X/A 모드에 대한 모델 실행 모드 해석. |
+| `core.config.model_config` | 879 | 모델 설정 해석: load_model_config, 페널티, max_tokens. |
+| `core.config.model_discovery` | 521 | 설치된 CLI에서 "모드 + 모델" 카탈로그 동적 검색. |
+| `core.config.model_mode` | 446 | 표준 S/C/D/G/X/A 모드의 모델 실행 모드 해석. |
 | `core.config.models` | 95 | 중앙 설정 모듈 — 분할된 모듈을 다시 내보내는 파사드. |
 | `core.config.ops` | 203 | AnimaWorks 설정을 읽고 업데이트하는 애플리케이션 작업. |
 | `core.config.resolver` | 159 | 설정 해석: status.json과 anima_defaults 병합. |
-| `core.config.schemas` | 1415 | AnimaWorks용 Pydantic 설정 스키마. |
-| `core.config.vault` | 409 | PyNaCl SealedBox 암호화를 사용한 자격 증명 보관소. |
+| `core.config.schemas` | 1421 | AnimaWorks용 Pydantic 설정 스키마. |
+| `core.config.vault` | 409 | PyNaCl SealedBox 암호화를 사용하는 자격 증명 보관소. |
+
+## `core.enclave`
+
+—
+
+| 모듈 | 행 수 | 독스트링 첫 줄 |
+|---|---:|---|
+| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로그 기록. |
+| `core.enclave.egress.config` | 107 | 이그레스 파이프라인의 설정 모델. |
+| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 간단한 파일 시스템 헬퍼. |
+| `core.enclave.egress.ledger` | 86 | 이그레스 파이프라인의 알려진 값 장부. |
+| `core.enclave.egress.masker.dispatch` | 36 | 기본 마스커의 프로필 디스패치. |
+| `core.enclave.egress.masker.facts` | 141 | 규칙 기반 레코드 사실 마스킹. |
+| `core.enclave.egress.masker.log_pii` | 115 | log/audit 개인정보 마스킹. |
+| `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 기반 마스킹. |
+| `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
+| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 안전하게 차단. |
+| `core.enclave.egress.stages` | 419 | 이그레스 파이프라인의 단계 구현. |
+
+## `core.enclave.egress`
+
+—
+
+| 모듈 | 행 수 | 독스트링 첫 줄 |
+|---|---:|---|
+| `core.enclave.egress` | 29 | 이그레스 파이프라인: 엔클레이브를 벗어나기 전에 발신 답변을 마스킹. |
+
+## `core.enclave.egress.masker`
+
+—
+
+| 모듈 | 행 수 | 독스트링 첫 줄 |
+|---|---:|---|
+| `core.enclave.egress.masker` | 19 | 이그레스 파이프라인용 기본 마스커. |
 
 ## `core.execution`
 
@@ -320,31 +354,31 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.i18n`
 
-번역 카탈로그 및 언어 선택.
+번역 카탈로그와 언어 선택.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원. |
 | `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.company` | 14 | 회사 관리용 현지화 문자열. |
+| `core.i18n.strings.company` | 14 | 회사 관리를 위한 지역화 문자열. |
 | `core.i18n.strings.config` | 312 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.handler` | 382 | 도메인별 i18n 문자열(핸들러 1부). |
-| `core.i18n.strings.handler_ext` | 364 | 도메인별 i18n 문자열(핸들러 2부). |
+| `core.i18n.strings.handler` | 382 | 도메인별 i18n 문자열(핸들러 파트 1). |
+| `core.i18n.strings.handler_ext` | 364 | 도메인별 i18n 문자열(핸들러 파트 2). |
 | `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 426 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.misc` | 434 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.misc_routes` | 17 | 도메인별 i18n 문자열(레거시 라우트 모듈). |
-| `core.i18n.strings.phone` | 88 | — |
+| `core.i18n.strings.phone` | 112 | — |
 | `core.i18n.strings.room_manager` | 29 | 회의실 관리자용 i18n 문자열. |
 | `core.i18n.strings.server` | 241 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.supervisor` | 91 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 121 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 관련 기능). |
+| `core.i18n.strings.tooling` | 121 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능). |
 | `core.i18n.strings.tooling_schema` | 476 | 도메인별 i18n 문자열(schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 132 | 도메인별 i18n 문자열(schema.* 2부). |
+| `core.i18n.strings.tooling_schema_ext` | 132 | 도메인별 i18n 문자열(schema.* 파트 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -706,15 +740,17 @@ Anima 간 및 외부와의 메시지 전달.
 
 ## `core.phone`
 
-Twilio 전화 채널의 음성 합성, 통화 상태, 웹훅 관리.
+Twilio 전화 채널의 음성 합성, 통화 상태, Webhook 관리.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.phone` | 7 | — |
-| `core.phone.alert` | 212 | — |
+| `core.phone.alert` | 218 | — |
 | `core.phone.audio_store` | 81 | — |
-| `core.phone.session` | 72 | — |
-| `core.phone.speech` | 94 | — |
+| `core.phone.session` | 66 | — |
+| `core.phone.speech` | 83 | — |
+| `core.phone.stream_tokens` | 101 | — |
+| `core.phone.stream_transport` | 120 | — |
 | `core.phone.twilio_client` | 194 | — |
 
 ## `core.platform`
@@ -744,14 +780,14 @@ Twilio 전화 채널의 음성 합성, 통화 상태, 웹훅 관리.
 
 ## `core.prompt`
 
-시스템 프롬프트와 컨텍스트의 구축.
+시스템 프롬프트 및 컨텍스트 구축.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
+| `core.prompt` | 1 | 프롬프트 구성 패키지. 특정 모듈을 직접 가져오세요. |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1274 | — |
-| `core.prompt.context` | 482 | Context window usage tracker. |
+| `core.prompt.builder` | 1287 | — |
+| `core.prompt.context` | 482 | 컨텍스트 창 사용량 추적기. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |
@@ -977,23 +1013,29 @@ LLM 사용량과 비용의 기록·집계.
 
 음성 입출력 및 음성 대화.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.voice` | 7 | 음성 대화 서브시스템 — STT, TTS 및 세션 오케스트레이션. |
-| `core.voice.front` | 368 | 음성 프런트 레인 — 로컬 LLM을 통한 경량 음성 우선 대화 경로. |
-| `core.voice.sentence_splitter` | 73 | 스트리밍 TTS를 위한 일본어 특성을 고려한 문장 분할. |
-| `core.voice.session` | 1867 | 음성 세션 — STT -> 채팅 -> TTS 오케스트레이션. |
-| `core.voice.stt` | 145 | 음성 STT — faster-whisper를 이용한 메모리 내 PCM 전사. |
+| `core.voice` | 7 | 음성 채팅 하위 시스템 — STT, TTS 및 세션 오케스트레이션. |
+| `core.voice.audio_codec` | 161 | — |
+| `core.voice.emotion_style` | 114 | — |
+| `core.voice.front` | 368 | 음성 프런트 레인 — 로컬 LLM을 통한 경량 음성 우선 채팅 경로. |
+| `core.voice.front_conversation` | 656 | 전송 방식에 구애받지 않는 프런트 레인 대화 및 위임 처리. |
+| `core.voice.sentence_splitter` | 73 | 스트리밍 TTS를 위한 일본어 특성 반영 문장 분할. |
+| `core.voice.session` | 1426 | 음성 세션 — STT -> 채팅 -> TTS 오케스트레이션. |
+| `core.voice.session_factory` | 66 | — |
+| `core.voice.speech_text` | 332 | — |
+| `core.voice.stt` | 145 | 음성 STT — faster-whisper를 사용한 메모리 내 PCM 전사. |
 | `core.voice.stt_stream` | 300 | 스트리밍 STT — 롤링 버퍼 + LocalAgreement-2 접두사 확정. |
-| `core.voice.transport` | 21 | 음성 세션 출력을 위한 전송 프로토콜. |
-| `core.voice.tts_base` | 61 | TTS 추상 기본 클래스 — 공급자 인터페이스 및 구성. |
+| `core.voice.transport` | 21 | 음성 세션 출력용 전송 프로토콜. |
+| `core.voice.tts_base` | 61 | TTS 추상 기반 클래스 — 공급자 인터페이스 및 설정. |
 | `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS 공급자 — REST API 스트리밍. |
 | `core.voice.tts_factory` | 47 | TTS 공급자 팩토리. |
 | `core.voice.tts_gemini` | 183 | Gemini TTS 공급자 — Gemini API Interactions 엔드포인트(SSE 스트리밍). |
 | `core.voice.tts_irodori` | 79 | Irodori-TTS 공급자 — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS 공급자. |
-| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS 공급자 — Engine HTTP API. |
-| `core.voice.voice_config` | 51 | — |
+| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS 공급자 — 엔진 HTTP API. |
+| `core.voice.turn_detector` | 383 | — |
+| `core.voice.voice_config` | 76 | — |
 
 ## `server`
 
@@ -1030,7 +1072,7 @@ LLM 사용량과 비용의 기록·집계.
 
 —
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1160 | — |
@@ -1053,7 +1095,8 @@ LLM 사용량과 비용의 기록·집계.
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
-| `server.routes.phone` | 597 | — |
+| `server.routes.phone` | 404 | — |
+| `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
@@ -1062,7 +1105,7 @@ LLM 사용량과 비용의 기록·집계.
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 250 | 음성 채팅 WebSocket 엔드포인트. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공용 헬퍼를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
