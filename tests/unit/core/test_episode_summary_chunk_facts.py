@@ -18,8 +18,8 @@ def test_episode_extraction_templates_reduce_tool_output_in_all_locales() -> Non
 
     for locale in ("ja", "en", "ko"):
         prompt = (root / locale / "prompts/memory/episode_extraction.md").read_text(encoding="utf-8")
-        assert "do not copy" in prompt.lower() or "転記しない" in prompt
-        assert "one line" in prompt.lower() or "1行" in prompt
+        assert "do not copy" in prompt.lower() or "転記しない" in prompt or "옮겨 적지 않" in prompt
+        assert "one line" in prompt.lower() or "1行" in prompt or "한 줄" in prompt
 
 
 @pytest.mark.asyncio
