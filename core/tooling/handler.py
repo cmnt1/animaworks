@@ -745,8 +745,9 @@ class ToolHandler(
         delegates to the tool module's ``dispatch()`` function directly.
         Supports core tools (TOOL_MODULES), common tools, and personal tools.
         """
-        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
+        from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
+        tool_modules = get_tool_modules()
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")
         tool_args = args.get("args") or {}
@@ -775,7 +776,7 @@ class ToolHandler(
         from core.messaging.reply_grants import reply_grant_ok_for_action
         from core.tooling.permissions import check_tool_access
 
-        origin = "core" if tool_name in TOOL_MODULES else "personal"
+        origin = "core" if tool_name in tool_modules else "personal"
         tool_file = Path(personal_tools[tool_name]) if is_personal else None
         decision = check_tool_access(
             self._anima_dir,
@@ -794,7 +795,7 @@ class ToolHandler(
         dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}
 
         try:
-            if is_personal and tool_name not in TOOL_MODULES:
+            if is_personal and tool_name not in tool_modules:
                 import importlib.util
 
                 spec = importlib.util.spec_from_file_location(
@@ -809,12 +810,12 @@ class ToolHandler(
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)  # type: ignore[union-attr]
             else:
-                if tool_name not in TOOL_MODULES:
+                if tool_name not in tool_modules:
                     return _error_result(
                         "InvalidArguments",
                         f"Unknown tool module: {tool_name}",
                     )
-                mod = load_tool_module(tool_name)
+                mod = load_tool_module(tool_name, tool_modules)
 
             result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
             return self._attach_action_rules(schema_name, tool_args, result)

@@ -334,6 +334,68 @@
   color: var(--aw-color-error, #b91c1c);
 }
 
+.home-enclave-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: -1rem 0 1.5rem;
+  color: var(--aw-color-text-secondary);
+  font-size: 0.76rem;
+}
+
+.home-enclave-strip[hidden] {
+  display: none;
+}
+
+.home-enclave-strip__label {
+  color: var(--aw-color-text-faint);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.home-enclave-strip__items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-enclave-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--aw-color-border);
+  border-radius: 999px;
+  background: var(--aw-color-bg-primary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-enclave-chip--ok::before,
+.home-enclave-chip--warn::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  content: "";
+}
+
+.home-enclave-chip--ok::before {
+  background: var(--aw-color-success, #16a34a);
+}
+
+.home-enclave-chip--warn::before {
+  background: var(--aw-color-warning, #d97706);
+}
+
+.home-enclave-chip--meta {
+  color: var(--aw-color-text-secondary);
+}
+
 /* ── Buttons ─────────────────────────────────── */
 
 .btn-primary {

@@ -238,6 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_memory_command(sub)
 
+    # ── Enclave operations ────────────────────────────────
+    from cli.commands.enclave_cmd import register_enclave_command
+
+    register_enclave_command(sub)
+
     # ── MCP stdio server ──────────────────────────────────
     from cli.commands.mcp_cmd import setup_mcp_command
 

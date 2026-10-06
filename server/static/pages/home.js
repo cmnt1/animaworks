@@ -99,6 +99,7 @@ export function render(container) {
       <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
       <span class="home-status-item" id="homeWsCount">--</span>
     </div>
+    <div class="home-enclave-strip" id="homeEnclaveStatus" hidden aria-live="polite"></div>
     <!-- Legacy IDs kept for compatibility with pure helpers / tests -->
     <div id="homeServerStatusBody" hidden></div>
     <div id="homeSchedulerStatus" hidden></div>
@@ -374,6 +375,48 @@ function _applyStatusBar(model) {
   }
 }
 
+export function enclaveStatusHtml(data, translate = t) {
+  const enclave = data?.enclave && typeof data.enclave === "object" ? data.enclave : null;
+  const remotes = data?.enclaves && typeof data.enclaves === "object"
+    ? Object.entries(data.enclaves)
+    : [];
+  if (!enclave?.enabled && remotes.length === 0) return "";
+
+  const chips = [];
+  if (enclave?.enabled) {
+    const name = String(enclave.name || translate("home.enclave_title"));
+    const socketOk = enclave.socket_ok === true;
+    const stateKey = socketOk ? "home.enclave_socket_ok" : "home.enclave_socket_down";
+    chips.push(
+      `<span class="home-enclave-chip ${socketOk ? "home-enclave-chip--ok" : "home-enclave-chip--warn"}">${escapeHtml(translate(stateKey, { name }))}</span>`,
+    );
+    const today = enclave.today && typeof enclave.today === "object" ? enclave.today : {};
+    const okCount = Number.isFinite(Number(today.ok)) ? Number(today.ok) : 0;
+    const blockedCount = Number.isFinite(Number(today.blocked)) ? Number(today.blocked) : 0;
+    chips.push(
+      `<span class="home-enclave-chip home-enclave-chip--meta">${escapeHtml(translate("home.enclave_today_ok", { count: okCount }))} · ${escapeHtml(translate("home.enclave_today_blocked", { count: blockedCount }))}</span>`,
+    );
+  }
+
+  for (const [name, status] of remotes) {
+    const reachable = status?.reachable === true;
+    const stateKey = reachable ? "home.enclave_client_ok" : "home.enclave_client_down";
+    chips.push(
+      `<span class="home-enclave-chip ${reachable ? "home-enclave-chip--ok" : "home-enclave-chip--warn"}">${escapeHtml(translate(stateKey, { name: String(name) }))}</span>`,
+    );
+  }
+
+  return `<span class="home-enclave-strip__label">${escapeHtml(translate("home.enclave_title"))}</span><div class="home-enclave-strip__items">${chips.join("")}</div>`;
+}
+
+function _applyEnclaveStatus(data) {
+  const el = document.getElementById("homeEnclaveStatus");
+  if (!el) return;
+  const html = enclaveStatusHtml(data);
+  el.hidden = !html;
+  el.innerHTML = html;
+}
+
 async function _loadServerStatus() {
   try {
     const [statusData, connectionsData, schedulerData] = await Promise.all([
@@ -382,6 +425,7 @@ async function _loadServerStatus() {
       api("/api/system/scheduler").catch(() => null),
     ]);
     const summary = summarizeServerStatus({ statusData, connectionsData, schedulerData });
+    _applyEnclaveStatus(statusData);
     const processes = statusData?.processes || {};
     const processCount = Object.values(processes).filter((p) => p?.status === "running").length;
     const model = systemStatusBarModel({
@@ -399,6 +443,7 @@ async function _loadServerStatus() {
       body.innerHTML = serverStatusTableHtml(serverStatusDisplayRows(summary));
     }
   } catch (err) {
+    _applyEnclaveStatus(null);
     const model = systemStatusBarModel({
       reachable: false,
       schedulerRunning: false,

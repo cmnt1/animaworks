@@ -11,7 +11,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class EnclaveDatasetConfig(BaseModel):
+    """A JSONL dataset available to an isolated anima."""
+
+    path: str = Field(min_length=1, description="JSONL path relative to ANIMAWORKS_DATA_DIR")
+    id_field: str = Field(min_length=1, description="Record field used as the stable lookup identifier")
+    sensitive_fields: list[str] = Field(default_factory=list)
+    searchable_fields: list[str] = Field(default_factory=list)
+
+    @field_validator("path", "id_field")
+    @classmethod
+    def _require_non_empty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
 
 
 class EnclaveConfig(BaseModel):
@@ -30,7 +47,8 @@ class EnclaveConfig(BaseModel):
     max_concurrency: int = 2
     request_timeout_s: int = 900
     allowed_llm_credentials: list[str] = Field(default_factory=list)
-    egress: dict[str, Any] = Field(default_factory=dict)  # interpretation is a later task
+    datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
+    egress: dict[str, Any] = Field(default_factory=dict)
 
 
 class EnclaveClientConfig(BaseModel):

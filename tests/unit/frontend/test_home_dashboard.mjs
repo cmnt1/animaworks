@@ -190,6 +190,33 @@ describe("systemStatusBarModel", () => {
   });
 });
 
+describe("enclaveStatusHtml", () => {
+  it("shows configured enclave health and aggregate counts without exposing markup", async () => {
+    const home = await loadHomeHelpers();
+    const translate = (key, params = {}) => `${key} ${Object.values(params).join(" ")}`;
+    const html = home.enclaveStatusHtml(
+      {
+        enclave: {
+          enabled: true,
+          name: "isolated",
+          socket_ok: true,
+          today: { ok: 2, blocked: 1 },
+        },
+        enclaves: { "<host>": { reachable: false } },
+      },
+      translate,
+    );
+
+    assert.match(html, /home-enclave-chip--ok/);
+    assert.match(html, /home-enclave-chip--warn/);
+    assert.match(html, /home.enclave_today_ok 2/);
+    assert.match(html, /home.enclave_today_blocked 1/);
+    assert.match(html, /&lt;host&gt;/);
+    assert.doesNotMatch(html, /<host>/);
+    assert.equal(home.enclaveStatusHtml({}, translate), "");
+  });
+});
+
 describe("home.js render template structure", () => {
   it("places org hero first, includes attention summary, drops quick links", () => {
     const source = readFileSync(HOME_PATH, "utf8");
@@ -279,6 +306,13 @@ describe("i18n keys for dashboard redesign", () => {
     "home.status_bar_connections",
     "home.status_bar_jobs",
     "home.status_bar_processes",
+    "home.enclave_client_down",
+    "home.enclave_client_ok",
+    "home.enclave_socket_down",
+    "home.enclave_socket_ok",
+    "home.enclave_title",
+    "home.enclave_today_blocked",
+    "home.enclave_today_ok",
     "animas.open_detail",
     "animas.actions_menu",
   ];
@@ -293,7 +327,7 @@ describe("i18n keys for dashboard redesign", () => {
       assert.ok(typeof ko[k] === "string" && ko[k].length > 0, `ko missing ${k}`);
     }
     // New home.* keys must be present in all three locales with identical names
-    const homeKeys = (obj) => Object.keys(obj).filter((k) => k.startsWith("home.attention_") || k.startsWith("home.status_bar_") || k === "home.org_unlisted").sort();
+    const homeKeys = (obj) => Object.keys(obj).filter((k) => k.startsWith("home.attention_") || k.startsWith("home.status_bar_") || k.startsWith("home.enclave_") || k === "home.org_unlisted").sort();
     assert.deepEqual(homeKeys(en), homeKeys(ja));
     assert.deepEqual(homeKeys(ko), homeKeys(ja));
   });
