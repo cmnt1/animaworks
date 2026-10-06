@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 

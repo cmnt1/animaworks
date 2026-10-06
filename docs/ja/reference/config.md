@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: e3db2499cf0f89fe49d1c24bf0afb7176be34385ec1a18cefff5381dcb02fabb -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: b7e3307862c2b48ff81f32b8563000402deabef0900845ad7ed1988e1b8edb99 -->
 
 # 設定リファレンス
 
@@ -560,6 +560,7 @@
 | `voice.proactive_enabled` | `bool` | `true` | — |
 | `voice.proactive_initial_delay_sec` | `float` | `10.0` | — |
 | `voice.proactive_lead_sec` | `float` | `5.0` | — |
+| `voice.notify_delegations_on_web_disconnect` | `bool` | `false` | — |
 | `voice.voicevox` | `VoicevoxConfig` | `{VoicevoxConfig}` | — |
 | `voice.voicevox.base_url` | `str` | `"http://localhost:50021"` | — |
 | `voice.elevenlabs` | `ElevenLabsVoiceConfig` | `{ElevenLabsVoiceConfig}` | — |
@@ -592,7 +593,7 @@
 | `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
-| `phone.turn_timeout_sec` | `float` | `300` | — |
+| `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
 
 ### `housekeeping`
 

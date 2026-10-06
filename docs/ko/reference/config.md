@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=6f9b108585560699618ec6b98b3532a0cd8ea765b7708cbeb1efbf02ca584760 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=abb8933f43c7ff196f3802c524247c3cfe0ac2445043b91ebdd2a064692f41c3 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -548,7 +548,7 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력 및 음성 제공자. |
+| `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력 및 음성 공급자. |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |
 | `voice.stt_compute_type` | `str` | `"default"` | — |
@@ -560,6 +560,7 @@
 | `voice.proactive_enabled` | `bool` | `true` | — |
 | `voice.proactive_initial_delay_sec` | `float` | `10.0` | — |
 | `voice.proactive_lead_sec` | `float` | `5.0` | — |
+| `voice.notify_delegations_on_web_disconnect` | `bool` | `false` | — |
 | `voice.voicevox` | `VoicevoxConfig` | `{VoicevoxConfig}` | — |
 | `voice.voicevox.base_url` | `str` | `"http://localhost:50021"` | — |
 | `voice.elevenlabs` | `ElevenLabsVoiceConfig` | `{ElevenLabsVoiceConfig}` | — |
@@ -579,7 +580,7 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio를 사용하는 Anima 전용 전화 대화 및 긴급 알림. |
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio를 이용한 Anima 전용 전화 대화 및 긴급 알림. |
 | `phone.enabled` | `bool` | `false` | — |
 | `phone.anima` | `str` | `"aoi"` | — |
 | `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
@@ -592,7 +593,7 @@
 | `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
-| `phone.turn_timeout_sec` | `float` | `300` | — |
+| `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; Media Streams 전화 대화에서는 사용되지 않습니다. |
 
 ### `housekeeping`
 

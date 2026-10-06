@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=07f5f0feb0972aaba3e2e02bc559425cc2eba9ace9ba1530063fc3f0e4c4fd36 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=7b8569e30c6ab95335bdb1e86f17c51df3e1f481b1c43a640228d0aaf0b17d54 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -204,8 +204,42 @@ Application configuration schema, loading, validation, and migration.
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1415 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1421 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
+
+## `core.enclave`
+
+—
+
+| Module | Lines | First line of docstring |
+|---|---:|---|
+| `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
+| `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
+| `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
+| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
+| `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
+| `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
+| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+
+## `core.enclave.egress`
+
+—
+
+| Module | Lines | First line of docstring |
+|---|---:|---|
+| `core.enclave.egress` | 29 | Egress pipeline: mask outgoing answers before they leave an enclave. |
+
+## `core.enclave.egress.masker`
+
+—
+
+| Module | Lines | First line of docstring |
+|---|---:|---|
+| `core.enclave.egress.masker` | 19 | Built-in masker for the egress pipeline. |
 
 ## `core.execution`
 
@@ -335,9 +369,9 @@ Translation catalog and language selection.
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 426 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 17 | Domain-specific i18n strings (legacy route modules). |
-| `core.i18n.strings.phone` | 88 | — |
+| `core.i18n.strings.phone` | 112 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
@@ -706,15 +740,17 @@ Organization models for companies, departments, roles, and more.
 
 ## `core.phone`
 
-Voice synthesis, call status, and webhook management for the Twilio phone channel.
+Twilio phone channel speech synthesis, call status, and webhook management.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.phone` | 7 | — |
-| `core.phone.alert` | 212 | — |
+| `core.phone.alert` | 218 | — |
 | `core.phone.audio_store` | 81 | — |
-| `core.phone.session` | 72 | — |
-| `core.phone.speech` | 94 | — |
+| `core.phone.session` | 66 | — |
+| `core.phone.speech` | 83 | — |
+| `core.phone.stream_tokens` | 101 | — |
+| `core.phone.stream_transport` | 120 | — |
 | `core.phone.twilio_client` | 194 | — |
 
 ## `core.platform`
@@ -746,11 +782,11 @@ Integration layer that abstracts differences between execution engines and opera
 
 System prompt and context construction.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1274 | — |
+| `core.prompt.builder` | 1287 | — |
 | `core.prompt.context` | 482 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
@@ -980,9 +1016,14 @@ Audio input/output and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
+| `core.voice.audio_codec` | 161 | — |
+| `core.voice.emotion_style` | 114 | — |
 | `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
-| `core.voice.session` | 1867 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session_factory` | 66 | — |
+| `core.voice.speech_text` | 332 | — |
 | `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
 | `core.voice.stt_stream` | 300 | Streaming STT — rolling buffer + LocalAgreement-2 prefix commitment. |
 | `core.voice.transport` | 21 | Transport protocol for voice-session output. |
@@ -993,7 +1034,8 @@ Audio input/output and voice conversations.
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
-| `core.voice.voice_config` | 51 | — |
+| `core.voice.turn_detector` | 383 | — |
+| `core.voice.voice_config` | 76 | — |
 
 ## `server`
 
@@ -1053,7 +1095,8 @@ Audio input/output and voice conversations.
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
-| `server.routes.phone` | 597 | — |
+| `server.routes.phone` | 404 | — |
+| `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
@@ -1062,7 +1105,7 @@ Audio input/output and voice conversations.
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 250 | Voice chat WebSocket endpoint. |
+| `server.routes.voice` | 223 | Voice chat WebSocket endpoint; per-Anima status.json settings use shared helpers. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 

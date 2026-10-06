@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4a4ff6564b8c628276647b3a7232fdc1c07c7f3551715e6c02ef77238e0cfe82 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 2b6b606ff3fb560b6944970636ce5227109a97adbcc11fb2be9e58754e88bc80 -->
 
 # モジュール一覧
 
@@ -204,8 +204,42 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1415 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1421 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
+
+## `core.enclave`
+
+—
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
+| `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
+| `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
+| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 141 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
+| `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
+| `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
+| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+
+## `core.enclave.egress`
+
+—
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.enclave.egress` | 29 | Egress pipeline: mask outgoing answers before they leave an enclave. |
+
+## `core.enclave.egress.masker`
+
+—
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.enclave.egress.masker` | 19 | Built-in masker for the egress pipeline. |
 
 ## `core.execution`
 
@@ -335,9 +369,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 426 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 17 | Domain-specific i18n strings (legacy route modules). |
-| `core.i18n.strings.phone` | 88 | — |
+| `core.i18n.strings.phone` | 112 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
@@ -711,10 +745,12 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.phone` | 7 | — |
-| `core.phone.alert` | 212 | — |
+| `core.phone.alert` | 218 | — |
 | `core.phone.audio_store` | 81 | — |
-| `core.phone.session` | 72 | — |
-| `core.phone.speech` | 94 | — |
+| `core.phone.session` | 66 | — |
+| `core.phone.speech` | 83 | — |
+| `core.phone.stream_tokens` | 101 | — |
+| `core.phone.stream_transport` | 120 | — |
 | `core.phone.twilio_client` | 194 | — |
 
 ## `core.platform`
@@ -750,7 +786,7 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1274 | — |
+| `core.prompt.builder` | 1287 | — |
 | `core.prompt.context` | 482 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
@@ -980,9 +1016,14 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
+| `core.voice.audio_codec` | 161 | — |
+| `core.voice.emotion_style` | 114 | — |
 | `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front_conversation` | 656 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
-| `core.voice.session` | 1867 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session` | 1426 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session_factory` | 66 | — |
+| `core.voice.speech_text` | 332 | — |
 | `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
 | `core.voice.stt_stream` | 300 | Streaming STT — rolling buffer + LocalAgreement-2 prefix commitment. |
 | `core.voice.transport` | 21 | Transport protocol for voice-session output. |
@@ -993,7 +1034,8 @@ LLM 利用量とコストの記録・集計。
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
-| `core.voice.voice_config` | 51 | — |
+| `core.voice.turn_detector` | 383 | — |
+| `core.voice.voice_config` | 76 | — |
 
 ## `server`
 
@@ -1053,7 +1095,8 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
-| `server.routes.phone` | 597 | — |
+| `server.routes.phone` | 404 | — |
+| `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
@@ -1062,7 +1105,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 250 | Voice chat WebSocket endpoint. |
+| `server.routes.voice` | 223 | Voice chat WebSocket endpoint; per-Anima status.json settings use shared helpers. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 

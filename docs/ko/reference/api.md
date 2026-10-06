@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=b5b330b69296bdc306ec06c047b8ee0ce1414120d0d561a48b02910700330d82 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=ce2f9915a12a76d75fc6918cea0aa1d10d02b5c91880eba63b776e73542cc8f3 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -190,12 +190,14 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/phone.py`
 
-| GET | `/api/webhooks/twilio/audio/{token}.wav` | 불필요(제외 목록) | 추측할 수 없는 토큰으로 만료되지 않은 합성 WAV를 제공합니다. | `server/routes/phone.py:audio` |
-| POST | `/api/webhooks/twilio/pin` | 불필요(제외 목록) | 볼트 PIN을 검증하고 음성 턴 루프로 전환합니다. | `server/routes/phone.py:pin` |
-| POST | `/api/webhooks/twilio/poll` | 불필요(제외 목록) | 현재 턴이 끝날 때까지 잠시 기다린 뒤 준비되면 결과를 재생합니다. | `server/routes/phone.py:poll` |
-| POST | `/api/webhooks/twilio/status` | 불필요(제외 목록) | Twilio 통화 상태 콜백을 처리하고 종료된 세션을 해제합니다. | `server/routes/phone.py:status` |
-| POST | `/api/webhooks/twilio/turn` | 불필요(제외 목록) | 음성 인식된 발화 하나를 수신하고 IPC 작업을 시작합니다. | `server/routes/phone.py:turn` |
-| POST | `/api/webhooks/twilio/voice` | 불필요(제외 목록) | 수신 통화, 알림 재생 및 알림 DTMF 응답을 처리합니다. | `server/routes/phone.py:voice` |
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | 불필요(제외 목록) | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | 불필요(제외 목록) | Validate the PIN and issue a one-use credential for the phone stream. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/status` | 불필요(제외 목록) | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/voice` | 불필요(제외 목록) | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
+
+## `server/routes/phone_stream.py`
+
+| WS | `/api/webhooks/twilio/stream` | 불필요(제외 목록) | — | `server/routes/phone_stream.py:phone_media_stream` |
 
 ## `server/routes/room.py`
 

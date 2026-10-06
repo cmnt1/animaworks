@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 0e041a0dab3b597b3172bc5d9ec9e104ebf319a7cf515a6d6e84a8e2c6f031a9 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 1e6763c44c14b626adbeb9d6c164ef743280a7f4b0997d389637d47cc32e3790 -->
 
 # API リファレンス
 
@@ -191,11 +191,13 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 ## `server/routes/phone.py`
 
 | GET | `/api/webhooks/twilio/audio/{token}.wav` | 不要（除外一覧） | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
-| POST | `/api/webhooks/twilio/pin` | 不要（除外一覧） | Validate the vault PIN and transition to the speech turn loop. | `server/routes/phone.py:pin` |
-| POST | `/api/webhooks/twilio/poll` | 不要（除外一覧） | Wait briefly for the current turn and play its result when ready. | `server/routes/phone.py:poll` |
+| POST | `/api/webhooks/twilio/pin` | 不要（除外一覧） | Validate the PIN and issue a one-use credential for the phone stream. | `server/routes/phone.py:pin` |
 | POST | `/api/webhooks/twilio/status` | 不要（除外一覧） | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
-| POST | `/api/webhooks/twilio/turn` | 不要（除外一覧） | Receive one speech-recognized utterance and start its IPC task. | `server/routes/phone.py:turn` |
 | POST | `/api/webhooks/twilio/voice` | 不要（除外一覧） | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
+
+## `server/routes/phone_stream.py`
+
+| WS | `/api/webhooks/twilio/stream` | 不要（除外一覧） | — | `server/routes/phone_stream.py:phone_media_stream` |
 
 ## `server/routes/room.py`
 

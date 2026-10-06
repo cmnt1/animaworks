@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=b5b330b69296bdc306ec06c047b8ee0ce1414120d0d561a48b02910700330d82 generated=2026-10-06 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=ce2f9915a12a76d75fc6918cea0aa1d10d02b5c91880eba63b776e73542cc8f3 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API Reference
 
@@ -190,12 +190,14 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/phone.py`
 
-| GET | `/api/webhooks/twilio/audio/{token}.wav` | Not required (exclusion list) | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
-| POST | `/api/webhooks/twilio/pin` | Not required (exclusion list) | Validate the vault PIN and transition to the speech turn loop. | `server/routes/phone.py:pin` |
-| POST | `/api/webhooks/twilio/poll` | Not required (exclusion list) | Wait briefly for the current turn and play its result when ready. | `server/routes/phone.py:poll` |
-| POST | `/api/webhooks/twilio/status` | Not required (exclusion list) | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
-| POST | `/api/webhooks/twilio/turn` | Not required (exclusion list) | Receive one speech-recognized utterance and start its IPC task. | `server/routes/phone.py:turn` |
-| POST | `/api/webhooks/twilio/voice` | Not required (exclusion list) | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | No (exclusion list) | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | No (exclusion list) | Validate the PIN and issue a one-use credential for the phone stream. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/status` | No (exclusion list) | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/voice` | No (exclusion list) | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
+
+## `server/routes/phone_stream.py`
+
+| WS | `/api/webhooks/twilio/stream` | No (exclusion list) | — | `server/routes/phone_stream.py:phone_media_stream` |
 
 ## `server/routes/room.py`
 
