@@ -509,6 +509,16 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
     config = load_config()
+
+    from core.enclave import EnclaveViolationError, enforce_enclave_runtime
+    from core.paths import get_data_dir
+
+    try:
+        enforce_enclave_runtime(config, get_data_dir(), host=args.host)
+    except EnclaveViolationError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
+
     configure_timezone(config.system.timezone)
     if not config.setup_complete:
         print(f"Open http://{display_host}:{args.port}/setup/ to configure your animas and settings.")

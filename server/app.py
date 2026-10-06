@@ -984,6 +984,11 @@ def create_app(
     ws_manager = WebSocketManager()
 
     config = load_config()
+
+    from core.enclave import enforce_enclave_runtime
+    from core.paths import get_data_dir
+
+    enforce_enclave_runtime(config, get_data_dir(), host=None)
     _base_path = _normalize_base_path(getattr(config.server, "base_path", ""))
 
     # Create run directory for sockets and PID files

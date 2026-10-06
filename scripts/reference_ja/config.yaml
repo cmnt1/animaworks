@@ -44,6 +44,8 @@ activity_schedule: 時刻帯ごとの活動頻度。
 icon_url_template: anima アイコン URL のテンプレート。
 ui: Web UI の表示設定。
 cli: CLI クライアントの設定。default_anima は引数なしの animaworks / animaworks chat で開く anima（空なら上司なしの有効な anima が1体だけの時それを使う）。
+enclave: 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。
+enclaves: 外部の enclave インスタンスに接続するクライアント側の設定。
 status_json.background_model: heartbeat や cron で使うモデル上書き。
 status_json.credential: anima に関連付ける認証情報名。
 status_json.execution_mode: anima の実行モード。
