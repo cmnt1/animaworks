@@ -111,6 +111,7 @@ _FACILITY_RE = re.compile(
     r"([" + _KANJI + r"ぁ-んァ-ヶーA-Za-z0-9０-９第]{1,40}?" + _FACILITY_SUFFIX + _DEPARTMENT_SUFFIX + r")"
 )
 
+
 def _phone_repl(match: re.Match[str]) -> str:
     """Mask only plausible phone numbers: 10-11 digits, or +81 with 9-10 national digits."""
     raw = match.group(0)
