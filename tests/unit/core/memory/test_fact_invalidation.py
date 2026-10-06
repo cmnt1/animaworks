@@ -237,12 +237,14 @@ def test_reconcile_complement_updates_best_candidate_without_append(tmp_path: Pa
         config=ReconcileConfig(enabled=True),
     )
 
-    updated_records = read_fact_records(path_best, include_expired=True)
-    assert result.action == ReconcileAction.UPDATE
-    assert result.should_append is False
-    assert "score deltas" in updated_records[0].text.lower()
-    assert updated_records[0].entities == ["Alice", "LoCoMo", "Score Deltas"]
-    assert updated_records[0].confidence == 0.9
+    stored_records = read_fact_records(path_best, include_expired=True)
+    assert result.action == ReconcileAction.ADD
+    assert result.should_append is True
+    assert result.label == "COMPLEMENT"
+    assert result.reason == "complement_kept_separate"
+    assert result.affected_fact_ids == (old_best.fact_id,)
+    assert stored_records[0].text == old_best.text
+    assert stored_records[0].entities == old_best.entities
 
 
 @pytest.mark.unit
@@ -341,7 +343,7 @@ def test_reconcile_invalidation_append_failure_rolls_back_old_update(
 
 
 @pytest.mark.unit
-def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
+def test_reconcile_invalidation_incomplete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,32 +364,6 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     )
     assert incomplete.action == ReconcileAction.SKIP
     assert incomplete.reason == "invalidate_incomplete"
-
-    monkeypatch.setattr("core.memory.facts.invalidation.update_fact_record_by_id", lambda *_args, **_kwargs: None)
-    missing_target = reconcile_new_fact(
-        anima_dir,
-        new,
-        classifier=lambda *_args: "COMPLEMENT",
-        candidate_search=lambda *_args: [_candidate(old, path)],
-        config=ReconcileConfig(enabled=True),
-    )
-    assert missing_target.action == ReconcileAction.ADD
-    assert missing_target.reason == "complement_target_missing"
-
-    monkeypatch.setattr(
-        "core.memory.facts.invalidation.update_fact_record_by_id",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("update failed")),
-    )
-    update_failed = reconcile_new_fact(
-        anima_dir,
-        new,
-        classifier=lambda *_args: "COMPLEMENT",
-        candidate_search=lambda *_args: [_candidate(old, path)],
-        config=ReconcileConfig(enabled=True),
-    )
-    assert update_failed.action == ReconcileAction.ADD
-    assert update_failed.reason == "complement_update_failed"
-    assert update_failed.error == "update failed"
 
 
 @pytest.mark.unit
@@ -540,7 +516,7 @@ def test_default_batch_classifier_parses_labels_and_sizes_tokens(
         config=ReconcileConfig(enabled=True),
     )
 
-    assert result.action == ReconcileAction.UPDATE
+    assert result.action == ReconcileAction.ADD
     assert result.reconcile_llm_calls == 1
     assert captured["max_tokens"] == 32 + 40 * 2
     assert captured["model"] == "test-reconcile-model"

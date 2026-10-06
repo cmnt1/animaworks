@@ -101,7 +101,7 @@ def _relation_prompt_context(new_fact: FactRecord, candidates: list[Any]) -> str
         "Definitions:\n"
         "- DUPLICATE: same meaning, no new durable information.\n"
         "- CONTRADICT: cannot both be true for the same time period.\n"
-        "- COMPLEMENT: compatible additional detail should be merged into the existing fact.\n"
+        "- COMPLEMENT: compatible additional detail about the same subject.\n"
         "- ADD: distinct fact that should be appended.\n\n"
     )
 
