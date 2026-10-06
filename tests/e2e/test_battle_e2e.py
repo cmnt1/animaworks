@@ -70,31 +70,31 @@ def test_demo_animation_pause_mobile_and_next_wave(page, battle_server, tmp_path
     page.route_web_socket("**/ws", lambda ws: sockets.append(ws))
     page.goto(battle_server + "/battle?demo=1")
     page.wait_for_function("document.querySelectorAll('.party-row').length === 4")
-    page.wait_for_function("document.querySelector('#phaseLabel').textContent.includes('01')")
+    page.wait_for_function("document.querySelector('[data-battle=phase-label]')?.textContent.includes('01')")
     assert page.locator(".command.selected").inner_text() == "しらべる"
-    page.wait_for_function("document.querySelector('#phaseLabel').textContent.includes('02')")
+    page.wait_for_function("document.querySelector('[data-battle=phase-label]')?.textContent.includes('02')")
     assert page.locator(".target-row.selected").count() == 1
-    page.wait_for_function("document.querySelector('#phaseLabel').textContent.includes('03')")
-    page.wait_for_function("document.querySelector('#phaseLabel').textContent.includes('04')")
-    page.wait_for_function("document.querySelector('#phaseLabel').textContent.includes('05')")
+    page.wait_for_function("document.querySelector('[data-battle=phase-label]')?.textContent.includes('03')")
+    page.wait_for_function("document.querySelector('[data-battle=phase-label]')?.textContent.includes('04')")
+    page.wait_for_function("document.querySelector('[data-battle=phase-label]')?.textContent.includes('05')")
     page.screenshot(path=str(tmp_path / "battle-impact.png"), full_page=True)
-    assert "Mira" in page.locator("#journal").inner_text()
-    page.locator("#pause").click()
-    text = page.locator("#message").inner_text()
-    pixels = page.locator("#battle").evaluate("(el) => el.toDataURL()")
+    assert "Mira" in page.locator("[data-battle=journal]").inner_text()
+    page.locator("[data-battle=pause]").click()
+    text = page.locator("[data-battle=message]").inner_text()
+    pixels = page.locator("[data-battle=canvas]").evaluate("(el) => el.toDataURL()")
     page.wait_for_timeout(350)
-    assert page.locator("#message").inner_text() == text
-    assert page.locator("#battle").evaluate("(el) => el.toDataURL()") == pixels
+    assert page.locator("[data-battle=message]").inner_text() == text
+    assert page.locator("[data-battle=canvas]").evaluate("(el) => el.toDataURL()") == pixels
     for width in [390, 768]:
         page.set_viewport_size({"width": width, "height": 844})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.screenshot(path=str(tmp_path / f"battle-{width}.png"), full_page=True)
-    page.locator("#speed").select_option("4")
-    page.locator("#pause").click()
-    page.wait_for_function("document.querySelector('#clearCount').textContent === '3'", timeout=20000)
-    page.wait_for_function("document.querySelector('#activeCount').textContent === '3'", timeout=10000)
+    page.locator("[data-battle=speed]").select_option("4")
+    page.locator("[data-battle=pause]").click()
+    page.wait_for_function("document.querySelector('[data-battle=clear-count]')?.textContent === '3'", timeout=20000)
+    page.wait_for_function("document.querySelector('[data-battle=active-count]')?.textContent === '3'", timeout=10000)
     assert not sockets, "Demo must not subscribe to live activity"
-    assert page.locator("#modeSwitch").get_attribute("href") == "/battle"
+    assert page.locator("[data-battle=mode-switch]").get_attribute("href") == "/battle?demo=0"
 
 
 def test_live_tasks_tools_failure_completion_and_reconnect(page, battle_server):
@@ -123,13 +123,13 @@ def test_live_tasks_tools_failure_completion_and_reconnect(page, battle_server):
 
     page.route_web_socket("**/ws", connected)
     page.goto(battle_server + "/battle/")
-    page.wait_for_function("document.querySelector('#connection').dataset.state === 'online'")
-    page.wait_for_function("document.querySelector('#activeCount').textContent === '1'")
+    page.wait_for_function("document.querySelector('[data-battle=connection]')?.dataset.state === 'online'")
+    page.wait_for_function("document.querySelector('[data-battle=active-count]')?.textContent === '1'")
     assert {"type": "pong"} in received
-    assert page.locator("#modeSwitch").get_attribute("href") == "/battle?demo=1"
-    page.locator("#partyPage").click()
+    assert page.locator("[data-battle=mode-switch]").get_attribute("href") == "/battle?demo=1"
+    page.locator("[data-battle=party-page]").click()
     assert page.locator(".party-name").inner_text() == "e"
-    page.locator("#speed").select_option("4")
+    page.locator("[data-battle=speed]").select_option("4")
 
     def send(kind, data):
         sockets[-1].send(json.dumps({"type": kind, "data": data}))
@@ -138,34 +138,34 @@ def test_live_tasks_tools_failure_completion_and_reconnect(page, battle_server):
         "anima.tool_activity",
         {"name": "a", "type": "tool_result", "tool": "Read", "ctx": "task:build", "meta": {"tool_use_id": "read-1"}},
     )
-    page.wait_for_function("document.querySelectorAll('#journal li[data-source=activity]').length === 1")
-    assert page.locator("#journal li[data-source=activity]").first.get_attribute("data-skill") in [
+    page.wait_for_function("document.querySelectorAll('[data-battle=journal] li[data-source=activity]').length === 1")
+    assert page.locator("[data-battle=journal] li[data-source=activity]").first.get_attribute("data-skill") in [
         "flare",
         "frost",
         "thunder",
         "meteor",
     ]
-    assert page.locator("#partyPage").inner_text() == "1/2 ›"
+    assert page.locator("[data-battle=party-page]").inner_text() == "1/2 ›"
     send(
         "anima.tool_activity",
         {"name": "a", "event": "tool_end", "tool_name": "Bash", "tool_id": "bash-1", "is_error": True},
     )
-    page.wait_for_function("document.querySelectorAll('#journal li[data-source=activity]').length === 2")
-    assert "失敗" in page.locator("#journal li[data-source=activity]").first.inner_text()
+    page.wait_for_function("document.querySelectorAll('[data-battle=journal] li[data-source=activity]').length === 2")
+    assert "失敗" in page.locator("[data-battle=journal] li[data-source=activity]").first.inner_text()
     send("anima.status", {"name": "a", "status": "idle"})
     page.wait_for_timeout(500)
-    assert page.locator("#clearCount").inner_text() == "0"
+    assert page.locator("[data-battle=clear-count]").inner_text() == "0"
     tasks[0]["queue_status"] = "done"
     send("anima.tool_activity", {"name": "a", "type": "task_updated", "meta": {"task_id": "build", "status": "done"}})
-    page.wait_for_function("document.querySelector('#clearCount').textContent === '1'")
-    page.wait_for_function("document.querySelector('#activeCount').textContent === '0'")
-    assert "タスク完了" in page.locator("#journal").inner_text()
+    page.wait_for_function("document.querySelector('[data-battle=clear-count]')?.textContent === '1'")
+    page.wait_for_function("document.querySelector('[data-battle=active-count]')?.textContent === '0'")
+    assert "タスク完了" in page.locator("[data-battle=journal]").inner_text()
     sockets[-1].close(code=1012, reason="test reconnect")
-    page.wait_for_function("document.querySelector('#connection').dataset.state === 'offline'")
-    assert "ライブ" in page.locator("#modeLabel").inner_text() or "LIVE" in page.locator("#modeLabel").inner_text()
-    page.wait_for_function("document.querySelector('#connection').dataset.state === 'online'", timeout=7000)
+    page.wait_for_function("document.querySelector('[data-battle=connection]')?.dataset.state === 'offline'")
+    assert "ライブ" in page.locator("[data-battle=mode-label]").inner_text() or "LIVE" in page.locator("[data-battle=mode-label]").inner_text()
+    page.wait_for_function("document.querySelector('[data-battle=connection]')?.dataset.state === 'online'", timeout=7000)
     assert len(sockets) >= 2
-    assert page.locator("#clearCount").inner_text() == "1"
+    assert page.locator("[data-battle=clear-count]").inner_text() == "1"
 
 
 def test_auth_failure_is_not_demo_and_text_is_safe(page, battle_server):
@@ -175,10 +175,10 @@ def test_auth_failure_is_not_demo_and_text_is_safe(page, battle_server):
     # Closing inside Playwright's route callback can deadlock its sync bridge.
     page.route_web_socket("**/ws", lambda ws: None)
     page.goto(battle_server + "/battle")
-    page.wait_for_function("document.querySelector('#message').textContent.includes('ログイン')")
+    page.wait_for_function("document.querySelector('[data-battle=message]')?.textContent.includes('ログイン')")
     assert page.locator(".party-row").count() == 0
     assert page.locator(".target-row").count() == 0
-    assert page.locator("#clearCount").inner_text() == "0"
+    assert page.locator("[data-battle=clear-count]").inner_text() == "0"
 
 
 def test_base_path_live_transport_and_untrusted_titles(page, battle_server):
@@ -217,13 +217,13 @@ def test_base_path_live_transport_and_untrusted_titles(page, battle_server):
     assert sockets
     assert page.locator(".target-name").inner_text() != title
     page.locator(".target-name").click()
-    assert page.locator("#taskTitle").inner_text() == title
-    assert page.locator("#taskDialog").is_visible()
-    assert page.locator("#taskDialog img").count() == 0
-    page.locator("#taskClose").click()
-    assert page.locator("#targets img").count() == 0
+    assert page.locator("[data-battle=task-title]").inner_text() == title
+    assert page.locator("[data-battle=task-dialog]").is_visible()
+    assert page.locator("[data-battle=task-dialog] img").count() == 0
+    page.locator("[data-battle=task-close]").click()
+    assert page.locator("[data-battle=targets] img").count() == 0
     assert page.evaluate("window.injected") is None
-    assert page.locator("#modeSwitch").get_attribute("href") == "/office/battle?demo=1"
+    assert page.locator("[data-battle=mode-switch]").get_attribute("href") == "/office/battle?demo=1"
 
 
 def test_enemies_act_without_events_and_repeated_tools_vary(page, battle_server):
@@ -250,14 +250,14 @@ def test_enemies_act_without_events_and_repeated_tools_vary(page, battle_server)
     page.on("request", lambda request: requests.append(request))
     page.route_web_socket("**/ws", lambda ws: sockets.append(ws))
     page.goto(battle_server + "/battle")
-    page.locator("#speed").select_option("4")
+    page.locator("[data-battle=speed]").select_option("4")
     page.wait_for_function("Number(document.querySelector('.party-row')?.dataset.hp) < 1200")
-    assert "ダメージ" in page.locator("#journal li[data-side=enemy]").first.inner_text()
+    assert "ダメージ" in page.locator("[data-battle=journal] li[data-side=enemy]").first.inner_text()
     page.wait_for_function(
-        "[...document.querySelectorAll('#journal li[data-source=scene]')].some(el => el.textContent.includes('反撃'))"
+        "[...document.querySelectorAll('[data-battle=journal] li[data-source=scene]')].some(el => el.textContent.includes('反撃'))"
     )
-    assert page.locator("#clearCount").inner_text() == "0"
-    assert page.locator("#activeCount").inner_text() == "1"
+    assert page.locator("[data-battle=clear-count]").inner_text() == "0"
+    assert page.locator("[data-battle=active-count]").inner_text() == "1"
     assert ".py" not in page.locator(".target-name").inner_text()
     for index in range(3):
         sockets[-1].send(
@@ -274,8 +274,8 @@ def test_enemies_act_without_events_and_repeated_tools_vary(page, battle_server)
                 }
             )
         )
-    page.wait_for_function("document.querySelectorAll('#journal li[data-source=activity]').length === 3", timeout=20000)
-    skills = page.locator("#journal li[data-source=activity]").evaluate_all("els => els.map(el => el.dataset.skill)")
+    page.wait_for_function("document.querySelectorAll('[data-battle=journal] li[data-source=activity]').length === 3", timeout=20000)
+    skills = page.locator("[data-battle=journal] li[data-source=activity]").evaluate_all("els => els.map(el => el.dataset.skill)")
     assert len(set(skills)) >= 2
     assert all(a != b for a, b in zip(skills, skills[1:], strict=False))
     assert not [r for r in requests if r.method not in {"GET", "HEAD"}]
