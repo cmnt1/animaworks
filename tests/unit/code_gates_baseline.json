@@ -34,6 +34,7 @@
     "core/tooling/handler_org_dashboard.py",
     "core/tooling/handler_subordinate_control.py",
     "core/tooling/standalone.py",
+    "core/voice/voice_config.py",
     "server/gateways/discord_channel_sync.py",
     "server/routes/animas.py",
     "server/routes/internal.py",

@@ -31,9 +31,12 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.maintenance.activity_compaction import (
+    CURRENT_COMPACT_PROFILE,
+    INPUT_PROFILES,
     ActivityCompactionSettings,
     ActivityCompactionStats,
     compact_activity_entries,
+    is_compact_profile,
 )
 from core.time_utils import ensure_aware, get_app_timezone, now_local
 
@@ -164,11 +167,13 @@ class ConsolidationEngine:
         checkpoint = self._load_episode_checkpoint()
         iso = target_date.isoformat()
         if not checkpoint.get(iso, []):
-            return requested_profile if requested_profile in ("full", "compact") else "compact"
+            if requested_profile == "full":
+                return "full"
+            return CURRENT_COMPACT_PROFILE
         recorded_by_date = checkpoint.get(_INPUT_PROFILE_KEY, {})
         if isinstance(recorded_by_date, dict):
             recorded = recorded_by_date.get(iso)
-            if recorded in ("full", "compact"):
+            if recorded in INPUT_PROFILES:
                 return recorded
         return "full"
 
@@ -185,9 +190,7 @@ class ConsolidationEngine:
         for key, value in data.items():
             if key == _INPUT_PROFILE_KEY and isinstance(value, dict):
                 profiles = {
-                    day: profile
-                    for day, profile in value.items()
-                    if isinstance(day, str) and profile in ("full", "compact")
+                    day: profile for day, profile in value.items() if isinstance(day, str) and profile in INPUT_PROFILES
                 }
                 if profiles:
                     checkpoint[key] = profiles
@@ -224,7 +227,7 @@ class ConsolidationEngine:
             filtered = set(checkpoint.get(_NOOP_FILTER_KEY, []))
             filtered.add(key)
             checkpoint[_NOOP_FILTER_KEY] = sorted(filtered)
-        if input_profile in ("full", "compact"):
+        if input_profile in INPUT_PROFILES:
             profiles = checkpoint.get(_INPUT_PROFILE_KEY, {})
             if not isinstance(profiles, dict):
                 profiles = {}
@@ -610,7 +613,7 @@ class ConsolidationEngine:
                 if cfg is not None
                 else ActivityCompactionSettings()
             )
-        if settings.profile not in ("full", "compact"):
+        if settings.profile not in INPUT_PROFILES:
             raise ValueError(f"Unknown activity input profile: {settings.profile!r}")
 
         # Keep chunk boundaries stable so existing checkpoint hashes remain valid;
@@ -688,14 +691,14 @@ class ConsolidationEngine:
                 continue
             included.append(e)
 
-        if settings.profile == "compact":
+        if is_compact_profile(settings.profile):
             formatted_entries, compaction_stats = compact_activity_entries(
                 included,
                 settings=settings,
                 format_full=lambda entry: self._format_entry_full(entry, max_content_bytes=entry_content_bytes),
                 format_tool_use=lambda entry: self._format_entry_full(
                     entry,
-                    max_content_bytes=settings.tool_use_max_bytes,
+                    max_content_bytes=settings.tool_use_bytes_for(entry),
                 ),
             )
         else:
@@ -709,7 +712,12 @@ class ConsolidationEngine:
             input_bytes = sum(len(text.encode("utf-8")) + 1 for _, text in formatted_entries)
             compaction_stats = ActivityCompactionStats(bytes_before=input_bytes, bytes_after=input_bytes)
 
-        if settings.profile == "compact" or noop_llm_excluded or noop_command_excluded or noop_tool_entries_excluded:
+        if (
+            is_compact_profile(settings.profile)
+            or noop_llm_excluded
+            or noop_command_excluded
+            or noop_tool_entries_excluded
+        ):
             logger.info(
                 "Phase A input filter anima=%s excluded_noop_cron llm=%d command=%d entries=%d "
                 "profile=%s bytes_before=%d bytes_after=%d cron_digests=%d cron_runs_folded=%d "

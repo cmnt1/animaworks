@@ -17,6 +17,7 @@ from server.routes.external_tasks import create_external_tasks_router
 from server.routes.internal import create_internal_router
 from server.routes.logs_routes import create_logs_router
 from server.routes.memory_routes import create_memory_router
+from server.routes.phone import create_phone_router
 from server.routes.room import create_room_router
 from server.routes.sessions import create_sessions_router
 from server.routes.skills import create_skills_router
@@ -53,6 +54,7 @@ def create_router() -> APIRouter:
     api.include_router(create_external_tasks_router())
     api.include_router(create_usage_router())
     api.include_router(create_webhooks_router())
+    api.include_router(create_phone_router())
 
     router.include_router(api)
     router.include_router(create_websocket_router())

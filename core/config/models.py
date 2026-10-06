@@ -80,6 +80,7 @@ from core.config.schemas import (
     MediaProxyConfig,
     NotificationChannelConfig,
     PermissionsConfig,
+    PhoneConfig,
     PrimingConfig,
     PromptConfig,
     RAGConfig,

@@ -235,6 +235,34 @@ def _check_confirm_key_via_server(anima_name: str, session_id: str, sha: str) ->
         return ""
 
 
+def _send_phone_alert(subject: str, body: str, anima_name: str) -> str:
+    """Best-effort urgent phone alert through the authenticated server API."""
+    from core.internal_api import host_api
+
+    try:
+        response = host_api.post(
+            "/api/internal/phone/alert",
+            json={"anima": anima_name, "subject": subject, "body": body},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return "phone: ERROR - invalid server response"
+        status = payload.get("status")
+        if status == "calling":
+            return "phone: calling"
+        if status == "skipped":
+            reason = str(payload.get("reason") or "not configured").replace("\n", " ")[:200]
+            return f"phone: skipped ({reason})"
+        return "phone: ERROR - unexpected server response"
+    except Exception as exc:
+        # Keep provider/network exception details out of CLI output: they can
+        # contain request metadata. Phone failure is independent of Slack.
+        logger.warning("call_human urgent phone alert request failed (%s)", type(exc).__name__)
+        return f"phone: ERROR - {type(exc).__name__}"
+
+
 def get_cli_guide() -> str:
     """Return CLI guide text for the tool guide injection."""
     return """\
@@ -321,11 +349,15 @@ def cli_main(args: list[str]) -> None:
     hn_cfg = cfg.get("human_notification", {})
 
     if not hn_cfg.get("enabled", False):
+        if ns.priority == "urgent":
+            print(_send_phone_alert(ns.subject, ns.body, _resolve_cli_anima_name()))
         print("ERROR: human_notification is disabled in config.json", file=sys.stderr)
         sys.exit(1)
 
     channels = hn_cfg.get("channels", [])
     if not channels:
+        if ns.priority == "urgent":
+            print(_send_phone_alert(ns.subject, ns.body, _resolve_cli_anima_name()))
         print("ERROR: no channels configured in human_notification", file=sys.stderr)
         sys.exit(1)
 
@@ -385,14 +417,17 @@ def cli_main(args: list[str]) -> None:
         else:
             results.append(f"{ch_type}: not supported in CLI mode")
 
+    if ns.priority == "urgent":
+        results.append(_send_phone_alert(ns.subject, ns.body, _resolve_cli_anima_name()))
+
     for r in results:
         print(r)
 
     if ns.interactive and interaction is not None:
         print(t("tools.call_human.callback_id", callback_id=interaction.callback_id))
 
-    sent_ok = any("OK" in r for r in results)
-    has_error = any("ERROR" in r for r in results)
+    sent_ok = any("OK" in r and not r.startswith("phone:") for r in results)
+    has_error = any("ERROR" in r and not r.startswith("phone:") for r in results)
     if has_error or not sent_ok:
         sys.exit(1)
 

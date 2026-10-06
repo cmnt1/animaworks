@@ -34,6 +34,7 @@ activity_log: 操作・活動ログの保存設定。
 logging: ログレベル、出力先、機密情報のマスキング。
 heartbeat: 定期的な heartbeat の実行設定。
 voice: 音声入出力と音声プロバイダー。
+phone: Twilio を利用した Anima 専用の電話会話と緊急通知。
 housekeeping: 実行時データの定期整理。
 inbox: anima の受信箱と通知表示。
 local_llm: ローカル LLM エンドポイントとモデル設定。
