@@ -578,6 +578,29 @@ class TestListDMPairs:
         assert ab["last_message_ts"] == "2026-02-17T11:00:00"
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
+    async def test_self_addressed_entries_are_not_a_dm_pair(
+        self,
+        _mock_load_config: MagicMock,
+        tmp_path: Path,
+    ):
+        """Task-failure notices an Anima sends itself must not list as 'sora-sora'."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        today = _today()
+        _write_activity_log(
+            tmp_path,
+            "sora",
+            today,
+            [{"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "[task failed]", "to": "sora"}],
+        )
+
+        app = _make_test_app(shared_dir)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/dm")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_lists_dm_pairs_from_activity_log(
         self,
         _mock_load_config: MagicMock,

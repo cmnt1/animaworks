@@ -126,11 +126,29 @@ function _ensureClosedTags(html) {
   return _sanitizerEl.innerHTML;
 }
 
+// A "---" line right under a paragraph is a Setext <h2> in Markdown. Anima
+// replies join progress notes with single newlines and then a "---" divider,
+// which turned every note into one big bold heading. Treat it as a rule.
+export function breakSetextHeadings(text) {
+  if (typeof text !== "string" || !text.includes("---")) return text;
+  const lines = text.split("\n");
+  const out = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s{0,3}(```|~~~)/.test(line)) inFence = !inFence;
+    if (!inFence && /^\s{0,3}-{3,}\s*$/.test(line) && out.length && out[out.length - 1].trim() !== "") {
+      out.push("");
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 export function renderMarkdown(text, animaName) {
   _ensureKatex();
   _mdAnimaCtx = animaName || null;
   try {
-    return _ensureClosedTags(marked.parse(text, _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(text), _markedOptions));
   } catch {
     return escapeHtml(text);
   } finally {
@@ -142,7 +160,7 @@ export function renderSafeMarkdown(text) {
   if (!text) return "";
   _ensureKatex();
   try {
-    return _ensureClosedTags(marked.parse(escapeHtml(text), _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(escapeHtml(text)), _markedOptions));
   } catch {
     return escapeHtml(text);
   }

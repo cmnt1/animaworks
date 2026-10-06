@@ -337,7 +337,9 @@ def create_channels_router() -> APIRouter:
                     for e in entries:
                         sender = e.from_person or anima_dir.name
                         receiver = e.to_person
-                        if not receiver:
+                        # Self-addressed entries (e.g. background task failure
+                        # notices) are not a conversation between two parties.
+                        if not receiver or receiver == sender:
                             continue
                         pair_key = "-".join(sorted([sender, receiver]))
                         if pair_key not in pair_map:
@@ -374,7 +376,7 @@ def create_channels_router() -> APIRouter:
             if info["count"] == 0:
                 continue
             parts = pair_key.split("-", 1)
-            if len(parts) != 2:
+            if len(parts) != 2 or parts[0] == parts[1]:
                 continue
             if valid_names and not (parts[0] in valid_names and parts[1] in valid_names):
                 continue
