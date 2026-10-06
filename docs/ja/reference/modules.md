@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: f08dc715e28a565aad65ed687def58ba67fb5c84f85a7a01039a8ecfb88eef99 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 4c22ed47feebd59a34036a9c4ee2b93ac01285d4844f39edab49999bc9e98a28 -->
 
 # モジュール一覧
 
@@ -130,7 +130,7 @@ LLM エージェントの実行、会話制御、エンジン連携。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.agent` | 23 | — |
-| `core.agent.agent_core` | 324 | — |
+| `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
 | `core.agent.priming` | 493 | — |
@@ -150,7 +150,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 693 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
-| `core.anima.factory` | 825 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
+| `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 998 | — |
@@ -201,11 +201,11 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
-| `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
+| `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
-| `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1426 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1427 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -516,7 +516,7 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 708 | — |
+| `core.mcp.server` | 714 | — |
 
 ## `core.memory`
 
@@ -721,8 +721,9 @@ anima 間および外部とのメッセージ配送。
 | `core.notification.channels.ntfy` | 87 | — |
 | `core.notification.channels.slack` | 261 | — |
 | `core.notification.channels.telegram` | 91 | — |
+| `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
-| `core.notification.notifier` | 219 | — |
+| `core.notification.notifier` | 238 | — |
 | `core.notification.reply_routing` | 467 | — |
 | `core.notification.slack_names` | 67 | — |
 
@@ -796,7 +797,7 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
 | `core.prompt.builder` | 1287 | — |
-| `core.prompt.context` | 482 | Context window usage tracker. |
+| `core.prompt.context` | 486 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |
@@ -955,7 +956,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 881 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 872 | — |
+| `core.tooling.handler_comms` | 880 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 262 | — |
 | `core.tooling.handler_exec` | 345 | — |
@@ -1016,7 +1017,7 @@ LLM 利用量とコストの記録・集計。
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 55 | — |
-| `core.usage.token_usage` | 556 | — |
+| `core.usage.token_usage` | 587 | — |
 
 ## `core.voice`
 
@@ -1028,9 +1029,9 @@ LLM 利用量とコストの記録・集計。
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
 | `core.voice.front` | 385 | Voice front lane — lightweight speech-first chat path via a local LLM. |
-| `core.voice.front_conversation` | 668 | Transport-agnostic front-lane conversation and delegation handling. |
+| `core.voice.front_conversation` | 694 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
-| `core.voice.session` | 1680 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session` | 1843 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.session_factory` | 66 | — |
 | `core.voice.speech_text` | 332 | — |
 | `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
@@ -1039,11 +1040,11 @@ LLM 利用量とコストの記録・集計。
 | `core.voice.tts_base` | 63 | TTS abstract base — provider interface and config. |
 | `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
 | `core.voice.tts_factory` | 47 | TTS provider factory. |
-| `core.voice.tts_gemini` | 185 | Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming). |
+| `core.voice.tts_gemini` | 220 | Gemini TTS provider — Gemini API ``streamGenerateContent`` (SSE streaming). |
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
-| `core.voice.turn_detector` | 385 | — |
+| `core.voice.turn_detector` | 398 | — |
 | `core.voice.voice_config` | 76 | — |
 
 ## `server`
@@ -1100,7 +1101,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1488 | — |
+| `server.routes.internal` | 1510 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
@@ -1110,7 +1111,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1156 | — |
+| `server.routes.system` | 1170 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
@@ -1141,6 +1142,6 @@ LLM 利用量とコストの記録・集計。
 | `server.supervisor._mgr_scheduler（非公開）` | 1247 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
-| `server.supervisor.manager` | 1120 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `server.supervisor.manager` | 1148 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `server.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
 | `server.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |

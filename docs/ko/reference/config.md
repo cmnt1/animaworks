@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=5518a1484e6f3fab520c25e31e0b4041770f2802f862663bcbaf0438e5365858 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=51cc8a67d0ea2741cc71b589ceeb00452ef8e7660407f4e6c7399acddabf2876 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 설정 참조
 
@@ -65,8 +65,8 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 각 Anima에 적용할 모델 및 실행 설정의 기본값. |
-| `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
+| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 각 anima에 적용할 모델·실행 설정의 기본값. |
+| `anima_defaults.model` | `str` | `"claude-sonnet-5-5"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
 | `anima_defaults.background_model` | `str \| None` | `null` | — |
@@ -81,17 +81,17 @@
 | `anima_defaults.task_compaction_max` | `int` | `6` | — |
 | `anima_defaults.max_session_age_hours` | `float` | `24.0` | — |
 | `anima_defaults.conversation_history_threshold` | `float` | `0.3` | — |
-| `anima_defaults.execution_mode` | `str \| None` | `null` | None = auto-detect from model |
+| `anima_defaults.execution_mode` | `str \| None` | `null` | None = 모델에서 자동 감지 |
 | `anima_defaults.supervisor` | `str \| None` | `null` | — |
 | `anima_defaults.speciality` | `str \| None` | `null` | — |
 | `anima_defaults.extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
-| `anima_defaults.thinking` | `bool \| None` | `null` | Extended thinking (Bedrock: reasoning_effort, Ollama: think) |
-| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (default: "high") |
-| `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
+| `anima_defaults.thinking` | `bool \| None` | `null` | 확장 사고 (Bedrock: reasoning_effort, Ollama: think) |
+| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (기본값: "high") |
+| `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S 인증: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본값은 true. false로 설정하면 정기 heartbeat만 비활성화. 메시지로 인한 HB와 cron에는 영향 없음 |
-| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기반 HB·cron은 영향 없음 |
+| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = 월간 토큰 사용량 무제한 |
 
 ### `animas`
 
@@ -117,9 +117,9 @@
 | `consolidation.synaptic_downscaling_enabled` | `bool` | `true` | — |
 | `consolidation.skill_autolearn_enabled` | `bool` | `true` | — |
 | `consolidation.curator_auto_apply_enabled` | `bool` | `false` | — |
-| `consolidation.daily_time` | `str` | `"02:00"` | Format: HH:MM |
+| `consolidation.daily_time` | `str` | `"02:00"` | 형식: HH:MM |
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
-| `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
+| `consolidation.llm_model` | `str` | `"claude-sonnet-5-5"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
 | `consolidation.weekly_llm_model` | `str \| None` | `null` | — |
 | `consolidation.weekly_llm_credential` | `str \| None` | `null` | — |
@@ -128,9 +128,9 @@
 | `consolidation.fact_reconcile_model` | `str \| None` | `null` | — |
 | `consolidation.fact_reconcile_credential` | `str \| None` | `null` | — |
 | `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | 각 일일 에피소드 요약 LLM 호출의 최대 UTF-8 프롬프트 크기. |
-| `consolidation.episode_summary_backfill_days` | `int` | `7` | 처리되지 않은 일일 에피소드 활동을 확인할 현지 날짜 기준 과거 일수. |
-| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `1` | 한 번의 일일 통합 중 보충 처리할 과거 날짜의 최대 수(어제는 별도). |
-| `consolidation.episode_summary_exclude_noop_cron` | `bool` | `true` | 일일 에피소드 요약 입력에서 '아무것도 하지 않음' cron 실행을 제외합니다. |
+| `consolidation.episode_summary_backfill_days` | `int` | `7` | 처리되지 않은 일일 에피소드 활동을 위해 이만큼의 로컬 일수를 되돌아봄. |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `1` | 한 번의 일일 통합 중 백필할 최대 이전 일수 (어제는 별도). |
+| `consolidation.episode_summary_exclude_noop_cron` | `bool` | `true` | 일일 에피소드 요약 입력에서 '아무것도 안 함' cron 실행 제외. |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
@@ -138,13 +138,13 @@
 | `consolidation.weekly_ipc_timeout_seconds` | `int` | `3600` | — |
 | `consolidation.max_concurrent_animas` | `int` | `3` | 동시에 실행할 최대 Anima daily/weekly 통합 수. |
 | `consolidation.weekly_enabled` | `bool` | `false` | — |
-| `consolidation.weekly_time` | `str` | `"sun:03:00"` | Format: day:HH:MM |
-| `consolidation.indexing_enabled` | `bool` | `true` | 일일 RAG 인덱싱 전환 |
-| `consolidation.indexing_time` | `str` | `"04:00"` | Format: HH:MM |
+| `consolidation.weekly_time` | `str` | `"sun:03:00"` | 형식: day:HH:MM |
+| `consolidation.indexing_enabled` | `bool` | `true` | 일일 RAG 인덱싱 토글 |
+| `consolidation.indexing_time` | `str` | `"04:00"` | 형식: HH:MM |
 | `consolidation.knowledge_self_correction_enabled` | `bool` | `true` | — |
 | `consolidation.knowledge_self_correction_max_reconsolidation_files` | `int` | `5` | — |
 | `consolidation.knowledge_self_correction_timeout_seconds` | `int` | `300` | — |
-| `consolidation.fact_extraction_chunk_chars` | `int` | `12000` | 통합 중 원자적 사실 추출 청크당 최대 문자 수. 0(또는 음수)은 분할을 비활성화합니다. |
+| `consolidation.fact_extraction_chunk_chars` | `int` | `12000` | 통합 중 원자적 사실 추출 청크당 최대 문자 수. 0(또는 음수)은 분할을 비활성화. |
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
@@ -329,12 +329,13 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | 사람에게 알림을 보내는 방법과 수신 대상. |
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | 인간에게 알리는 방법과 알림 대상. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
+| `human_notification.web_ui` | `bool` | `true` | 내장 채널: call_human을 Web UI 채팅에 푸시 |
 
 ### `interaction`
 
@@ -593,8 +594,8 @@
 | `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
-| `phone.turn_timeout_sec` | `float` | `300` | 레거시 Gather/poll 시간 초과. Media Streams 전화 대화에서는 사용되지 않음. |
-| `phone.turn_end_silence_ms` | `int` | `2000` | — |
+| `phone.turn_timeout_sec` | `float` | `300` | 레거시 Gather/poll 타임아웃; Media Streams 전화 대화에서는 사용되지 않음. |
+| `phone.turn_end_silence_ms` | `int` | `1200` | — |
 
 ### `housekeeping`
 
@@ -748,13 +749,14 @@
 | `default_workspace` | `—` | `—` | — |
 | `execution_mode` | `str \| None` | `null` | anima의 실행 모드. |
 | `extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
-| `fallback_model` | `str \| None` | `null` | 주 모델 실패 시 사용하는 대체 모델. |
+| `fallback_model` | `str \| None` | `null` | 주 모델 실패 시 사용할 대체 모델. |
 | `fallback_models` | `list[str]` | `[]` | — |
 | `heartbeat_enabled` | `bool` | `true` | 정기 heartbeat의 활성·비활성. |
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | 모델의 최대 출력 토큰 수. |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | anima의 주 모델. |
+| `model` | `str` | `"claude-sonnet-5-5"` | anima의 주 모델. |
+| `speciality` | `str \| None` | `null` | — |
 | `supervisor` | `str \| None` | `null` | 상위 supervisor anima의 이름. |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
@@ -783,7 +785,9 @@
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
+| `claude-sonnet-5-5` | `S` | 200000 |
 | `codex/*` | `C` | 128000 |
 | `codex/gpt-4.1` | `C` | 1000000 |
 | `codex/gpt-5.4` | `C` | 272000 |

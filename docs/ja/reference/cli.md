@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: fe0a04828af201e0277da0af7f98ea84506827bfd0bc61ec46fc3fbe08a82f67 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: da0f271143c6293e62945e68086690d04a6205c07d0cd446bfdc38129dbf1e79 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -697,7 +697,7 @@ Show resolved mode and context for a model
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| model | positional | — | — | Model name (e.g. claude-sonnet-4-6) |
+| model | positional | — | — | Model name (e.g. claude-sonnet-5-5) |
 
 ## `models list`
 

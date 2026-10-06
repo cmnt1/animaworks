@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=87b5de437e4469bc9ff7937e96bf349a204a339ee12ad42b1a9eea3e3243ce61 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=4fcec2c9a51d241bd169789eed0512842d0848a5f1747cbbbcaf259364d1add3 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -130,7 +130,7 @@ LLM agent execution, conversation control, and engine integration.
 | Module | Lines | First docstring line |
 |---|---:|---|
 | `core.agent` | 23 | — |
-| `core.agent.agent_core` | 324 | — |
+| `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
 | `core.agent.priming` | 493 | — |
@@ -141,7 +141,7 @@ LLM agent execution, conversation control, and engine integration.
 
 Digital Anima lifecycle and runtime objects.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
@@ -150,7 +150,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 693 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
-| `core.anima.factory` | 825 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
+| `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 998 | — |
@@ -188,7 +188,7 @@ Common send clients and token resolution for Slack, Discord, and Chatwork.
 
 Application configuration schema, loading, validation, and migration.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.config` | 36 | — |
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
@@ -201,11 +201,11 @@ Application configuration schema, loading, validation, and migration.
 | `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
-| `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
+| `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
-| `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1426 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1427 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -516,7 +516,7 @@ Model Context Protocol server and client.
 | Module | Lines | First docstring line |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 708 | — |
+| `core.mcp.server` | 714 | — |
 
 ## `core.memory`
 
@@ -721,8 +721,9 @@ Notification generation and delivery.
 | `core.notification.channels.ntfy` | 87 | — |
 | `core.notification.channels.slack` | 261 | — |
 | `core.notification.channels.telegram` | 91 | — |
+| `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
-| `core.notification.notifier` | 219 | — |
+| `core.notification.notifier` | 238 | — |
 | `core.notification.reply_routing` | 467 | — |
 | `core.notification.slack_names` | 67 | — |
 
@@ -791,12 +792,12 @@ Integration layer that abstracts differences between execution engines and opera
 
 System prompt and context construction.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
 | `core.prompt.builder` | 1287 | — |
-| `core.prompt.context` | 482 | Context window usage tracker. |
+| `core.prompt.context` | 486 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |
@@ -947,7 +948,7 @@ Text token estimation and budget-based truncation.
 
 Tool schemas, permissions, and execution infrastructure.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
 | `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
@@ -955,7 +956,7 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 881 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 872 | — |
+| `core.tooling.handler_comms` | 880 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 262 | — |
 | `core.tooling.handler_exec` | 345 | — |
@@ -1016,21 +1017,21 @@ LLM usage and cost recording and aggregation.
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 55 | — |
-| `core.usage.token_usage` | 556 | — |
+| `core.usage.token_usage` | 587 | — |
 
 ## `core.voice`
 
-Audio input/output and voice conversations.
+Voice input/output and voice conversation.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
 | `core.voice.front` | 385 | Voice front lane — lightweight speech-first chat path via a local LLM. |
-| `core.voice.front_conversation` | 668 | Transport-agnostic front-lane conversation and delegation handling. |
+| `core.voice.front_conversation` | 694 | Transport-agnostic front-lane conversation and delegation handling. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
-| `core.voice.session` | 1680 | Voice session — STT -> Chat -> TTS orchestration. |
+| `core.voice.session` | 1843 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.session_factory` | 66 | — |
 | `core.voice.speech_text` | 332 | — |
 | `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
@@ -1039,11 +1040,11 @@ Audio input/output and voice conversations.
 | `core.voice.tts_base` | 63 | TTS abstract base — provider interface and config. |
 | `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
 | `core.voice.tts_factory` | 47 | TTS provider factory. |
-| `core.voice.tts_gemini` | 185 | Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming). |
+| `core.voice.tts_gemini` | 220 | Gemini TTS provider — Gemini API ``streamGenerateContent`` (SSE streaming). |
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
-| `core.voice.turn_detector` | 385 | — |
+| `core.voice.turn_detector` | 398 | — |
 | `core.voice.voice_config` | 76 | — |
 
 ## `server`
@@ -1081,7 +1082,7 @@ Audio input/output and voice conversations.
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
@@ -1100,7 +1101,7 @@ Audio input/output and voice conversations.
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1488 | — |
+| `server.routes.internal` | 1510 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
@@ -1110,7 +1111,7 @@ Audio input/output and voice conversations.
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1156 | — |
+| `server.routes.system` | 1170 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
@@ -1131,7 +1132,7 @@ Audio input/output and voice conversations.
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `server.supervisor` | 23 | Server-level supervision APIs for managing Anima processes. |
 | `server.supervisor._manager_protocols（非公開）` | 85 | Structural host protocols for the compositional mixins. |
@@ -1141,6 +1142,6 @@ Audio input/output and voice conversations.
 | `server.supervisor._mgr_scheduler（非公開）` | 1247 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
-| `server.supervisor.manager` | 1120 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `server.supervisor.manager` | 1148 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `server.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
 | `server.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |

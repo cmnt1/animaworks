@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 905a2217ef9eb86cfc0af7fdead1eb041d9af97c46fa428209c686e27059d4c8 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 0eaa84163f3f4407cb3a8f9fa89c6b7a31b9fcd6acfeb3664c56695f684257ba -->
 
 # 設定リファレンス
 
@@ -66,7 +66,7 @@
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 各 anima に適用するモデル・実行設定の既定値。 |
-| `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
+| `anima_defaults.model` | `str` | `"claude-sonnet-5-5"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
 | `anima_defaults.background_model` | `str \| None` | `null` | — |
@@ -119,7 +119,7 @@
 | `consolidation.curator_auto_apply_enabled` | `bool` | `false` | — |
 | `consolidation.daily_time` | `str` | `"02:00"` | Format: HH:MM |
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
-| `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
+| `consolidation.llm_model` | `str` | `"claude-sonnet-5-5"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
 | `consolidation.weekly_llm_model` | `str \| None` | `null` | — |
 | `consolidation.weekly_llm_credential` | `str \| None` | `null` | — |
@@ -335,6 +335,7 @@
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
+| `human_notification.web_ui` | `bool` | `true` | built-in channel: push call_human into the Web UI chat |
 
 ### `interaction`
 
@@ -594,7 +595,7 @@
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
 | `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
-| `phone.turn_end_silence_ms` | `int` | `2000` | — |
+| `phone.turn_end_silence_ms` | `int` | `1200` | — |
 
 ### `housekeeping`
 
@@ -754,7 +755,8 @@
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | モデルの最大出力トークン数。 |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | anima の主モデル。 |
+| `model` | `str` | `"claude-sonnet-5-5"` | anima の主モデル。 |
+| `speciality` | `str \| None` | `null` | — |
 | `supervisor` | `str \| None` | `null` | 上位 supervisor anima の名前。 |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
@@ -783,7 +785,9 @@
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
+| `claude-sonnet-5-5` | `S` | 200000 |
 | `codex/*` | `C` | 128000 |
 | `codex/gpt-4.1` | `C` | 1000000 |
 | `codex/gpt-5.4` | `C` | 272000 |

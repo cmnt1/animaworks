@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=87b5de437e4469bc9ff7937e96bf349a204a339ee12ad42b1a9eea3e3243ce61 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=4fcec2c9a51d241bd169789eed0512842d0848a5f1747cbbbcaf259364d1add3 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 모듈 목록
 
@@ -130,27 +130,27 @@ LLM 에이전트 실행, 대화 제어, 엔진 연동.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.agent` | 23 | — |
-| `core.agent.agent_core` | 324 | — |
+| `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
 | `core.agent.priming` | 493 | — |
 | `core.agent.prompt_log` | 151 | — |
-| `core.agent.session_compactor` | 566 | Anima별 × thread_id별 유휴 압축 타이머 관리. |
+| `core.agent.session_compactor` | 566 | Per-Anima × per-thread_id idle compaction timer management. |
 
 ## `core.anima`
 
-디지털 Anima의 수명 주기와 런타임 객체.
+Digital Anima의 라이프사이클과 런타임 객체.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima._mixin_protocols（非公開）` | 130 | 조합형 믹스인을 위한 구조적 호스트 프로토콜 |
+| `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 693 | — |
-| `core.anima.emotion_tag` | 84 | LLM 응답에서 감정 태그를 추출하는 공통 기능 |
-| `core.anima.factory` | 825 | Anima 생성 팩토리: 템플릿, 빈 파일 또는 MD 파일에서 새 디지털 Anima 생성 |
+| `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
+| `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 998 | — |
@@ -191,22 +191,22 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.config` | 36 | — |
-| `core.config.anima_registry` | 313 | config.json에서 Anima 등록, 등록 해제, 이름 변경. |
+| `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
-| `core.config.io` | 317 | 설정 I/O: 싱글턴 캐시, 로드 및 저장. |
-| `core.config.local_llm` | 69 | 로컬 Ollama 기반 모델 기본값 및 역할 프리셋용 헬퍼. |
+| `core.config.io` | 317 | Configuration I/O: singleton cache, load, and save. |
+| `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 201 | — |
-| `core.config.model_catalog` | 194 | 정적 모델 카탈로그 및 요청별 모델 재정의 검증. |
-| `core.config.model_config` | 879 | 모델 설정 확인: load_model_config, penalties, max_tokens. |
-| `core.config.model_discovery` | 530 | 설치된 CLI에서 "모드 + 모델" 카탈로그 동적 검색. |
-| `core.config.model_mode` | 446 | 표준 S/C/D/G/X/A 모드에 맞는 모델 실행 모드 확인. |
-| `core.config.models` | 95 | 중앙 설정 모듈 — 분할 모듈을 다시 내보내는 퍼사드. |
-| `core.config.ops` | 203 | AnimaWorks 설정을 읽고 업데이트하는 애플리케이션 작업. |
-| `core.config.resolver` | 159 | 설정 확인: anima_defaults와 status.json 병합. |
-| `core.config.schemas` | 1426 | AnimaWorks용 Pydantic 설정 스키마. |
-| `core.config.vault` | 409 | PyNaCl SealedBox 암호화를 사용하는 자격 증명 보관소. |
+| `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
+| `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
+| `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
+| `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
+| `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
+| `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1427 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
@@ -516,7 +516,7 @@ Model Context Protocol 서버와 클라이언트.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 708 | — |
+| `core.mcp.server` | 714 | — |
 
 ## `core.memory`
 
@@ -710,7 +710,7 @@ Anima 간 및 외부와의 메시지 전달.
 
 ## `core.notification`
 
-알림의 생성과 배달.
+알림 생성 및 전달.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
@@ -721,8 +721,9 @@ Anima 간 및 외부와의 메시지 전달.
 | `core.notification.channels.ntfy` | 87 | — |
 | `core.notification.channels.slack` | 261 | — |
 | `core.notification.channels.telegram` | 91 | — |
+| `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
-| `core.notification.notifier` | 219 | — |
+| `core.notification.notifier` | 238 | — |
 | `core.notification.reply_routing` | 467 | — |
 | `core.notification.slack_names` | 67 | — |
 
@@ -789,14 +790,14 @@ Twilio 전화 채널의 음성 합성, 통화 상태, Webhook 관리.
 
 ## `core.prompt`
 
-시스템 프롬프트 및 컨텍스트 구축.
+시스템 프롬프트와 컨텍스트 구축.
 
-| 모듈 | 행 수 | 독스트링 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.prompt` | 1 | 프롬프트 구성 패키지. 특정 모듈을 직접 가져오세요. |
+| `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
 | `core.prompt.builder` | 1287 | — |
-| `core.prompt.context` | 482 | 컨텍스트 창 사용량 추적기. |
+| `core.prompt.context` | 486 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |
@@ -945,17 +946,17 @@ Anima 메인 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 ## `core.tooling`
 
-도구 스키마, 권한 및 실행 기반.
+도구의 스키마, 권한, 실행 기반.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.tooling` | 1 | 도구 패키지입니다. 핸들러가 즉시 로드되는 것을 방지하려면 특정 모듈을 가져오세요. |
-| `core.tooling._handler_protocols（非公開）` | 224 | 구성형 믹스인을 위한 구조적 호스트 프로토콜. |
-| `core.tooling.codex_command_hook` | 31 | Codex의 PreToolUse 훅을 위한 핵심 명령 정책 결정. |
+| `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
+| `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
+| `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 881 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 872 | — |
+| `core.tooling.handler_comms` | 880 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 262 | — |
 | `core.tooling.handler_exec` | 345 | — |
@@ -990,7 +991,7 @@ Anima 메인 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 188 | — |
-| `core.tooling.tool_context` | 17 | ToolHandler 믹스인 위임 객체에 전달되는 공유 런타임 상태. |
+| `core.tooling.tool_context` | 17 | Shared runtime state passed to ToolHandler mixin delegates. |
 
 ## `core.tooling.policy`
 
@@ -1016,7 +1017,7 @@ LLM 사용량과 비용의 기록·집계.
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 55 | — |
-| `core.usage.token_usage` | 556 | — |
+| `core.usage.token_usage` | 587 | — |
 
 ## `core.voice`
 
@@ -1024,26 +1025,26 @@ LLM 사용량과 비용의 기록·집계.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.voice` | 7 | 음성 채팅 하위 시스템 — STT, TTS 및 세션 오케스트레이션. |
+| `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
 | `core.voice.emotion_style` | 114 | — |
-| `core.voice.front` | 385 | 음성 프런트 레인 — 로컬 LLM을 통한 경량 음성 우선 채팅 경로. |
-| `core.voice.front_conversation` | 668 | 전송 방식에 독립적인 프런트 레인 대화 및 위임 처리. |
-| `core.voice.sentence_splitter` | 73 | 스트리밍 TTS용 일본어 문장 분할. |
-| `core.voice.session` | 1680 | 음성 세션 — STT -> Chat -> TTS 오케스트레이션. |
+| `core.voice.front` | 385 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front_conversation` | 694 | Transport-agnostic front-lane conversation and delegation handling. |
+| `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
+| `core.voice.session` | 1843 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.session_factory` | 66 | — |
 | `core.voice.speech_text` | 332 | — |
-| `core.voice.stt` | 145 | 음성 STT — faster-whisper를 이용한 메모리 내 PCM 전사. |
-| `core.voice.stt_stream` | 300 | 스트리밍 STT — 롤링 버퍼 + LocalAgreement-2 접두부 확정. |
-| `core.voice.transport` | 21 | 음성 세션 출력용 전송 프로토콜. |
-| `core.voice.tts_base` | 63 | TTS 추상 기본 클래스 — 공급자 인터페이스 및 구성. |
-| `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS 공급자 — REST API 스트리밍. |
-| `core.voice.tts_factory` | 47 | TTS 공급자 팩토리. |
-| `core.voice.tts_gemini` | 185 | Gemini TTS 공급자 — Gemini API Interactions 엔드포인트(SSE 스트리밍). |
-| `core.voice.tts_irodori` | 79 | Irodori-TTS 공급자 — HTTP API. |
-| `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS 공급자. |
-| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS 공급자 — 엔진 HTTP API. |
-| `core.voice.turn_detector` | 385 | — |
+| `core.voice.stt` | 145 | Voice STT — in-memory PCM transcription via faster-whisper. |
+| `core.voice.stt_stream` | 300 | Streaming STT — rolling buffer + LocalAgreement-2 prefix commitment. |
+| `core.voice.transport` | 21 | Transport protocol for voice-session output. |
+| `core.voice.tts_base` | 63 | TTS abstract base — provider interface and config. |
+| `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
+| `core.voice.tts_factory` | 47 | TTS provider factory. |
+| `core.voice.tts_gemini` | 220 | Gemini TTS provider — Gemini API ``streamGenerateContent`` (SSE streaming). |
+| `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
+| `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
+| `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
+| `core.voice.turn_detector` | 398 | — |
 | `core.voice.voice_config` | 76 | — |
 
 ## `server`
@@ -1100,21 +1101,21 @@ LLM 사용량과 비용의 기록·집계.
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1488 | — |
+| `server.routes.internal` | 1510 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
-| `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
+| `server.routes.room` | 443 | SSE 스트리밍을 사용하는 회의실 API 라우트. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1156 | — |
+| `server.routes.system` | 1170 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공통 헬퍼를 사용합니다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트; Anima별 status.json 설정은 공용 헬퍼를 사용. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
@@ -1133,14 +1134,14 @@ LLM 사용량과 비용의 기록·집계.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `server.supervisor` | 23 | Anima 프로세스 관리를 위한 서버 수준 감독 API. |
-| `server.supervisor._manager_protocols（非公開）` | 85 | 구성형 믹스인을 위한 구조적 호스트 프로토콜. |
-| `server.supervisor._mgr_health（非公開）` | 470 | ProcessSupervisor용 상태 확인 믹스인. |
+| `server.supervisor` | 23 | Anima 프로세스를 관리하는 서버 수준 감독 API. |
+| `server.supervisor._manager_protocols（非公開）` | 85 | 구성 믹스인을 위한 구조적 호스트 프로토콜. |
+| `server.supervisor._mgr_health（非公開）` | 470 | ProcessSupervisor용 헬스 체크 믹스인. |
 | `server.supervisor._mgr_rag_repair（非公開）` | 268 | ProcessSupervisor용 감독형 RAG 복구 믹스인. |
 | `server.supervisor._mgr_reconcile（非公開）` | 320 | ProcessSupervisor용 조정 믹스인. |
 | `server.supervisor._mgr_scheduler（非公開）` | 1247 | ProcessSupervisor용 시스템 스케줄러 믹스인. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
-| `server.supervisor.manager` | 1120 | 프로세스 감독자 - Anima 자식 프로세스의 수명 주기를 관리합니다. |
-| `server.supervisor.process_handle` | 768 | 자식 Anima 프로세스를 관리하기 위한 프로세스 핸들. |
+| `server.supervisor.manager` | 1148 | 프로세스 슈퍼바이저 - Anima 하위 프로세스의 수명 주기를 관리. |
+| `server.supervisor.process_handle` | 768 | 하위 Anima 프로세스 관리를 위한 프로세스 핸들. |
 | `server.supervisor.restart_state` | 169 | ProcessSupervisor용 통합 재시작 상태 머신. |

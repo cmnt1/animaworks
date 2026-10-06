@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=d8272fbb5aee3a5e64abc8871d3235c5a79788096c41b0af5ca0de434e568d29 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=6abbb3827be29bed9907c7391c24e2352393779bc649027eb0f7ffbb447ff520 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -691,13 +691,13 @@ anima용 stdio MCP 서버 실행
 
 ## `models info`
 
-모델의 해석된 모드와 컨텍스트 표시
+모델의 해결 모드와 컨텍스트 표시
 
 `usage: animaworks models info [-h] model`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| model | 위치 인자 | — | — | 모델 이름 (예: claude-sonnet-4-6) |
+| model | 위치 인자 | — | — | 모델 이름 (예: claude-sonnet-5-5) |
 
 ## `models list`
 

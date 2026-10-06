@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=5518a1484e6f3fab520c25e31e0b4041770f2802f862663bcbaf0438e5365858 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=51cc8a67d0ea2741cc71b589ceeb00452ef8e7660407f4e6c7399acddabf2876 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Configuration Reference
 
@@ -65,8 +65,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and runtime settings applied to each Anima. |
-| `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
+| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and execution configuration applied to each anima. |
+| `anima_defaults.model` | `str` | `"claude-sonnet-5-5"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
 | `anima_defaults.background_model` | `str \| None` | `null` | — |
@@ -90,7 +90,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Defaults to true. Set to false to disable only periodic heartbeats. Message-triggered HB and cron are unaffected. |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. If false, only disables periodic heartbeat. Message-triggered heartbeats and cron are unaffected |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
 
 ### `animas`
@@ -119,7 +119,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.curator_auto_apply_enabled` | `bool` | `false` | — |
 | `consolidation.daily_time` | `str` | `"02:00"` | Format: HH:MM |
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
-| `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
+| `consolidation.llm_model` | `str` | `"claude-sonnet-5-5"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
 | `consolidation.weekly_llm_model` | `str \| None` | `null` | — |
 | `consolidation.weekly_llm_credential` | `str \| None` | `null` | — |
@@ -329,12 +329,13 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Notification methods and destinations for people. |
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Notification methods and destinations for humans. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
+| `human_notification.web_ui` | `bool` | `true` | built-in channel: push call_human into the Web UI chat |
 
 ### `interaction`
 
@@ -580,7 +581,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `phone` | `PhoneConfig` | `{PhoneConfig}` | Anima-exclusive phone conversations and emergency notifications using Twilio. |
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Anima-dedicated phone conversations and emergency notifications using Twilio. |
 | `phone.enabled` | `bool` | `false` | — |
 | `phone.anima` | `str` | `"aoi"` | — |
 | `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
@@ -594,7 +595,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
 | `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
-| `phone.turn_end_silence_ms` | `int` | `2000` | — |
+| `phone.turn_end_silence_ms` | `int` | `1200` | — |
 
 ### `housekeeping`
 
@@ -744,7 +745,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `context_absolute_ceiling` | `float` | `0.75` | — |
 | `context_threshold` | `float` | `0.5` | — |
 | `conversation_history_threshold` | `float` | `0.3` | — |
-| `credential` | `str \| None` | `null` | Name of the authentication credential associated with the anima. |
+| `credential` | `str \| None` | `null` | Name of the authentication information associated with the anima. |
 | `default_workspace` | `—` | `—` | — |
 | `execution_mode` | `str \| None` | `null` | Execution mode of the anima. |
 | `extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
@@ -754,8 +755,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | Maximum number of output tokens for the model. |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | Primary model of the anima. |
-| `supervisor` | `str \| None` | `null` | Name of the parent supervisor anima. |
+| `model` | `str` | `"claude-sonnet-5-5"` | Primary model of the anima. |
+| `speciality` | `str \| None` | `null` | — |
+| `supervisor` | `str \| None` | `null` | Name of the higher-level supervisor anima. |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
 | `thinking` | `bool \| None` | `null` | — |
@@ -774,7 +776,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 Execution modes and context windows for each model name pattern.
 
 | Model name pattern | Mode | Context window |
-|---|---|---:|
+|---|---:|---:|
 | `anthropic/claude-*` | `A` | 200000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |
@@ -783,7 +785,9 @@ Execution modes and context windows for each model name pattern.
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
+| `claude-sonnet-5-5` | `S` | 200000 |
 | `codex/*` | `C` | 128000 |
 | `codex/gpt-4.1` | `C` | 1000000 |
 | `codex/gpt-5.4` | `C` | 272000 |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 6feb2b3862aa4bf7400155c7bd90bfc01389df5234155fabb5154721e638328b -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 24620c08c781fad4d844f7cb794c80475cbba5111c5f6fd797e238ce5953234f -->
 
 # API リファレンス
 
@@ -144,6 +144,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/interaction/message-ts` | 内部 | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | 内部 | Notify the server that a message was sent via CLI. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | 内部 | — | `server/routes/internal.py:internal_notification_mapping` |
+| POST | `/api/internal/notify-web` | 内部 | Push a call_human notification into connected Web UI clients. | `server/routes/internal.py:internal_notify_web` |
 | POST | `/api/internal/phone/alert` | 内部 | Start an urgent phone alert for the configured Anima. | `server/routes/internal.py:internal_phone_alert` |
 | POST | `/api/internal/post-channel` | 内部 | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 内部 | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
