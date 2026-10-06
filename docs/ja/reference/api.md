@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 1e6763c44c14b626adbeb9d6c164ef743280a7f4b0997d389637d47cc32e3790 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 6feb2b3862aa4bf7400155c7bd90bfc01389df5234155fabb5154721e638328b -->
 
 # API リファレンス
 
@@ -36,6 +36,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | PUT | `/api/animas/{name}/background-model` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
 | GET | `/api/animas/{name}/background-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
 | GET | `/api/animas/{name}/background-tasks/{task_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
+| POST | `/api/animas/{name}/bootstrap/repair` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Recover an Anima whose first-run setup stopped in needs_repair. | `server/routes/animas.py:repair_anima_bootstrap` |
 | GET | `/api/animas/{name}/config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
 | GET | `/api/animas/{name}/cron` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the raw cron.md content for an anima. | `server/routes/animas.py:get_anima_cron` |
 | POST | `/api/animas/{name}/disable` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Disable an Anima (set status.json to enabled: false and stop process). | `server/routes/animas.py:disable_anima` |
