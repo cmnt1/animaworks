@@ -31,7 +31,7 @@ from core.config.schemas import DEFAULT_CONSOLIDATION_MODEL
 
 _cfg = _load_config()
 EXPECTED_CONSOLIDATION_MODEL = _cfg.consolidation.llm_model
-EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-4-6"
+EXPECTED_ANIMA_DEFAULT_MODEL = "claude-sonnet-5-5"
 _CODE_DEFAULT_CONSOLIDATION_MODEL = DEFAULT_CONSOLIDATION_MODEL
 _LITELLM_TEST_CONSOLIDATION_MODEL = "google/gemini-2.5-pro"
 
@@ -270,7 +270,7 @@ class TestConfigDefaults:
         cfg = ConsolidationConfig()
         assert "/" not in cfg.llm_model, (
             "llm_model must not include a provider prefix ('anthropic/'). "
-            "Use bare model name (e.g. 'claude-sonnet-4-6') so resolve_execution_mode() "
+            "Use bare model name (e.g. 'claude-sonnet-5-5') so resolve_execution_mode() "
             "routes via models.json → Mode S / Agent SDK in Max-plan environments."
         )
 

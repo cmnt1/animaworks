@@ -971,7 +971,7 @@ class TestSetupWithUserInfo:
         ("google", {"google": {"api_key": "test-key"}}, "google/gemini-2.5-flash", "A", "google"),
         ("cursor_agent", {}, "cursor/claude-sonnet-4-6", "D", "cursor_agent"),
         ("gemini_cli", {}, "gemini/2.5-pro", "G", "gemini_cli"),
-        ("claude_code", {}, "claude-opus-4-6", "S", "anthropic"),
+        ("claude_code", {}, "claude-opus-5-5", "S", "anthropic"),
         ("ollama", {}, "ollama/glm4:9b", "A", "ollama"),
     ],
 )

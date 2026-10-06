@@ -37,7 +37,7 @@ FULL_CHARACTER_SHEET = """\
 | 上司 | sakura |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | credential | anthropic |
 
 ## 人格
@@ -62,7 +62,7 @@ MINIMAL_CHARACTER_SHEET = """\
 | 上司 | (なし) |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | credential | anthropic |
 
 ## 人格
@@ -131,8 +131,10 @@ class TestCreateFromMdFullFlow:
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "sakura"
         assert status["role"] == "general"
-        assert status["execution_mode"] == "autonomous"
-        assert status["model"] == "claude-sonnet-4-6"
+        # "autonomous" is the sheet's prose label, not a mode; pinning it would
+        # force Mode A (API key) on Claude subscription hires.
+        assert "execution_mode" not in status
+        assert status["model"] == "claude-sonnet-5-5"
         assert status["credential"] == "anthropic"
 
     def test_identity_md_populated_from_personality_section(self, data_dir: Path, tmp_path: Path):
