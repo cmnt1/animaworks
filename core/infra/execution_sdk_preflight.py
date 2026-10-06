@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 
+from core.config.model_mode import CLAUDE_CLI_ALIASES
+
 logger = logging.getLogger("animaworks")
 
 
@@ -28,7 +30,7 @@ def _is_mode_s_status(data: dict) -> bool:
     if mode == "S":
         return True
     model = str(data.get("model") or "").strip().lower()
-    return model.startswith("claude-") or model.startswith("anthropic/")
+    return model.startswith(("claude-", "anthropic/")) or model in CLAUDE_CLI_ALIASES
 
 
 def _package_importable(module_name: str) -> bool:

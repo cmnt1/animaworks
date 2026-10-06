@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.config.model_mode import _match_models_json
+from core.config.model_mode import _match_models_json, is_claude_cli_alias
 from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDER
 from core.config.schemas import AnimaWorksConfig
 from core.i18n import t
@@ -721,7 +721,7 @@ def _model_family(model: str) -> str:
     ``claude-*`` → ``"claude"``, ``prefix/rest`` → ``prefix``,
     anything else → the model string itself.
     """
-    if model.startswith("claude-") or model == "claude":
+    if model.startswith("claude-") or model == "claude" or is_claude_cli_alias(model):
         return "claude"
     if "/" in model:
         return model.split("/", 1)[0]

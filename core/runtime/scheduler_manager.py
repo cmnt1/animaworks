@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from core.config.model_mode import is_claude_cli_alias
 from core.config.models import load_config
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
@@ -191,7 +192,7 @@ def _model_to_governor_provider(model_name: str | None) -> str | None:
     if not model_name:
         return None
     # Anthropic: bare ``claude-*`` or ``anthropic/claude-*``
-    if model_name.startswith("claude-") or model_name.startswith("anthropic/"):
+    if model_name.startswith(("claude-", "anthropic/")) or is_claude_cli_alias(model_name):
         return "claude"
     # OpenAI: ``openai/*`` and ``codex/*`` (Codex uses OpenAI credentials)
     if model_name.startswith("openai/") or model_name.startswith("codex/"):

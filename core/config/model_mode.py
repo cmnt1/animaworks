@@ -20,6 +20,16 @@ logger = logging.getLogger("animaworks.config")
 CANONICAL_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X", "A"})
 _CANONICAL_MODES_LOWER = frozenset(mode.lower() for mode in CANONICAL_MODES)
 
+# Claude Code CLI aliases ("an alias for the latest model").  The CLI resolves
+# them to the newest model of that family at launch, so they only work in
+# Mode S and must be treated as Claude models everywhere else.
+CLAUDE_CLI_ALIASES: frozenset[str] = frozenset({"fable", "opus", "sonnet", "haiku"})
+
+
+def is_claude_cli_alias(model: str) -> bool:
+    return model.strip().lower() in CLAUDE_CLI_ALIASES
+
+
 # Default model_modes with wildcard pattern support.
 # Patterns use fnmatch syntax (*, ?, [seq]).
 # Order matters for specificity — more specific patterns should appear first,
@@ -37,6 +47,7 @@ _CANONICAL_MODES_LOWER = frozenset(mode.lower() for mode in CANONICAL_MODES)
 DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     # ── S: Claude Agent SDK ──────────────────────────────
     "claude-*": "S",
+    **dict.fromkeys(sorted(CLAUDE_CLI_ALIASES), "S"),
     # ── C: Codex SDK (Codex CLI wrapper) ─────────────────
     "codex/*": "C",
     "openai-codex/*": "C",
@@ -204,6 +215,7 @@ ToolUseCapability = str  # Literal["high", "medium", "low", "none"]
 DEFAULT_TOOL_USE_CAPABILITY_PATTERNS: dict[str, str] = {
     # ── high ────────────────────────────────────────────
     "claude-*": "high",
+    **dict.fromkeys(sorted(CLAUDE_CLI_ALIASES), "high"),
     "anthropic/claude-*": "high",
     "nanogpt/anthropic/claude-*": "high",
     "nanogpt/openai/gpt-*": "high",

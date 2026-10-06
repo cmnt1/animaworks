@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
+from core.config.model_mode import is_claude_cli_alias
+
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
 from core.execution.events import done_event, stream_events, text_delta_event
@@ -76,7 +78,11 @@ def is_adaptive_model(model: str) -> bool:
     Opus/Sonnet 4.6 and every Opus/Sonnet/Fable/Mythos release from 4.7 on.
     These reject ``budget_tokens`` (4.7+) and are tuned through ``effort``.
     """
-    m = _CLAUDE_VERSION_RE.match(_bare_model_name(model))
+    bare = _bare_model_name(model)
+    if is_claude_cli_alias(bare):
+        # CLI aliases resolve to the newest release of the family.
+        return bare.strip().lower() != "haiku"
+    m = _CLAUDE_VERSION_RE.match(bare)
     if m is None:
         return False
     family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
@@ -89,7 +95,8 @@ def is_adaptive_model(model: str) -> bool:
 
 def is_anthropic_claude(model: str) -> bool:
     """Return True if *model* is an Anthropic Claude model."""
-    return _bare_model_name(model).startswith("claude-")
+    bare = _bare_model_name(model)
+    return bare.startswith("claude-") or is_claude_cli_alias(bare)
 
 
 def is_bedrock_qwen(model: str) -> bool:
@@ -154,7 +161,7 @@ def supports_max_effort(model: str) -> bool:
     if is_bedrock_kimi(model):
         return False
     bare = _bare_model_name(model)
-    if not bare.startswith("claude-"):
+    if not is_anthropic_claude(bare):
         return True
     return is_adaptive_model(model) and not bare.startswith("claude-sonnet-4-6")
 

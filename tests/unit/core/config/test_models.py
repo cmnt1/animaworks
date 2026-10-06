@@ -1003,6 +1003,18 @@ class TestResolveExecutionModeWildcard:
         # Future Claude model also matches
         assert resolve_execution_mode(config, "claude-haiku-5-20260101") == "S"
 
+    def test_claude_cli_aliases_are_mode_s_claude(self):
+        from core.config.model_config import _FAMILY_CREDENTIAL_MAP, _model_family
+        from core.execution.base import is_adaptive_model, is_anthropic_claude
+
+        config = AnimaWorksConfig()
+        for alias in ("fable", "opus", "sonnet", "haiku"):
+            assert resolve_execution_mode(config, alias) == "S"
+            assert _FAMILY_CREDENTIAL_MAP[_model_family(alias)] == "anthropic"
+            assert is_anthropic_claude(alias)
+        assert is_adaptive_model("fable")
+        assert not is_adaptive_model("haiku")
+
     def test_cloud_api_providers_a(self):
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "openai/gpt-4.1") == "A"
