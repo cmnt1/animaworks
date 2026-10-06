@@ -71,7 +71,9 @@ class VectorUpdateMetadataRequest(BaseModel):
     anima_name: str
     collection: str
     ids: list[str]
-    metadatas: list[dict[str, str | int | float]]
+    # Same shape as upsert metadata: the store serialises list values such as
+    # fact ``entities``, so rejecting them here 422'd every fact refresh.
+    metadatas: list[dict[str, Any]]
 
 
 class VectorDeleteDocumentsRequest(BaseModel):
