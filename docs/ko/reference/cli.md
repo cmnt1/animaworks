@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d8272fbb5aee3a5e64abc8871d3235c5a79788096c41b0af5ca0de434e568d29 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -429,6 +429,36 @@ cli.cost_help
 | --port | 옵션 | 18501 | — | — |
 | --host | 옵션 | "0.0.0.0" | — | — |
 | --reset | 플래그 | false | — | — |
+
+## `enclave`
+
+격리된 엔클레이브의 상태 확인 및 감사 집계를 수행합니다.
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+엔클레이브의 시작 가드, 소켓, 이그레스 설정을 점검합니다.
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --json | 플래그 | false | — | 기계 판독 가능한 JSON 형식으로 출력합니다 |
+
+## `enclave status`
+
+당일 이그레스 성공 및 차단 건수를 표시합니다.
+
+`usage: animaworks enclave status [-h]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
 
 ## `heartbeat`
 

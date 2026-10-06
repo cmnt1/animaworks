@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=d16c16c03c4df80aab2151b660a8d8ee5a09a78af60410acab816e8336bc2430 generated=2026-10-06 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=5518a1484e6f3fab520c25e31e0b4041770f2802f862663bcbaf0438e5365858 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Configuration Reference
 
@@ -580,7 +580,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio-powered phone conversations and emergency notifications dedicated to Anima. |
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Anima-exclusive phone conversations and emergency notifications using Twilio. |
 | `phone.enabled` | `bool` | `false` | — |
 | `phone.anima` | `str` | `"aoi"` | — |
 | `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
@@ -594,6 +594,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
 | `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
+| `phone.turn_end_silence_ms` | `int` | `2000` | — |
 
 ### `housekeeping`
 
@@ -704,28 +705,33 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `enclave`
 
-| Key | Type | Default value | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, security guards are checked at startup. |
-| `enclave.enabled` | `bool` | `false` | — |
-| `enclave.name` | `str` | `""` | — |
-| `enclave.socket_path` | `str` | `""` | — |
-| `enclave.socket_group` | `str` | `""` | — |
-| `enclave.entry_anima` | `str` | `""` | — |
-| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
-| `enclave.max_concurrency` | `int` | `2` | — |
-| `enclave.request_timeout_s` | `int` | `900` | — |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
-| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks security guards at startup. |
+| `enclave.enabled` | `bool` | `false` | Start this runtime environment as an isolated enclave. |
+| `enclave.name` | `str` | `""` | Identifier returned by the enclave gateway. |
+| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket on which the gateway listens. |
+| `enclave.socket_group` | `str` | `""` | OS group to set on the gateway socket. |
+| `enclave.entry_anima` | `str` | `""` | Entry anima that handles queries within the enclave. |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UID permitted to connect to the gateway. |
+| `enclave.max_concurrency` | `int` | `2` | Maximum number of queries the gateway handles concurrently. |
+| `enclave.request_timeout_s` | `int` | `900` | Timeout in seconds for query processing and gateway responses. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Credential names available to anima inside the enclave. |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets accessible to anima inside the enclave. |
+| `enclave.datasets.path` | `str` | `"—"` | Relative path to a JSONL file within the data directory. |
+| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve records uniquely. |
+| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | Fields to register in the known-value ledger before returning. |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields for which partial-match search is allowed. |
+| `enclave.egress` | `dict[str, Any]` | `{}` | Egress stage configuration for processing facts returned externally. |
 
 ### `enclaves`
 
-| Key | Type | Default value | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
 | `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | Client-side configuration for connecting to an external enclave instance. |
-| `enclaves.socket_path` | `str` | `"—"` | — |
-| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
-| `enclaves.timeout_s` | `int` | `900` | — |
+| `enclaves.socket_path` | `str` | `"—"` | Unix domain socket for the enclave to connect to. |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | Host-side anima permitted to send queries to that enclave. |
+| `enclaves.timeout_s` | `int` | `900` | Timeout in seconds for connecting to the enclave gateway. |
 
 ## Per-anima `status.json`
 

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 1dc92c9a2c2347be99e2cb76fa553b62b74e267fef6c8cb2e36276550224dabc -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: fe0a04828af201e0277da0af7f98ea84506827bfd0bc61ec46fc3fbe08a82f67 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -429,6 +429,36 @@ Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged i
 | --port | option | 18501 | — | — |
 | --host | option | "0.0.0.0" | — | — |
 | --reset | flag | false | — | — |
+
+## `enclave`
+
+隔離 enclave の状態確認と監査集計を行います。
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+enclave の起動ガード、ソケット、egress 設定を点検します。
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --json | flag | false | — | 機械可読な JSON 形式で出力する |
+
+## `enclave status`
+
+当日の egress 成功・遮断件数を表示します。
+
+`usage: animaworks enclave status [-h]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
 
 ## `heartbeat`
 

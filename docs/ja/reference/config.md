@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 51a2bac64ff95cd54b86ab12dd0de0619639b862f739b3cb6efeda88c5993558 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 905a2217ef9eb86cfc0af7fdead1eb041d9af97c46fa428209c686e27059d4c8 -->
 
 # 設定リファレンス
 
@@ -594,6 +594,7 @@
 | `phone.alert_max_attempts` | `int` | `3` | — |
 | `phone.alert_retry_interval_sec` | `float` | `120` | — |
 | `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
+| `phone.turn_end_silence_ms` | `int` | `2000` | — |
 
 ### `housekeeping`
 
@@ -707,25 +708,30 @@
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。 |
-| `enclave.enabled` | `bool` | `false` | — |
-| `enclave.name` | `str` | `""` | — |
-| `enclave.socket_path` | `str` | `""` | — |
-| `enclave.socket_group` | `str` | `""` | — |
-| `enclave.entry_anima` | `str` | `""` | — |
-| `enclave.allowed_peer_uids` | `list[int]` | `[]` | — |
-| `enclave.max_concurrency` | `int` | `2` | — |
-| `enclave.request_timeout_s` | `int` | `900` | — |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | — |
-| `enclave.egress` | `dict[str, Any]` | `{}` | — |
+| `enclave.enabled` | `bool` | `false` | この実行環境を隔離 enclave として起動する。 |
+| `enclave.name` | `str` | `""` | enclave gateway が返す識別名。 |
+| `enclave.socket_path` | `str` | `""` | gateway が待ち受ける Unix ドメインソケットのパス。 |
+| `enclave.socket_group` | `str` | `""` | gateway ソケットに設定する OS グループ。 |
+| `enclave.entry_anima` | `str` | `""` | enclave 内で質問を処理する entry anima。 |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | gateway への接続を許可する OS ユーザー UID。 |
+| `enclave.max_concurrency` | `int` | `2` | gateway が同時に処理する質問の最大数。 |
+| `enclave.request_timeout_s` | `int` | `900` | 質問処理と gateway 応答のタイムアウト秒数。 |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 内の anima が利用できる認証情報名。 |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
+| `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
+| `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
+| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 返却前に既知値台帳へ登録するフィールド。 |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 部分一致検索を許可するフィールド。 |
+| `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
 
 ### `enclaves`
 
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | 外部の enclave インスタンスに接続するクライアント側の設定。 |
-| `enclaves.socket_path` | `str` | `"—"` | — |
-| `enclaves.allowed_animas` | `list[str]` | `[]` | — |
-| `enclaves.timeout_s` | `int` | `900` | — |
+| `enclaves.socket_path` | `str` | `"—"` | 接続先 enclave の Unix ドメインソケット。 |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | その enclave への質問を許可する本体側 anima。 |
+| `enclaves.timeout_s` | `int` | `900` | enclave gateway への接続タイムアウト秒数。 |
 
 ## anima ごとの `status.json`
 
