@@ -382,7 +382,10 @@ function _sourceLabel(sourceKey) {
 
 function _renderMessageMeta(msg, escapeHtml) {
   const parts = [];
-  if (msg.to_person) {
+  // A chat reply always goes to the person reading it; name the recipient
+  // only for messages that went somewhere else (inbox, heartbeat, ...).
+  const isChatReply = msg.role === "assistant" && (!msg.source_key || msg.source_key === "chat");
+  if (msg.to_person && !isChatReply) {
     parts.push(`${escapeHtml(t("chat.meta_to"))}: ${escapeHtml(msg.to_person)}`);
   }
   // A reply in the chat pane obviously came from chat; label only the

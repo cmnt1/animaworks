@@ -31,6 +31,7 @@ STATUS_JSON_FIELD_MAP: dict[str, str] = {
     "credential": "credential",
     "execution_mode": "execution_mode",
     "supervisor": "supervisor",
+    "speciality": "speciality",
     "max_tokens": "max_tokens",
     "fallback_model": "fallback_model",
     "fallback_models": "fallback_models",

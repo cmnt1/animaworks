@@ -855,14 +855,17 @@ class CommsToolsMixin:
         except Exception as e:
             return _error_result("NotificationError", f"Failed to send notification: {e}")
 
-        notif_data = {
-            "anima": self._anima_name,
-            "subject": subject,
-            "body": body,
-            "priority": priority,
-            "timestamp": now_iso(),
-        }
-        self._pending_notifications.append(notif_data)
+        # The Web UI channel already pushed it to the browser; queuing it for the
+        # chat stream as well would show the same notification twice.
+        if getattr(self._human_notifier, "delivers_to_web", False) is not True:
+            notif_data = {
+                "anima": self._anima_name,
+                "subject": subject,
+                "body": body,
+                "priority": priority,
+                "timestamp": now_iso(),
+            }
+            self._pending_notifications.append(notif_data)
 
         payload: dict[str, Any] = {"status": "sent", "results": results}
         if interactive and interaction_req is not None:

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from server.events import emit
+from server.events import emit, emit_notification
 
 logger = logging.getLogger("animaworks.routes.internal")
 
@@ -213,6 +213,14 @@ class InternalPostChannelRequest(BaseModel):
     text: str
     source: str = "anima"
     from_name: str | None = None
+
+
+class InternalNotifyWebRequest(BaseModel):
+    anima: str
+    subject: str
+    body: str
+    priority: str = "normal"
+    timestamp: str = ""
 
 
 class UpdateTaskPersistRequest(BaseModel):
@@ -1200,6 +1208,20 @@ def create_internal_router() -> APIRouter:
         except ChannelAccessDeniedError as exc:
             return JSONResponse(status_code=403, content={"detail": str(exc)})
         logger.info("internal post-channel: %s -> #%s", body.from_anima, body.channel)
+        return {"ok": True}
+
+    @internal.post("/internal/notify-web")
+    async def internal_notify_web(body: InternalNotifyWebRequest, request: Request):
+        """Push a call_human notification into connected Web UI clients."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima, path=request.url.path)
+        if denied is not None:
+            return denied
+        from core.anima.factory import validate_anima_name
+
+        if validate_anima_name(body.anima):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        await emit_notification(request, body.model_dump())
+        logger.info("internal notify-web: %s (%s)", body.anima, body.priority)
         return {"ok": True}
 
     @internal.get("/internal/tasks")

@@ -112,6 +112,7 @@ FIELD_NAMES: dict[str, dict[str, str]] = {
         "model": "モデル",
         "exec_mode": "実行モード",
         "credential": "credential",
+        "speciality": "役職/専門",
     },
     "en": {
         "name": "Name",
@@ -119,8 +120,13 @@ FIELD_NAMES: dict[str, dict[str, str]] = {
         "model": "Model",
         "exec_mode": "Execution Mode",
         "credential": "credential",
+        "speciality": "Role/Specialty",
     },
 }
+
+_SHEET_PROSE_MODES: frozenset[str] = frozenset(
+    {"autonomous", "assisted", "autonomous / assisted", "{autonomous / assisted}"}
+)
 
 TABLE_SKIP_VALUES: dict[str, set[str]] = {
     "ja": {"項目", "設定", "---", "------"},
@@ -578,7 +584,10 @@ def _create_status_json(
     # This means most Claude models auto-resolve to Mode S without needing
     # an explicit setting.  See core/config/models.py for the full table.
     explicit_mode = info.get("exec_mode")
-    if explicit_mode:
+    # "autonomous"/"assisted" are the sheet's prose labels, not a mode choice;
+    # pinning them would map a Claude subscription Anima to the LiteLLM API
+    # path (Mode A) and its bootstrap fails without an API key.
+    if explicit_mode and explicit_mode.strip().lower() not in _SHEET_PROSE_MODES:
         status["execution_mode"] = explicit_mode
 
     # Merge role defaults (model config fields)
@@ -609,6 +618,10 @@ def _create_status_json(
     sheet_cred = info.get("credential", "")
     if sheet_cred:
         status["credential"] = sheet_cred
+    # Shown on org charts instead of the bare role ("General").
+    sheet_speciality = info.get("speciality") or info.get("役職/専門", "")
+    if sheet_speciality and sheet_speciality not in NONE_VALUES:
+        status["speciality"] = sheet_speciality
 
     from core.anima.settings_store import update_status
 
@@ -804,7 +817,11 @@ def _place_bootstrap(anima_dir: Path) -> None:
 
     bootstrap_tpl = BOOTSTRAP_TEMPLATE
     if bootstrap_tpl.exists():
-        shutil.copy2(bootstrap_tpl, anima_dir / "bootstrap.md")
+        # The runtime data dir is the parent of animas/; resolve the placeholder
+        # so the new Anima does not have to guess where prompts/ lives.
+        text = bootstrap_tpl.read_text(encoding="utf-8")
+        text = text.replace("{data_dir}", str(anima_dir.parent.parent))
+        (anima_dir / "bootstrap.md").write_text(text, encoding="utf-8")
         logger.debug("Placed bootstrap.md in %s", anima_dir)
     try:
         from core.anima.bootstrap_state import initialize_bootstrap_state

@@ -18,26 +18,26 @@ description: >-
 
 ### 1. Interview (minimal is fine)
 
-Interview the requester for the following information. **Only the bold items are required**; if others are unspecified, generate them automatically:
+Gather the following information from the requester. **Only the bold items are required**; if others are not specified, they will be auto-generated:
 
 **Required:**
 - **English name** (lowercase alphanumeric only. This becomes the directory name)
 - **Role/specialty**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
-- **Personality direction**: Temperature rather than function (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If the organization already has two cool types, don't choose that
-- **Face type**: Choose one from `{data_dir}/prompts/face_types.md`. Avoid excessive overlap with existing members
+- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If there are already 2 cool types in the organization, don't choose that
+- **Face type**: Choose 1 from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
 
-**Optional (reflect if specified, auto-generate if not):**
+**Optional (reflected if specified, auto-generated if not):**
 - Japanese name
 - Age
 - Any other preferences
 
-**Technical configuration (use defaults if not specified):**
+**Technical configuration (defaults used if not specified):**
 - Role: `commander` (can delegate to other employees) or `worker` (receives delegation)
-- supervisor: The English name of the Anima who will be the supervisor (required for worker; if unspecified, self)
+- supervisor: English name of the Anima who is the supervisor (required for worker; defaults to self if not specified)
 
 **Brain (LLM model) configuration:**
 
-Present the following table and have them choose:
+Do not show the model table to the user to choose from (since unusable models would be mixed in). Only when the user specifies a model, configure it with reference to the table below. If not specified, omit the model row in the character sheet and proceed with the default model:
 
 | Level | Execution mode | Example models | Features | credential |
 |--------|-----------|-------------|------|------------|
@@ -45,7 +45,7 @@ Present the following table and have them choose:
 | A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | Via LiteLLM. Tool use available | openai / google / azure / vertex |
 | B | assisted | `ollama/gemma3:27b`, `ollama/qwen2.5-coder:32b` | No tools. Local execution, low cost | ollama |
 
-※ If not specified, use the default (claude-sonnet-4 / autonomous / anthropic).
+※ If not specified, omit the model, execution mode, and credential rows (defaults will be used).
 
 ### 2. Character design (auto-generated)
 
@@ -57,21 +57,21 @@ Always Read the following in this order:
 
 Don't associate a cool beauty with the role. Don't make hobbies an extension of work. Check that hair color, face type, and speech style don't overlap with existing members.
 
-### 3. Create a character sheet and generate everything at once via CLI
+### 3. Create the character sheet and batch-create via CLI
 
-Following the **character sheet specification**, write the results of the interview and design to a character sheet file, then create via CLI command:
+Write the character sheet to a file according to the **character sheet specification** based on the interview and design results, then create it with the CLI command:
 
 1. Write the character sheet to a file (e.g., `/tmp/{english_name}.md`)
-2. Execute the following command:
+2. Run the following command:
 
 ```bash
 animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} --supervisor {supervisor_english_name}
 ```
 
-**supervisor configuration:**
-- Specify explicitly with the `supervisor` parameter (recommended)
-- If omitted: retrieved from the `| 上司 |` field of the character sheet
-- If neither: self (the calling Anima) becomes the supervisor
+**Supervisor configuration:**
+- Explicitly specify via the `supervisor` parameter (recommended)
+- If omitted: Get from the `| 上司 |` field of the character sheet
+- If neither exists: Self (the calling Anima) becomes the supervisor
 
 **Character sheet specification:**
 
@@ -87,9 +87,8 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 | 役職/専門 | {Role description} |
 | 上司 | {supervisor English name} |
 | 役割 | {commander / worker} |
-| 実行モード | {autonomous / assisted} |
-| モデル | {model name} |
-| credential | {anthropic / openai / google / ollama} |
+| モデル | {model name — ユーザーが指定した時だけ書く} |
+| credential | {ユーザーがモデルを指定した時だけ書く} |
 
 ## 人格 (→ identity.md)
 
@@ -148,19 +147,22 @@ Message-triggered heartbeats and cron run independently of this configuration, s
 ### 5. Reflect on the server
 
 ```
-Bash: curl -s -X POST http://localhost:18500/api/system/reload
+Bash: curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload
 ```
 
 ### 6. Report to the requester
 
-Report the completion of the hire:
+Report the completion of hiring:
 - The new employee's name and role
 - The configured technical stack (model, execution mode)
 
-⚠️ Do not report avatar image generation (the new Anima itself generates it via bootstrap)
+- They will start on their first small task immediately upon arrival, and you will report the results in a summary
+
+⚠️ Do not report avatar image generation (the new Anima itself generates it during bootstrap)
 
 ### From here on, the new Anima executes autonomously:
 - Enriching identity.md / injection.md
 - Self-designing heartbeat.md / cron.md
 - Generating the avatar image (with supervisor reference)
 - Reporting arrival to the supervisor
+- Starting the first small task (something useful to the user) and reporting the results to the supervisor

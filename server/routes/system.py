@@ -323,6 +323,16 @@ def create_system_router() -> APIRouter:
                 "reasons": [],
             }
 
+            # A background bootstrap does not always report a busy status;
+            # restarting mid-setup throws its work away and burns a retry.
+            try:
+                if supervisor.is_bootstrapping(anima_name) is True:
+                    cast_reasons = result["reasons"]
+                    if isinstance(cast_reasons, list):
+                        cast_reasons.append("bootstrapping")
+            except Exception:
+                logger.debug("Failed to read bootstrap state for %s", anima_name, exc_info=True)
+
             try:
                 active_stream = stream_registry.get_active(anima_name)
                 if active_stream is not None and active_stream.status == "streaming":
@@ -386,9 +396,13 @@ def create_system_router() -> APIRouter:
                 on_disk.add(name)
 
                 if name not in current_names:
-                    # New anima - start process
+                    # New anima - start process. Reconciliation may have added it
+                    # while the busy probes above were awaiting; check the live list.
+                    if name in request.app.state.anima_names:
+                        continue
                     await supervisor.start_anima(name)
-                    request.app.state.anima_names.append(name)
+                    if name not in request.app.state.anima_names:
+                        request.app.state.anima_names.append(name)
                     added.append(name)
                     logger.info("Hot-loaded anima: %s", name)
                 else:

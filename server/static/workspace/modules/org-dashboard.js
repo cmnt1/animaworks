@@ -101,10 +101,14 @@ export const VISIBLE_TOOL_NAMES = new Set([
   "post_channel", "send_message",
 ]);
 
+// These tools also log a dedicated event (message_sent / channel_post /
+// human_notify), so their raw tool_use rows would only duplicate it.
+const _TOOLS_WITH_OWN_EVENT = new Set(["send_message", "post_channel", "call_human"]);
+
 function _isCardVisible(ev) {
   const type = ev.type || ev.name || "";
   if (_CARD_VISIBLE_TYPES.has(type)) return true;
-  if (type === "tool_use" && VISIBLE_TOOL_NAMES.has(ev.tool)) return true;
+  if (type === "tool_use" && VISIBLE_TOOL_NAMES.has(ev.tool) && !_TOOLS_WITH_OWN_EVENT.has(ev.tool)) return true;
   return false;
 }
 
@@ -447,8 +451,9 @@ function _createCardEl(node) {
   const statusAttr = getStatusAttr(node.status);
   const initial = (node.name || "?")[0].toUpperCase();
   const color = animaHashColor(node.name);
-  const roleLabel = node.role || "";
   const specLabel = node.speciality || "";
+  // The speciality says more than the template role ("general"); show the role only as a fallback.
+  const roleLabel = specLabel ? "" : (node.role || "");
   const tagHtml = roleLabel || specLabel
     ? `<span class="org-card-tags">${roleLabel ? `<span class="org-card-role">${escapeHtml(roleLabel)}</span>` : ""}${specLabel ? `<span class="org-card-spec">${escapeHtml(specLabel)}</span>` : ""}</span>`
     : "";
@@ -754,8 +759,9 @@ let _kpiTasks = "-";
 
 async function _loadKpiStats() {
   try {
-    const data = await api("/api/activity/recent?hours=1&limit=200");
-    _kpiEventsH = String((data.events ?? []).length);
+    const data = await api("/api/activity/recent?hours=1&limit=500");
+    // Count what the cards show (messages, heartbeats, tasks), not raw tool calls.
+    _kpiEventsH = String((data.events ?? []).filter(_isCardVisible).length);
   } catch { /* ignore */ }
   try {
     const data = await api("/api/task-board/summary");
@@ -817,7 +823,8 @@ async function _loadInitialStreams(animas) {
       type: grpType,
       text: _summarizeGroup(grp),
       status: "running",
-      ts: Date.now(),
+      // Real start time, so the stale timer also expires groups that never closed.
+      ts: grp.start_ts ? new Date(grp.start_ts).getTime() : Date.now(),
     });
     if (entries.length > MAX_STREAM_ENTRIES * 2) {
       _cardStreams.set(name, entries.slice(-MAX_STREAM_ENTRIES));
@@ -838,7 +845,9 @@ async function _loadInitialStreams(animas) {
 async function _fetchActiveGroups() {
   try {
     const data = await api("/api/activity/recent?grouped=true&hours=1&group_limit=50");
-    return (data.groups ?? []).filter(g => g.is_open);
+    // A DM group only closes when the receiver replies, so a message that
+    // needed no answer would show as "running" forever.
+    return (data.groups ?? []).filter(g => g.is_open && g.type !== "dm");
   } catch {
     return [];
   }
@@ -871,7 +880,10 @@ function _mapEventType(type) {
 }
 
 function _summarizeEvent(ev) {
-  if (ev.summary) return ev.summary.slice(0, 80);
+  // tool_use summaries are a raw Python dict repr of the arguments.
+  if (ev.summary && !(ev.summary.startsWith("{") && (ev.type || "").includes("tool_use"))) {
+    return ev.summary.slice(0, 80);
+  }
   const type = ev.type || ev.name || "";
   if (type.includes("tool_use")) return `⚙ ${ev.tool || ev.tool_name || type}`;
   if (type.includes("heartbeat")) return "heartbeat";

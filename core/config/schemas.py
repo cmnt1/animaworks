@@ -438,6 +438,7 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+    web_ui: bool = True  # built-in channel: push call_human into the Web UI chat
 
 
 class InteractionConfig(BaseModel):

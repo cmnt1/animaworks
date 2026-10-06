@@ -13,5 +13,6 @@ Use the value of the `現在時刻` field in the system prompt. Do not infer fro
 - If nothing, do nothing (HEARTBEAT_OK)
 
 ## Notification Rules
-- Notify relevant parties only when deemed urgent
+- If deemed urgent, notify relevant parties
+- If the supervisor is unavailable, communicate only the key points of results received from subordinates to the user via call_human
 - Do not repeat the same notification within 24 hours

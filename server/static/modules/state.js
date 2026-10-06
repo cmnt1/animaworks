@@ -57,8 +57,26 @@ function _ensureKatex() {
   if (typeof markedKatex !== "undefined") {
     marked.use(markedKatex({ throwOnError: false, output: "htmlAndMathml" }));
   }
+  marked.use({ extensions: [_cjkStrongExtension] });
   _katexInitialized = true;
 }
+
+// CommonMark only closes "**" when it is followed by a space or punctuation,
+// so Japanese like "**桜庭 咲良（さくら）**と申します" stayed as literal
+// asterisks. This tokenizer runs before marked's own and ignores flanking.
+const _cjkStrongExtension = {
+  name: "cjkStrong",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("**");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = /^\*\*(?![\s*])([^\n]*?[^\s*])\*\*/.exec(src);
+    if (!m) return undefined;
+    return { type: "strong", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+  },
+};
 
 const _markedRenderer = new marked.Renderer();
 const _origLinkRenderer = _markedRenderer.link.bind(_markedRenderer);

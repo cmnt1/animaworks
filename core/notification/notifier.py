@@ -122,13 +122,17 @@ class HumanNotifier:
         self._channels = channels
 
     @classmethod
-    def from_config(cls, config: HumanNotificationConfig) -> HumanNotifier:
-        """Build a notifier from the global HumanNotificationConfig."""
+    def from_config(cls, config: HumanNotificationConfig, *, include_external: bool = True) -> HumanNotifier:
+        """Build a notifier from the global HumanNotificationConfig.
+
+        The built-in Web UI channel is always added (unless ``web_ui`` is
+        off) so a fresh install can reach the user without external setup.
+        """
         # Import channel modules to trigger registration
         _ensure_channels_registered()
 
         channels: list[NotificationChannel] = []
-        for ch_config in config.channels:
+        for ch_config in config.channels if include_external else []:
             if not ch_config.enabled:
                 continue
             try:
@@ -138,7 +142,16 @@ class HumanNotifier:
                     "Skipping unknown notification channel: %s",
                     ch_config.type,
                 )
+        if config.web_ui and not any(ch.channel_type == "web" for ch in channels):
+            from core.notification.channels.web import WebChannel
+
+            channels.append(WebChannel({}))
         return cls(channels)
+
+    @property
+    def delivers_to_web(self) -> bool:
+        """Whether the Web UI already receives notifications from this notifier."""
+        return any(ch.channel_type == "web" for ch in self._channels)
 
     @property
     def channel_count(self) -> int:
@@ -217,3 +230,4 @@ def _ensure_channels_registered() -> None:
     import core.notification.channels.ntfy  # noqa: F401
     import core.notification.channels.slack  # noqa: F401
     import core.notification.channels.telegram  # noqa: F401
+    import core.notification.channels.web  # noqa: F401

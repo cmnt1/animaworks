@@ -502,3 +502,15 @@ class TestWebSocketManagerFlushQueue:
         assert first_sent["data"]["subject"] == "queued"
         assert second_sent["type"] == "anima.notification"
         assert second_sent["data"]["subject"] == "queued"
+
+
+def test_web_delivered_notification_is_not_queued_again(tmp_path):
+    """The Web UI channel already pushed it; the chat stream must not repeat it."""
+    notifier = _make_mock_notifier(notify_result=["web: OK"])
+    notifier.delivers_to_web = True
+    handler = _make_tool_handler(tmp_path, notifier=notifier)
+
+    result = handler.handle("call_human", {"subject": "Team update", "body": "hinata joined"})
+
+    assert json.loads(result)["status"] == "sent"
+    assert handler._pending_notifications == []

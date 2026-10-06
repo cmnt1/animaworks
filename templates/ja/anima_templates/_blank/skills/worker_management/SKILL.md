@@ -50,7 +50,7 @@ animaworks anima set-model aoi claude-sonnet-4-6
 
 ## API リファレンス（CLIが使えない場合）
 
-ベース URL: `http://localhost:18500`
+ベース URL: `$ANIMAWORKS_SERVER_URL`（未設定なら `http://localhost:18500`）
 
 | エンドポイント | メソッド | 用途 |
 |--------------|---------|------|
@@ -67,7 +67,7 @@ animaworks anima set-model aoi claude-sonnet-4-6
 ## リロード手順（プログラム更新後）
 
 ```bash
-curl -s -X POST http://localhost:18500/api/system/reload | python3 -m json.tool
+curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload | python3 -m json.tool
 ```
 
 - `added`: 新たに検出された anima

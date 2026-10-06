@@ -36,7 +36,7 @@ description: >-
 
 **頭脳（LLMモデル）設定:**
 
-以下の表を提示して選んでもらう:
+モデルの表をユーザーに見せて選ばせない（使えないモデルが混ざるため）。ユーザーがモデルを指定した時だけ、下の表を参考に設定する。指定がなければキャラクターシートのモデル行を省略し、既定のモデルで進める:
 
 | レベル | 実行モード | 使用モデル例 | 特徴 | credential |
 |--------|-----------|-------------|------|------------|
@@ -44,7 +44,7 @@ description: >-
 | A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | LiteLLM経由。ツール使用可 | openai / google / azure / vertex |
 | B | assisted | `ollama/gemma3:27b`, `ollama/qwen2.5-coder:32b` | ツールなし。ローカル実行・低コスト | ollama |
 
-※ 指定がなければデフォルト（claude-sonnet-4 / autonomous / anthropic）を使用。
+※ 指定がなければモデル・実行モード・credential の行を省略する（既定値が使われる）。
 
 ### 2. キャラクター設計（自動生成）
 
@@ -86,9 +86,8 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 | 役職/専門 | {Role description} |
 | 上司 | {supervisor English name} |
 | 役割 | {commander / worker} |
-| 実行モード | {autonomous / assisted} |
-| モデル | {model name} |
-| credential | {anthropic / openai / google / ollama} |
+| モデル | {model name — ユーザーが指定した時だけ書く} |
+| credential | {ユーザーがモデルを指定した時だけ書く} |
 
 ## 人格 (→ identity.md)
 
@@ -147,7 +146,7 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 ### 5. サーバーに反映
 
 ```
-Bash: curl -s -X POST http://localhost:18500/api/system/reload
+Bash: curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload
 ```
 
 ### 6. 依頼者に報告
@@ -156,6 +155,8 @@ Bash: curl -s -X POST http://localhost:18500/api/system/reload
 - 新しい社員の名前と役割
 - 設定した技術スタック（モデル、実行モード）
 
+- 着任するとすぐ最初の小さな仕事に取りかかり、結果はあなたからまとめて伝えること
+
 ⚠️ アバター画像の生成は報告しない（新Anima自身がbootstrapで生成する）
 
 ### 以降は新Anima自身が自律的に実行:
@@ -163,3 +164,4 @@ Bash: curl -s -X POST http://localhost:18500/api/system/reload
 - heartbeat.md / cron.md の自己設計
 - アバター画像の生成（上司参照付き）
 - 上司への着任報告
+- 最初の小さな仕事（ユーザーの役に立つもの）に着手し、結果を上司へ報告
