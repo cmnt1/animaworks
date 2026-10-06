@@ -67,6 +67,7 @@ class TurnDetector:
         self._playback_candidate = False
         self._barge_probe_sent = False
         self._held_audio = bytearray()
+        self._carry_audio = bytearray()
         self._voiced_ms = 0
         self._silence_ms = 0
         self._barge_candidate_ms = 0
@@ -94,9 +95,8 @@ class TurnDetector:
         if active == self._playback_active:
             return
         if active:
-            if self._speech_active and not self._barge_probe_sent:
-                self._reset_segment()
-                self._pre_speech_frames.clear()
+            # A caller already mid-utterance keeps their segment: it ends with a
+            # normal speech_end and the session decides whether to cut us off.
             self._playback_active = True
             self.playback_ended_at = None
             return
@@ -104,8 +104,16 @@ class TurnDetector:
         self._playback_active = False
         self.playback_ended_at = self._clock()
         if self._speech_active and self._playback_candidate and not self._barge_probe_sent:
-            self._reset_segment()
-            self._pre_speech_frames.clear()
+            if self._voiced_ms >= MIN_SPEECH_MS // 2:
+                # The caller started talking over the tail of our audio (often
+                # a short filler). Keep their words: hand the held audio on as
+                # a normal segment; faint echo is rejected later by its energy.
+                self._playback_candidate = False
+                self._carry_audio.extend(self._held_audio)
+                self._held_audio.clear()
+            else:
+                self._reset_segment()
+                self._pre_speech_frames.clear()
         elif self._barge_probe_sent:
             # A probe has been handed to STT. Continue forwarding its audio even
             # if the player reports paused/stopped before a verdict arrives.
@@ -151,6 +159,10 @@ class TurnDetector:
         events: list[TurnDetectorEvent] = []
         pending_audio = bytearray()
 
+        if self._carry_audio:
+            pending_audio.extend(self._carry_audio)
+            self._carry_audio.clear()
+
         def flush_audio() -> None:
             if pending_audio:
                 events.append(TurnDetectorEvent("audio", bytes(pending_audio)))
@@ -166,7 +178,7 @@ class TurnDetector:
             in_echo_tail = (
                 self.playback_ended_at is not None
                 and now - self.playback_ended_at < ECHO_TAIL_MS / 1000
-                and not (self._speech_active and self._barge_probe_sent)
+                and not (self._speech_active and (self._barge_probe_sent or not self._playback_candidate))
             )
             if in_echo_tail:
                 self._pre_speech_frames.clear()
@@ -264,6 +276,7 @@ class TurnDetector:
         self._held_audio.clear()
 
     def _reset_segment(self) -> None:
+        self._carry_audio.clear()
         self._speech_active = False
         self._playback_candidate = False
         self._barge_probe_sent = False
