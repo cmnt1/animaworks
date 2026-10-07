@@ -22,9 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from cli._anima_tool import run_anima_tool
-
-_TOOL_ERROR_PREFIXES = ("error", "unknown tool:", "エラー", "오류", "错误")
+from cli._anima_tool import run_and_print
 
 
 def cmd_task(args: argparse.Namespace) -> None:
@@ -435,20 +433,6 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
-def _run_task_tool(tool_name: str, tool_args: dict) -> None:
-    result = run_anima_tool(tool_name, tool_args)
-    print(result)
-    rendered = result.lstrip()
-    try:
-        parsed, _ = json.JSONDecoder().raw_decode(rendered)
-    except (json.JSONDecodeError, TypeError):
-        parsed = None
-    if isinstance(parsed, dict) and parsed.get("status") == "error":
-        sys.exit(1)
-    if rendered.casefold().startswith(_TOOL_ERROR_PREFIXES):
-        sys.exit(1)
-
-
 def _cmd_update(args: argparse.Namespace) -> None:
     tool_args = {
         "task_id": getattr(args, "task_id", ""),
@@ -457,12 +441,12 @@ def _cmd_update(args: argparse.Namespace) -> None:
     summary = getattr(args, "summary", None)
     if summary is not None:
         tool_args["summary"] = summary
-    _run_task_tool("update_task", tool_args)
+    run_and_print("update_task", tool_args)
 
 
 def _cmd_resume(args: argparse.Namespace) -> None:
     """Requeue a task through update_task using its saved execution input."""
-    _run_task_tool(
+    run_and_print(
         "update_task",
         {
             "task_id": getattr(args, "task_id", ""),
@@ -477,7 +461,7 @@ def _cmd_list(args: argparse.Namespace) -> None:
     status_filter = getattr(args, "status", None)
     if status_filter:
         tool_args["status"] = status_filter
-    _run_task_tool("list_tasks", tool_args)
+    run_and_print("list_tasks", tool_args)
 
 
 def register_task_command(subparsers) -> None:

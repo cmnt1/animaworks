@@ -13,7 +13,7 @@ Usage via animaworks-tool:
     animaworks-tool supervisor task-tracker [--status STATUS]
 
 These commands delegate to ``ToolHandler`` (via
-``cli._anima_tool.run_anima_tool``) so their output
+``cli._anima_tool.run_and_print``) so their output
 matches what the MCP / Mode A executors return for the same tool.
 """
 
@@ -21,7 +21,7 @@ import argparse
 import logging
 import sys
 
-from cli._anima_tool import run_anima_tool
+from cli._anima_tool import run_and_print
 
 logger = logging.getLogger("animaworks")
 
@@ -46,13 +46,13 @@ def cmd_supervisor(args: argparse.Namespace) -> None:
 
 
 def _cmd_org_dashboard(args: argparse.Namespace) -> None:
-    print(run_anima_tool("org_dashboard", {}))
+    run_and_print("org_dashboard", {})
 
 
 def _cmd_ping(args: argparse.Namespace) -> None:
     target_name = getattr(args, "name", None)
     tool_args = {"name": target_name} if target_name else {}
-    print(run_anima_tool("ping_subordinate", tool_args))
+    run_and_print("ping_subordinate", tool_args)
 
 
 def _cmd_read_state(args: argparse.Namespace) -> None:
@@ -60,12 +60,12 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
     if not target_name:
         print("Error: NAME is required", file=sys.stderr)
         sys.exit(1)
-    print(run_anima_tool("read_subordinate_state", {"name": target_name}))
+    run_and_print("read_subordinate_state", {"name": target_name})
 
 
 def _cmd_task_tracker(args: argparse.Namespace) -> None:
     status_filter = getattr(args, "status", "delegated")
-    print(run_anima_tool("task_tracker", {"status": status_filter}))
+    run_and_print("task_tracker", {"status": status_filter})
 
 
 def register_supervisor_command(subparsers) -> None:

@@ -26,9 +26,8 @@ import getpass
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
-from cli._anima_tool import run_anima_tool, tool_result_is_error
+from cli._anima_tool import run_and_print
 from core.config.vault import SHARED_VAULT_SECTION as SHARED_SECTION
 from core.config.vault import VaultAccessError, resolve_vault_sections
 from core.platform.env import anima_dir_env
@@ -72,18 +71,11 @@ def cmd_vault(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _run_vault_tool(tool_name: str, tool_args: dict[str, Any]) -> None:
-    result = run_anima_tool(tool_name, tool_args)
-    print(result)
-    if tool_result_is_error(result):
-        sys.exit(1)
-
-
 def _cmd_tool_get(args: argparse.Namespace, shared_only: bool) -> None:
     tool_args = {"key": getattr(args, "key", "")}
     if shared_only:
         tool_args["section"] = SHARED_SECTION
-    _run_vault_tool("vault_get", tool_args)
+    run_and_print("vault_get", tool_args)
 
 
 def _cmd_tool_store(args: argparse.Namespace, shared: bool) -> None:
@@ -94,12 +86,12 @@ def _cmd_tool_store(args: argparse.Namespace, shared: bool) -> None:
     if shared:
         # The handler rejects anima writes to shared before looking at a value.
         tool_args["section"] = SHARED_SECTION
-    _run_vault_tool("vault_store", tool_args)
+    run_and_print("vault_store", tool_args)
 
 
 def _cmd_tool_list(shared_only: bool) -> None:
     tool_args = {"section": SHARED_SECTION} if shared_only else {}
-    _run_vault_tool("vault_list", tool_args)
+    run_and_print("vault_list", tool_args)
 
 
 def _get_anima_namespace(*, required: bool = True) -> str | None:

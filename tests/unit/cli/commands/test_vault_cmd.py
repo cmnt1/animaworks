@@ -40,7 +40,7 @@ def _run(args: argparse.Namespace, vault: VaultManager, handler=None) -> None:
         if handler is None:
             args.func(args)
         else:
-            with patch("cli.commands.vault_cmd.run_anima_tool", side_effect=handler.handle):
+            with patch("cli._anima_tool.run_anima_tool", side_effect=handler.handle):
                 args.func(args)
 
 

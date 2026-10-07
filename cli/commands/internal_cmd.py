@@ -7,30 +7,9 @@ from __future__ import annotations
 """Thin CLI adapters for internal tools invoked by Animas."""
 
 import argparse
-import json
 import sys
 
-from cli._anima_tool import run_anima_tool
-
-_TOOL_ERROR_PREFIXES = ("error", "unknown tool:", "エラー", "오류", "错误")
-
-
-def _print_tool_result(result: str) -> None:
-    """Print a tool result and use a failing exit status for handler errors."""
-    print(result)
-    rendered = result.lstrip()
-    try:
-        parsed, _ = json.JSONDecoder().raw_decode(rendered)
-    except (json.JSONDecodeError, TypeError):
-        parsed = None
-    if isinstance(parsed, dict) and parsed.get("status") == "error":
-        sys.exit(1)
-    if rendered.casefold().startswith(_TOOL_ERROR_PREFIXES):
-        sys.exit(1)
-
-
-def _run_tool(tool_name: str, tool_args: dict) -> None:
-    _print_tool_result(run_anima_tool(tool_name, tool_args))
+from cli._anima_tool import run_and_print
 
 
 def cmd_internal(args: argparse.Namespace) -> None:
@@ -57,7 +36,7 @@ def cmd_internal(args: argparse.Namespace) -> None:
 
 
 def _cmd_archive_memory(args: argparse.Namespace) -> None:
-    _run_tool(
+    run_and_print(
         "archive_memory_file",
         {
             "path": getattr(args, "path", ""),
@@ -71,7 +50,7 @@ def _cmd_check_permissions(args: argparse.Namespace) -> None:
     action = getattr(args, "action", None)
     if action:
         tool_args["action"] = action
-    _run_tool("check_permissions", tool_args)
+    run_and_print("check_permissions", tool_args)
 
 
 def _skill_description(body: str) -> str:
@@ -100,7 +79,7 @@ def _cmd_create_skill(args: argparse.Namespace) -> None:
         "body": body,
         "location": getattr(args, "location", "personal"),
     }
-    _run_tool("create_skill", tool_args)
+    run_and_print("create_skill", tool_args)
 
 
 def _cmd_manage_channel(args: argparse.Namespace) -> None:
@@ -114,7 +93,7 @@ def _cmd_manage_channel(args: argparse.Namespace) -> None:
     description = getattr(args, "description", None)
     if description is not None:
         tool_args["description"] = description
-    _run_tool("manage_channel", tool_args)
+    run_and_print("manage_channel", tool_args)
 
 
 def _cmd_list_background_tasks(args: argparse.Namespace) -> None:
@@ -122,11 +101,11 @@ def _cmd_list_background_tasks(args: argparse.Namespace) -> None:
     status = getattr(args, "status", None)
     if status:
         tool_args["status"] = status
-    _run_tool("list_background_tasks", tool_args)
+    run_and_print("list_background_tasks", tool_args)
 
 
 def _cmd_check_background_task(args: argparse.Namespace) -> None:
-    _run_tool("check_background_task", {"task_id": getattr(args, "task_id", "")})
+    run_and_print("check_background_task", {"task_id": getattr(args, "task_id", "")})
 
 
 def register_internal_command(subparsers) -> None:

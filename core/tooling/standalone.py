@@ -62,18 +62,21 @@ def run_tool_for_current_anima(
     return _standalone_handler((anima_dir or require_anima_dir()).resolve()).handle(tool_name, tool_args)
 
 
+_ERROR_PREFIXES = ("error", "unknown tool", "エラー", "오류", "错误")
+
+
 def tool_result_is_error(result: str) -> bool:
     """Recognize ToolHandler errors, including results with appended action rules."""
     text = result.lstrip()
     try:
         payload, _ = _json.JSONDecoder().raw_decode(text)
     except (ValueError, TypeError):
-        return text.lower().startswith(("error", "unknown tool"))
+        return text.casefold().startswith(_ERROR_PREFIXES)
 
     if isinstance(payload, dict):
         return payload.get("status") == "error"
     if isinstance(payload, str):
-        return payload.lstrip().lower().startswith(("error", "unknown tool"))
+        return payload.lstrip().casefold().startswith(_ERROR_PREFIXES)
     return False
 
 

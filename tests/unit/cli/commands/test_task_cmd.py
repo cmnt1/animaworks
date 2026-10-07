@@ -16,7 +16,7 @@ from cli.commands.task_cmd import _cmd_add, _cmd_list, _cmd_resume, _cmd_update,
 def test_cli_update_calls_update_task_with_mapped_args(capsys, monkeypatch) -> None:
     result = '{"task_id":"task-1","status":"done"}'
     run_tool = Mock(return_value=result)
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_update(SimpleNamespace(task_id="task-1", status="done", summary="Verified once"))
 
@@ -29,7 +29,7 @@ def test_cli_update_calls_update_task_with_mapped_args(capsys, monkeypatch) -> N
 
 def test_cli_update_omits_missing_summary(monkeypatch, capsys) -> None:
     run_tool = Mock(return_value="{}")
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_update(SimpleNamespace(task_id="task-1", status="cancelled", summary=None))
 
@@ -39,7 +39,7 @@ def test_cli_update_omits_missing_summary(monkeypatch, capsys) -> None:
 
 def test_cli_update_prints_tool_error_and_exits_nonzero(monkeypatch, capsys) -> None:
     error = json.dumps({"status": "error", "error_type": "InvalidArguments", "message": "retired"})
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", lambda *_args: error)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", lambda *_args: error)
 
     with pytest.raises(SystemExit) as stopped:
         _cmd_update(SimpleNamespace(task_id="task-1", status="failed", summary=None))
@@ -51,7 +51,7 @@ def test_cli_update_prints_tool_error_and_exits_nonzero(monkeypatch, capsys) -> 
 def test_cli_list_requests_full_tool_details(monkeypatch, capsys) -> None:
     result = "[]"
     run_tool = Mock(return_value=result)
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_list(SimpleNamespace(status="pending"))
 
@@ -61,7 +61,7 @@ def test_cli_list_requests_full_tool_details(monkeypatch, capsys) -> None:
 
 def test_cli_list_without_filter_requests_full_tool_details(monkeypatch, capsys) -> None:
     run_tool = Mock(return_value="[]")
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_list(SimpleNamespace(status=None))
 
@@ -71,7 +71,7 @@ def test_cli_list_without_filter_requests_full_tool_details(monkeypatch, capsys)
 
 def test_cli_resume_calls_update_task_with_resume_flag(monkeypatch, capsys) -> None:
     run_tool = Mock(return_value='{"status":"pending"}')
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_resume(SimpleNamespace(task_id="task-1"))
 

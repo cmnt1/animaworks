@@ -13,7 +13,7 @@ from cli.commands import internal_cmd
 def _run_internal(monkeypatch, capsys, subcommand: str, args: dict, tool_name: str, tool_args: dict) -> None:
     result = '{"status":"ok"}'
     run_tool = Mock(return_value=result)
-    monkeypatch.setattr(internal_cmd, "run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     internal_cmd.cmd_internal(Namespace(internal_command=subcommand, **args))
 
@@ -193,7 +193,7 @@ def test_check_background_task_maps_task_id(monkeypatch, capsys) -> None:
     ],
 )
 def test_handler_error_is_printed_and_exits_nonzero(monkeypatch, capsys, error: str) -> None:
-    monkeypatch.setattr(internal_cmd, "run_anima_tool", lambda *_args: error)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", lambda *_args: error)
 
     with pytest.raises(SystemExit) as stopped:
         internal_cmd.cmd_internal(Namespace(internal_command="check-background-task", task_id="missing"))

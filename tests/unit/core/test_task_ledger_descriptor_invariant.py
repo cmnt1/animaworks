@@ -175,7 +175,7 @@ class TestInProgressRejection:
         )
         calls = []
         monkeypatch.setattr(
-            "cli.commands.task_cmd.run_anima_tool", lambda name, args: calls.append((name, args)) or error
+            "cli._anima_tool.run_anima_tool", lambda name, args: calls.append((name, args)) or error
         )
 
         with pytest.raises(SystemExit) as exc:

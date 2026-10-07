@@ -142,7 +142,7 @@ def test_cli_resume_maps_to_update_tool(anima_dir, monkeypatch, capsys):
     from cli.commands.task_cmd import _cmd_resume
 
     run_tool = Mock(return_value='{"task_id":"task-one","status":"pending"}')
-    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
     _cmd_resume(SimpleNamespace(task_id="task-one"))
 
