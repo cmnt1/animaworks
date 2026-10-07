@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import has_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,16 +10,71 @@ from core.platform.env import has_env
 """Build a standalone ``ToolHandler`` for non-Web processes.
 
 Shared by the MCP subprocess (``core.mcp.server``) and the
-``animaworks-tool supervisor`` CLI, which both need a fully assembled
-``ToolHandler`` from an ``anima_dir`` without a running ``AgentCore``.
+``animaworks-tool`` CLI, which both need a fully assembled ``ToolHandler``
+from an ``anima_dir`` without a running ``AgentCore``.
 """
 
 import json as _json
 import logging
+import sys
+from functools import cache
 from pathlib import Path
 from typing import Any
 
+from core.platform.env import anima_dir_env, has_env
+
 logger = logging.getLogger(__name__)
+
+
+def current_anima_dir() -> Path | None:
+    """Return the calling anima's directory, or ``None`` outside a tool context."""
+    value = anima_dir_env() or ""
+    if not value:
+        return None
+    path = Path(value)
+    return path if path.is_dir() else None
+
+
+def require_anima_dir() -> Path:
+    """Return the calling anima's directory or exit with a usage error."""
+    anima_dir = current_anima_dir()
+    if anima_dir is None:
+        print(
+            "Error: ANIMAWORKS_ANIMA_DIR not set or missing (set automatically inside an anima's tool context)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return anima_dir
+
+
+@cache
+def _standalone_handler(anima_dir: Path) -> Any:
+    return build_standalone_tool_handler(anima_dir, for_mcp=False)
+
+
+def run_tool_for_current_anima(
+    tool_name: str,
+    tool_args: dict[str, Any],
+    *,
+    anima_dir: Path | None = None,
+) -> str:
+    """Run *tool_name* through the current anima's standalone ``ToolHandler``."""
+    return _standalone_handler((anima_dir or require_anima_dir()).resolve()).handle(tool_name, tool_args)
+
+
+def tool_result_is_error(result: str) -> bool:
+    """Recognize ToolHandler errors, including results with appended action rules."""
+    text = result.lstrip()
+    try:
+        payload, _ = _json.JSONDecoder().raw_decode(text)
+    except (ValueError, TypeError):
+        return text.lower().startswith(("error", "unknown tool"))
+
+    if isinstance(payload, dict):
+        return payload.get("status") == "error"
+    if isinstance(payload, str):
+        return payload.lstrip().lower().startswith(("error", "unknown tool"))
+    return False
 
 
 def _load_permitted_categories(anima_dir: Path) -> set[str]:

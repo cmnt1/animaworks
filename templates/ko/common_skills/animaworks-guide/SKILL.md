@@ -411,20 +411,20 @@ animaworks-tool internal check-background-task {task_id}
 
 **vault**(Anima 네임스페이스가 있는 KV)
 
-저장 위치는 「자신의 Anima 네임스페이스」와 「`shared` 섹션」의 두 가지. `shared`은 도구의 credential 해결(`get_credential`)이 읽는 곳으로, `--shared`를 붙여 쓴다. `get` / `list`은 미지정 시 자신의 네임스페이스 → `shared` 순서로 둘 다 본다.
+저장 위치는 자신의 Anima 네임스페이스와 `shared` 섹션 두 곳입니다. Anima는 자신의 네임스페이스와 `shared`를 읽을 수 있지만, 자신의 네임스페이스에만 쓰기/삭제할 수 있습니다. `shared` 쓰기/삭제는 `ANIMAWORKS_ANIMA_DIR`가 설정되지 않은 운영자 전용입니다. `get`은 기본적으로 자신의 네임스페이스 → `shared` 순서로 검색하고, `list`는 이 두 네임스페이스만 표시합니다.
 
 ```bash
-animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
-animaworks-tool vault get {キー} --shared     # shared のみ
-animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
-printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
-animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
-animaworks-tool vault list --shared           # shared のみ
-animaworks-tool vault delete {キー}           # 自分の名前空間から削除
-animaworks-tool vault delete {キー} --shared  # shared から削除
+animaworks-tool vault get {KEY}                       # 자신의 네임스페이스, 다음 shared 검색
+animaworks-tool vault get {KEY} --shared              # shared만 검색
+animaworks-tool vault store {KEY} {VALUE}             # 자신의 네임스페이스에 저장
+printf '%s' "{VALUE}" | animaworks-tool vault store {KEY} --shared  # 운영자 전용, stdin만
+animaworks-tool vault list                            # {"sections":{"자신의 네임스페이스":[...], "shared":[...]}}
+animaworks-tool vault list --shared                   # shared만 표시
+animaworks-tool vault delete {KEY}                    # 자신의 네임스페이스에서 삭제
+animaworks-tool vault delete {KEY} --shared           # 운영자 전용
 ```
 
-`delete`만은 캐스케이드하지 않는다(`--shared` 없이 shared의 credential을 끌어들이지 않기 위해). 단회 사용 토큰처럼 「유효한 복제가 동시에 하나만 존재할 수 있는」 값은 보관 위치를 한 곳으로 정해 분산시키지 않는다.
+Anima는 `--shared`를 통한 쓰기/삭제를 할 수 없습니다. 단회 사용 토큰처럼 유효한 복제가 동시에 하나만 존재할 수 있는 값은 보관 위치를 한 곳으로 정해 분산시키지 마세요.
 
 **supervisor**(`ANIMAWORKS_ANIMA_DIR`의 Anima 이름을 기준으로, status.json의 supervisor 관계로 하위를 해결)
 

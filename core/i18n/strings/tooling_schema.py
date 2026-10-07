@@ -102,6 +102,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "通知カテゴリ（inbox分岐用）",
         "en": "Notification category for inbox routing",
     },
+    "schema.call_human.callback_id": {
+        "ja": "インタラクティブ通知で使う安定したcallback ID（省略時は自動生成）",
+        "en": "Stable callback ID for an interactive notification (auto-generated if omitted)",
+    },
     "schema.call_human.allowed_users_desc": {
         "ja": "プラットフォーム別の承認者ID",
         "en": "Per-platform approver user IDs",

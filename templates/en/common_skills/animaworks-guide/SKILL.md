@@ -411,20 +411,20 @@ animaworks-tool internal check-background-task {task_id}
 
 **vault** (KV with Anima namespace)
 
-Storage destinations are two: "your own Anima namespace" and the "`shared` section". `shared` is the location read by tool credential resolution (`get_credential`), and is written with `--shared` attached. `get` / `list` look at both in the order of your own namespace → `shared` when unspecified.
+Storage destinations are your own Anima namespace and the `shared` section. Animas can read their own namespace and `shared`, but can write/delete only in their own namespace. Shared writes/deletes are operator-only and require `ANIMAWORKS_ANIMA_DIR` to be unset. `get` searches your namespace → `shared` by default; `list` shows only those two namespaces.
 
 ```bash
-animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
-animaworks-tool vault get {キー} --shared     # shared のみ
-animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
-printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
-animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
-animaworks-tool vault list --shared           # shared のみ
-animaworks-tool vault delete {キー}           # 自分の名前空間から削除
-animaworks-tool vault delete {キー} --shared  # shared から削除
+animaworks-tool vault get {KEY}                       # own namespace, then shared
+animaworks-tool vault get {KEY} --shared              # shared only
+animaworks-tool vault store {KEY} {VALUE}             # write to your namespace
+printf '%s' "{VALUE}" | animaworks-tool vault store {KEY} --shared  # operator-only; stdin only
+animaworks-tool vault list                            # {"sections":{"your-namespace":[...], "shared":[...]}}
+animaworks-tool vault list --shared                   # shared only
+animaworks-tool vault delete {KEY}                    # delete from your namespace
+animaworks-tool vault delete {KEY} --shared           # operator-only
 ```
 
-Only `delete` does not cascade (to avoid involving shared credentials without `--shared`). For values where only one valid copy can exist at a time, such as single-use tokens, decide on a single storage location and do not distribute them.
+Animas cannot write/delete with `--shared`. For values where only one valid copy can exist at a time, such as single-use tokens, decide on a single storage location and do not distribute them.
 
 **supervisor** (starting from the Anima name of `ANIMAWORKS_ANIMA_DIR`, resolves subordinates via the supervisor relationship of status.json)
 

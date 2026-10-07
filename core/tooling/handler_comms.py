@@ -798,11 +798,47 @@ class CommsToolsMixin:
             )
 
         # The confirm step asks the Anima to check Slack/Chatwork first; with only
-        # the built-in Web UI channel there is nothing outside to check.
+        # the built-in Web UI channel there is nothing outside to check. CLI
+        # subprocesses share the server's per-session key store so confirmation
+        # remains usable across separate invocations.
         if getattr(self._human_notifier, "has_external_channels", True) is False:
             issued_key = None
         else:
-            issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
+            from core.platform.env import get_env
+
+            cli_session_id = get_env("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+            if cli_session_id:
+                from core.internal_api import host_api
+
+                try:
+                    response = host_api.post(
+                        "/api/internal/call-human/confirm",
+                        json={
+                            "anima_name": self._anima_name,
+                            "session_id": cli_session_id,
+                            "sha": args.get("sha", ""),
+                        },
+                        timeout=10.0,
+                    )
+                    response.raise_for_status()
+                    confirmation = response.json()
+                    if (
+                        not isinstance(confirmation, dict)
+                        or not isinstance(confirmation.get("ok"), bool)
+                        or not isinstance(confirmation.get("sha"), str)
+                        or (not confirmation["ok"] and not confirmation["sha"])
+                    ):
+                        raise ValueError("Invalid call_human confirmation response")
+                    issued_key = confirmation["sha"] or None
+                except Exception:
+                    logger.warning("Could not verify call_human confirmation with the server", exc_info=True)
+                    self._last_call_human_denied = True
+                    return _error_result(
+                        "ConfirmationUnavailable",
+                        t("handler.call_human_confirm_unavailable"),
+                    )
+            else:
+                issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
         self._last_call_human_denied = issued_key is not None
         if issued_key is not None:
             return _error_result(
@@ -836,6 +872,7 @@ class CommsToolsMixin:
                     category,
                     opts_list,
                     allowed_users=aud or None,
+                    callback_id=str(args.get("callback_id") or ""),
                 )
             except ValueError as ve:
                 return _error_result("InvalidArguments", str(ve))

@@ -41,3 +41,12 @@ def test_build_standalone_handler_supports_supervisor_tools(
     handler = build_standalone_tool_handler(anima_dir, for_mcp=False)
     result = handler.handle("org_dashboard", {})
     assert isinstance(result, str)
+
+
+def test_cli_runner_reexport_uses_the_standalone_tool_handler(anima_dir: Path) -> None:
+    """The CLI re-export runs the same standalone ToolHandler implementation."""
+    from cli._anima_tool import run_anima_tool
+
+    result = run_anima_tool("read_memory_file", {"path": "notes.md"}, anima_dir=anima_dir)
+
+    assert "standalone-note" in result

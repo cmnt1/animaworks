@@ -257,7 +257,7 @@ def _vault_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.vault_get.key"),
                     },
                 },
-                "required": ["section", "key"],
+                "required": ["key"],
             },
         },
         {
@@ -279,7 +279,7 @@ def _vault_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.vault_store.value"),
                     },
                 },
-                "required": ["section", "key", "value"],
+                "required": ["key", "value"],
             },
         },
         {

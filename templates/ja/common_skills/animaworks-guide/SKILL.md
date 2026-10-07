@@ -410,20 +410,20 @@ animaworks-tool internal check-background-task {task_id}
 
 **vault**（Anima 名前空間付き KV）
 
-保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。`shared` はツールのクレデンシャル解決（`get_credential`）が読む場所で、`--shared` を付けて書く。`get` / `list` は無指定なら自分の名前空間 → `shared` の順で両方を見る。
+保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。Anima は自分の名前空間と `shared` を読めますが、書き込み・削除できるのは自分の名前空間だけです。`shared` への書き込み・削除は `ANIMAWORKS_ANIMA_DIR` を設定していないオペレーター専用です。`get` は無指定なら自分の名前空間 → `shared` の順で検索し、`list` はこの2つだけを表示します。
 
 ```bash
 animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
 animaworks-tool vault get {キー} --shared     # shared のみ
 animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
-printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
-animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
+printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # オペレーター専用（stdin 経由のみ）
+animaworks-tool vault list                    # {"sections":{"自分の名前空間":[...], "shared":[...]}}
 animaworks-tool vault list --shared           # shared のみ
 animaworks-tool vault delete {キー}           # 自分の名前空間から削除
-animaworks-tool vault delete {キー} --shared  # shared から削除
+animaworks-tool vault delete {キー} --shared  # オペレーター専用
 ```
 
-`delete` だけはカスケードしない（`--shared` 無しで shared のクレデンシャルを巻き込まないため）。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
+Anima は `--shared` による書き込み・削除を実行できません。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
 
 **supervisor**（`ANIMAWORKS_ANIMA_DIR` の Anima 名を起点に、status.json の supervisor 関係で配下を解決）
 
