@@ -76,19 +76,19 @@ def test_standalone_send_persists_session_scoped_reply_and_executor_reads_it(
     with runtime_session_scope(ctx):
         assert executor._read_replied_to_file() == {"bob"}
 
-    # A new CLI process builds a fresh handler, which restores the same run state
-    # before dispatch and therefore keeps the per-run duplicate guard effective.
+    # run/replied_to accumulates across runs, so a fresh CLI handler must not
+    # treat it as "already sent in this run" (that would block later runs).
     second_handler = build_standalone_tool_handler(alice_dir, for_mcp=False)
     second_handler._messenger.send = MagicMock(return_value=_message())
     duplicate = second_handler.handle(
         "send_message",
         {"to": "bob", "content": "A second status update", "intent": "report"},
     )
-    assert "already sent" in duplicate.lower() or "送信済み" in duplicate
-    second_handler._messenger.send.assert_not_called()
+    assert "Message sent to bob" in duplicate
+    second_handler._messenger.send.assert_called_once()
 
 
-def test_standalone_send_restores_unknown_session_reply_for_next_handler(
+def test_standalone_send_does_not_inherit_unknown_session_replies(
     data_dir_at_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -126,8 +126,8 @@ def test_standalone_send_restores_unknown_session_reply_for_next_handler(
         "send_message",
         {"to": "bob", "content": "A second status update", "intent": "report"},
     )
-    assert "already sent" in duplicate.lower() or "送信済み" in duplicate
-    second_handler._messenger.send.assert_not_called()
+    assert "Message sent to bob" in duplicate
+    second_handler._messenger.send.assert_called_once()
 
 
 def test_cli_messaging_no_longer_has_a1_reply_file_copy() -> None:

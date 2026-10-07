@@ -60,53 +60,6 @@ def _notify_message_sent(
         callback(from_person, to_person, content)
 
 
-def _posted_channels_path(host: _CommsToolsHost, session_type: str) -> Path:
-    """Return the active runtime path, falling back to the unknown/default run."""
-    from core.execution.session.session_context import current_runtime_session
-
-    ctx = current_runtime_session() or getattr(host, "_runtime_session_context", None)
-    thread_id = ctx.thread_id if ctx is not None else "default"
-    return Path(host._anima_dir) / "run" / "posted_channels" / session_type / f"{thread_id or 'default'}.jsonl"
-
-
-def _read_posted_channels(host: _CommsToolsHost, session_type: str) -> set[str]:
-    path = _posted_channels_path(host, session_type)
-    if not path.is_file():
-        return set()
-    channels: set[str] = set()
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                entry = _json.loads(line)
-            except _json.JSONDecodeError:
-                continue
-            if isinstance(entry, dict) and entry.get("success") and isinstance(entry.get("channel"), str):
-                channels.add(entry["channel"])
-    except OSError:
-        logger.warning("Failed to read posted-channel state from %s", path, exc_info=True)
-    return channels
-
-
-def _persist_posted_channel(host: _CommsToolsHost, channel: str, session_type: str) -> None:
-    path = _posted_channels_path(host, session_type)
-    from core.execution.session.session_context import current_runtime_session
-
-    ctx = current_runtime_session() or getattr(host, "_runtime_session_context", None)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {
-            "channel": channel,
-            "success": True,
-            "session_type": session_type,
-            "thread_id": ctx.thread_id if ctx else "default",
-            "request_id": ctx.request_id if ctx else "",
-        }
-        with path.open("a", encoding="utf-8") as f:
-            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
-    except (OSError, TypeError, ValueError) as exc:
-        logger.warning("Failed to persist posted channel #%s: %s", channel, exc)
-
-
 def _company_boundary_error(
     from_anima: str,
     to_anima: str,
@@ -474,7 +427,6 @@ class CommsToolsMixin:
 
         session_type = active_session_type.get()
         current_posted = self.posted_channels_for(session_type)
-        current_posted.update(_read_posted_channels(self, session_type))
         if channel in current_posted:
             alt_channels = {"general", "ops"} - {channel} - current_posted
             alt_hint = ""
@@ -499,7 +451,6 @@ class CommsToolsMixin:
             return t("handler.channel_acl_denied", channel=channel)
 
         self._posted_channels.setdefault(session_type, set()).add(channel)
-        _persist_posted_channel(self, channel, session_type)
         logger.info("post_channel channel=%s anima=%s", channel, self._anima_name)
 
         if not suppress_board_fanout.get():

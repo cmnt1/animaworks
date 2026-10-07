@@ -289,7 +289,7 @@ class TestBoardMentionFanout:
         assert "external_platform" in chain
         assert "anima" in chain
 
-    def test_posted_channel_deduplication_survives_standalone_handlers(
+    def test_posted_channel_guard_is_per_handler_with_runtime_context(
         self,
         anima_dir: Path,
         memory: MagicMock,
@@ -320,11 +320,12 @@ class TestBoardMentionFanout:
         finally:
             active_session_type.reset(second_token)
 
+        # The guard is per run (per handler); nothing is carried over from files.
         assert first_result == "Posted to #general"
-        assert "already posted" in second_result.lower() or "既に" in second_result
-        assert messenger.post_channel.call_count == 1
+        assert second_result == "Posted to #general"
+        assert messenger.post_channel.call_count == 2
 
-    def test_posted_channel_deduplication_survives_handlers_without_runtime_context(
+    def test_posted_channel_guard_is_per_handler_without_runtime_context(
         self,
         anima_dir: Path,
         memory: MagicMock,
@@ -344,6 +345,7 @@ class TestBoardMentionFanout:
         finally:
             active_session_type.reset(token)
 
+        # The guard is per run (per handler); nothing is carried over from files.
         assert first_result == "Posted to #general"
-        assert "already posted" in second_result.lower() or "既に" in second_result
-        assert messenger.post_channel.call_count == 1
+        assert second_result == "Posted to #general"
+        assert messenger.post_channel.call_count == 2

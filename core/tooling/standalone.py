@@ -205,29 +205,13 @@ def _make_on_complete_callback(anima_dir: Path) -> Any:
     return _on_complete
 
 
-def _read_replied_to(anima_dir: Path, ctx: Any | None) -> set[str]:
-    """Load successful recipients from the run file shared with Agent SDK executors."""
-    session_type = ctx.session_type if ctx is not None else "unknown"
-    thread_id = (ctx.thread_id or "default") if ctx is not None else "default"
-    path = anima_dir / "run" / "replied_to" / session_type / f"{thread_id}.jsonl"
-    if not path.is_file():
-        return set()
-    names: set[str] = set()
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                entry = _json.loads(line)
-            except _json.JSONDecodeError:
-                continue
-            if isinstance(entry, dict) and entry.get("success") and isinstance(entry.get("to"), str):
-                names.add(entry["to"])
-    except OSError:
-        logger.warning("Failed to read replied_to state from %s", path, exc_info=True)
-    return names
+def _wrap_cli_handler_with_runtime_session(handler: Any) -> Any:
+    """Bind each short-lived CLI invocation to the caller's runtime session.
 
-
-def _wrap_cli_handler_with_runtime_session(handler: Any, anima_dir: Path) -> Any:
-    """Bind each short-lived CLI invocation to its persisted run/session state."""
+    Records such as ``run/replied_to`` are then written under the session the
+    executor reads. The per-run "already sent" guards are not seeded from those
+    files: they accumulate across runs and would block later runs.
+    """
     original_handle = handler.handle
 
     def _handle_with_runtime_session(
@@ -244,11 +228,8 @@ def _wrap_cli_handler_with_runtime_session(handler: Any, anima_dir: Path) -> Any
         session_token = handler.set_active_session_type(session_type)
         try:
             if ctx is None:
-                handler.merge_replied_to(_read_replied_to(anima_dir, None), session_type=session_type)
                 return original_handle(name, args, tool_use_id=tool_use_id)
-
             with runtime_session_scope(ctx):
-                handler.merge_replied_to(_read_replied_to(anima_dir, ctx), session_type=session_type)
                 return original_handle(name, args, tool_use_id=tool_use_id)
         finally:
             session_token.var.reset(session_token)
@@ -326,7 +307,8 @@ def build_standalone_tool_handler(anima_dir: Path, *, for_mcp: bool) -> Any:
         messenger=messenger,
         tool_registry=tool_registry,
         personal_tools=personal_tools,
-        on_message_sent=notify_server_message_sent,
+        # MCP keeps its previous behaviour; the CLI notified the server itself.
+        on_message_sent=None if for_mcp else notify_server_message_sent,
         on_schedule_changed=None,
         human_notifier=human_notifier,
         background_manager=bg_manager,
@@ -334,7 +316,7 @@ def build_standalone_tool_handler(anima_dir: Path, *, for_mcp: bool) -> Any:
     )
 
     if not for_mcp:
-        handler = _wrap_cli_handler_with_runtime_session(handler, anima_dir)
+        handler = _wrap_cli_handler_with_runtime_session(handler)
 
     logger.info("ToolHandler initialised for anima '%s' (%s)", anima_dir.name, anima_dir)
     return handler
