@@ -55,6 +55,10 @@ def _notification_tools() -> list[dict[str, Any]]:
                         "default": "approval",
                         "description": _t("schema.call_human.category_desc"),
                     },
+                    "callback_id": {
+                        "type": "string",
+                        "description": _t("schema.call_human.callback_id"),
+                    },
                     "allowed_users": {
                         "type": "array",
                         "items": {"type": "string"},

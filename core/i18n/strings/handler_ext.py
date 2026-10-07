@@ -254,6 +254,10 @@ STRINGS: dict[str, dict[str, str]] = {
             'externally (Chatwork, Slack, etc.). Keep only what still needs a human, then call call_human again with sha="{sha}".'
         ),
     },
+    "handler.call_human_confirm_unavailable": {
+        "ja": "AnimaWorksサーバーに接続できないか応答を検証できないため、確認キーを確認できませんでした。接続を回復してから再実行してください。通知は送信されていません。",
+        "en": "The call_human confirmation key could not be verified with the AnimaWorks server. Restore the connection and retry; the notification was not sent.",
+    },
     "handler.send_msg_non_chat_hint": {
         "ja": (
             "宛先 '{to}' には send_message で送信できません。人間への連絡は call_human を使用してください。send_message は他のAnima宛てにのみ使用してください。"

@@ -5,19 +5,39 @@
 from __future__ import annotations
 
 import argparse
-import logging
+import sys
 
-from cli._gateway import gateway_request
-from core.platform.env import anima_dir_env
-
-logger = logging.getLogger("animaworks")
-
+from cli._anima_tool import current_anima_dir, run_and_print
+from core.tooling.standalone import notify_server_message_sent
 
 # ── Send ───────────────────────────────────────────────────
 
 
 def cmd_send(args: argparse.Namespace) -> None:
-    """Send a message from an anima or a human user to an anima (filesystem based)."""
+    """Send a message through ToolHandler for Animas or Messenger for operators."""
+    anima_dir = current_anima_dir()
+    if anima_dir is not None:
+        if args.from_person != anima_dir.name:
+            print(
+                f"Error: anima '{anima_dir.name}' cannot send as '{args.from_person}'",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+        run_and_print(
+            "send_message",
+            {
+                "to": args.to_person,
+                "content": args.message,
+                "intent": getattr(args, "intent", "") or "",
+                "thread_id": args.thread_id or "",
+                "reply_to": args.reply_to or "",
+            },
+        )
+        return
+
+    # Human/operator use remains a small Messenger path; only anima tool calls
+    # are required to pass through ToolHandler.
     from core.infra.runtime_init import ensure_runtime_dir
     from core.messaging.messenger import Messenger
     from core.messaging.sender import resolve_sender_source
@@ -36,52 +56,7 @@ def cmd_send(args: argparse.Namespace) -> None:
     )
     sender_label = msg.from_person if source == "anima" else f"{msg.from_person} (human)"
     print(f"Sent: {sender_label} -> {msg.to_person} (id: {msg.id}, thread: {msg.thread_id})")
-    _persist_replied_to_for_a1(args.to_person)
     _notify_server_message_sent(args.from_person, args.to_person, args.message, msg.id)
-
-
-def _persist_replied_to_for_a1(to: str) -> None:
-    """Write replied_to entry for A1 mode (Agent SDK subprocess).
-
-    In A1 mode, agents send messages via the CLI ``send`` command instead of
-    the ``send_message`` tool, so ToolHandler._persist_replied_to() is never
-    called.  This function bridges the gap by writing to the same scoped
-    ``{anima_dir}/run/replied_to/{session_type}/{thread_id}.jsonl`` file that
-    the Agent SDK executor reads after the subprocess finishes.
-
-    Only writes when ``ANIMAWORKS_ANIMA_DIR`` is set (i.e. running inside an
-    Agent SDK subprocess).  No-op otherwise.
-    """
-    import json as _json
-    from pathlib import Path
-
-    from core.execution.session.session_context import RuntimeSessionContext
-
-    anima_dir = anima_dir_env()
-    if not anima_dir:
-        return
-    ctx = RuntimeSessionContext.from_env()
-    session_type = ctx.session_type if ctx else "unknown"
-    thread_id = ctx.thread_id if ctx else "default"
-    replied_to_path = Path(anima_dir) / "run" / "replied_to" / session_type / f"{thread_id or 'default'}.jsonl"
-    try:
-        replied_to_path.parent.mkdir(parents=True, exist_ok=True)
-        with replied_to_path.open("a", encoding="utf-8") as f:
-            f.write(
-                _json.dumps(
-                    {
-                        "to": to,
-                        "success": True,
-                        "session_type": session_type,
-                        "thread_id": thread_id or "default",
-                        "request_id": ctx.request_id if ctx else "",
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-    except Exception as e:
-        logger.debug("Failed to persist replied_to for '%s': %s", to, e)
 
 
 def _notify_server_message_sent(
@@ -90,41 +65,8 @@ def _notify_server_message_sent(
     content: str,
     message_id: str = "",
 ) -> None:
-    """Notify the running server about a CLI-sent message.
-
-    Triggers WebSocket broadcast and reply tracking.
-    Fails silently if the server is not running.
-    """
-    from core.platform.pid import read_server_pid
-    from core.platform.process import is_process_alive
-
-    pid = read_server_pid()
-    if pid is None or not is_process_alive(pid):
-        return
-
-    try:
-        from core.internal_api import internal_api_headers
-
-        resp = gateway_request(
-            argparse.Namespace(gateway_url=None),
-            "POST",
-            "/api/internal/message-sent",
-            headers=internal_api_headers(),
-            json={
-                "from_person": from_anima,
-                "to_person": to_anima,
-                "content": content[:200],
-                "message_id": message_id,
-            },
-            timeout=5.0,
-            raw_response=True,
-        )
-        if resp.status_code == 200:
-            logger.debug("Server notified of CLI send: %s -> %s", from_anima, to_anima)
-        else:
-            logger.debug("Server notification failed: %s", resp.status_code)
-    except Exception:
-        logger.debug("Could not notify server of CLI message send", exc_info=True)
+    """Keep operator sends' server notification on the shared core path."""
+    notify_server_message_sent(from_anima, to_anima, content, message_id)
 
 
 # ── Status ─────────────────────────────────────────────────

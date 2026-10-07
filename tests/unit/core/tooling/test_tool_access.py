@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -646,61 +645,47 @@ class TestCliDispatch:
         mock_client_factory.assert_not_called()
 
 
-# ── internal check-permissions ───────────────────────────
+# ── focused check_permissions tool query ──────────────────
 
 
-class TestCmdCheckPermissions:
-    def test_denied_tool_reported(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(
-            json.dumps({"external_tools": {"allow_all": True, "deny": ["gmail"]}}),
-            encoding="utf-8",
-        )
-        from cli.commands.internal_cmd import _cmd_check_permissions
+class TestCheckPermissionsToolQuery:
+    def _handler(self, anima: Path):
+        from core.tooling.handler import ToolHandler
 
-        args = argparse.Namespace(tool_name="gmail", action=None)
-        _cmd_check_permissions(args, anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "tool_denied"
+        return ToolHandler(anima_dir=anima, memory=MagicMock(), tool_registry=[])
 
-    def test_gated_action_not_allowed(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(json.dumps({"external_tools": {"allow_all": True}}), encoding="utf-8")
-        from cli.commands.internal_cmd import _cmd_check_permissions
+    def test_known_tool_query_uses_shared_access_checker(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        anima = tmp_path / "animas" / "worker"
+        anima.mkdir(parents=True)
+        handler = self._handler(anima)
+        decision = ToolAccessDecision(False, "action_gated")
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="gmail", action="send"), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "action_gated"
-        assert out["action"] == "send"
+        with (
+            patch("core.integrations.TOOL_MODULES", {"gmail": "core.integrations.gmail"}),
+            patch("core.tooling.permissions.check_tool_access", return_value=decision) as check,
+        ):
+            result = json.loads(handler.handle("check_permissions", {"tool_name": "gmail", "action": "send"}))
 
-    def test_allowed_gated_action(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(
-            json.dumps({"external_tools": {"allow_all": True, "allow": ["gmail_send"]}}),
-            encoding="utf-8",
-        )
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        check.assert_called_once_with(anima, "gmail", "send", origin="core", tool_file=None)
+        assert result == {"tool": "gmail", "action": "send", "permitted": False, "reason": "action_gated"}
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="gmail", action="send"), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is True
-        assert out["reason"] == "ok"
+    def test_unknown_tool_query_returns_narrow_denial(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        anima = tmp_path / "animas" / "worker"
+        anima.mkdir(parents=True)
+        handler = self._handler(anima)
 
-    def test_unknown_tool(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(json.dumps({"external_tools": {"allow_all": True}}), encoding="utf-8")
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        with (
+            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
+            patch("core.tooling.permissions.check_tool_access") as check,
+        ):
+            result = json.loads(handler.handle("check_permissions", {"tool_name": "unknown"}))
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="no_such_tool_xyz", action=None), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "unknown_tool"
+        check.assert_not_called()
+        assert result == {"tool": "unknown", "action": None, "permitted": False, "reason": "unknown_tool"}
 
 
 # ── _handle_web_search ──────────────────────────────────

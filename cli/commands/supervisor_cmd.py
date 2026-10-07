@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import anima_dir_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -15,34 +13,17 @@ Usage via animaworks-tool:
     animaworks-tool supervisor task-tracker [--status STATUS]
 
 These commands delegate to ``ToolHandler`` (via
-``core.tooling.standalone.build_standalone_tool_handler``) so their output
+``cli._anima_tool.run_and_print``) so their output
 matches what the MCP / Mode A executors return for the same tool.
 """
 
 import argparse
 import logging
 import sys
-from pathlib import Path
+
+from cli._anima_tool import run_and_print
 
 logger = logging.getLogger("animaworks")
-
-
-def _get_anima_dir() -> Path:
-    anima_dir_str = anima_dir_env() or ""
-    if not anima_dir_str:
-        print("Error: ANIMAWORKS_ANIMA_DIR not set (set automatically inside an anima's tool context)", file=sys.stderr)
-        sys.exit(1)
-    anima_dir = Path(anima_dir_str)
-    if not anima_dir.is_dir():
-        print(f"Error: anima_dir not found: {anima_dir}", file=sys.stderr)
-        sys.exit(1)
-    return anima_dir
-
-
-def _build_handler():
-    from core.tooling.standalone import build_standalone_tool_handler
-
-    return build_standalone_tool_handler(_get_anima_dir(), for_mcp=False)
 
 
 def cmd_supervisor(args: argparse.Namespace) -> None:
@@ -65,13 +46,13 @@ def cmd_supervisor(args: argparse.Namespace) -> None:
 
 
 def _cmd_org_dashboard(args: argparse.Namespace) -> None:
-    print(_build_handler().handle("org_dashboard", {}))
+    run_and_print("org_dashboard", {})
 
 
 def _cmd_ping(args: argparse.Namespace) -> None:
     target_name = getattr(args, "name", None)
     tool_args = {"name": target_name} if target_name else {}
-    print(_build_handler().handle("ping_subordinate", tool_args))
+    run_and_print("ping_subordinate", tool_args)
 
 
 def _cmd_read_state(args: argparse.Namespace) -> None:
@@ -79,12 +60,12 @@ def _cmd_read_state(args: argparse.Namespace) -> None:
     if not target_name:
         print("Error: NAME is required", file=sys.stderr)
         sys.exit(1)
-    print(_build_handler().handle("read_subordinate_state", {"name": target_name}))
+    run_and_print("read_subordinate_state", {"name": target_name})
 
 
 def _cmd_task_tracker(args: argparse.Namespace) -> None:
     status_filter = getattr(args, "status", "delegated")
-    print(_build_handler().handle("task_tracker", {"status": status_filter}))
+    run_and_print("task_tracker", {"status": status_filter})
 
 
 def register_supervisor_command(subparsers) -> None:

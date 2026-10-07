@@ -288,3 +288,64 @@ class TestBoardMentionFanout:
         assert chain is not None
         assert "external_platform" in chain
         assert "anima" in chain
+
+    def test_posted_channel_guard_is_per_handler_with_runtime_context(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+        messenger: MagicMock,
+    ) -> None:
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.tooling.handler_base import active_session_type
+
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="thread-a", trigger="message")
+        first = ToolHandler(anima_dir, memory, messenger, tool_registry=[])
+        second = ToolHandler(anima_dir, memory, messenger, tool_registry=[])
+        first.bind_runtime_session(ctx)
+        second.bind_runtime_session(ctx)
+        first._fire_board_slack_sync = MagicMock()
+        second._fire_board_slack_sync = MagicMock()
+
+        first_token = first.set_active_session_type(ctx.session_type)
+        try:
+            with runtime_session_scope(ctx):
+                first_result = first.handle("post_channel", {"channel": "general", "text": "first"})
+        finally:
+            active_session_type.reset(first_token)
+
+        second_token = second.set_active_session_type(ctx.session_type)
+        try:
+            with runtime_session_scope(ctx):
+                second_result = second.handle("post_channel", {"channel": "general", "text": "second"})
+        finally:
+            active_session_type.reset(second_token)
+
+        # The guard is per run (per handler); nothing is carried over from files.
+        assert first_result == "Posted to #general"
+        assert second_result == "Posted to #general"
+        assert messenger.post_channel.call_count == 2
+
+    def test_posted_channel_guard_is_per_handler_without_runtime_context(
+        self,
+        anima_dir: Path,
+        memory: MagicMock,
+        messenger: MagicMock,
+    ) -> None:
+        from core.tooling.handler_base import active_session_type
+
+        first = ToolHandler(anima_dir, memory, messenger, tool_registry=[])
+        second = ToolHandler(anima_dir, memory, messenger, tool_registry=[])
+        first._fire_board_slack_sync = MagicMock()
+        second._fire_board_slack_sync = MagicMock()
+
+        token = active_session_type.set("unknown")
+        try:
+            first_result = first.handle("post_channel", {"channel": "general", "text": "first"})
+            second_result = second.handle("post_channel", {"channel": "general", "text": "second"})
+        finally:
+            active_session_type.reset(token)
+
+        # The guard is per run (per handler); nothing is carried over from files.
+        assert first_result == "Posted to #general"
+        assert second_result == "Posted to #general"
+        assert messenger.post_channel.call_count == 2

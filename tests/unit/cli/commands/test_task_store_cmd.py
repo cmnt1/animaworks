@@ -116,9 +116,7 @@ def test_export_import_roundtrip_preserves_command_task_type(maintenance, tmp_pa
 
     TaskQueueManager(anima_dir).submit(payload, meta={"executor": "command"})
     destination = tmp_path / "command-snapshot"
-    run_maintenance(
-        argparse.Namespace(anima="alice", task_store_action="export", destination=destination)
-    )
+    run_maintenance(argparse.Namespace(anima="alice", task_store_action="export", destination=destination))
 
     snapshot_anima = destination / "animas" / "alice"
     recovered = TaskStore(tmp_path / "command-recovered.sqlite3")

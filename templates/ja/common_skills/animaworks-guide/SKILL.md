@@ -189,11 +189,11 @@ animaworks chat {名前} "メッセージ"
 animaworks chat {名前} "メッセージ" --from {送信者名}
 animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Anima間メッセージ送信
-animaworks send {送信者} {受信者} "メッセージ"
-animaworks send {送信者} {受信者} "メッセージ" --intent report   # report / delegation / question または省略（空）
-animaworks send {送信者} {受信者} "メッセージ" --reply-to {メッセージID}
-animaworks send {送信者} {受信者} "メッセージ" --thread-id {スレッドID}
+# Anima間メッセージ送信（Animaコンテキストでは送信者は自分のAnima名、intentは必須）
+animaworks send {自分} {受信者} "メッセージ" --intent report   # report または question。委譲には delegate_task を使う
+animaworks send {自分} {受信者} "メッセージ" --intent question
+animaworks send {自分} {受信者} "メッセージ" --intent report --reply-to {メッセージID}
+animaworks send {自分} {受信者} "メッセージ" --intent report --thread-id {スレッドID}
 
 # ハートビート手動起動
 animaworks heartbeat {名前}
@@ -209,8 +209,9 @@ animaworks board read {チャネル名}                      # チャネル読�
 animaworks board read {チャネル名} --limit 50           # 最大件数
 animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
 animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
-animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20）
+animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20、direction both）
 animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
+animaworks board dm-history {自分} {相手} --direction sent --hours 24 --keyword deploy
 ```
 
 ---
@@ -281,10 +282,11 @@ animaworks cost --json                   # JSON出力
 ```bash
 animaworks task list                     # タスク一覧（JSON）
 animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
-animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima
+animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima。実行入力を登録しTaskExecが実行
 animaworks task add --assignee {名前} --instruction "内容" --source human
 animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
 animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+# task add は実行可能タスク。追跡専用の backlog_task ツールとは用途が異なる
 animaworks task update --task-id {ID} --status done
 animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
@@ -399,31 +401,32 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 **internal**
 
 ```bash
-animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
+animaworks-tool internal archive-memory {相対パス} [--reason "理由"]  # knowledge/ procedures/ state/overflow_inbox/ のみ。episodes/ は対象外
+# --reason の既定値は "archived via CLI"。パス権限・保護ファイル検査と索引更新は archive_memory_file ツールが行う
 animaworks-tool internal check-permissions {ツール名} [アクション]
 # ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
-animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
-animaworks-tool internal manage-channel create|archive {チャネル名}
-animaworks-tool internal list-background-tasks
+animaworks-tool internal create-skill {名前} [--content ...] [--location personal|common]  # 省略時は標準入力
+animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {チャネル名} [--member 名前] [--description 説明]
+animaworks-tool internal list-background-tasks [--status running|completed|failed|pending]
 animaworks-tool internal check-background-task {task_id}
 ```
 
 **vault**（Anima 名前空間付き KV）
 
-保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。`shared` はツールのクレデンシャル解決（`get_credential`）が読む場所で、`--shared` を付けて書く。`get` / `list` は無指定なら自分の名前空間 → `shared` の順で両方を見る。
+保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。Anima は自分の名前空間と `shared` を読めますが、書き込み・削除できるのは自分の名前空間だけです。`shared` への書き込み・削除は `ANIMAWORKS_ANIMA_DIR` を設定していないオペレーター専用です。`get` は無指定なら自分の名前空間 → `shared` の順で検索し、`list` はこの2つだけを表示します。
 
 ```bash
 animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
 animaworks-tool vault get {キー} --shared     # shared のみ
 animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
-printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
-animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
+printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # オペレーター専用（stdin 経由のみ）
+animaworks-tool vault list                    # {"sections":{"自分の名前空間":[...], "shared":[...]}}
 animaworks-tool vault list --shared           # shared のみ
 animaworks-tool vault delete {キー}           # 自分の名前空間から削除
-animaworks-tool vault delete {キー} --shared  # shared から削除
+animaworks-tool vault delete {キー} --shared  # オペレーター専用
 ```
 
-`delete` だけはカスケードしない（`--shared` 無しで shared のクレデンシャルを巻き込まないため）。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
+Anima は `--shared` による書き込み・削除を実行できません。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
 
 **supervisor**（`ANIMAWORKS_ANIMA_DIR` の Anima 名を起点に、status.json の supervisor 関係で配下を解決）
 

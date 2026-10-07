@@ -187,89 +187,40 @@ class TestLocalDeprecation:
 
 
 class TestCallHumanExitCode:
-    """Tests for call_human CLI exit code (core.integrations.call_human)."""
+    """Tests for the call_human CLI adapter's ToolHandler result handling."""
 
-    @patch("core.integrations.call_human._load_config")
-    def test_cli_main_exits_1_when_all_not_supported(self, mock_load_config: MagicMock) -> None:
-        """Configure channels with only non-slack types; assert SystemExit 1."""
+    @patch("core.tooling.standalone.run_tool_for_current_anima")
+    def test_cli_main_exits_0_for_successful_handler_result(self, mock_run: MagicMock, capsys) -> None:
         from core.integrations.call_human import cli_main
 
-        mock_load_config.return_value = {
-            "human_notification": {
-                "enabled": True,
-                "channels": [
-                    {"type": "chatwork", "enabled": True},
-                    {"type": "line", "enabled": True},
-                ],
-            },
-        }
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_main(["Subject", "Body"])
-
-        assert exc_info.value.code == 1
-
-    @patch("core.integrations.call_human._send_slack", new_callable=AsyncMock)
-    @patch("core.integrations.call_human._get_bot_token")
-    @patch("core.integrations.call_human._load_config")
-    def test_cli_main_exits_0_when_slack_ok(
-        self,
-        mock_load_config: MagicMock,
-        mock_get_token: MagicMock,
-        mock_send_slack: AsyncMock,
-    ) -> None:
-        """Configure slack channel; mock _send_slack to return OK; assert exit 0."""
-        from core.integrations.call_human import cli_main
-
-        mock_load_config.return_value = {
-            "human_notification": {
-                "enabled": True,
-                "channels": [
-                    {
-                        "type": "slack",
-                        "enabled": True,
-                        "config": {"channel": "C123", "bot_token": "xoxb-fake"},
-                    },
-                ],
-            },
-        }
-        mock_get_token.return_value = "xoxb-fake"
-        mock_send_slack.return_value = ("OK", None)
+        mock_run.return_value = '{"status":"sent","results":["chatwork: OK"]}'
 
         cli_main(["Subject", "Body"])
-        mock_send_slack.assert_called_once()
 
-    @patch("core.integrations.call_human._send_slack", new_callable=AsyncMock)
-    @patch("core.integrations.call_human._get_bot_token")
-    @patch("core.integrations.call_human._load_config")
-    def test_cli_main_exits_1_when_slack_error(
-        self,
-        mock_load_config: MagicMock,
-        mock_get_token: MagicMock,
-        mock_send_slack: AsyncMock,
-    ) -> None:
-        """Configure slack; mock _send_slack to return ERROR; assert SystemExit 1."""
+        mock_run.assert_called_once_with(
+            "call_human",
+            {
+                "subject": "Subject",
+                "body": "Body",
+                "priority": "normal",
+                "interactive": False,
+                "category": "approval",
+                "options": ["approve", "reject", "comment"],
+            },
+        )
+        assert "chatwork: OK" in capsys.readouterr().out
+
+    @patch("core.tooling.standalone.run_tool_for_current_anima")
+    def test_cli_main_exits_1_for_handler_error(self, mock_run: MagicMock, capsys) -> None:
         from core.integrations.call_human import cli_main
 
-        mock_load_config.return_value = {
-            "human_notification": {
-                "enabled": True,
-                "channels": [
-                    {
-                        "type": "slack",
-                        "enabled": True,
-                        "config": {"channel": "C123", "bot_token": "xoxb-fake"},
-                    },
-                ],
-            },
-        }
-        mock_get_token.return_value = "xoxb-fake"
-        mock_send_slack.return_value = ("ERROR: channel_not_found", None)
+        mock_run.return_value = '{"status":"error","error_type":"NotificationError"}'
 
         with pytest.raises(SystemExit) as exc_info:
             cli_main(["Subject", "Body"])
 
         assert exc_info.value.code == 1
+        assert '"status":"error"' in capsys.readouterr().out
 
 
 # ── _gateway.py env var tests ────────────────────────────

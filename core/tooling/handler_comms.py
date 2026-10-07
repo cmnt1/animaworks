@@ -8,10 +8,11 @@ from core.tooling._handler_protocols import _CommsToolsHost
 
 """CommsToolsMixin — messaging, channel, DM history, and human notification handlers."""
 
+import inspect
 import json as _json
 import logging
-import re
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from core.i18n import t
 from core.time_utils import now_iso
@@ -32,6 +33,31 @@ if TYPE_CHECKING:
     from core.notification.notifier import HumanNotifier
 
 logger = logging.getLogger("animaworks.tool_handler")
+
+
+def _notify_message_sent(
+    callback: OnMessageSentFn | None,
+    from_person: str,
+    to_person: str,
+    content: str,
+    *,
+    message_id: str = "",
+) -> None:
+    """Invoke message callbacks, passing an ID when their signature accepts it."""
+    if callback is None:
+        return
+    try:
+        parameters = inspect.signature(callback).parameters.values()
+        accepts_message_id = any(
+            parameter.name == "message_id" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+    except (TypeError, ValueError):
+        accepts_message_id = False
+    if accepts_message_id:
+        cast(Any, callback)(from_person, to_person, content, message_id=message_id)
+    else:
+        callback(from_person, to_person, content)
 
 
 def _company_boundary_error(
@@ -216,15 +242,15 @@ class CommsToolsMixin:
             except Exception:
                 logger.warning("Activity logging failed for external send to %s", to)
 
-            if self._on_message_sent:
-                try:
-                    self._on_message_sent(
-                        self._messenger.anima_name,
-                        to,
-                        content,
-                    )
-                except Exception:
-                    logger.exception("on_message_sent callback failed")
+            try:
+                _notify_message_sent(
+                    self._on_message_sent,
+                    self._messenger.anima_name,
+                    to,
+                    content,
+                )
+            except Exception:
+                logger.exception("on_message_sent callback failed")
 
             from core.messaging.outbound import send_external
 
@@ -257,15 +283,16 @@ class CommsToolsMixin:
         self._replied_to.setdefault(active_session_type.get(), set()).add(internal_to)
         self._persist_replied_to(internal_to, success=True)
 
-        if self._on_message_sent:
-            try:
-                self._on_message_sent(
-                    self._messenger.anima_name,
-                    internal_to,
-                    content,
-                )
-            except Exception:
-                logger.exception("on_message_sent callback failed")
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                internal_to,
+                content,
+                message_id=msg.id,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed")
 
         base = f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
         feedback = self._build_send_feedback(internal_to)
@@ -398,7 +425,8 @@ class CommsToolsMixin:
         if company_error is not None:
             return company_error
 
-        current_posted = self.posted_channels_for(active_session_type.get())
+        session_type = active_session_type.get()
+        current_posted = self.posted_channels_for(session_type)
         if channel in current_posted:
             alt_channels = {"general", "ops"} - {channel} - current_posted
             alt_hint = ""
@@ -422,7 +450,7 @@ class CommsToolsMixin:
         except ChannelAccessDeniedError:
             return t("handler.channel_acl_denied", channel=channel)
 
-        self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
+        self._posted_channels.setdefault(session_type, set()).add(channel)
         logger.info("post_channel channel=%s anima=%s", channel, self._anima_name)
 
         if not suppress_board_fanout.get():
@@ -437,75 +465,36 @@ class CommsToolsMixin:
         # Sync board post to mapped Slack channel (fire-and-forget)
         self._fire_board_slack_sync(channel, text)
 
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                f"#channel:{channel}",
+                text,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed for board post")
+
         return f"Posted to #{channel}"
 
     def _fanout_board_mentions(self: _CommsToolsHost, channel: str, text: str) -> None:
-        """Send DM notifications to mentioned Animas when posting to a board channel."""
+        """Delegate mention delivery to the shared Board fan-out implementation."""
         if not self._messenger:
             return
 
-        mentions = re.findall(r"@(\w+)", text)
-        if not mentions:
-            return
+        from core.messaging.board_fanout import fanout_board_mentions
 
-        is_all = "all" in mentions
-
-        from core.paths import get_data_dir
-
-        sockets_dir = get_data_dir() / "run" / "sockets"
-        if sockets_dir.exists():
-            running = {p.stem for p in sockets_dir.glob("*.sock")}
-        else:
-            running = set()
-
-        if is_all:
-            targets = running - {self._anima_name}
-        else:
-            named = {m for m in mentions if m != "all"}
-            targets = (named & running) - {self._anima_name}
-
-        # ── ACL filter: only notify channel members ──
-        from core.messaging.messenger import is_channel_member
-
-        targets = {t for t in targets if is_channel_member(self._messenger.shared_dir, channel, t)}
-
-        # Defense in depth: the post gate rejects mixed-company channels, but
-        # membership may change before mention fan-out is delivered.
-        targets = {target for target in targets if self._cross_company_communication_error([target]) is None}
-
-        if not targets:
-            return
-
-        from_name = self._anima_name
-        fanout_content = f"[board_reply:channel={channel},from={from_name}]\n" + t(
-            "handler.board_mention_content", from_name=from_name, channel=channel, text=text
+        fanout_board_mentions(
+            self._messenger,
+            self._anima_name,
+            channel,
+            text,
+            origin_chain=build_outgoing_origin_chain(
+                self._session_origin,
+                self._session_origin_chain,
+            ),
+            animas_dir=Path(self._anima_dir).parent,
         )
-
-        outgoing_chain = build_outgoing_origin_chain(
-            self._session_origin,
-            self._session_origin_chain,
-        )
-
-        for target in sorted(targets):
-            try:
-                self._messenger.send(
-                    to=target,
-                    content=fanout_content,
-                    msg_type="board_mention",
-                    origin_chain=outgoing_chain,
-                )
-                logger.info(
-                    "board_mention fanout: %s -> %s (channel=%s)",
-                    from_name,
-                    target,
-                    channel,
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to fanout board_mention to %s",
-                    target,
-                    exc_info=True,
-                )
 
     def _fire_board_slack_sync(self: _CommsToolsHost, channel: str, text: str) -> None:
         """Sync a board post to the mapped Slack channel.
@@ -720,6 +709,75 @@ class CommsToolsMixin:
             logger.info("manage_channel remove_member: #%s -= %s", channel, remove_members)
             return t("handler.channel_members_removed", channel=channel, members=", ".join(remove_members))
 
+        elif action == "archive":
+            channel_file = shared_dir / "channels" / f"{channel}.jsonl"
+            meta = load_channel_meta(shared_dir, channel)
+            if not channel_file.exists() and meta is None:
+                return t("handler.channel_not_found", channel=channel)
+            company_error = self._channel_company_boundary_error(channel)
+            if company_error is not None:
+                return company_error
+            if meta is not None and meta.members and self._anima_name not in meta.members:
+                return t("handler.channel_acl_not_member", channel=channel)
+            if meta is not None and meta.closed and not channel_file.exists():
+                return _json.dumps(
+                    {
+                        "action": "archive",
+                        "channel": channel,
+                        "archived": False,
+                        "already_archived": True,
+                        "closed": True,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            def _close_channel(current: ChannelMeta | None) -> ChannelMeta:
+                if current is None:
+                    from core.org.company import get_company
+
+                    return ChannelMeta(
+                        members=[],
+                        created_by=self._anima_name,
+                        created_at=now_iso(),
+                        closed=True,
+                        company=get_company(self._anima_name, animas_dir=self._anima_dir.parent) or "",
+                    )
+                current.closed = True
+                return current
+
+            try:
+                closed_meta = update_channel_meta(shared_dir, channel, _close_channel, create_if_missing=True)
+                if closed_meta is None:
+                    return _error_result("ArchiveFailed", f"Could not write channel tombstone for #{channel}")
+
+                archived_path = None
+                if channel_file.exists():
+                    archive_dir = shared_dir / "channels" / "archive"
+                    archive_dir.mkdir(parents=True, exist_ok=True)
+                    archived_path = archive_dir / channel_file.name
+                    if archived_path.exists():
+                        stem, suffix = channel_file.stem, channel_file.suffix
+                        counter = 1
+                        while archived_path.exists():
+                            archived_path = archive_dir / f"{stem}_{counter}{suffix}"
+                            counter += 1
+                    channel_file.rename(archived_path)
+            except OSError as exc:
+                logger.warning("manage_channel archive failed: #%s: %s", channel, exc)
+                return _error_result("ArchiveFailed", f"Failed to archive channel #{channel}: {exc}")
+
+            result: dict[str, Any] = {
+                "action": "archive",
+                "channel": channel,
+                "archived": True,
+                "closed": True,
+            }
+            if archived_path is not None:
+                result["to"] = str(archived_path.relative_to(shared_dir))
+            logger.info("manage_channel archive: #%s by %s", channel, self._anima_name)
+            return _json.dumps(result, ensure_ascii=False, indent=2)
+
         elif action == "info":
             channel_file = shared_dir / "channels" / f"{channel}.jsonl"
             if not channel_file.exists():
@@ -740,7 +798,7 @@ class CommsToolsMixin:
         else:
             return _error_result(
                 "InvalidArguments",
-                f"Unknown action: {action!r}. Use create, add_member, remove_member, or info.",
+                f"Unknown action: {action!r}. Use create, archive, add_member, remove_member, or info.",
             )
 
     # ── Human notification handler ────────────────────────────
@@ -798,11 +856,47 @@ class CommsToolsMixin:
             )
 
         # The confirm step asks the Anima to check Slack/Chatwork first; with only
-        # the built-in Web UI channel there is nothing outside to check.
+        # the built-in Web UI channel there is nothing outside to check. CLI
+        # subprocesses share the server's per-session key store so confirmation
+        # remains usable across separate invocations.
         if getattr(self._human_notifier, "has_external_channels", True) is False:
             issued_key = None
         else:
-            issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
+            from core.platform.env import get_env
+
+            cli_session_id = get_env("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+            if cli_session_id:
+                from core.internal_api import host_api
+
+                try:
+                    response = host_api.post(
+                        "/api/internal/call-human/confirm",
+                        json={
+                            "anima_name": self._anima_name,
+                            "session_id": cli_session_id,
+                            "sha": args.get("sha", ""),
+                        },
+                        timeout=10.0,
+                    )
+                    response.raise_for_status()
+                    confirmation = response.json()
+                    if (
+                        not isinstance(confirmation, dict)
+                        or not isinstance(confirmation.get("ok"), bool)
+                        or not isinstance(confirmation.get("sha"), str)
+                        or (not confirmation["ok"] and not confirmation["sha"])
+                    ):
+                        raise ValueError("Invalid call_human confirmation response")
+                    issued_key = confirmation["sha"] or None
+                except Exception:
+                    logger.warning("Could not verify call_human confirmation with the server", exc_info=True)
+                    self._last_call_human_denied = True
+                    return _error_result(
+                        "ConfirmationUnavailable",
+                        t("handler.call_human_confirm_unavailable"),
+                    )
+            else:
+                issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
         self._last_call_human_denied = issued_key is not None
         if issued_key is not None:
             return _error_result(
@@ -836,6 +930,7 @@ class CommsToolsMixin:
                     category,
                     opts_list,
                     allowed_users=aud or None,
+                    callback_id=str(args.get("callback_id") or ""),
                 )
             except ValueError as ve:
                 return _error_result("InvalidArguments", str(ve))

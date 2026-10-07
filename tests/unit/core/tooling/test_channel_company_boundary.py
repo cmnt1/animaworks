@@ -271,6 +271,55 @@ def test_restricted_channel_members_take_precedence_over_company(tmp_path: Path)
     assert "member-content" in result
 
 
+def test_archive_channel_through_handler_moves_history_and_writes_closed_tombstone(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    channel_file = _make_channel(tmp_path, "team", ["alice"])
+    handler = _make_handler(tmp_path)
+
+    result = json.loads(handler.handle("manage_channel", {"action": "archive", "channel": "team"}))
+
+    archived_file = tmp_path / "shared" / "channels" / "archive" / "team.jsonl"
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert result["archived"] is True
+    assert result["closed"] is True
+    assert result["to"] == "channels/archive/team.jsonl"
+    assert not channel_file.exists()
+    assert archived_file.read_text(encoding="utf-8").find("secret") >= 0
+    assert meta is not None
+    assert meta.closed is True
+    assert meta.members == ["alice"]
+    assert not is_channel_member(tmp_path / "shared", "team", "alice")
+
+
+def test_archive_channel_rejects_non_member_without_mutation(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    _make_anima(tmp_path, "bob", "alpha")
+    channel_file = _make_channel(tmp_path, "team", ["bob"])
+    handler = _make_handler(tmp_path)
+
+    result = handler.handle("manage_channel", {"action": "archive", "channel": "team"})
+
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert "not a member" in result.lower() or "メンバーではない" in result
+    assert channel_file.exists()
+    assert meta is not None and not meta.closed
+
+
+def test_archive_channel_rejects_cross_company_members_without_mutation(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    _make_anima(tmp_path, "bob", "beta")
+    _write_company(tmp_path, "beta", "Beta Corporation")
+    channel_file = _make_channel(tmp_path, "team", ["alice", "bob"])
+    handler = _make_handler(tmp_path)
+
+    result = handler.handle("manage_channel", {"action": "archive", "channel": "team"})
+
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert "Beta Corporation" in result
+    assert channel_file.exists()
+    assert meta is not None and not meta.closed
+
+
 def test_create_channel_auto_assigns_creator_company(tmp_path: Path) -> None:
     _make_anima(tmp_path, "alice", "alpha")
     _make_anima(tmp_path, "same", "alpha")
