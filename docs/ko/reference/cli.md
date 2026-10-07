@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=6abbb3827be29bed9907c7391c24e2352393779bc649027eb0f7ffbb447ff520 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=0ce1093ae5b09830100b26c221f97c231be6d5f64244245c4eb2f19cc192b4e4 generated=2026-10-07 engine=luna model=gpt-6-luna translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -219,15 +219,21 @@ heartbeat/cron 모델 설정
 
 ## `board dm-history`
 
-피어와의 DM 기록 읽기
+상대와의 DM 기록 읽기
 
-`usage: animaworks board dm-history [-h] [--limit LIMIT] from_anima peer`
+`usage: animaworks board dm-history [-h] [--limit LIMIT]
+                                   [--direction {sent,received,both}]
+                                   [--hours HOURS] [--keyword KEYWORD]
+                                   from_anima peer`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| from_anima | positional | — | — | 자기 애니마 이름 |
-| peer | positional | — | — | 피어 애니마 이름 |
+| from_anima | positional | — | — | 자신의 아니마 이름 |
+| peer | positional | — | — | 상대 아니마 이름 |
 | --limit | option | 20 | — | 최대 메시지 수 |
+| --direction | option | "both" | sent, received, both | 메시지 방향으로 필터링 (기본값: both) |
+| --hours | option | — | — | 최근 N시간 동안의 메시지만 포함 |
+| --keyword | option | — | — | 이 키워드가 포함된 메시지만 포함 |
 
 ## `board post`
 
@@ -560,13 +566,14 @@ Anima 사용을 위한 내부 도구
 
 ## `internal archive-memory`
 
-메모리 파일 보관
+기억 파일 보관
 
-`usage: animaworks internal archive-memory [-h] path`
+`usage: animaworks internal archive-memory [-h] [--reason REASON] path`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| path | 위치 인자 | — | — | 상대 경로 (예: knowledge/old-notes.md) |
+| path | positional | — | — | archive_memory_file에서 허용하는 상대 경로 |
+| --reason | option | "archived via CLI" | — | 보관 사유 |
 
 ## `internal check-background-task`
 
@@ -593,33 +600,42 @@ Anima 사용을 위한 내부 도구
 
 스킬 파일 생성
 
-`usage: animaworks internal create-skill [-h] [--content CONTENT] name`
+`usage: animaworks internal create-skill [-h] [--content CONTENT]
+                                        [--location {personal,common}]
+                                        name`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| name | 위치 인자 | — | — | 스킬 이름 (또는 name.md) |
-| --content | 옵션 | — | — | 내용 (기본값: 표준 입력) |
+| name | positional | — | — | 스킬 이름 (또는 name.md) |
+| --content | option | — | — | SKILL.md 콘텐츠 (기본값: stdin) |
+| --location | option | "personal" | personal, common | — |
 
 ## `internal list-background-tasks`
 
-백그라운드 작업 목록
+백그라운드 작업 목록 조회
 
-`usage: animaworks internal list-background-tasks [-h]`
+`usage: animaworks internal list-background-tasks [-h]
+                                                 [--status {running,completed,failed,pending}]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| --status | option | — | running, completed, failed, pending | 상태로 필터링 |
 
 ## `internal manage-channel`
 
-채널 생성 또는 보관
+채널 및 구성원 관리
 
-`usage: animaworks internal manage-channel [-h] {create,archive} channel`
+`usage: animaworks internal manage-channel [-h] [--member MEMBERS]
+                                          [--description DESCRIPTION]
+                                          {create,archive,add_member,remove_member,info}
+                                          channel`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| action | 위치 인자 | — | create, archive | 작업 |
-| channel | 위치 인자 | — | — | 채널 이름 |
+| action | positional | — | create, archive, add_member, remove_member, info | 작업 |
+| channel | positional | — | — | 채널 이름 |
+| --member | option | [] | — | 구성원 이름 (반복 지정 가능) |
+| --description | option | — | — | 새 채널에 대한 설명 |
 
 ## `logs`
 
@@ -1168,7 +1184,7 @@ Anima용 슈퍼바이저 도구
 
 ## `task add`
 
-새 작업 추가
+실행 가능한 TaskExec 작업을 게시합니다. backlog_task는 추적 작업을 대기열에 추가하기만 합니다.
 
 `usage: animaworks task add [-h] [--source {human,anima}] --instruction
                            INSTRUCTION --assignee ASSIGNEE [--summary SUMMARY]
@@ -1176,12 +1192,12 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --source | 옵션 | "anima" | human, anima | — |
-| --instruction | 옵션 | — | — | 원본 지시문 텍스트 |
-| --assignee | 옵션 | — | — | 담당자 Anima 이름 |
-| --summary | 옵션 | — | — | 한 줄 요약 (기본값: instruction[:100]) |
-| --relay-chain | 옵션 | — | — | 쉼표로 구분된 릴레이 체인 |
-| --workspace | 옵션 | — | — | 작업의 working_directory용 작업공간 별칭 또는 경로 |
+| --source | option | "anima" | human, anima | — |
+| --instruction | option | — | — | 원래 지시문 텍스트 |
+| --assignee | option | — | — | 담당 아니마 이름 |
+| --summary | option | — | — | 한 줄 요약 (기본값: instruction[:100]) |
+| --relay-chain | option | — | — | 쉼표로 구분된 릴레이 체인 |
+| --workspace | option | — | — | 작업의 working_directory에 사용할 워크스페이스 별칭 또는 경로 |
 
 ## `task board`
 
@@ -1294,14 +1310,13 @@ Anima용 슈퍼바이저 도구
 
 작업 상태 업데이트
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status
-                              {pending,delegated,done,cancelled}
+`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
                               [--summary SUMMARY]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --task-id | option | — | — | 작업 ID |
-| --status | option | — | pending, delegated, done, cancelled | — |
+| --status | option | — | — | 지정할 상태 (폐기된 상태는 update_task에서 거부됨) |
 | --summary | option | — | — | 업데이트된 요약 |
 
 ## `task-store`
@@ -1436,7 +1451,7 @@ tmp 사용량 요약 표시
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | key | positional | — | — | 제거할 키 |
-| --shared | flag | false | — | Anima 네임스페이스 대신 공유 섹션에서 삭제 (절대 연쇄되지 않음) |
+| --shared | flag | false | — | 운영자 전용: 공유 섹션에서 삭제 (연쇄 삭제하지 않음) |
 
 ## `vault get`
 
@@ -1446,8 +1461,8 @@ tmp 사용량 요약 표시
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| key | positional | — | — | 검색할 키 |
-| --shared | flag | false | — | 공유 섹션에서만 검색 (기본값: Anima 네임스페이스, 그 다음 공유) |
+| key | positional | — | — | 가져올 키 |
+| --shared | flag | false | — | 공유 섹션에서만 검색 (기본값: 자체 네임스페이스를 먼저 검색한 뒤 공유 섹션 검색) |
 
 ## `vault init`
 
@@ -1461,13 +1476,13 @@ tmp 사용량 요약 표시
 
 ## `vault list`
 
-anima 네임스페이스와 공유 섹션의 키 목록 표시
+자체 및 공유 네임스페이스의 키 목록 조회
 
 `usage: animaworks vault list [-h] [--shared]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --shared | flag | false | — | 공유 섹션만 표시 (ANIMAWORKS_ANIMA_DIR 필요 없음) |
+| --shared | flag | false | — | 공유 섹션만 조회 (ANIMAWORKS_ANIMA_DIR가 필요하지 않음) |
 
 ## `vault status`
 
@@ -1488,5 +1503,5 @@ anima 네임스페이스와 공유 섹션의 키 목록 표시
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | key | positional | — | — | 저장할 키 |
-| value | positional | — | — | 저장할 값 (Anima 범위 호환 모드 전용) |
-| --shared | flag | false | — | stdin 또는 숨김 프롬프트에서 값을 읽어 공유 섹션에 저장 |
+| value | positional | — | — | 아니마 네임스페이스에 저장할 값 |
+| --shared | flag | false | — | 운영자 전용: stdin 또는 숨겨진 프롬프트를 통해 공유 섹션에 저장 |
