@@ -190,11 +190,11 @@ animaworks chat {名前} "メッセージ"
 animaworks chat {名前} "メッセージ" --from {送信者名}
 animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Anima間メッセージ送信
-animaworks send {送信者} {受信者} "メッセージ"
-animaworks send {送信者} {受信者} "メッセージ" --intent report   # report / delegation / question または省略（空）
-animaworks send {送信者} {受信者} "メッセージ" --reply-to {メッセージID}
-animaworks send {送信者} {受信者} "メッセージ" --thread-id {スレッドID}
+# Send between Animas (in an Anima tool context, use your own name and specify intent)
+animaworks send {self} {recipient} "message" --intent report    # report or question; use delegate_task for delegation
+animaworks send {self} {recipient} "message" --intent question
+animaworks send {self} {recipient} "message" --intent report --reply-to {message-id}
+animaworks send {self} {recipient} "message" --intent report --thread-id {thread-id}
 
 # ハートビート手動起動
 animaworks heartbeat {名前}
@@ -210,8 +210,9 @@ animaworks board read {チャネル名}                      # チャネル読�
 animaworks board read {チャネル名} --limit 50           # 最大件数
 animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
 animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
-animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20）
-animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
+animaworks board dm-history {self} {peer}               # DM history (default --limit 20, direction both)
+animaworks board dm-history {self} {peer} --limit 50    # Set result limit
+animaworks board dm-history {self} {peer} --direction sent --hours 24 --keyword deploy
 ```
 
 ---

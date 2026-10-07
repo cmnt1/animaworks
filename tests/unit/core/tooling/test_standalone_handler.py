@@ -41,3 +41,15 @@ def test_build_standalone_handler_supports_supervisor_tools(
     handler = build_standalone_tool_handler(anima_dir, for_mcp=False)
     result = handler.handle("org_dashboard", {})
     assert isinstance(result, str)
+
+
+def test_build_standalone_handler_wires_server_message_notification(
+    anima_dir: Path,
+) -> None:
+    """Standalone CLI and MCP handlers notify the server through one callback."""
+    from unittest.mock import patch
+
+    with patch("core.tooling.standalone.notify_server_message_sent") as notify:
+        handler = build_standalone_tool_handler(anima_dir, for_mcp=False)
+
+    assert handler.on_message_sent is notify

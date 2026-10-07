@@ -6,14 +6,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
-import re
 import sys
 
-from cli._gateway import gateway_request
-from core.i18n import t
+from cli._anima_tool import current_anima_dir, run_anima_tool
+from cli.commands._tool_result import print_tool_result
+from core.messaging.board_fanout import fanout_board_mentions
+from core.tooling.standalone import notify_server_message_sent
 
-logger = logging.getLogger("animaworks")
+
+def _refuse_impersonation(anima_name: str, requested_name: str) -> None:
+    print(
+        f"Error: anima '{anima_name}' cannot act as '{requested_name}'",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 # ── Board Read ────────────────────────────────────────────
@@ -21,6 +27,19 @@ logger = logging.getLogger("animaworks")
 
 def cmd_board_read(args: argparse.Namespace) -> None:
     """Read recent messages from a shared channel."""
+    if current_anima_dir() is not None:
+        print_tool_result(
+            run_anima_tool(
+                "read_channel",
+                {
+                    "channel": args.channel,
+                    "limit": getattr(args, "limit", 20),
+                    "human_only": getattr(args, "human_only", False),
+                },
+            )
+        )
+        return
+
     from core.infra.runtime_init import ensure_runtime_dir
     from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
@@ -29,8 +48,8 @@ def cmd_board_read(args: argparse.Namespace) -> None:
     messenger = Messenger(get_shared_dir(), "cli")
     messages = messenger.read_channel(
         args.channel,
-        limit=args.limit,
-        human_only=args.human_only,
+        limit=getattr(args, "limit", 20),
+        human_only=getattr(args, "human_only", False),
     )
     if not messages:
         print(f"No messages in #{args.channel}")
@@ -43,6 +62,21 @@ def cmd_board_read(args: argparse.Namespace) -> None:
 
 def cmd_board_post(args: argparse.Namespace) -> None:
     """Post a message to a shared channel."""
+    anima_dir = current_anima_dir()
+    if anima_dir is not None:
+        if args.from_anima != anima_dir.name:
+            _refuse_impersonation(anima_dir.name, args.from_anima)
+        print_tool_result(
+            run_anima_tool(
+                "post_channel",
+                {
+                    "channel": args.channel,
+                    "text": args.text,
+                },
+            )
+        )
+        return
+
     from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
     from core.infra.runtime_init import ensure_runtime_dir
     from core.messaging.messenger import Messenger
@@ -60,10 +94,9 @@ def cmd_board_post(args: argparse.Namespace) -> None:
         raise SystemExit(1) from exc
     print(f"Posted to #{args.channel}")
 
-    # Mention fanout
-    _fanout_board_mentions(messenger, args.from_anima, args.channel, args.text)
-
-    # Notify running server (silent failure)
+    # Operator posts use the same ACL/company-filtered mention fan-out as the
+    # ToolHandler path; there is only one implementation of this behavior.
+    fanout_board_mentions(messenger, args.from_anima, args.channel, args.text)
     _notify_server_board_posted(args.from_anima, args.channel, args.text)
 
 
@@ -72,84 +105,41 @@ def cmd_board_post(args: argparse.Namespace) -> None:
 
 def cmd_board_dm_history(args: argparse.Namespace) -> None:
     """Read DM history with a specific peer."""
+    anima_dir = current_anima_dir()
+    if anima_dir is not None:
+        if args.from_anima != anima_dir.name:
+            _refuse_impersonation(anima_dir.name, args.from_anima)
+        print_tool_result(
+            run_anima_tool(
+                "read_dm_history",
+                {
+                    "peer": args.peer,
+                    "limit": getattr(args, "limit", 20),
+                    "direction": getattr(args, "direction", "both"),
+                    "hours": getattr(args, "hours", None),
+                    "keyword": getattr(args, "keyword", None),
+                },
+            )
+        )
+        return
+
     from core.infra.runtime_init import ensure_runtime_dir
     from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
     messenger = Messenger(get_shared_dir(), args.from_anima)
-    messages = messenger.read_dm_history(args.peer, limit=args.limit)
+    messages = messenger.read_dm_history(
+        args.peer,
+        limit=getattr(args, "limit", 20),
+        direction=getattr(args, "direction", "both"),
+        hours=getattr(args, "hours", None),
+        keyword=getattr(args, "keyword", None),
+    )
     if not messages:
         print(f"No DM history with {args.peer}")
         return
     print(json.dumps(messages, ensure_ascii=False, indent=2))
-
-
-# ── Mention Fanout ────────────────────────────────────────
-
-
-def _fanout_board_mentions(
-    messenger: Messenger,  # noqa: F821
-    from_anima: str,
-    channel: str,
-    text: str,
-) -> None:
-    """Send DM notifications to mentioned Animas.
-
-    Replicates the fanout logic from core/tooling/handler.py
-    so that CLI board posts trigger the same @mention notifications
-    as tool_use-based posts.
-    """
-    mentions = re.findall(r"@(\w+)", text)
-    if not mentions:
-        return
-
-    is_all = "all" in mentions
-
-    # Determine running Animas via socket files
-    from core.paths import get_data_dir
-
-    sockets_dir = get_data_dir() / "run" / "sockets"
-    if sockets_dir.exists():
-        running = {p.stem for p in sockets_dir.glob("*.sock")}
-    else:
-        running = set()
-
-    if is_all:
-        targets = running - {from_anima}
-    else:
-        named = {m for m in mentions if m != "all"}
-        targets = (named & running) - {from_anima}
-
-    if not targets:
-        return
-
-    fanout_content = f"[board_reply:channel={channel},from={from_anima}]\n" + t(
-        "handler.board_mention_content", from_name=from_anima, channel=channel, text=text
-    )
-
-    for target in sorted(targets):
-        try:
-            messenger.send(
-                to=target,
-                content=fanout_content,
-                msg_type="board_mention",
-            )
-            logger.info(
-                "board_mention fanout: %s -> %s (channel=%s)",
-                from_anima,
-                target,
-                channel,
-            )
-        except Exception:
-            logger.warning(
-                "Failed to fanout board_mention to %s",
-                target,
-                exc_info=True,
-            )
-
-
-# ── Server Notification ───────────────────────────────────
 
 
 def _notify_server_board_posted(
@@ -157,36 +147,5 @@ def _notify_server_board_posted(
     channel: str,
     text: str,
 ) -> None:
-    """Notify the running server about a CLI board post.
-
-    Fails silently if the server is not running.
-    """
-    from core.platform.pid import read_server_pid
-    from core.platform.process import is_process_alive
-
-    pid = read_server_pid()
-    if pid is None or not is_process_alive(pid):
-        return
-
-    try:
-        from core.internal_api import internal_api_headers
-
-        resp = gateway_request(
-            argparse.Namespace(gateway_url=None),
-            "POST",
-            "/api/internal/message-sent",
-            headers=internal_api_headers(),
-            json={
-                "from_person": from_anima,
-                "to_person": f"#channel:{channel}",
-                "content": text[:200],
-            },
-            timeout=5.0,
-            raw_response=True,
-        )
-        if resp.status_code == 200:
-            logger.debug("Server notified of CLI board post: %s -> #%s", from_anima, channel)
-        else:
-            logger.debug("Server notification failed: %s", resp.status_code)
-    except Exception:
-        logger.debug("Could not notify server of CLI board post", exc_info=True)
+    """Keep operator Board posts on the shared server-notification path."""
+    notify_server_message_sent(from_anima, f"#channel:{channel}", text)

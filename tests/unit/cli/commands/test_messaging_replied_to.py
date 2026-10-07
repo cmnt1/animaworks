@@ -1,118 +1,136 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for _persist_replied_to_for_a1 in CLI messaging module."""
+"""Tests for ToolHandler replied_to persistence in standalone CLI processes."""
 
 import json
-import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock
+
+import pytest
 
 
-class TestPersistRepliedToForA1:
-    """Test _persist_replied_to_for_a1() writes to replied_to.jsonl."""
+def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, anima_dir: Path) -> None:
+    monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
+    monkeypatch.setenv("ANIMAWORKS_REQUEST_ID", "req-123")
+    monkeypatch.setenv("ANIMAWORKS_SESSION_TYPE", "chat")
+    monkeypatch.setenv("ANIMAWORKS_THREAD_ID", "thread-a")
+    monkeypatch.setenv("ANIMAWORKS_TRIGGER", "message:bob")
+    monkeypatch.setenv("ANIMAWORKS_TOOL_SESSION_ID", "tool-123")
 
-    def _path(self, root: Path, session_type: str = "unknown", thread_id: str = "default") -> Path:
-        return root / "run" / "replied_to" / session_type / f"{thread_id}.jsonl"
 
-    def _call(self, to: str) -> None:
-        from cli.commands.messaging import _persist_replied_to_for_a1
+def _message() -> MagicMock:
+    message = MagicMock()
+    message.type = "message"
+    message.id = "msg-123"
+    message.thread_id = "thread-123"
+    return message
 
-        _persist_replied_to_for_a1(to)
 
-    def test_writes_entry_when_env_set(self, tmp_path: Path) -> None:
-        """When ANIMAWORKS_ANIMA_DIR is set, the function writes a JSONL entry."""
-        with patch.dict(os.environ, {"ANIMAWORKS_ANIMA_DIR": str(tmp_path)}):
-            self._call("mio")
+def test_standalone_send_persists_session_scoped_reply_and_executor_reads_it(
+    data_dir_at_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.execution.base import BaseExecutor
+    from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+    from core.tooling.standalone import build_standalone_tool_handler
 
-        path = self._path(tmp_path)
-        assert path.exists()
-        lines = path.read_text(encoding="utf-8").strip().splitlines()
-        assert len(lines) == 1
-        entry = json.loads(lines[0])
-        assert entry == {
-            "to": "mio",
-            "success": True,
-            "session_type": "unknown",
-            "thread_id": "default",
-            "request_id": "",
-        }
+    alice_dir = data_dir_at_tmp_path / "animas" / "alice"
+    alice_dir.mkdir(parents=True)
+    (alice_dir / "status.json").write_text("{}", encoding="utf-8")
+    bob_dir = data_dir_at_tmp_path / "animas" / "bob"
+    bob_dir.mkdir()
+    (bob_dir / "status.json").write_text("{}", encoding="utf-8")
+    _set_runtime_env(monkeypatch, alice_dir)
 
-    def test_appends_multiple_entries(self, tmp_path: Path) -> None:
-        """Multiple calls append to the same file."""
-        with patch.dict(os.environ, {"ANIMAWORKS_ANIMA_DIR": str(tmp_path)}):
-            self._call("alice")
-            self._call("bob")
-            self._call("charlie")
+    first_handler = build_standalone_tool_handler(alice_dir, for_mcp=False)
+    first_handler._messenger.send = MagicMock(return_value=_message())
+    result = first_handler.handle(
+        "send_message",
+        {"to": "bob", "content": "A status update", "intent": "report"},
+    )
+    assert "Message sent to bob" in result
 
-        path = self._path(tmp_path)
-        lines = path.read_text(encoding="utf-8").strip().splitlines()
-        assert len(lines) == 3
-        names = [json.loads(line)["to"] for line in lines]
-        assert names == ["alice", "bob", "charlie"]
+    replied_to_path = alice_dir / "run" / "replied_to" / "chat" / "thread-a.jsonl"
+    entries = [json.loads(line) for line in replied_to_path.read_text(encoding="utf-8").splitlines()]
+    assert entries[-1] == {
+        "to": "bob",
+        "success": True,
+        "session_type": "chat",
+        "thread_id": "thread-a",
+        "request_id": "req-123",
+    }
 
-    def test_noop_when_env_not_set(self, tmp_path: Path) -> None:
-        """When ANIMAWORKS_ANIMA_DIR is not set, nothing is written."""
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("ANIMAWORKS_ANIMA_DIR", None)
-            self._call("mio")
+    class _TestExecutor(BaseExecutor):
+        async def execute(self, prompt, system_prompt="", tracker=None, shortterm=None, trigger="", images=None):
+            raise NotImplementedError
 
-        # No run/ directory should be created anywhere
-        assert not (tmp_path / "run").exists()
+    from core.schemas import ModelConfig
 
-    def test_creates_run_directory(self, tmp_path: Path) -> None:
-        """The run/ directory is created if it doesn't exist."""
-        assert not (tmp_path / "run").exists()
-        with patch.dict(os.environ, {"ANIMAWORKS_ANIMA_DIR": str(tmp_path)}):
-            self._call("yuki")
-        assert self._path(tmp_path).exists()
+    executor = _TestExecutor(ModelConfig(model="test-model"), alice_dir)
+    ctx = RuntimeSessionContext.from_env()
+    assert ctx is not None
+    with runtime_session_scope(ctx):
+        assert executor._read_replied_to_file() == {"bob"}
 
-    def test_handles_write_error_gracefully(self, tmp_path: Path) -> None:
-        """If writing fails, the function logs but does not raise."""
-        # Point to a non-writable path
-        bad_path = tmp_path / "readonly"
-        bad_path.mkdir()
-        readonly_file = self._path(bad_path)
-        readonly_file.parent.mkdir(parents=True)
-        readonly_file.touch()
-        readonly_file.chmod(0o000)
-        try:
-            with patch.dict(os.environ, {"ANIMAWORKS_ANIMA_DIR": str(bad_path)}):
-                # Should not raise
-                self._call("mio")
-        finally:
-            readonly_file.chmod(0o644)
+    # A new CLI process builds a fresh handler, which restores the same run state
+    # before dispatch and therefore keeps the per-run duplicate guard effective.
+    second_handler = build_standalone_tool_handler(alice_dir, for_mcp=False)
+    second_handler._messenger.send = MagicMock(return_value=_message())
+    duplicate = second_handler.handle(
+        "send_message",
+        {"to": "bob", "content": "A second status update", "intent": "report"},
+    )
+    assert "already sent" in duplicate.lower() or "送信済み" in duplicate
+    second_handler._messenger.send.assert_not_called()
 
-    def test_format_matches_toolhandler(self, tmp_path: Path) -> None:
-        """Output format must match ToolHandler._persist_replied_to()."""
-        with patch.dict(os.environ, {"ANIMAWORKS_ANIMA_DIR": str(tmp_path)}):
-            self._call("test-anima")
 
-        path = self._path(tmp_path)
-        entry = json.loads(path.read_text(encoding="utf-8").strip())
-        # Must have exactly these keys (same as ToolHandler format)
-        assert set(entry.keys()) == {"to", "success", "session_type", "thread_id", "request_id"}
-        assert isinstance(entry["to"], str)
-        assert isinstance(entry["success"], bool)
+def test_standalone_send_restores_unknown_session_reply_for_next_handler(
+    data_dir_at_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.execution.session.session_context import RuntimeSessionContext
+    from core.tooling.standalone import build_standalone_tool_handler
 
-    def test_uses_runtime_session_env(self, tmp_path: Path) -> None:
-        """Runtime session env scopes the bridge file."""
-        env = {
-            "ANIMAWORKS_ANIMA_DIR": str(tmp_path),
-            "ANIMAWORKS_REQUEST_ID": "req-123",
-            "ANIMAWORKS_SESSION_TYPE": "chat",
-            "ANIMAWORKS_THREAD_ID": "thread-a",
-            "ANIMAWORKS_TRIGGER": "message:mio",
-            "ANIMAWORKS_TOOL_SESSION_ID": "tool-123",
-        }
-        with patch.dict(os.environ, env):
-            self._call("mio")
+    alice_dir = data_dir_at_tmp_path / "animas" / "alice"
+    alice_dir.mkdir(parents=True)
+    (alice_dir / "status.json").write_text("{}", encoding="utf-8")
+    bob_dir = data_dir_at_tmp_path / "animas" / "bob"
+    bob_dir.mkdir()
+    (bob_dir / "status.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(alice_dir))
+    for name in (
+        "ANIMAWORKS_REQUEST_ID",
+        "ANIMAWORKS_SESSION_TYPE",
+        "ANIMAWORKS_THREAD_ID",
+        "ANIMAWORKS_TRIGGER",
+        "ANIMAWORKS_TOOL_SESSION_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert RuntimeSessionContext.from_env() is None
 
-        path = self._path(tmp_path, "chat", "thread-a")
-        entry = json.loads(path.read_text(encoding="utf-8").strip())
-        assert entry["to"] == "mio"
-        assert entry["session_type"] == "chat"
-        assert entry["thread_id"] == "thread-a"
-        assert entry["request_id"] == "req-123"
+    first_handler = build_standalone_tool_handler(alice_dir, for_mcp=False)
+    first_handler._messenger.send = MagicMock(return_value=_message())
+    result = first_handler.handle(
+        "send_message",
+        {"to": "bob", "content": "A status update", "intent": "report"},
+    )
+    assert "Message sent to bob" in result
+
+    second_handler = build_standalone_tool_handler(alice_dir, for_mcp=False)
+    second_handler._messenger.send = MagicMock(return_value=_message())
+    duplicate = second_handler.handle(
+        "send_message",
+        {"to": "bob", "content": "A second status update", "intent": "report"},
+    )
+    assert "already sent" in duplicate.lower() or "送信済み" in duplicate
+    second_handler._messenger.send.assert_not_called()
+
+
+def test_cli_messaging_no_longer_has_a1_reply_file_copy() -> None:
+    from cli.commands import messaging
+
+    assert not hasattr(messaging, "_persist_replied_to_for_a1")

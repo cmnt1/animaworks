@@ -11,9 +11,9 @@ from core.platform.env import has_env
 
 """Build a standalone ``ToolHandler`` for non-Web processes.
 
-Shared by the MCP subprocess (``core.mcp.server``) and the
-``animaworks-tool supervisor`` CLI, which both need a fully assembled
-``ToolHandler`` from an ``anima_dir`` without a running ``AgentCore``.
+Shared by the MCP subprocess (``core.mcp.server``) and anima-context CLI
+adapters, which need a fully assembled ``ToolHandler`` from an ``anima_dir``
+without a running ``AgentCore``.
 """
 
 import json as _json
@@ -22,6 +22,39 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def notify_server_message_sent(
+    from_person: str,
+    to_person: str,
+    content: str,
+    message_id: str = "",
+) -> None:
+    """Broadcast a sent DM or Board post through the server, if it is running."""
+    from core.platform.pid import is_server_running
+
+    if not is_server_running():
+        return
+
+    try:
+        from core.internal_api import host_api
+
+        response = host_api.post(
+            "/api/internal/message-sent",
+            json={
+                "from_person": from_person,
+                "to_person": to_person,
+                "content": content[:200],
+                "message_id": message_id,
+            },
+            timeout=5.0,
+        )
+        if response.status_code == 200:
+            logger.debug("Server notified of message: %s -> %s", from_person, to_person)
+        else:
+            logger.debug("Server notification failed: %s", response.status_code)
+    except Exception:
+        logger.debug("Could not notify server of message", exc_info=True)
 
 
 def _load_permitted_categories(anima_dir: Path) -> set[str]:
@@ -107,13 +140,64 @@ def _make_on_complete_callback(anima_dir: Path) -> Any:
     return _on_complete
 
 
+def _read_replied_to(anima_dir: Path, ctx: Any | None) -> set[str]:
+    """Load successful recipients from the run file shared with Agent SDK executors."""
+    session_type = ctx.session_type if ctx is not None else "unknown"
+    thread_id = (ctx.thread_id or "default") if ctx is not None else "default"
+    path = anima_dir / "run" / "replied_to" / session_type / f"{thread_id}.jsonl"
+    if not path.is_file():
+        return set()
+    names: set[str] = set()
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("success") and isinstance(entry.get("to"), str):
+                names.add(entry["to"])
+    except OSError:
+        logger.warning("Failed to read replied_to state from %s", path, exc_info=True)
+    return names
+
+
+def _wrap_cli_handler_with_runtime_session(handler: Any, anima_dir: Path) -> Any:
+    """Bind each short-lived CLI invocation to its persisted run/session state."""
+    original_handle = handler.handle
+
+    def _handle_with_runtime_session(
+        name: str,
+        args: dict[str, Any],
+        tool_use_id: str | None = None,
+    ) -> str:
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+
+        ctx = RuntimeSessionContext.from_env()
+        session_type = ctx.session_type if ctx is not None else "unknown"
+        if ctx is not None:
+            handler.bind_runtime_session(ctx)
+        session_token = handler.set_active_session_type(session_type)
+        try:
+            if ctx is None:
+                handler.merge_replied_to(_read_replied_to(anima_dir, None), session_type=session_type)
+                return original_handle(name, args, tool_use_id=tool_use_id)
+
+            with runtime_session_scope(ctx):
+                handler.merge_replied_to(_read_replied_to(anima_dir, ctx), session_type=session_type)
+                return original_handle(name, args, tool_use_id=tool_use_id)
+        finally:
+            session_token.var.reset(session_token)
+
+    handler.handle = _handle_with_runtime_session
+    return handler
+
+
 def build_standalone_tool_handler(anima_dir: Path, *, for_mcp: bool) -> Any:
     """Assemble a fully configured ``ToolHandler`` from *anima_dir*.
 
-    Used by the MCP subprocess (``for_mcp=True``) and the
-    ``animaworks-tool supervisor`` CLI (``for_mcp=False``).  The
-    ``for_mcp`` flag only controls the ``debug_superuser`` gate that
-    skips the ``status.json`` check for short-lived MCP tool subprocesses.
+    Used by the MCP subprocess (``for_mcp=True``) and anima-context CLI
+    adapters (``for_mcp=False``). The flag controls the ``debug_superuser``
+    gate and whether each CLI invocation is wrapped in its runtime session.
     """
     anima_dir = Path(anima_dir).resolve()
 
@@ -177,12 +261,15 @@ def build_standalone_tool_handler(anima_dir: Path, *, for_mcp: bool) -> Any:
         messenger=messenger,
         tool_registry=tool_registry,
         personal_tools=personal_tools,
-        on_message_sent=None,
+        on_message_sent=notify_server_message_sent,
         on_schedule_changed=None,
         human_notifier=human_notifier,
         background_manager=bg_manager,
         superuser=_superuser,
     )
+
+    if not for_mcp:
+        handler = _wrap_cli_handler_with_runtime_session(handler, anima_dir)
 
     logger.info("ToolHandler initialised for anima '%s' (%s)", anima_dir.name, anima_dir)
     return handler

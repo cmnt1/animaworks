@@ -189,11 +189,11 @@ animaworks chat {名前} "メッセージ"
 animaworks chat {名前} "メッセージ" --from {送信者名}
 animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Anima間メッセージ送信
-animaworks send {送信者} {受信者} "メッセージ"
-animaworks send {送信者} {受信者} "メッセージ" --intent report   # report / delegation / question または省略（空）
-animaworks send {送信者} {受信者} "メッセージ" --reply-to {メッセージID}
-animaworks send {送信者} {受信者} "メッセージ" --thread-id {スレッドID}
+# Anima間メッセージ送信（Animaコンテキストでは送信者は自分のAnima名、intentは必須）
+animaworks send {自分} {受信者} "メッセージ" --intent report   # report または question。委譲には delegate_task を使う
+animaworks send {自分} {受信者} "メッセージ" --intent question
+animaworks send {自分} {受信者} "メッセージ" --intent report --reply-to {メッセージID}
+animaworks send {自分} {受信者} "メッセージ" --intent report --thread-id {スレッドID}
 
 # ハートビート手動起動
 animaworks heartbeat {名前}
@@ -209,8 +209,9 @@ animaworks board read {チャネル名}                      # チャネル読�
 animaworks board read {チャネル名} --limit 50           # 最大件数
 animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
 animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
-animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20）
+animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20、direction both）
 animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
+animaworks board dm-history {自分} {相手} --direction sent --hours 24 --keyword deploy
 ```
 
 ---
