@@ -234,7 +234,16 @@ def _check_permissions_tools() -> list[dict[str, Any]]:
             "description": _t("schema.check_permissions.desc"),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": _t("schema.check_permissions.tool_name"),
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": _t("schema.check_permissions.action"),
+                    },
+                },
             },
         },
     ]

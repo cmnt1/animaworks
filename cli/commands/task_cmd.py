@@ -10,7 +10,7 @@ from core.platform.env import anima_dir_env
 
 Usage via animaworks-tool:
     animaworks-tool task add --source human --instruction "..." --assignee rin
-    animaworks-tool task update --task-id abc123 --status in_progress
+    animaworks-tool task update --task-id abc123 --status done
     animaworks-tool task list [--status pending]
 """
 
@@ -21,6 +21,10 @@ import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from cli._anima_tool import run_anima_tool
+
+_TOOL_ERROR_PREFIXES = ("error", "unknown tool:", "エラー", "오류", "错误")
 
 
 def cmd_task(args: argparse.Namespace) -> None:
@@ -34,6 +38,15 @@ def cmd_task(args: argparse.Namespace) -> None:
         return
     if sub in {"claim", "release", "done", "cancel", "note"}:
         _cmd_lease_action(args)
+        return
+    if sub == "update":
+        _cmd_update(args)
+        return
+    if sub == "resume":
+        _cmd_resume(args)
+        return
+    if sub == "list":
+        _cmd_list(args)
         return
 
     anima_dir_str = anima_dir_env() or ""
@@ -52,18 +65,10 @@ def cmd_task(args: argparse.Namespace) -> None:
         print(f"Error: anima_dir not found: {anima_dir}", file=sys.stderr)
         sys.exit(1)
 
-    from core.tasks.queue import TaskQueueManager
-
-    manager = TaskQueueManager(anima_dir, read_only=(sub == "list"))
-
     if sub == "add":
-        _cmd_add(args, manager)
-    elif sub == "update":
-        _cmd_update(args, manager)
-    elif sub == "resume":
-        _cmd_resume(args, manager)
-    elif sub == "list":
-        _cmd_list(args, manager)
+        from core.tasks.queue import TaskQueueManager
+
+        _cmd_add(args, TaskQueueManager(anima_dir))
     else:
         print(
             "Usage: animaworks-tool task {board|show|claim|release|done|cancel|note|add|update|resume|list}",
@@ -365,21 +370,21 @@ def _exit_board_error(message: str, exit_code: int, payload: dict | None, as_jso
 def _cmd_add(args: argparse.Namespace, manager) -> None:
     from core.org.workspace import resolve_workspace
     from core.tasks.dispatch import publish_tasks
+    from core.tasks.queue import normalize_task_queue_fields
 
     source = getattr(args, "source", "anima")
-    instruction = getattr(args, "instruction", "")
-    assignee = getattr(args, "assignee", "")
-    summary = getattr(args, "summary", "") or instruction[:100]
+    try:
+        instruction, assignee, summary = normalize_task_queue_fields(
+            getattr(args, "instruction", ""),
+            getattr(args, "assignee", ""),
+            getattr(args, "summary", None),
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     relay_chain_raw = getattr(args, "relay_chain", None)
     relay_chain = relay_chain_raw.split(",") if relay_chain_raw else []
     workspace_raw = getattr(args, "workspace", None)
-
-    if not instruction:
-        print("Error: --instruction is required", file=sys.stderr)
-        sys.exit(1)
-    if not assignee:
-        print("Error: --assignee is required", file=sys.stderr)
-        sys.exit(1)
 
     # 1-1: This CLI only adds to your own queue. Foreign assignees would land
     # in another anima's ledger while the descriptor is written to this one.
@@ -430,74 +435,49 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
-def _cmd_update(args: argparse.Namespace, manager) -> None:
-    from core.i18n import t
-    from core.tasks.dispatch import update_task
+def _run_task_tool(tool_name: str, tool_args: dict) -> None:
+    result = run_anima_tool(tool_name, tool_args)
+    print(result)
+    rendered = result.lstrip()
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(rendered)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict) and parsed.get("status") == "error":
+        sys.exit(1)
+    if rendered.casefold().startswith(_TOOL_ERROR_PREFIXES):
+        sys.exit(1)
 
-    task_id = getattr(args, "task_id", "")
-    status = getattr(args, "status", "")
+
+def _cmd_update(args: argparse.Namespace) -> None:
+    tool_args = {
+        "task_id": getattr(args, "task_id", ""),
+        "status": getattr(args, "status", ""),
+    }
     summary = getattr(args, "summary", None)
-
-    if not task_id:
-        print("Error: --task-id is required", file=sys.stderr)
-        sys.exit(1)
-    if not status:
-        print("Error: --status is required", file=sys.stderr)
-        sys.exit(1)
-    if status == "in_progress":
-        print(
-            "Error: status 'in_progress' is written only by the running TaskExec.\n"
-            "To (re)start a task, submit it with the submit_tasks tool. To close it, use --status done or cancelled.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
-    try:
-        entry = update_task(manager, task_id, status, summary=summary)
-    except Exception as exc:
-        print(t("tooling.task_update_failed", error=str(exc)), file=sys.stderr)
-        sys.exit(3)
-    if entry is None:
-        print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
-        sys.exit(1)
-
-    result = entry.model_dump()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if summary is not None:
+        tool_args["summary"] = summary
+    _run_task_tool("update_task", tool_args)
 
 
-def _cmd_resume(args: argparse.Namespace, manager) -> None:
-    """Requeue a task under the same task_id using its saved execution input."""
-    from core.tasks.dispatch import update_task
-
-    task_id = getattr(args, "task_id", "")
-
-    if not task_id:
-        print("Error: --task-id is required", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        entry = update_task(manager, task_id, "pending", resume=True)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(3)
-    except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(4)
-    if entry is None:
-        print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
-        sys.exit(1)
-
-    print(json.dumps(entry.model_dump(), ensure_ascii=False, indent=2))
+def _cmd_resume(args: argparse.Namespace) -> None:
+    """Requeue a task through update_task using its saved execution input."""
+    _run_task_tool(
+        "update_task",
+        {
+            "task_id": getattr(args, "task_id", ""),
+            "status": "pending",
+            "resume": True,
+        },
+    )
 
 
-def _cmd_list(args: argparse.Namespace, manager) -> None:
-    from core.tasks.queue import mark_executability
-
+def _cmd_list(args: argparse.Namespace) -> None:
+    tool_args = {"detail": True}
     status_filter = getattr(args, "status", None)
-    tasks = manager.list_tasks(status=status_filter)
-    result = [t.model_dump() for t in tasks]
-    mark_executability(result, manager.anima_dir)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if status_filter:
+        tool_args["status"] = status_filter
+    _run_task_tool("list_tasks", tool_args)
 
 
 def register_task_command(subparsers) -> None:
@@ -544,7 +524,11 @@ def register_task_command(subparsers) -> None:
     p_note.add_argument("--json", action="store_true", help="Emit JSON")
 
     # task add
-    p_add = task_sub.add_parser("add", help="Add a new task")
+    p_add = task_sub.add_parser(
+        "add",
+        help="Publish executable TaskExec work; unlike backlog_task, this is not tracking-only",
+        description="Publishes an executable TaskExec task; backlog_task only queues tracking work.",
+    )
     p_add.add_argument("--source", default="anima", choices=["human", "anima"])
     p_add.add_argument("--instruction", required=True, help="Original instruction text")
     p_add.add_argument("--assignee", required=True, help="Assignee anima name")
@@ -555,7 +539,9 @@ def register_task_command(subparsers) -> None:
     # task update
     p_update = task_sub.add_parser("update", help="Update task status")
     p_update.add_argument("--task-id", required=True, help="Task ID")
-    p_update.add_argument("--status", required=True, choices=["pending", "delegated", "done", "cancelled"])
+    p_update.add_argument(
+        "--status", required=True, help="Status to declare (retired statuses are rejected by update_task)"
+    )
     p_update.add_argument("--summary", default=None, help="Updated summary")
 
     # task resume

@@ -1,163 +1,123 @@
-"""Canonical task updates from CLI sandboxes use the same declaration contract as MCP."""
+"""Task queue CLI adapters delegate updates and listings to ToolHandler."""
 
 from __future__ import annotations
 
-import errno
+import argparse
 import json
-import sqlite3
-from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
-from cli.commands.task_cmd import _cmd_update
-from core.tasks.board.tasks import attempt_scope
-from core.tasks.dispatch import publish_tasks
-from core.tasks.queue import TaskQueueManager
+from cli.commands.task_cmd import _cmd_add, _cmd_list, _cmd_resume, _cmd_update, register_task_command
 
 
-@pytest.fixture
-def task(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+def test_cli_update_calls_update_task_with_mapped_args(capsys, monkeypatch) -> None:
+    result = '{"task_id":"task-1","status":"done"}'
+    run_tool = Mock(return_value=result)
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+
+    _cmd_update(SimpleNamespace(task_id="task-1", status="done", summary="Verified once"))
+
+    run_tool.assert_called_once_with(
+        "update_task",
+        {"task_id": "task-1", "status": "done", "summary": "Verified once"},
+    )
+    assert capsys.readouterr().out == f"{result}\n"
+
+
+def test_cli_update_omits_missing_summary(monkeypatch, capsys) -> None:
+    run_tool = Mock(return_value="{}")
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+
+    _cmd_update(SimpleNamespace(task_id="task-1", status="cancelled", summary=None))
+
+    run_tool.assert_called_once_with("update_task", {"task_id": "task-1", "status": "cancelled"})
+    capsys.readouterr()
+
+
+def test_cli_update_prints_tool_error_and_exits_nonzero(monkeypatch, capsys) -> None:
+    error = json.dumps({"status": "error", "error_type": "InvalidArguments", "message": "retired"})
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", lambda *_args: error)
+
+    with pytest.raises(SystemExit) as stopped:
+        _cmd_update(SimpleNamespace(task_id="task-1", status="failed", summary=None))
+
+    assert stopped.value.code == 1
+    assert capsys.readouterr().out == f"{error}\n"
+
+
+def test_cli_list_requests_full_tool_details(monkeypatch, capsys) -> None:
+    result = "[]"
+    run_tool = Mock(return_value=result)
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+
+    _cmd_list(SimpleNamespace(status="pending"))
+
+    run_tool.assert_called_once_with("list_tasks", {"detail": True, "status": "pending"})
+    assert capsys.readouterr().out == f"{result}\n"
+
+
+def test_cli_list_without_filter_requests_full_tool_details(monkeypatch, capsys) -> None:
+    run_tool = Mock(return_value="[]")
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+
+    _cmd_list(SimpleNamespace(status=None))
+
+    run_tool.assert_called_once_with("list_tasks", {"detail": True})
+    capsys.readouterr()
+
+
+def test_cli_resume_calls_update_task_with_resume_flag(monkeypatch, capsys) -> None:
+    run_tool = Mock(return_value='{"status":"pending"}')
+    monkeypatch.setattr("cli.commands.task_cmd.run_anima_tool", run_tool)
+
+    _cmd_resume(SimpleNamespace(task_id="task-1"))
+
+    run_tool.assert_called_once_with(
+        "update_task",
+        {"task_id": "task-1", "status": "pending", "resume": True},
+    )
+    capsys.readouterr()
+
+
+def test_task_add_still_publishes_an_executable_descriptor(tmp_path: Path, capsys) -> None:
     anima_dir = tmp_path / "animas" / "worker"
     anima_dir.mkdir(parents=True)
-    publish_tasks(anima_dir, [{"task_id": "task-1", "title": "Work", "description": "Synthetic work"}])
-    return TaskQueueManager(anima_dir)
+    entry = Mock()
+    entry.model_dump.return_value = {"task_id": "task-1", "summary": "Do the work"}
+
+    with patch("core.tasks.dispatch.publish_tasks", return_value=[entry]) as publish:
+        _cmd_add(
+            SimpleNamespace(
+                source="human",
+                instruction="Do the work",
+                assignee="worker",
+                summary=None,
+                relay_chain="alice,bob",
+                workspace=None,
+            ),
+            SimpleNamespace(anima_dir=anima_dir),
+        )
+
+    payload = publish.call_args.args[1][0]
+    assert publish.call_args.kwargs["source"] == "human"
+    assert payload["task_type"] == "llm"
+    assert payload["description"] == "Do the work"
+    assert payload["title"] == "Do the work"
+    assert payload["task_id"]
+    assert json.loads(capsys.readouterr().out)["executable"] is True
 
 
-def _args():
-    return SimpleNamespace(task_id="task-1", status="done", summary="Verified once")
+def test_task_add_help_explains_difference_from_backlog_task(capsys) -> None:
+    parser = argparse.ArgumentParser()
+    register_task_command(parser.add_subparsers())
 
+    with pytest.raises(SystemExit) as stopped:
+        parser.parse_args(["task", "add", "--help"])
 
-def test_cli_done_atomically_records_agent_declaration_and_result(task, capsys):
-    _cmd_update(_args(), task)
-    entry = task.get_task_by_id("task-1")
-    assert entry.status == "done"
-    assert entry.meta["completed_by"] == "agent_declaration"
-    assert entry.meta["result_note"] == "Verified once"
-    assert entry.meta["declared_at"]
-    assert json.loads(capsys.readouterr().out)["status"] == "done"
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        PermissionError(errno.EACCES, "denied"),
-        OSError(errno.EROFS, "read-only"),
-        sqlite3.OperationalError("attempt to write a readonly database"),
-    ],
-)
-def test_cli_storage_denial_proxies_same_identity_and_declaration(task, failure, capsys):
-    entry = task.get_task_by_id("task-1")
-    response = MagicMock()
-    response.json.return_value = {
-        "ok": True,
-        "task": entry.model_copy(update={"status": "done"}).model_dump(mode="json"),
-    }
-    identity = {"anima": "worker", "task_id": "task-1", "token": "attempt-token"}
-    with (
-        attempt_scope(identity),
-        patch.object(task, "update_meta", side_effect=failure),
-        patch("core.internal_api.host_api.post", return_value=response) as post,
-    ):
-        _cmd_update(_args(), task)
-    post.assert_called_once()
-    assert post.call_args.args[0] == "/api/internal/update-task"
-    payload = post.call_args.kwargs["json"]
-    assert payload["attempt_identity"] == identity
-    assert payload["anima_name"] == "worker"
-    assert payload["task_id"] == "task-1"
-    assert payload["status"] == "done"
-    assert payload["meta"]["completed_by"] == "agent_declaration"
-    assert payload["meta"]["result_note"] == "Verified once"
-    assert payload["meta"]["declared_at"]
-    assert task.get_task_by_id("task-1").status == "pending"
-    assert json.loads(capsys.readouterr().out)["status"] == "done"
-
-
-@pytest.mark.parametrize("message", ["database is locked", "near UPDATE: syntax error"])
-def test_cli_sql_failure_rolls_back_declaration_without_proxy(task, message):
-    with (
-        patch.object(task, "update_status", side_effect=sqlite3.OperationalError(message)),
-        patch("httpx.post") as post,
-        pytest.raises(SystemExit) as stopped,
-    ):
-        _cmd_update(_args(), task)
-    assert stopped.value.code == 3
-    post.assert_not_called()
-    entry = task.get_task_by_id("task-1")
-    assert entry.status == "pending"
-    assert "completed_by" not in entry.meta
-    assert "result_note" not in entry.meta
-
-
-def test_cli_stale_attempt_is_rejected_without_proxy(task):
-    first = task.store.claim("worker", "task-1", {"pid": 1})
-    task.store.finish(first["_attempt_token"], status="pending", stop_kind="interrupted")
-    publish_tasks(task.anima_dir, [{"task_id": "task-1", "resume": True}])
-    task.store.claim("worker", "task-1", {"pid": 1})
-    with (
-        attempt_scope({"anima": "worker", "task_id": "task-1", "token": first["_attempt_token"]}),
-        patch("httpx.post") as post,
-        pytest.raises(SystemExit) as stopped,
-    ):
-        _cmd_update(_args(), task)
-    assert stopped.value.code == 3
-    post.assert_not_called()
-    entry = task.get_task_by_id("task-1")
-    assert entry.status == "in_progress"
-    assert "completed_by" not in entry.meta
-
-
-def test_cli_real_readonly_sqlite_falls_back_to_host_update_endpoint(task, monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from server.routes.internal import create_internal_router
-
-    monkeypatch.setattr("core.paths.get_animas_dir", lambda: task.anima_dir.parent)
-    store = task.store
-    attempt = store.claim("worker", "task-1", {"pid": 1})
-    identity = {"anima": "worker", "task_id": "task-1", "token": attempt["_attempt_token"]}
-    app = FastAPI()
-    app.include_router(create_internal_router(), prefix="/api")
-    readonly_errors = []
-
-    @contextmanager
-    def readonly_connection():
-        db = sqlite3.connect(f"file:{store.db_path}?mode=ro", uri=True, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        try:
-            yield db
-        except Exception as exc:
-            readonly_errors.append(exc)
-            raise
-        finally:
-            db.close()
-
-    with TestClient(app) as client:
-
-        def post_to_host(url, *, json, timeout, **kwargs):
-            return client.post("/api/internal/update-task", json=json)
-
-        with (
-            attempt_scope(identity),
-            patch.object(store, "_connect", readonly_connection),
-            patch("core.internal_api.host_api.post", side_effect=post_to_host) as proxy,
-        ):
-            _cmd_update(_args(), task)
-
-    assert len(readonly_errors) == 1
-    # TaskQueueManager wraps SQLite failures in TaskPersistenceError.
-    sqlite_error = readonly_errors[0]
-    while not isinstance(sqlite_error, sqlite3.OperationalError):
-        sqlite_error = sqlite_error.__cause__
-        assert sqlite_error is not None
-    assert sqlite_error.sqlite_errorcode & 0xFF == sqlite3.SQLITE_READONLY
-    proxy.assert_called_once()
-    assert proxy.call_args.kwargs["json"]["attempt_identity"] == identity
-    entry = task.get_task_by_id("task-1")
-    assert entry.status == "done"
-    assert entry.meta["completed_by"] == "agent_declaration"
-    assert entry.meta["result_note"] == "Verified once"
+    assert stopped.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "executable TaskExec task" in help_text
+    assert "backlog_task" in help_text

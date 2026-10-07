@@ -281,10 +281,11 @@ animaworks cost --json                   # JSON出力
 ```bash
 animaworks task list                     # タスク一覧（JSON）
 animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
-animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima
+animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima。実行入力を登録しTaskExecが実行
 animaworks task add --assignee {名前} --instruction "内容" --source human
 animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
 animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+# task add は実行可能タスク。追跡専用の backlog_task ツールとは用途が異なる
 animaworks task update --task-id {ID} --status done
 animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
@@ -399,12 +400,13 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 **internal**
 
 ```bash
-animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
+animaworks-tool internal archive-memory {相対パス} [--reason "理由"]  # knowledge/ procedures/ state/overflow_inbox/ のみ。episodes/ は対象外
+# --reason の既定値は "archived via CLI"。パス権限・保護ファイル検査と索引更新は archive_memory_file ツールが行う
 animaworks-tool internal check-permissions {ツール名} [アクション]
 # ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
-animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
-animaworks-tool internal manage-channel create|archive {チャネル名}
-animaworks-tool internal list-background-tasks
+animaworks-tool internal create-skill {名前} [--content ...] [--location personal|common]  # 省略時は標準入力
+animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {チャネル名} [--member 名前] [--description 説明]
+animaworks-tool internal list-background-tasks [--status running|completed|failed|pending]
 animaworks-tool internal check-background-task {task_id}
 ```
 

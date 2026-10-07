@@ -55,7 +55,65 @@ class PermissionsMixin:
     # ── check_permissions handler ────────────────────────────
 
     def _handle_check_permissions(self: _PermissionsHost, args: dict[str, Any]) -> str:
-        """Return a summary of what tools, external tools, and file access this anima has."""
+        """Return permission details or check one external tool/action."""
+        if "tool_name" in args:
+            tool_name = args.get("tool_name")
+            action = args.get("action")
+            if not isinstance(tool_name, str) or not tool_name.strip():
+                return _error_result("InvalidArguments", "tool_name is required")
+            if action is not None and not isinstance(action, str):
+                return _error_result("InvalidArguments", "action must be a string")
+            tool_name = tool_name.strip()
+            action = action.strip() if action else ""
+
+            from core.integrations import TOOL_MODULES, discover_common_tools, discover_personal_tools
+            from core.tooling.permissions import check_tool_access
+
+            tool_file = None
+            if tool_name in TOOL_MODULES:
+                origin = "core"
+            else:
+                common = discover_common_tools()
+                personal = discover_personal_tools(self._anima_dir)
+                if tool_name in personal:
+                    origin = "personal"
+                    tool_file = Path(personal[tool_name])
+                elif tool_name in common:
+                    origin = "common"
+                    tool_file = Path(common[tool_name])
+                else:
+                    return _json.dumps(
+                        {
+                            "tool": tool_name,
+                            "action": action or None,
+                            "permitted": False,
+                            "reason": "unknown_tool",
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+
+            decision = check_tool_access(
+                self._anima_dir,
+                tool_name,
+                action or None,
+                origin=origin,
+                tool_file=tool_file,
+            )
+            return _json.dumps(
+                {
+                    "tool": tool_name,
+                    "action": action or None,
+                    "permitted": decision.allowed,
+                    "reason": decision.reason,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        if args.get("action"):
+            return _error_result("InvalidArguments", "tool_name is required when action is provided")
+
         internal_tools = sorted(self._dispatch.keys())
 
         external_enabled: list[str] = []

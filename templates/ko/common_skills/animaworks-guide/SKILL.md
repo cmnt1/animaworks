@@ -282,10 +282,11 @@ animaworks cost --json                   # JSON出力
 ```bash
 animaworks task list                     # タスク一覧（JSON）
 animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
-animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima
-animaworks task add --assignee {名前} --instruction "内容" --source human
-animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
-animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+animaworks task add --assignee {이름} --instruction "작업 내용"   # 기본 --source anima; 실행 가능한 TaskExec 작업을 게시
+animaworks task add --assignee {이름} --instruction "작업 내용" --source human
+animaworks task add ... --relay-chain alice,bob   # 선택적 쉼표 구분 릴레이 체인
+animaworks task add ... --summary "한 줄 요약"   # 생략하면 instruction 앞 100자
+# task add는 실행 가능한 작업을 게시하며, backlog_task 도구는 추적 전용 작업만 기록
 animaworks task update --task-id {ID} --status done
 animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
@@ -400,12 +401,13 @@ submit의 상세 → `common_knowledge/operations/background-tasks.md`
 **internal**
 
 ```bash
-animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
-animaworks-tool internal check-permissions {ツール名} [アクション]
-# ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
-animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
-animaworks-tool internal manage-channel create|archive {チャネル名}
-animaworks-tool internal list-background-tasks
+animaworks-tool internal archive-memory {상대 경로} [--reason "이유"]  # knowledge/, procedures/, state/overflow_inbox/만 가능; episodes/는 대상 아님
+# --reason 기본값은 "archived via CLI". archive_memory_file 도구가 경로/보호 파일을 검사하고 인덱스를 갱신
+animaworks-tool internal check-permissions {도구 이름} [작업]
+# permissions.json의 external_tools allow/deny 및 gated action을 확인하고, 판정 실패/미등록 도구는 거부
+animaworks-tool internal create-skill {이름} [--content ...] [--location personal|common]  # --content 생략 시 stdin 사용
+animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {채널 이름} [--member 이름] [--description 설명]
+animaworks-tool internal list-background-tasks [--status running|completed|failed|pending]
 animaworks-tool internal check-background-task {task_id}
 ```
 
