@@ -95,7 +95,7 @@ def _channel_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["create", "add_member", "remove_member", "info"],
+                        "enum": ["create", "archive", "add_member", "remove_member", "info"],
                         "description": _t("schema.manage_channel.action"),
                     },
                     "channel": {

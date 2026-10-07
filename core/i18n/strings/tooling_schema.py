@@ -128,6 +128,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "Check the list of currently permitted tools, external tools, and file access. Know what you can and cannot use in advance to avoid trial-and-error cycles."
         ),
     },
+    "schema.check_permissions.tool_name": {
+        "ja": "特定ツールの許可状態を確認する場合に指定するツール名（任意）",
+        "en": "Optional tool name for a focused permission check.",
+    },
+    "schema.check_permissions.action": {
+        "ja": "特定ツールのアクションを確認する場合に指定するアクション名（任意）",
+        "en": "Optional action name for a focused permission check.",
+    },
     "schema.create_skill.allowed_tools": {
         "ja": "frontmatter allowed_tools（任意）",
         "en": "Frontmatter allowed_tools (optional)",
@@ -283,9 +291,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Status to filter by (omit for active tasks only)",
     },
     "schema.manage_channel.action": {
-        "ja": "操作種別。create=チャネル作成, add_member=メンバー追加, remove_member=メンバー削除, info=チャネル情報表示",
+        "ja": "操作種別。create=チャネル作成, archive=チャネルアーカイブ, add_member=メンバー追加, remove_member=メンバー削除, info=チャネル情報表示",
         "en": (
-            "Action type. create=create channel, add_member=add members, remove_member=remove members, info=show channel info"
+            "Action type. create=create channel, archive=archive channel, add_member=add members, remove_member=remove members, info=show channel info"
         ),
     },
     "schema.manage_channel.channel": {
@@ -294,10 +302,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.manage_channel.desc": {
         "ja": (
-            "Boardチャネルのアクセス制御(ACL)を管理する。チャネルの作成、メンバーの追加・削除、チャネル情報の確認ができる。メンバーリストが空のチャネル（general, ops等）は全員アクセス可能。"
+            "Boardチャネルのアクセス制御(ACL)を管理する。チャネルの作成・アーカイブ、メンバーの追加・削除、チャネル情報の確認ができる。メンバーリストが空のチャネル（general, ops等）は全員アクセス可能。"
         ),
         "en": (
-            "Manage Board channel access control (ACL). Create channels, add/remove members, and view channel info. Channels with an empty member list (general, ops, etc.) are accessible to all."
+            "Manage Board channel access control (ACL). Create/archive channels, add/remove members, and view channel info. Channels with an empty member list (general, ops, etc.) are accessible to all."
         ),
     },
     "schema.manage_channel.description": {

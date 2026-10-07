@@ -147,11 +147,11 @@ class TestInProgressRejection:
                     "source": "human",
                     "original_instruction": "test",
                     "assignee": "aoi",
-                    "summary": "s",
                 },
             )
         )
         task_id = add["task_id"]
+        assert add["summary"] == "test"
 
         res = json.loads(handler.handle("update_task", {"task_id": task_id, "status": "in_progress"}))
         assert res["status"] == "error"
@@ -161,22 +161,29 @@ class TestInProgressRejection:
         manager = TaskQueueManager(anima_dir)
         assert manager.get_task_by_id(task_id).status == "pending"
 
-    def test_cli_task_update_rejects_in_progress(self, tmp_path, monkeypatch):
-        anima_dir = tmp_path / "testanima"
-        (anima_dir / "state").mkdir(parents=True)
-        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-
+    def test_cli_task_update_delegates_in_progress_validation(self, monkeypatch, capsys):
         from types import SimpleNamespace
 
         from cli.commands.task_cmd import _cmd_update
 
-        # Build the Namespace directly so the flow reaches _cmd_update's own
-        # in_progress guard rather than argparse's choices check.
-        args = SimpleNamespace(task_id="abc", status="in_progress", summary=None)
-        manager = TaskQueueManager(anima_dir)
+        error = json.dumps(
+            {
+                "status": "error",
+                "error_type": "InvalidArguments",
+                "message": "status 'in_progress' is written only by the running TaskExec",
+            }
+        )
+        calls = []
+        monkeypatch.setattr(
+            "cli.commands.task_cmd.run_anima_tool", lambda name, args: calls.append((name, args)) or error
+        )
+
         with pytest.raises(SystemExit) as exc:
-            _cmd_update(args, manager)
-        assert exc.value.code == 2
+            _cmd_update(SimpleNamespace(task_id="abc", status="in_progress", summary=None))
+
+        assert exc.value.code == 1
+        assert calls == [("update_task", {"task_id": "abc", "status": "in_progress"})]
+        assert json.loads(capsys.readouterr().out)["status"] == "error"
 
 
 class TestListTasksExecutability:

@@ -1,44 +1,53 @@
 from __future__ import annotations
 
-from core.platform.env import anima_dir_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""CLI subcommands for internal tools invoked by Animas via animaworks-tool internal."""
+"""Thin CLI adapters for internal tools invoked by Animas."""
 
 import argparse
 import json
 import sys
-from pathlib import Path
+
+from cli._anima_tool import run_anima_tool
+
+_TOOL_ERROR_PREFIXES = ("error", "unknown tool:", "エラー", "오류", "错误")
+
+
+def _print_tool_result(result: str) -> None:
+    """Print a tool result and use a failing exit status for handler errors."""
+    print(result)
+    rendered = result.lstrip()
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(rendered)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict) and parsed.get("status") == "error":
+        sys.exit(1)
+    if rendered.casefold().startswith(_TOOL_ERROR_PREFIXES):
+        sys.exit(1)
+
+
+def _run_tool(tool_name: str, tool_args: dict) -> None:
+    _print_tool_result(run_anima_tool(tool_name, tool_args))
 
 
 def cmd_internal(args: argparse.Namespace) -> None:
     """Dispatch internal subcommand."""
-    anima_dir_str = anima_dir_env() or ""
-    if not anima_dir_str:
-        print("Error: ANIMAWORKS_ANIMA_DIR not set (set automatically inside an anima's tool context)", file=sys.stderr)
-        sys.exit(1)
-
-    anima_dir = Path(anima_dir_str)
-    if not anima_dir.is_dir():
-        print(f"Error: anima_dir not found: {anima_dir}", file=sys.stderr)
-        sys.exit(1)
-
     sub = getattr(args, "internal_command", None)
     if sub == "archive-memory":
-        _cmd_archive_memory(args, anima_dir)
+        _cmd_archive_memory(args)
     elif sub == "check-permissions":
-        _cmd_check_permissions(args, anima_dir)
+        _cmd_check_permissions(args)
     elif sub == "create-skill":
-        _cmd_create_skill(args, anima_dir)
+        _cmd_create_skill(args)
     elif sub == "manage-channel":
-        _cmd_manage_channel(args, anima_dir)
+        _cmd_manage_channel(args)
     elif sub == "list-background-tasks":
-        _cmd_list_background_tasks(args, anima_dir)
+        _cmd_list_background_tasks(args)
     elif sub == "check-background-task":
-        _cmd_check_background_task(args, anima_dir)
+        _cmd_check_background_task(args)
     else:
         print(
             "Usage: animaworks-tool internal {archive-memory|check-permissions|create-skill|manage-channel|list-background-tasks|check-background-task}",
@@ -47,272 +56,77 @@ def cmd_internal(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _validate_memory_path(anima_dir: Path, path_str: str) -> Path | None:
-    """Validate path is under knowledge/, episodes/, or procedures/ and within anima_dir."""
-    if ".." in path_str or path_str.startswith("/"):
-        return None
-    allowed_prefixes = ("knowledge/", "episodes/", "procedures/")
-    if not any(path_str.startswith(p) for p in allowed_prefixes):
-        return None
-    target = (anima_dir / path_str).resolve()
-    base = anima_dir.resolve()
-    if not str(target).startswith(str(base)):
-        return None
-    return target
-
-
-def _cmd_archive_memory(args: argparse.Namespace, anima_dir: Path) -> None:
-    path_str = getattr(args, "path", "")
-    if not path_str:
-        print("Error: PATH is required", file=sys.stderr)
-        sys.exit(1)
-
-    target = _validate_memory_path(anima_dir, path_str)
-    if target is None:
-        print("Error: invalid path (must be under knowledge/, episodes/, or procedures/)", file=sys.stderr)
-        sys.exit(1)
-
-    if not target.exists():
-        print(json.dumps({"archived": False, "error": "file not found"}, ensure_ascii=False, indent=2))
-        sys.exit(1)
-
-    if not target.is_file():
-        print(json.dumps({"archived": False, "error": "not a file"}, ensure_ascii=False, indent=2))
-        sys.exit(1)
-
-    archive_dir = anima_dir / "archive"
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    dest = archive_dir / target.name
-    if dest.exists():
-        stem, suffix = target.stem, target.suffix
-        counter = 1
-        while dest.exists():
-            dest = archive_dir / f"{stem}_{counter}{suffix}"
-            counter += 1
-
-    target.rename(dest)
-    from_rel = path_str
-    to_rel = dest.relative_to(anima_dir)
-    print(
-        json.dumps(
-            {"archived": True, "from": from_rel, "to": str(to_rel)},
-            ensure_ascii=False,
-            indent=2,
-        )
+def _cmd_archive_memory(args: argparse.Namespace) -> None:
+    _run_tool(
+        "archive_memory_file",
+        {
+            "path": getattr(args, "path", ""),
+            "reason": getattr(args, "reason", "archived via CLI"),
+        },
     )
 
 
-def _cmd_check_permissions(args: argparse.Namespace, anima_dir: Path) -> None:
-    tool_name = getattr(args, "tool_name", "")
-    action = getattr(args, "action", None) or ""
-
-    if not tool_name:
-        print("Error: TOOL_NAME is required", file=sys.stderr)
-        sys.exit(1)
-
-    from core.integrations import TOOL_MODULES, discover_common_tools, discover_personal_tools
-    from core.tooling.permissions import check_tool_access
-
-    if tool_name in TOOL_MODULES:
-        origin = "core"
-        tool_file = None
-    else:
-        common = discover_common_tools()
-        personal = discover_personal_tools(anima_dir)
-        if tool_name in personal:
-            origin = "personal"
-            tool_file = Path(personal[tool_name])
-        elif tool_name in common:
-            origin = "common"
-            tool_file = Path(common[tool_name])
-        else:
-            print(
-                json.dumps(
-                    {"tool": tool_name, "action": action or None, "permitted": False, "reason": "unknown_tool"},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return
-
-    decision = check_tool_access(
-        anima_dir,
-        tool_name,
-        action or None,
-        origin=origin,  # type: ignore[arg-type]
-        tool_file=tool_file,
-    )
-    print(
-        json.dumps(
-            {
-                "tool": tool_name,
-                "action": action or None,
-                "permitted": decision.allowed,
-                "reason": decision.reason,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+def _cmd_check_permissions(args: argparse.Namespace) -> None:
+    tool_args = {"tool_name": getattr(args, "tool_name", "")}
+    action = getattr(args, "action", None)
+    if action:
+        tool_args["action"] = action
+    _run_tool("check_permissions", tool_args)
 
 
-def _cmd_create_skill(args: argparse.Namespace, anima_dir: Path) -> None:
+def _skill_description(body: str) -> str:
+    """Derive a description from the first non-empty Markdown line."""
+    first_line = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    return first_line.lstrip("#").strip()
+
+
+def _cmd_create_skill(args: argparse.Namespace) -> None:
+    from core.memory.frontmatter import parse_frontmatter
+
     name = getattr(args, "name", "")
     content = getattr(args, "content", None)
-
-    if not name:
-        print("Error: NAME is required", file=sys.stderr)
-        sys.exit(1)
-
     if content is None:
         content = sys.stdin.read()
 
-    skills_dir = anima_dir / "skills"
-
-    if ".." in name or "/" in name or "\\" in name:
-        print("Error: invalid name (directory traversal not allowed)", file=sys.stderr)
-        sys.exit(1)
+    metadata, body = parse_frontmatter(content)
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        description = _skill_description(body)
 
     skill_name = name[:-3] if name.endswith(".md") else name
-    if not skill_name:
-        print("Error: invalid name", file=sys.stderr)
-        sys.exit(1)
-
-    skill_path = skills_dir / skill_name / "SKILL.md"
-
-    if not str(skill_path.resolve()).startswith(str(skills_dir.resolve())):
-        print("Error: invalid name (path traversal not allowed)", file=sys.stderr)
-        sys.exit(1)
-
-    from core.paths import get_data_dir
-    from core.skills.ledger import SkillLedger
-
-    before_exists = skill_path.is_file()
-    before_text = skill_path.read_text(encoding="utf-8") if before_exists else ""
-    skill_path.parent.mkdir(parents=True, exist_ok=True)
-    skill_path.write_text(content, encoding="utf-8")
-    SkillLedger(anima_dir, data_dir=get_data_dir()).record_change(
-        skill_path,
-        before_text=before_text,
-        after_text=content,
-        before_exists=before_exists,
-        after_exists=True,
-        actor="cli",
-        route="internal.create_skill",
-        reason="internal CLI skill creation",
-    )
-    rel_path = skill_path.relative_to(anima_dir)
-    print(
-        json.dumps(
-            {"created": True, "path": str(rel_path)},
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    tool_args = {
+        "skill_name": skill_name,
+        "description": description,
+        "body": body,
+        "location": getattr(args, "location", "personal"),
+    }
+    _run_tool("create_skill", tool_args)
 
 
-def _cmd_manage_channel(args: argparse.Namespace, anima_dir: Path) -> None:
-    from core.paths import get_data_dir
-
-    action = getattr(args, "action", "")
-    channel = getattr(args, "channel", "")
-
-    if not action or not channel:
-        print("Error: ACTION and CHANNEL are required", file=sys.stderr)
-        sys.exit(1)
-
-    if ".." in channel or "/" in channel:
-        print("Error: invalid channel name", file=sys.stderr)
-        sys.exit(1)
-
-    data_dir = get_data_dir()
-    channels_dir = data_dir / "shared" / "channels"
-    channel_file = channels_dir / f"{channel}.jsonl"
-
-    if action == "create":
-        channels_dir.mkdir(parents=True, exist_ok=True)
-        if channel_file.exists():
-            print(
-                json.dumps(
-                    {"action": "create", "channel": channel, "created": False, "message": "already exists"},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-        else:
-            channel_file.touch()
-            print(
-                json.dumps(
-                    {"action": "create", "channel": channel, "created": True, "path": str(channel_file)},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-    elif action == "archive":
-        archive_dir = channels_dir / "archive"
-        if not channel_file.exists():
-            print(
-                json.dumps(
-                    {"action": "archive", "channel": channel, "archived": False, "error": "channel not found"},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-        else:
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            dest = archive_dir / channel_file.name
-            channel_file.rename(dest)
-            print(
-                json.dumps(
-                    {"action": "archive", "channel": channel, "archived": True, "to": str(dest)},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-    else:
-        print("Error: ACTION must be create or archive", file=sys.stderr)
-        sys.exit(1)
+def _cmd_manage_channel(args: argparse.Namespace) -> None:
+    tool_args = {
+        "action": getattr(args, "action", ""),
+        "channel": getattr(args, "channel", ""),
+    }
+    members = getattr(args, "members", None) or []
+    if members:
+        tool_args["members"] = members
+    description = getattr(args, "description", None)
+    if description is not None:
+        tool_args["description"] = description
+    _run_tool("manage_channel", tool_args)
 
 
-def _cmd_list_background_tasks(args: argparse.Namespace, anima_dir: Path) -> None:
-    bg_dir = anima_dir / "state" / "background_tasks"
-    tasks: list[dict] = []
-
-    for path in sorted(bg_dir.glob("*.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if "_source" not in data:
-                data["_source"] = "root"
-            tasks.append(data)
-        except (json.JSONDecodeError, OSError):
-            continue
-
-    print(json.dumps(tasks, ensure_ascii=False, indent=2))
+def _cmd_list_background_tasks(args: argparse.Namespace) -> None:
+    tool_args = {}
+    status = getattr(args, "status", None)
+    if status:
+        tool_args["status"] = status
+    _run_tool("list_background_tasks", tool_args)
 
 
-def _cmd_check_background_task(args: argparse.Namespace, anima_dir: Path) -> None:
-    task_id = getattr(args, "task_id", "")
-    if not task_id:
-        print("Error: TASK_ID is required", file=sys.stderr)
-        sys.exit(1)
-
-    if ".." in task_id or "/" in task_id:
-        print(json.dumps({"error": "invalid task_id"}, ensure_ascii=False, indent=2))
-        sys.exit(1)
-
-    bg_dir = anima_dir / "state" / "background_tasks"
-    task_file = bg_dir / f"{task_id}.json"
-    if task_file.exists():
-        try:
-            data = json.loads(task_file.read_text(encoding="utf-8"))
-            print(json.dumps(data, ensure_ascii=False, indent=2))
-            return
-        except (json.JSONDecodeError, OSError) as e:
-            print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2))
-            sys.exit(1)
-
-    print(json.dumps({"error": "task not found", "task_id": task_id}, ensure_ascii=False, indent=2))
-    sys.exit(1)
+def _cmd_check_background_task(args: argparse.Namespace) -> None:
+    _run_tool("check_background_task", {"task_id": getattr(args, "task_id", "")})
 
 
 def register_internal_command(subparsers) -> None:
@@ -321,7 +135,8 @@ def register_internal_command(subparsers) -> None:
     internal_sub = p_internal.add_subparsers(dest="internal_command")
 
     p_archive = internal_sub.add_parser("archive-memory", help="Archive a memory file")
-    p_archive.add_argument("path", help="Relative path (e.g. knowledge/old-notes.md)")
+    p_archive.add_argument("path", help="Relative path allowed by archive_memory_file")
+    p_archive.add_argument("--reason", default="archived via CLI", help="Reason for archiving")
     p_archive.set_defaults(func=cmd_internal)
 
     p_check_perm = internal_sub.add_parser("check-permissions", help="Check tool permission")
@@ -331,15 +146,28 @@ def register_internal_command(subparsers) -> None:
 
     p_skill = internal_sub.add_parser("create-skill", help="Create a skill file")
     p_skill.add_argument("name", help="Skill name (or name.md)")
-    p_skill.add_argument("--content", default=None, help="Content (default: stdin)")
+    p_skill.add_argument("--content", default=None, help="SKILL.md content (default: stdin)")
+    p_skill.add_argument("--location", choices=["personal", "common"], default="personal")
     p_skill.set_defaults(func=cmd_internal)
 
-    p_channel = internal_sub.add_parser("manage-channel", help="Create or archive a channel")
-    p_channel.add_argument("action", choices=["create", "archive"], help="Action")
+    p_channel = internal_sub.add_parser("manage-channel", help="Manage a channel and its members")
+    p_channel.add_argument(
+        "action",
+        choices=["create", "archive", "add_member", "remove_member", "info"],
+        help="Action",
+    )
     p_channel.add_argument("channel", help="Channel name")
+    p_channel.add_argument("--member", dest="members", action="append", default=[], help="Member name (repeatable)")
+    p_channel.add_argument("--description", default=None, help="Description for a new channel")
     p_channel.set_defaults(func=cmd_internal)
 
     p_list_bg = internal_sub.add_parser("list-background-tasks", help="List background tasks")
+    p_list_bg.add_argument(
+        "--status",
+        choices=["running", "completed", "failed", "pending"],
+        default=None,
+        help="Filter by status",
+    )
     p_list_bg.set_defaults(func=cmd_internal)
 
     p_check_bg = internal_sub.add_parser("check-background-task", help="Check a specific task")
