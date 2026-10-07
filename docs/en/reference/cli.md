@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=0ce1093ae5b09830100b26c221f97c231be6d5f64244245c4eb2f19cc192b4e4 generated=2026-10-07 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -699,11 +699,22 @@ Run necessary migrations on runtime data.
 
 Model information and catalog
 
-`usage: animaworks models [-h] {list,info,show} ...`
+`usage: animaworks models [-h] {list,info,helpers,show} ...`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default value | Options | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
+
+## `models helpers`
+
+Displays the resolved model, credential name, fallback candidates, and resolution source for each auxiliary model role.
+
+`usage: animaworks models helpers [-h] [--anima ANIMA] [--json]`
+
+| Name | Type | Default value | Options | Description |
+|---|---|---|---|---|
+| --anima | option | — | — | Resolve per-anima helper overrides for this Anima |
+| --json | flag | false | — | Output as JSON |
 
 ## `models info`
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=51cc8a67d0ea2741cc71b589ceeb00452ef8e7660407f4e6c7399acddabf2876 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=1f0b4da23e3adce5e8bca25bec89a2858004e2b2ebb967449ebacd9340e1ba0d generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -161,6 +161,100 @@
 | `consolidation.live_fact_min_input_chars` | `int` | `200` | — |
 | `consolidation.live_fact_max_input_chars` | `int` | `24000` | — |
 | `consolidation.live_fact_debounce_seconds` | `int` | `120` | — |
+
+### `helper_models`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `helper_models` | `HelperModelsConfig` | `{HelperModelsConfig}` | 보조 LLM 호출별 모델, 인증 정보, 명시적 대체 후보 및 원샷 정책. |
+| `helper_models.episode_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.episode_summary.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.episode_summary.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.episode_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.episode_summary.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.episode_summary.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.episode_summary.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.episode_summary.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.fact_extraction` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_extraction.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.fact_extraction.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.fact_extraction.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.fact_extraction.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.fact_extraction.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.fact_extraction.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.fact_extraction.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.fact_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_reconcile.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.fact_reconcile.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.fact_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.fact_reconcile.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.fact_reconcile.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.fact_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.fact_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.weekly_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.weekly_consolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.weekly_consolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.weekly_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.weekly_consolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.weekly_consolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.weekly_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.weekly_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.project_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.project_consolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.project_consolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.project_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.project_consolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.project_consolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.project_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.project_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.conversation_compression` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.conversation_compression.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.conversation_compression.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.conversation_compression.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.conversation_compression.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.conversation_compression.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.conversation_compression.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.conversation_compression.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.distillation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.distillation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.distillation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.distillation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.distillation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.distillation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.distillation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.distillation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.reconsolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.reconsolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.reconsolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.reconsolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.reconsolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.reconsolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.reconsolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.reconsolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.asset_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.asset_reconcile.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.asset_reconcile.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.asset_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.asset_reconcile.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.asset_reconcile.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.asset_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.asset_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.meeting_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.meeting_summary.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.meeting_summary.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.meeting_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.meeting_summary.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.meeting_summary.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.meeting_summary.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.meeting_summary.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.default` | `HelperModelRole` | `{HelperModelRole}` | — |
+| `helper_models.default.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
+| `helper_models.default.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
+| `helper_models.default.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.default.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
+| `helper_models.default.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
+| `helper_models.default.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
+| `helper_models.default.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
 
 ### `background_review`
 

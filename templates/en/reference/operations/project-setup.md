@@ -138,7 +138,7 @@ Role of each section:
 |-----------|------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
-| `locale` | Locale configuration |
+| `locale` | Locale setting |
 | `system` | System settings (mode, log level) |
 | `credentials` | API authentication credentials |
 | `model_modes` | Model name → execution mode mapping |
@@ -146,7 +146,8 @@ Role of each section:
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima configuration defaults |
 | `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation settings |
+| `consolidation` | Memory consolidation settings |
+| `helper_models` |  |
 | `background_review` |  |
 | `rag` | RAG (retrieval-augmented generation) settings |
 | `gpu` |  |

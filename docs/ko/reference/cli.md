@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=0ce1093ae5b09830100b26c221f97c231be6d5f64244245c4eb2f19cc192b4e4 generated=2026-10-07 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -699,11 +699,22 @@ anima용 stdio MCP 서버 실행
 
 모델 정보 및 카탈로그
 
-`usage: animaworks models [-h] {list,info,show} ...`
+`usage: animaworks models [-h] {list,info,helpers,show} ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
+
+## `models helpers`
+
+보조 모델의 역할별로 결정된 모델, 인증 정보 이름, 대체 후보, 결정 출처를 표시합니다.
+
+`usage: animaworks models helpers [-h] [--anima ANIMA] [--json]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --anima | 옵션 | — | — | 이 Anima에 대한 애니마별 보조 모델 재정의를 확인합니다 |
+| --json | 플래그 | false | — | JSON 형식으로 출력 |
 
 ## `models info`
 

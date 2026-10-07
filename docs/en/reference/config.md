@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=51cc8a67d0ea2741cc71b589ceeb00452ef8e7660407f4e6c7399acddabf2876 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=1f0b4da23e3adce5e8bca25bec89a2858004e2b2ebb967449ebacd9340e1ba0d generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Configuration Reference
 
@@ -161,6 +161,100 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.live_fact_min_input_chars` | `int` | `200` | — |
 | `consolidation.live_fact_max_input_chars` | `int` | `24000` | — |
 | `consolidation.live_fact_debounce_seconds` | `int` | `120` | — |
+
+### `helper_models`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `helper_models` | `HelperModelsConfig` | `{HelperModelsConfig}` | Model, authentication credentials, explicit fallback candidates, and one-shot policy for each auxiliary LLM call. |
+| `helper_models.episode_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.episode_summary.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.episode_summary.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.episode_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.episode_summary.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.episode_summary.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.episode_summary.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.episode_summary.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.fact_extraction` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_extraction.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.fact_extraction.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.fact_extraction.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.fact_extraction.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.fact_extraction.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.fact_extraction.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.fact_extraction.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.fact_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_reconcile.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.fact_reconcile.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.fact_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.fact_reconcile.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.fact_reconcile.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.fact_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.fact_reconcile.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.weekly_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.weekly_consolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.weekly_consolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.weekly_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.weekly_consolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.weekly_consolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.weekly_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.weekly_consolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.project_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.project_consolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.project_consolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.project_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.project_consolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.project_consolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.project_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.project_consolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.conversation_compression` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.conversation_compression.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.conversation_compression.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.conversation_compression.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.conversation_compression.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.conversation_compression.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.conversation_compression.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.conversation_compression.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.distillation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.distillation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.distillation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.distillation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.distillation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.distillation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.distillation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.distillation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.reconsolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.reconsolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.reconsolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.reconsolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.reconsolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.reconsolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.reconsolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.reconsolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.asset_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.asset_reconcile.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.asset_reconcile.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.asset_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.asset_reconcile.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.asset_reconcile.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.asset_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.asset_reconcile.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.meeting_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.meeting_summary.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.meeting_summary.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.meeting_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.meeting_summary.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.meeting_summary.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.meeting_summary.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.meeting_summary.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.default` | `HelperModelRole` | `{HelperModelRole}` | — |
+| `helper_models.default.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.default.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.default.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.default.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.default.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.default.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.default.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
 
 ### `background_review`
 
