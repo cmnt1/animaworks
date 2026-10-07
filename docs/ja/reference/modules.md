@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4c22ed47feebd59a34036a9c4ee2b93ac01285d4844f39edab49999bc9e98a28 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 0cb1a153df9e771664c5618cb989e1b133b5e69c8e0feb757a86cafc0d146ffe -->
 
 # モジュール一覧
 
@@ -13,10 +13,11 @@
 |---|---:|---|
 | `cli` | 9 | — |
 | `cli.__main__（非公開）` | 9 | — |
+| `cli._anima_tool（非公開）` | 33 | — |
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
-| `cli.parser` | 859 | — |
+| `cli.parser` | 867 | — |
 | `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
@@ -28,7 +29,7 @@
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
 | `cli.commands.anima_mgmt` | 1172 | CLI commands for anima process management. |
-| `cli.commands.board` | 192 | — |
+| `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
 | `cli.commands.cost_cmd` | 232 | — |
@@ -36,11 +37,11 @@
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
-| `cli.commands.internal_cmd` | 349 | — |
+| `cli.commands.internal_cmd` | 156 | — |
 | `cli.commands.logs` | 209 | CLI commands for viewing anima logs. |
 | `cli.commands.mcp_cmd` | 66 | — |
 | `cli.commands.memory_cmd` | 56 | — |
-| `cli.commands.messaging` | 144 | — |
+| `cli.commands.messaging` | 86 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
 | `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
@@ -50,11 +51,11 @@
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 848 | — |
 | `cli.commands.skills` | 211 | — |
-| `cli.commands.supervisor_cmd` | 110 | — |
-| `cli.commands.task_cmd` | 569 | — |
+| `cli.commands.supervisor_cmd` | 91 | — |
+| `cli.commands.task_cmd` | 539 | — |
 | `cli.commands.task_store_cmd` | 258 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
-| `cli.commands.vault_cmd` | 248 | — |
+| `cli.commands.vault_cmd` | 309 | — |
 
 ## `cli.tui`
 
@@ -206,7 +207,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
 | `core.config.schemas` | 1427 | Pydantic configuration schemas for AnimaWorks. |
-| `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
+| `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
@@ -372,7 +373,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 364 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.handler_ext` | 368 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
@@ -384,8 +385,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
-| `core.i18n.strings.tooling_schema` | 476 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 132 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling_schema` | 488 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 130 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -444,7 +445,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._slack_cli（非公開）` | 308 | Standalone CLI entry point for Slack tools. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack markdown conversion and formatting utilities. |
 | `core.integrations.aws_collector` | 408 | AnimaWorks AWS collector tool — ECS status, CloudWatch logs & metrics. |
-| `core.integrations.call_human` | 435 | — |
+| `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
@@ -688,6 +689,7 @@ anima 間および外部とのメッセージ配送。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.messaging` | 6 | — |
+| `core.messaging.board_fanout` | 95 | — |
 | `core.messaging.discord_webhooks` | 296 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
 | `core.messaging.messenger` | 1082 | — |
@@ -762,6 +764,7 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.phone.stream_tokens` | 101 | — |
 | `core.phone.stream_transport` | 120 | — |
 | `core.phone.twilio_client` | 194 | — |
+| `core.phone.urgent` | 46 | — |
 
 ## `core.platform`
 
@@ -908,7 +911,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
 | `core.tasks.pending_executor` | 1565 | Execute claimed TaskStore work in background lanes. |
-| `core.tasks.queue` | 485 | — |
+| `core.tasks.queue` | 500 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
 ## `core.tasks.board`
@@ -954,9 +957,9 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
-| `core.tooling.handler` | 881 | — |
+| `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 880 | — |
+| `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 262 | — |
 | `core.tooling.handler_exec` | 345 | — |
@@ -964,8 +967,8 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 203 | — |
-| `core.tooling.handler_perms` | 388 | — |
-| `core.tooling.handler_skills` | 832 | — |
+| `core.tooling.handler_perms` | 446 | — |
+| `core.tooling.handler_skills` | 837 | — |
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
@@ -979,10 +982,10 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.policy.schemas.converters` | 27 | — |
 | `core.tooling.policy.schemas.loader` | 101 | — |
 | `core.tooling.policy.schemas.memory` | 228 | — |
-| `core.tooling.policy.schemas.notification` | 67 | — |
+| `core.tooling.policy.schemas.notification` | 71 | — |
 | `core.tooling.policy.schemas.session_todo` | 62 | — |
 | `core.tooling.policy.schemas.skill` | 306 | — |
-| `core.tooling.policy.schemas.supervisor` | 331 | — |
+| `core.tooling.policy.schemas.supervisor` | 340 | — |
 | `core.tooling.policy.schemas.task` | 180 | — |
 | `core.tooling.policy.schemas.workspace` | 46 | — |
 | `core.tooling.policy.submit_tasks` | 91 | — |
@@ -990,7 +993,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.policy.tool_content` | 42 | — |
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
-| `core.tooling.standalone` | 188 | — |
+| `core.tooling.standalone` | 322 | — |
 | `core.tooling.tool_context` | 17 | Shared runtime state passed to ToolHandler mixin delegates. |
 
 ## `core.tooling.policy`

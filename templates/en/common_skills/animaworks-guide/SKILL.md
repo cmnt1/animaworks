@@ -190,11 +190,11 @@ animaworks chat {名前} "メッセージ"
 animaworks chat {名前} "メッセージ" --from {送信者名}
 animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Send between Animas (in an Anima tool context, use your own name and specify intent)
-animaworks send {self} {recipient} "message" --intent report    # report or question; use delegate_task for delegation
-animaworks send {self} {recipient} "message" --intent question
-animaworks send {self} {recipient} "message" --intent report --reply-to {message-id}
-animaworks send {self} {recipient} "message" --intent report --thread-id {thread-id}
+# Anima間メッセージ送信（Animaコンテキストでは送信者は自分のAnima名、intentは必須）
+animaworks send {自分} {受信者} "メッセージ" --intent report   # report または question。委譲には delegate_task を使う
+animaworks send {自分} {受信者} "メッセージ" --intent question
+animaworks send {自分} {受信者} "メッセージ" --intent report --reply-to {メッセージID}
+animaworks send {自分} {受信者} "メッセージ" --intent report --thread-id {スレッドID}
 
 # ハートビート手動起動
 animaworks heartbeat {名前}
@@ -210,9 +210,9 @@ animaworks board read {チャネル名}                      # チャネル読�
 animaworks board read {チャネル名} --limit 50           # 最大件数
 animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
 animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
-animaworks board dm-history {self} {peer}               # DM history (default --limit 20, direction both)
-animaworks board dm-history {self} {peer} --limit 50    # Set result limit
-animaworks board dm-history {self} {peer} --direction sent --hours 24 --keyword deploy
+animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20、direction both）
+animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
+animaworks board dm-history {自分} {相手} --direction sent --hours 24 --keyword deploy
 ```
 
 ---
@@ -278,16 +278,16 @@ animaworks cost --json                   # JSON出力
 
 ## Task Management (task subcommand)
 
-**Prerequisite**: Before execution, set `ANIMAWORKS_ANIMA_DIR` to the target Anima's directory (e.g., `~/.animaworks/animas/{名前}`). If not set, an error occurs (intended usage includes `animaworks-tool task` within the Anima child process, or `animaworks task` with variables assigned in the shell).
+**Prerequisite**: Before running, set `ANIMAWORKS_ANIMA_DIR` to the target Anima's directory (e.g., `~/.animaworks/animas/{名前}`). An error will occur if it is not set (intended uses include `animaworks-tool task` inside an Anima child process and `animaworks task` with the variable set in the shell).
 
 ```bash
 animaworks task list                     # タスク一覧（JSON）
 animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
-animaworks task add --assignee {name} --instruction "task details"   # defaults to --source anima; publishes executable TaskExec work
-animaworks task add --assignee {name} --instruction "task details" --source human
-animaworks task add ... --relay-chain alice,bob   # Optional comma-separated relay chain
-animaworks task add ... --summary "one-line summary"  # Defaults to the first 100 instruction characters
-# task add publishes executable work; the backlog_task tool only records tracking work
+animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima。実行入力を登録しTaskExecが実行
+animaworks task add --assignee {名前} --instruction "内容" --source human
+animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
+animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+# task add は実行可能タスク。追跡専用の backlog_task ツールとは用途が異なる
 animaworks task update --task-id {ID} --status done
 animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
@@ -397,39 +397,39 @@ For submit details → `common_knowledge/operations/background-tasks.md`
 
 ### Subcommands for Child Processes (internal / vault / supervisor)
 
-All require **`ANIMAWORKS_ANIMA_DIR`** (same as `task`). The top-level `animaworks` also has subcommands with the same names registered.
+All require **`ANIMAWORKS_ANIMA_DIR`** (same as `task`). Subcommands with the same names are also registered on the top-level `animaworks`.
 
 **internal**
 
 ```bash
-animaworks-tool internal archive-memory {relative-path} [--reason "reason"]  # knowledge/, procedures/, state/overflow_inbox/ only; episodes/ is not archivable
-# --reason defaults to "archived via CLI". The archive_memory_file tool applies path/protected-file checks and updates indexes.
-animaworks-tool internal check-permissions {tool-name} [action]
-# Reads permissions.json external_tools allow/deny and gated actions; unknown or failed checks are denied.
-animaworks-tool internal create-skill {name} [--content ...] [--location personal|common]  # Reads stdin when --content is omitted
-animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {channel} [--member NAME] [--description TEXT]
+animaworks-tool internal archive-memory {相対パス} [--reason "理由"]  # knowledge/ procedures/ state/overflow_inbox/ のみ。episodes/ は対象外
+# --reason の既定値は "archived via CLI"。パス権限・保護ファイル検査と索引更新は archive_memory_file ツールが行う
+animaworks-tool internal check-permissions {ツール名} [アクション]
+# ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
+animaworks-tool internal create-skill {名前} [--content ...] [--location personal|common]  # 省略時は標準入力
+animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {チャネル名} [--member 名前] [--description 説明]
 animaworks-tool internal list-background-tasks [--status running|completed|failed|pending]
 animaworks-tool internal check-background-task {task_id}
 ```
 
-**vault** (KV with Anima namespace)
+**vault** (Anima-namespaced KV)
 
-Storage destinations are your own Anima namespace and the `shared` section. Animas can read their own namespace and `shared`, but can write/delete only in their own namespace. Shared writes/deletes are operator-only and require `ANIMAWORKS_ANIMA_DIR` to be unset. `get` searches your namespace → `shared` by default; `list` shows only those two namespaces.
+There are two storage locations: “your own Anima namespace” and the “`shared` section.” Anima can read its own namespace and `shared`, but can only write to and delete from its own namespace. Writing to and deleting from `shared` is restricted to operators who have not set `ANIMAWORKS_ANIMA_DIR`. If unspecified, `get` searches in the order of its own namespace → `shared`, while `list` displays only these two.
 
 ```bash
-animaworks-tool vault get {KEY}                       # own namespace, then shared
-animaworks-tool vault get {KEY} --shared              # shared only
-animaworks-tool vault store {KEY} {VALUE}             # write to your namespace
-printf '%s' "{VALUE}" | animaworks-tool vault store {KEY} --shared  # operator-only; stdin only
-animaworks-tool vault list                            # {"sections":{"your-namespace":[...], "shared":[...]}}
-animaworks-tool vault list --shared                   # shared only
-animaworks-tool vault delete {KEY}                    # delete from your namespace
-animaworks-tool vault delete {KEY} --shared           # operator-only
+animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
+animaworks-tool vault get {キー} --shared     # shared のみ
+animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
+printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # オペレーター専用（stdin 経由のみ）
+animaworks-tool vault list                    # {"sections":{"自分の名前空間":[...], "shared":[...]}}
+animaworks-tool vault list --shared           # shared のみ
+animaworks-tool vault delete {キー}           # 自分の名前空間から削除
+animaworks-tool vault delete {キー} --shared  # オペレーター専用
 ```
 
-Animas cannot write/delete with `--shared`. For values where only one valid copy can exist at a time, such as single-use tokens, decide on a single storage location and do not distribute them.
+Anima cannot perform writes or deletions via `--shared`. Values for which “only one valid copy can exist at a time,” such as single-use tokens, should be stored in one location and not distributed.
 
-**supervisor** (starting from the Anima name of `ANIMAWORKS_ANIMA_DIR`, resolves subordinates via the supervisor relationship of status.json)
+**supervisor** (resolve descendants through the supervisor relationships in status.json, starting from the Anima name in `ANIMAWORKS_ANIMA_DIR`)
 
 ```bash
 animaworks-tool supervisor org-dashboard
