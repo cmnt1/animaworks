@@ -856,9 +856,11 @@ async function _renderOverviewTab(content, name) {
       <div class="card">
         <div class="card-header">${t("animas.state_current")}</div>
         <div class="card-body">
-          <pre style="white-space:pre-wrap; word-break:break-word; margin:0;">${escapeHtml(
-            detail.state ? (typeof detail.state === "string" ? detail.state : JSON.stringify(detail.state, null, 2)) : t("animas.no_state")
-          )}</pre>
+          ${typeof detail.state === "string" && detail.state
+            ? `<div class="md-config-content">${renderMarkdown(detail.state)}</div>`
+            : `<pre style="white-space:pre-wrap; word-break:break-word; margin:0;">${escapeHtml(
+              detail.state ? JSON.stringify(detail.state, null, 2) : t("animas.no_state")
+            )}</pre>`}
         </div>
       </div>
     `;

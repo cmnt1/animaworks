@@ -745,8 +745,9 @@ class ToolHandler(
         delegates to the tool module's ``dispatch()`` function directly.
         Supports core tools (TOOL_MODULES), common tools, and personal tools.
         """
-        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
+        from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
+        tool_modules = get_tool_modules()
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")
         tool_args = args.get("args") or {}
@@ -775,7 +776,7 @@ class ToolHandler(
         from core.messaging.reply_grants import reply_grant_ok_for_action
         from core.tooling.permissions import check_tool_access
 
-        origin = "core" if tool_name in TOOL_MODULES else "personal"
+        origin = "core" if tool_name in tool_modules else "personal"
         tool_file = Path(personal_tools[tool_name]) if is_personal else None
         decision = check_tool_access(
             self._anima_dir,
@@ -794,7 +795,7 @@ class ToolHandler(
         dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}
 
         try:
-            if is_personal and tool_name not in TOOL_MODULES:
+            if is_personal and tool_name not in tool_modules:
                 import importlib.util
 
                 spec = importlib.util.spec_from_file_location(
@@ -809,12 +810,12 @@ class ToolHandler(
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)  # type: ignore[union-attr]
             else:
-                if tool_name not in TOOL_MODULES:
+                if tool_name not in tool_modules:
                     return _error_result(
                         "InvalidArguments",
                         f"Unknown tool module: {tool_name}",
                     )
-                mod = load_tool_module(tool_name)
+                mod = load_tool_module(tool_name, tool_modules)
 
             result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
             return self._attach_action_rules(schema_name, tool_args, result)
@@ -829,52 +830,78 @@ class ToolHandler(
     # ── Vault tools ──────────────────────────────────────────
 
     def _handle_vault_get(self, args: dict[str, Any]) -> str:
-        """Retrieve a decrypted value from the credential vault."""
-        from core.config.vault import get_vault_manager
+        """Retrieve a decrypted value from the caller's vault sections."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        section = args.get("section", "")
         key = args.get("key", "")
-        if not section or not key:
-            return _error_result("InvalidArguments", "section and key are required")
+        section = args.get("section")
+        if not isinstance(key, str) or not key:
+            return _error_result("InvalidArguments", "key is required")
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
+
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
 
         vault = get_vault_manager()
-        value = vault.get(section, key)
-        if value is None:
-            return _error_result("NotFound", f"No entry for {section}/{key}")
-        return value
+        for allowed_section in sections:
+            value = vault.get(allowed_section, key)
+            if value is not None:
+                return value
+        searched = ", ".join(sections)
+        return _error_result("NotFound", f"No entry for {key} (searched sections: {searched})")
 
     def _handle_vault_store(self, args: dict[str, Any]) -> str:
-        """Store an encrypted value in the credential vault."""
-        from core.config.vault import get_vault_manager
+        """Store an encrypted value in the caller's own vault section."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        section = args.get("section", "")
         key = args.get("key", "")
-        value = args.get("value", "")
-        if not section or not key or not value:
-            return _error_result(
-                "InvalidArguments",
-                "section, key, and value are required",
-            )
+        section = args.get("section")
+        value = args.get("value")
+        if not isinstance(key, str) or not key:
+            return _error_result("InvalidArguments", "key is required")
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
 
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section, write=True)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
+        if not isinstance(value, str):
+            return _error_result("InvalidArguments", "value is required")
+
+        own_section = sections[0]
         vault = get_vault_manager()
-        vault.store(section, key, value)
+        vault.store(own_section, key, value)
         return _json.dumps(
-            {"status": "ok", "message": f"Stored {section}/{key}"},
+            {"status": "ok", "message": f"Stored {own_section}/{key}"},
             ensure_ascii=False,
         )
 
     def _handle_vault_list(self, args: dict[str, Any]) -> str:
-        """List vault sections and keys (values are never shown)."""
-        from core.config.vault import get_vault_manager
+        """List keys in the caller's vault sections without exposing values."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        vault = get_vault_manager()
-        data = vault.load_vault()
         section = args.get("section")
-        if section:
-            keys = list(data.get(section, {}).keys())
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
+
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
+
+        data = get_vault_manager().load_vault()
+        section_keys = {
+            name: sorted(entries) if isinstance(entries, dict) else []
+            for name in sections
+            for entries in (data.get(name),)
+        }
+        if section is not None:
             return _json.dumps(
-                {"section": section, "keys": keys},
+                {"section": section, "keys": section_keys.get(section, [])},
                 ensure_ascii=False,
             )
-        sections = {s: list(v.keys()) for s, v in data.items()}
-        return _json.dumps({"sections": sections}, ensure_ascii=False)
+        return _json.dumps({"sections": section_keys}, ensure_ascii=False)

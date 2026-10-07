@@ -13,6 +13,7 @@ synchronous callbacks supplied by the voice session.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -20,6 +21,8 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import litellm
+
+from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,8 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
         "description": (
             "時間のかかる作業・ツール実行・記憶の検索保存・タスク化・調査・実装などを、"
             "自分自身の本体（フルエージェント）に依頼する。会話で即答できないことはこれで依頼する。"
-            "挨拶・お礼・雑談・意見や感想・自分で即答できる質問には使わない"
+            "挨拶・お礼・雑談・意見や感想・自分で即答できる質問には使わない。"
+            "実行中の依頼がある間は新しい依頼をせず、完了を待つ。"
         ),
         "parameters": {
             "type": "object",
@@ -70,6 +74,14 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
         },
     },
 }
+
+
+def localized_ask_anima_tool() -> dict[str, Any]:
+    """Return the ask_anima tool schema in the configured locale."""
+    tool = copy.deepcopy(ASK_ANIMA_TOOL)
+    tool["function"]["description"] = t("voice.ask_anima_tool_description")
+    return tool
+
 
 READ_MEMORY_TOOL: dict[str, Any] = {
     "type": "function",
@@ -247,6 +259,11 @@ class VoiceFrontLane:
             kwargs.pop("temperature")
             kwargs.pop("extra_body")
             kwargs["reasoning_effort"] = "none"
+            # LiteLLM does not know newer deployments (e.g. azure/gpt-6-luna)
+            # are reasoning models: it rejects reasoning_effort client-side and
+            # forwards max_tokens, which the API refuses.
+            kwargs["allowed_openai_params"] = ["reasoning_effort"]
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         if tools:
             kwargs["tools"] = tools
 

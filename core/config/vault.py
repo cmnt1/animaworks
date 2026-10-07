@@ -52,6 +52,58 @@ class VaultError(ConfigError):
     """Vault-specific errors (missing key, decryption failure)."""
 
 
+class VaultAccessError(PermissionError):
+    """Raised when an anima requests a vault section outside its namespace."""
+
+
+SHARED_VAULT_SECTION = "shared"
+
+
+def resolve_vault_sections(
+    anima_name: str | None,
+    *,
+    section: str | None = None,
+    write: bool = False,
+    operator: bool = False,
+) -> list[str]:
+    """Return the vault sections available to a caller.
+
+    An anima may read its own section and ``shared``, but may only write its
+    own section. Callers without an anima identity must explicitly opt into
+    operator access and name a section; this preserves the operator-only CLI
+    without treating an identity-less tool handler as an operator.
+    """
+    if section is not None and (not isinstance(section, str) or not section or section != section.strip()):
+        raise VaultAccessError("section must be a non-empty string without surrounding whitespace")
+
+    if not anima_name:
+        if not operator:
+            raise VaultAccessError("An anima identity is required to access the vault")
+        if section is None:
+            raise VaultAccessError("An explicit vault section is required for operator access")
+        return [section]
+
+    own_section = anima_name.strip()
+    if not own_section:
+        raise VaultAccessError("Anima name must be a non-empty string")
+    if own_section == SHARED_VAULT_SECTION:
+        raise VaultAccessError("Anima name cannot use the reserved shared vault section")
+
+    allowed_sections = [own_section]
+    if not write:
+        allowed_sections.append(SHARED_VAULT_SECTION)
+
+    if section is None:
+        return allowed_sections
+    if section not in allowed_sections:
+        operation = "write" if write else "access"
+        allowed = ", ".join(allowed_sections)
+        raise VaultAccessError(
+            f"Anima '{own_section}' may not {operation} vault section '{section}'; allowed sections: {allowed}"
+        )
+    return [section]
+
+
 def resolve_vault_references(value: Any, data_dir: Path) -> Any:
     """Recursively resolve ``{"$vault": "KEY"}`` references.
 

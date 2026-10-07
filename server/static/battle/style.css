@@ -4,7 +4,7 @@
   font-display:swap;
 }
 
-:root {
+.aw-battle {
   color-scheme:dark;
   --ink:#eef3ee;
   --muted:#849baf;
@@ -16,54 +16,56 @@
   color:var(--ink);
 }
 
-* {
+.aw-battle, .aw-battle * {
   box-sizing:border-box;
 }
 
-body {
+/* STANDALONE_PAGE_ONLY_BEGIN */
+body.aw-battle-page {
   margin:0;
   background:radial-gradient(ellipse at 50% 34%,#192b3d77,transparent 65%);
   min-height:100vh;
 }
+/* STANDALONE_PAGE_ONLY_END */
 
-button,select,a {
+.aw-battle button,.aw-battle select,.aw-battle a {
   -webkit-tap-highlight-color:transparent;
 }
 
-button,select {
+.aw-battle button,.aw-battle select {
   font:inherit;
   color:inherit;
 }
 
-button,a,select {
+.aw-battle button,.aw-battle a,.aw-battle select {
   touch-action:manipulation;
 }
 
-button,a {
+.aw-battle button,.aw-battle a {
   cursor:pointer;
 }
 
-a {
+.aw-battle a {
   color:inherit;
   text-decoration:none;
 }
 
-button:focus-visible,a:focus-visible,select:focus-visible,summary:focus-visible {
+.aw-battle button:focus-visible,.aw-battle a:focus-visible,.aw-battle select:focus-visible,.aw-battle summary:focus-visible {
   outline:2px solid var(--mint);
   outline-offset:5px;
 }
 
-button:hover,a:hover {
+.aw-battle button:hover,.aw-battle a:hover {
   color:var(--mint);
 }
 
-#app {
+.aw-battle {
   max-width:1120px;
   margin:0 auto;
   padding:0 36px 24px;
 }
 
-.masthead {
+.aw-battle .masthead {
   height:77px;
   display:flex;
   align-items:center;
@@ -73,27 +75,27 @@ button:hover,a:hover {
   letter-spacing:1.8px;
 }
 
-.brand {
+.aw-battle .brand {
   display:flex;
   gap:12px;
   align-items:center;
 }
 
-.brand:first-letter {
+.aw-battle .brand:first-letter {
   color:var(--mint);
 }
 
-nav {
+.aw-battle nav {
   display:flex;
   gap:27px;
   color:#778798;
 }
 
-nav .current {
+.aw-battle nav .current {
   color:var(--mint);
 }
 
-.connection {
+.aw-battle .connection {
   margin-left:auto;
   font-size:10px;
   letter-spacing:1px;
@@ -102,7 +104,7 @@ nav .current {
   gap:8px;
 }
 
-.connection:before {
+.aw-battle .connection:before {
   content:'';
   width:6px;
   height:6px;
@@ -110,16 +112,16 @@ nav .current {
   border-radius:50%;
 }
 
-.connection[data-state=online]:before {
+.aw-battle .connection[data-state=online]:before {
   background:var(--mint);
   box-shadow:0 0 9px #8ce1cc66;
 }
 
-.connection[data-state=offline]:before {
+.aw-battle .connection[data-state=offline]:before {
   background:#ed8494;
 }
 
-.heading {
+.aw-battle .heading {
   display:flex;
   justify-content:space-between;
   align-items:center;
@@ -127,56 +129,56 @@ nav .current {
   gap:16px;
 }
 
-.eyebrow {
+.aw-battle .eyebrow {
   font:9px monospace;
   letter-spacing:3px;
   color:var(--mint);
   margin:0 0 10px;
 }
 
-h1 {
+.aw-battle h1 {
   font-size:30px;
   letter-spacing:3px;
   font-weight:normal;
   margin:0 0 10px;
 }
 
-.subtitle {
+.aw-battle .subtitle {
   font-size:12px;
   color:var(--muted);
   margin:0;
 }
 
-.counters {
+.aw-battle .counters {
   display:flex;
   gap:30px;
 }
 
-.counters div {
+.aw-battle .counters div {
   display:grid;
   text-align:right;
   gap:6px;
 }
 
-.counters b {
+.aw-battle .counters b {
   font-weight:normal;
   font-size:27px;
   color:var(--gold);
 }
 
-.counters span {
+.aw-battle .counters span {
   font-size:10px;
   color:var(--muted);
 }
 
-.theater {
+.aw-battle .theater {
   border:2px solid #738293;
   box-shadow:0 0 0 2px #101724,0 0 0 3px #364358,0 20px 65px #0005;
   background:#111b30;
   overflow:hidden;
 }
 
-.field-bar {
+.aw-battle .field-bar {
   height:33px;
   display:flex;
   align-items:center;
@@ -188,7 +190,7 @@ h1 {
   letter-spacing:1px;
 }
 
-.field-bar i {
+.aw-battle .field-bar i {
   display:inline-block;
   width:5px;
   height:5px;
@@ -196,24 +198,24 @@ h1 {
   margin-right:7px;
 }
 
-.field-bar>span:last-child {
+.aw-battle .field-bar>span:last-child {
   color:var(--gold);
   font-size:9px;
 }
 
-.field {
+.aw-battle .field {
   position:relative;
   background:#101e30;
 }
 
-canvas {
+.aw-battle canvas {
   width:100%;
   display:block;
   aspect-ratio:960/440;
   image-rendering:pixelated;
 }
 
-.announcement {
+.aw-battle .announcement {
   position:absolute;
   top:16px;
   left:22%;
@@ -226,11 +228,11 @@ canvas {
   text-shadow:2px 2px #101927;
 }
 
-.announcement:empty {
+.aw-battle .announcement:empty {
   visibility:hidden;
 }
 
-.field-caption {
+.aw-battle .field-caption {
   position:absolute;
   bottom:12px;
   left:18px;
@@ -243,7 +245,7 @@ canvas {
   letter-spacing:1px;
 }
 
-.empty {
+.aw-battle .empty {
   position:absolute;
   top:31%;
   width:100%;
@@ -253,24 +255,24 @@ canvas {
   padding:18px;
 }
 
-.empty[hidden] {
+.aw-battle .empty[hidden] {
   display:none;
 }
 
-.empty span {
+.aw-battle .empty span {
   color:var(--gold);
   font-size:24px;
 }
 
-.empty p {
+.aw-battle .empty p {
   font-size:18px;
 }
 
-.empty small {
+.aw-battle .empty small {
   color:#c1d2d5;
 }
 
-.hud {
+.aw-battle .hud {
   display:grid;
   grid-template-columns:1fr .63fr 1.13fr;
   gap:4px;
@@ -278,7 +280,7 @@ canvas {
   padding:4px;
 }
 
-.panel {
+.aw-battle .panel {
   min-width:0;
   min-height:179px;
   border:2px solid #8b9bb1;
@@ -289,7 +291,7 @@ canvas {
   text-shadow:1px 2px #071122;
 }
 
-.panel h2 {
+.aw-battle .panel h2 {
   margin:0 0 13px;
   font-size:10px;
   font-weight:normal;
@@ -301,19 +303,19 @@ canvas {
   gap:5px;
 }
 
-.panel h2 small {
+.aw-battle .panel h2 small {
   color:var(--gold);
   font-size:9px;
   white-space:nowrap;
 }
 
-.target-row {
+.aw-battle .target-row {
   position:relative;
   margin:0 0 12px;
   padding-left:14px;
 }
 
-.target-row.selected:before,.command.selected:before,.party-row.selected:before {
+.aw-battle .target-row.selected:before,.aw-battle .command.selected:before,.aw-battle .party-row.selected:before {
   content:'▶';
   position:absolute;
   left:0;
@@ -321,7 +323,7 @@ canvas {
   text-shadow:1px 2px #000;
 }
 
-.target-name {
+.aw-battle .target-name {
   border:0;
   padding:0;
   background:none;
@@ -335,7 +337,7 @@ canvas {
   margin-bottom:4px;
 }
 
-.target-meta {
+.aw-battle .target-meta {
   display:flex;
   justify-content:space-between;
   gap:5px;
@@ -343,21 +345,21 @@ canvas {
   color:#b0c4d9;
 }
 
-.meter {
+.aw-battle .meter {
   height:4px;
   background:#071325;
   margin-top:5px;
   border:1px solid #06101c;
 }
 
-.meter i {
+.aw-battle .meter i {
   display:block;
   height:100%;
   background:linear-gradient(90deg,#ba9253,#f0d991);
   transition:width .2s;
 }
 
-.command {
+.aw-battle .command {
   font-size:15px;
   padding:3px 0 3px 20px;
   position:relative;
@@ -365,11 +367,11 @@ canvas {
   color:#bbc9df;
 }
 
-.command.selected {
+.aw-battle .command.selected {
   color:#fff3c9;
 }
 
-.party-row {
+.aw-battle .party-row {
   display:grid;
   grid-template-columns:1fr 60px;
   position:relative;
@@ -380,46 +382,51 @@ canvas {
   padding-left:13px;
 }
 
-.party-name {
+.aw-battle .party-name {
+  border:0;
+  padding:0;
+  background:none;
+  color:inherit;
+  text-align:left;
   overflow:hidden;
   white-space:nowrap;
   text-overflow:ellipsis;
 }
 
-.party-state {
+.aw-battle .party-state {
   font-size:9px;
   color:var(--mint);
   text-align:right;
 }
 
-.party-gauges { grid-column:1/-1; display:grid; grid-template-columns:94px 1fr; align-items:center; gap:3px 8px; }
-.hp-value { grid-row:1/3; font-size:9px; color:#c5e9d7; }
-.party-row .limit-meter { height:3px; }
-.party-row .meter.limit-meter i { background:linear-gradient(90deg,#be8c64,#ffe1a0); }
-.party-row.wounded .hp-value { color:#ffabb3; }
-.party-row.wounded .hp-meter i { background:#e58195; }
-.theater[data-side=enemy] #turnLabel,.theater[data-side=enemy] .announcement { color:#ffb5ac; }
-.journal li[data-side=enemy] .log-actor { color:#ffb5ac; }
+.aw-battle .party-gauges { grid-column:1/-1; display:grid; grid-template-columns:94px 1fr; align-items:center; gap:3px 8px; }
+.aw-battle .hp-value { grid-row:1/3; font-size:9px; color:#c5e9d7; }
+.aw-battle .party-row .limit-meter { height:3px; }
+.aw-battle .party-row .meter.limit-meter i { background:linear-gradient(90deg,#be8c64,#ffe1a0); }
+.aw-battle .party-row.wounded .hp-value { color:#ffabb3; }
+.aw-battle .party-row.wounded .hp-meter i { background:#e58195; }
+.aw-battle .theater[data-side=enemy] [data-battle="turn-label"],.aw-battle .theater[data-side=enemy] .announcement { color:#ffb5ac; }
+.aw-battle .journal li[data-side=enemy] .log-actor { color:#ffb5ac; }
 
-dialog { width:min(520px,calc(100vw - 32px)); padding:28px; border:2px solid #8b9bb1; border-radius:5px; background:#172941; color:var(--ink); }
-dialog::backdrop { background:#020a16bb; }
-dialog h2 { font-size:21px; color:var(--gold); font-weight:normal; }
-dialog p { line-height:1.8; font-size:13px; }
-#taskTitle { white-space:pre-wrap; overflow-wrap:anywhere; }
-dialog small { color:var(--mint); }
-dialog form { margin-top:24px; text-align:right; }
-dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; }
+.aw-battle dialog { width:min(520px,calc(100vw - 32px)); padding:28px; border:2px solid #8b9bb1; border-radius:5px; background:#172941; color:var(--ink); }
+.aw-battle dialog::backdrop { background:#020a16bb; }
+.aw-battle dialog h2 { font-size:21px; color:var(--gold); font-weight:normal; }
+.aw-battle dialog p { line-height:1.8; font-size:13px; }
+.aw-battle [data-battle="task-title"] { white-space:pre-wrap; overflow-wrap:anywhere; }
+.aw-battle dialog small { color:var(--mint); }
+.aw-battle dialog form { margin-top:24px; text-align:right; }
+.aw-battle dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; }
 
-.party-row .meter {
+.aw-battle .party-row .meter {
   margin:0;
   height:7px;
 }
 
-.party-row .meter i {
+.aw-battle .party-row .meter i {
   background:linear-gradient(90deg,#5baba6,#b5ecd4);
 }
 
-#partyPage {
+.aw-battle [data-battle="party-page"] {
   padding:0;
   border:0;
   background:none;
@@ -427,7 +434,7 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   font-size:10px;
 }
 
-.message-box {
+.aw-battle .message-box {
   display:flex;
   align-items:center;
   gap:14px;
@@ -440,23 +447,23 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   padding:12px 20px;
 }
 
-.message-star {
+.aw-battle .message-star {
   color:var(--gold);
   font-size:22px;
 }
 
-.message-box>div {
+.aw-battle .message-box>div {
   min-width:0;
   flex:1;
 }
 
-.message-box p {
+.aw-battle .message-box p {
   margin:0;
   font-size:14px;
   line-height:1.6;
 }
 
-.message-box small {
+.aw-battle .message-box small {
   display:block;
   color:#b2c2d0;
   overflow:hidden;
@@ -467,12 +474,12 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   margin-top:3px;
 }
 
-.advance {
+.aw-battle .advance {
   font-size:18px;
   color:var(--gold);
 }
 
-.controls {
+.aw-battle .controls {
   display:flex;
   justify-content:space-between;
   align-items:center;
@@ -481,48 +488,48 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   font-size:11px;
 }
 
-.playback {
+.aw-battle .playback {
   display:flex;
   align-items:center;
   gap:10px;
 }
 
-.controls button,.controls select,.controls a {
+.aw-battle .controls button,.aw-battle .controls select,.aw-battle .controls a {
   background:#142030;
   border:1px solid #384456;
   border-radius:3px;
   padding:7px 11px;
 }
 
-.controls label {
+.aw-battle .controls label {
   display:flex;
   align-items:center;
   gap:8px;
   color:#9babbb;
 }
 
-.controls select {
+.aw-battle .controls select {
   padding:6px;
 }
 
-.mode-switch a {
+.aw-battle .mode-switch a {
   border-color:#698879;
   color:var(--mint);
   display:inline-block;
 }
 
-.explanation {
+.aw-battle .explanation {
   font-size:10px;
   line-height:1.7;
   color:#8194a6;
   margin:14px 0 26px;
 }
 
-.journal {
+.aw-battle .journal {
   border-top:1px solid #2b3748;
 }
 
-.journal summary {
+.aw-battle .journal summary {
   list-style:none;
   display:flex;
   justify-content:space-between;
@@ -532,22 +539,22 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   color:#b8c6d4;
 }
 
-.journal summary:after {
+.aw-battle .journal summary:after {
   content:'−';
   margin-left:14px;
 }
 
-.journal:not([open]) summary:after {
+.aw-battle .journal:not([open]) summary:after {
   content:'+';
 }
 
-#queueCount {
+.aw-battle .queue-count {
   margin-left:auto;
   color:#7e98aa;
   font-size:10px;
 }
 
-.journal ol {
+.aw-battle .journal ol {
   margin:0;
   padding:0;
   list-style:none;
@@ -555,7 +562,7 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   overflow-y:auto;
 }
 
-.journal li {
+.aw-battle .journal li {
   display:grid;
   grid-template-columns:65px 90px 1fr;
   gap:12px;
@@ -565,22 +572,22 @@ dialog button { background:#243e57; border:1px solid #698879; padding:8px 20px; 
   border-top:1px solid #1c293a;
 }
 
-.journal time {
+.aw-battle .journal time {
   color:#6d879a;
 }
 
-.journal .log-actor {
+.aw-battle .journal .log-actor {
   color:var(--mint);
   overflow:hidden;
   text-overflow:ellipsis;
 }
 
-.journal .log-text {
+.aw-battle .journal .log-text {
   overflow-wrap:anywhere;
   color:#bdc9d5;
 }
 
-footer {
+.aw-battle footer {
   display:flex;
   justify-content:space-between;
   gap:10px;
@@ -589,11 +596,11 @@ footer {
   color:#677f91;
 }
 
-footer a {
+.aw-battle footer a {
   color:#adc0ca;
 }
 
-.theater:fullscreen {
+.aw-battle .theater:fullscreen {
   width:100vw;
   height:100vh;
   display:flex;
@@ -602,133 +609,133 @@ footer a {
   background:#070d17;
 }
 
-.theater:fullscreen .field {
+.aw-battle .theater:fullscreen .field {
   min-height:0;
   flex:1;
 }
 
-.theater:fullscreen canvas {
+.aw-battle .theater:fullscreen canvas {
   height:100%;
   width:100%;
   object-fit:contain;
 }
 
-.theater:fullscreen .hud {
+.aw-battle .theater:fullscreen .hud {
   min-height:185px;
 }
 
-.theater:fullscreen .message-box {
+.aw-battle .theater:fullscreen .message-box {
   flex-shrink:0;
 }
 
 @media(min-width:1450px) {
-  #app {
+  .aw-battle {
     max-width:1190px;
   }
-  .heading {
+  .aw-battle .heading {
     padding:35px 0;
   }
-  h1 {
+  .aw-battle h1 {
     font-size:34px;
   }
-  .panel {
+  .aw-battle .panel {
     min-height:191px;
   }
-  .party-row {
+  .aw-battle .party-row {
     margin-bottom:16px;
   }
 }
 
 @media(max-width:700px) {
-  #app {
+  .aw-battle {
     padding:0 14px 18px;
   }
-  .masthead {
+  .aw-battle .masthead {
     height:59px;
     gap:22px;
     font-size:10px;
     letter-spacing:1px;
   }
-  nav {
+  .aw-battle nav {
     gap:12px;
   }
-  .brand {
+  .aw-battle .brand {
     gap:7px;
   }
-  .connection {
+  .aw-battle .connection {
     font-size:8px;
   }
-  .heading {
+  .aw-battle .heading {
     padding:23px 0 22px;
   }
-  h1 {
+  .aw-battle h1 {
     font-size:24px;
   }
-  .eyebrow {
+  .aw-battle .eyebrow {
     font-size:8px;
   }
-  .subtitle {
+  .aw-battle .subtitle {
     font-size:10px;
     max-width:230px;
     line-height:1.6;
   }
-  .counters {
+  .aw-battle .counters {
     gap:14px;
   }
-  .counters b {
+  .aw-battle .counters b {
     font-size:22px;
   }
-  .counters span {
+  .aw-battle .counters span {
     font-size:8px;
   }
-  .hud {
+  .aw-battle .hud {
     grid-template-columns:1fr .68fr;
   }
-  .party {
+  .aw-battle .party {
     grid-column:1/-1;
     min-height:0;
   }
-  .party>div {
+  .aw-battle .party>div {
     display:grid;
     grid-template-columns:1fr 1fr;
     gap:2px 16px;
   }
-  .party-row {
+  .aw-battle .party-row {
     grid-template-columns:1fr 50px;
     margin-bottom:9px;
     font-size:12px;
   }
-  .party-state {
+  .aw-battle .party-state {
     grid-column:2;
   }
-  .party-row .meter {
+  .aw-battle .party-row .meter {
     grid-column:2;
     margin-top:0;
     height:4px;
   }
-  .party-gauges { grid-template-columns:75px 1fr; gap:3px 4px; }
-  .hp-value { font-size:8px; }
-  .party-row .limit-meter { height:2px; }
-  .panel {
+  .aw-battle .party-gauges { grid-template-columns:75px 1fr; gap:3px 4px; }
+  .aw-battle .hp-value { font-size:8px; }
+  .aw-battle .party-row .limit-meter { height:2px; }
+  .aw-battle .panel {
     padding:10px;
     min-height:158px;
   }
-  .party {
+  .aw-battle .party {
     min-height:0;
   }
-  .panel h2 {
+  .aw-battle .panel h2 {
     margin-bottom:10px;
   }
-  .target-name {
+  .aw-battle .target-name {
     font-size:12px;
   }
-  .target-row {
+  .aw-battle .target-row {
     margin-bottom:10px;
   }
-  .command {
+  .aw-battle .command {
     font-size:13px;
   }
-  .announcement {
+  .aw-battle .announcement {
     font-size:11px;
     top:7px;
     left:10%;
@@ -736,90 +743,90 @@ footer a {
     padding:6px;
     min-height:27px;
   }
-  .message-box {
+  .aw-battle .message-box {
     padding:10px;
     min-height:69px;
   }
-  .message-box p {
+  .aw-battle .message-box p {
     font-size:12px;
   }
-  .controls {
+  .aw-battle .controls {
     align-items:flex-start;
     gap:8px;
   }
-  .playback {
+  .aw-battle .playback {
     flex-wrap:wrap;
     gap:7px;
   }
-  .controls label>span {
+  .aw-battle .controls label>span {
     display:none;
   }
-  .controls button,.controls select,.controls a {
+  .aw-battle .controls button,.aw-battle .controls select,.aw-battle .controls a {
     padding:7px;
     font-size:10px;
   }
-  .field-caption {
+  .aw-battle .field-caption {
     font-size:7px;
     bottom:7px;
     left:10px;
     right:10px;
   }
-  .field-bar {
+  .aw-battle .field-bar {
     font-size:8px;
     padding:0 10px;
     height:28px;
   }
-  .journal li {
+  .aw-battle .journal li {
     grid-template-columns:48px 58px 1fr;
     gap:8px;
     font-size:10px;
   }
-  footer {
+  .aw-battle footer {
     font-size:8px;
   }
-  .empty {
+  .aw-battle .empty {
     top:16%;
     padding:8px;
   }
-  .empty p {
+  .aw-battle .empty p {
     font-size:13px;
     margin:8px;
   }
-  .empty small {
+  .aw-battle .empty small {
     font-size:9px;
   }
 }
 
 @media(prefers-reduced-motion:reduce) {
-  .meter i {
+  .aw-battle .meter i {
     transition:none;
   }
 }
 
 @media(max-width:700px) {
-  .heading {
+  .aw-battle .heading {
     flex-wrap:wrap;
     gap:14px;
   }
-  .heading>div:first-child {
+  .aw-battle .heading>div:first-child {
     flex:1 0 100%;
   }
-  .subtitle {
+  .aw-battle .subtitle {
     max-width:none;
   }
-  .counters {
+  .aw-battle .counters {
     gap:22px;
     margin-left:auto;
   }
-  .counters div {
+  .aw-battle .counters div {
     display:flex;
     align-items:baseline;
     gap:8px;
   }
-  .counters span {
+  .aw-battle .counters span {
     white-space:nowrap;
   }
-  h1 {
+  .aw-battle h1 {
     letter-spacing:2px;
   }
 }

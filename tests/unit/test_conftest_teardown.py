@@ -55,7 +55,9 @@ class TestKillOrphanRunners:
 
         with (
             patch("tests.conftest.subprocess.run", return_value=MagicMock(stdout="99999")),
-            patch.object(Path, "read_text", return_value=f"core.runtime.runner {tmp_path}"),
+            patch.object(
+                Path, "read_text", return_value=f"core.runtime.runner --socket-path {tmp_path}/run/sockets/a.sock"
+            ),
             patch("tests.conftest.os.kill", side_effect=ProcessLookupError) as kill,
         ):
             _kill_orphan_runners(str(tmp_path))

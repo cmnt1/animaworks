@@ -205,10 +205,20 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   /* --- Tap targets: 44px minimum --- */
   .btn-logout {
     min-height: 44px;
-    padding: 8px 14px;
+    padding: 8px 10px;
     font-size: 0.85rem;
     display: inline-flex;
     align-items: center;
+    /* Keep the 44px tap target, but a full-height bordered box dwarfed the
+       44px header; render it as a text button instead. */
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .btn-secondary.usage-refresh-btn {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
   }
 
   .nav-item {

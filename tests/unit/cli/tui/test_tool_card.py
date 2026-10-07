@@ -26,7 +26,6 @@ def _header_text(card: ToolCard) -> str:
 
 
 class TestFormatInputSummary:
-
     def test_dict_repr_becomes_key_value_line(self):
         raw = "{'command': 'ls -la', 'description': 'list'}"
         assert format_input_summary(raw) == "command=ls -la, description=list"
@@ -44,7 +43,6 @@ class TestFormatInputSummary:
 
 @pytest.mark.asyncio
 class TestToolCardHeader:
-
     async def test_detail_shows_on_header_while_collapsed(self):
         card = ToolCard("Bash", "t1")
         async with _Harness(card).run_test():

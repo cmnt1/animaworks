@@ -1,4 +1,12 @@
 {
+  "claude-opus-5-5": {
+    "mode": "S",
+    "context_window": 200000
+  },
+  "claude-sonnet-5-5": {
+    "mode": "S",
+    "context_window": 200000
+  },
   "claude-opus-4-6": {
     "mode": "S",
     "context_window": 200000

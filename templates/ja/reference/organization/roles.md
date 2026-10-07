@@ -237,12 +237,12 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 
 | ロール | model | background_model | context_threshold | conversation_history_threshold |
 |--------|-------|------------------|-------------------|----------------------------------|
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
+| manager | claude-opus-5-5 | claude-sonnet-5-5 | 0.60 | 0.30 |
+| engineer | claude-opus-5-5 | claude-sonnet-5-5 | 0.80 | 0.40 |
+| researcher | claude-sonnet-5-5 | — | 0.50 | 0.30 |
+| writer | claude-sonnet-5-5 | — | 0.70 | 0.30 |
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
 `--role` 未指定の `create_from_md` では `general` が使われる。ops のデフォルトはローカル向けに `ollama/glm-4.7`。テンプレ同梱の `templates/_shared/config_defaults/models.json` では `ollama/glm-4.7*` が実行モード **A**（LiteLLM + tool ループ）にマッチする。vLLM 等を使う場合は `animaworks anima set-model` で `model` / `credential` を設定し、バックグラウンドモデルは `animaworks anima set-background-model` を使う。サーバー稼働中は root API、停止中はオフライン設定ストア経由で root 所有の `status.json` に反映される。Anima プロセスから直接編集しない。
 

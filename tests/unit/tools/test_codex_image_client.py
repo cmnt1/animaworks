@@ -144,6 +144,23 @@ class TestCodexImageClient:
         ):
             client.generate_fullbody(prompt="x")
 
+    def test_nonzero_returncode_keeps_valid_output(self) -> None:
+        """codex may save the image, then exit non-zero on a leftover step."""
+
+        def _run(cmd: list[str], **_kwargs: Any) -> MagicMock:
+            tmpdir = Path(cmd[cmd.index("-C") + 1])
+            (tmpdir / "out.png").write_bytes(_png_bytes(64, 64))
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = b""
+            result.stderr = b"ERROR: exec command failed"
+            return result
+
+        client = CodexImageClient()
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_run):
+            data = client.generate_fullbody(prompt="x")
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+
     def test_error_reason_prefers_last_distinct_error_line(self) -> None:
         client = CodexImageClient()
 

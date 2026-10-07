@@ -27,6 +27,7 @@ def test_phone_config_defaults() -> None:
     assert config.alert_max_attempts == 3
     assert config.alert_retry_interval_sec == 120
     assert config.turn_timeout_sec == 300
+    assert config.turn_end_silence_ms == 1200
 
 
 def test_phone_config_is_available_and_roundtrips_with_global_config() -> None:
@@ -44,3 +45,7 @@ def test_phone_config_rejects_invalid_retry_limits() -> None:
         PhoneConfig(alert_max_attempts=0)
     with pytest.raises(ValidationError):
         PhoneConfig(turn_timeout_sec=0)
+    with pytest.raises(ValidationError):
+        PhoneConfig(turn_end_silence_ms=299)
+    with pytest.raises(ValidationError):
+        PhoneConfig(turn_end_silence_ms=5001)

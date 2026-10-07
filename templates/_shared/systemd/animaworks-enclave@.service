@@ -1,0 +1,23 @@
+[Unit]
+Description=AnimaWorks enclave instance for %i
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=animaworks-enclave
+Environment=ANIMAWORKS_DATA_DIR=/home/%i/.animaworks
+# Replace the virtualenv path and port with values for this installation.
+ExecStart=/opt/animaworks/.venv/bin/animaworks start -f --host 127.0.0.1 --port 18600
+RuntimeDirectory=animaworks-enclave
+RuntimeDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/%i/.animaworks
+ProtectHome=tmpfs
+BindPaths=/home/%i
+
+[Install]
+WantedBy=multi-user.target

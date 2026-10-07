@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: e214c2599fd2047d4f813f2a7831e1f86a38b377831968e25e49918a0f6cafd0 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: d4aa95591df9d0fb3b5ed0556845de355edd20690604c25601d69d5717516398 -->
 
 # 設定リファレンス
 
@@ -7,24 +7,66 @@
 
 ## `config.json`
 
+### `version`
+
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `version` | `int` | `1` | 設定ファイル形式のバージョン。 |
+
+### `setup_complete`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `setup_complete` | `bool` | `false` | 初期セットアップが完了したかどうか。 |
+
+### `locale`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `locale` | `str` | `"ja"` | システム全体で使用する既定の言語。 |
+
+### `system`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `system` | `SystemConfig` | `{SystemConfig}` | 実行環境、タイムゾーン、基本動作に関する設定。 |
 | `system.mode` | `str` | `"server"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
+
+### `credentials`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | 外部モデル・サービスの認証情報。 |
 | `credentials.type` | `str` | `"api_key"` | — |
 | `credentials.api_key` | `str` | `""` | — |
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
+
+### `model_modes`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `model_modes` | `dict[str, str]` | `{}` | モデル名パターンと実行モードの対応。 |
+
+### `model_context_windows`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `model_context_windows` | `dict[str, int]` | `{}` | モデルごとのコンテキスト長の互換設定。models.json の使用を推奨。 |
+
+### `model_max_tokens`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `model_max_tokens` | `dict[str, int]` | `{}` | モデル名パターンごとの既定出力トークン数。 |
+
+### `anima_defaults`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 各 anima に適用するモデル・実行設定の既定値。 |
-| `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
+| `anima_defaults.model` | `str` | `"claude-sonnet-5-5"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
 | `anima_defaults.background_model` | `str \| None` | `null` | — |
@@ -50,6 +92,11 @@
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
 | `anima_defaults.heartbeat_enabled` | `bool` | `true` | 既定true。falseで定期heartbeatのみ無効化。メッセージ起因HB・cronは影響なし |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
+
+### `animas`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `animas` | `dict[str, AnimaModelConfig]` | `{}` | anima ごとのモデル設定上書き。 |
 | `animas.supervisor` | `str \| None` | `null` | — |
 | `animas.company` | `str \| None` | `null` | — |
@@ -59,6 +106,11 @@
 | `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
+
+### `consolidation`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | 記憶統合の動作とスケジュール。 |
 | `consolidation.daily_enabled` | `bool` | `true` | — |
 | `consolidation.weekly_distillation_enabled` | `bool` | `true` | — |
@@ -67,16 +119,24 @@
 | `consolidation.curator_auto_apply_enabled` | `bool` | `false` | — |
 | `consolidation.daily_time` | `str` | `"02:00"` | Format: HH:MM |
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
-| `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
+| `consolidation.llm_model` | `str` | `"claude-sonnet-5-5"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
+| `consolidation.weekly_llm_model` | `str \| None` | `null` | — |
+| `consolidation.weekly_llm_credential` | `str \| None` | `null` | — |
+| `consolidation.llm_fallback_model` | `str \| None` | `null` | — |
+| `consolidation.llm_fallback_credential` | `str \| None` | `null` | — |
+| `consolidation.fact_reconcile_model` | `str \| None` | `null` | — |
+| `consolidation.fact_reconcile_credential` | `str \| None` | `null` | — |
 | `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | Maximum UTF-8 prompt size for each daily episode-summary LLM call. |
 | `consolidation.episode_summary_backfill_days` | `int` | `7` | Look back this many local days for unprocessed daily episode activity. |
-| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `1` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
+| `consolidation.episode_summary_exclude_noop_cron` | `bool` | `true` | Exclude 'did nothing' cron executions from daily episode-summary input. |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
 | `consolidation.ipc_timeout_max_seconds` | `int` | `7200` | — |
 | `consolidation.weekly_ipc_timeout_seconds` | `int` | `3600` | — |
+| `consolidation.max_concurrent_animas` | `int` | `3` | Maximum number of Anima daily/weekly consolidations to run concurrently. |
 | `consolidation.weekly_enabled` | `bool` | `false` | — |
 | `consolidation.weekly_time` | `str` | `"sun:03:00"` | Format: day:HH:MM |
 | `consolidation.indexing_enabled` | `bool` | `true` | Daily RAG indexing toggle |
@@ -84,9 +144,122 @@
 | `consolidation.knowledge_self_correction_enabled` | `bool` | `true` | — |
 | `consolidation.knowledge_self_correction_max_reconsolidation_files` | `int` | `5` | — |
 | `consolidation.knowledge_self_correction_timeout_seconds` | `int` | `300` | — |
+| `consolidation.fact_extraction_chunk_chars` | `int` | `12000` | Maximum characters per atomic-fact-extraction chunk during consolidation. 0 (or negative) disables splitting. |
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
+| `consolidation.episode_summary_input_profile` | `Literal['full', 'compact']` | `"compact"` | — |
+| `consolidation.episode_summary_cron_digest_min_runs` | `int` | `6` | — |
+| `consolidation.episode_summary_cron_digest_max_notable_runs` | `int` | `5` | — |
+| `consolidation.episode_summary_tool_use_max_bytes` | `int` | `300` | — |
+| `consolidation.episode_summary_bash_tool_use_max_bytes` | `int` | `120` | — |
+| `consolidation.episode_summary_error_tail_bytes` | `int` | `300` | — |
+| `consolidation.episode_summary_max_output_tokens` | `int` | `4096` | — |
+| `consolidation.live_fact_extraction_enabled` | `bool` | `true` | — |
+| `consolidation.live_fact_model` | `str \| None` | `null` | — |
+| `consolidation.live_fact_credential` | `str \| None` | `null` | — |
+| `consolidation.live_fact_min_input_chars` | `int` | `200` | — |
+| `consolidation.live_fact_max_input_chars` | `int` | `24000` | — |
+| `consolidation.live_fact_debounce_seconds` | `int` | `120` | — |
+
+### `helper_models`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `helper_models` | `HelperModelsConfig` | `{HelperModelsConfig}` | 補助LLM呼び出しごとのモデル、認証情報、明示的な代替候補、one-shot方針。 |
+| `helper_models.episode_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.episode_summary.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.episode_summary.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.episode_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.episode_summary.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.episode_summary.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.episode_summary.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.episode_summary.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.fact_extraction` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_extraction.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.fact_extraction.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.fact_extraction.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.fact_extraction.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.fact_extraction.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.fact_extraction.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.fact_extraction.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.fact_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.fact_reconcile.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.fact_reconcile.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.fact_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.fact_reconcile.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.fact_reconcile.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.fact_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.fact_reconcile.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.weekly_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.weekly_consolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.weekly_consolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.weekly_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.weekly_consolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.weekly_consolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.weekly_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.weekly_consolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.project_consolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.project_consolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.project_consolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.project_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.project_consolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.project_consolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.project_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.project_consolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.conversation_compression` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.conversation_compression.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.conversation_compression.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.conversation_compression.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.conversation_compression.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.conversation_compression.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.conversation_compression.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.conversation_compression.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.distillation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.distillation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.distillation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.distillation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.distillation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.distillation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.distillation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.distillation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.reconsolidation` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.reconsolidation.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.reconsolidation.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.reconsolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.reconsolidation.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.reconsolidation.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.reconsolidation.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.reconsolidation.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.asset_reconcile` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.asset_reconcile.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.asset_reconcile.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.asset_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.asset_reconcile.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.asset_reconcile.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.asset_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.asset_reconcile.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.meeting_summary` | `HelperModelRole \| None` | `null` | — |
+| `helper_models.meeting_summary.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.meeting_summary.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.meeting_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.meeting_summary.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.meeting_summary.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.meeting_summary.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.meeting_summary.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+| `helper_models.default` | `HelperModelRole` | `{HelperModelRole}` | — |
+| `helper_models.default.model` | `str \| None` | `null` | Primary helper model identifier. |
+| `helper_models.default.credential` | `str \| None` | `null` | Credential name for the primary model. |
+| `helper_models.default.fallbacks` | `list[HelperModelFallback]` | `[]` | Ordered explicit fallback models. |
+| `helper_models.default.fallbacks.model` | `str` | `"—"` | Fallback model identifier. |
+| `helper_models.default.fallbacks.credential` | `str \| None` | `null` | Credential name for the fallback model. |
+| `helper_models.default.allow_agent_sdk_fallback` | `bool` | `false` | Allow one-shot calls for this role to fall back to the Claude Agent SDK. |
+| `helper_models.default.max_output_tokens` | `int \| None` | `null` | Maximum output tokens for one-shot calls made by this role. |
+
+### `background_review`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | セッション後の非同期振り返りと人物像更新の設定。 |
 | `background_review.enabled` | `bool` | `true` | — |
 | `background_review.chat_every_user_turns` | `int` | `10` | — |
@@ -95,6 +268,11 @@
 | `background_review.max_input_bytes` | `int` | `61440` | — |
 | `background_review.max_writes` | `int` | `3` | — |
 | `background_review.peer_profile_max_chars` | `int` | `1500` | — |
+
+### `rag`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `rag` | `RAGConfig` | `{RAGConfig}` | 検索拡張生成と記憶検索の設定。 |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
@@ -124,19 +302,36 @@
 | `rag.rrf_confidence_threshold` | `float` | `0.02` | — |
 | `rag.facts_extraction_enabled` | `bool` | `true` | — |
 | `rag.fact_extraction_timeout_seconds` | `int` | `120` | Default timeout in seconds for LLM calls used by legacy atomic fact extraction; per-Anima status.json extraction_timeout overrides this value. |
+| `rag.fact_extraction_max_tokens` | `int` | `8192` | Maximum output tokens for legacy atomic fact extraction LLM calls. |
+| `rag.facts_extraction_single_call` | `bool` | `true` | Extract legacy atomic facts and their entities in one LLM call when supported. |
 | `rag.facts_reconcile_enabled` | `bool` | `true` | Enable legacy atomic fact reconciliation before append; failures fall back to ADD. |
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
+
+### `gpu`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 利用とデバイス選択の設定。 |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
 | `gpu.embedding_batch_size` | `int` | `32` | — |
 | `gpu.embedding_bulk_yield_batches` | `int` | `5` | Maximum consecutive embedding batches bulk work may yield to waiting interactive work. |
+
+### `memory`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `memory` | `MemoryConfig` | `{MemoryConfig}` | 記憶保存・検索の共通設定。 |
 | `memory.fact_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
 | `memory.fact_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
 | `memory.fact_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
+
+### `skills`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `skills` | `SkillsConfig` | `{SkillsConfig}` | スキル読み込みと管理の設定。 |
 | `skills.promotion` | `SkillPromotionConfig` | `{SkillPromotionConfig}` | — |
 | `skills.promotion.success_count_threshold` | `int` | `3` | — |
@@ -154,8 +349,18 @@
 | `skills.external_roots.engine` | `str` | `"—"` | matches ^[a-z][a-z0-9-]*$ |
 | `skills.external_roots.trust_level` | `str` | `"trusted"` | — |
 | `skills.external_roots.enabled` | `bool` | `true` | — |
+
+### `chatwork_tool`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork ツールの権限設定。 |
 | `chatwork_tool.grants` | `dict[str, dict[str, str]]` | `{}` | — |
+
+### `prompt`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `prompt` | `PromptConfig` | `{PromptConfig}` | システムプロンプトとプロンプト構築の設定。 |
 | `prompt.injection_size_warning_chars` | `int` | `2000` | — |
 | `prompt.identity_business_exclude_headings` | `list[str]` | `["外見","基本プロフィール","Appearance","Basic Profile"]` | — |
@@ -168,9 +373,16 @@
 | `prompt.skill_catalog_router_dense_enabled` | `bool` | `true` | — |
 | `prompt.skill_catalog_router_dense_weight` | `float` | `8.0` | — |
 | `prompt.skill_catalog_max_items` | `int` | `3` | — |
+
+### `priming`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `priming` | `PrimingConfig` | `{PrimingConfig}` | anima の起動時に読み込む情報の設定。 |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
+| `priming.recent_facts_enabled` | `bool` | `true` | — |
+| `priming.recent_facts_max_tokens` | `int` | `500` | — |
 | `priming.compact_background_recall_enabled` | `bool` | `true` | — |
 | `priming.compact_background_recall` | `CompactBackgroundRecallConfig` | `{CompactBackgroundRecallConfig}` | — |
 | `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
@@ -179,6 +391,11 @@
 | `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
 | `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
 | `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
+
+### `image_gen`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 画像生成プロバイダーと既定パラメーター。 |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
@@ -201,15 +418,31 @@
 | `image_gen.diffusers_img2img_strength` | `float` | `0.55` | — |
 | `image_gen.ip_adapter_model` | `str` | `"h94/IP-Adapter"` | — |
 | `image_gen.ip_adapter_scale` | `float` | `0.6` | IP-Adapter face reference blend weight (0.0-1.0) |
+
+### `human_notification`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | 人間への通知方法と通知先。 |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
+| `human_notification.web_ui` | `bool` | `true` | built-in channel: push call_human into the Web UI chat |
+
+### `interaction`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `interaction` | `InteractionConfig` | `{InteractionConfig}` | anima 間の対話とメッセージ処理。 |
 | `interaction.default_approver_ids` | `list[str]` | `[]` | Default Slack user IDs merged with per-call call_human allowed_users. |
 | `interaction.web_base_url` | `str` | `""` | — |
+
+### `server`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP サーバー、認証、利用量制御の設定。 |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
@@ -240,14 +473,29 @@
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
 | `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
+
+### `llm_rate_guard`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `llm_rate_guard` | `LlmRateGuardConfig` | `{LlmRateGuardConfig}` | LLM 呼び出し頻度と同時実行数の制御。 |
 | `llm_rate_guard.enabled` | `bool` | `true` | — |
 | `llm_rate_guard.default_block_seconds` | `int` | `60` | — |
 | `llm_rate_guard.max_block_seconds` | `int` | `600` | — |
 | `llm_rate_guard.quota_block_seconds` | `int` | `1800` | — |
 | `llm_rate_guard.max_quota_block_seconds` | `int` | `14400` | — |
+
+### `mcp`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `mcp` | `MCPConfig` | `{MCPConfig}` | MCP サーバー接続とツール公開の設定。 |
 | `mcp.trigger_scoped_tools` | `bool` | `true` | — |
+
+### `external_messaging`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack など外部メッセージング連携。 |
 | `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
 | `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
@@ -301,6 +549,11 @@
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
 | `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | flush interval for buffered transcript |
 | `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | max chars per chunk (flush on whichever comes first) |
+
+### `external_tasks`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `external_tasks` | `ExternalTasksConfig` | `{ExternalTasksConfig}` | 外部タスクシステムとの連携。 |
 | `external_tasks.enabled` | `bool` | `true` | — |
 | `external_tasks.interval_minutes` | `int` | `5` | — |
@@ -309,6 +562,11 @@
 | `external_tasks.sources.slack` | `bool` | `true` | — |
 | `external_tasks.sources.chatwork` | `bool` | `true` | — |
 | `external_tasks.sources.gmail` | `bool` | `true` | — |
+
+### `github_webhook`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `github_webhook` | `GitHubWebhookConfig` | `{GitHubWebhookConfig}` | GitHub webhook の受信と検証。 |
 | `github_webhook.enabled` | `bool` | `false` | — |
 | `github_webhook.repos` | `list[str]` | `[]` | — |
@@ -317,6 +575,11 @@
 | `github_webhook.reviewer_login` | `str` | `""` | — |
 | `github_webhook.quiet_seconds` | `float` | `180` | — |
 | `github_webhook.drop_bot_noise` | `bool` | `true` | — |
+
+### `event_export`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `event_export` | `EventExportConfig` | `{EventExportConfig}` | イベントデータのエクスポート。 |
 | `event_export.url` | `str \| None` | `null` | — |
 | `event_export.headers` | `dict[str, str]` | `{}` | — |
@@ -325,6 +588,11 @@
 | `event_export.max_retries` | `int` | `8` | — |
 | `event_export.backoff_base_seconds` | `float` | `2.0` | — |
 | `event_export.spool_max_mb` | `int` | `64` | — |
+
+### `background_task`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `background_task` | `BackgroundTaskConfig` | `{BackgroundTaskConfig}` | バックグラウンド実行対象ツールの設定。 |
 | `background_task.enabled` | `bool` | `true` | — |
 | `background_task.shutdown_drain_seconds` | `float` | `600.0` | — |
@@ -333,6 +601,11 @@
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
+
+### `activity_log`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | 操作・活動ログの保存設定。 |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
@@ -340,8 +613,18 @@
 | `activity_log.max_file_size_mb` | `int` | `100` | per-file bloat trigger; 0 disables |
 | `activity_log.max_age_days` | `int` | `7` | mode="time"\|"both" で使用 |
 | `activity_log.rotation_time` | `str` | `"05:00"` | 実行時刻 (configured TZ) |
+
+### `logging`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `logging` | `LoggingConfig` | `{LoggingConfig}` | ログレベル、出力先、機密情報のマスキング。 |
 | `logging.redaction_enabled` | `bool` | `true` | Mask secrets in log output; disable for raw-log debugging. |
+
+### `heartbeat`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | 定期的な heartbeat の実行設定。 |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
 | `heartbeat.current_state_max_chars` | `int` | `8000` | Max chars for current_state.md before trim; 0 = disabled |
@@ -355,6 +638,11 @@
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | Minutes after last stream end to trigger idle auto-compaction |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section |
+
+### `voice`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | 音声入出力と音声プロバイダー。 |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |
@@ -367,6 +655,7 @@
 | `voice.proactive_enabled` | `bool` | `true` | — |
 | `voice.proactive_initial_delay_sec` | `float` | `10.0` | — |
 | `voice.proactive_lead_sec` | `float` | `5.0` | — |
+| `voice.notify_delegations_on_web_disconnect` | `bool` | `false` | — |
 | `voice.voicevox` | `VoicevoxConfig` | `{VoicevoxConfig}` | — |
 | `voice.voicevox.base_url` | `str` | `"http://localhost:50021"` | — |
 | `voice.elevenlabs` | `ElevenLabsVoiceConfig` | `{ElevenLabsVoiceConfig}` | — |
@@ -381,6 +670,31 @@
 | `voice.gemini.api_key_env` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.vault_key` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.chunk_seconds` | `float` | `1.0` | — |
+
+### `phone`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `phone` | `PhoneConfig` | `{PhoneConfig}` | Twilio を利用した Anima 専用の電話会話と緊急通知。 |
+| `phone.enabled` | `bool` | `false` | — |
+| `phone.anima` | `str` | `"aoi"` | — |
+| `phone.public_base_url` | `str` | `"https://zoomhook.kk-a.jp"` | — |
+| `phone.from_number` | `str` | `"+16073257655"` | — |
+| `phone.owner_numbers` | `list[str]` | `["+819060943763"]` | — |
+| `phone.from_person` | `str` | `"human"` | — |
+| `phone.thread_id` | `str` | `"phone"` | — |
+| `phone.pin_vault_key` | `str` | `"AOI_PHONE_PIN"` | — |
+| `phone.account_sid_vault_key` | `str` | `"TWILIO_ACCOUNT_SID"` | — |
+| `phone.auth_token_vault_key` | `str` | `"TWILIO_AUTH_TOKEN"` | — |
+| `phone.alert_max_attempts` | `int` | `3` | — |
+| `phone.alert_retry_interval_sec` | `float` | `120` | — |
+| `phone.turn_timeout_sec` | `float` | `300` | Legacy Gather/poll timeout; unused by the Media Streams phone conversation. |
+| `phone.turn_end_silence_ms` | `int` | `1200` | — |
+
+### `housekeeping`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | 実行時データの定期整理。 |
 | `housekeeping.enabled` | `bool` | `true` | — |
 | `housekeeping.run_time` | `str` | `"05:30"` | — |
@@ -413,11 +727,21 @@
 | `housekeeping.sdk_bash_injection_max_size_mb` | `int` | `10` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |
 | `housekeeping.archive_versions_keep_per_file` | `int` | `5` | — |
+
+### `inbox`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `inbox` | `InboxConfig` | `{InboxConfig}` | anima の受信箱と通知表示。 |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |
 | `inbox.quarantine_retention_days` | `int` | `30` | — |
+
+### `local_llm`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `local_llm` | `LocalLLMConfig` | `{LocalLLMConfig}` | ローカル LLM エンドポイントとモデル設定。 |
 | `local_llm.base_url` | `str` | `"http://127.0.0.1:11434"` | — |
 | `local_llm.default_model` | `str` | `"ollama/qwen2.5-coder:14b"` | — |
@@ -425,17 +749,84 @@
 | `local_llm.auto_apply_presets` | `bool` | `false` | — |
 | `local_llm.presets` | `dict[str, str]` | `{"coding":"ollama/qwen2.5-coder:14b","general":"ollama/glm4:9b","reasoning":"ollama/deepseek-r1:8b"}` | — |
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
+
+### `workspaces`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `workspaces` | `dict[str, str]` | `{}` | 名前付き workspace パスの対応。 |
+
+### `github_identities`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `github_identities` | `dict[str, str]` | `{}` | 会社 slug と GitHub アカウントの対応。 |
+
+### `activity_level`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `activity_level` | `int` | `100` | 全体の活動頻度を調整する倍率。 |
+
+### `activity_schedule`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | 時刻帯ごとの活動頻度。 |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |
 | `activity_schedule.end` | `str` | `"—"` | End time in HH:MM format (may wrap past midnight) |
 | `activity_schedule.level` | `int` | `"—"` | Activity level percentage for this period |
+
+### `icon_url_template`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `icon_url_template` | `str` | `""` | anima アイコン URL のテンプレート。 |
+
+### `ui`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
 | `ui` | `UIConfig` | `{UIConfig}` | Web UI の表示設定。 |
 | `ui.theme` | `str` | `"default"` | — |
 | `ui.demo_mode` | `bool` | `false` | — |
+
+### `cli`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `cli` | `CLIConfig` | `{CLIConfig}` | CLI クライアントの設定。default_anima は引数なしの animaworks / animaworks chat で開く anima（空なら上司なしの有効な anima が1体だけの時それを使う）。 |
+| `cli.default_anima` | `str` | `""` | — |
+
+### `enclave`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。 |
+| `enclave.enabled` | `bool` | `false` | この実行環境を隔離 enclave として起動する。 |
+| `enclave.name` | `str` | `""` | enclave gateway が返す識別名。 |
+| `enclave.socket_path` | `str` | `""` | gateway が待ち受ける Unix ドメインソケットのパス。 |
+| `enclave.socket_group` | `str` | `""` | gateway ソケットに設定する OS グループ。 |
+| `enclave.entry_anima` | `str` | `""` | enclave 内で質問を処理する entry anima。 |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | gateway への接続を許可する OS ユーザー UID。 |
+| `enclave.max_concurrency` | `int` | `2` | gateway が同時に処理する質問の最大数。 |
+| `enclave.request_timeout_s` | `int` | `900` | 質問処理と gateway 応答のタイムアウト秒数。 |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 内の anima が利用できる認証情報名。 |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
+| `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
+| `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
+| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 返却前に既知値台帳へ登録するフィールド。 |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 部分一致検索を許可するフィールド。 |
+| `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
+
+### `enclaves`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `enclaves` | `dict[str, EnclaveClientConfig]` | `{}` | 外部の enclave インスタンスに接続するクライアント側の設定。 |
+| `enclaves.socket_path` | `str` | `"—"` | 接続先 enclave の Unix ドメインソケット。 |
+| `enclaves.allowed_animas` | `list[str]` | `[]` | その enclave への質問を許可する本体側 anima。 |
+| `enclaves.timeout_s` | `int` | `900` | enclave gateway への接続タイムアウト秒数。 |
 
 ## anima ごとの `status.json`
 
@@ -458,7 +849,8 @@
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | モデルの最大出力トークン数。 |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | anima の主モデル。 |
+| `model` | `str` | `"claude-sonnet-5-5"` | anima の主モデル。 |
+| `speciality` | `str \| None` | `null` | — |
 | `supervisor` | `str \| None` | `null` | 上位 supervisor anima の名前。 |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
@@ -487,7 +879,9 @@
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
+| `claude-sonnet-5-5` | `S` | 200000 |
 | `codex/*` | `C` | 128000 |
 | `codex/gpt-4.1` | `C` | 1000000 |
 | `codex/gpt-5.4` | `C` | 272000 |

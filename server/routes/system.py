@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from core.enclave.ops import check_gateway_health, count_today_egress_audits
 from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
 
@@ -240,6 +241,49 @@ def _gpu_status() -> dict[str, object]:
         }
 
 
+async def _collect_enclave_status() -> tuple[dict[str, object], dict[str, dict[str, bool]]]:
+    """Return enclave health and today's aggregate audit counts, without bodies."""
+    from core.config import load_config
+    from core.paths import get_data_dir
+
+    data_dir = get_data_dir()
+    today = await asyncio.to_thread(count_today_egress_audits, data_dir)
+    try:
+        config = load_config()
+    except Exception:
+        logger.warning("Failed to load enclave config for system status", exc_info=True)
+        return (
+            {"enabled": False, "name": "", "socket_ok": False, "today": today},
+            {},
+        )
+
+    enabled = config.enclave.enabled is True
+    socket_ok = False
+    if enabled and config.enclave.socket_path:
+        socket_ok = await asyncio.to_thread(check_gateway_health, config.enclave.socket_path)
+
+    client_items = sorted(config.enclaves.items())
+    if client_items:
+        reachable_values = await asyncio.gather(
+            *(asyncio.to_thread(check_gateway_health, client.socket_path) for _, client in client_items)
+        )
+        enclaves = {
+            name: {"reachable": reachable} for (name, _), reachable in zip(client_items, reachable_values, strict=True)
+        }
+    else:
+        enclaves = {}
+
+    return (
+        {
+            "enabled": enabled,
+            "name": config.enclave.name,
+            "socket_ok": socket_ok,
+            "today": today,
+        },
+        enclaves,
+    )
+
+
 async def _reschedule_all_heartbeats(supervisor) -> None:
     """Tell all running Anima processes to reschedule their heartbeats.
 
@@ -292,6 +336,7 @@ def create_system_router() -> APIRouter:
         except Exception:
             slack_enabled = False
 
+        enclave_status, enclaves_status = await _collect_enclave_status()
         return {
             "animas": len(anima_names),
             "processes": process_statuses,
@@ -299,6 +344,8 @@ def create_system_router() -> APIRouter:
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
             "zoom_gateway": await _zoom_gateway_status(request),
             "gpu": _gpu_status(),
+            "enclave": enclave_status,
+            "enclaves": enclaves_status,
         }
 
     @router.post("/system/reload")
@@ -322,6 +369,16 @@ def create_system_router() -> APIRouter:
                 "active_label": "",
                 "reasons": [],
             }
+
+            # A background bootstrap does not always report a busy status;
+            # restarting mid-setup throws its work away and burns a retry.
+            try:
+                if supervisor.is_bootstrapping(anima_name) is True:
+                    cast_reasons = result["reasons"]
+                    if isinstance(cast_reasons, list):
+                        cast_reasons.append("bootstrapping")
+            except Exception:
+                logger.debug("Failed to read bootstrap state for %s", anima_name, exc_info=True)
 
             try:
                 active_stream = stream_registry.get_active(anima_name)
@@ -386,9 +443,13 @@ def create_system_router() -> APIRouter:
                 on_disk.add(name)
 
                 if name not in current_names:
-                    # New anima - start process
+                    # New anima - start process. Reconciliation may have added it
+                    # while the busy probes above were awaiting; check the live list.
+                    if name in request.app.state.anima_names:
+                        continue
                     await supervisor.start_anima(name)
-                    request.app.state.anima_names.append(name)
+                    if name not in request.app.state.anima_names:
+                        request.app.state.anima_names.append(name)
                     added.append(name)
                     logger.info("Hot-loaded anima: %s", name)
                 else:

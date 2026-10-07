@@ -138,7 +138,7 @@ def test_resolve_extraction_config_ignores_background_model_and_handles_invalid_
 
     model, llm_extra, locale, timeout, credential = _resolve_extraction_config(anima_dir)
 
-    assert model == "claude-sonnet-4-6"
+    assert model == "claude-sonnet-5-5"
     assert llm_extra == {}
     assert locale
     assert timeout == 11

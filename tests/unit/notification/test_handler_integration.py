@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -279,6 +279,7 @@ class TestCallHumanHandler:
                     "interactive": True,
                     "category": "approval",
                     "options": ["approve", "reject"],
+                    "callback_id": "cb_test_1",
                     "allowed_users": ["U1"],
                 },
             )
@@ -290,3 +291,4 @@ class TestCallHumanHandler:
         mock_create.assert_called_once()
         _cargs, ckwargs = mock_create.call_args
         assert ckwargs["allowed_users"] == {"slack": ["U1", "U9"]}
+        assert ckwargs["callback_id"] == "cb_test_1"

@@ -472,23 +472,23 @@ class TestSanitizeForTTS:
         assert strip_ruby("GitHub（設定）") == "GitHub（設定）"
 
     def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
-        import core.voice.session as vs
+        import core.voice.speech_text as speech_text
 
         (tmp_path / "voice_yomi.tsv").write_text("# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8")
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-        monkeypatch.setattr(vs, "_yomi_cache", None)
-        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
-        assert vs.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
+        monkeypatch.setattr(speech_text, "_yomi_cache", None)
+        monkeypatch.setattr(speech_text, "_yomi_mtime", 0.0)
+        assert speech_text.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
         # Display copy stays untouched.
-        assert vs.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
+        assert speech_text.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
 
     def test_yomi_dict_missing_is_noop(self, tmp_path, monkeypatch) -> None:
-        import core.voice.session as vs
+        import core.voice.speech_text as speech_text
 
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-        monkeypatch.setattr(vs, "_yomi_cache", None)
-        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
-        assert vs.apply_reading_rules("そのまま") == "そのまま"
+        monkeypatch.setattr(speech_text, "_yomi_cache", None)
+        monkeypatch.setattr(speech_text, "_yomi_mtime", 0.0)
+        assert speech_text.apply_reading_rules("そのまま") == "そのまま"
 
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
@@ -1294,6 +1294,50 @@ class TestBargeProbe:
         assert bytes(session._audio_buffer) == b"probe audio"
 
     @pytest.mark.asyncio
+    async def test_phone_quiet_probe_is_echo_not_interrupt(self) -> None:
+        import struct
+
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+        session._channel = "phone"
+        await session.handle_barge_probe()
+        session._audio_buffer.extend(struct.pack("<h", 30) * 1600)  # faint leak of our own reply
+
+        interrupted = await session._judge_probe("ちょっと待って")
+
+        assert interrupted is False
+        ws.send_json.assert_awaited_with({"type": "barge_verdict", "interrupt": False})
+        assert session._audio_buffer == bytearray()
+
+    @pytest.mark.asyncio
+    async def test_phone_loud_probe_interrupts(self) -> None:
+        import struct
+
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+        session._channel = "phone"
+        await session.handle_barge_probe()
+        session._audio_buffer.extend(struct.pack("<hh", 8000, -8000) * 800)
+
+        assert await session._judge_probe("ちょっと待って") is True
+
+    @pytest.mark.asyncio
+    async def test_probe_timeout_transcribes_held_audio(self) -> None:
+        import struct
+
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "ちょっと待って"})
+        session = _make_session(stt=stt)
+        session._channel = "phone"
+        await session.handle_barge_probe()
+        session._audio_buffer.extend(struct.pack("<hh", 8000, -8000) * 800)
+        with patch("core.voice.session.PROBE_TIMEOUT_SEC", 0):
+            await session._probe_timeout()
+
+        stt.transcribe_buffer_async.assert_awaited_once()
+        assert session._interrupted is True
+
+    @pytest.mark.asyncio
     async def test_short_partial_keeps_probe_open(self) -> None:
         ws = AsyncMock()
         session = _make_session(ws=ws)
@@ -1667,3 +1711,127 @@ class TestTTSPrefetchPipeline:
 
         assert session._consecutive_tts_failures == 3
         assert session._tts_available is None
+
+
+class TestPhoneTurnTaking:
+    @pytest.mark.asyncio
+    async def test_phone_speech_end_while_preparing_abandons_unheard_reply(self) -> None:
+        from core.voice.session import _VoiceTurnTiming
+
+        session = _make_session()
+        session._channel = "phone"
+        session._processing = True
+        session._active_turn = _VoiceTurnTiming(speech_end_at=0.0)
+
+        await session.handle_speech_end()
+
+        assert session._deferred_speech_end is True
+        assert session._interrupted is True
+
+    @pytest.mark.asyncio
+    async def test_phone_speech_end_after_reply_audio_keeps_reply(self) -> None:
+        from core.voice.session import _VoiceTurnTiming
+
+        session = _make_session()
+        session._channel = "phone"
+        session._processing = True
+        session._active_turn = _VoiceTurnTiming(speech_end_at=0.0, first_audio_at=1.0)
+
+        await session.handle_speech_end()
+
+        assert session._deferred_speech_end is True
+        assert session._interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_web_speech_end_while_processing_is_ignored(self) -> None:
+        session = _make_session()
+        session._processing = True
+
+        await session.handle_speech_end()
+
+        assert session._deferred_speech_end is False
+        assert session._interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_phone_unfinished_turn_carries_into_next_utterance(self) -> None:
+        import struct
+
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            side_effect=[{"raw_text": "あー毎回その"}, {"raw_text": "通信が悪いと困る"}]
+        )
+        session = _make_session(stt=stt)
+        session._channel = "phone"
+        session._front_model = "azure/x"
+        session._get_or_create_front_lane = MagicMock(return_value=MagicMock())
+        session._front_conversation.check_health = AsyncMock(return_value=True)
+        seen: list[str] = []
+        completed = iter([False, True])
+
+        async def fake_turn(lane, text, from_person, tts_ok, **kw):
+            seen.append(text)
+            session._front_conversation._last_completed = next(completed)
+            return True
+
+        session._run_front_turn = fake_turn
+        session._check_tts_health = AsyncMock(return_value=False)
+        loud = struct.pack("<hh", 8000, -8000) * 8000
+        for _ in range(2):
+            session._audio_buffer.extend(loud)
+            await session.handle_speech_end()
+
+        assert seen == ["あー毎回その", "あー毎回その 通信が悪いと困る"]
+        assert session._carry_transcript == ""
+
+
+def test_phone_reply_drops_interjection_repeating_filler() -> None:
+    from core.voice.session import _VoiceTurnTiming
+
+    session = _make_session()
+    session._active_turn = _VoiceTurnTiming(speech_end_at=0.0, filler="なるほど、")
+    assert session._without_repeated_filler("なるほど、それはもどかしいね。") == "それはもどかしいね。"
+    assert session._without_repeated_filler("うん、そうだね") == "うん、そうだね"
+    session._active_turn = _VoiceTurnTiming(speech_end_at=0.0)
+    assert session._without_repeated_filler("なるほど、それは") == "なるほど、それは"
+
+
+@pytest.mark.asyncio
+async def test_phone_caller_talking_over_reply_cuts_it_and_merges() -> None:
+    import struct
+
+    ws = AsyncMock()
+    session = _make_session(ws=ws)
+    session._channel = "phone"
+    session._last_turn_text = "あー毎回その"
+    session._last_turn_at = time.monotonic()
+    session._playback_end_at = time.monotonic() + 5
+    session._transport.pending_marks = frozenset({"voice-1"})
+    lane = MagicMock()
+    lane.history = [{"role": "user", "content": "あー毎回その"}, {"role": "assistant", "content": "ごめんね"}]
+    session._front_conversation._lane = lane
+    session._audio_buffer.extend(struct.pack("<hh", 8000, -8000) * 800)
+
+    await session._cut_off_playing_reply()
+
+    ws.send_json.assert_awaited_with({"type": "barge_verdict", "interrupt": True})
+    assert session._carry_transcript == "あー毎回その"
+    lane.set_history.assert_called_once_with([])
+
+
+@pytest.mark.asyncio
+async def test_phone_reply_already_played_is_not_cut_off() -> None:
+    import struct
+
+    ws = AsyncMock()
+    session = _make_session(ws=ws)
+    session._channel = "phone"
+    session._last_turn_text = "あー毎回その"
+    session._last_turn_at = time.monotonic()
+    session._playback_end_at = time.monotonic() + 5  # stale estimate
+    session._transport.pending_marks = frozenset()
+    session._audio_buffer.extend(struct.pack("<hh", 8000, -8000) * 800)
+
+    await session._cut_off_playing_reply()
+
+    ws.send_json.assert_not_awaited()
+    assert session._carry_transcript == ""

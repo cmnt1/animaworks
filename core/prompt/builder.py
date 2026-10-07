@@ -52,6 +52,7 @@ from core.prompt.sections import (
 )
 from core.time_utils import now_local
 from core.tooling.policy.tool_content import load_guide
+from core.voice.emotion_style import EmotionStyle, VoiceChannel, front_prompt_emotion_instruction
 
 logger = logging.getLogger("animaworks.prompt_builder")
 
@@ -1187,7 +1188,13 @@ def _read_text_file(path: Path) -> str:
         return ""
 
 
-def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) -> str:
+def build_voice_front_prompt(
+    anima_dir: Path,
+    *,
+    anima_name: str | None = None,
+    channel: VoiceChannel = "web",
+    emotion_style: EmotionStyle = "emoji",
+) -> str:
     """Build a minimal, *fixed* system prompt for the voice front lane.
 
     The prompt is intentionally static for the whole voice session so the
@@ -1213,6 +1220,17 @@ def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) 
     if specialty:
         parts.append(f"Speciality:\n{specialty}")
 
+    phone_rules = ""
+    if channel == "phone":
+        phone_rules = (
+            "- This is speech-recognition output from a phone call and may contain errors; ask for clarification "
+            "when the meaning is ambiguous.\n"
+            "- The phone confirmation rule overrides the same-turn ask_anima instruction above: for requests involving "
+            "a money transfer, deletion, production change, or external message, repeat the request and wait for the "
+            "caller's explicit yes before calling ask_anima.\n"
+            "- Never read URLs aloud; omit URLs from spoken replies.\n"
+        )
+
     parts.append(
         "You are " + name + ", speaking to a person by voice. "
         "Respond in natural, conversational spoken language.\n\n"
@@ -1234,15 +1252,10 @@ def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) 
         "something (recent events, notes, procedures).\n\n"
         "Rules:\n"
         "- Reply in one or two short spoken sentences — aim for 60 characters, "
-        "never exceed 120. This is a voice conversation: one thing per turn, "
+        f"never exceed {150 if channel == 'phone' else 120}. This is a voice conversation: one thing per turn, "
         "no lists, no long explanations unless explicitly asked.\n"
-        "- Always include emotion-conveying emojis in every reply; they are "
-        "fed to the TTS engine and markedly improve its emotional accuracy. "
-        "Use ONLY emojis the TTS understands as style cues: "
-        "😊😆🫶😌🤭😏😎🤔😲😮😟😠🙄😪🥱😖😰😱😭🥺🫣🙏💪💥🥴 "
-        "⏸️🐢⏩👂📢📖😮‍💨👌🤧. Others (😃😀😅❤️✨ etc.) garble the reading. "
-        "One emoji barely registers — put 2-3 of the same emoji at the START "
-        "of a short sentence to convey emotion.\n"
+        f"{front_prompt_emotion_instruction(emotion_style)}"
+        f"{phone_rules}"
         "- Write large numbers and years in speakable form "
         "(「三千八百億」「にせんさんねん」), not raw digits.\n"
         "- Every alphabet-spelled term — English words, acronyms, product/"

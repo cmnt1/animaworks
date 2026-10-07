@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from core.tooling.handler_memory import MemoryToolsMixin
@@ -38,6 +39,29 @@ class _FakeHandler(MemoryToolsMixin):
 
 
 # ── Tests ────────────────────────────────────────────────
+
+
+def test_archive_memory_tool_rejects_episodes_directory(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    anima_dir = tmp_path / "animas" / "alice"
+    episodes_dir = anima_dir / "episodes"
+    episodes_dir.mkdir(parents=True)
+    episode = episodes_dir / "2026-10-07.md"
+    episode.write_text("temporary execution record", encoding="utf-8")
+
+    from core.tooling.handler import ToolHandler
+
+    handler = ToolHandler(anima_dir=anima_dir, memory=MagicMock(), tool_registry=[])
+    result = json.loads(
+        handler.handle(
+            "archive_memory_file",
+            {"path": "episodes/2026-10-07.md", "reason": "no longer needed"},
+        )
+    )
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "PermissionDenied"
+    assert episode.exists()
 
 
 class TestSearchMemoryCountHeader:

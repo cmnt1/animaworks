@@ -689,3 +689,23 @@ class TestClearPycache:
             assert not cache2.exists()
         finally:
             server_mod.__file__ = original
+
+
+class TestKillOrphanRunnersScope:
+    """Orphan cleanup must stay inside its own data dir."""
+
+    def test_sibling_data_dir_is_not_matched(self, tmp_path):
+        from cli.commands.server import _kill_orphan_runners
+
+        data_dir = tmp_path / ".animaworks"
+        with (
+            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("cli.commands.server.terminate_matching_processes", return_value=0) as terminate,
+        ):
+            _kill_orphan_runners()
+
+        path_filter = terminate.call_args.kwargs["path_contains"]
+        own = f"--socket-path {data_dir}/run/sockets/a.sock"
+        sibling = f"--socket-path {tmp_path}/.animaworks-demo/run/sockets/a.sock"
+        assert path_filter in own
+        assert path_filter not in sibling

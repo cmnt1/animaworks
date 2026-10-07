@@ -4,17 +4,14 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Signed Twilio webhooks for phone alerts and turn-based conversations."""
+"""Signed Twilio webhooks for phone PIN, alert, and Media Streams setup."""
 
 import asyncio
 import hmac
-import json
 import logging
 import re
-import time
 from html import escape
-from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -25,16 +22,14 @@ from core.config.vault import get_vault_manager
 from core.phone.alert import acknowledge_alert, get_alert, notify_call_status
 from core.phone.audio_store import phone_audio_store
 from core.phone.session import PhoneSession, phone_sessions
-from core.phone.speech import clean_for_speech, synthesize_speech
+from core.phone.speech import synthesize_speech
+from core.phone.stream_tokens import phone_stream_tokens
 from core.phone.twilio_client import build_webhook_url, get_twilio_credentials, validate_signature
+from core.voice.speech_text import prepare_speech
 
 logger = logging.getLogger(__name__)
 
 _MAX_PIN_FAILURES = 3
-_MAX_SILENT_TURNS = 2
-# Twilio abandons a webhook after 15 s; keep every handler well under it.
-_POLL_WAIT_SEC = 6.0
-_THINKING_NOTICE_INTERVAL_SEC = 20.0
 
 
 def _get_phone_config() -> tuple[AnimaWorksConfig, PhoneConfig]:
@@ -83,9 +78,9 @@ def _xml_attr(name: str, value: object) -> str:
     return f' {name}="{escape(str(value), quote=True)}"'
 
 
-def _tag(name: str, content: str = "", **attrs: object) -> str:
+def _tag(tag_name: str, content: str = "", **attrs: object) -> str:
     attributes = "".join(_xml_attr(key, value) for key, value in attrs.items() if value is not None)
-    return f"<{name}{attributes}>{content}</{name}>"
+    return f"<{tag_name}{attributes}>{content}</{tag_name}>"
 
 
 def _twiml(*parts: str) -> Response:
@@ -108,6 +103,22 @@ def _hook_url(phone_config: PhoneConfig, endpoint: str, **params: str | int) -> 
     )
 
 
+def _stream_ws_url(phone_config: PhoneConfig) -> str:
+    """Build the public WSS URL Twilio uses to open the bidirectional stream."""
+    parsed = urlsplit(phone_config.public_base_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("phone.public_base_url must be an absolute HTTP(S) URL")
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    path = f"{parsed.path.rstrip('/')}/api/webhooks/twilio/stream"
+    return urlunsplit((scheme, parsed.netloc, path, "", ""))
+
+
+def _connect_stream(phone_config: PhoneConfig, token: str) -> str:
+    parameter = _tag("Parameter", **{"name": "token", "value": token})
+    stream = _tag("Stream", parameter, url=_stream_ws_url(phone_config))
+    return _tag("Connect", stream)
+
+
 async def _play_text(
     request: Request,
     app_config: AnimaWorksConfig,
@@ -117,16 +128,25 @@ async def _play_text(
     *,
     cache_key: str | None = None,
 ) -> str:
+    from core.i18n import t
+
+    link_placeholder = t("phone.link_placeholder", locale=app_config.locale)
+    tts_provider = app_config.voice.default_tts_provider
     try:
         from core.paths import get_animas_dir
+        from core.voice.voice_config import load_per_anima_voice
 
         animas_dir = getattr(request.app.state, "animas_dir", None) or get_animas_dir()
+        tts_config = load_per_anima_voice(animas_dir, anima, app_config.voice)
+        tts_provider = tts_config.provider
         audio = await synthesize_speech(
             anima,
             text,
             animas_dir=animas_dir,
             voice_config=app_config.voice,
             cache_key=cache_key,
+            link_placeholder=link_placeholder,
+            max_chars=400,
         )
         token = phone_audio_store.put(audio)
         url = build_webhook_url(
@@ -136,7 +156,7 @@ async def _play_text(
         return _tag("Play", escape(url))
     except Exception:
         logger.warning("Phone speech synthesis failed for anima=%s", anima)
-        spoken = clean_for_speech(text)
+        spoken = prepare_speech(text, provider=tts_provider, link_placeholder=link_placeholder, max_chars=400).spoken
         language = "en-US" if app_config.locale == "en" else "ja-JP"
         return _tag("Say", escape(spoken), language=language)
 
@@ -165,19 +185,14 @@ _WARM_KEYS = (
     "phone.pin_prompt",
     "phone.pin_invalid",
     "phone.pin_locked",
-    "phone.greeting",
-    "phone.wait",
-    "phone.still_thinking",
-    "phone.silence_retry",
-    "phone.goodbye",
-    "phone.turn_timeout",
-    "phone.turn_error",
+    "phone.alert_ack",
+    "phone.alert_invalid_choice",
 )
 _warm_task: asyncio.Task[None] | None = None
 
 
 def _start_warmup(request: Request, app_config: AnimaWorksConfig, phone_config: PhoneConfig) -> None:
-    """Synthesize the fixed prompts in the background so later webhooks only replay them."""
+    """Warm only the short PIN and alert prompts used by TwiML playback."""
     global _warm_task
     if _warm_task is not None and not _warm_task.done():
         return
@@ -185,24 +200,9 @@ def _start_warmup(request: Request, app_config: AnimaWorksConfig, phone_config: 
     async def _warm() -> None:
         for key in _WARM_KEYS:
             await _play_key(request, app_config, phone_config, key)
+        await _play_key(request, app_config, phone_config, "phone.alert_choice", anima=phone_config.anima)
 
     _warm_task = asyncio.create_task(_warm(), name="phone-warm-prompts")
-
-
-async def _turn_and_speak(
-    request: Request,
-    app_config: AnimaWorksConfig,
-    phone_config: PhoneConfig,
-    supervisor: Any,
-    session: PhoneSession,
-    speech: str,
-) -> str:
-    """Run one Anima turn and synthesize the reply, returning the TwiML to play."""
-    text = await _run_turn(supervisor, session, speech, phone_config, app_config.locale)
-    clean_text, _ = _extract_emotion(text)
-    if not clean_text.strip():
-        clean_text = _localized("phone.turn_error", app_config.locale)
-    return await _play_text(request, app_config, phone_config, session.anima, clean_text)
 
 
 def _pin_gather(phone_config: PhoneConfig, prompt: str) -> str:
@@ -218,19 +218,6 @@ def _pin_gather(phone_config: PhoneConfig, prompt: str) -> str:
     )
 
 
-def _speech_gather(phone_config: PhoneConfig, prompt: str = "") -> str:
-    return _tag(
-        "Gather",
-        prompt,
-        input="speech",
-        language="ja-JP",
-        speechTimeout="auto",
-        action=_hook_url(phone_config, "turn"),
-        actionOnEmptyResult="true",
-        method="POST",
-    )
-
-
 def _alert_gather(phone_config: PhoneConfig, alert_id: str, prompt: str) -> str:
     return _tag(
         "Gather",
@@ -242,14 +229,6 @@ def _alert_gather(phone_config: PhoneConfig, alert_id: str, prompt: str) -> str:
         method="POST",
         timeout="8",
     )
-
-
-def _poll_redirect(phone_config: PhoneConfig) -> str:
-    return _tag("Redirect", escape(_hook_url(phone_config, "poll")), method="POST")
-
-
-def _poll_pause(phone_config: PhoneConfig, *, notice: str = "") -> Response:
-    return _twiml(notice, '<Pause length="2"/>', _poll_redirect(phone_config))
 
 
 def _pin_from_vault(phone_config: PhoneConfig) -> str | None:
@@ -269,84 +248,8 @@ def _terminal_call_status(status: str) -> bool:
     return status.lower().replace("_", "-") in {"completed", "busy", "failed", "no-answer", "canceled"}
 
 
-def _result_text(result: Any) -> str:
-    if not isinstance(result, dict):
-        return ""
-    response = result.get("response")
-    if isinstance(response, str) and response.strip():
-        return response
-    cycle_result = result.get("cycle_result")
-    if isinstance(cycle_result, dict):
-        summary = cycle_result.get("summary")
-        if isinstance(summary, str):
-            return summary
-    return ""
-
-
-async def _run_turn(
-    supervisor: Any,
-    session: PhoneSession,
-    speech: str,
-    phone_config: PhoneConfig,
-    locale: str,
-) -> str:
-    from core.i18n import t
-
-    params = {
-        "message": speech + t("phone.mode_suffix", locale=locale),
-        "from_person": phone_config.from_person,
-        "intent": "",
-        "stream": True,
-        "voice_mode": True,
-        "thread_id": phone_config.thread_id,
-        "images": [],
-        "attachment_paths": [],
-    }
-    text_parts: list[str] = []
-    result_data: dict[str, Any] = {}
-    try:
-        async for item in supervisor.send_request_stream(
-            anima_name=session.anima,
-            method="process_message",
-            params=params,
-            timeout=float(phone_config.turn_timeout_sec),
-        ):
-            if getattr(item, "done", False):
-                value = getattr(item, "result", None)
-                if isinstance(value, dict):
-                    result_data = value
-                continue
-            chunk = getattr(item, "chunk", None)
-            if not chunk:
-                continue
-            try:
-                chunk_data = json.loads(chunk)
-            except (json.JSONDecodeError, TypeError):
-                chunk_data = {"type": "text_delta", "text": str(chunk)}
-            if not isinstance(chunk_data, dict):
-                continue
-            if chunk_data.get("type") == "text_delta":
-                delta = chunk_data.get("text", "")
-                if delta:
-                    text_parts.append(str(delta))
-            elif chunk_data.get("type") == "cycle_done":
-                value = chunk_data.get("cycle_result")
-                if isinstance(value, dict) and not text_parts:
-                    summary = value.get("summary")
-                    if isinstance(summary, str) and summary:
-                        text_parts.append(summary)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.warning("Phone conversation request failed for anima=%s", session.anima)
-        return t("phone.turn_error", locale=locale)
-
-    response = "".join(text_parts).strip() or _result_text(result_data).strip()
-    return response or t("phone.turn_error", locale=locale)
-
-
 def create_phone_router() -> APIRouter:
-    """Create the Twilio phone webhook router."""
+    """Create the Twilio phone webhook and Media Streams router."""
     router = APIRouter(prefix="/webhooks/twilio", tags=["phone"])
 
     @router.post("/voice")
@@ -435,7 +338,7 @@ def create_phone_router() -> APIRouter:
 
     @router.post("/pin")
     async def pin(request: Request) -> Response:
-        """Validate the vault PIN and transition to the speech turn loop."""
+        """Validate the PIN and issue a one-use credential for the phone stream."""
         app_config, phone_config, params = await _verified_request(request)
         session = _session_for_call(params)
         if session is None:
@@ -460,95 +363,9 @@ def create_phone_router() -> APIRouter:
 
         session.authenticated = True
         session.pin_failures = 0
-        session.silence_count = 0
-        greeting = await _play_key(request, app_config, phone_config, "phone.greeting")
-        return _twiml(greeting, _speech_gather(phone_config))
-
-    @router.post("/turn")
-    async def turn(request: Request) -> Response:
-        """Receive one speech-recognized utterance and start its IPC task."""
-        app_config, phone_config, params = await _verified_request(request)
-        session = _session_for_call(params)
-        if session is None or not session.authenticated:
-            return _twiml(_hangup())
-
-        speech = _form_value(params, "SpeechResult").strip()
-        if not speech:
-            session.silence_count += 1
-            if session.silence_count >= _MAX_SILENT_TURNS:
-                goodbye = await _play_key(request, app_config, phone_config, "phone.goodbye")
-                return _twiml(goodbye, _hangup())
-            retry = await _play_key(request, app_config, phone_config, "phone.silence_retry")
-            return _twiml(retry, _speech_gather(phone_config))
-
-        session.silence_count = 0
-        existing_task = session.turn_task
-        if existing_task is not None:
-            if not existing_task.done():
-                still_thinking = await _play_key(request, app_config, phone_config, "phone.still_thinking")
-                return _twiml(still_thinking, _poll_redirect(phone_config))
-            # Do not overwrite a completed but not-yet-played response.
-            session.turn_task = None
-            try:
-                response_audio = existing_task.result()
-            except (asyncio.CancelledError, Exception):
-                response_audio = await _play_key(request, app_config, phone_config, "phone.turn_error")
-            return _twiml(response_audio, _speech_gather(phone_config))
-
-        supervisor = getattr(request.app.state, "supervisor", None)
-        if supervisor is None:
-            error_audio = await _play_key(request, app_config, phone_config, "phone.turn_error")
-            return _twiml(error_audio, _speech_gather(phone_config))
-
-        session.turn_started_at = time.monotonic()
-        session.last_thinking_at = 0.0
-        session.timed_out = False
-        session.turn_task = asyncio.create_task(
-            _turn_and_speak(request, app_config, phone_config, supervisor, session, speech),
-            name=f"phone-turn-{session.call_sid}",
-        )
-        wait_audio = await _play_key(request, app_config, phone_config, "phone.wait")
-        return _twiml(wait_audio, _poll_redirect(phone_config))
-
-    @router.post("/poll")
-    async def poll(request: Request) -> Response:
-        """Wait briefly for the current turn and play its result when ready."""
-        app_config, phone_config, params = await _verified_request(request)
-        session = _session_for_call(params)
-        if session is None or not session.authenticated or session.turn_task is None:
-            return _twiml(_hangup())
-
-        task = session.turn_task
-        elapsed = max(0.0, time.monotonic() - session.turn_started_at)
-        timeout = float(phone_config.turn_timeout_sec)
-        if not task.done() and elapsed < timeout:
-            await asyncio.wait({task}, timeout=min(_POLL_WAIT_SEC, max(0.0, timeout - elapsed)))
-
-        if task.done():
-            try:
-                response_audio = task.result()
-            except asyncio.CancelledError:
-                return _twiml(_hangup())
-            except Exception:
-                response_audio = await _play_key(request, app_config, phone_config, "phone.turn_error")
-            session.turn_task = None
-            session.turn_started_at = 0.0
-            return _twiml(response_audio, _speech_gather(phone_config))
-
-        elapsed = max(0.0, time.monotonic() - session.turn_started_at)
-        if elapsed >= timeout and not session.timed_out:
-            session.timed_out = True
-            timeout_audio = await _play_key(request, app_config, phone_config, "phone.turn_timeout")
-            return _twiml(timeout_audio, _speech_gather(phone_config))
-
-        notice = ""
-        now = time.monotonic()
-        if elapsed >= _THINKING_NOTICE_INTERVAL_SEC and (
-            not session.last_thinking_at or now - session.last_thinking_at >= _THINKING_NOTICE_INTERVAL_SEC
-        ):
-            notice = await _play_key(request, app_config, phone_config, "phone.still_thinking")
-            session.last_thinking_at = now
-        return _poll_pause(phone_config, notice=notice)
+        phone_stream_tokens.revoke_for_call(session.call_sid)
+        token = phone_stream_tokens.issue(session.call_sid)
+        return _twiml(_connect_stream(phone_config, token))
 
     @router.post("/status")
     async def status(request: Request) -> Response:
@@ -561,8 +378,7 @@ def create_phone_router() -> APIRouter:
             alert_id = request.query_params.get("alert", "") or (session.alert_id if session else "")
             if alert_id:
                 notify_call_status(alert_id, call_sid, call_status)
-            # Keep an in-flight turn running after hang-up: the Anima may be
-            # mid-way through work the caller asked for.
+            phone_stream_tokens.revoke_for_call(call_sid)
             phone_sessions.discard(call_sid)
         return Response(status_code=204)
 
@@ -579,19 +395,10 @@ def create_phone_router() -> APIRouter:
             headers={"Cache-Control": "private, no-store"},
         )
 
+    from server.routes.phone_stream import register_phone_stream_route
+
+    register_phone_stream_route(router)
     return router
-
-
-def _extract_emotion(text: str) -> tuple[str, str]:
-    from server.routes.chat_emotion import extract_emotion
-
-    return extract_emotion(text)
-
-
-def _localized(key: str, locale: str) -> str:
-    from core.i18n import t
-
-    return t(key, locale=locale)
 
 
 __all__ = ["create_phone_router"]

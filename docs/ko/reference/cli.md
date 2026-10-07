@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=6abbb3827be29bed9907c7391c24e2352393779bc649027eb0f7ffbb447ff520 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -430,6 +430,36 @@ cli.cost_help
 | --host | 옵션 | "0.0.0.0" | — | — |
 | --reset | 플래그 | false | — | — |
 
+## `enclave`
+
+격리된 엔클레이브의 상태 확인 및 감사 집계를 수행합니다.
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+엔클레이브의 시작 가드, 소켓, 이그레스 설정을 점검합니다.
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --json | 플래그 | false | — | 기계 판독 가능한 JSON 형식으로 출력합니다 |
+
+## `enclave status`
+
+당일 이그레스 성공 및 차단 건수를 표시합니다.
+
+`usage: animaworks enclave status [-h]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 ## `heartbeat`
 
 하트비트 트리거
@@ -661,13 +691,13 @@ anima용 stdio MCP 서버 실행
 
 ## `models info`
 
-모델의 해석된 모드와 컨텍스트 표시
+모델의 해결 모드와 컨텍스트 표시
 
 `usage: animaworks models info [-h] model`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| model | 위치 인자 | — | — | 모델 이름 (예: claude-sonnet-4-6) |
+| model | 위치 인자 | — | — | 모델 이름 (예: claude-sonnet-5-5) |
 
 ## `models list`
 

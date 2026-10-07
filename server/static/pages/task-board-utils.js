@@ -14,6 +14,13 @@ export function isCancellable(task) {
   return task?.visibility === "active";
 }
 
+export function queueStatusLabel(status) {
+  if (!status) return "";
+  const key = `taskboard.status_${status}`;
+  const label = t(key);
+  return label === key ? status : label;
+}
+
 export function statusClassSuffix(status) {
   return String(status || "missing").replace(/[^a-zA-Z0-9_-]/g, "-");
 }

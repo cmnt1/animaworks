@@ -47,7 +47,8 @@ export function createStreamingController(ctx) {
     const pct = Math.round(ratio * 100);
     const inK = inputTokens >= 1000 ? `${(inputTokens / 1000).toFixed(0)}k` : String(inputTokens);
     const winK = contextWindow >= 1000 ? `${(contextWindow / 1000).toFixed(0)}k` : String(contextWindow);
-    ring.title = contextWindow ? `${pct}%  ${inK} / ${winK}` : `${pct}%`;
+    const usage = contextWindow ? `${pct}%  ${inK} / ${winK}` : `${pct}%`;
+    ring.title = `${t("chat.context_ring_title")}: ${usage}`;
   }
 
   function updateContextRing(data, animaName) {
@@ -74,7 +75,7 @@ export function createStreamingController(ctx) {
       const fg = ring.querySelector(".context-ring-fg");
       if (fg) fg.style.strokeDashoffset = RING_CIRCUMFERENCE;
       ring.className = "context-ring-wrap";
-      ring.title = "";
+      ring.title = t("chat.context_ring_title");
     }
   }
 
@@ -271,18 +272,19 @@ export function createStreamingController(ctx) {
     }
 
     const currentAnima = state.animas.find(p => p.name === name);
+    const restoreUnsentInput = () => {
+      const input = $("chatPageInput");
+      if (input && !input.value && message) input.value = message;
+    };
     if (currentAnima?.needs_repair || currentAnima?.bootstrap_state?.state === "needs_repair") {
-      const msgs = $("chatPageMessages");
-      if (msgs) {
-        const el = document.createElement("div");
-        el.className = "chat-bubble assistant";
-        el.textContent = t("chat.bootstrap_needs_repair");
-        msgs.appendChild(el);
-        msgs.scrollTop = msgs.scrollHeight;
-      }
+      // The repair panel (with its recovery buttons) is the answer here;
+      // keep the user's text so it can be sent once the Anima is back.
+      restoreUnsentInput();
+      ctx.controllers.renderer.renderChat();
       return;
     }
     if (currentAnima?.status === "bootstrapping" || currentAnima?.bootstrapping) {
+      restoreUnsentInput();
       const msgs = $("chatPageMessages");
       if (msgs) {
         const el = document.createElement("div");

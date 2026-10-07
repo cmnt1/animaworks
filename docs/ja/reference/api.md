@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 8018b4f8cba4e63d8bb51092228bdda8f7631a40495b0da01dfe66792b783d54 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 24620c08c781fad4d844f7cb794c80475cbba5111c5f6fd797e238ce5953234f -->
 
 # API リファレンス
 
@@ -36,6 +36,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | PUT | `/api/animas/{name}/background-model` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
 | GET | `/api/animas/{name}/background-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
 | GET | `/api/animas/{name}/background-tasks/{task_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
+| POST | `/api/animas/{name}/bootstrap/repair` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Recover an Anima whose first-run setup stopped in needs_repair. | `server/routes/animas.py:repair_anima_bootstrap` |
 | GET | `/api/animas/{name}/config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
 | GET | `/api/animas/{name}/cron` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the raw cron.md content for an anima. | `server/routes/animas.py:get_anima_cron` |
 | POST | `/api/animas/{name}/disable` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Disable an Anima (set status.json to enabled: false and stop process). | `server/routes/animas.py:disable_anima` |
@@ -143,6 +144,8 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/interaction/message-ts` | 内部 | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | 内部 | Notify the server that a message was sent via CLI. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | 内部 | — | `server/routes/internal.py:internal_notification_mapping` |
+| POST | `/api/internal/notify-web` | 内部 | Push a call_human notification into connected Web UI clients. | `server/routes/internal.py:internal_notify_web` |
+| POST | `/api/internal/phone/alert` | 内部 | Start an urgent phone alert for the configured Anima. | `server/routes/internal.py:internal_phone_alert` |
 | POST | `/api/internal/post-channel` | 内部 | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 内部 | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | 内部 | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
@@ -186,6 +189,17 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/memory/stats` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_procedures` |
 | GET | `/api/animas/{name}/procedures/{proc}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_procedure` |
+
+## `server/routes/phone.py`
+
+| GET | `/api/webhooks/twilio/audio/{token}.wav` | 不要（除外一覧） | Serve an unexpired synthesized WAV by its unguessable token. | `server/routes/phone.py:audio` |
+| POST | `/api/webhooks/twilio/pin` | 不要（除外一覧） | Validate the PIN and issue a one-use credential for the phone stream. | `server/routes/phone.py:pin` |
+| POST | `/api/webhooks/twilio/status` | 不要（除外一覧） | Handle Twilio call status callbacks and release terminal sessions. | `server/routes/phone.py:status` |
+| POST | `/api/webhooks/twilio/voice` | 不要（除外一覧） | Handle inbound calls, alert playback, and alert DTMF responses. | `server/routes/phone.py:voice` |
+
+## `server/routes/phone_stream.py`
+
+| WS | `/api/webhooks/twilio/stream` | 不要（除外一覧） | — | `server/routes/phone_stream.py:phone_media_stream` |
 
 ## `server/routes/room.py`
 

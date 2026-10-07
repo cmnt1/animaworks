@@ -365,6 +365,11 @@ def _render_startup_progress_html(snapshot: dict[str, object]) -> str:
     {error_html}
     <div class="bar" aria-hidden="true"><span></span></div>
   </main>
+  <script>
+    // meta refresh to the same URL is a same-document navigation when the URL
+    // has a fragment (e.g. /#/chat), so it never reloads; force a real reload.
+    setTimeout(function () {{ location.reload(); }}, 3000);
+  </script>
 </body>
 </html>
 """
@@ -507,130 +512,148 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         # Reconcile missing anima assets once as a fallback for failed bootstrap.
         _schedule_startup_asset_reconciliation(app)
 
-        # ── Slack: ensure .env slots + warn about missing tokens ──
+        # Enclave mode never starts outward channels (Slack/Discord/Zoom/GitHub).
         try:
-            from core.config.env_slots import ensure_all_anima_slots
-            from core.credentials import check_missing_slack_tokens
+            _enclave_mode = load_config().enclave.enabled
+        except Exception:
+            logger.warning("Could not read enclave mode; starting no external gateways", exc_info=True)
+            _enclave_mode = True
+        if _enclave_mode:
+            logger.info("Enclave mode: external gateways are not started")
+            for _attr in (
+                "slack_socket_manager",
+                "discord_gateway_manager",
+                "discord_channel_sync",
+                "zoom_gateway_manager",
+                "github_gateway_manager",
+                "slack_channel_sync",
+            ):
+                setattr(app.state, _attr, None)
+        else:
+            # ── Slack: ensure .env slots + warn about missing tokens ──
+            try:
+                from core.config.env_slots import ensure_all_anima_slots
+                from core.credentials import check_missing_slack_tokens
 
-            ensure_all_anima_slots()
-            missing = check_missing_slack_tokens()
-            if missing:
-                logger.warning(
-                    "Slack tokens missing for: %s — edit .env and restart",
-                    ", ".join(missing),
+                ensure_all_anima_slots()
+                missing = check_missing_slack_tokens()
+                if missing:
+                    logger.warning(
+                        "Slack tokens missing for: %s — edit .env and restart",
+                        ", ".join(missing),
+                    )
+            except Exception:
+                logger.debug("Slack env slot check failed", exc_info=True)
+
+            # ── Slack Socket Mode ─────────────────────────────────
+            _slack_enabled = False
+            try:
+                _slack_enabled = load_config().external_messaging.slack.enabled
+            except Exception:
+                logger.debug("Best-effort operation failed", exc_info=True)
+
+            try:
+                from server.gateways.slack_socket import SlackSocketModeManager
+
+                socket_manager = SlackSocketModeManager()
+                await asyncio.wait_for(socket_manager.start(), timeout=30)
+                app.state.slack_socket_manager = socket_manager
+            except TimeoutError:
+                logger.error("Slack Socket Mode startup timed out (30s)")
+                app.state.slack_socket_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Slack Socket Mode startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
                 )
-        except Exception:
-            logger.debug("Slack env slot check failed", exc_info=True)
+                app.state.slack_socket_manager = None
 
-        # ── Slack Socket Mode ─────────────────────────────────
-        _slack_enabled = False
-        try:
-            _slack_enabled = load_config().external_messaging.slack.enabled
-        except Exception:
-            logger.debug("Best-effort operation failed", exc_info=True)
+            if _slack_enabled and app.state.slack_socket_manager is None:
+                logger.critical(
+                    "Slack is enabled but Socket Mode failed to start — "
+                    "Slack replies will NOT be received. "
+                    "Install slack-bolt: pip install 'animaworks[communication]'"
+                )
 
-        try:
-            from server.gateways.slack_socket import SlackSocketModeManager
-
-            socket_manager = SlackSocketModeManager()
-            await asyncio.wait_for(socket_manager.start(), timeout=30)
-            app.state.slack_socket_manager = socket_manager
-        except TimeoutError:
-            logger.error("Slack Socket Mode startup timed out (30s)")
-            app.state.slack_socket_manager = None
-        except Exception as exc:
-            logger.error(
-                "Slack Socket Mode startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.slack_socket_manager = None
-
-        if _slack_enabled and app.state.slack_socket_manager is None:
-            logger.critical(
-                "Slack is enabled but Socket Mode failed to start — "
-                "Slack replies will NOT be received. "
-                "Install slack-bolt: pip install 'animaworks[communication]'"
-            )
-
-        # ── Discord Gateway ────────────────────────────────────
-        try:
-            from server.gateways.discord_gateway import DiscordGatewayManager
-
-            discord_manager = DiscordGatewayManager()
-            await asyncio.wait_for(discord_manager.start(), timeout=35)
-            app.state.discord_gateway_manager = discord_manager
-        except TimeoutError:
-            logger.error("Discord Gateway startup timed out (35s)")
-            app.state.discord_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Discord Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.discord_gateway_manager = None
-
-        # ── Discord channel → board sync (initial) ───────────
-        if app.state.discord_gateway_manager is not None:
+            # ── Discord Gateway ────────────────────────────────────
             try:
-                from server.gateways.discord_channel_sync import DiscordChannelSync
+                from server.gateways.discord_gateway import DiscordGatewayManager
 
-                discord_sync = DiscordChannelSync()
-                await discord_sync.sync(app.state.discord_gateway_manager)
-                app.state.discord_channel_sync = discord_sync
-            except Exception:
-                logger.warning("Initial Discord channel sync failed", exc_info=True)
+                discord_manager = DiscordGatewayManager()
+                await asyncio.wait_for(discord_manager.start(), timeout=35)
+                app.state.discord_gateway_manager = discord_manager
+            except TimeoutError:
+                logger.error("Discord Gateway startup timed out (35s)")
+                app.state.discord_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Discord Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.discord_gateway_manager = None
+
+            # ── Discord channel → board sync (initial) ───────────
+            if app.state.discord_gateway_manager is not None:
+                try:
+                    from server.gateways.discord_channel_sync import DiscordChannelSync
+
+                    discord_sync = DiscordChannelSync()
+                    await discord_sync.sync(app.state.discord_gateway_manager)
+                    app.state.discord_channel_sync = discord_sync
+                except Exception:
+                    logger.warning("Initial Discord channel sync failed", exc_info=True)
+                    app.state.discord_channel_sync = None
+            else:
                 app.state.discord_channel_sync = None
-        else:
-            app.state.discord_channel_sync = None
 
-        # ── Zoom RTMS Gateway ──────────────────────────────────
-        try:
-            from server.gateways.zoom_gateway import ZoomRTMSManager
-
-            zoom_manager = ZoomRTMSManager()
-            await asyncio.wait_for(zoom_manager.start(), timeout=35)
-            app.state.zoom_gateway_manager = zoom_manager
-        except TimeoutError:
-            logger.error("Zoom RTMS Gateway startup timed out (35s)")
-            app.state.zoom_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Zoom RTMS Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.zoom_gateway_manager = None
-
-        # ── GitHub Webhook Gateway ─────────────────────────────
-        try:
-            from server.gateways.github_gateway import GitHubWebhookManager
-
-            github_manager = GitHubWebhookManager()
-            await github_manager.start()
-            app.state.github_gateway_manager = github_manager
-        except Exception as exc:
-            logger.error(
-                "GitHub Webhook Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.github_gateway_manager = None
-
-        # ── Slack channel → board sync (initial) ──────────────
-        if app.state.slack_socket_manager is not None:
+            # ── Zoom RTMS Gateway ──────────────────────────────────
             try:
-                from server.gateways.slack_channel_sync import SlackChannelSync
+                from server.gateways.zoom_gateway import ZoomRTMSManager
 
-                channel_sync = SlackChannelSync()
-                await channel_sync.sync(app.state.slack_socket_manager)
-                app.state.slack_channel_sync = channel_sync
-            except Exception:
-                logger.warning("Initial Slack channel sync failed", exc_info=True)
+                zoom_manager = ZoomRTMSManager()
+                await asyncio.wait_for(zoom_manager.start(), timeout=35)
+                app.state.zoom_gateway_manager = zoom_manager
+            except TimeoutError:
+                logger.error("Zoom RTMS Gateway startup timed out (35s)")
+                app.state.zoom_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Zoom RTMS Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.zoom_gateway_manager = None
+
+            # ── GitHub Webhook Gateway ─────────────────────────────
+            try:
+                from server.gateways.github_gateway import GitHubWebhookManager
+
+                github_manager = GitHubWebhookManager()
+                await github_manager.start()
+                app.state.github_gateway_manager = github_manager
+            except Exception as exc:
+                logger.error(
+                    "GitHub Webhook Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.github_gateway_manager = None
+
+            # ── Slack channel → board sync (initial) ──────────────
+            if app.state.slack_socket_manager is not None:
+                try:
+                    from server.gateways.slack_channel_sync import SlackChannelSync
+
+                    channel_sync = SlackChannelSync()
+                    await channel_sync.sync(app.state.slack_socket_manager)
+                    app.state.slack_channel_sync = channel_sync
+                except Exception:
+                    logger.warning("Initial Slack channel sync failed", exc_info=True)
+                    app.state.slack_channel_sync = None
+            else:
                 app.state.slack_channel_sync = None
-        else:
-            app.state.slack_channel_sync = None
 
         # ── ConfigReloadManager ───────────────────────────────
         from server.reload_manager import ConfigReloadManager
@@ -728,6 +751,9 @@ async def _run_model_warmup() -> None:
         # 1s of 16kHz mono PCM16 silence — enough to force the model load.
         await stt.transcribe_buffer_async(b"\x00\x00" * 16000)
         logger.info("Model warmup complete: stt")
+    except ImportError as exc:
+        # Voice input is an optional extra; say so once instead of a traceback.
+        logger.info("Voice STT warmup skipped: %s", exc)
     except Exception:
         logger.exception("Model warmup failed: stt")
 
@@ -925,6 +951,11 @@ async def lifespan(app: FastAPI):
     else:
         startup_progress.set_phase("ready", detail=t("startup.detail_setup_mode"), reset_counts=True)
         logger.info("Server started in setup mode (setup not yet complete)")
+    # Enclave gateway: start only when enclave mode is enabled (fail-closed on
+    # socket-rebinding errors).
+    from core.enclave.gateway_server import start_gateway
+
+    await start_gateway(app)
     yield
     # Shutdown
     if app.state.setup_complete:
@@ -955,6 +986,9 @@ async def lifespan(app: FastAPI):
             await app.state.zoom_gateway_manager.stop()
         if getattr(app.state, "github_gateway_manager", None):
             await app.state.github_gateway_manager.stop()
+        from core.enclave.gateway_server import stop_gateway
+
+        await stop_gateway(app)
         await app.state.supervisor.shutdown_all()
         from core.memory.rag.vector_registry import configure_server_vector_access
 
@@ -983,6 +1017,11 @@ def create_app(
     ws_manager = WebSocketManager()
 
     config = load_config()
+
+    from core.enclave import enforce_enclave_runtime
+    from core.paths import get_data_dir
+
+    enforce_enclave_runtime(config, get_data_dir(), host=None)
     _base_path = _normalize_base_path(getattr(config.server, "base_path", ""))
 
     # Create run directory for sockets and PID files
@@ -1090,12 +1129,14 @@ def create_app(
         if not setup_complete:
             # During setup: only setup API and the static assets needed by
             # the setup wizard are accessible.  The setup HTML imports shared
-            # modules through the versioned static route.
+            # modules through the versioned static route, and the wizard steps
+            # import the same-origin fetch wrapper from /modules/api.js.
             if (
                 path.startswith("/api/setup")
                 or path.startswith("/setup")
                 or path.startswith("/_v/")
                 or path.startswith("/shared/")
+                or path == "/modules/api.js"
             ):
                 response = await call_next(request)
                 # Prevent browser caching of setup static files so code
@@ -1354,11 +1395,15 @@ def create_app(
     if _pixel_workspace_html_raw:
 
         @app.get("/workspace/pixel", include_in_schema=False)
-        async def _redirect_pixel_workspace():
-            return RedirectResponse(_base_prefixed("/workspace/pixel/"))
+        async def _redirect_pixel_workspace(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
+            return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
         @app.get("/workspace/pixel/", include_in_schema=False)
-        async def _serve_pixel_workspace_index():
+        async def _serve_pixel_workspace_index(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
             return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
     battle_index = static_dir / "battle" / "index.html"
@@ -1367,7 +1412,9 @@ def create_app(
 
         @app.get("/battle", include_in_schema=False)
         @app.get("/battle/", include_in_schema=False)
-        async def _serve_battle_index():
+        async def _serve_battle_index(request: Request):
+            if "demo" not in request.query_params and "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?view=battle"))
             return HTMLResponse(_inject_html(battle_html), headers={"Cache-Control": "no-store"})
 
     if setup_static_dir.exists():

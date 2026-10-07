@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from core.enclave.config import EnclaveClientConfig, EnclaveConfig
+
 logger = logging.getLogger("animaworks.config")
 
 # ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ class AnimaModelConfig(BaseModel):
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
-DEFAULT_ANIMA_MODEL: str = "claude-sonnet-4-6"
+DEFAULT_ANIMA_MODEL: str = "claude-sonnet-5-5"
 DEFAULT_CONSOLIDATION_MODEL: str = DEFAULT_ANIMA_MODEL
 
 
@@ -478,6 +480,7 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+    web_ui: bool = True  # built-in channel: push call_human into the Web UI chat
 
 
 class InteractionConfig(BaseModel):
@@ -959,7 +962,12 @@ class PhoneConfig(BaseModel):
     auth_token_vault_key: str = "TWILIO_AUTH_TOKEN"
     alert_max_attempts: int = Field(default=3, ge=1)
     alert_retry_interval_sec: float = Field(default=120, ge=0)
-    turn_timeout_sec: float = Field(default=300, gt=0)
+    turn_timeout_sec: float = Field(
+        default=300,
+        gt=0,
+        description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
+    )
+    turn_end_silence_ms: int = Field(default=1200, ge=300, le=5000)
 
 
 class VoicevoxConfig(BaseModel):
@@ -1016,6 +1024,8 @@ class VoiceConfig(BaseModel):
     proactive_lead_sec: float = 5.0
     """Start the next monologue this many seconds before the current playback ends
     (so speech is continuous but never more than one utterance is queued)."""
+    notify_delegations_on_web_disconnect: bool = False
+    """Send pending voice-front delegation results to humans when a Web voice session closes."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
@@ -1397,6 +1407,8 @@ class AnimaWorksConfig(BaseModel):
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
     cli: CLIConfig = CLIConfig()
+    enclave: EnclaveConfig = EnclaveConfig()
+    enclaves: dict[str, EnclaveClientConfig] = Field(default_factory=dict)
 
 
 __all__ = [

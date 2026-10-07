@@ -57,8 +57,26 @@ function _ensureKatex() {
   if (typeof markedKatex !== "undefined") {
     marked.use(markedKatex({ throwOnError: false, output: "htmlAndMathml" }));
   }
+  marked.use({ extensions: [_cjkStrongExtension] });
   _katexInitialized = true;
 }
+
+// CommonMark only closes "**" when it is followed by a space or punctuation,
+// so Japanese like "**桜庭 咲良（さくら）**と申します" stayed as literal
+// asterisks. This tokenizer runs before marked's own and ignores flanking.
+const _cjkStrongExtension = {
+  name: "cjkStrong",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("**");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = /^\*\*(?![\s*])([^\n]*?[^\s*])\*\*/.exec(src);
+    if (!m) return undefined;
+    return { type: "strong", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+  },
+};
 
 const _markedRenderer = new marked.Renderer();
 const _origLinkRenderer = _markedRenderer.link.bind(_markedRenderer);
@@ -126,11 +144,29 @@ function _ensureClosedTags(html) {
   return _sanitizerEl.innerHTML;
 }
 
+// A "---" line right under a paragraph is a Setext <h2> in Markdown. Anima
+// replies join progress notes with single newlines and then a "---" divider,
+// which turned every note into one big bold heading. Treat it as a rule.
+export function breakSetextHeadings(text) {
+  if (typeof text !== "string" || !text.includes("---")) return text;
+  const lines = text.split("\n");
+  const out = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s{0,3}(```|~~~)/.test(line)) inFence = !inFence;
+    if (!inFence && /^\s{0,3}-{3,}\s*$/.test(line) && out.length && out[out.length - 1].trim() !== "") {
+      out.push("");
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 export function renderMarkdown(text, animaName) {
   _ensureKatex();
   _mdAnimaCtx = animaName || null;
   try {
-    return _ensureClosedTags(marked.parse(text, _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(text), _markedOptions));
   } catch {
     return escapeHtml(text);
   } finally {
@@ -142,7 +178,7 @@ export function renderSafeMarkdown(text) {
   if (!text) return "";
   _ensureKatex();
   try {
-    return _ensureClosedTags(marked.parse(escapeHtml(text), _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(escapeHtml(text)), _markedOptions));
   } catch {
     return escapeHtml(text);
   }

@@ -42,7 +42,7 @@ export function render(container) {
 
         <div data-chat-id="chatRightTabContent" style="padding:0.75rem;">
           <div data-chat-id="chatPaneState">
-            <pre class="state-content" data-chat-id="chatAnimaState" style="white-space:pre-wrap; word-break:break-word; margin:0;">${t("chat.anima_select_first")}</pre>
+            <div class="md-config-content" data-chat-id="chatAnimaState">${t("chat.anima_select_first")}</div>
           </div>
           <div data-chat-id="chatPaneActivity" style="display:none;">
             <div data-chat-id="chatActivityFeed" class="activity-feed">

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +18,7 @@ from core.notification import CallHumanKeys
 
 def _make_handler(tmp_path: Path):
     anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "activity_log").mkdir(parents=True)
+    (anima_dir / "activity_log").mkdir(parents=True, exist_ok=True)
     memory = MagicMock()
     memory.anima_dir = anima_dir
     with (
@@ -29,6 +30,7 @@ def _make_handler(tmp_path: Path):
         handler = ToolHandler(anima_dir=anima_dir, memory=memory)
     notifier = MagicMock()
     notifier.channel_count = 1
+    notifier.has_external_channels = True
     notifier.notify = AsyncMock(return_value=["ok"])
     handler._human_notifier = notifier
     return handler, notifier
@@ -36,6 +38,20 @@ def _make_handler(tmp_path: Path):
 
 def _issued_key(result: str) -> str:
     return json.loads(result)["message"].split('sha="')[1][:8]
+
+
+def _confirmation_api(monkeypatch: pytest.MonkeyPatch, keys: CallHumanKeys) -> MagicMock:
+    def confirm(path: str, *, json: dict, timeout: float):
+        assert path == "/api/internal/call-human/confirm"
+        assert timeout == 10.0
+        issued_key = keys.check(json["anima_name"], json["session_id"], json.get("sha", ""))
+        response = MagicMock()
+        response.json.return_value = {"ok": issued_key is None, "sha": issued_key or ""}
+        return response
+
+    post = MagicMock(side_effect=confirm)
+    monkeypatch.setattr("core.internal_api.host_api", SimpleNamespace(post=post))
+    return post
 
 
 def test_keys_are_random_per_session():
@@ -84,33 +100,113 @@ def test_denied_call_is_not_logged_as_human_notify(tmp_path: Path):
     assert logged == ["tool_use", "human_notify"]
 
 
-def test_cli_requires_key_only_inside_anima_session(tmp_path: Path, monkeypatch, capsys):
+def test_cli_confirmation_survives_standalone_handler_processes(tmp_path: Path, monkeypatch, capsys):
     from core.integrations import call_human as cli
 
-    server_keys = CallHumanKeys()
-    monkeypatch.setattr(cli, "_check_confirm_key_via_server", lambda a, s, sha: server_keys.check(a, s, sha) or "")
-    monkeypatch.setattr(cli, "_load_config", lambda: {"human_notification": {"enabled": False}})
-    monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(tmp_path / "mei"))
+    keys = CallHumanKeys()
+    post = _confirmation_api(monkeypatch, keys)
+    first_handler, first_notifier = _make_handler(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(first_handler._anima_dir))
     monkeypatch.setenv("ANIMAWORKS_TOOL_SESSION_ID", "sess1")
-    with pytest.raises(SystemExit) as exc:
-        cli.cli_main(["s", "b"])
-    assert exc.value.code == 2
-    key = capsys.readouterr().err.split('--sha "')[1][:8]
+    monkeypatch.setattr(
+        "core.tooling.standalone.run_tool_for_current_anima",
+        lambda name, args: first_handler.handle(name, args),
+    )
 
-    # Correct key passes the gate (then stops at the disabled-config check).
-    with pytest.raises(SystemExit) as exc:
-        cli.cli_main(["s", "b", "--sha", key])
-    assert exc.value.code == 1
-
-    # Humans (no session id) are not gated.
-    monkeypatch.delenv("ANIMAWORKS_TOOL_SESSION_ID")
     with pytest.raises(SystemExit) as exc:
         cli.cli_main(["s", "b"])
     assert exc.value.code == 1
+    first_result = capsys.readouterr().out
+    key = _issued_key(first_result)
+    assert len(key) == 8
+    first_notifier.notify.assert_not_called()
+    assert post.call_args.kwargs["json"]["session_id"] == "sess1"
+
+    # A fresh standalone ToolHandler uses the same server-side key for the CLI session.
+    next_handler, next_notifier = _make_handler(tmp_path)
+    monkeypatch.setattr(
+        "core.tooling.standalone.run_tool_for_current_anima",
+        lambda name, args: next_handler.handle(name, args),
+    )
+    cli.cli_main(["s", "b", "--sha", key])
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "sent"
+    next_notifier.notify.assert_awaited_once()
+    assert post.call_count == 2
 
 
-def test_cli_fails_open_when_server_unreachable(monkeypatch):
-    from core.integrations import call_human as cli
+def test_cli_confirmation_fails_closed_when_server_unreachable(tmp_path: Path, monkeypatch):
+    handler, notifier = _make_handler(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_TOOL_SESSION_ID", "sess1")
+    monkeypatch.setattr(
+        "core.internal_api.host_api",
+        SimpleNamespace(post=MagicMock(side_effect=RuntimeError("server unavailable"))),
+    )
 
-    monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://127.0.0.1:9")
-    assert cli._check_confirm_key_via_server("mei", "sess1", "") == ""
+    result = json.loads(handler.handle("call_human", {"subject": "s", "body": "b"}))
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "ConfirmationUnavailable"
+    notifier.notify.assert_not_called()
+
+
+def test_web_only_notification_skips_external_confirmation(tmp_path: Path, monkeypatch):
+    handler, notifier = _make_handler(tmp_path)
+    notifier.has_external_channels = False
+    monkeypatch.setenv("ANIMAWORKS_TOOL_SESSION_ID", "sess1")
+    post = MagicMock()
+    monkeypatch.setattr("core.internal_api.host_api", SimpleNamespace(post=post))
+
+    result = json.loads(handler.handle("call_human", {"subject": "s", "body": "b"}))
+
+    assert result["status"] == "sent"
+    post.assert_not_called()
+    notifier.notify.assert_awaited_once()
+
+
+def _phone_api(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    response = MagicMock()
+    response.json.return_value = {"status": "calling"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr("core.internal_api.host_api", SimpleNamespace(post=post))
+    return post
+
+
+def test_urgent_tool_call_rings_phone_like_the_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, notifier = _make_handler(tmp_path)
+    post = _phone_api(monkeypatch)
+    args = {"subject": "Outage", "body": "API is down", "priority": "urgent"}
+    key = _issued_key(handler._handle_call_human(args))
+    post.assert_not_called()
+
+    result = json.loads(handler._handle_call_human({**args, "sha": key}))
+
+    assert result["results"] == ["ok", "phone: calling"]
+    notifier.notify.assert_awaited_once()
+    post.assert_called_once_with(
+        "/api/internal/phone/alert",
+        json={"anima": handler._anima_name, "subject": "Outage", "body": "API is down"},
+        timeout=10.0,
+    )
+
+
+def test_nonurgent_tool_call_does_not_ring_phone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, _ = _make_handler(tmp_path)
+    post = _phone_api(monkeypatch)
+    args = {"subject": "s", "body": "b", "priority": "high"}
+    key = _issued_key(handler._handle_call_human(args))
+    handler._handle_call_human({**args, "sha": key})
+    post.assert_not_called()
+
+
+def test_urgent_tool_call_rings_phone_without_other_channels(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    handler, notifier = _make_handler(tmp_path)
+    notifier.channel_count = 0
+    post = _phone_api(monkeypatch)
+
+    result = json.loads(handler._handle_call_human({"subject": "s", "body": "b", "priority": "urgent"}))
+
+    assert result["error_type"] == "NotConfigured"
+    assert result["context"] == {"phone": "phone: calling"}
+    post.assert_called_once()

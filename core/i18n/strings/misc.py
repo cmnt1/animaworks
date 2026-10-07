@@ -423,4 +423,45 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "音声認識に失敗しました",
         "en": "Speech recognition failed",
     },
+    "voice.ask_anima_tool_description": {
+        "ja": (
+            "時間のかかる作業・ツール実行・記憶の検索保存・タスク化・調査・実装などを、"
+            "自分自身の本体（フルエージェント）に依頼する。会話で即答できないことはこれで依頼する。"
+            "挨拶・お礼・雑談・意見や感想・自分で即答できる質問には使わない。"
+            "実行中の依頼がある間は新しい依頼をせず、完了を待つ。"
+        ),
+        "en": (
+            "Delegate time-consuming work, tool execution, memory search or storage, task creation, research, "
+            "or implementation to your full agent. Use this when you cannot answer immediately from conversation. "
+            "Do not use it for greetings, thanks, small talk, opinions, or questions you can answer yourself. "
+            "Do not submit a new request while another request is running; wait for it to finish."
+        ),
+        "ko": (
+            "시간이 걸리는 작업, 도구 실행, 기억 검색이나 저장, 작업 생성, 조사, 구현 등을 전체 에이전트인 자신에게 위임한다. "
+            "대화만으로 바로 답할 수 없는 경우에 사용한다. 인사, 감사, 잡담, 의견, 스스로 바로 답할 수 있는 질문에는 사용하지 않는다. "
+            "실행 중인 요청이 있으면 새 요청을 보내지 말고 완료될 때까지 기다린다."
+        ),
+    },
+    "voice.ask_anima_in_progress": {
+        "ja": (
+            "job {job}（依頼: {request}）が実行中です。同じ内容なら完了を待ってください。"
+            "別の依頼なら、完了後に改めて依頼してください。"
+        ),
+        "en": (
+            "Job {job} (request: {request}) is already running. If this is the same request, wait for it to finish. "
+            "If it is a different request, submit it after the current job completes."
+        ),
+        "ko": (
+            "job {job}(요청: {request})이(가) 실행 중입니다. 같은 요청이면 완료될 때까지 기다려 주세요. "
+            "다른 요청이면 현재 작업이 끝난 후 다시 요청해 주세요."
+        ),
+    },
+    "voice.delegation_report_subject": {
+        "ja": "音声で頼まれた件の結果（{anima}）",
+        "en": "Results of the voice request ({anima})",
+    },
+    "voice.delegation_still_running": {
+        "ja": "[ask_anima job {job}: 30分以内に完了を確認できませんでした。依頼: {request}]",
+        "en": "[ask_anima job {job}: still running after 30 minutes. Request: {request}]",
+    },
 }

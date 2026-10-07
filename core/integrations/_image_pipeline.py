@@ -107,6 +107,11 @@ def _append_image_error(result: PipelineResult, step: str, exc: BaseException) -
                 retry_after=retry_after_text,
             )
         )
+    elif missing_backend and "(codex:" in raw:
+        # Codex was available and tried; say why it failed instead of telling
+        # a logged-in user to log in.
+        reason = raw[raw.rfind("(codex:") + len("(codex:") :].rstrip(") ").strip()
+        result.errors.append(t("image_generation.codex_failed", step=step, reason=reason))
     elif missing_backend:
         result.errors.append(t("image_generation.no_backend", step=step))
     else:

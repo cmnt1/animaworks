@@ -201,6 +201,15 @@ class TestPlaceBootstrap:
         assert (anima_dir / "bootstrap.md").exists()
         assert (anima_dir / "bootstrap.md").read_text(encoding="utf-8") == "Bootstrap content"
 
+    def test_resolves_data_dir_placeholder(self, tmp_path):
+        anima_dir = tmp_path / "animas" / "hinata"
+        anima_dir.mkdir(parents=True)
+        bootstrap = tmp_path / "bootstrap.md"
+        bootstrap.write_text("Read {data_dir}/prompts/guide.md", encoding="utf-8")
+        with patch("core.anima.factory.BOOTSTRAP_TEMPLATE", bootstrap):
+            _place_bootstrap(anima_dir)
+        assert (anima_dir / "bootstrap.md").read_text(encoding="utf-8") == f"Read {tmp_path}/prompts/guide.md"
+
     def test_no_bootstrap_template(self, tmp_path):
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -673,7 +682,7 @@ class TestCreateStatusJson:
             "name": "sakura",
             "役割": "developer",
             "supervisor": "tanaka",
-            "exec_mode": "assisted",
+            "exec_mode": "A",
             "model": "openai/gpt-4o",
             "credential": "openai_key",
         }
@@ -681,9 +690,28 @@ class TestCreateStatusJson:
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "tanaka"
         assert status["role"] == "general"
-        assert status["execution_mode"] == "assisted"
+        assert status["execution_mode"] == "A"
         assert status["model"] == "openai/gpt-4o"
         assert status["credential"] == "openai_key"
+
+    @pytest.mark.parametrize("label", ["autonomous", "assisted"])
+    def test_prose_execution_mode_is_not_pinned(self, tmp_path, label):
+        """A Claude subscription hire must not be forced onto the API-key path."""
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        _create_status_json(anima_dir, {"exec_mode": label, "model": "claude-sonnet-4-6"})
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert "execution_mode" not in status
+
+    def test_speciality_from_sheet(self, tmp_path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        info = _parse_character_sheet_info(
+            "## 基本情報\n\n| 項目 | 設定 |\n|---|---|\n| 英名 | hinata |\n| 役職/専門 | 営業リサーチ担当 |\n"
+        )
+        _create_status_json(anima_dir, info)
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["speciality"] == "営業リサーチ担当"
 
     def test_supervisor_nashi_normalized(self, tmp_path):
         anima_dir = tmp_path / "anima"

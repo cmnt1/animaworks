@@ -458,11 +458,17 @@ def _is_consolidation_mode() -> bool:
 
 
 def _has_notification_channels_for_anima() -> bool:
-    """Return whether at least one human-notification channel is enabled."""
+    """Return whether this Anima can reach a human (Web UI or an enabled channel)."""
     try:
+        from core.config.anima_registry import read_anima_supervisor
         from core.config.models import load_config
 
-        return any(channel.enabled for channel in load_config().human_notification.channels)
+        hn = load_config().human_notification
+        if any(channel.enabled for channel in hn.channels):
+            return True
+        anima_dir_value = anima_dir_env() or ""
+        # The built-in Web UI channel is for top-level Animas only.
+        return bool(hn.web_ui and anima_dir_value and read_anima_supervisor(Path(anima_dir_value)) is None)
     except Exception:
         logger.debug("Failed to check human notification configuration", exc_info=True)
         return False

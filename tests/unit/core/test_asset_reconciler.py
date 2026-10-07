@@ -358,7 +358,7 @@ class TestExtractPrompt:
         with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("claude-sonnet-4-6", "anthropic")
+        assert result == ("claude-sonnet-5-5", "anthropic")
 
     def test_prompt_synthesis_model_uses_legacy_helper_model_and_credential(self, tmp_path: Path) -> None:
         from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
@@ -386,7 +386,7 @@ class TestExtractPrompt:
         with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("claude-sonnet-4-6", "anthropic")
+        assert result == ("claude-sonnet-5-5", "anthropic")
 
 
 # ── reconcile_anima_assets ──────────────────────────────────────
@@ -699,4 +699,4 @@ def test_asset_helper_ignores_codex_anima_model(tmp_path):
     config.anima_defaults.model = "codex/account-model"
     config.anima_defaults.credential = "openai"
     with patch("core.config.io.load_config", return_value=config):
-        assert _resolve_prompt_synthesis_model(tmp_path) == ("claude-sonnet-4-6", "anthropic")
+        assert _resolve_prompt_synthesis_model(tmp_path) == ("claude-sonnet-5-5", "anthropic")

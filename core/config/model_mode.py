@@ -103,10 +103,12 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "openai/deepseek-v4-flash-0731", "mode": "A", "note": ""},
     {"name": "gemini/gemini-2.5-flash", "mode": "G", "note": ""},
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
-    {"name": "claude-opus-4-6", "mode": "S", "note": "最高性能・推奨"},
-    {"name": "claude-sonnet-4-6", "mode": "S", "note": "バランス型・推奨"},
+    {"name": "claude-opus-5-5", "mode": "S", "note": "最高性能・推奨"},
+    {"name": "claude-sonnet-5-5", "mode": "S", "note": "バランス型・推奨"},
     {"name": "claude-haiku-4-5-20251001", "mode": "S", "note": "軽量・高速"},
     # Legacy (still available)
+    {"name": "claude-opus-4-6", "mode": "S", "note": "旧Opus 4.6"},
+    {"name": "claude-sonnet-4-6", "mode": "S", "note": "旧Sonnet 4.6"},
     {"name": "claude-opus-4-5-20251101", "mode": "S", "note": "旧フラッグシップ"},
     {"name": "claude-opus-4-1-20250805", "mode": "S", "note": "旧Opus"},
     {"name": "claude-sonnet-4-5-20250929", "mode": "S", "note": "旧Sonnet"},

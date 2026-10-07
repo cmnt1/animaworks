@@ -222,6 +222,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_board_dm.add_argument("from_anima", help="Self anima name")
     p_board_dm.add_argument("peer", help="Peer anima name")
     p_board_dm.add_argument("--limit", type=int, default=20, help="Max messages")
+    p_board_dm.add_argument(
+        "--direction",
+        choices=("sent", "received", "both"),
+        default="both",
+        help="Filter by message direction (default: both)",
+    )
+    p_board_dm.add_argument("--hours", type=int, default=None, help="Only include messages from the last N hours")
+    p_board_dm.add_argument("--keyword", default=None, help="Only include messages containing this keyword")
     p_board_dm.set_defaults(func=_lazy_board_dm_history)
 
     # ── Status ────────────────────────────────────────────
@@ -237,6 +245,11 @@ def build_parser() -> argparse.ArgumentParser:
     from cli.commands.memory_cmd import register_memory_command
 
     register_memory_command(sub)
+
+    # ── Enclave operations ────────────────────────────────
+    from cli.commands.enclave_cmd import register_enclave_command
+
+    register_enclave_command(sub)
 
     # ── MCP stdio server ──────────────────────────────────
     from cli.commands.mcp_cmd import setup_mcp_command
@@ -644,7 +657,12 @@ def cli_main() -> None:
     if _first_arg and not _first_arg.startswith("-"):
         from core.integrations import TOOL_MODULES
 
-        if _first_arg in TOOL_MODULES or _first_arg == "submit":
+        # Real subcommands win over same-named tool modules (e.g. "enclave").
+        _subcommands = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            {},
+        )
+        if _first_arg not in _subcommands and (_first_arg in TOOL_MODULES or _first_arg == "submit"):
             _sys.argv[0] = "animaworks-tool"
             from cli.tool_dispatch import cli_dispatch
 

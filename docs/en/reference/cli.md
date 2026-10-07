@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=6abbb3827be29bed9907c7391c24e2352393779bc649027eb0f7ffbb447ff520 generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -430,6 +430,36 @@ Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged i
 | --host | option | "0.0.0.0" | — | — |
 | --reset | flag | false | — | — |
 
+## `enclave`
+
+Check the status of the isolated enclave and aggregate audit data.
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+Inspect the enclave’s startup guards, sockets, and egress configuration.
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| --json | flag | false | — | Output in machine-readable JSON format |
+
+## `enclave status`
+
+Display the number of successful and blocked egress requests today.
+
+`usage: animaworks enclave status [-h]`
+
+| Name | Type | Default | Options | Description |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 ## `heartbeat`
 
 Trigger heartbeat
@@ -665,9 +695,9 @@ Show resolved mode and context for a model
 
 `usage: animaworks models info [-h] model`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
-| model | positional | — | — | Model name (e.g. claude-sonnet-4-6) |
+| model | positional | — | — | Model name (e.g. claude-sonnet-5-5) |
 
 ## `models list`
 

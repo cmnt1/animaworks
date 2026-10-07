@@ -309,4 +309,190 @@ STRINGS: dict[str, dict[str, str]] = {
             "작업 디렉터리를 data_dir 밖에 두거나 companies/<회사>/shared를 사용하세요."
         ),
     },
+    "enclave.guard.name_required": {
+        "ja": "enclave に name が設定されていません",
+        "en": "enclave has no name set",
+    },
+    "enclave.guard.socket_path_required": {
+        "ja": "enclave に socket_path が設定されていません",
+        "en": "enclave has no socket_path set",
+    },
+    "enclave.guard.entry_anima_required": {
+        "ja": "enclave に entry_anima が設定されていません",
+        "en": "enclave has no entry_anima set",
+    },
+    "enclave.guard.egress_invalid": {
+        "ja": "enclave の egress 設定が不正です（stages を1つ以上、既知の type で設定する必要があります）",
+        "en": "enclave egress config is invalid (at least one stage of a known type is required)",
+    },
+    "enclave.guard.peer_uids_required": {
+        "ja": "enclave の allowed_peer_uids が空です（少なくとも1つ設定する必要があります）",
+        "en": "enclave allowed_peer_uids is empty (at least one must be set)",
+    },
+    "enclave.guard.socket_group_missing": {
+        "ja": "enclave の socket_group '{group}' が存在しません",
+        "en": "enclave socket_group '{group}' does not exist",
+    },
+    "enclave.gateway.answer_instruction": {
+        "ja": (
+            '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
+            "根拠ID を必ず付ける。個人を特定できる値は書かない"
+        ),
+        "en": (
+            'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
+            "Always attach evidence IDs. Do not write values that identify a specific person."
+        ),
+    },
+    "enclave.tool.unknown_enclave": {
+        "ja": "エラー: enclave '{enclave}' が設定に存在しません",
+        "en": "error: enclave '{enclave}' is not configured",
+    },
+    "enclave.tool.anima_not_allowed": {
+        "ja": "エラー: この anima は enclave へのアクセスを許可されていません",
+        "en": "error: this anima is not allowed to access the enclave",
+    },
+    "enclave.tool.unreachable": {
+        "ja": "エラー: enclave に接続できません",
+        "en": "error: could not reach the enclave",
+    },
+    "enclave.tool.failed": {
+        "ja": "エラー: enclave が応答を返しませんでした (code={code})",
+        "en": "error: enclave returned an error (code={code})",
+    },
+    "enclave.tool.schema_description": {
+        "ja": "隔離された enclave に質問し、事実と根拠IDだけの回答を得る",
+        "en": "Ask an isolated enclave a question and get a fact-only answer with evidence IDs",
+    },
+    "enclave.tool.schema_enclave": {
+        "ja": "接続する enclave の設定名",
+        "en": "name of the enclave config to connect to",
+    },
+    "enclave.tool.schema_question": {
+        "ja": "隔離インスタンスに送る質問",
+        "en": "the question to send to the isolated instance",
+    },
+    "enclave.tool.schema_case_id": {
+        "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",
+        "en": "optional case identifier (defaults to anima name plus date)",
+    },
+    "enclave.tool.fact_line": {
+        "ja": "- {text}（根拠: {evidence}）",
+        "en": "- {text} (evidence: {evidence})",
+    },
+    "enclave.records.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.records.dataset_required": {
+        "ja": "データセット名を指定してください。",
+        "en": "A dataset name is required.",
+    },
+    "enclave.records.query_required": {
+        "ja": "検索語を指定してください。",
+        "en": "A search query is required.",
+    },
+    "enclave.records.limit_integer": {
+        "ja": "limit は整数で指定してください。",
+        "en": "limit must be an integer.",
+    },
+    "enclave.records.id_required": {
+        "ja": "record_id を指定してください。",
+        "en": "record_id is required.",
+    },
+    "enclave.records.dataset_not_configured": {
+        "ja": "データセット '{dataset}' は enclave に設定されていません。",
+        "en": "Dataset '{dataset}' is not configured in the enclave.",
+    },
+    "enclave.records.not_found": {
+        "ja": "ID '{record_id}' のレコードは見つかりません。",
+        "en": "No record was found for ID '{record_id}'.",
+    },
+    "enclave.records.unavailable": {
+        "ja": "データセットを安全に参照できません。設定とファイルを確認してください。",
+        "en": "The dataset could not be read safely. Check its configuration and file.",
+    },
+    "enclave.records.schema_search": {
+        "ja": "隔離 enclave 内の設定済み JSONL データを、検索可能な項目から検索します。",
+        "en": "Search configured JSONL datasets using their searchable fields inside the enclave.",
+    },
+    "enclave.records.schema_get": {
+        "ja": "隔離 enclave 内の設定済み JSONL データから、ID を指定して 1 件取得します。",
+        "en": "Fetch one configured JSONL record by ID from inside the enclave.",
+    },
+    "enclave.records.schema_dataset": {
+        "ja": "設定済みデータセット名",
+        "en": "Configured dataset name",
+    },
+    "enclave.records.schema_query": {
+        "ja": "検索する文字列",
+        "en": "Text to search for",
+    },
+    "enclave.records.schema_limit": {
+        "ja": "返すレコードの最大件数（1〜100）",
+        "en": "Maximum records to return (1-100)",
+    },
+    "enclave.records.schema_record_id": {
+        "ja": "データセットの ID フィールド値",
+        "en": "Value of the dataset's ID field",
+    },
+    "enclave.cli.doctor_json": {
+        "ja": "機械可読な JSON 形式で出力する",
+        "en": "Output in machine-readable JSON format",
+    },
+    "enclave.guard.entry_anima_missing": {
+        "ja": "entry_anima '{anima}' のディレクトリが存在しません",
+        "en": "entry_anima '{anima}' directory does not exist",
+    },
+    "enclave.guard.event_export_url": {
+        "ja": "event_export.url が設定されています（enclave では外部送信を無効にする必要があります）",
+        "en": "event_export.url is set (external export must be disabled in an enclave)",
+    },
+    "enclave.guard.external_enabled": {
+        "ja": "外部連携 {channel} が有効になっています（enclave では無効にする必要があります）",
+        "en": "external integration {channel} is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.dir_owner": {
+        "ja": "ディレクトリ {path} の所有者が現在のユーザーではありません",
+        "en": "directory {path} is not owned by the current user",
+    },
+    "enclave.guard.dir_mode": {
+        "ja": "ディレクトリ {path} に group/other のパーミッションビットがあります",
+        "en": "directory {path} has group/other permission bits set",
+    },
+    "enclave.guard.llm_credentials_required": {
+        "ja": "allowed_llm_credentials が空です（少なくとも1つ設定する必要があります）",
+        "en": "allowed_llm_credentials is empty (at least one must be set)",
+    },
+    "enclave.guard.llm_credential_not_allowed": {
+        "ja": "LLM クレデンシャル '{credential}' が許可リストに含まれていません",
+        "en": "LLM credential '{credential}' is not in the allow-list",
+    },
+    "enclave.guard.status_unreadable": {
+        "ja": "anima {anima} の status.json を読み込めません",
+        "en": "could not read status.json for anima {anima}",
+    },
+    "enclave.guard.file_root_unreadable": {
+        "ja": "anima {anima} の permissions を読み込めません",
+        "en": "could not read permissions for anima {anima}",
+    },
+    "enclave.guard.file_root_full_access": {
+        "ja": 'anima {anima} の file_roots に "/" があります（danger-full-access）',
+        "en": 'anima {anima} has "/" in file_roots (danger-full-access)',
+    },
+    "enclave.guard.auth_unreadable": {
+        "ja": "認証設定 (auth) を読み込めません",
+        "en": "could not read authentication config (auth)",
+    },
+    "enclave.guard.auth_mode": {
+        "ja": "auth_mode が '{mode}' です（password または multi_user が必要です）",
+        "en": "auth_mode is '{mode}' (password or multi_user required)",
+    },
+    "enclave.guard.auth_trust_localhost": {
+        "ja": "trust_localhost が有効です（enclave では無効にする必要があります）",
+        "en": "trust_localhost is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.host": {
+        "ja": "bind host '{host}' が loopback アドレスではありません",
+        "en": "bind host '{host}' is not a loopback address",
+    },
 }

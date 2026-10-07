@@ -7,6 +7,7 @@ Validates the complete integration: render-utils.js generates correct HTML
 with data-raw-text attributes and action bar markup, CSS rules are
 consistent with the HTML structure, and consumer files wire everything up.
 """
+
 from __future__ import annotations
 
 import re
@@ -16,6 +17,7 @@ import pytest
 
 _STATIC_DIR = Path(__file__).resolve().parents[2] / "server" / "static"
 _RENDER_UTILS_JS = _STATIC_DIR / "shared" / "chat" / "render-utils.js"
+_HTML_UTILS_JS = _STATIC_DIR / "shared" / "html-utils.js"
 _CHAT_CSS = _STATIC_DIR / "styles" / "chat.css"
 _CHAT_RENDERER_JS = _STATIC_DIR / "pages" / "chat" / "chat-renderer.js"
 _WS_CHAT_HISTORY_JS = _STATIC_DIR / "workspace" / "modules" / "chat-history.js"
@@ -211,21 +213,26 @@ class TestInteractionExclusions:
 class TestEscapeAttrSafety:
     """Verify _escapeAttr handles all HTML-special characters."""
 
+    # Attribute escaping moved to shared/html-utils.js (f5f60089).
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
         self.js = _RENDER_UTILS_JS.read_text(encoding="utf-8")
+        self.html_utils = _HTML_UTILS_JS.read_text(encoding="utf-8")
 
     def test_escapes_ampersand(self) -> None:
-        assert "/&/g" in self.js
+        assert 'import { escapeAttr as _escapeAttr } from "../html-utils.js";' in self.js
+        assert "_escapeAttr(rawText)" in self.js
+        assert '"&": "&amp;"' in self.html_utils
 
     def test_escapes_double_quote(self) -> None:
-        assert '/"/g' in self.js
+        assert "&quot;" in self.html_utils
 
     def test_escapes_less_than(self) -> None:
-        assert "/</g" in self.js
+        assert '"<": "&lt;"' in self.html_utils
 
     def test_escapes_greater_than(self) -> None:
-        assert "/>/g" in self.js
+        assert '">": "&gt;"' in self.html_utils
 
     def test_handles_null_input(self) -> None:
-        assert 'if (!str) return ""' in self.js
+        assert "return escapeHtml(value);" in self.html_utils
+        assert 'String(value ?? "")' in self.html_utils

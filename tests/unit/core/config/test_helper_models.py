@@ -11,7 +11,7 @@ from core.config.helper_models import (
     resolve_helper_model,
     validate_helper_model_credentials,
 )
-from core.config.schemas import AnimaWorksConfig
+from core.config.schemas import DEFAULT_CONSOLIDATION_MODEL, AnimaWorksConfig
 from core.schemas import ModelConfig
 
 
@@ -124,7 +124,7 @@ def test_helper_default_precedes_code_default() -> None:
 def test_code_default_is_used_when_no_explicit_helper_or_legacy_model_exists() -> None:
     resolved = resolve_helper_model("episode_summary", config=AnimaWorksConfig())
 
-    assert resolved.model == "claude-sonnet-4-6"
+    assert resolved.model == DEFAULT_CONSOLIDATION_MODEL
     assert resolved.credential == "anthropic"
     assert resolved.source == "code.DEFAULT_CONSOLIDATION_MODEL"
 

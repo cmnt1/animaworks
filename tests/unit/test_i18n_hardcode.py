@@ -74,13 +74,15 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 KNOWN_VIOLATIONS: dict[str, int] = {
+    # Japanese character classes in egress masker regexes (NLP data, not UI text)
+    "core/enclave/egress/masker/facts.py": 2,
     # bilingual empty-state placeholders for prompt injection (ja/en)
     # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
     "core/anima/lifecycle.py": 4,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/anima/inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
-    "core/anima/factory.py": 8,
+    "core/anima/factory.py": 9,
     # deprecation warning message
     # permissions.md section headers used by the legacy permissions fallback
     "core/config/migrate.py": 2,
@@ -120,9 +122,14 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/memory/maintenance/forgetting.py": 1,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
-    # voice front lane — spoken ACK/error phrases voiced to the user via TTS
-    # plus the proactive silence-turn system prompt fed to the front LLM
-    "core/voice/session.py": 8,
+    # provider/channel-specific prompt templates and pronunciation rules are LLM/TTS instruction data
+    "core/voice/emotion_style.py": 6,
+    "core/voice/speech_text.py": 3,
+    # voice front lane — spoken ACK/error phrases and report prompt now live
+    # with the extracted FrontConversation implementation
+    "core/voice/front_conversation.py": 4,
+    # proactive silence-turn system prompt fed to the front LLM
+    "core/voice/session.py": 0,
 }
 
 

@@ -849,6 +849,51 @@ def create_animas_router() -> APIRouter:
             "pid": proc_status.get("pid"),
         }
 
+    @router.post("/animas/{name}/bootstrap/repair")
+    async def repair_anima_bootstrap(name: str, request: Request):
+        """Recover an Anima whose first-run setup stopped in needs_repair.
+
+        ``action=complete`` keeps the current identity/injection and marks the
+        setup finished; ``action=retry`` prepares another bootstrap attempt.
+        """
+        from core.anima.bootstrap_state import (
+            STATE_COMPLETED,
+            repair_bootstrap_complete,
+            repair_bootstrap_retry,
+        )
+
+        _validate_anima_name(name)
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        data = await request.json()
+        action = data.get("action") if isinstance(data, dict) else None
+        if action not in {"complete", "retry"}:
+            raise HTTPException(status_code=400, detail="action must be 'complete' or 'retry'")
+
+        supervisor = request.app.state.supervisor
+        retries_file = getattr(supervisor, "_bootstrap_retries_file", None)
+        repair = repair_bootstrap_complete if action == "complete" else repair_bootstrap_retry
+        status = await asyncio.to_thread(repair, anima_dir, retry_counts_file=retries_file)
+        if action == "complete" and status.get("state") != STATE_COMPLETED:
+            raise HTTPException(
+                status_code=409,
+                detail=t("anima.bootstrap_complete_requires_identity", name=name),
+            )
+
+        retry_counts = getattr(supervisor, "_bootstrap_retry_counts", None)
+        if isinstance(retry_counts, dict):
+            retry_counts.pop(name, None)
+        if name in request.app.state.anima_names:
+            await supervisor.restart_anima(name)
+        if action == "complete":
+            await supervisor._broadcast_event(  # noqa: SLF001
+                "anima.bootstrap",
+                {"name": name, "status": "completed", "bootstrap_state": status},
+            )
+        return {"name": name, "action": action, "bootstrap_state": status}
+
     @router.post("/animas/{name}/interrupt")
     async def interrupt_anima(name: str, request: Request, thread_id: str | None = None):
         """Interrupt the current LLM session without stopping the process.

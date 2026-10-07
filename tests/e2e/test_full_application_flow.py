@@ -24,8 +24,8 @@ from core.memory import MemoryManager
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming import PrimingEngine, format_priming_section
-from server.supervisor.manager import ProcessSupervisor
 from core.time_utils import now_jst
+from server.supervisor.manager import ProcessSupervisor
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -336,7 +336,8 @@ Senior Software Engineer
         priming_result = await env["priming"].prime_memories(
             message="How is the microservices architecture progressing?",
             sender_name="developer",
-            channel="chat",
+            # Recent-activity recall runs only for background triggers (aba8aa05).
+            channel="heartbeat",
         )
 
     # Verify priming retrieved data
@@ -670,8 +671,8 @@ async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    from core.schemas import ModelConfig
     from core.runtime.scheduler_manager import SchedulerManager
+    from core.schemas import ModelConfig
     from core.time_utils import get_app_timezone
 
     anima = MagicMock()

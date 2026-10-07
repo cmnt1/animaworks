@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 3adc10a670a57664a4463359f35ad2e65176aa6caf30e0979e7e79fd1f43dc28 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: b6bbbacf81b7d8e42e6e27732102916a65ce1f402fef24df788b881757fc3331 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -221,13 +221,19 @@ Board shared channel operations
 
 Read DM history with peer
 
-`usage: animaworks board dm-history [-h] [--limit LIMIT] from_anima peer`
+`usage: animaworks board dm-history [-h] [--limit LIMIT]
+                                   [--direction {sent,received,both}]
+                                   [--hours HOURS] [--keyword KEYWORD]
+                                   from_anima peer`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | from_anima | positional | — | — | Self anima name |
 | peer | positional | — | — | Peer anima name |
 | --limit | option | 20 | — | Max messages |
+| --direction | option | "both" | sent, received, both | Filter by message direction (default: both) |
+| --hours | option | — | — | Only include messages from the last N hours |
+| --keyword | option | — | — | Only include messages containing this keyword |
 
 ## `board post`
 
@@ -430,6 +436,36 @@ Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged i
 | --host | option | "0.0.0.0" | — | — |
 | --reset | flag | false | — | — |
 
+## `enclave`
+
+隔離 enclave の状態確認と監査集計を行います。
+
+`usage: animaworks enclave [-h] {doctor,status} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `enclave doctor`
+
+enclave の起動ガード、ソケット、egress 設定を点検します。
+
+`usage: animaworks enclave doctor [-h] [--json]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --json | flag | false | — | 機械可読な JSON 形式で出力する |
+
+## `enclave status`
+
+当日の egress 成功・遮断件数を表示します。
+
+`usage: animaworks enclave status [-h]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 ## `heartbeat`
 
 Trigger heartbeat
@@ -532,11 +568,12 @@ Internal tools for Anima use
 
 Archive a memory file
 
-`usage: animaworks internal archive-memory [-h] path`
+`usage: animaworks internal archive-memory [-h] [--reason REASON] path`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| path | positional | — | — | Relative path (e.g. knowledge/old-notes.md) |
+| path | positional | — | — | Relative path allowed by archive_memory_file |
+| --reason | option | "archived via CLI" | — | Reason for archiving |
 
 ## `internal check-background-task`
 
@@ -563,33 +600,42 @@ Check tool permission
 
 Create a skill file
 
-`usage: animaworks internal create-skill [-h] [--content CONTENT] name`
+`usage: animaworks internal create-skill [-h] [--content CONTENT]
+                                        [--location {personal,common}]
+                                        name`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | name | positional | — | — | Skill name (or name.md) |
-| --content | option | — | — | Content (default: stdin) |
+| --content | option | — | — | SKILL.md content (default: stdin) |
+| --location | option | "personal" | personal, common | — |
 
 ## `internal list-background-tasks`
 
 List background tasks
 
-`usage: animaworks internal list-background-tasks [-h]`
+`usage: animaworks internal list-background-tasks [-h]
+                                                 [--status {running,completed,failed,pending}]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| --status | option | — | running, completed, failed, pending | Filter by status |
 
 ## `internal manage-channel`
 
-Create or archive a channel
+Manage a channel and its members
 
-`usage: animaworks internal manage-channel [-h] {create,archive} channel`
+`usage: animaworks internal manage-channel [-h] [--member MEMBERS]
+                                          [--description DESCRIPTION]
+                                          {create,archive,add_member,remove_member,info}
+                                          channel`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| action | positional | — | create, archive | Action |
+| action | positional | — | create, archive, add_member, remove_member, info | Action |
 | channel | positional | — | — | Channel name |
+| --member | option | [] | — | Member name (repeatable) |
+| --description | option | — | — | Description for a new channel |
 
 ## `logs`
 
@@ -678,7 +724,7 @@ Show resolved mode and context for a model
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| model | positional | — | — | Model name (e.g. claude-sonnet-4-6) |
+| model | positional | — | — | Model name (e.g. claude-sonnet-5-5) |
 
 ## `models list`
 
@@ -1149,7 +1195,7 @@ Manage persistent task queue
 
 ## `task add`
 
-Add a new task
+Publishes an executable TaskExec task; backlog_task only queues tracking work.
 
 `usage: animaworks task add [-h] [--source {human,anima}] --instruction
                            INSTRUCTION --assignee ASSIGNEE [--summary SUMMARY]
@@ -1275,14 +1321,13 @@ Show complete task details
 
 Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status
-                              {pending,delegated,done,cancelled}
+`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
                               [--summary SUMMARY]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | --task-id | option | — | — | Task ID |
-| --status | option | — | pending, delegated, done, cancelled | — |
+| --status | option | — | — | Status to declare (retired statuses are rejected by update_task) |
 | --summary | option | — | — | Updated summary |
 
 ## `task-store`
@@ -1417,7 +1462,7 @@ Remove a key from one section
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | key | positional | — | — | Key to remove |
-| --shared | flag | false | — | Delete from the shared section instead of the Anima namespace (never cascades) |
+| --shared | flag | false | — | Operator-only: delete from shared (never cascades) |
 
 ## `vault get`
 
@@ -1428,7 +1473,7 @@ Get a value by key
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | key | positional | — | — | Key to retrieve |
-| --shared | flag | false | — | Look only in the shared section (default: Anima namespace, then shared) |
+| --shared | flag | false | — | Look only in the shared section (default: own namespace, then shared) |
 
 ## `vault init`
 
@@ -1442,7 +1487,7 @@ Generate a vault key if one does not exist
 
 ## `vault list`
 
-List keys in the anima namespace and the shared section
+List keys in the own and shared namespaces
 
 `usage: animaworks vault list [-h] [--shared]`
 
@@ -1469,5 +1514,5 @@ Store a key-value pair
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | key | positional | — | — | Key to store |
-| value | positional | — | — | Value to store (Anima-scoped compatibility mode only) |
-| --shared | flag | false | — | Store in the shared section, reading the value from stdin or a hidden prompt |
+| value | positional | — | — | Value to store in the anima namespace |
+| --shared | flag | false | — | Operator-only: store in shared via stdin or a hidden prompt |

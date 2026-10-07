@@ -83,6 +83,30 @@ def test_finalize_keeps_bootstrap_when_identity_incomplete(tmp_path: Path) -> No
     assert "injection_undefined" in status["validation_errors"]
 
 
+def test_finalize_archives_leftover_character_sheet_when_identity_defined(tmp_path: Path) -> None:
+    anima_dir = _make_anima_dir(tmp_path)
+    (anima_dir / "identity.md").write_text("# Midori\n\nDefined identity\n", encoding="utf-8")
+    (anima_dir / "injection.md").write_text("# Role\n\nDefined role\n", encoding="utf-8")
+    (anima_dir / "character_sheet.md").write_text("# Character Sheet\n", encoding="utf-8")
+
+    status = finalize_bootstrap_run(anima_dir)
+
+    assert status["state"] == STATE_COMPLETED
+    assert not (anima_dir / "character_sheet.md").exists()
+    assert list((anima_dir / "state" / "bootstrap_archive").glob("character_sheet-*.md"))
+
+
+def test_finalize_keeps_character_sheet_when_identity_incomplete(tmp_path: Path) -> None:
+    anima_dir = _make_anima_dir(tmp_path)
+    (anima_dir / "character_sheet.md").write_text("# Character Sheet\n", encoding="utf-8")
+
+    status = finalize_bootstrap_run(anima_dir)
+
+    assert status["state"] == STATE_NEEDS_REPAIR
+    assert (anima_dir / "character_sheet.md").exists()
+    assert "character_sheet_unprocessed" in status["validation_errors"]
+
+
 def test_interactive_bootstrap_completion_overrides_pending_state(tmp_path: Path) -> None:
     anima_dir = _make_anima_dir(tmp_path)
     from core.anima.bootstrap_state import initialize_bootstrap_state

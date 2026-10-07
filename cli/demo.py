@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 # Model names (must match KNOWN_MODELS in core/config/model_mode.py)
-CLAUDE_MODEL_MAIN = "claude-sonnet-4-6"
+CLAUDE_MODEL_MAIN = "claude-sonnet-5-5"
 CLAUDE_MODEL_BACKGROUND = "claude-haiku-4-5-20251001"
 CODEX_MODEL_MAIN = "codex/gpt-5.4"
 CODEX_MODEL_BACKGROUND = "codex/gpt-5.4-mini"

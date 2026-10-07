@@ -108,14 +108,14 @@ class TestReplayEventDMCases:
 
     def test_message_case_does_not_use_raw_anima(self) -> None:
         """Verify `showMessageEffect(anima,` (the old buggy pattern using raw
-        anima as first arg) is NOT in the code.  Instead it should use
-        `showMessageEffect(p.from,`."""
+        anima as first arg) is NOT in the code.  Instead it should use the
+        resolved sender, `showMessageEffect(persons.from,`."""
         src = _read_replay()
         assert "showMessageEffect(anima," not in src, (
             "showMessageEffect must not use raw 'anima' as first argument"
         )
-        assert "showMessageEffect(p.from," in src, (
-            "showMessageEffect should use 'p.from' as first argument"
+        assert "showMessageEffect(persons.from," in src, (
+            "showMessageEffect should use the resolved sender 'persons.from' as first argument"
         )
 
 
@@ -207,11 +207,11 @@ class TestReplayEventDeskHighlightCoverage:
     """Verify desk highlight and clear-timeout patterns exist in _replayEvent."""
 
     def test_highlightDesk_called_for_chat_group(self) -> None:
-        """Verify `_highlightDesk(anima)` appears in the code (for
+        """Verify `highlightTemporarily(anima)` appears in the code (for
         chat/board/heartbeat/cron cases)."""
         src = _read_replay()
-        assert "_highlightDesk(anima)" in src, (
-            "_highlightDesk(anima) must be called for desk-highlight cases"
+        assert "highlightTemporarily(anima)" in src, (
+            "highlightTemporarily(anima) must be called for desk-highlight cases"
         )
 
     def test_clearHighlight_timeout_present(self) -> None:
@@ -236,7 +236,7 @@ class TestResolvePersonsFallbackForDM:
 
     def test_dm_fallback_to_desk_highlight(self) -> None:
         """In the message/dm block, verify there is a fallback
-        `_highlightDesk(p.from || p.to)` for when showMessageEffect
+        `highlightTemporarily(persons.from || persons.to)` for when showMessageEffect
         cannot fire."""
         src = _read_replay()
         # Extract the message/dm case block from _replayEvent
@@ -248,6 +248,6 @@ class TestResolvePersonsFallbackForDM:
         )
         assert match, "message/dm_received/dm_sent case block not found"
         block = match.group(1)
-        assert "_highlightDesk(p.from || p.to)" in block, (
-            "Fallback _highlightDesk(p.from || p.to) not found in message/DM block"
+        assert "highlightTemporarily(persons.from || persons.to)" in block, (
+            "Fallback highlightTemporarily(persons.from || persons.to) not found in message/DM block"
         )

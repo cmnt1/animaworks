@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=2dd0bf986da2e5faac901c75f9ef3b0bda08cbfbe7cb2552c07e2a246dbb3261 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=b9ff04d94def616cd790e1887ca962f78541de300e8469605ed371561a1b9716 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 도구 CLI 참조: `animaworks-tool`
 
@@ -26,6 +26,16 @@ Discord 텍스트 채널에 메시지를 게시합니다. 메시지는 Anima 신
 |---|---|---|---|
 | `channel_id` | string | 아니요 | 검색할 Discord 채널 ID (생략 시 모든 캐시된 채널 검색) |
 | `limit` | integer | 아니요 | 최대 결과 수 (기본값: 10) |
+
+## `enclave_ask`
+
+격리된 enclave에 질문하고 사실과 근거 ID만 포함된 답변 받기
+
+| 인수 | 유형 | 필수 | 설명 |
+|---|---|---|---|
+| `case_id` | string | 아니요 | 선택적 사례 식별자(생략하면 anima 이름과 날짜를 바탕으로 생성) |
+| `enclave` | string | 예 | 연결할 enclave의 설정 이름 |
+| `question` | string | 예 | 격리된 인스턴스에 보낼 질문 |
 
 ## `google_sheets_append_values`
 

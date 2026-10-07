@@ -387,13 +387,12 @@ async def test_notification_chatwork_request_golden(
 
 
 @pytest.mark.asyncio
-async def test_call_human_slack_request_golden(http_capture: list[dict]) -> None:
-    from core.integrations.call_human import _send_slack
+async def test_call_human_uses_notification_slack_channel(http_capture: list[dict]) -> None:
+    from core.notification.channels.slack import SlackChannel
 
-    status, ts = await _send_slack("C123", "call-human-token", "*Alert*\nBody")
+    result = await SlackChannel({"bot_token": "call-human-token", "channel": "C123"}).send("Alert", "Body")
 
-    assert status == "OK"
-    assert ts == "1710000000.000001"
+    assert result == "slack: OK"
     assert len(http_capture) == 1
     _assert_http_request(
         http_capture[0],

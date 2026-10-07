@@ -15,8 +15,8 @@ import pytest
 from core.config.models import PhoneConfig
 from core.phone.audio_store import AudioStore
 from core.phone.session import PhoneSessionStore
-from core.phone.speech import clean_for_speech
 from core.phone.twilio_client import TwilioAPIError, TwilioClient, validate_signature
+from core.voice.speech_text import prepare_speech
 from core.voice.tts_base import TTSConfig
 from core.voice.voice_config import load_per_anima_voice
 
@@ -146,7 +146,7 @@ def test_phone_session_store_tracks_and_discards_call_state() -> None:
 def test_speech_cleanup_removes_markdown_and_replaces_links() -> None:
     text = "## Status\n\n- **Ready**: [the docs](https://example.com/help)\nUse https://example.org now."
 
-    spoken = clean_for_speech(text)
+    spoken = prepare_speech(text, provider="voicevox", link_placeholder="リンク", max_chars=400).spoken
 
     assert spoken == "Status\nReady: the docs、リンク\nUse リンク now."
     assert "**" not in spoken
@@ -154,7 +154,7 @@ def test_speech_cleanup_removes_markdown_and_replaces_links() -> None:
 
 
 def test_speech_cleanup_caps_text_at_400_characters() -> None:
-    spoken = clean_for_speech("x" * 500)
+    spoken = prepare_speech("x" * 500, provider="voicevox", link_placeholder="リンク", max_chars=400).spoken
 
     assert len(spoken) == 400
     assert spoken.endswith("…")

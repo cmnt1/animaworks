@@ -67,7 +67,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
 
             anima = DigitalAnima(anima_dir, shared_dir)
 
-    # Mock run_cycle to return quickly
+    # process_message drains run_cycle_streaming after 18b30d5c.
     cycle_result = CycleResult(
         trigger="message:human",
         action="respond",
@@ -75,7 +75,11 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
         duration_ms=10,
         tool_call_records=[],
     )
-    anima.agent.run_cycle = AsyncMock(return_value=cycle_result)
+
+    async def mock_stream(*args, **kwargs):
+        yield {"type": "cycle_done", "cycle_result": cycle_result.model_dump(mode="json")}
+
+    anima.agent.run_cycle_streaming = mock_stream
 
     # Mock ConversationMemory.compress_if_needed_detailed to avoid LLM calls.
     # Patch must extend through timer fire (run_idle_compaction uses it).
@@ -171,10 +175,14 @@ def test_config_idle_compaction_minutes_sets_timer_delay() -> None:
 async def test_activity_log_records_idle_compaction_event(anima) -> None:
     """Run compaction; activity_log contains 'idle_compaction' event."""
     # Mock ConversationMemory to avoid LLM
-    with patch(
-        "core.agent.session_compactor._compact_conversation",
-        new_callable=AsyncMock,
-        return_value=True,
+    with (
+        patch(
+            "core.agent.session_compactor._compact_conversation",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        # This test asserts the activity event, not the asynchronous LLM review.
+        patch("core.memory.maintenance.background_review.request_background_review"),
     ):
         await run_idle_compaction(anima, "default")
 

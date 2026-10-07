@@ -4,3 +4,6 @@ anima set-model: 指定した anima の主モデルを変更します。
 models helpers: 補助モデルの役割ごとに、解決されたモデル、認証情報名、代替候補、解決元を表示します。
 task board: タスクボードの項目を確認・操作します。
 migrate: 実行時データに必要なマイグレーションを実行します。
+enclave: 隔離 enclave の状態確認と監査集計を行います。
+enclave doctor: enclave の起動ガード、ソケット、egress 設定を点検します。
+enclave status: 当日の egress 成功・遮断件数を表示します。

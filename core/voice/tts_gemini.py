@@ -2,7 +2,11 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Gemini TTS provider — Gemini API Interactions endpoint (SSE streaming).
+"""Gemini TTS provider — Gemini API ``streamGenerateContent`` (SSE streaming).
+
+The Interactions endpoint returned the first audio ~3 s later than
+``streamGenerateContent`` for the same model and voice (measured 2026-10-06:
+~4.5 s vs ~1.4 s), which is too slow for phone turns.
 
 Supports prebuilt voices (e.g. ``Leda``) and Voice design personas
 (``voice_...`` IDs created via ``POST /v1beta/voices``). Audio arrives as raw
@@ -54,21 +58,7 @@ def pcm_to_wav(pcm: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> bytes:
     return buf.getvalue()
 
 
-def parse_sse_audio(line: str) -> tuple[bytes, int] | None:
-    """Extract (pcm, sample_rate) from one SSE ``data:`` line, if it carries audio."""
-    if not line.startswith("data:"):
-        return None
-    try:
-        payload = json.loads(line[5:].strip())
-    except json.JSONDecodeError:
-        return None
-    delta = payload.get("delta") if isinstance(payload, dict) else None
-    if not isinstance(delta, dict):
-        return None
-    mime = str(delta.get("mime_type") or "")
-    data = delta.get("data")
-    if not data or not mime.startswith("audio/"):
-        return None
+def _decode_audio(mime: str, data: str) -> tuple[bytes, int]:
     raw = base64.b64decode(data)
     if mime.startswith("audio/wav") or raw[:4] == b"RIFF":
         with wave.open(io.BytesIO(raw), "rb") as w:
@@ -77,11 +67,52 @@ def parse_sse_audio(line: str) -> tuple[bytes, int] | None:
     return raw, int(m.group(1)) if m else DEFAULT_SAMPLE_RATE
 
 
+def parse_sse_audio(line: str) -> tuple[bytes, int] | None:
+    """Extract (pcm, sample_rate) from one SSE ``data:`` line, if it carries audio.
+
+    Accepts ``streamGenerateContent`` chunks (``candidates[].content.parts[]
+    .inlineData``) and legacy Interactions deltas (``delta.mime_type/data``).
+    """
+    if not line.startswith("data:"):
+        return None
+    try:
+        payload = json.loads(line[5:].strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    pcm = bytearray()
+    rate: int | None = None
+    for cand in payload.get("candidates") or []:
+        parts = ((cand or {}).get("content") or {}).get("parts") or []
+        for part in parts:
+            inline = (part or {}).get("inlineData") or (part or {}).get("inline_data")
+            if not isinstance(inline, dict):
+                continue
+            mime = str(inline.get("mimeType") or inline.get("mime_type") or "")
+            data = inline.get("data")
+            if data and mime.startswith("audio/"):
+                chunk, rate = _decode_audio(mime, data)
+                pcm.extend(chunk)
+    if rate is not None:
+        return bytes(pcm), rate
+    delta = payload.get("delta")
+    if not isinstance(delta, dict):
+        return None
+    mime = str(delta.get("mime_type") or "")
+    data = delta.get("data")
+    if not data or not mime.startswith("audio/"):
+        return None
+    return _decode_audio(mime, data)
+
+
 # ── GeminiTTS ──────────────────────────────────────────────────
 
 
 class GeminiTTS(BaseTTSProvider):
     """Gemini API TTS provider (streaming via Interactions API)."""
+
+    prefers_whole_reply = True
 
     def __init__(self, voice_config: Any) -> None:
         self._model = _cfg(voice_config, "model", DEFAULT_MODEL)
@@ -100,21 +131,24 @@ class GeminiTTS(BaseTTSProvider):
         except Exception:
             return None
 
+    def _model_for(self, config: TTSConfig) -> str:
+        extra = config.extra if isinstance(config.extra, dict) else {}
+        return str(extra.get("model") or self._model)
+
     def _body(self, text: str, config: TTSConfig) -> dict[str, Any]:
-        content: dict[str, Any] = {"type": "text", "text": text}
+        part: dict[str, Any] = {"text": text}
         style = (config.extra or {}).get("style") if isinstance(config.extra, dict) else None
         if style:
-            content["annotations"] = [{"type": "speech_metadata", "speaker": "speaker", "style": str(style)}]
-        body: dict[str, Any] = {
-            "model": (config.extra or {}).get("model", self._model) if isinstance(config.extra, dict) else self._model,
-            "stream": True,
-            "input": [{"type": "user_input", "content": [content]}],
-            "response_format": {"type": "audio"},
-        }
+            part["speech_metadata"] = {"style": str(style)}
+        speech_config: dict[str, Any] = {}
         voice = (config.voice_id or "").strip()
         if voice:
-            body["generation_config"] = {"speech_config": [{"voice": voice}]}
-        return body
+            # Prebuilt names, Voice design and replication IDs share this field.
+            speech_config["voiceConfig"] = {"voice": voice}
+        generation_config: dict[str, Any] = {"responseModalities": ["AUDIO"]}
+        if speech_config:
+            generation_config["speechConfig"] = speech_config
+        return {"contents": [{"role": "user", "parts": [part]}], "generationConfig": generation_config}
 
     async def synthesize(self, text: str, config: TTSConfig) -> AsyncIterator[bytes]:
         """Stream ~chunk_seconds WAV segments as audio deltas arrive."""
@@ -129,7 +163,10 @@ class GeminiTTS(BaseTTSProvider):
             async with (
                 httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client,
                 client.stream(
-                    "POST", f"{API_BASE}/interactions?alt=sse", headers=headers, json=self._body(text, config)
+                    "POST",
+                    f"{API_BASE}/models/{self._model_for(config)}:streamGenerateContent?alt=sse",
+                    headers=headers,
+                    json=self._body(text, config),
                 ) as r,
             ):
                 if r.status_code >= 400:

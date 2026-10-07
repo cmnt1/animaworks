@@ -105,9 +105,9 @@ class ExternalToolDispatcher:
         Convention: name is {tool}_{action}. Matches against registry
         and personal tools, preferring longest match (e.g. image_gen over image).
         """
-        from core.tooling.policy.registry import TOOL_MODULES
+        from core.tooling.policy.registry import get_tool_modules
 
-        all_tools = set(self._registry) | set(self._personal_tools.keys()) | set(TOOL_MODULES.keys())
+        all_tools = set(self._registry) | set(self._personal_tools.keys()) | set(get_tool_modules().keys())
         best_tool: str | None = None
         best_len = 0
         for tool in all_tools:
@@ -145,15 +145,16 @@ class ExternalToolDispatcher:
         if not self._registry:
             return None
 
-        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
+        from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
-        tool_names = self._candidate_tool_names(name, TOOL_MODULES, set(self._registry))
+        tool_modules = get_tool_modules()
+        tool_names = self._candidate_tool_names(name, tool_modules, set(self._registry))
         if not tool_names:
             return None
 
         for tool_name in tool_names:
             try:
-                mod = load_tool_module(tool_name)
+                mod = load_tool_module(tool_name, tool_modules)
                 schemas = mod.get_tool_schemas() if hasattr(mod, "get_tool_schemas") else []
                 if name not in [s["name"] for s in schemas]:
                     continue

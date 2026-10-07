@@ -136,7 +136,7 @@ function _renderAddUserForm() {
     <div class="card" style="margin-bottom:1.5rem;">
       <div class="card-body">
         <h3 style="margin:0 0 0.75rem;font-size:1.05rem;">${t("users.add_title")}</h3>
-        <form id="addUserForm" style="display:flex;flex-direction:column;gap:0.5rem;max-width:320px;">
+        <form id="addUserForm" class="users-form">
           <input type="text" id="newUsername" placeholder="${t("users.placeholder_username")}" required autocomplete="off">
           <input type="password" id="newUserPassword" placeholder="${t("users.placeholder_password")}" required autocomplete="new-password">
           <select id="newUserRole">
@@ -144,7 +144,7 @@ function _renderAddUserForm() {
             <option value="admin">${t("users.role_admin")}</option>
           </select>
           <div id="addUserResult" class="login-error hidden"></div>
-          <button type="submit" class="btn-login" style="width:auto;">${t("users.add_btn")}</button>
+          <button type="submit" class="btn-primary">${t("users.add_btn")}</button>
         </form>
       </div>
     </div>
@@ -161,12 +161,12 @@ function _renderPasswordSection(me) {
         <p style="color:var(--text-secondary,#666);font-size:0.85rem;margin:0 0 0.75rem;">
           ${t("users.password_hint", { username: me.username || "" })}
         </p>
-        <form id="changePasswordForm" style="display:flex;flex-direction:column;gap:0.5rem;max-width:320px;">
+        <form id="changePasswordForm" class="users-form">
           ${skipCurrent ? "" : `<input type="password" id="currentPassword" placeholder="${t("users.placeholder_current_password")}" required autocomplete="current-password">`}
           <input type="password" id="newPassword" placeholder="${t("users.placeholder_new_password")}" required autocomplete="new-password">
           <input type="password" id="confirmPassword" placeholder="${t("users.placeholder_confirm_password")}" required autocomplete="new-password">
           <div id="pwChangeResult" class="login-error hidden"></div>
-          <button type="submit" class="btn-login" style="width:auto;">${t("users.password_btn")}</button>
+          <button type="submit" class="btn-primary">${t("users.password_btn")}</button>
         </form>
       </div>
     </div>

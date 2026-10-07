@@ -337,7 +337,8 @@ def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
             try:
                 cmdline_path = Path(f"/proc/{pid}/cmdline")
                 cmdline = cmdline_path.read_text().replace("\x00", " ")
-                if data_dir_str not in cmdline:
+                # Trailing separator: tmp dir "x1" must not match runners of "x10".
+                if data_dir_str.rstrip(os.sep) + os.sep not in cmdline:
                     continue
             except OSError:
                 continue

@@ -98,9 +98,9 @@ def _permitted_names(
 
 def get_permitted_tools(config: PermissionsConfig) -> set[str]:
     """Get permitted tool names from structured permissions config."""
-    from core.tooling.policy.registry import TOOL_MODULES
+    from core.tooling.policy.registry import get_tool_modules
 
-    all_tools = set(TOOL_MODULES.keys()) - _disabled_service_tools()
+    all_tools = set(get_tool_modules()) - _disabled_service_tools()
     return _permitted_names(config, all_tools, frozenset(_disabled_service_tools()))
 
 
@@ -114,11 +114,12 @@ def _load_execution_profile(tool_name: str) -> dict[str, dict[str, object]] | No
         The module's EXECUTION_PROFILE dict, or None if not found or load fails.
     """
     try:
-        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
+        from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
-        if tool_name not in TOOL_MODULES:
+        tool_modules = get_tool_modules()
+        if tool_name not in tool_modules:
             return None
-        mod = load_tool_module(tool_name)
+        mod = load_tool_module(tool_name, tool_modules)
         return getattr(mod, "EXECUTION_PROFILE", None)
     except Exception:
         logger.debug("Failed to load EXECUTION_PROFILE for %s", tool_name, exc_info=True)
@@ -156,11 +157,12 @@ def evaluate_tool_access(
     profile: Mapping[str, Mapping[str, object]] | None,
     disabled_services: frozenset[str] = frozenset(),
     reply_grant_ok: bool = False,
+    core_tools: set[str] | None = None,
 ) -> ToolAccessDecision:
     """Evaluate whether a tool (and optional gated action) is permitted.
 
     Pure decision function — performs no I/O. Configuration, execution
-    profile and disabled-service set are supplied as arguments.
+    profile, disabled-service set, and optional runtime core-tool set are supplied as arguments.
 
     Decision order:
       1. ``tool_name`` in ``external_tools.deny`` → ``tool_denied``
@@ -174,6 +176,10 @@ def evaluate_tool_access(
          applies to one of the Slack reply actions; otherwise → ``action_gated``.
          Explicit permission is required even when ``allow_all`` is true.
       5. Otherwise → ``ok``.
+
+    ``core_tools`` defaults to the static host registry. Enclave-aware callers
+    pass the registry for their current runtime so enclave-only tools are
+    permitted only inside an enabled enclave.
     """
     from core.tooling.policy.registry import TOOL_MODULES
 
@@ -186,7 +192,7 @@ def evaluate_tool_access(
 
     # 2. Core tools must be in the permitted core set.
     if origin == "core":
-        all_core_tools = set(TOOL_MODULES.keys())
+        all_core_tools = set(TOOL_MODULES if core_tools is None else core_tools)
         permitted = _permitted_names(config, all_core_tools, disabled_services)
         if tool_name not in permitted:
             return ToolAccessDecision(
@@ -263,8 +269,9 @@ def check_tool_access(
 
         config = load_permissions(anima_dir) if anima_dir else PermissionsConfig()
 
+        core_tools = _core_tool_names() if origin == "core" else None
         if origin == "core":
-            profile = _load_execution_profile(tool_name) if tool_name in _core_tool_names() else None
+            profile = _load_execution_profile(tool_name) if tool_name in core_tools else None
         else:
             profile = _load_profile_from_file(tool_file)
 
@@ -277,6 +284,7 @@ def check_tool_access(
             origin=origin,
             profile=profile,
             reply_grant_ok=reply_grant_ok,
+            core_tools=core_tools,
         )
     except Exception as e:
         logger.warning("Permission check failed for %s %s: %s", tool_name, action, e, exc_info=True)
@@ -288,9 +296,9 @@ def check_tool_access(
 
 
 def _core_tool_names() -> set[str]:
-    from core.tooling.policy.registry import TOOL_MODULES
+    from core.tooling.policy.registry import get_tool_modules
 
-    return set(TOOL_MODULES.keys())
+    return set(get_tool_modules().keys())
 
 
 # ── Compatibility wrapper ────────────────────────────────

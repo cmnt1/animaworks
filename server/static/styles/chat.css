@@ -1262,6 +1262,9 @@
 .bg-session-message td {
   border: 1px solid var(--aw-color-border-dark);
   padding: 4px 8px;
+  /* The bubble allows breaking anywhere, which lets the table layout squeeze
+     columns down to one character ("Hin|a"). Break only overlong words. */
+  overflow-wrap: break-word;
 }
 .chat-bubble th,
 .bg-session-message th {
@@ -2185,6 +2188,26 @@
 }
 
 .bootstrap-progress--error .bootstrap-progress-step {
+  color: var(--aw-color-error, #ef4444);
+}
+
+.bootstrap-repair-hint {
+  max-width: 440px;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--aw-color-text-secondary, #6b7280);
+}
+
+.bootstrap-repair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.bootstrap-repair-error {
+  font-size: 0.8rem;
   color: var(--aw-color-error, #ef4444);
 }
 
@@ -3340,6 +3363,12 @@
   height: 100%;
   padding: 2rem;
   gap: 1.5rem;
+}
+
+/* Below existing activity: flow with the timeline instead of filling the pane. */
+.demo-suggest-container--inline {
+  height: auto;
+  padding-top: 1.5rem;
 }
 
 .demo-suggest-header {

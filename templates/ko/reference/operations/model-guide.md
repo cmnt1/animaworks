@@ -7,11 +7,11 @@ AnimaWorks의 모델 설정에 관한 종합 가이드.
 
 ## 실행 모드
 
-AnimaWorks는 모델 이름에서 실행 모드를 자동 판정한다. 6종류의 실행 모드가 있다:
+AnimaWorks는 모델 이름에서 실행 모드를 자동으로 판정한다. 6가지 실행 모드가 있다:
 
 | 모드 | 이름 | 개요 | 대상 모델 예 |
 |--------|------|------|-------------|
-| **S** | SDK | Claude Agent SDK 경유. 가장 고기능 | `claude-opus-4-6`, `claude-sonnet-4-6` |
+| **S** | SDK | Claude Agent SDK 경유. 가장 고기능 | `claude-opus-5-5`, `claude-sonnet-5-5` |
 | **C** | Codex | Codex CLI 경유 | `codex/o4-mini`, `codex/gpt-4.1` |
 | **D** | Cursor Agent | Cursor Agent CLI(`cursor-agent`) 경유. MCP 통합 | `cursor/*` |
 | **G** | Gemini CLI | Gemini CLI 경유. MCP 통합 | `gemini/*` |
@@ -34,13 +34,13 @@ Mode X 이용 전에 `grok` CLI를 설치하고, `grok login`으로 인증해야
 
 `animaworks models list`에서 최신 목록을 표시할 수 있다. 주요 모델:
 
-### Claude / Anthropic (Mode S)
+### Claude / Anthropic(Mode S)
 
 | 모델 | 설명 |
 |--------|------|
-| `claude-opus-4-6` | 최고 성능·추천 |
-| `claude-sonnet-4-6` | 밸런스형·추천 |
-| `claude-haiku-4-5-20251001` | 경량·고속 |
+| `claude-opus-5-5` | 최고 성능・추천 |
+| `claude-sonnet-5-5` | 밸런스형・추천 |
+| `claude-haiku-4-5-20251001` | 경량・고속 |
 
 ### OpenAI (Mode A)
 
@@ -177,8 +177,8 @@ fnmatch 와일드카드 패턴 사용 가능.
 
 ```json
 {
-  "claude-opus-4-6":    { "mode": "S", "context_window": 1000000 },
-  "claude-sonnet-4-6":  { "mode": "S", "context_window": 1000000 },
+  "claude-opus-5-5":    { "mode": "S", "context_window": 1000000 },
+  "claude-sonnet-5-5":  { "mode": "S", "context_window": 1000000 },
   "claude-*":           { "mode": "S", "context_window": 200000 },
   "grok/*":             { "mode": "X", "context_window": 500000 },
   "openai/gpt-4.1*":   { "mode": "A", "context_window": 1000000 },
@@ -187,7 +187,7 @@ fnmatch 와일드카드 패턴 사용 가능.
 }
 ```
 
-구체적인 패턴이 우선. `claude-opus-4-6`은 `claude-*`보다 먼저 매치된다.
+구체적인 패턴이 우선된다. `claude-opus-5-5`은 `claude-*`보다 먼저 매치된다.
 
 ### 확인 명령
 
@@ -337,13 +337,13 @@ Heartbeat / Inbox / Cron은 「판단·트리아지」가 주목적이며, 실�
 
 ```bash
 # 特定Animaにbackground_model を設定
-animaworks anima set-background-model {名前} claude-sonnet-4-6
+animaworks anima set-background-model {名前} claude-sonnet-5-5
 
 # credential が異なるプロバイダの場合
 animaworks anima set-background-model {名前} azure/gpt-4.1-mini --credential azure
 
 # 全Animaに一括設定
-animaworks anima set-background-model --all claude-sonnet-4-6
+animaworks anima set-background-model --all claude-sonnet-5-5
 
 # background_model を削除（メインモデルにフォールバック）
 animaworks anima set-background-model {名前} --clear
@@ -352,35 +352,35 @@ animaworks anima set-background-model {名前} --clear
 animaworks anima restart {名前}
 ```
 
-### status.json에서 확인
+### status.json에서의 확인
 
 ```json
 {
-  "model": "claude-opus-4-6",
-  "background_model": "claude-sonnet-4-6",
+  "model": "claude-opus-5-5",
+  "background_model": "claude-sonnet-5-5",
   "background_credential": null
 }
 ```
 
-`background_model`이 미설정 또는 메인 모델과 동일한 경우, 전환은 스킵된다.
+`background_model`이 미설정 또는 메인 모델과 동일한 경우, 전환은 건너뛴다.
 
 ---
 
 ## 역할 템플릿과 기본 모델
 
-`animaworks anima set-role`에서 역할을 변경하면, 기본 모델도 변경된다:
+`animaworks anima set-role`에서 역할을 변경하면 기본 모델도 변경된다:
 
 | 역할 | 기본 모델 | background_model | context_threshold | conversation_history_threshold |
 |--------|---------------|-----------------|-------------------|----------------------------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| engineer | claude-opus-5-5 | claude-sonnet-5-5 | 0.80 | 0.40 |
+| manager | claude-opus-5-5 | claude-sonnet-5-5 | 0.60 | 0.30 |
+| writer | claude-sonnet-5-5 | — | 0.70 | 0.30 |
+| researcher | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| general | claude-sonnet-5-5 | — | 0.50 | 0.30 |
 
-Opus 계열 역할(engineer, manager)은 `background_model`로서 Sonnet이 자동 설정된다.
-Sonnet 이하의 역할은 이미 비용 효율이 좋으므로, `background_model`는 미설정.
+Opus 계열 역할(engineer, manager)은 `background_model`로 Sonnet이 자동 설정된다.
+Sonnet 이하의 역할은 이미 비용 효율이 좋기 때문에 `background_model`는 미설정.
 
 ---
 
@@ -398,13 +398,13 @@ models.json는 파일의 mtime으로 자동 리로드된다. `anima reload`으�
 
 `models.json`의 `context_window`을 변경하거나, `config.json`의 `model_context_windows`으로 오버라이드.
 
-### 어떤 모델을 선택해야 할지 모르겠음
+### 어떤 모델을 선택해야 할지 모르겠다
 
-- **고품질·자율 실행 필요** → `claude-opus-4-6`(Mode S)
-- **밸런스·비용 중시** → `claude-sonnet-4-6`(Mode S)
-- **저비용·대량 처리** → `openai/gpt-4.1-mini`(Mode A)
-- **로컬 GPU·비용 $0** → `openai/qwen3.5-35b-a3b`(Mode A, vLLM) **추천**
-- **로컬·경량** → `ollama/qwen3:14b`(Mode A)
+- **고품질・자율 실행 필요** → `claude-opus-5-5`(Mode S)
+- **밸런스・비용 중시** → `claude-sonnet-5-5`(Mode S)
+- **저비용・대량 처리** → `openai/gpt-4.1-mini`(Mode A)
+- **로컬 GPU・비용 $0** → `openai/qwen3.5-35b-a3b`(Mode A, vLLM)**추천**
+- **로컬・경량** → `ollama/qwen3:14b`(Mode A)
 
 ### Heartbeat / Cron 비용을 줄이고 싶다
 

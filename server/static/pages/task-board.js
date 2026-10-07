@@ -9,6 +9,7 @@ import {
   shortId,
   splitTaskDescription,
   statusClassSuffix,
+  queueStatusLabel,
   taskKey,
 } from "./task-board-utils.js";
 
@@ -259,7 +260,7 @@ function _cardHtml(task) {
   return `
     <article class="taskboard-card" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       <div class="taskboard-card-topline">
-        <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
+        <span class="taskboard-anima">${escapeHtml((task.waiting && task.delegated_by) || task.anima_name || task.assignee || "-")}</span>
         <code>${escapeHtml(shortId(task.task_id))}</code>
       </div>
       <div class="taskboard-card-title-row">
@@ -273,7 +274,7 @@ function _cardHtml(task) {
       ` : ""}
       <div class="taskboard-meta-row">
         <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
-          ${escapeHtml(task.queue_status)}
+          ${escapeHtml(queueStatusLabel(task.queue_status))}
         </span>
         ${task.source === "human" ? `<span class="taskboard-badge taskboard-badge--human">${t("taskboard.source_human")}</span>` : ""}
       </div>

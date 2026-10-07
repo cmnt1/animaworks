@@ -42,6 +42,21 @@ _VALID_SOURCES = frozenset({"human", "anima"})
 _STALE_TASK_THRESHOLD_SEC = 1800
 
 
+def normalize_task_queue_fields(
+    original_instruction: Any,
+    assignee: Any,
+    summary: Any = None,
+) -> tuple[str, str, str]:
+    """Validate and normalize fields shared by backlog and executable task creation."""
+    if not isinstance(original_instruction, str) or not original_instruction:
+        raise ValueError("original_instruction is required")
+    if not isinstance(assignee, str) or not assignee:
+        raise ValueError("assignee is required")
+    if summary is not None and not isinstance(summary, str):
+        raise ValueError("summary must be a string")
+    return original_instruction, assignee, summary or original_instruction[:100]
+
+
 def _elapsed_seconds(updated_at: str, now: datetime) -> float | None:
     """Return seconds since updated_at, or None on parse failure."""
     try:

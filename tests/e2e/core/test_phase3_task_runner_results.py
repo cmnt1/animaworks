@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from core.schemas import CronTask
 from core.runtime import ipc_v2
 from core.runtime.memory_service import MemoryService
 from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
+from core.schemas import CronTask
 
 
 class _MockEngineHandler(BaseHTTPRequestHandler):
@@ -23,6 +23,38 @@ class _MockEngineHandler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length))
         if "embed" in self.path:
             body = {"embeddings": [[1.0, 0.0, 0.0] for _ in payload.get("texts", [])]}
+            encoded = json.dumps(body).encode()
+            content_type = "application/json"
+        elif payload.get("stream"):
+            # process_message uses the streaming execution path after 18b30d5c.
+            chunks = [
+                {
+                    "id": "mock-chat",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "mock",
+                    "choices": [
+                        {"index": 0, "delta": {"role": "assistant", "content": "mock reply"}, "finish_reason": None}
+                    ],
+                },
+                {
+                    "id": "mock-chat",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "mock",
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                },
+                {
+                    "id": "mock-chat",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "mock",
+                    "choices": [],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            ]
+            encoded = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks).encode() + b"data: [DONE]\n\n"
+            content_type = "text/event-stream"
         else:
             body = {
                 "id": "mock-chat",
@@ -38,9 +70,10 @@ class _MockEngineHandler(BaseHTTPRequestHandler):
                 ],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
-        encoded = json.dumps(body).encode()
+            encoded = json.dumps(body).encode()
+            content_type = "application/json"
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
@@ -84,6 +117,9 @@ async def test_phase3_returns_cron_command_and_chat_results(
     status["process_model"] = "phase3"
     status_path.write_text(json.dumps(status), encoding="utf-8")
     monkeypatch.setenv("ANIMAWORKS_EMBED_URL", f"{mock_engine_url}/embed")
+    # Task runners require explicit vector and rerank URLs after the service split (a2f29ea0).
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://127.0.0.1:9")
 
     read_envelope = ipc_v2.read_ipc_v2_envelope
 
