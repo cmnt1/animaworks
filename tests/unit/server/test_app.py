@@ -180,11 +180,13 @@ class TestLifespan:
             patch("server.app._prepare_child_env_urls"),
             patch("server.app._startup_animas_background", new=fake_startup_animas),
             patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
+            patch("core.config.helper_models.validate_helper_model_credentials") as validate_helper_credentials,
         ):
             mock_gp.return_value = MagicMock(loaded=True, check_integrity=MagicMock(return_value=True))
             async with lifespan(mock_app):
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
+                validate_helper_credentials.assert_called_once_with(mock_app.state.animas_dir)
                 scheduled_ids = {call.kwargs.get("id") for call in mock_scheduler.add_job.call_args_list}
                 assert "asset_reconciliation" not in scheduled_ids
 

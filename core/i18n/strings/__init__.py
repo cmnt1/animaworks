@@ -24,6 +24,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         migrate,
         misc,
         misc_routes,
+        models,
         phone,
         room_manager,
         server,
@@ -56,6 +57,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         misc,
         misc_routes,
         migrate,
+        models,
         phone,
         zoom,
     ):

@@ -147,6 +147,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `anima_defaults` | Anima設定デフォルト値 |
 | `animas` | Anima別設定オーバーライド |
 | `consolidation` | 記憶統合設定 |
+| `helper_models` |  |
 | `background_review` |  |
 | `rag` | RAG（検索拡張生成）設定 |
 | `gpu` |  |

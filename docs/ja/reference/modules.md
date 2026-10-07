@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 0cb1a153df9e771664c5618cb989e1b133b5e69c8e0feb757a86cafc0d146ffe -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: e2f87d7b6ffa289dcc0ef4b00d2cf0bd64788a236750b976d2612427d1c4bc99 -->
 
 # モジュール一覧
 
@@ -43,7 +43,7 @@
 | `cli.commands.memory_cmd` | 56 | — |
 | `cli.commands.messaging` | 86 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
-| `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
+| `cli.commands.models_cmd` | 303 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
@@ -147,7 +147,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
-| `core.anima.asset_reconciler` | 790 | — |
+| `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 693 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
@@ -156,7 +156,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 998 | — |
 | `core.anima.inbox_overflow` | 100 | — |
-| `core.anima.lifecycle` | 1609 | — |
+| `core.anima.lifecycle` | 1662 | — |
 | `core.anima.messaging` | 1384 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -191,11 +191,12 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.config` | 36 | — |
+| `core.config` | 42 | — |
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
+| `core.config.helper_models` | 498 | — |
 | `core.config.io` | 317 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 201 | — |
@@ -203,10 +204,10 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 95 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 99 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1427 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1474 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -379,6 +380,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.migrate` | 99 | — |
 | `core.i18n.strings.misc` | 467 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
+| `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
@@ -395,7 +397,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.i18n.strings` | 63 | Merge all domain string modules into a single dict. |
+| `core.i18n.strings` | 65 | Merge all domain string modules into a single dict. |
 
 ## `core.infra`
 
@@ -500,6 +502,7 @@ LLM エラー分類、レート制御、リトライの共通機能。
 | `core.llm.guard.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
+| `core.llm.helper_completion` | 145 | — |
 | `core.llm.oneshot` | 927 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
@@ -528,22 +531,22 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory` | 20 | — |
 | `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
 | `core.memory.config_reader` | 31 | — |
-| `core.memory.conversation.compression` | 324 | Compression logic for conversation memory. |
-| `core.memory.conversation.finalize` | 490 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 348 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
+| `core.memory.conversation.compression` | 322 | Compression logic for conversation memory. |
+| `core.memory.conversation.finalize` | 493 | Session finalization for conversation memory. |
+| `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
 | `core.memory.conversation.shortterm` | 313 | Short-term memory (短期記憶) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
-| `core.memory.facts.config` | 127 | — |
+| `core.memory.facts.config` | 85 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 521 | — |
-| `core.memory.facts.extractor` | 411 | LLM-based entity and fact extraction pipeline. |
+| `core.memory.facts.extraction` | 526 | — |
+| `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 515 | — |
-| `core.memory.facts.invalidation_llm` | 164 | — |
-| `core.memory.facts.live` | 580 | — |
+| `core.memory.facts.invalidation_llm` | 154 | — |
+| `core.memory.facts.live` | 578 | — |
 | `core.memory.facts.observability` | 41 | — |
 | `core.memory.facts.ontology` | 247 | Pydantic models for entity / fact extraction results. |
 | `core.memory.facts.prompts.en` | 133 | English prompts for entity / fact extraction. |
@@ -552,15 +555,15 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.frontmatter` | 430 | — |
 | `core.memory.io` | 59 | — |
 | `core.memory.maintenance.activity_compaction` | 479 | — |
-| `core.memory.maintenance.background_review` | 554 | — |
-| `core.memory.maintenance.consolidation` | 1188 | — |
+| `core.memory.maintenance.background_review` | 565 | — |
+| `core.memory.maintenance.consolidation` | 1190 | — |
 | `core.memory.maintenance.cron_logger` | 159 | — |
 | `core.memory.maintenance.cron_noop` | 241 | — |
-| `core.memory.maintenance.distillation` | 546 | — |
+| `core.memory.maintenance.distillation` | 548 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
 | `core.memory.maintenance.housekeeping` | 1471 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
-| `core.memory.maintenance.reconsolidation` | 658 | — |
+| `core.memory.maintenance.reconsolidation` | 669 | — |
 | `core.memory.maintenance.resolution_tracker` | 60 | — |
 | `core.memory.manager` | 683 | — |
 | `core.memory.peer_profiles` | 37 | — |
@@ -1057,12 +1060,12 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1433 | — |
+| `server.app` | 1440 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
 | `server.reload_manager` | 115 | — |
-| `server.room_manager` | 541 | Meeting room lifecycle, orchestration, and minutes generation. |
+| `server.room_manager` | 542 | Meeting room lifecycle, orchestration, and minutes generation. |
 | `server.stream_registry` | 489 | — |
 | `server.websocket` | 165 | — |
 
@@ -1142,7 +1145,7 @@ LLM 利用量とコストの記録・集計。
 | `server.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_rag_repair（非公開）` | 268 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_reconcile（非公開）` | 320 | Reconciliation mixin for ProcessSupervisor. |
-| `server.supervisor._mgr_scheduler（非公開）` | 1247 | System scheduler mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_scheduler（非公開）` | 1245 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
 | `server.supervisor.manager` | 1148 | Process Supervisor - Manages lifecycle of Anima child processes. |

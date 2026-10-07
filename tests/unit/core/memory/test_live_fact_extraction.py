@@ -165,7 +165,7 @@ async def test_live_extraction_skips_llm_for_unqualified_or_short_input(
     since, _until = _range()
     engine = MagicMock()
     engine.extract_facts_from_text_outcome = AsyncMock(return_value=FactExtractionOutcome([]))
-    monkeypatch.setattr("core.memory.facts.live._load_options", lambda: _live_options(min_input_chars=200))
+    monkeypatch.setattr("core.memory.facts.live._load_options", lambda *_args: _live_options(min_input_chars=200))
     monkeypatch.setattr("core.memory.facts.live._make_fact_extractor", MagicMock())
     monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", MagicMock(return_value=engine))
 
@@ -224,7 +224,7 @@ async def test_checkpoint_advances_atomically_and_next_run_reads_only_new_activi
     engine.extract_facts_from_text_outcome = AsyncMock(
         side_effect=[FactExtractionOutcome([FactRecord(text="first fact")]), FactExtractionOutcome([])]
     )
-    monkeypatch.setattr("core.memory.facts.live._load_options", lambda: _live_options())
+    monkeypatch.setattr("core.memory.facts.live._load_options", lambda *_args: _live_options())
     monkeypatch.setattr("core.memory.facts.live._make_fact_extractor", lambda *_args: object())
     monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", MagicMock(return_value=engine))
 
@@ -380,13 +380,13 @@ async def test_live_fact_scheduler_rejects_disabled_consolidation_heartbeat_and_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     options = _live_options(enabled=False)
-    monkeypatch.setattr("core.memory.facts.live._load_options", lambda: options)
+    monkeypatch.setattr("core.memory.facts.live._load_options", lambda *_args: options)
     anima_dir = tmp_path / "animas" / "alice"
 
     assert not schedule_live_fact_extraction(anima_dir, trigger="chat")
 
     options = _live_options(enabled=True)
-    monkeypatch.setattr("core.memory.facts.live._load_options", lambda: options)
+    monkeypatch.setattr("core.memory.facts.live._load_options", lambda *_args: options)
     (anima_dir / "state").mkdir(parents=True)
     (anima_dir / "state" / ".consolidation_mode").write_text("1", encoding="utf-8")
     assert not schedule_live_fact_extraction(anima_dir, trigger="inbox")

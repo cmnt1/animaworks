@@ -44,6 +44,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.text", 2),  # Planned package; no current modules expected.
     ("core.llm.guard", 2),  # Planned package; no current modules expected.
     ("core.llm.oneshot", 3),  # Shared one-shot adapter used by memory and execution flows.
+    ("core.llm.helper_completion", 3),  # Registry-aware one-shot adapter shared by helper call sites.
     ("core.credentials", 2),  # Planned package; no current modules expected.
     ("core.platform", 0),
     ("core.exceptions", 0),

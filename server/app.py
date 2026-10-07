@@ -684,6 +684,13 @@ async def _run_startup_initialization(app: FastAPI) -> None:
     """Run heavyweight startup work after the ASGI app is accepting requests."""
     app.state.worker_services_ready = False
     try:
+        from core.config.helper_models import validate_helper_model_credentials
+
+        try:
+            validate_helper_model_credentials(app.state.animas_dir)
+        except Exception as exc:
+            logger.warning("Helper model credential validation skipped: %s", type(exc).__name__)
+
         _prepare_child_env_urls(app)
         from core.memory.rag.vector_registry import configure_server_vector_access
 

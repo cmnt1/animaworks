@@ -58,7 +58,7 @@ async def run_post_consolidation_knowledge_correction(
 
     try:
         await _run_with_remaining_time(
-            _run_reconsolidation_stage(anima_dir, anima_name, model, limits, summary),
+            _run_reconsolidation_stage(anima_dir, anima_name, "", limits, summary),
             deadline,
         )
     except TimeoutError:
@@ -107,7 +107,7 @@ async def _run_reconsolidation_stage(
     recon_summary = summary["reconsolidation"]
 
     knowledge_result = await engine.reconsolidate_knowledge(
-        model=model,
+        model="",
         max_files=remaining_files,
     )
     recon_summary["knowledge"] = knowledge_result
@@ -118,10 +118,10 @@ async def _run_reconsolidation_stage(
     if procedure_targets:
         recon_summary["procedures"] = {
             "targets_found": len(procedure_targets),
-            **await engine.apply_reconsolidation(procedure_targets, model=model),
+            **await engine.apply_reconsolidation(procedure_targets, model=""),
         }
 
     recon_summary["procedure_creation"] = await engine.create_procedures_from_resolved(
-        model=model,
+        model="",
         days=1,
     )

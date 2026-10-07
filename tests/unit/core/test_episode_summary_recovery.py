@@ -53,11 +53,13 @@ def test_episode_summary_candidates_use_configured_fallbacks() -> None:
         consolidation=ConsolidationConfig(
             llm_model="anthropic/claude-sonnet-4-6",
             llm_credential="anthropic",
+            llm_fallback_model="openai/gpt-4.1",
+            llm_fallback_credential="openai",
         ),
     )
     base = ModelConfig(
         model="chat-model",
-        fallback_models=["a:openai/gpt-4.1"],
+        fallback_models=["a:openai/gpt-4.1-mini"],
     )
 
     candidates = _episode_summary_model_configs(base, config.consolidation.llm_model, config)
@@ -78,10 +80,20 @@ def test_episode_summary_candidates_skip_cli_only_fallbacks() -> None:
             llm_model="anthropic/claude-sonnet-4-6",
             llm_credential="anthropic",
         ),
+        helper_models={
+            "episode_summary": {
+                "fallbacks": [
+                    {"model": "grok/grok-4.7"},
+                    {"model": "cursor/composer-2"},
+                    {"model": "gemini/gemini-3-pro"},
+                    {"model": "openai/gpt-4.1"},
+                ]
+            }
+        },
     )
     base = ModelConfig(
         model="chat-model",
-        fallback_models=["x:grok/grok-4.7", "d:cursor/composer-2", "g:gemini/gemini-3-pro", "a:openai/gpt-4.1"],
+        fallback_models=["x:grok/grok-4.7", "d:cursor/composer-2", "g:gemini/gemini-3-pro", "a:openai/gpt-4.1-mini"],
     )
 
     candidates = _episode_summary_model_configs(base, config.consolidation.llm_model, config)
@@ -110,6 +122,7 @@ async def test_episode_summary_tries_configured_fallback_after_json_rpc_failure(
     assert reason == ""
     assert [call.kwargs["model"] for call in completion.await_args_list] == ["primary/model", "fallback/model"]
     assert completion.await_args_list[1].kwargs["credential"] == "secondary"
+    assert all(call.kwargs["allow_agent_sdk_fallback"] is False for call in completion.await_args_list)
 
 
 @pytest.mark.asyncio
