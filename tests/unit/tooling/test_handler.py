@@ -428,7 +428,24 @@ class TestHandleRouting:
                 "send_message",
                 {"to": "alice", "content": "hello", "intent": "report"},
             )
-        callback.assert_called_once_with("test-anima", "alice", "hello")
+        callback.assert_called_once_with("test-anima", "alice", "hello", message_id="msg_001")
+
+    def test_post_channel_notifies_server_with_channel_target(
+        self,
+        handler_with_messenger: ToolHandler,
+    ):
+        callback = MagicMock()
+        handler_with_messenger.on_message_sent = callback
+        handler_with_messenger._channel_company_boundary_error = MagicMock(return_value=None)
+        handler_with_messenger._fire_board_slack_sync = MagicMock()
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
+            result = handler_with_messenger.handle(
+                "post_channel",
+                {"channel": "general", "text": "hello"},
+            )
+
+        assert result == "Posted to #general"
+        callback.assert_called_once_with("test-anima", "#channel:general", "hello", message_id="")
 
     def test_send_message_on_message_sent_error_swallowed(
         self,
@@ -482,7 +499,10 @@ class TestHandleRouting:
                 )
                 for name in ("alice", "bob", "charlie")
             ]
-        assert all(f"Message sent to {name}" in result for name, result in zip(("alice", "bob", "charlie"), results))
+        assert all(
+            f"Message sent to {name}" in result
+            for name, result in zip(("alice", "bob", "charlie"), results, strict=True)
+        )
 
     def test_send_message_two_recipients_allowed(
         self,

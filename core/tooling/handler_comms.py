@@ -8,10 +8,11 @@ from core.tooling._handler_protocols import _CommsToolsHost
 
 """CommsToolsMixin — messaging, channel, DM history, and human notification handlers."""
 
+import inspect
 import json as _json
 import logging
-import re
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from core.i18n import t
 from core.time_utils import now_iso
@@ -32,6 +33,78 @@ if TYPE_CHECKING:
     from core.notification.notifier import HumanNotifier
 
 logger = logging.getLogger("animaworks.tool_handler")
+
+
+def _notify_message_sent(
+    callback: OnMessageSentFn | None,
+    from_person: str,
+    to_person: str,
+    content: str,
+    *,
+    message_id: str = "",
+) -> None:
+    """Invoke message callbacks, passing an ID when their signature accepts it."""
+    if callback is None:
+        return
+    try:
+        parameters = inspect.signature(callback).parameters.values()
+        accepts_message_id = any(
+            parameter.name == "message_id" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+    except (TypeError, ValueError):
+        accepts_message_id = False
+    if accepts_message_id:
+        cast(Any, callback)(from_person, to_person, content, message_id=message_id)
+    else:
+        callback(from_person, to_person, content)
+
+
+def _posted_channels_path(host: _CommsToolsHost, session_type: str) -> Path:
+    """Return the active runtime path, falling back to the unknown/default run."""
+    from core.execution.session.session_context import current_runtime_session
+
+    ctx = current_runtime_session() or getattr(host, "_runtime_session_context", None)
+    thread_id = ctx.thread_id if ctx is not None else "default"
+    return Path(host._anima_dir) / "run" / "posted_channels" / session_type / f"{thread_id or 'default'}.jsonl"
+
+
+def _read_posted_channels(host: _CommsToolsHost, session_type: str) -> set[str]:
+    path = _posted_channels_path(host, session_type)
+    if not path.is_file():
+        return set()
+    channels: set[str] = set()
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("success") and isinstance(entry.get("channel"), str):
+                channels.add(entry["channel"])
+    except OSError:
+        logger.warning("Failed to read posted-channel state from %s", path, exc_info=True)
+    return channels
+
+
+def _persist_posted_channel(host: _CommsToolsHost, channel: str, session_type: str) -> None:
+    path = _posted_channels_path(host, session_type)
+    from core.execution.session.session_context import current_runtime_session
+
+    ctx = current_runtime_session() or getattr(host, "_runtime_session_context", None)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "channel": channel,
+            "success": True,
+            "session_type": session_type,
+            "thread_id": ctx.thread_id if ctx else "default",
+            "request_id": ctx.request_id if ctx else "",
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning("Failed to persist posted channel #%s: %s", channel, exc)
 
 
 def _company_boundary_error(
@@ -216,15 +289,15 @@ class CommsToolsMixin:
             except Exception:
                 logger.warning("Activity logging failed for external send to %s", to)
 
-            if self._on_message_sent:
-                try:
-                    self._on_message_sent(
-                        self._messenger.anima_name,
-                        to,
-                        content,
-                    )
-                except Exception:
-                    logger.exception("on_message_sent callback failed")
+            try:
+                _notify_message_sent(
+                    self._on_message_sent,
+                    self._messenger.anima_name,
+                    to,
+                    content,
+                )
+            except Exception:
+                logger.exception("on_message_sent callback failed")
 
             from core.messaging.outbound import send_external
 
@@ -257,15 +330,16 @@ class CommsToolsMixin:
         self._replied_to.setdefault(active_session_type.get(), set()).add(internal_to)
         self._persist_replied_to(internal_to, success=True)
 
-        if self._on_message_sent:
-            try:
-                self._on_message_sent(
-                    self._messenger.anima_name,
-                    internal_to,
-                    content,
-                )
-            except Exception:
-                logger.exception("on_message_sent callback failed")
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                internal_to,
+                content,
+                message_id=msg.id,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed")
 
         base = f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
         feedback = self._build_send_feedback(internal_to)
@@ -398,7 +472,9 @@ class CommsToolsMixin:
         if company_error is not None:
             return company_error
 
-        current_posted = self.posted_channels_for(active_session_type.get())
+        session_type = active_session_type.get()
+        current_posted = self.posted_channels_for(session_type)
+        current_posted.update(_read_posted_channels(self, session_type))
         if channel in current_posted:
             alt_channels = {"general", "ops"} - {channel} - current_posted
             alt_hint = ""
@@ -422,7 +498,8 @@ class CommsToolsMixin:
         except ChannelAccessDeniedError:
             return t("handler.channel_acl_denied", channel=channel)
 
-        self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
+        self._posted_channels.setdefault(session_type, set()).add(channel)
+        _persist_posted_channel(self, channel, session_type)
         logger.info("post_channel channel=%s anima=%s", channel, self._anima_name)
 
         if not suppress_board_fanout.get():
@@ -437,75 +514,36 @@ class CommsToolsMixin:
         # Sync board post to mapped Slack channel (fire-and-forget)
         self._fire_board_slack_sync(channel, text)
 
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                f"#channel:{channel}",
+                text,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed for board post")
+
         return f"Posted to #{channel}"
 
     def _fanout_board_mentions(self: _CommsToolsHost, channel: str, text: str) -> None:
-        """Send DM notifications to mentioned Animas when posting to a board channel."""
+        """Delegate mention delivery to the shared Board fan-out implementation."""
         if not self._messenger:
             return
 
-        mentions = re.findall(r"@(\w+)", text)
-        if not mentions:
-            return
+        from core.messaging.board_fanout import fanout_board_mentions
 
-        is_all = "all" in mentions
-
-        from core.paths import get_data_dir
-
-        sockets_dir = get_data_dir() / "run" / "sockets"
-        if sockets_dir.exists():
-            running = {p.stem for p in sockets_dir.glob("*.sock")}
-        else:
-            running = set()
-
-        if is_all:
-            targets = running - {self._anima_name}
-        else:
-            named = {m for m in mentions if m != "all"}
-            targets = (named & running) - {self._anima_name}
-
-        # ── ACL filter: only notify channel members ──
-        from core.messaging.messenger import is_channel_member
-
-        targets = {t for t in targets if is_channel_member(self._messenger.shared_dir, channel, t)}
-
-        # Defense in depth: the post gate rejects mixed-company channels, but
-        # membership may change before mention fan-out is delivered.
-        targets = {target for target in targets if self._cross_company_communication_error([target]) is None}
-
-        if not targets:
-            return
-
-        from_name = self._anima_name
-        fanout_content = f"[board_reply:channel={channel},from={from_name}]\n" + t(
-            "handler.board_mention_content", from_name=from_name, channel=channel, text=text
+        fanout_board_mentions(
+            self._messenger,
+            self._anima_name,
+            channel,
+            text,
+            origin_chain=build_outgoing_origin_chain(
+                self._session_origin,
+                self._session_origin_chain,
+            ),
+            animas_dir=Path(self._anima_dir).parent,
         )
-
-        outgoing_chain = build_outgoing_origin_chain(
-            self._session_origin,
-            self._session_origin_chain,
-        )
-
-        for target in sorted(targets):
-            try:
-                self._messenger.send(
-                    to=target,
-                    content=fanout_content,
-                    msg_type="board_mention",
-                    origin_chain=outgoing_chain,
-                )
-                logger.info(
-                    "board_mention fanout: %s -> %s (channel=%s)",
-                    from_name,
-                    target,
-                    channel,
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to fanout board_mention to %s",
-                    target,
-                    exc_info=True,
-                )
 
     def _fire_board_slack_sync(self: _CommsToolsHost, channel: str, text: str) -> None:
         """Sync a board post to the mapped Slack channel.

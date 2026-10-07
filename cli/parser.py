@@ -222,6 +222,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_board_dm.add_argument("from_anima", help="Self anima name")
     p_board_dm.add_argument("peer", help="Peer anima name")
     p_board_dm.add_argument("--limit", type=int, default=20, help="Max messages")
+    p_board_dm.add_argument(
+        "--direction",
+        choices=("sent", "received", "both"),
+        default="both",
+        help="Filter by message direction (default: both)",
+    )
+    p_board_dm.add_argument("--hours", type=int, default=None, help="Only include messages from the last N hours")
+    p_board_dm.add_argument("--keyword", default=None, help="Only include messages containing this keyword")
     p_board_dm.set_defaults(func=_lazy_board_dm_history)
 
     # ── Status ────────────────────────────────────────────
