@@ -189,36 +189,32 @@ class TestNoHardcodedModelDefaults:
         )
 
     def test_fallback_pattern_present(self):
-        """Verify that 'if not model:' + get_consolidation_llm_kwargs() fallback is used."""
+        """Verify that an empty model falls back through the helper-model role registry."""
         root = self._project_root()
 
-        # Files that should have the fallback pattern (all except context.py)
-        # NOTE: consolidation.py removed — its model-accepting methods were deleted
-        # in the consolidation refactor.
-        # NOTE: contradiction.py deleted and forgetting.py's LLM merge removed
-        # when machine memory reorganization was retired.
-        expected_fallback_files = [
-            "core/memory/maintenance/distillation.py",
-            "core/memory/maintenance/reconsolidation.py",
-        ]
-
-        fallback_pattern = re.compile(
-            r"if not model:.*?get_consolidation_llm_kwargs\s*\(\s*\)\s*\[\s*[\"']model[\"']\s*\]",
-            re.DOTALL,
-        )
+        # NOTE: the old ``if not model: get_consolidation_llm_kwargs()["model"]``
+        # fallback was replaced by ``one_shot_helper_completion(role=...)``,
+        # which resolves the model per helper role (status.json -> config
+        # helper_models -> legacy consolidation keys -> code default).
+        expected_roles = {
+            "core/memory/maintenance/distillation.py": "distillation",
+            "core/memory/maintenance/reconsolidation.py": "reconsolidation",
+        }
 
         missing: list[str] = []
-        for relpath in expected_fallback_files:
+        for relpath, role in expected_roles.items():
             filepath = root / relpath
             if not filepath.exists():
                 continue
             content = filepath.read_text(encoding="utf-8")
-            if not fallback_pattern.search(content):
+            pattern = re.compile(
+                r"one_shot_helper_completion\s*\(.*?role\s*=\s*[\"']" + re.escape(role) + r"[\"']",
+                re.DOTALL,
+            )
+            if not pattern.search(content):
                 missing.append(relpath)
 
-        assert not missing, "Expected 'if not model: ... get_consolidation_llm_kwargs()[\"model\"]' in:\n" + "\n".join(
-            missing
-        )
+        assert not missing, "Expected one_shot_helper_completion(role=...) fallback in:\n" + "\n".join(missing)
 
 
 # ── Test 5: Lifecycle and Supervisor model resolution ────────────────────

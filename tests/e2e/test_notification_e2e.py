@@ -165,6 +165,7 @@ class TestNotificationE2EFlow:
             patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls,
             patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls,
             patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls,
+            patch("core.phone.urgent.request_phone_alert", return_value="phone: calling") as phone_alert,
         ):
             for cls in (slack_cls, ntfy_cls, cw_cls):
                 mock_client = AsyncMock()
@@ -184,7 +185,10 @@ class TestNotificationE2EFlow:
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
-        assert len(parsed["results"]) == 3
+        # Urgent priority also places a phone alert alongside the three channels.
+        assert len(parsed["results"]) == 4
+        assert "phone: calling" in parsed["results"]
+        phone_alert.assert_called_once()
 
     def test_disabled_channels_skipped(self, anima_dir, memory):
         """Disabled channels in config are not included in the notifier."""
