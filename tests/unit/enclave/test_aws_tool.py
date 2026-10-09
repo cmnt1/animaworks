@@ -492,3 +492,12 @@ def test_aws_service_errors_never_return_exception_or_secret_text(
     assert isinstance(result, str)
     assert "do-not-leak" not in result
     assert "AWS_SECRET_KEY" not in result
+
+
+def test_parse_time_accepts_now() -> None:
+    import time
+
+    from core.integrations.enclave_aws import _parse_time
+
+    assert abs(_parse_time("now") - int(time.time())) <= 2
+    assert _parse_time("NOW") >= _parse_time("-1h")

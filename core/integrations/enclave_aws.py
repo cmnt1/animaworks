@@ -153,8 +153,10 @@ def _require_limit(value: Any, *, minimum: int, maximum: int) -> int:
 
 
 def _parse_time(value: str) -> int:
-    """Parse an ISO8601 timestamp or a relative duration such as ``-1h``."""
+    """Parse ``now``, an ISO8601 timestamp or a relative duration such as ``-1h``."""
     text = _require_text(value)
+    if text.casefold() == "now":
+        return int(datetime.now(UTC).timestamp())
     relative = _RELATIVE_TIME_RE.fullmatch(text)
     if relative:
         amount = int(relative.group(1))

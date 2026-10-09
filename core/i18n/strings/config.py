@@ -524,8 +524,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "AWS data source configured under enclave.aws_sources",
     },
     "enclave.aws.schema_time": {
-        "ja": "ISO8601 時刻または -1h / -24h 形式の相対時刻",
-        "en": "ISO8601 time or a relative duration such as -1h or -24h",
+        "ja": "now、ISO8601 時刻、または -1h / -24h 形式の相対時刻",
+        "en": "now, an ISO8601 time, or a relative duration such as -1h or -24h",
     },
     "enclave.aws.schema_logs_query": {
         "ja": "許可された CloudWatch Logs グループで Logs Insights クエリを実行します。",
