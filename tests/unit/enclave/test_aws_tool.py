@@ -501,3 +501,16 @@ def test_parse_time_accepts_now() -> None:
 
     assert abs(_parse_time("now") - int(time.time())) <= 2
     assert _parse_time("NOW") >= _parse_time("-1h")
+
+
+def test_numbers_and_timestamps_are_not_registered(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import core.enclave.egress.ledger as ledger
+    from core.integrations import enclave_aws
+
+    captured: list[str] = []
+    monkeypatch.setattr(ledger, "record_known_values", lambda _d, values, source: captured.extend(values))
+    config = SimpleNamespace(ledger_register=True)
+    enclave_aws._record_values("prod", config, ["12", "3.5", "2026-10-10T07:00:00Z", "true", "Taro Example"])
+    assert captured == ["Taro Example"]

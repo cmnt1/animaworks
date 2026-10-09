@@ -254,7 +254,18 @@ def _json_line_values(text: str, source_config: Any) -> list[str]:
 
 
 def _record_values(source_name: str, source_config: Any, values: list[str]) -> None:
-    if not source_config.ledger_register or not values:
+    if not source_config.ledger_register:
+        return
+    from core.integrations.enclave_sql import _is_boolean, _is_datetime, _is_numeric
+
+    # Counts, timestamps and flags are not personal data; registering them would
+    # redact ordinary numbers (e.g. an error count) from every later answer.
+    values = [
+        value
+        for value in values
+        if not (_is_numeric(value.strip()) or _is_datetime(value.strip().rstrip("Zz")) or _is_boolean(value))
+    ]
+    if not values:
         return
     from core.enclave.egress.ledger import record_known_values
     from core.paths import get_data_dir
