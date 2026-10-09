@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=a81ab4cb48174192d0669a0f072e6f40e79d674aaa963244d44c97bad4653e69 generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=e7e5c9663efa9ba4d8570a1d21f347312344008a917ec0dbe3813046be0ba6a2 generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -418,7 +418,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integration and the implementation of animaworks-tool.
+External service integration and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -453,7 +453,7 @@ External service integration and the implementation of animaworks-tool.
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
-| `core.integrations.enclave_aws` | 1012 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_aws` | 1023 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_records` | 230 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 364 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
