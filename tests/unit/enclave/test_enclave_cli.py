@@ -120,3 +120,71 @@ def test_parser_registers_doctor_json_option() -> None:
     assert args.enclave_command == "doctor"
     assert args.json_output is True
     assert args.func is enclave_cmd.enclave_doctor_command
+
+
+def _fake_sql_source(*, plugin_path: str, tunnel: bool = True) -> object:
+    from types import SimpleNamespace
+
+    if tunnel:
+        return SimpleNamespace(
+            password_secret="db-password",
+            tunnel=SimpleNamespace(aws_secret="aws-creds", plugin_path=plugin_path),
+        )
+    return SimpleNamespace(password_secret="db-password", tunnel=None)
+
+
+def test_doctor_reports_missing_sql_source_secrets(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin = data_dir / "sm-plugin"
+    plugin.write_text("#!/bin/sh\n", encoding="utf-8")
+    plugin.chmod(0o755)
+    config = SimpleNamespace(enclave=SimpleNamespace(sql_sources={"main": _fake_sql_source(plugin_path=str(plugin))}))
+    # Only db-password exists; aws-creds is missing -> secrets must fail.
+    monkeypatch.setattr("core.enclave.secrets.secret_exists", lambda name: name == "db-password")
+    monkeypatch.setattr(enclave_cmd, "_sql_importable_dependencies", lambda: [])
+
+    rows = enclave_cmd._sql_source_checks(config)
+
+    scopes = {row["scope"] for row in rows}
+    assert "enclave.sql_sources.main" in scopes
+    secrets_row = next(row for row in rows if row["check"] == "secrets")
+    assert secrets_row["status"] == "fail"
+    assert "tunnel.aws_secret" in secrets_row["detail"]
+    plugin_row = next(row for row in rows if row["check"] == "plugin")
+    assert plugin_row["status"] == "ok"
+
+
+def test_doctor_reports_non_executable_plugin(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin = data_dir / "sm-plugin"
+    plugin.write_text("#!/bin/sh\n", encoding="utf-8")  # not chmod'ed -> not executable
+    config = SimpleNamespace(enclave=SimpleNamespace(sql_sources={"main": _fake_sql_source(plugin_path=str(plugin))}))
+    monkeypatch.setattr("core.enclave.secrets.secret_exists", lambda name: True)
+    monkeypatch.setattr(enclave_cmd, "_sql_importable_dependencies", lambda: [])
+
+    rows = enclave_cmd._sql_source_checks(config)
+
+    plugin_row = next(row for row in rows if row["check"] == "plugin")
+    assert plugin_row["status"] == "fail"
+
+
+def test_doctor_reports_sql_source_missing_deps(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plugin = data_dir / "sm-plugin"
+    plugin.write_text("#!/bin/sh\n", encoding="utf-8")
+    plugin.chmod(0o755)
+    config = SimpleNamespace(enclave=SimpleNamespace(sql_sources={"main": _fake_sql_source(plugin_path=str(plugin))}))
+    monkeypatch.setattr("core.enclave.secrets.secret_exists", lambda name: True)
+    monkeypatch.setattr(enclave_cmd, "_sql_importable_dependencies", lambda: ["pymysql"])
+
+    rows = enclave_cmd._sql_source_checks(config)
+
+    deps_row = next(row for row in rows if row["check"] == "deps")
+    assert deps_row["status"] == "fail"
+    assert "pymysql" in deps_row["detail"]

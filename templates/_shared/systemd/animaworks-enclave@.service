@@ -9,6 +9,13 @@ Group=animaworks-enclave
 Environment=ANIMAWORKS_DATA_DIR=/home/%i/.animaworks
 # Replace the virtualenv path and port with values for this installation.
 ExecStart=/opt/animaworks/.venv/bin/animaworks start -f --host 127.0.0.1 --port 18600
+# Secrets for real data sources are injected as credential files and read from
+# $CREDENTIALS_DIRECTORY (see core/enclave/secrets.py). Store each file
+# root-owned 0600 (e.g. /etc/credstore/animaworks-enclave/<name>/db-password):
+#   LoadCredential=pii-db-password:/etc/credstore/animaworks-enclave/%i/db-password
+#   LoadCredential=aws-creds:/etc/credstore/animaworks-enclave/%i/aws-creds
+# The enclave config then references these by name in
+# enclave.sql_sources.<name>.password_secret / tunnel.aws_secret.
 RuntimeDirectory=animaworks-enclave
 RuntimeDirectoryMode=0750
 UMask=0077

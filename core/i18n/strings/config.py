@@ -435,6 +435,54 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "データセットの ID フィールド値",
         "en": "Value of the dataset's ID field",
     },
+    "enclave.sql.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.sql.source_required": {
+        "ja": "データソース名を指定してください。",
+        "en": "A data source name is required.",
+    },
+    "enclave.sql.source_not_configured": {
+        "ja": "データソース '{source}' は enclave に設定されていません。",
+        "en": "Data source '{source}' is not configured in the enclave.",
+    },
+    "enclave.sql.sql_required": {
+        "ja": "SQL を指定してください。",
+        "en": "An SQL statement is required.",
+    },
+    "enclave.sql.multiple_statements": {
+        "ja": "SQL は 1 文で指定してください（セミコロン区切りの複数文は使えません）。",
+        "en": "Provide a single SQL statement (semicolon-separated statements are not allowed).",
+    },
+    "enclave.sql.sql_not_allowed": {
+        "ja": "この SQL は読み取り専用の安全な形式ではありません。",
+        "en": "This SQL is not in a safe read-only form.",
+    },
+    "enclave.sql.unavailable": {
+        "ja": "データソースを安全に参照できません。設定と秘密を確認してください。",
+        "en": "The data source could not be read safely. Check its configuration and secrets.",
+    },
+    "enclave.sql.schema_query": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB に、検証済みの SELECT を実行します。",
+        "en": "Run a validated read-only query against a configured enclave database.",
+    },
+    "enclave.sql.schema_schema": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB のスキーマ（テーブル一覧か列定義）を返します。",
+        "en": "Return the schema (table list or column definitions) of a configured enclave database.",
+    },
+    "enclave.sql.schema_source": {
+        "ja": "設定済みデータソース名",
+        "en": "Configured data source name",
+    },
+    "enclave.sql.schema_sql": {
+        "ja": "実行する検証済み SELECT 文",
+        "en": "Validated SELECT statement to run",
+    },
+    "enclave.sql.schema_table": {
+        "ja": "省略可なテーブル名（指定時は列定義を返す）",
+        "en": "Optional table name (returns column definitions when set)",
+    },
     "enclave.cli.doctor_json": {
         "ja": "機械可読な JSON 形式で出力する",
         "en": "Output in machine-readable JSON format",

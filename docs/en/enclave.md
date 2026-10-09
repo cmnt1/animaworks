@@ -162,6 +162,70 @@ animaworks enclave status
 
 `status` outputs only the day's counts of successful and blocked requests, and does not display the contents of questions or answers. The egress audit log is saved to `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the known-value ledger to `~/.animaworks/enclave/ledger/known_values.jsonl`. Since the audit log includes the facts being processed, maintain access permissions on the files and their parent directories, and do not copy them outside the isolated environment.
 
+## Connecting Real Data Sources
+
+You can refer to a production MySQL-compatible DB from the isolated side in read-only mode. Since this is a public repository, do not write real customer names, industries, or real host names / IPs / account IDs — everything below uses `example` placeholders.
+
+### Placing Secrets
+
+The DB password and AWS access keys are passed only to the isolated process via `enclave.secrets_dir` or systemd `LoadCredential=`. Place the files root-owned with mode `0600` (never write the password as plaintext in the config file).
+
+- With systemd: use `LoadCredential=` in `animaworks-enclave@.service` to read files such as `/etc/credstore/animaworks-enclave/<name>/db-password`, making them available under `$CREDENTIALS_DIRECTORY`.
+- When a separate directory is set in `enclave.secrets_dir`, place a value in a file named after the secret in the same way.
+
+```bash
+install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
+install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-enclave/aws-creds
+```
+
+### sql_sources Example Configuration
+
+Define read-only data sources under `enclave.sql_sources`. `password_secret` is the name of a secret. Setting `tunnel` connects to RDS via an SSM Session Manager port forward (through a bastion). The `aws_secret` value is JSON: `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`.
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "sql_sources": {
+      "main-db": {
+        "driver": "mysql",
+        "host": "example.rds.example.amazonaws.com",
+        "port": 3306,
+        "database": "example_db",
+        "user": "enclave_reader",
+        "password_secret": "db-password",
+        "ssl": true,
+        "max_rows": 200,
+        "timeout_s": 30,
+        "cell_max_chars": 2000,
+        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "tunnel": {
+          "type": "ssm_port_forward",
+          "region": "example-region-1",
+          "target_tag_name": "example-bastion-tag",
+          "aws_secret": "aws-creds",
+          "plugin_path": "/usr/local/bin/session-manager-plugin",
+          "idle_shutdown_s": 600
+        }
+      }
+    }
+  }
+}
+```
+
+`ledger_exempt_columns` is a list of regular expressions that select columns **not to redact at the exit (IDs, status, etc.)**. Values in these columns are not added to the known-value ledger. All other string cells — except those that are purely numeric, ISO datetimes, or booleans — are registered in the ledger before the result is returned, so they are redacted if they reappear in an answer. SSL is required by default. To use the RDS CA set `ssl_ca` to the CA path; when hostname verification must be disabled, keep `ssl_verify_identity: false` (default) and note that the hostname will not match because the connection goes through the tunnel.
+
+### Reading the doctor output
+
+When `sql_sources` is configured, `animaworks enclave doctor` adds checks per source. The startup guards do not stop the process when secrets are missing; the doctor shows `fail` instead (secrets may be placed later).
+
+- `<name>.secrets`: whether the `password_secret` and `tunnel.aws_secret` secret files can be read.
+- `<name>.plugin`: whether `session-manager-plugin` is executable.
+- `<name>.deps`: whether `pymysql` and `boto3` can be imported.
+
+It does not connect to the actual DB or AWS.
+
 ## Verifying Operation with Mock Data
 
 The mock data generation script uses a fixed seed to regenerate the same 100 customer records and 300 inquiry tickets. Some tickets include names or phone numbers in their contents. Do not use real data, and place the output in the isolated-side data directory.

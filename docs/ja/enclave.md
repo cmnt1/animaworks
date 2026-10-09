@@ -159,6 +159,70 @@ animaworks enclave status
 
 `status` は当日の成功・遮断件数だけを出力し、質問や回答の本文を表示しない。egress 監査ログは `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`、既知値台帳は `~/.animaworks/enclave/ledger/known_values.jsonl` に保存される。監査ログには処理対象の facts が含まれるため、ファイルと親ディレクトリのアクセス権を維持し、隔離環境外へコピーしない。
 
+## 実データ源の接続
+
+隔離側から本番 MySQL 互換 DB を読み取り専用で参照できます。接続は扱うデータを実在の例で書けません（公開リポジトリのため、顧客名・業種・実在のホスト名・IP・アカウント ID は書かないでください）。以下はすべて `example` を使ったプレースホルダーです。
+
+### 秘密の置き方
+
+DB パスワードと AWS アクセスキーは、`enclave.secrets_dir` か systemd の `LoadCredential=` で隔離プロセスにだけ渡します。ファイルは root 所有・`0600` で置いてください（パスワードは漏えいしないため決して設定ファイルに平文で書かない）。
+
+- systemd を使う場合: `animaworks-enclave@.service` の `LoadCredential=` で `/etc/credstore/animaworks-enclave/<name>/db-password` などを読み込み、`$CREDENTIALS_DIRECTORY` から読めるようにします。
+- 別のディレクトリを `enclave.secrets_dir` に指定した場合も同じ形式で、名前をファイル名にした値を配置します。
+
+```bash
+install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
+install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-enclave/aws-creds
+```
+
+### sql_sources 設定例
+
+`enclave.sql_sources` に読み取り専用のデータソースを定義します。`password_secret` は秘密の名前です。`tunnel` を設定すると、SSM Session Manager のポート転送（踏み台経由）で RDS へ接続します。`aws_secret` の中身は `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}` の JSON です。
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "sql_sources": {
+      "main-db": {
+        "driver": "mysql",
+        "host": "example.rds.example.amazonaws.com",
+        "port": 3306,
+        "database": "example_db",
+        "user": "enclave_reader",
+        "password_secret": "db-password",
+        "ssl": true,
+        "max_rows": 200,
+        "timeout_s": 30,
+        "cell_max_chars": 2000,
+        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "tunnel": {
+          "type": "ssm_port_forward",
+          "region": "example-region-1",
+          "target_tag_name": "example-bastion-tag",
+          "aws_secret": "aws-creds",
+          "plugin_path": "/usr/local/bin/session-manager-plugin",
+          "idle_shutdown_s": 600
+        }
+      }
+    }
+  }
+}
+```
+
+`ledger_exempt_columns` は正規表現のリストで、**出口で伏字にしない列（ID・状態など）**を指定します。ここで指定した列の値は既知値台帳へ積まれません。残りの文字列セルは、数値・ISO 日時・真偽値だけのものを除いて、結果を返す前に既知値台帳へ登録され、回答に再出現したときに伏字になります。SSL は既定で必須です。RDS の CA を使う場合は `ssl_ca` に CA のパス、ホスト名検証の無効化が必要なら `ssl_verify_identity: false`（既定）のままトンネル越しのためホスト名一致しない点を考慮してください。
+
+### doctor の見方
+
+`sql_sources` を設定すると、`animaworks enclave doctor` に各ソースの検査が追加されます。起動時ガードは秘密が未配置でも起動を止めず、doctor で `fail` を表示します（秘密は後から置ける運用のため）。
+
+- `<name>.secrets`: `password_secret` と `tunnel.aws_secret` の秘密ファイルが読めるか。
+- `<name>.plugin`: `session-manager-plugin` が実行可能か。
+- `<name>.deps`: `pymysql` と `boto3` が import できるか。
+
+実際の DB・AWS には接続しません。
+
 ## モックデータでの動作確認
 
 モックデータ生成スクリプトは固定シードを使い、同じ 100 件の顧客データと 300 件の問い合わせチケットを再生成する。氏名や電話番号を本文に含むチケットもある。実データは使用せず、出力先は隔離側の data directory 内にする。

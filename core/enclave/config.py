@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EnclaveDatasetConfig(BaseModel):
@@ -31,6 +31,70 @@ class EnclaveDatasetConfig(BaseModel):
         return value
 
 
+class EnclaveSsmTunnelConfig(BaseModel):
+    """An SSM Session Manager port-forwarding tunnel to a remote host.
+
+    Credentials come from the secrets store (``aws_secret``), never from
+    environment variables or the boto profile chain.  Connection is made to
+    a target resolved either by instance id or by EC2 ``Name`` tag (running
+    instances only).
+    """
+
+    type: Literal["ssm_port_forward"] = "ssm_port_forward"
+    region: str = Field(min_length=1, description="AWS region for SSM and target resolution")
+    target_instance_id: str | None = None
+    target_tag_name: str | None = None
+    aws_secret: str = Field(min_length=1, description="Secret name holding AWS credential JSON")
+    plugin_path: str = "/usr/local/bin/session-manager-plugin"
+    idle_shutdown_s: int = 600
+
+    @model_validator(mode="after")
+    def _require_target(self) -> EnclaveSsmTunnelConfig:
+        if bool(self.target_instance_id) == bool(self.target_tag_name):
+            raise ValueError("exactly one of target_instance_id or target_tag_name is required")
+        return self
+
+
+class EnclaveSqlSourceConfig(BaseModel):
+    """A read-only SQL data source reachable from inside the enclave.
+
+    The connection may go straight to ``host`` or through the optional
+    ``tunnel`` (SSM port forward).  The database password is read from the
+    secrets store by name (``password_secret``); it is never stored or
+    logged in plaintext.
+    """
+
+    driver: Literal["mysql"] = "mysql"
+    host: str = Field(min_length=1, description="Tunnel target (or direct) host")
+    port: int = 3306
+    database: str = Field(min_length=1)
+    user: str = Field(min_length=1)
+    password_secret: str = Field(min_length=1)
+    ssl: bool = True
+    ssl_ca: str | None = Field(default=None, description="Optional CA bundle path for TLS verification")
+    ssl_verify_identity: bool = False
+    tunnel: EnclaveSsmTunnelConfig | None = None
+    max_rows: int = 200
+    timeout_s: int = 30
+    cell_max_chars: int = 2000
+    ledger_exempt_columns: list[str] = Field(default_factory=list)
+
+    @field_validator("host", "database", "user", "password_secret")
+    @classmethod
+    def _require_non_empty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("max_rows")
+    @classmethod
+    def _clamp_max_rows(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_rows must be at least 1")
+        return min(value, 1000)
+
+
 class EnclaveConfig(BaseModel):
     """Server-side configuration for an isolated (enclave) runtime instance.
 
@@ -48,6 +112,8 @@ class EnclaveConfig(BaseModel):
     request_timeout_s: int = 900
     allowed_llm_credentials: list[str] = Field(default_factory=list)
     datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
+    sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)
+    secrets_dir: str | None = None
     egress: dict[str, Any] = Field(default_factory=dict)
 
 

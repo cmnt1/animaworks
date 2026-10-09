@@ -12,7 +12,10 @@ logger = logging.getLogger(__name__)
 
 # These tools are only exposed in an isolated runtime. Keep them out of the
 # default registry so host-side tool lists and permissions remain unchanged.
-_ENCLAVE_ONLY_TOOL_MODULES = {"enclave_records": "core.integrations.enclave_records"}
+_ENCLAVE_ONLY_TOOL_MODULES = {
+    "enclave_records": "core.integrations.enclave_records",
+    "enclave_sql": "core.integrations.enclave_sql",
+}
 
 
 def discover_core_tools() -> dict[str, str]:
