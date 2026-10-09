@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -124,9 +123,10 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
     # ── send ─────────────────────────────────────────────────
     if args.command == "send":
         # Block during inbox auto-reply (framework posts automatically)
-        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-        if anima_dir_env:
-            marker = Path(anima_dir_env) / "run" / "discord_auto_reply_active"
+        # Not named anima_dir_env: that would shadow the imported helper for the whole function.
+        anima_dir = anima_dir_env() or ""
+        if anima_dir:
+            marker = Path(anima_dir) / "run" / "discord_auto_reply_active"
             if marker.exists():
                 print(
                     "Blocked: discord send is unnecessary during inbox processing. "
@@ -140,7 +140,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
         # `post_channel` enforces this via messenger, but this CLI path
         # would otherwise bypass the check and allow any Anima to post to
         # another Anima's exclusive DM channel.
-        caller_name = Path(anima_dir_env).name if anima_dir_env else ""
+        caller_name = Path(anima_dir).name if anima_dir else ""
         if caller_name:
             try:
                 from core.config import load_config
@@ -167,7 +167,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
         thread_id = getattr(args, "thread_id", None)
 
         # Prefer webhook (Anima identity) over bot token (AnimaWorks identity)
-        anima_name = Path(anima_dir_env() or "").name or ""
+        anima_name = Path(anima_dir).name if anima_dir else ""
         sent_via_webhook = False
         if anima_name:
             try:
