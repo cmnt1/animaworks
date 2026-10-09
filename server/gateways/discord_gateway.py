@@ -30,6 +30,7 @@ from core.integrations._discord_markdown import clean_discord_markup
 from core.messaging.messenger import Messenger
 from core.paths import get_data_dir, get_shared_dir
 from core.platform.tasks import spawn
+from server.gateways import discord_debate_threads as debate_threads
 
 logger = logging.getLogger("animaworks.discord_gateway")
 
@@ -706,6 +707,71 @@ class DiscordGatewayManager:
             return True
         return anima_name in members
 
+    def _deliver_debate(
+        self,
+        debate: dict,
+        plan: list[tuple[str, bool]],
+        *,
+        author: str,
+        author_id: str,
+        text: str,
+        history: list[tuple[str, str]],
+        message_id: str,
+        routing_channel_id: str,
+        thread_id: str,
+    ) -> None:
+        """Deliver a debate-thread message to each planned participant's inbox."""
+        data_dir = get_data_dir()
+        for target, required in plan:
+            if not (data_dir / "animas" / target).is_dir():
+                logger.warning("Debate thread: anima directory not found: %s", target)
+                continue
+            try:
+                Messenger(get_shared_dir(), target).receive_external(
+                    content=debate_threads.build_delivery(
+                        debate, target=target, required=required, author=author, text=text, history=history
+                    ),
+                    source="discord",
+                    source_message_id=message_id,
+                    external_user_id=author_id,
+                    external_channel_id=routing_channel_id,
+                    external_thread_ts=thread_id,
+                    intent="question",
+                )
+                logger.info("Debate thread %s: %s -> %s (required=%s)", thread_id, author, target, required)
+            except Exception:
+                logger.exception("Debate thread: failed to deliver to %s", target)
+
+    async def _handle_debate_anima_post(self, message: Any, author_name: str) -> None:
+        """An Anima posted in a debate thread: record it and pass it to anyone it names."""
+        if getattr(message.channel, "parent_id", None) is None:
+            return
+        thread_id = str(message.channel.id)
+        debate = debate_threads.load_entry(thread_id)
+        if debate is None or _is_duplicate_id(str(message.id)):
+            return
+        author = self._resolve_canonical_name(author_name) or author_name
+        text = clean_discord_markup(message.content or "")
+        debate_threads.append_to_record(debate, author, text)
+        if not debate_threads.take_anima_turn(thread_id):
+            logger.info("Debate thread %s: Anima turn budget spent; %s not relayed", thread_id, author)
+            return
+        plan = debate_threads.plan_anima_deliveries(debate, author, self._detect_all_target_animas(text))
+        if not plan:
+            return
+        history = await debate_threads.recent_history(message.channel, before_id=message.id)
+        self._deliver_debate(
+            debate,
+            plan,
+            author=author,
+            author_id=str(message.author.id),
+            text=text,
+            history=history,
+            message_id=str(message.id),
+            routing_channel_id=str(message.channel.parent_id),
+            thread_id=thread_id,
+        )
+
     async def _handle_message(self, message: Any) -> None:
         """Core message handler for all Discord events."""
         # Ignore own messages
@@ -721,6 +787,8 @@ class DiscordGatewayManager:
             except Exception:
                 logger.debug("Failed to load human aliases for Discord webhook echo guard", exc_info=True)
             if author_name.lower() in ignored_webhook_names:
+                # Debate threads: an Anima's post may call on another participant.
+                await self._handle_debate_anima_post(message, author_name)
                 return
 
         # Dedup
@@ -909,6 +977,26 @@ class DiscordGatewayManager:
             board_mapping=discord_cfg.board_mapping,
             source=board_source,
         )
+
+        # Debate threads route to every participant (see discord_debate_threads).
+        if parent_id is not None:
+            debate = debate_threads.load_entry(channel_id)
+            if debate is not None:
+                debate_threads.start_human_turn(channel_id)
+                debate_threads.append_to_record(debate, author_display, cleaned_text)
+                history = await debate_threads.recent_history(message.channel, before_id=message.id)
+                self._deliver_debate(
+                    debate,
+                    debate_threads.plan_human_deliveries(debate, target_animas),
+                    author=author_display,
+                    author_id=str(message.author.id),
+                    text=cleaned_text,
+                    history=history,
+                    message_id=msg_id,
+                    routing_channel_id=routing_channel_id,
+                    thread_id=channel_id,
+                )
+                return
 
         # Deliver to each target's inbox
         if target_animas:

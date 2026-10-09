@@ -68,7 +68,7 @@ def prepare_auto_response_text(response_text: str) -> str:
     normal reports are left untouched.
     """
     text = response_text.strip()
-    if not text:
+    if not text or text.strip("`* \n") == "[[PASS]]":  # a debate-thread participant chose not to speak
         return ""
     if _looks_like_operational_loop(text):
         logger.warning("External auto-response suppressed repetitive operational text")
