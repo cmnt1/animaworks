@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: e2f87d7b6ffa289dcc0ef4b00d2cf0bd64788a236750b976d2612427d1c4bc99 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 92597b6713a402f9acaedd098b0a99fad7f8ad1f67c783d47c49dfd816dd8cc9 -->
 
 # モジュール一覧
 
@@ -33,7 +33,7 @@
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
 | `cli.commands.cost_cmd` | 232 | — |
-| `cli.commands.enclave_cmd` | 237 | Operational commands for enclave runtimes. |
+| `cli.commands.enclave_cmd` | 323 | Operational commands for enclave runtimes. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
@@ -216,23 +216,25 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.enclave` | 44 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 59 | Configuration models for enclave mode. |
+| `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 188 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 107 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
-| `core.enclave.egress.ledger` | 86 | Known-value ledger for the egress pipeline. |
+| `core.enclave.egress.ledger` | 164 | Known-value ledger for the egress pipeline. |
 | `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
 | `core.enclave.egress.masker.facts` | 155 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
-| `core.enclave.egress.stages` | 419 | Stage implementations for the egress pipeline. |
+| `core.enclave.egress.stages` | 473 | Stage implementations for the egress pipeline. |
 | `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
+| `core.enclave.secrets` | 103 | Read secrets from the enclave credentials store. |
+| `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -370,7 +372,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 498 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 650 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -451,7 +453,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
+| `core.integrations.enclave_aws` | 1012 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_records` | 230 | Read configured JSONL datasets from inside an enclave runtime. |
+| `core.integrations.enclave_sql` | 364 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -978,7 +982,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 455 | — |
-| `core.tooling.policy.registry` | 60 | — |
+| `core.tooling.policy.registry` | 64 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
 | `core.tooling.policy.schemas.channel` | 118 | — |

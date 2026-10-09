@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=7b3f837620dd32802c843289512bc027ee16b6ba55c1ccb5f815352959df9e07 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=6180702228ee9130f88f8ee743f43290528d080237780c8224d9faa4d5a3b5bf generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인한 커밋: f448d7b0
 
@@ -161,6 +161,114 @@ animaworks enclave status
 ```
 
 `status`은 당일 성공·차단 건수만 출력하며 질문이나 답변의 본문은 표시하지 않는다. egress 감사 로그는 `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`에, 알려진 값 원장은 `~/.animaworks/enclave/ledger/known_values.jsonl`에 저장된다. 감사 로그에는 처리 대상 facts가 포함되므로 파일과 상위 디렉터리의 접근 권한을 유지하고, 격리 환경 밖으로 복사하지 않는다.
+
+## 실제 데이터 소스 연결
+
+격리 측에서 운영 MySQL 호환 DB를 읽기 전용으로 참조할 수 있습니다. 연결은 다루는 데이터를 실제 예시로 작성할 수 없습니다(공개 리포지토리이므로 고객명·업종·실제 호스트명·IP·계정 ID는 작성하지 마세요). 아래는 모두 `example`을 사용한 플레이스홀더입니다.
+
+### 비밀값 배치 방법
+
+DB 비밀번호와 AWS 액세스 키는 `enclave.secrets_dir` 또는 systemd의 `LoadCredential=`로 격리 프로세스에만 전달합니다. 비밀 파일은 root 소유·`0600`로 설정하세요. 비밀번호 유출을 막기 위해 설정 파일에 평문으로 작성하면 안 됩니다.
+
+- systemd를 사용하는 경우: `animaworks-enclave@.service`의 `LoadCredential=`로 `/etc/credstore/animaworks-enclave/<name>/db-password` 등을 읽어 `$CREDENTIALS_DIRECTORY`에서 읽을 수 있게 합니다.
+- 다른 디렉터리를 `enclave.secrets_dir`로 지정한 경우도 같은 형식으로, 이름을 파일명으로 한 값을 배치합니다.
+
+```bash
+install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
+install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-enclave/aws-creds
+```
+
+### sql_sources 설정 예시
+
+`enclave.sql_sources`에 읽기 전용 데이터 소스를 정의합니다. `password_secret`는 비밀값의 이름입니다. `tunnel`을 설정하면 SSM Session Manager의 포트 전달(배스천 경유)로 RDS에 연결합니다. `aws_secret`의 내용은 `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`의 JSON입니다.
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "sql_sources": {
+      "main-db": {
+        "driver": "mysql",
+        "host": "example.rds.example.amazonaws.com",
+        "port": 3306,
+        "database": "example_db",
+        "user": "enclave_reader",
+        "password_secret": "db-password",
+        "ssl": true,
+        "max_rows": 200,
+        "timeout_s": 30,
+        "cell_max_chars": 2000,
+        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "tunnel": {
+          "type": "ssm_port_forward",
+          "region": "example-region-1",
+          "target_tag_name": "example-bastion-tag",
+          "aws_secret": "aws-creds",
+          "plugin_path": "/usr/local/bin/session-manager-plugin",
+          "idle_shutdown_s": 600
+        }
+      }
+    }
+  }
+}
+```
+
+`ledger_exempt_columns`은 정규식 목록으로, **출구에서 마스킹하지 않을 열(ID·상태 등)**을 지정합니다. 여기서 지정한 열의 값은 알려진 값 원장에 적재되지 않습니다. 나머지 문자열 셀은 숫자·ISO 날짜시간·불리언 값만 있는 것을 제외하고, 결과를 반환하기 전에 알려진 값 원장에 등록되어 답변에 다시 나타나면 마스킹됩니다. SSL은 기본적으로 필수입니다. RDS의 CA를 사용하는 경우 `ssl_ca`에 CA의 경로, 호스트명 검증 비활성화가 필요하면 `ssl_verify_identity: false`(기본값) 그대로 터널 경유이므로 호스트명이 일치하지 않는 점을 고려하세요.
+
+### doctor 보는 방법
+
+`sql_sources`을 설정하면 `animaworks enclave doctor`에 각 소스의 검사가 추가됩니다. 시작 시 가드는 비밀값이 미배치되어도 시작을 막지 않고, doctor에서 `fail`를 표시합니다(비밀값은 나중에 배치할 수 있는 운영 방식).
+
+- `<name>.secrets`: `password_secret`와 `tunnel.aws_secret`의 비밀 파일을 읽을 수 있는지.
+- `<name>.plugin`: `session-manager-plugin`이 실행 가능한지.
+- `<name>.deps`: `pymysql`와 `boto3`을 import 할 수 있는지.
+
+실제 DB·AWS에는 연결하지 않습니다.
+
+## AWS 읽기 소스
+
+`enclave.aws_sources`에는 CloudWatch Logs, RDS Performance Insights, RDS 로그 파일, S3의 읽기 대상을 등록합니다. 인증 정보는 `aws_secret`으로 지정한 비밀 파일에서 읽어오며, 설정 파일이나 도구 출력에는 AWS 키를 포함하지 않습니다. 아래의 이름과 값은 모두 설명용 플레이스홀더입니다.
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "aws_sources": {
+      "observability": {
+        "region": "example-region-1",
+        "aws_secret": "aws-readonly",
+        "log_groups": ["/example/application/*"],
+        "pi_resource_id": "db-example-resource",
+        "rds_instance_id": "db-example-instance",
+        "s3_buckets": ["example-placeholder-bucket"],
+        "max_bytes": 200000,
+        "ledger_register": true,
+        "ledger_exempt_keys": [
+          "level", "timestamp", "time", "message_type", "message", "msg",
+          "error", "exception", "stack_trace", "status", "method", "path",
+          "route", "duration", "request_id", "requestid", "req_id", "reqid",
+          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
+          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
+        ]
+      }
+    }
+  }
+}
+```
+
+비밀값 `aws-readonly`의 파일 내용은 다음 JSON 형식으로 합니다. 값은 예시용 플레이스홀더이며 그대로 사용하지 마세요.
+
+```json
+{"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
+```
+
+`log_groups`는 완전 일치 또는 끝부분의 `*`에 의한 전방 일치로 허용합니다. PI·RDS 각 도구는 각각 설정된 리소스 ID만 사용하고, S3는 `s3_buckets`에 나열한 버킷만 접근합니다. 시간은 ISO8601 또는 `-1h` / `-24h`의 상대 지정입니다. Logs Insights 쿼리는 최대 60초 폴링하며, 각 도구의 반환 텍스트는 `max_bytes`으로 제한됩니다. 텍스트가 아니거나 상한을 초과하는 S3 객체는 본문을 도구 응답에 포함하지 않고, 격리 data 디렉터리의 `enclave/downloads/<bucket>/<key-sha256>`에 mode `0600`로 저장합니다.
+
+`ledger_register`이 활성화되어도 자유 문장 전체를 알려진 값 원장에 등록하는 것은 아닙니다. JSON으로 해석할 수 있는 로그의 각 줄은 `ledger_exempt_keys`에 포함되지 않은 문자열 값만 등록합니다. PI의 SQL 전문은 문자열 리터럴(`'...'`)의 내용만 등록합니다. JSON이 아닌 일반 로그 본문이나 기타 자유 문장은 등록되지 않으며, 출구의 masker와 `regex_denylist`이 담당합니다. 따라서 자유 문장의 마스킹은 알려진 값 원장만으로는 보장되지 않습니다. `ledger_register: false`으로 설정하면 AWS 읽기 결과의 등록을 비활성화할 수 있습니다.
+
+AWS 소스의 `doctor` 검사는 `aws_sources.<name>.secret`와 `.deps`(`boto3`)을 확인합니다. 실제 AWS에 연결하지 않고, 비밀값의 존재와 SDK의 import 가능 여부만 확인합니다.
 
 ## 모의 데이터로 동작 확인
 
