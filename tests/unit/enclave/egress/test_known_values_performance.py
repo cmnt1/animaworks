@@ -94,7 +94,8 @@ def test_known_value_matching_performance_200k_values_20kb_text(tmp_path: Path) 
     result, count = run_stage(stage, [Fact(text, [])], data_dir=tmp_path, case_id="performance")
     elapsed = time.perf_counter() - started
 
-    assert elapsed < 3.0
+    # About 1 s locally; shared CI runners are 4-5x slower.
+    assert elapsed < 10.0
     assert result[0].fact == text
     assert count == 0
 
