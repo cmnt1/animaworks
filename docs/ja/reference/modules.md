@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 92597b6713a402f9acaedd098b0a99fad7f8ad1f67c783d47c49dfd816dd8cc9 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 0a6211c2307f0f14dca358858ac8bed2d95ab5fb015d1474733127ae780df578 -->
 
 # モジュール一覧
 
@@ -453,7 +453,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
-| `core.integrations.enclave_aws` | 1012 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_aws` | 1023 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_records` | 230 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 364 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
