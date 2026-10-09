@@ -11,6 +11,7 @@ import grp
 import importlib
 import json
 import logging
+import os
 import stat
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,89 @@ def _masker_dependencies() -> list[str]:
     return missing
 
 
+def _sql_importable_dependencies() -> list[str]:
+    """Return the SQL-source dependencies that cannot be imported."""
+    missing: list[str] = []
+    for module_name in ("pymysql", "boto3"):
+        try:
+            importlib.import_module(module_name)
+        except Exception:
+            missing.append(module_name)
+    return missing
+
+
+def _aws_importable_dependencies() -> list[str]:
+    """Return AWS-source dependencies that cannot be imported."""
+    try:
+        importlib.import_module("boto3")
+    except Exception:
+        return ["boto3"]
+    return []
+
+
+def _aws_source_checks(config: Any) -> list[dict[str, str]]:
+    """Check AWS credential provisioning and SDK availability without connecting."""
+    from core.enclave.secrets import secret_exists
+
+    aws_sources = getattr(config.enclave, "aws_sources", {})
+    if not aws_sources:
+        return [_check_row("enclave", "aws_sources", "skip", "no enclave AWS sources are configured")]
+
+    rows: list[dict[str, str]] = []
+    missing_deps = _aws_importable_dependencies()
+    for name, source in sorted(aws_sources.items()):
+        scope = f"enclave.aws_sources.{name}"
+        if secret_exists(source.aws_secret):
+            rows.append(_check_row(scope, "secret", "ok", "AWS credential secret is available"))
+        else:
+            rows.append(_check_row(scope, "secret", "fail", "aws_secret is not available"))
+
+        if missing_deps:
+            rows.append(_check_row(scope, "deps", "fail", f"cannot import: {', '.join(missing_deps)}"))
+        else:
+            rows.append(_check_row(scope, "deps", "ok", "boto3 imports successfully"))
+    return rows
+
+
+def _sql_source_checks(config: Any) -> list[dict[str, str]]:
+    """Check secrets, plugin path, and dependencies for each SQL source."""
+    from core.enclave.secrets import secret_exists
+
+    sql_sources = config.enclave.sql_sources
+    if not sql_sources:
+        return [_check_row("enclave", "sql_sources", "skip", "no enclave SQL sources are configured")]
+
+    rows: list[dict[str, str]] = []
+    missing_deps = _sql_importable_dependencies()
+    for name, source in sorted(sql_sources.items()):
+        scope = f"enclave.sql_sources.{name}"
+
+        secrets_missing: list[str] = []
+        if not secret_exists(source.password_secret):
+            secrets_missing.append("password_secret")
+        if source.tunnel is not None and not secret_exists(source.tunnel.aws_secret):
+            secrets_missing.append("tunnel.aws_secret")
+        if secrets_missing:
+            rows.append(_check_row(scope, "secrets", "fail", ", ".join(secrets_missing) + " is not available"))
+        else:
+            rows.append(_check_row(scope, "secrets", "ok", "password and AWS secrets are available"))
+
+        if source.tunnel is not None:
+            plugin = Path(source.tunnel.plugin_path)
+            if plugin.is_file() and os.access(plugin, os.X_OK):
+                rows.append(_check_row(scope, "plugin", "ok", "session-manager-plugin is executable"))
+            else:
+                rows.append(_check_row(scope, "plugin", "fail", "session-manager-plugin is not executable"))
+        else:
+            rows.append(_check_row(scope, "plugin", "skip", "no SSM tunnel configured"))
+
+        if missing_deps:
+            rows.append(_check_row(scope, "deps", "fail", f"cannot import: {', '.join(missing_deps)}"))
+        else:
+            rows.append(_check_row(scope, "deps", "ok", "pymysql and boto3 import successfully"))
+    return rows
+
+
 def _check_local_enclave(config: Any, data_dir: Path) -> list[dict[str, str]]:
     """Run all local-only checks for an enabled enclave config."""
     from core.enclave.guards import collect_enclave_violations
@@ -163,6 +247,8 @@ def _check_local_enclave(config: Any, data_dir: Path) -> list[dict[str, str]]:
             f"cannot import: {', '.join(missing)}" if missing else "fugashi and ipadic import successfully",
         )
     )
+    rows.extend(_sql_source_checks(config))
+    rows.extend(_aws_source_checks(config))
     return rows
 
 

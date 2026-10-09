@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=1f0b4da23e3adce5e8bca25bec89a2858004e2b2ebb967449ebacd9340e1ba0d generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=f4f04454d3659e463d6658892764396439b57c174444b3231ea6357f0fdf73f4 generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Configuration Reference
 
@@ -802,22 +802,55 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks security guards at startup. |
-| `enclave.enabled` | `bool` | `false` | Start this runtime environment as an isolated enclave. |
-| `enclave.name` | `str` | `""` | Identifier returned by the enclave gateway. |
-| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket on which the gateway listens. |
-| `enclave.socket_group` | `str` | `""` | OS group to set on the gateway socket. |
-| `enclave.entry_anima` | `str` | `""` | Entry anima that handles queries within the enclave. |
-| `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UID permitted to connect to the gateway. |
-| `enclave.max_concurrency` | `int` | `2` | Maximum number of queries the gateway handles concurrently. |
-| `enclave.request_timeout_s` | `int` | `900` | Timeout in seconds for query processing and gateway responses. |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Credential names available to anima inside the enclave. |
-| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets accessible to anima inside the enclave. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, security guards are checked at startup. |
+| `enclave.enabled` | `bool` | `false` | Start this execution environment as an isolated enclave. |
+| `enclave.name` | `str` | `""` | Identifier name returned by the enclave gateway. |
+| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket the gateway listens on. |
+| `enclave.socket_group` | `str` | `""` | OS group assigned to the gateway socket. |
+| `enclave.entry_anima` | `str` | `""` | Entry anima that processes questions within the enclave. |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UIDs allowed to connect to the gateway. |
+| `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway processes concurrently. |
+| `enclave.request_timeout_s` | `int` | `900` | Timeout in seconds for question processing and gateway response. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Authentication credential names available to animas within the enclave. |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that animas within the enclave can reference. |
 | `enclave.datasets.path` | `str` | `"—"` | Relative path to a JSONL file within the data directory. |
-| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve records uniquely. |
-| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | Fields to register in the known-value ledger before returning. |
+| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to uniquely retrieve records. |
+| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | Fields registered to the known-value ledger before returning. |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields for which partial-match search is allowed. |
-| `enclave.egress` | `dict[str, Any]` | `{}` | Egress stage configuration for processing facts returned externally. |
+| `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
+| `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
+| `enclave.sql_sources.host` | `str` | `"—"` | Tunnel target (or direct) host |
+| `enclave.sql_sources.port` | `int` | `3306` | — |
+| `enclave.sql_sources.database` | `str` | `"—"` | — |
+| `enclave.sql_sources.user` | `str` | `"—"` | — |
+| `enclave.sql_sources.password_secret` | `str` | `"—"` | — |
+| `enclave.sql_sources.ssl` | `bool` | `true` | — |
+| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | Optional CA bundle path for TLS verification |
+| `enclave.sql_sources.ssl_verify_identity` | `bool` | `false` | — |
+| `enclave.sql_sources.tunnel` | `EnclaveSsmTunnelConfig \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.type` | `Literal['ssm_port_forward']` | `"ssm_port_forward"` | — |
+| `enclave.sql_sources.tunnel.region` | `str` | `"—"` | AWS region for SSM and target resolution |
+| `enclave.sql_sources.tunnel.target_instance_id` | `str \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.target_tag_name` | `str \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
+| `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
+| `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
+| `enclave.sql_sources.max_rows` | `int` | `200` | — |
+| `enclave.sql_sources.timeout_s` | `int` | `30` | — |
+| `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
+| `enclave.sql_sources.ledger_exempt_columns` | `list[str]` | `[]` | — |
+| `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
+| `enclave.aws_sources.region` | `str` | `"—"` | — |
+| `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
+| `enclave.aws_sources.log_groups` | `list[str]` | `[]` | — |
+| `enclave.aws_sources.pi_resource_id` | `str \| None` | `null` | — |
+| `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
+| `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
+| `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
+| `enclave.aws_sources.ledger_register` | `bool` | `true` | — |
+| `enclave.aws_sources.ledger_exempt_keys` | `list[str]` | `…` | — |
+| `enclave.secrets_dir` | `str \| None` | `null` | — |
+| `enclave.egress` | `dict[str, Any]` | `{}` | Egress stage configuration that processes facts returned externally. |
 
 ### `enclaves`
 

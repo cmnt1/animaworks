@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: d4aa95591df9d0fb3b5ed0556845de355edd20690604c25601d69d5717516398 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 6852baad82d3a1c1d8470cedadbc3ab16dac5005aa681e9e4715de8ee8d1cb8d -->
 
 # 設定リファレンス
 
@@ -817,6 +817,39 @@
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
 | `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 返却前に既知値台帳へ登録するフィールド。 |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 部分一致検索を許可するフィールド。 |
+| `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
+| `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
+| `enclave.sql_sources.host` | `str` | `"—"` | Tunnel target (or direct) host |
+| `enclave.sql_sources.port` | `int` | `3306` | — |
+| `enclave.sql_sources.database` | `str` | `"—"` | — |
+| `enclave.sql_sources.user` | `str` | `"—"` | — |
+| `enclave.sql_sources.password_secret` | `str` | `"—"` | — |
+| `enclave.sql_sources.ssl` | `bool` | `true` | — |
+| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | Optional CA bundle path for TLS verification |
+| `enclave.sql_sources.ssl_verify_identity` | `bool` | `false` | — |
+| `enclave.sql_sources.tunnel` | `EnclaveSsmTunnelConfig \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.type` | `Literal['ssm_port_forward']` | `"ssm_port_forward"` | — |
+| `enclave.sql_sources.tunnel.region` | `str` | `"—"` | AWS region for SSM and target resolution |
+| `enclave.sql_sources.tunnel.target_instance_id` | `str \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.target_tag_name` | `str \| None` | `null` | — |
+| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
+| `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
+| `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
+| `enclave.sql_sources.max_rows` | `int` | `200` | — |
+| `enclave.sql_sources.timeout_s` | `int` | `30` | — |
+| `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
+| `enclave.sql_sources.ledger_exempt_columns` | `list[str]` | `[]` | — |
+| `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
+| `enclave.aws_sources.region` | `str` | `"—"` | — |
+| `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
+| `enclave.aws_sources.log_groups` | `list[str]` | `[]` | — |
+| `enclave.aws_sources.pi_resource_id` | `str \| None` | `null` | — |
+| `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
+| `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
+| `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
+| `enclave.aws_sources.ledger_register` | `bool` | `true` | — |
+| `enclave.aws_sources.ledger_exempt_keys` | `list[str]` | `…` | — |
+| `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
 
 ### `enclaves`

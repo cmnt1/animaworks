@@ -17,7 +17,14 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-from core.enclave.config import EnclaveClientConfig, EnclaveConfig, EnclaveDatasetConfig
+from core.enclave.config import (
+    EnclaveAwsSourceConfig,
+    EnclaveClientConfig,
+    EnclaveConfig,
+    EnclaveDatasetConfig,
+    EnclaveSqlSourceConfig,
+    EnclaveSsmTunnelConfig,
+)
 
 # The guard module imports ``core.config`` and ``core.auth``; defer it so that
 # ``core.config.schemas`` (which imports EnclaveConfig) can load without a
@@ -35,9 +42,12 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "EnclaveAwsSourceConfig",
     "EnclaveClientConfig",
     "EnclaveConfig",
     "EnclaveDatasetConfig",
+    "EnclaveSqlSourceConfig",
+    "EnclaveSsmTunnelConfig",
     "EnclaveViolationError",
     "collect_enclave_violations",
     "enforce_enclave_runtime",

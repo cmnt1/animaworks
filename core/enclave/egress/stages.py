@@ -29,6 +29,7 @@ from core.enclave.egress.config import (
 )
 from core.enclave.egress.fs import ensure_dir_0700
 from core.enclave.egress.masker import MaskerUnavailableError, mask_text
+from core.enclave.egress.masker.facts import _kata_to_hira, normalize_known_value
 from core.enclave.egress.models import Fact
 from core.platform.atomic_io import atomic_write_json
 
@@ -139,19 +140,32 @@ def _run_pseudonymize(
 
 def _normalize_known(value: str) -> str:
     """Normalize a known value for matching (shared with the masker module)."""
-    from core.enclave.egress.masker.facts import normalize_known_value
-
     return normalize_known_value(value)
 
 
-def _add_known(known: set[str], raw: str, min_length: int, ngram: int) -> None:
+def _known_variants(raw: str, min_length: int, ngram: int):
     norm = _normalize_known(raw)
-    if len(norm) < min_length:
+    if len(norm) < min_length or not norm:
         return
-    known.add(norm)
+    # A value longer than the n-gram is fully covered by its overlapping n-grams,
+    # and overlapping spans merge, so the whole value adds no redaction. Skipping
+    # it keeps the number of distinct match lengths small for long free text.
+    if not (ngram > 0 and len(norm) > ngram):
+        yield norm
     if len(norm) >= ngram and ngram > 0:
         for i in range(len(norm) - ngram + 1):
-            known.add(norm[i : i + ngram])
+            yield norm[i : i + ngram]
+
+
+def _add_known(known: set[str], raw: str, min_length: int, ngram: int) -> None:
+    """Compatibility helper that expands a raw value into a flat known set."""
+    known.update(_known_variants(raw, min_length, ngram))
+
+
+def _add_known_buckets(known: dict[int, set[str]], raw: str, min_length: int, ngram: int) -> None:
+    """Add normalized variants to buckets keyed by their exact match length."""
+    for value in _known_variants(raw, min_length, ngram):
+        known.setdefault(len(value), set()).add(value)
 
 
 def _load_json_records(path: Path) -> list[dict[str, Any]]:
@@ -215,14 +229,14 @@ def _run_known_values(
 ) -> tuple[list[Fact], int]:
     min_length = stage.min_length
     ngram = stage.ngram
-    known: set[str] = set()
+    known: dict[int, set[str]] = {}
 
     for source in stage.sources:
         path = data_dir / source.path
         if not path.exists():
             raise EgressStageError("known_values_source_missing")
         for value in _read_source_values(path, source.format, source.fields):
-            _add_known(known, value, min_length, ngram)
+            _add_known_buckets(known, value, min_length, ngram)
 
     ledger_path = data_dir / "enclave" / "ledger" / "known_values.jsonl"
     if ledger_path.exists():
@@ -238,18 +252,13 @@ def _run_known_values(
                     raise EgressStageError("known_values_ledger_corrupt") from exc
                 value = record.get("value") if isinstance(record, dict) else None
                 if isinstance(value, str):
-                    _add_known(known, value, min_length, ngram)
+                    _add_known_buckets(known, value, min_length, ngram)
 
     if not known:
         return facts, 0
 
-    # Zero-width lookahead finds matches at every position, so a value that
-    # starts inside an earlier match is still found and its tail redacted.
-    alternation = "|".join(re.escape(v) for v in sorted(known, key=len, reverse=True))
-    regex = re.compile(f"(?=({alternation}))")
-
     def _redact(text: str) -> tuple[str, int]:
-        return _redact_known(text, regex)
+        return _redact_known_patterns(text, known)
 
     new_facts, total = _map_facts(facts, _redact)
     return new_facts, total
@@ -262,14 +271,59 @@ def _normalize_with_positions(text: str) -> tuple[str, list[int]]:
         for norm in unicodedata.normalize("NFKC", ch):
             if norm.isspace():
                 continue
-            from core.enclave.egress.masker.facts import _kata_to_hira
-
             chars.append(_kata_to_hira(norm).lower())
             positions.append(idx)
     return "".join(chars), positions
 
 
+def _redact_known_patterns(text: str, known: dict[int, set[str]]) -> tuple[str, int]:
+    """Find known values without building one enormous regular expression.
+
+    The longest matching value is selected at every normalized character
+    position, matching the ordered alternation used by the former regex path.
+    The resulting source spans are merged with the same overlap/touch rule.
+    """
+    normalized, positions = _normalize_with_positions(text)
+    if not normalized:
+        return text, 0
+
+    lengths = sorted((length for length in known if length > 0), reverse=True)
+    if not lengths:
+        return text, 0
+
+    spans: list[tuple[int, int]] = []
+    text_length = len(normalized)
+    for start in range(text_length):
+        remaining = text_length - start
+        for length in lengths:
+            if length > remaining:
+                continue
+            if normalized[start : start + length] in known[length]:
+                spans.append((positions[start], positions[start + length - 1] + 1))
+                break
+
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    if not merged:
+        return text, 0
+
+    out: list[str] = []
+    last = 0
+    for start, end in merged:
+        out.append(text[last:start])
+        out.append("[REDACTED]")
+        last = end
+    out.append(text[last:])
+    return "".join(out), len(merged)
+
+
 def _redact_known(text: str, regex: re.Pattern) -> tuple[str, int]:
+    """Legacy regex implementation retained for differential regression tests."""
     normalized, positions = _normalize_with_positions(text)
     if not normalized:
         return text, 0

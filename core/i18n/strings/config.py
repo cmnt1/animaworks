@@ -435,6 +435,158 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "データセットの ID フィールド値",
         "en": "Value of the dataset's ID field",
     },
+    "enclave.sql.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.sql.source_required": {
+        "ja": "データソース名を指定してください。",
+        "en": "A data source name is required.",
+    },
+    "enclave.sql.source_not_configured": {
+        "ja": "データソース '{source}' は enclave に設定されていません。",
+        "en": "Data source '{source}' is not configured in the enclave.",
+    },
+    "enclave.sql.sql_required": {
+        "ja": "SQL を指定してください。",
+        "en": "An SQL statement is required.",
+    },
+    "enclave.sql.multiple_statements": {
+        "ja": "SQL は 1 文で指定してください（セミコロン区切りの複数文は使えません）。",
+        "en": "Provide a single SQL statement (semicolon-separated statements are not allowed).",
+    },
+    "enclave.sql.sql_not_allowed": {
+        "ja": "この SQL は読み取り専用の安全な形式ではありません。",
+        "en": "This SQL is not in a safe read-only form.",
+    },
+    "enclave.sql.unavailable": {
+        "ja": "データソースを安全に参照できません。設定と秘密を確認してください。",
+        "en": "The data source could not be read safely. Check its configuration and secrets.",
+    },
+    "enclave.sql.schema_query": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB に、検証済みの SELECT を実行します。",
+        "en": "Run a validated read-only query against a configured enclave database.",
+    },
+    "enclave.sql.schema_schema": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB のスキーマ（テーブル一覧か列定義）を返します。",
+        "en": "Return the schema (table list or column definitions) of a configured enclave database.",
+    },
+    "enclave.sql.schema_source": {
+        "ja": "設定済みデータソース名",
+        "en": "Configured data source name",
+    },
+    "enclave.sql.schema_sql": {
+        "ja": "実行する検証済み SELECT 文",
+        "en": "Validated SELECT statement to run",
+    },
+    "enclave.sql.schema_table": {
+        "ja": "省略可なテーブル名（指定時は列定義を返す）",
+        "en": "Optional table name (returns column definitions when set)",
+    },
+    "enclave.aws.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.aws.source_required": {
+        "ja": "AWS データソース名を指定してください。",
+        "en": "An AWS data source name is required.",
+    },
+    "enclave.aws.source_not_configured": {
+        "ja": "AWS データソースが enclave に設定されていません。",
+        "en": "The AWS data source is not configured in the enclave.",
+    },
+    "enclave.aws.target_not_allowed": {
+        "ja": "対象の AWS リソースは設定または許可されていません。",
+        "en": "The requested AWS resource is not configured or allowed.",
+    },
+    "enclave.aws.invalid_input": {
+        "ja": "AWS 読み取りツールの引数が無効です。",
+        "en": "An AWS read-tool argument is invalid.",
+    },
+    "enclave.aws.query_timeout": {
+        "ja": "Logs Insights クエリが制限時間内に完了しませんでした。",
+        "en": "The Logs Insights query did not complete within the time limit.",
+    },
+    "enclave.aws.invalid_secret": {
+        "ja": "AWS 認証情報の秘密が有効な形式ではありません。",
+        "en": "The AWS credential secret is not in a valid format.",
+    },
+    "enclave.aws.dependencies_missing": {
+        "ja": "AWS 読み取りに必要な依存パッケージがありません。",
+        "en": "A dependency required for AWS reads is unavailable.",
+    },
+    "enclave.aws.unavailable": {
+        "ja": "AWS データを安全に読み取れません。設定と秘密を確認してください。",
+        "en": "AWS data could not be read safely. Check the configuration and secrets.",
+    },
+    "enclave.aws.schema_source": {
+        "ja": "enclave.aws_sources に設定された AWS データソース名",
+        "en": "AWS data source configured under enclave.aws_sources",
+    },
+    "enclave.aws.schema_time": {
+        "ja": "now、ISO8601 時刻、または -1h / -24h 形式の相対時刻",
+        "en": "now, an ISO8601 time, or a relative duration such as -1h or -24h",
+    },
+    "enclave.aws.schema_logs_query": {
+        "ja": "許可された CloudWatch Logs グループで Logs Insights クエリを実行します。",
+        "en": "Run a Logs Insights query against an allowed CloudWatch Logs group.",
+    },
+    "enclave.aws.schema_logs_filter": {
+        "ja": "許可された CloudWatch Logs グループからイベントを取得します。",
+        "en": "Fetch events from an allowed CloudWatch Logs group.",
+    },
+    "enclave.aws.schema_log_group": {
+        "ja": "enclave.aws_sources で許可されたロググループ名",
+        "en": "Log group allowed by enclave.aws_sources",
+    },
+    "enclave.aws.schema_query": {
+        "ja": "実行する Logs Insights クエリ",
+        "en": "Logs Insights query to run",
+    },
+    "enclave.aws.schema_filter_pattern": {
+        "ja": "CloudWatch Logs のフィルターパターン（空文字は全イベント）",
+        "en": "CloudWatch Logs filter pattern (empty means all events)",
+    },
+    "enclave.aws.schema_pi_top_sql": {
+        "ja": "RDS Performance Insights から負荷上位の SQL ディメンションを取得します。",
+        "en": "Return top SQL dimensions from RDS Performance Insights.",
+    },
+    "enclave.aws.schema_pi_sql_detail": {
+        "ja": "Performance Insights の SQL ディメンション詳細（SQL 全文）を取得します。",
+        "en": "Fetch Performance Insights SQL dimension details, including the full SQL text.",
+    },
+    "enclave.aws.schema_group_identifier": {
+        "ja": "enclave_pi_top_sql が返した SQL グループ識別子",
+        "en": "SQL group identifier returned by enclave_pi_top_sql",
+    },
+    "enclave.aws.schema_rds_logs": {
+        "ja": "設定済み RDS インスタンスのログファイル一覧または一部を取得します。",
+        "en": "List log files or fetch a portion of a configured RDS instance log.",
+    },
+    "enclave.aws.schema_log_file_name": {
+        "ja": "取得する RDS ログファイル名（省略時は一覧）",
+        "en": "RDS log file name to fetch (omit to list files)",
+    },
+    "enclave.aws.schema_marker": {
+        "ja": "前回応答の継続マーカー",
+        "en": "Continuation marker from the previous response",
+    },
+    "enclave.aws.schema_s3_get": {
+        "ja": "許可された S3 バケットからオブジェクトを読み取ります。",
+        "en": "Read an object from an allowed S3 bucket.",
+    },
+    "enclave.aws.schema_s3_list": {
+        "ja": "許可された S3 バケットのオブジェクトキーを一覧します。",
+        "en": "List object keys in an allowed S3 bucket.",
+    },
+    "enclave.aws.schema_bucket": {
+        "ja": "enclave.aws_sources で許可されたバケット名",
+        "en": "Bucket allowed by enclave.aws_sources",
+    },
+    "enclave.aws.schema_key": {
+        "ja": "S3 オブジェクトキー",
+        "en": "S3 object key",
+    },
     "enclave.cli.doctor_json": {
         "ja": "機械可読な JSON 形式で出力する",
         "en": "Output in machine-readable JSON format",
