@@ -1,11 +1,11 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=7b3f837620dd32802c843289512bc027ee16b6ba55c1ccb5f815352959df9e07 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=6180702228ee9130f88f8ee743f43290528d080237780c8224d9faa4d5a3b5bf generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
 
-> Commit checked: f448d7b0
+> Confirmed commit: f448d7b0
 
 # Building and Operating an Enclave
 
-An Enclave is a mechanism for isolating Anima that handle SaaS personal information and similar data from the main runtime environment. Data access is limited to JSONL files on the isolated side, and communication with the main system is limited to Unix domain sockets. Responses returned externally are inspected by the egress pipeline, and you can review aggregate results and audit records.
+An enclave is a mechanism that isolates Anima, which handles personal information from SaaS, from the main execution environment. Data references are limited to JSONL files on the isolated side, and communication with the main body is limited to Unix domain sockets. Responses returned to the outside are inspected by the egress pipeline, and you can review the aggregated results and audit records.
 
 ## Overview
 
@@ -23,11 +23,11 @@ flowchart LR
     E --> Q[(監査ログ)]
 ```
 
-The isolated-side `enclave_records_search` and `enclave_records_get` read only configured datasets. Before responding, they register the `sensitive_fields` of the records they return in the known-value ledger. Dataset paths are restricted to within `ANIMAWORKS_DATA_DIR`. The JSONL contents are never returned to the host, and the Web UI displays only the connection status and the day's counts of successful and blocked requests.
+The `enclave_records_search` and `enclave_records_get` on the isolated side read only the configured datasets, register the `sensitive_fields` of returned records in the known-value ledger, and then respond. Dataset paths are restricted to within `ANIMAWORKS_DATA_DIR`. The host side does not receive the JSONL body; the Web UI only displays the connection status and the day's success and blocked counts.
 
 ## OS Users and Groups
 
-The following is an example for Linux. User, group, and systemd operations must be performed with administrator privileges.
+The following is an example for Linux. User, group, and systemd operations are performed with administrator privileges.
 
 ```bash
 groupadd --system animaworks-enclave
@@ -35,7 +35,7 @@ useradd --system --create-home --home-dir /home/aw-enclave \
   --gid animaworks-enclave --shell /usr/sbin/nologin aw-enclave
 ```
 
-Add the OS user that the main-side service uses to connect to the socket to the group. Replace `<host-user>` with the actual username of the main-side service.
+Add the OS user that the main-side service uses to connect to the socket to the group. Replace `<host-user>` with the actual user name of the main-side service.
 
 ```bash
 HOST_USER=host-service-user  # 本体側サービスの実ユーザー名に置き換える
@@ -43,11 +43,11 @@ usermod --append --groups animaworks-enclave "$HOST_USER"
 id -u "$HOST_USER"
 ```
 
-Specify the displayed UID as `allowed_peer_uids` on the isolated side. After adding the user to the group, restart the main-side service so that the new supplementary group takes effect. The isolated-side data directory and anima directory must be owned by the runtime user and have permissions that prevent other users from reading them. If a startup guard is violated, `doctor` displays the reason.
+Specify the displayed UID in `allowed_peer_uids` on the isolated side. After adding the group, restart the main-side service to reflect the new supplementary group. The data directory and anima directory on the isolated side must be owned by the execution user and have permissions that prevent other users from reading them. If there is a violation of the startup guard, `doctor` will display the reason.
 
-## Isolated-side configuration
+## Isolated-Side Configuration
 
-Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<name>.path` is a relative path from the data directory and specifies the `.jsonl` file. Items not in `searchable_fields` are not included in search.
+Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<name>.path` is a relative path from the data directory and specifies the `.jsonl` file. Items not in `searchable_fields` are not search targets.
 
 ```json
 {
@@ -85,9 +85,9 @@ Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<nam
 }
 ```
 
-In `allowed_llm_credentials`, list only the authentication credential names actually used by each anima on the isolated side. `external_tasks.enabled` defaults to `true`, so set it to `false` on the isolated side. For newly created anima, `permissions.json` has `file_roots` set to `["/"]`, so change it to cover only necessary areas, such as the anima's own directory (otherwise, the startup guard will refuse startup). In isolation mode, do not start the Slack, Discord, Zoom, or GitHub Webhook gateways. Other startup guards must also be satisfied, so do not enable event exports or external message integrations, and restrict file access to the necessary scope in each anima's `permissions.json`. When restricting external tools for the entry anima, allow `enclave_records`.
+In `allowed_llm_credentials`, list only the authentication information names that each anima on the isolated side actually uses. `external_tasks.enabled` has an initial value of `true`, so set it to `false` on the isolated side. Since the `permissions.json` of a newly created anima has `file_roots` set to `["/"]`, rewrite it to the necessary scope, such as the anima's own directory (if left as is, the startup guard will refuse to start). In isolated mode, the Slack, Discord, Zoom, and GitHub Webhook gateways are not started. Other startup guards must also be satisfied, so do not enable event export or external message integration, and restrict file access to the necessary scope in each anima's `permissions.json`. To restrict external tools for the entry anima, allow `enclave_records`.
 
-For authentication, use the password mode of `auth.json` and configure it not to trust localhost. Do not store passwords in plaintext; set an application-generated Argon2id hash in `password_hash`.
+For authentication, use the password mode of `auth.json` and configure it not to trust localhost. Do not store plaintext passwords; set the Argon2id hash generated by the app in `password_hash`.
 
 ```json
 {
@@ -105,11 +105,11 @@ For authentication, use the password mode of `auth.json` and configure it not to
 }
 ```
 
-The value of `password_hash` is a placeholder indicating the format; do not use it as-is. If you created the authentication user in the Web UI's user settings, retain the generated hash.
+The value of `password_hash` is a placeholder indicating the format; do not use it as is. If you create an authentication user in the Web UI user settings, keep the generated hash.
 
-## Startup with systemd
+## Starting with systemd
 
-`templates/_shared/systemd/animaworks-enclave@.service` is a template that uses `%i` as the runtime username. Replace the virtual environment path and port in `ExecStart` to match the installation location, then place it in the systemd unit directory with administrator privileges.
+`templates/_shared/systemd/animaworks-enclave@.service` is a template that uses `%i` as the execution user name. Replace the virtual environment path and port in `ExecStart` according to the deployment location, and place it in the systemd unit directory with administrator privileges.
 
 ```bash
 install -m 0644 templates/_shared/systemd/animaworks-enclave@.service \
@@ -118,13 +118,13 @@ systemctl daemon-reload
 systemctl enable --now animaworks-enclave@aw-enclave.service
 ```
 
-The template sets `User=%i`, a dedicated `RuntimeDirectory`, `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, and `ProtectSystem=strict`. Allow writes only to `/home/%i/.animaworks`, and expose only that user's home directory using `ProtectHome=tmpfs` and `BindPaths=/home/%i`. Set the example HTTP port to a value that does not conflict with the main side. Since the gateway communicates over a Unix socket, limit the HTTP bind address to loopback.
+The template sets `User=%i`, a dedicated `RuntimeDirectory`, `UMask=0077`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, and `ProtectSystem=strict`. The write destination is limited to `/home/%i/.animaworks`, and `ProtectHome=tmpfs` and `BindPaths=/home/%i` expose only that user's home directory. The example HTTP port should be a value that does not conflict with the main side. Since the gateway communicates via a Unix socket, the HTTP bind address is limited to loopback.
 
 ## Main-Side Connection Configuration
 
-Register the connection destination in `config.json` on the main side. `allowed_animas` is the allow-list of main-side anima that can call `enclave_ask`. An empty list grants access to no one.
+Register the connection destination in `config.json` on the main side. `allowed_animas` is an allow-list of main-side animas that can call `enclave_ask`. An empty list allows no one.
 
-`allowed_animas` is an application-layer restriction. The OS boundary is enforced by the socket's group permissions (0660) and the source uid that the gateway verifies at `SO_PEERCRED` (`allowed_peer_uids`); any process with the same uid can connect to the socket. Minimize the number of users on the main side that belong to the socket's group.
+`allowed_animas` is an application-layer restriction. The OS boundary is the socket's group permission (0660) and the connection source uid that the gateway verifies with `SO_PEERCRED` (`allowed_peer_uids`); any process with the same uid can connect to the socket. Keep the number of users who can be added to the socket group on the main side to a minimum.
 
 ```json
 {
@@ -150,9 +150,9 @@ If external tools are restricted in the main-side anima's `permissions.json`, ad
 }
 ```
 
-## Inspection and Auditing
+## Inspection and Audit
 
-Run the following on the isolated side. `doctor` checks startup guards, the socket type, mode, and group, the gateway's `/v1/health`, egress pipeline configuration, and the imports of `fugashi` and `ipadic`. If `enclaves` is configured on the main side, it also checks each socket's connection and health response. If there is a problem, it exits with code 1; `--json` returns machine-readable results.
+On the isolated side, run the following. `doctor` checks the startup guard, socket type, mode, and group, the gateway's `/v1/health`, the egress pipeline configuration, and the imports of `fugashi` and `ipadic`. If `enclaves` is configured on the main side, it also checks each socket's connection and health response. If there is a problem, exit code 1 is returned, and `--json` returns machine-readable results.
 
 ```bash
 animaworks enclave doctor
@@ -160,27 +160,27 @@ animaworks enclave doctor --json
 animaworks enclave status
 ```
 
-`status` outputs only the day's counts of successful and blocked requests, and does not display the contents of questions or answers. The egress audit log is saved to `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the known-value ledger to `~/.animaworks/enclave/ledger/known_values.jsonl`. Since the audit log includes the facts being processed, maintain access permissions on the files and their parent directories, and do not copy them outside the isolated environment.
+`status` outputs only the day's success and blocked counts and does not display the question or answer body. The egress audit log is saved in `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the known-value ledger in `~/.animaworks/enclave/ledger/known_values.jsonl`. The audit log contains the facts being processed, so maintain the access permissions of the file and parent directory, and do not copy it outside the isolated environment.
 
-## Connecting Real Data Sources
+## Connecting to Real Data Sources
 
-You can refer to a production MySQL-compatible DB from the isolated side in read-only mode. Since this is a public repository, do not write real customer names, industries, or real host names / IPs / account IDs — everything below uses `example` placeholders.
+From the isolated side, you can reference a production MySQL-compatible DB in read-only mode. The connection cannot be written with real examples of the data handled (since this is a public repository, do not write customer names, industries, real host names, IPs, or account IDs). Everything below is a placeholder using `example`.
 
-### Placing Secrets
+### How to Store Secrets
 
-The DB password and AWS access keys are passed only to the isolated process via `enclave.secrets_dir` or systemd `LoadCredential=`. Place the files root-owned with mode `0600` (never write the password as plaintext in the config file).
+DB passwords and AWS access keys should be passed only to isolated processes via `enclave.secrets_dir` or systemd's `LoadCredential=`. Secret files should be owned by root with permissions set to `0600`. To prevent password leakage, do not write them in plain text in configuration files.
 
-- With systemd: use `LoadCredential=` in `animaworks-enclave@.service` to read files such as `/etc/credstore/animaworks-enclave/<name>/db-password`, making them available under `$CREDENTIALS_DIRECTORY`.
-- When a separate directory is set in `enclave.secrets_dir`, place a value in a file named after the secret in the same way.
+- When using systemd: use `animaworks-enclave@.service`'s `LoadCredential=` to load values such as `/etc/credstore/animaworks-enclave/<name>/db-password`, making them readable from `$CREDENTIALS_DIRECTORY`.
+- If a different directory is specified for `enclave.secrets_dir`, use the same format, placing values in files named after the corresponding keys.
 
 ```bash
 install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
 install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-enclave/aws-creds
 ```
 
-### sql_sources Example Configuration
+### sql_sources Configuration Example
 
-Define read-only data sources under `enclave.sql_sources`. `password_secret` is the name of a secret. Setting `tunnel` connects to RDS via an SSM Session Manager port forward (through a bastion). The `aws_secret` value is JSON: `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`.
+Define a read-only data source in `enclave.sql_sources`. `password_secret` is the secret name. Setting `tunnel` connects to RDS via SSM Session Manager port forwarding (through a bastion). The contents of `aws_secret` are the JSON of `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`.
 
 ```json
 {
@@ -214,30 +214,74 @@ Define read-only data sources under `enclave.sql_sources`. `password_secret` is 
 }
 ```
 
-`ledger_exempt_columns` is a list of regular expressions that select columns **not to redact at the exit (IDs, status, etc.)**. Values in these columns are not added to the known-value ledger. All other string cells — except those that are purely numeric, ISO datetimes, or booleans — are registered in the ledger before the result is returned, so they are redacted if they reappear in an answer. SSL is required by default. To use the RDS CA set `ssl_ca` to the CA path; when hostname verification must be disabled, keep `ssl_verify_identity: false` (default) and note that the hostname will not match because the connection goes through the tunnel.
+`ledger_exempt_columns` is a list of regular expressions that specifies **columns not to be masked at the exit (such as IDs and statuses)**. Values in columns specified here are not added to the known-value ledger. The remaining string cells, except those containing only numbers, ISO dates, or booleans, are registered in the known-value ledger before returning results and are masked when they reappear in the answer. SSL is required by default. If using the RDS CA, specify the CA path in `ssl_ca`; if hostname verification needs to be disabled, note that the hostname will not match because it is over a tunnel with `ssl_verify_identity: false` (default) left as is.
 
-### Reading the doctor output
+### Reading the doctor
 
-When `sql_sources` is configured, `animaworks enclave doctor` adds checks per source. The startup guards do not stop the process when secrets are missing; the doctor shows `fail` instead (secrets may be placed later).
+Setting `sql_sources` adds an inspection of each source to `animaworks enclave doctor`. The startup guard does not stop startup even if secrets are not yet placed; the doctor displays `fail` (for operations where secrets can be placed later).
 
-- `<name>.secrets`: whether the `password_secret` and `tunnel.aws_secret` secret files can be read.
-- `<name>.plugin`: whether `session-manager-plugin` is executable.
-- `<name>.deps`: whether `pymysql` and `boto3` can be imported.
+- `<name>.secrets`: Whether the secret files of `password_secret` and `tunnel.aws_secret` can be read.
+- `<name>.plugin`: Whether `session-manager-plugin` is executable.
+- `<name>.deps`: Whether `pymysql` and `boto3` can be imported.
 
 It does not connect to the actual DB or AWS.
 
-## Verifying Operation with Mock Data
+## AWS Read Sources
 
-The mock data generation script uses a fixed seed to regenerate the same 100 customer records and 300 inquiry tickets. Some tickets include names or phone numbers in their contents. Do not use real data, and place the output in the isolated-side data directory.
+Register CloudWatch Logs, RDS Performance Insights, RDS log files, and S3 read targets in `enclave.aws_sources`. Authentication information is loaded from the secret file specified in `aws_secret`; AWS keys are not included in configuration files or tool output. All names and values below are placeholders for illustration purposes.
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "aws_sources": {
+      "observability": {
+        "region": "example-region-1",
+        "aws_secret": "aws-readonly",
+        "log_groups": ["/example/application/*"],
+        "pi_resource_id": "db-example-resource",
+        "rds_instance_id": "db-example-instance",
+        "s3_buckets": ["example-placeholder-bucket"],
+        "max_bytes": 200000,
+        "ledger_register": true,
+        "ledger_exempt_keys": [
+          "level", "timestamp", "time", "message_type", "message", "msg",
+          "error", "exception", "stack_trace", "status", "method", "path",
+          "route", "duration", "request_id", "requestid", "req_id", "reqid",
+          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
+          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
+        ]
+      }
+    }
+  }
+}
+```
+
+The file contents for secret `aws-readonly` should follow the JSON format below. The values are example placeholders and should not be used as-is.
+
+```json
+{"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
+```
+
+`log_groups` allows exact matches or prefix matches using the trailing `*`. Each PI and RDS tool uses only its configured resource ID, and S3 accesses only the buckets listed in `s3_buckets`. Time is specified in ISO8601 or as relative values using `-1h` / `-24h`. Logs Insights queries poll for up to 60 seconds, and each tool's returned text is limited by `max_bytes`. S3 objects that are non-text or exceed the limit do not include their content in the tool response; instead, they are saved to `enclave/downloads/<bucket>/<key-sha256>` in the isolated data directory with mode `0600`.
+
+Even when `ledger_register` is enabled, not all free text is registered in the known-value ledger. For each log line that can be interpreted as JSON, only string values not included in `ledger_exempt_keys` are registered. For PI SQL full text, only the contents of string literals (`'...'`) are registered. Regular log bodies that are not JSON and other free text are not registered; this is handled by the egress masker and `regex_denylist`. Therefore, redaction of free text is not guaranteed by the known-value ledger alone. Setting `ledger_register: false` disables registration of AWS read results.
+
+The `doctor` check for AWS sources verifies `aws_sources.<name>.secret` and `.deps` (`boto3`). It does not connect to real AWS; it only checks for the existence of secrets and whether the SDK can be imported.
+
+## Verification with Mock Data
+
+The mock data generation script uses a fixed seed and regenerates the same 100 customer records and 300 inquiry tickets. Some tickets include names and phone numbers in the body. No real data is used, and the output destination is within the isolated side's data directory.
 
 ```bash
 DATA_DIR="$HOME/.animaworks"
 uv run python scripts/enclave/make_mock_dataset.py --out "$DATA_DIR/data"
 ```
 
-Confirm that `datasets` in the isolated-side config points to the above `data/customers.jsonl` and `data/tickets.jsonl`, and make `enclave_records_search` and `enclave_records_get` available to the entry anima. Then do the following:
+Confirm that `datasets` in the isolated-side config points to the above `data/customers.jsonl` and `data/tickets.jsonl`, and make the entry anima able to use `enclave_records_search` and `enclave_records_get`. Then proceed with the following.
 
-1. On the isolated side, run `animaworks enclave doctor` and check the status of the guards and gateway.
+1. Run `animaworks enclave doctor` on the isolated side and check the guard and gateway status.
 2. Register the connection destination in `config.json` on the main side, and allow `enclave` for the main-side anima.
-3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. Confirm that the entry anima searches the mock data and returns a response that has passed egress inspection.
-4. On the isolated side, run `animaworks enclave status` and confirm that the success count has increased. The Web UI home screen displays only the connection status and aggregate counts.
+3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. Confirm that the entry anima searches the mock data and returns an egress-inspected answer.
+4. Run `animaworks enclave status` on the isolated side and confirm that the success count has increased. The Web UI home screen displays only the connection status and aggregated counts.

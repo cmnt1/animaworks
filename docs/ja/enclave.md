@@ -165,7 +165,7 @@ animaworks enclave status
 
 ### 秘密の置き方
 
-DB パスワードと AWS アクセスキーは、`enclave.secrets_dir` か systemd の `LoadCredential=` で隔離プロセスにだけ渡します。ファイルは root 所有・`0600` で置いてください（パスワードは漏えいしないため決して設定ファイルに平文で書かない）。
+DB パスワードと AWS アクセスキーは、`enclave.secrets_dir` か systemd の `LoadCredential=` で隔離プロセスにだけ渡します。秘密ファイルは root 所有・`0600` にしてください。パスワードの漏えいを防ぐため、設定ファイルに平文で書いてはいけません。
 
 - systemd を使う場合: `animaworks-enclave@.service` の `LoadCredential=` で `/etc/credstore/animaworks-enclave/<name>/db-password` などを読み込み、`$CREDENTIALS_DIRECTORY` から読めるようにします。
 - 別のディレクトリを `enclave.secrets_dir` に指定した場合も同じ形式で、名前をファイル名にした値を配置します。
@@ -222,6 +222,50 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 - `<name>.deps`: `pymysql` と `boto3` が import できるか。
 
 実際の DB・AWS には接続しません。
+
+## AWS の読み取りソース
+
+`enclave.aws_sources` には CloudWatch Logs、RDS Performance Insights、RDS ログファイル、S3 の読み取り対象を登録します。認証情報は `aws_secret` で指定した秘密ファイルから読み込み、設定ファイルやツール出力には AWS キーを含めません。下記の名前と値はすべて説明用のプレースホルダーです。
+
+```json
+{
+  "enclave": {
+    "enabled": true,
+    "secrets_dir": null,
+    "aws_sources": {
+      "observability": {
+        "region": "example-region-1",
+        "aws_secret": "aws-readonly",
+        "log_groups": ["/example/application/*"],
+        "pi_resource_id": "db-example-resource",
+        "rds_instance_id": "db-example-instance",
+        "s3_buckets": ["example-placeholder-bucket"],
+        "max_bytes": 200000,
+        "ledger_register": true,
+        "ledger_exempt_keys": [
+          "level", "timestamp", "time", "message_type", "message", "msg",
+          "error", "exception", "stack_trace", "status", "method", "path",
+          "route", "duration", "request_id", "requestid", "req_id", "reqid",
+          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
+          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
+        ]
+      }
+    }
+  }
+}
+```
+
+秘密 `aws-readonly` のファイル内容は次の JSON 形式にします。値は例示用のプレースホルダーであり、そのまま使わないでください。
+
+```json
+{"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
+```
+
+`log_groups` は完全一致か、末尾の `*` による前方一致で許可します。PI・RDS の各ツールはそれぞれ設定されたリソース ID だけを使い、S3 は `s3_buckets` に列挙したバケットだけにアクセスします。時刻は ISO8601 または `-1h` / `-24h` の相対指定です。Logs Insights クエリは最大 60 秒ポーリングし、各ツールの返却テキストは `max_bytes` で制限されます。テキスト以外、または上限を超える S3 オブジェクトは本文をツール応答に含めず、隔離 data directory の `enclave/downloads/<bucket>/<key-sha256>` に mode `0600` で保存します。
+
+`ledger_register` が有効でも、自由文すべてを既知値台帳へ登録するわけではありません。JSON として解釈できるログの各行は、`ledger_exempt_keys` に含まれない文字列値だけを登録します。PI の SQL 全文は文字列リテラル（`'...'`）の内容だけを登録します。JSON ではない通常のログ本文やその他の自由文は登録されず、出口の masker と `regex_denylist` が担います。このため、自由文の伏字化は既知値台帳だけでは保証されません。`ledger_register: false` にすると AWS 読み取り結果の登録を無効化できます。
+
+AWS ソースの `doctor` 検査は `aws_sources.<name>.secret` と `.deps`（`boto3`）を確認します。実 AWS へ接続せず、秘密の存在と SDK の import 可否だけを調べます。
 
 ## モックデータでの動作確認
 

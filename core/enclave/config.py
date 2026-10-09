@@ -55,6 +55,68 @@ class EnclaveSsmTunnelConfig(BaseModel):
         return self
 
 
+_DEFAULT_AWS_LEDGER_EXEMPT_KEYS = [
+    "level",
+    "timestamp",
+    "time",
+    "message_type",
+    "message",
+    "msg",
+    "error",
+    "exception",
+    "stack_trace",
+    "status",
+    "method",
+    "path",
+    "route",
+    "duration",
+    "request_id",
+    "requestid",
+    "req_id",
+    "reqid",
+    "trace_id",
+    "traceid",
+    "correlation_id",
+    "@timestamp",
+    "@message",
+    "@ptr",
+    "@log",
+    "@logstream",
+    "@ingestiontime",
+    "eventid",
+    "logstreamname",
+]
+
+
+class EnclaveAwsSourceConfig(BaseModel):
+    """Allow-listed AWS read-only services available inside an enclave."""
+
+    region: str = Field(min_length=1)
+    aws_secret: str = Field(min_length=1, description="Secret name holding AWS credential JSON")
+    log_groups: list[str] = Field(default_factory=list)
+    pi_resource_id: str | None = None
+    rds_instance_id: str | None = None
+    s3_buckets: list[str] = Field(default_factory=list)
+    max_bytes: int = 200_000
+    ledger_register: bool = True
+    ledger_exempt_keys: list[str] = Field(default_factory=lambda: list(_DEFAULT_AWS_LEDGER_EXEMPT_KEYS))
+
+    @field_validator("region", "aws_secret")
+    @classmethod
+    def _require_non_empty_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("max_bytes")
+    @classmethod
+    def _require_positive_max_bytes(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_bytes must be at least 1")
+        return value
+
+
 class EnclaveSqlSourceConfig(BaseModel):
     """A read-only SQL data source reachable from inside the enclave.
 
@@ -113,6 +175,7 @@ class EnclaveConfig(BaseModel):
     allowed_llm_credentials: list[str] = Field(default_factory=list)
     datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
     sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)
+    aws_sources: dict[str, EnclaveAwsSourceConfig] = Field(default_factory=dict)
     secrets_dir: str | None = None
     egress: dict[str, Any] = Field(default_factory=dict)
 

@@ -188,3 +188,18 @@ def test_doctor_reports_sql_source_missing_deps(
     deps_row = next(row for row in rows if row["check"] == "deps")
     assert deps_row["status"] == "fail"
     assert "pymysql" in deps_row["detail"]
+
+
+def test_doctor_reports_aws_source_secret_and_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = SimpleNamespace(aws_secret="aws-readonly")
+    config = SimpleNamespace(enclave=SimpleNamespace(aws_sources={"observability": source}))
+    monkeypatch.setattr("core.enclave.secrets.secret_exists", lambda name: False)
+    monkeypatch.setattr(enclave_cmd, "_aws_importable_dependencies", lambda: ["boto3"])
+
+    rows = enclave_cmd._aws_source_checks(config)
+
+    assert {row["scope"] for row in rows} == {"enclave.aws_sources.observability"}
+    assert {row["check"] for row in rows} == {"secret", "deps"}
+    assert all(row["status"] == "fail" for row in rows)
+    assert any("aws_secret" in row["detail"] for row in rows)
+    assert any("boto3" in row["detail"] for row in rows)

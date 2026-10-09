@@ -127,6 +127,39 @@ def _sql_importable_dependencies() -> list[str]:
     return missing
 
 
+def _aws_importable_dependencies() -> list[str]:
+    """Return AWS-source dependencies that cannot be imported."""
+    try:
+        importlib.import_module("boto3")
+    except Exception:
+        return ["boto3"]
+    return []
+
+
+def _aws_source_checks(config: Any) -> list[dict[str, str]]:
+    """Check AWS credential provisioning and SDK availability without connecting."""
+    from core.enclave.secrets import secret_exists
+
+    aws_sources = getattr(config.enclave, "aws_sources", {})
+    if not aws_sources:
+        return [_check_row("enclave", "aws_sources", "skip", "no enclave AWS sources are configured")]
+
+    rows: list[dict[str, str]] = []
+    missing_deps = _aws_importable_dependencies()
+    for name, source in sorted(aws_sources.items()):
+        scope = f"enclave.aws_sources.{name}"
+        if secret_exists(source.aws_secret):
+            rows.append(_check_row(scope, "secret", "ok", "AWS credential secret is available"))
+        else:
+            rows.append(_check_row(scope, "secret", "fail", "aws_secret is not available"))
+
+        if missing_deps:
+            rows.append(_check_row(scope, "deps", "fail", f"cannot import: {', '.join(missing_deps)}"))
+        else:
+            rows.append(_check_row(scope, "deps", "ok", "boto3 imports successfully"))
+    return rows
+
+
 def _sql_source_checks(config: Any) -> list[dict[str, str]]:
     """Check secrets, plugin path, and dependencies for each SQL source."""
     from core.enclave.secrets import secret_exists
@@ -215,6 +248,7 @@ def _check_local_enclave(config: Any, data_dir: Path) -> list[dict[str, str]]:
         )
     )
     rows.extend(_sql_source_checks(config))
+    rows.extend(_aws_source_checks(config))
     return rows
 
 

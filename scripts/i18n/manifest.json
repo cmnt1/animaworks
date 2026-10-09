@@ -431,9 +431,9 @@
       "translator_version": "2"
     },
     "docs/en/enclave.md": {
-      "engine": "luna",
-      "generated": "2026-10-07",
-      "model": "gpt-6-luna",
+      "engine": "local",
+      "generated": "2026-10-09",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "1a8f879b5ceaeff67146012c865af94acdeb30f75163475b45c7c78d9d3f0ec6",
         "017c45a7dbaccd1615612062906243cebaf4215f048892affcbcf856b8119e5a",
@@ -443,11 +443,21 @@
         "6bceb8d20a115e75d3400bf763d634e9b2d38431b6206efd5403836a08668f3e",
         "6d2ec0fd478f51ee1ec119e7a718010af5665058a3a225dcc9585fa6a546ea0c",
         "aea82cf93b9855177187302f62d0e0af0fc1bc2f75565d0fdb9c3f2b6ea171e8",
+        "70b9ccaf4c303204d1d6dd91d97b4019ed467567b20d049829883678dbfd4c24",
+        "f627d79822e2be9601b75f01e066f3a15a9d0d7a0c744231cda2469e30caabc0",
+        "9f40e28b13ade46860a61d95025cc7cd8c46187a69e87f8a53ab9e08686ecf9e",
+        "80256c0aa0ce0031434e8c13114cc803b6e35db75b1c6ffa96117cfa43544cbf",
+        "25a8aa1b3e2179604a1e5732a93dda973b2b48560d87016b41aac70786fce4c7",
         "9b22ec99b1a16495951627540c13272173d8969665b647216259aeb1b179a6bf"
       ],
       "source": "docs/ja/enclave.md",
-      "source_sha256": "7b3f837620dd32802c843289512bc027ee16b6ba55c1ccb5f815352959df9e07",
+      "source_sha256": "6180702228ee9130f88f8ee743f43290528d080237780c8224d9faa4d5a3b5bf",
       "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
         "translated",
         "translated",
         "translated",

@@ -18,6 +18,7 @@ from importlib import import_module
 from typing import Any
 
 from core.enclave.config import (
+    EnclaveAwsSourceConfig,
     EnclaveClientConfig,
     EnclaveConfig,
     EnclaveDatasetConfig,
@@ -41,6 +42,7 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "EnclaveAwsSourceConfig",
     "EnclaveClientConfig",
     "EnclaveConfig",
     "EnclaveDatasetConfig",

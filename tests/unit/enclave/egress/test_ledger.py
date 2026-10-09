@@ -6,9 +6,13 @@
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
-from core.enclave.egress.ledger import record_known_values
+import pytest
+
+from core.enclave.egress.ledger import _load_recorded, record_known_values
 
 
 def test_record_known_values_writes_and_counts(tmp_path: Path) -> None:
@@ -29,3 +33,52 @@ def test_record_known_values_skips_duplicates(tmp_path: Path) -> None:
     assert n == 0
     path = tmp_path / "enclave" / "ledger" / "known_values.jsonl"
     assert path.read_text(encoding="utf-8").count("\n") == 1
+
+
+def test_load_recorded_cache_reads_appended_rows(tmp_path: Path) -> None:
+    record_known_values(tmp_path, ["山田太郎"], source="tool")
+    assert "山田太郎" in _load_recorded(tmp_path)
+
+    path = tmp_path / "enclave" / "ledger" / "known_values.jsonl"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"value": "千代田区", "source": "external"}, ensure_ascii=False) + "\n")
+
+    recorded = _load_recorded(tmp_path)
+    assert "山田太郎" in recorded
+    assert "千代田区" in recorded
+
+
+def test_record_known_values_keeps_cache_warm_for_unchanged_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import core.enclave.egress.ledger as ledger
+
+    record_known_values(tmp_path, ["山田太郎"], source="tool")
+    record_known_values(tmp_path, ["山田太郎"], source="tool")
+    monkeypatch.setattr(ledger, "_add_recorded_line", lambda *_args: pytest.fail("cache should avoid rereading"))
+
+    assert record_known_values(tmp_path, ["山田太郎"], source="tool") == 0
+
+
+@pytest.mark.slow
+@pytest.mark.performance
+def test_load_recorded_second_read_of_100k_rows_is_cached(tmp_path: Path) -> None:
+    path = tmp_path / "enclave" / "ledger" / "known_values.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "".join(
+            json.dumps({"value": f"value-{index:06d}", "source": "test"}, ensure_ascii=False) + "\n"
+            for index in range(100_000)
+        ),
+        encoding="utf-8",
+    )
+
+    first = _load_recorded(tmp_path)
+    assert len(first) == 100_000
+
+    started = time.perf_counter()
+    second = _load_recorded(tmp_path)
+    elapsed = time.perf_counter() - started
+
+    assert len(second) == 100_000
+    assert elapsed < 0.1
