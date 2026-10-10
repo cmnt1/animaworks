@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +79,7 @@ def load_entry(thread_id: str, *, now: datetime | None = None, shared_dir: Path 
         expires = datetime.fromisoformat(str(entry.get("expires_at")))
     except ValueError:
         return None
-    if expires <= (now or datetime.now(timezone.utc)):
+    if expires <= (now or datetime.now(UTC)):
         return None
     return entry
 
