@@ -195,7 +195,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
         "timeout_s": 30,
         "cell_max_chars": 2000,
         "app_key_secret": "laravel-app-keys",
-        "decrypt_columns": ["^request$", "transcription", "^title$"],
+        "decrypt_columns": ["^request$", "^body$", "^title$"],
         "tunnel": {
           "type": "ssm_port_forward",
           "region": "example-region-1",

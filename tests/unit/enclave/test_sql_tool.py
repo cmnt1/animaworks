@@ -289,7 +289,7 @@ def test_query_decrypts_matching_columns_before_raw_storage_and_truncation(
     encrypted_other = _encrypt_laravel_string("not selected", key)
     source = _direct_source(
         app_key_secret="laravel-app-key",
-        decrypt_columns=["^request$", "transcription", "^title$"],
+        decrypt_columns=["^request$", "^body$", "^title$"],
     )
     source["cell_max_chars"] = 5
     _write_config(data_dir, sources={"main": source})
