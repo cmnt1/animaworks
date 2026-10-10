@@ -108,6 +108,34 @@ def _build_sdk_path_env(anima_dir: Path, project_dir: Path) -> str:
     return sep.join(merged)
 
 
+def _enclave_aws_keys(secret_name: Any) -> dict[str, str]:
+    """Read Bedrock AWS keys from the enclave secrets store.
+
+    The credential's ``keys.aws_secret`` names a secret file (systemd
+    ``LoadCredential``) holding ``{"aws_access_key_id", "aws_secret_access_key"}``
+    JSON, so the keys never sit in config.json.  Returns ``{}`` when unset or
+    unreadable.
+    """
+    if not isinstance(secret_name, str) or not secret_name:
+        return {}
+    import json
+
+    from core.enclave.secrets import read_enclave_secret
+
+    try:
+        payload = json.loads(read_enclave_secret(secret_name))
+    except Exception:  # noqa: BLE001 - never surface secret contents
+        logger.warning("Mode S auth: could not read the enclave AWS secret for Bedrock")
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: str(payload[key])
+        for key in ("aws_access_key_id", "aws_secret_access_key", "aws_session_token")
+        if payload.get(key)
+    }
+
+
 def _resolve_sdk_cli_path() -> str | None:
     """Return a verified Claude Code CLI path, cached after first call."""
     global _cached_cli_path, _cli_path_resolved
@@ -143,6 +171,10 @@ class SDKOptionsMixin:
         import re
 
         m = self._model_config.model
+        if self._model_config.mode_s_auth == "bedrock" and m.startswith("bedrock/"):
+            # Bedrock needs the full model / inference-profile id
+            # (e.g. ``jp.anthropic.claude-opus-5-5``), not the bare model name.
+            return m.removeprefix("bedrock/")
         m = re.sub(
             r"^(anthropic|bedrock|vertex_ai)/"
             r"([a-z]{2}\.anthropic\.)?",
@@ -207,6 +239,18 @@ class SDKOptionsMixin:
         elif auth == "bedrock":
             env["ANTHROPIC_API_KEY"] = ""
             env["CLAUDE_CODE_USE_BEDROCK"] = "1"
+            # Bedrock runs are used for data that must not leave the account:
+            # keep the CLI from sending telemetry, error reports or update checks.
+            env["DISABLE_TELEMETRY"] = "1"
+            env["DISABLE_ERROR_REPORTING"] = "1"
+            env["DISABLE_AUTOUPDATER"] = "1"
+            env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+            # The CLI's background "small fast" model would otherwise default to
+            # a Bedrock id the account may not be allowed to invoke.
+            sdk_model = self._resolve_agent_sdk_model()
+            env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = sdk_model
+            env["ANTHROPIC_SMALL_FAST_MODEL"] = sdk_model
+            extra = {**extra, **_enclave_aws_keys(extra.get("aws_secret"))}
             for env_key, extra_key in (
                 ("AWS_ACCESS_KEY_ID", "aws_access_key_id"),
                 ("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"),

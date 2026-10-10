@@ -190,6 +190,32 @@ class TestAgentSDKExecutor:
             assert env["AWS_SECRET_ACCESS_KEY"] == "secret_test"
             assert env["AWS_REGION"] == "us-east-1"
             assert "CLAUDE_CODE_USE_VERTEX" not in env
+            assert env["DISABLE_TELEMETRY"] == "1"
+            assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+
+    def test_build_env_bedrock_reads_enclave_secret(self, anima_dir):
+        """keys.aws_secret → AWS keys come from the enclave secrets store."""
+        config = ModelConfig(
+            model="bedrock/jp.anthropic.claude-opus-5-5",
+            api_key=None,
+            mode_s_auth="bedrock",
+            extra_keys={"aws_secret": "aws-test", "aws_region_name": "ap-northeast-1"},
+        )
+        secret = '{"aws_access_key_id": "AKIA_ENC", "aws_secret_access_key": "enc_secret"}'
+        with (
+            patch_agent_sdk(),
+            patch("core.enclave.secrets.read_enclave_secret", return_value=secret) as read_secret,
+        ):
+            from core.execution.engines.claude.executor import AgentSDKExecutor
+
+            executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
+            env = executor._build_env()
+            read_secret.assert_called_once_with("aws-test")
+            assert env["AWS_ACCESS_KEY_ID"] == "AKIA_ENC"
+            assert env["AWS_SECRET_ACCESS_KEY"] == "enc_secret"
+            assert env["AWS_REGION"] == "ap-northeast-1"
+            assert executor._resolve_agent_sdk_model() == "jp.anthropic.claude-opus-5-5"
+            assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "jp.anthropic.claude-opus-5-5"
 
     def test_build_env_vertex(self, anima_dir):
         """mode_s_auth=vertex → Vertex AI mode."""

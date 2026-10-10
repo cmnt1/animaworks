@@ -245,6 +245,16 @@ def test_tunnel_is_reused_within_idle_window(
     assert len(spawned) == 1
 
 
+def test_configured_local_port_is_used(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _setup(data_dir, monkeypatch)
+    config = _tunnel_config(local_port=33061)
+
+    assert ssm_tunnel.ensure_tunnel("main", config, "rds.example", 3306) == 33061
+
+
 def test_dead_process_is_reestablished(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

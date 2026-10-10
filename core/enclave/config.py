@@ -46,6 +46,12 @@ class EnclaveSsmTunnelConfig(BaseModel):
     aws_secret: str = Field(min_length=1, description="Secret name holding AWS credential JSON")
     plugin_path: str = "/usr/local/bin/session-manager-plugin"
     idle_shutdown_s: int = 600
+    local_port: int | None = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset",
+    )
 
     @model_validator(mode="after")
     def _require_target(self) -> EnclaveSsmTunnelConfig:
