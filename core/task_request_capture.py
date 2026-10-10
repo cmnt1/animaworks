@@ -10,7 +10,7 @@ This is a safety net for manual sends and legacy send_message usage. The
 primary path for delegation remains ``delegate_task``.
 """
 
-import json
+import hashlib
 import logging
 import re
 from datetime import UTC, datetime
@@ -173,24 +173,12 @@ def capture_task_request_from_message(
                 return task.task_id
 
         summary = summarize_task_request(content, to_person)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction=content,
-            assignee=to_person,
-            summary=summary,
-            relay_chain=[from_person],
-            meta={
-                "source": "message_request_capture",
-                "source_message_id": message_id,
-                "source_thread_id": thread_id,
-                "source_from": from_person,
-                "source_intent": intent,
-            },
-        )
+        # Stable across concurrent deliveries; entry and input are one transaction.
+        task_id = hashlib.sha256(f"{from_person}:{to_person}:{message_id}".encode()).hexdigest()[:24]
 
         task_desc = {
             "task_type": "llm",
-            "task_id": entry.task_id,
+            "task_id": task_id,
             "title": summary,
             "description": content,
             "context": "",
@@ -202,13 +190,19 @@ def capture_task_request_from_message(
             "reply_to": from_person,
             "source": "message_request_capture",
             "working_directory": "",
-            "priority": entry.priority,
+            "priority": "normal",
+            "relay_chain": [from_person],
         }
-        pending_dir = target_dir / "state" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-        (pending_dir / f"{entry.task_id}.json").write_text(
-            json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        entry = manager.submit(
+            task_desc,
+            source="anima",
+            meta={
+                "source": "message_request_capture",
+                "source_message_id": message_id,
+                "source_thread_id": thread_id,
+                "source_from": from_person,
+                "source_intent": intent,
+            },
         )
         logger.info(
             "Captured task-like DM as recipient task: %s -> %s task=%s msg=%s",

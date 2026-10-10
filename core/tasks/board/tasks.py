@@ -861,6 +861,41 @@ class TaskStore:
                 for row in db.execute("SELECT * FROM task_attempts WHERE anima=? AND ended_at IS NULL", (anima,))
             ]
 
+    def enqueue_stale_wakeups(self, anima: str) -> None:
+        """Remind owners of idle, non-executable work even with heartbeat disabled.
+
+        One durable reminder per task per day after 24 hours without progress.
+        Never replay a failed attempt: it may already have produced side effects.
+        """
+        current = datetime.fromisoformat(now_iso())
+        with self.transaction() as db:
+            rows = db.execute(
+                "SELECT task_id,entry_json,input_json FROM tasks WHERE anima=? AND archived=0 "
+                "AND ready=0 AND current_attempt IS NULL "
+                "AND json_extract(entry_json,'$.status') IN ('pending','in_progress')",
+                (anima,),
+            ).fetchall()
+            for row in rows:
+                entry = json.loads(row["entry_json"])
+                try:
+                    updated = datetime.fromisoformat(entry.get("updated_at") or entry["ts"])
+                    if current - updated < timedelta(days=1):
+                        continue
+                except (KeyError, TypeError, ValueError):
+                    continue
+                reason = "stale_incomplete" if row["input_json"] else "stale_backlog"
+                if db.execute(
+                    "SELECT 1 FROM task_wakeups WHERE anima=? AND task_id=? AND acknowledged_at IS NULL "
+                    "AND reason IN ('stale_backlog','stale_incomplete')",
+                    (anima, row["task_id"]),
+                ).fetchone():
+                    continue
+                token = f"stale-{row['task_id']}-{current.astimezone(UTC).date()}"
+                db.execute(
+                    "INSERT OR IGNORE INTO task_wakeups VALUES(?,?,?,?,?,NULL)",
+                    (anima, row["task_id"], token, reason, current.isoformat()),
+                )
+
     def wakeups(self, anima: str) -> list[dict[str, Any]]:
         if not self.has_database:
             return []

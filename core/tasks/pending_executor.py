@@ -490,6 +490,7 @@ class PendingTaskExecutor:
 
             store = self._get_task_queue_manager().store
             self._recover_task_attempts(store)
+            store.enqueue_stale_wakeups(self._anima_name)
             self._deliver_task_wakeups(store)
             claims = []
             for payload in store.pending(self._anima_name):
@@ -589,9 +590,19 @@ class PendingTaskExecutor:
 
     def _deliver_task_wakeups(self, store: Any) -> None:
         """Retry the durable outbox, independent of periodic heartbeat enablement."""
-        for event in store.wakeups(self._anima_name):
+        events = store.wakeups(self._anima_name)
+        if not events:
+            return
+        entries = store.read(self._anima_name, archived=True)
+        for event in events:
             payload = store.get_input(self._anima_name, event["task_id"]) or {}
+            entry = entries.get(event["task_id"])
+            if event["reason"] != "completion" and (not entry or entry.status in {"done", "cancelled"}):
+                store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+                continue
             reply_to = payload.get("reply_to")
+            if not reply_to and entry:
+                reply_to = entry.meta.get("source_from") or next(iter(entry.relay_chain), None)
             if isinstance(reply_to, dict):
                 reply_to = reply_to.get("name")
             completion = event["reason"] == "completion"
@@ -602,13 +613,18 @@ class PendingTaskExecutor:
                 if completion:
                     from core.paths import load_prompt
 
-                    entry = store.read(self._anima_name, archived=True).get(event["task_id"])
                     result = str(entry.meta.get("result_note") or entry.summary) if entry else ""
                     content = load_prompt(
                         "task_complete_notify",
                         task_id=event["task_id"],
                         title=payload.get("title", event["task_id"]),
                         result_summary=result[:_TASK_COMPLETE_NOTIFY_MAX_CHARS],
+                    )
+                elif event["reason"] in {"stale_backlog", "stale_incomplete"}:
+                    content = t(
+                        "pending_executor." + event["reason"],
+                        task_id=event["task_id"],
+                        title=payload.get("title") or (entry.summary if entry else event["task_id"]),
                     )
                 elif event["reason"] == "normal":
                     # The run itself ended cleanly; only the declaration is missing.
