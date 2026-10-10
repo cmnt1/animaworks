@@ -87,18 +87,10 @@ def test_pipeline_blocks_on_bad_command_structure(tmp_path: Path) -> None:
     assert exc.value.reason == "command_invalid_structure"
 
 
-def test_pipeline_full_stack_masks_pii(tmp_path: Path) -> None:
-    (tmp_path / "customers.jsonl").write_text(
-        json.dumps({"name": "山田太郎", "address": "東京都千代田区中央1-2-3", "phone": "090-1234-5678"}) + "\n",
-        encoding="utf-8",
-    )
+def test_pipeline_masker_stage_masks_pii(tmp_path: Path) -> None:
     cfg = load_egress_config(
         {
             "stages": [
-                {
-                    "type": "known_values",
-                    "sources": [{"path": "customers.jsonl", "format": "jsonl", "fields": ["name", "address", "phone"]}],
-                },
                 {"type": "masker", "profile": "default"},
                 {"type": "regex_denylist", "patterns": [{"regex": r"極秘", "action": "block"}]},
             ]
@@ -108,5 +100,6 @@ def test_pipeline_full_stack_masks_pii(tmp_path: Path) -> None:
     result = pipe.run(_req([Fact("山田太郎は東京に住む 電話 090-1234-5678", [])]))
     assert "山田" not in result.facts[0].fact
     assert "090-1234-5678" not in result.facts[0].fact
-    assert "[REDACTED]" in result.facts[0].fact
+    assert "[MASK-PER]" in result.facts[0].fact
+    assert "[MASK-PHONE]" in result.facts[0].fact
     assert _audit_records(tmp_path)[0]["blocked"] is False

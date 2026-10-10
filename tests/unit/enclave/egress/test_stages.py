@@ -2,12 +2,10 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for individual egress stages (pseudonymize, known-values,
-regex-denylist, command)."""
+"""Unit tests for individual egress stages (pseudonymize, masker, regex-denylist, command)."""
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -21,12 +19,6 @@ from core.enclave.egress.stages import EgressStageError, run_stage
 def _stage(stack: dict) -> object:
     cfg = load_egress_config({"stages": [stack]})
     return cfg.stages[0]
-
-
-def _write(values: list[str], path: Path) -> None:
-    with path.open("w", encoding="utf-8") as stream:
-        for value in values:
-            stream.write(json.dumps({"name": value}) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -75,99 +67,6 @@ def test_pseudonymize_rejects_bad_case_id(tmp_path: Path) -> None:
     with pytest.raises(EgressStageError) as exc:
         run_stage(stage, [Fact("C123456", [])], data_dir=tmp_path, case_id="bad case id")
     assert exc.value.reason == "invalid_case_id"
-
-
-# ---------------------------------------------------------------------------
-# known_values
-# ---------------------------------------------------------------------------
-
-
-def test_known_values_normalizes_katakana_to_hiragana(tmp_path: Path) -> None:
-    _write(["ヤマダタロウ"], tmp_path / "v.jsonl")
-    stage = _stage({"type": "known_values", "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    new, _ = run_stage(stage, [Fact("顧客はヤマダタロウと申します", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "顧客は[REDACTED]と申します"
-
-
-def test_known_values_normalizes_full_width_to_half_width(tmp_path: Path) -> None:
-    _write(["０９０１２３４"], tmp_path / "v.jsonl")
-    stage = _stage({"type": "known_values", "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    new, _ = run_stage(stage, [Fact("連絡先は０９０１２３４です", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "連絡先は[REDACTED]です"
-
-
-def test_known_values_normalizes_whitespace(tmp_path: Path) -> None:
-    _write(["山田 太郎"], tmp_path / "v.jsonl")
-    stage = _stage({"type": "known_values", "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    new, _ = run_stage(stage, [Fact("山田 太郎さん", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "[REDACTED]さん"
-
-
-def test_known_values_ngram_partial_match(tmp_path: Path) -> None:
-    _write(["東京都千代田区一番町"], tmp_path / "v.jsonl")
-    stage = _stage(
-        {
-            "type": "known_values",
-            "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}],
-            "min_length": 2,
-            "ngram": 6,
-        }
-    )
-    new, _ = run_stage(stage, [Fact("千代田区一番の住所に住む", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "[REDACTED]の住所に住む"
-
-
-def test_known_values_ignores_values_below_min_length(tmp_path: Path) -> None:
-    _write(["山"], tmp_path / "v.jsonl")
-    stage = _stage(
-        {
-            "type": "known_values",
-            "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}],
-            "min_length": 2,
-        }
-    )
-    new, _ = run_stage(stage, [Fact("山に登る", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "山に登る"
-
-
-def test_known_values_replacement_does_not_shift_positions(tmp_path: Path) -> None:
-    _write(["山田太郎"], tmp_path / "v.jsonl")
-    stage = _stage({"type": "known_values", "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    new, _ = run_stage(stage, [Fact("本日、山田太郎様がご来店。", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "本日、[REDACTED]様がご来店。"
-
-
-def test_known_values_source_missing_blocks(tmp_path: Path) -> None:
-    stage = _stage({"type": "known_values", "sources": [{"path": "nope.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    with pytest.raises(EgressStageError) as exc:
-        run_stage(stage, [Fact("何か", [])], data_dir=tmp_path, case_id="x")
-    assert exc.value.reason == "known_values_source_missing"
-
-
-def test_known_values_reads_from_ledger(tmp_path: Path) -> None:
-    from core.enclave.egress.ledger import record_known_values
-
-    record_known_values(tmp_path, ["東京都世田谷区"], source="test")
-    stage = _stage({"type": "known_values", "sources": []})
-    new, _ = run_stage(stage, [Fact("転居先は東京都世田谷区です", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "転居先は[REDACTED]です"
-
-
-def test_known_values_redacts_overlapping_values(tmp_path: Path) -> None:
-    _write(["山田花子", "花子様邸"], tmp_path / "v.jsonl")
-    stage = _stage({"type": "known_values", "sources": [{"path": "v.jsonl", "format": "jsonl", "fields": ["name"]}]})
-    new, _ = run_stage(stage, [Fact("訪問先は山田花子様邸です", [])], data_dir=tmp_path, case_id="x")
-    assert new[0].fact == "訪問先は[REDACTED]です"
-
-
-def test_known_values_corrupt_ledger_blocks(tmp_path: Path) -> None:
-    ledger = tmp_path / "enclave" / "ledger" / "known_values.jsonl"
-    ledger.parent.mkdir(parents=True)
-    ledger.write_text("{not json\n", encoding="utf-8")
-    stage = _stage({"type": "known_values", "sources": []})
-    with pytest.raises(EgressStageError) as exc:
-        run_stage(stage, [Fact("text", [])], data_dir=tmp_path, case_id="x")
-    assert exc.value.reason == "known_values_ledger_corrupt"
 
 
 # ---------------------------------------------------------------------------

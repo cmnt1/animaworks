@@ -33,7 +33,7 @@ def _write_config(data_dir: Path, socket_path: Path, *, socket_group: str = "tes
         "entry_anima": "entry-anima",
         "allowed_peer_uids": [os.getuid()],
         "allowed_llm_credentials": ["anthropic"],
-        "egress": {"stages": [{"type": "known_values", "sources": []}]},
+        "egress": {"stages": [{"type": "masker", "profile": "default"}]},
     }
     (data_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
     invalidate_cache()

@@ -804,6 +804,7 @@
 |---|---|---|---|
 | `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 enclave 모드의 서버 설정. 활성화 시 시작 시 보안 가드를 검사한다. |
 | `enclave.enabled` | `bool` | `false` | 이 실행 환경을 격리 enclave로 시작한다. |
+| `enclave.raw_dir` | `str` | `"raw"` | raw 결과 저장 위치. `ANIMAWORKS_DATA_DIR` 기준 상대 경로 또는 절대 경로. |
 | `enclave.name` | `str` | `""` | enclave gateway가 반환하는 식별 이름. |
 | `enclave.socket_path` | `str` | `""` | gateway가 대기하는 Unix 도메인 소켓의 경로. |
 | `enclave.socket_group` | `str` | `""` | gateway 소켓에 설정하는 OS 그룹. |
@@ -815,7 +816,6 @@
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 내의 anima가 참조할 수 있는 JSONL 데이터셋. |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 내에 있는 JSONL 파일의 상대 경로. |
 | `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 가져오기 위한 ID 필드. |
-| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 반환 전에 알려진 값 원장에 등록하는 필드. |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 부분 일치 검색을 허용하는 필드. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
@@ -838,7 +838,8 @@
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
-| `enclave.sql_sources.ledger_exempt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | Laravel 애플리케이션 키를 저장한 비밀 파일 이름. |
+| `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | 복호화할 결과 열 이름에 일치시키는 정규식. |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -847,8 +848,6 @@
 | `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
 | `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
-| `enclave.aws_sources.ledger_register` | `bool` | `true` | — |
-| `enclave.aws_sources.ledger_exempt_keys` | `list[str]` | `…` | — |
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 외부로 반환하는 facts를 처리하는 egress 스테이지 설정. |
 

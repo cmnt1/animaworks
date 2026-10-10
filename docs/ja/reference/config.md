@@ -804,6 +804,7 @@
 |---|---|---|---|
 | `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。 |
 | `enclave.enabled` | `bool` | `false` | この実行環境を隔離 enclave として起動する。 |
+| `enclave.raw_dir` | `str` | `"raw"` | raw 結果の保存先。`ANIMAWORKS_DATA_DIR` からの相対パスまたは絶対パス。 |
 | `enclave.name` | `str` | `""` | enclave gateway が返す識別名。 |
 | `enclave.socket_path` | `str` | `""` | gateway が待ち受ける Unix ドメインソケットのパス。 |
 | `enclave.socket_group` | `str` | `""` | gateway ソケットに設定する OS グループ。 |
@@ -815,7 +816,6 @@
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
-| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 返却前に既知値台帳へ登録するフィールド。 |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 部分一致検索を許可するフィールド。 |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
@@ -838,7 +838,8 @@
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
-| `enclave.sql_sources.ledger_exempt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | Laravel アプリ鍵を保存した秘密の名前。 |
+| `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | 復号対象の結果列名に照合する正規表現。 |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -847,8 +848,6 @@
 | `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
 | `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
-| `enclave.aws_sources.ledger_register` | `bool` | `true` | — |
-| `enclave.aws_sources.ledger_exempt_keys` | `list[str]` | `…` | — |
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
 

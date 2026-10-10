@@ -7,6 +7,8 @@
 The ``enclave.egress`` section of ``config.json`` (a plain dict) is validated
 against these Pydantic models. Unknown stage types and an empty stage list are
 treated as configuration errors because no pipeline can be built from them.
+Legacy known-value stages are discarded with a one-time warning; when that
+leaves no active stages, the default masker is installed as a safe fallback.
 """
 
 from __future__ import annotations
@@ -39,19 +41,6 @@ class PseudonymizeStage(BaseModel):
     patterns: list[PseudonymizePattern] = Field(default_factory=list)
 
 
-class KnownValueSource(BaseModel):
-    path: str
-    format: Literal["jsonl", "csv", "json"] = "jsonl"
-    fields: list[str] = Field(default_factory=list)
-
-
-class KnownValuesStage(BaseModel):
-    type: Literal["known_values"]
-    sources: list[KnownValueSource] = Field(default_factory=list)
-    min_length: int = 2
-    ngram: int = 8
-
-
 class MaskerStage(BaseModel):
     type: Literal["masker"]
     profile: str = "default"
@@ -74,7 +63,7 @@ class CommandStage(BaseModel):
 
 
 Stage = Annotated[
-    PseudonymizeStage | KnownValuesStage | MaskerStage | RegexDenylistStage | CommandStage,
+    PseudonymizeStage | MaskerStage | RegexDenylistStage | CommandStage,
     Field(discriminator="type"),
 ]
 
@@ -93,12 +82,31 @@ class EgressConfig(BaseModel):
         return self
 
 
+_WARNED_LEGACY_STAGE = False
+
+
 def load_egress_config(data: dict) -> EgressConfig:
     """Validate a raw ``enclave.egress`` dict into an :class:`EgressConfig`.
 
-    Raises :class:`EgressConfigError` for unknown stage types and for an empty
-    stage list.
+    Legacy known-value stages are ignored without preventing an existing
+    enclave from starting. Unknown stage types and empty stage lists remain
+    configuration errors.
     """
+    global _WARNED_LEGACY_STAGE
+
+    stages = data.get("stages")
+    if isinstance(stages, list):
+        active_stages = [
+            stage for stage in stages if not (isinstance(stage, dict) and stage.get("type") == "known_values")
+        ]
+        if len(active_stages) != len(stages):
+            if not _WARNED_LEGACY_STAGE:
+                logger.warning("Ignoring legacy enclave egress known_values stage configuration")
+                _WARNED_LEGACY_STAGE = True
+            if not active_stages:
+                active_stages = [{"type": "masker", "profile": "default"}]
+            data = {**data, "stages": active_stages}
+
     try:
         return EgressConfig.model_validate(data)
     except EgressConfigError:

@@ -16,30 +16,8 @@ from __future__ import annotations
 
 import logging
 import re
-import unicodedata
 
 logger = logging.getLogger(__name__)
-
-
-def _kata_to_hira(ch: str) -> str:
-    """Convert one katakana character to its hiragana equivalent."""
-    code = ord(ch)
-    if 0x30A1 <= code <= 0x30F6:
-        return chr(code - 0x60)
-    if code in (0x30FD, 0x30FE):  # ヽ・ヾ -> ゝ・ゞ
-        return chr(code - 0x60)
-    return ch
-
-
-def normalize_known_value(value: str) -> str:
-    """Normalize a value for matching: NFKC, strip whitespace, katakana to
-    hiragana, lowercase."""
-    out: list[str] = []
-    for ch in unicodedata.normalize("NFKC", value):
-        if ch.isspace():
-            continue
-        out.append(_kata_to_hira(ch).lower())
-    return "".join(out)
 
 
 # Calendar dates (western, Japanese, full-width) become [MASK-DATE].

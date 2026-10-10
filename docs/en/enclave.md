@@ -14,16 +14,15 @@ flowchart LR
     H[本体側 Anima] -->|enclave_ask| S[Unix ソケット]
     S --> G[隔離側 gateway]
     G --> A[entry anima]
-    A -->|enclave_records_search / get| D[(設定済み JSONL)]
-    D --> L[既知値台帳]
-    A -->|回答| E[egress パイプライン]
-    L --> E
-    E -->|検査済み facts| G
+    A -->|enclave_records_search / get| D[(Configured JSONL)]
+    A -->|Retrieved results| R[(Isolated raw directory)]
+    A -->|Answer| E[Egress pipeline]
+    E -->|Inspected facts| G
     G -->|監査 ID と facts| H
     E --> Q[(監査ログ)]
 ```
 
-The `enclave_records_search` and `enclave_records_get` on the isolated side read only the configured datasets, register the `sensitive_fields` of returned records in the known-value ledger, and then respond. Dataset paths are restricted to within `ANIMAWORKS_DATA_DIR`. The host side does not receive the JSONL body; the Web UI only displays the connection status and the day's success and blocked counts.
+The isolated-side `enclave_records_search` and `enclave_records_get` read only configured datasets. Search results are returned under `records`, and a fetched item under `record`. Retrieved records and full results from the data tools are saved under `raw_dir`, and the tools return a `raw_path`. By default, files are stored in `ANIMAWORKS_DATA_DIR/raw/YYYYMMDD` with directory mode `0700` and file mode `0600`. Dataset paths are restricted to within `ANIMAWORKS_DATA_DIR`. The host side does not receive the JSONL body; the Web UI only displays the connection status and the day's success and blocked counts.
 
 ## OS Users and Groups
 
@@ -53,6 +52,7 @@ Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<nam
 {
   "enclave": {
     "enabled": true,
+    "raw_dir": "raw",
     "name": "saas-data",
     "socket_path": "/run/animaworks-enclave/aw-enclave.sock",
     "socket_group": "animaworks-enclave",
@@ -65,21 +65,16 @@ Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<nam
       "customers": {
         "path": "data/customers.jsonl",
         "id_field": "customer_id",
-        "sensitive_fields": ["name", "kana", "address", "phone", "email"],
         "searchable_fields": ["customer_id", "name", "kana", "email"]
       },
       "tickets": {
         "path": "data/tickets.jsonl",
         "id_field": "ticket_id",
-        "sensitive_fields": ["customer_id", "body"],
         "searchable_fields": ["ticket_id", "customer_id", "category", "body"]
       }
     },
     "egress": {
-      "stages": [
-        {"type": "known_values", "sources": []},
-        {"type": "masker", "profile": "default"}
-      ]
+      "stages": [{"type": "masker", "profile": "default"}]
     }
   }
 }
@@ -160,7 +155,7 @@ animaworks enclave doctor --json
 animaworks enclave status
 ```
 
-`status` outputs only the day's success and blocked counts and does not display the question or answer body. The egress audit log is saved in `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the known-value ledger in `~/.animaworks/enclave/ledger/known_values.jsonl`. The audit log contains the facts being processed, so maintain the access permissions of the file and parent directory, and do not copy it outside the isolated environment.
+`status` outputs only the day's success and blocked counts and does not display the question or answer body. The egress audit log is saved in `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`; complete tool results are saved in `~/.animaworks/raw/YYYYMMDD/`. Audit and raw files can contain facts and unmodified source data, so preserve their access permissions and do not copy them outside the isolated environment.
 
 ## Connecting to Real Data Sources
 
@@ -168,7 +163,7 @@ From the isolated side, you can reference a production MySQL-compatible DB in re
 
 ### How to Store Secrets
 
-DB passwords and AWS access keys should be passed only to isolated processes via `enclave.secrets_dir` or systemd's `LoadCredential=`. Secret files should be owned by root with permissions set to `0600`. To prevent password leakage, do not write them in plain text in configuration files.
+DB passwords, AWS access keys, and Laravel APP_KEY values should be passed only to isolated processes via `enclave.secrets_dir` or systemd's `LoadCredential=`. Secret files should be owned by root with permissions set to `0600`; do not put secret values in configuration files. Put one Laravel APP_KEY per line, with the current key first and previous keys afterward.
 
 - When using systemd: use `animaworks-enclave@.service`'s `LoadCredential=` to load values such as `/etc/credstore/animaworks-enclave/<name>/db-password`, making them readable from `$CREDENTIALS_DIRECTORY`.
 - If a different directory is specified for `enclave.secrets_dir`, use the same format, placing values in files named after the corresponding keys.
@@ -199,7 +194,8 @@ Define a read-only data source in `enclave.sql_sources`. `password_secret` is th
         "max_rows": 200,
         "timeout_s": 30,
         "cell_max_chars": 2000,
-        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "app_key_secret": "laravel-app-keys",
+        "decrypt_columns": ["^request$", "transcription", "^title$"],
         "tunnel": {
           "type": "ssm_port_forward",
           "region": "example-region-1",
@@ -214,7 +210,7 @@ Define a read-only data source in `enclave.sql_sources`. `password_secret` is th
 }
 ```
 
-`ledger_exempt_columns` is a list of regular expressions that specifies **columns not to be masked at the exit (such as IDs and statuses)**. Values in columns specified here are not added to the known-value ledger. The remaining string cells, except those containing only numbers, ISO dates, or booleans, are registered in the known-value ledger before returning results and are masked when they reappear in the answer. SSL is required by default. If using the RDS CA, specify the CA path in `ssl_ca`; if hostname verification needs to be disabled, note that the hostname will not match because it is over a tunnel with `ssl_verify_identity: false` (default) left as is.
+`app_key_secret` names a secret file containing Laravel APP_KEY values, one per line. Both `base64:` keys and UTF-8 keys are supported; the first key is current and following keys are tried for older ciphertext. `decrypt_columns` is a list of regular expressions matched with `re.search` against result column names after aliasing. String cells in matching columns are decrypted as Laravel AES-256-CBC payloads; values that cannot be decrypted are returned unchanged. SQL rows are saved after decryption and before cell truncation, and the tool result's `raw_path` points to the complete result. SSL is required by default. If using the RDS CA, specify the CA path in `ssl_ca`; if hostname verification needs to be disabled, note that the hostname will not match because it is over a tunnel with `ssl_verify_identity: false` (default) left as is.
 
 ### Reading the doctor
 
@@ -243,15 +239,7 @@ Register CloudWatch Logs, RDS Performance Insights, RDS log files, and S3 read t
         "pi_resource_id": "db-example-resource",
         "rds_instance_id": "db-example-instance",
         "s3_buckets": ["example-placeholder-bucket"],
-        "max_bytes": 200000,
-        "ledger_register": true,
-        "ledger_exempt_keys": [
-          "level", "timestamp", "time", "message_type", "message", "msg",
-          "error", "exception", "stack_trace", "status", "method", "path",
-          "route", "duration", "request_id", "requestid", "req_id", "reqid",
-          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
-          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
-        ]
+        "max_bytes": 200000
       }
     }
   }
@@ -264,9 +252,7 @@ The file contents for secret `aws-readonly` should follow the JSON format below.
 {"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
 ```
 
-`log_groups` allows exact matches or prefix matches using the trailing `*`. Each PI and RDS tool uses only its configured resource ID, and S3 accesses only the buckets listed in `s3_buckets`. Time is specified in ISO8601 or as relative values using `-1h` / `-24h`. Logs Insights queries poll for up to 60 seconds, and each tool's returned text is limited by `max_bytes`. S3 objects that are non-text or exceed the limit do not include their content in the tool response; instead, they are saved to `enclave/downloads/<bucket>/<key-sha256>` in the isolated data directory with mode `0600`.
-
-Even when `ledger_register` is enabled, not all free text is registered in the known-value ledger. For each log line that can be interpreted as JSON, only string values not included in `ledger_exempt_keys` are registered. For PI SQL full text, only the contents of string literals (`'...'`) are registered. Regular log bodies that are not JSON and other free text are not registered; this is handled by the egress masker and `regex_denylist`. Therefore, redaction of free text is not guaranteed by the known-value ledger alone. Setting `ledger_register: false` disables registration of AWS read results.
+`log_groups` allows exact matches or prefix matches using the trailing `*`. Each PI and RDS tool uses only its configured resource ID, and S3 accesses only the buckets listed in `s3_buckets`. Time is specified in ISO8601 or as relative values using `-1h` / `-24h`. Logs Insights queries poll for up to 60 seconds, and each tool's returned text is limited by `max_bytes`. AWS tools save the full response and records before `max_bytes` truncation under `raw_dir`, and return the file location in `raw_path`. Non-text or oversized S3 objects are also saved to `enclave/downloads/<bucket>/<key-sha256>` in the isolated data directory with mode `0600`.
 
 The `doctor` check for AWS sources verifies `aws_sources.<name>.secret` and `.deps` (`boto3`). It does not connect to real AWS; it only checks for the existence of secrets and whether the SDK can be imported.
 

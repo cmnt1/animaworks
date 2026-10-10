@@ -19,7 +19,6 @@ class EnclaveDatasetConfig(BaseModel):
 
     path: str = Field(min_length=1, description="JSONL path relative to ANIMAWORKS_DATA_DIR")
     id_field: str = Field(min_length=1, description="Record field used as the stable lookup identifier")
-    sensitive_fields: list[str] = Field(default_factory=list)
     searchable_fields: list[str] = Field(default_factory=list)
 
     @field_validator("path", "id_field")
@@ -55,39 +54,6 @@ class EnclaveSsmTunnelConfig(BaseModel):
         return self
 
 
-_DEFAULT_AWS_LEDGER_EXEMPT_KEYS = [
-    "level",
-    "timestamp",
-    "time",
-    "message_type",
-    "message",
-    "msg",
-    "error",
-    "exception",
-    "stack_trace",
-    "status",
-    "method",
-    "path",
-    "route",
-    "duration",
-    "request_id",
-    "requestid",
-    "req_id",
-    "reqid",
-    "trace_id",
-    "traceid",
-    "correlation_id",
-    "@timestamp",
-    "@message",
-    "@ptr",
-    "@log",
-    "@logstream",
-    "@ingestiontime",
-    "eventid",
-    "logstreamname",
-]
-
-
 class EnclaveAwsSourceConfig(BaseModel):
     """Allow-listed AWS read-only services available inside an enclave."""
 
@@ -98,8 +64,6 @@ class EnclaveAwsSourceConfig(BaseModel):
     rds_instance_id: str | None = None
     s3_buckets: list[str] = Field(default_factory=list)
     max_bytes: int = 200_000
-    ledger_register: bool = True
-    ledger_exempt_keys: list[str] = Field(default_factory=lambda: list(_DEFAULT_AWS_LEDGER_EXEMPT_KEYS))
 
     @field_validator("region", "aws_secret")
     @classmethod
@@ -139,7 +103,8 @@ class EnclaveSqlSourceConfig(BaseModel):
     max_rows: int = 200
     timeout_s: int = 30
     cell_max_chars: int = 2000
-    ledger_exempt_columns: list[str] = Field(default_factory=list)
+    app_key_secret: str | None = None
+    decrypt_columns: list[str] = Field(default_factory=list)
 
     @field_validator("host", "database", "user", "password_secret")
     @classmethod
@@ -177,6 +142,7 @@ class EnclaveConfig(BaseModel):
     sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)
     aws_sources: dict[str, EnclaveAwsSourceConfig] = Field(default_factory=dict)
     secrets_dir: str | None = None
+    raw_dir: str = "raw"
     egress: dict[str, Any] = Field(default_factory=dict)
 
 

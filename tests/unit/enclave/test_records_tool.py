@@ -58,23 +58,18 @@ def _write_dataset(data_dir: Path) -> None:
     )
 
 
-def test_search_returns_matches_and_registers_sensitive_values(data_dir: Path) -> None:
+def test_search_returns_matches_and_saves_raw_records(data_dir: Path) -> None:
     _write_dataset(data_dir)
     _write_config(data_dir)
 
     results = enclave_records_search("customers", "C000001")
 
-    assert isinstance(results, list)
-    assert len(results) == 1
-    assert results[0]["name"] == "青葉 葵"
-    ledger_path = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    ledger = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
-    assert {item["value"] for item in ledger} == {
-        "青葉 葵",
-        "000-0000-0001",
-        "customer001@example.invalid",
-    }
-    assert {item["source"] for item in ledger} == {"dataset:customers"}
+    assert isinstance(results, dict)
+    assert len(results["records"]) == 1
+    assert results["records"][0]["name"] == "青葉 葵"
+    raw_path = Path(results["raw_path"])
+    assert json.loads(raw_path.read_text(encoding="utf-8")) == results["records"]
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_search_only_uses_configured_searchable_fields(data_dir: Path) -> None:
@@ -83,25 +78,22 @@ def test_search_only_uses_configured_searchable_fields(data_dir: Path) -> None:
 
     results = enclave_records_search("customers", "not searchable")
 
-    assert results == []
-    assert not (data_dir / "enclave" / "ledger" / "known_values.jsonl").exists()
+    assert isinstance(results, dict)
+    assert results["records"] == []
+    assert json.loads(Path(results["raw_path"]).read_text(encoding="utf-8")) == []
 
 
-def test_get_returns_record_and_registers_sensitive_values(data_dir: Path) -> None:
+def test_get_returns_record_and_saves_raw_record(data_dir: Path) -> None:
     _write_dataset(data_dir)
     _write_config(data_dir)
 
-    record = enclave_records_get("customers", "C000002")
+    result = enclave_records_get("customers", "C000002")
 
-    assert isinstance(record, dict)
-    assert record["email"] == "customer002@example.invalid"
-    ledger_path = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    ledger = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
-    assert {item["value"] for item in ledger} == {
-        "水野 凛",
-        "000-0000-0002",
-        "customer002@example.invalid",
-    }
+    assert isinstance(result, dict)
+    assert result["record"]["email"] == "customer002@example.invalid"
+    raw_path = Path(result["raw_path"])
+    assert json.loads(raw_path.read_text(encoding="utf-8")) == result["record"]
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_dataset_path_outside_data_dir_is_rejected(data_dir: Path) -> None:
@@ -115,7 +107,6 @@ def test_dataset_path_outside_data_dir_is_rejected(data_dir: Path) -> None:
     assert isinstance(result, str)
     assert "安全に参照" in result
     assert "must not be returned" not in result
-    assert not (data_dir / "enclave" / "ledger" / "known_values.jsonl").exists()
 
 
 def test_disabled_enclave_returns_enclave_only_error(data_dir: Path) -> None:
