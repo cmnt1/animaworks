@@ -207,7 +207,7 @@ def ensure_tunnel(
             _stop_tunnel(current)
 
         credentials = _read_aws_credentials(config)
-        local_port = _free_port()
+        local_port = config.local_port or _free_port()
         session, request, ssm = _start_session(config, credentials, local_port, remote_host, remote_port)
         process = _start_plugin(config, session, request)
         tunnel = _Tunnel(config, local_port, process, session)

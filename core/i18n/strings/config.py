@@ -483,6 +483,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "省略可なテーブル名（指定時は列定義を返す）",
         "en": "Optional table name (returns column definitions when set)",
     },
+    "enclave.sql.raw_note": {
+        "ja": "全文は raw_path のファイルを Read で読んでください。",
+        "en": "Read the file at raw_path to access the full query result.",
+    },
     "enclave.aws.only": {
         "ja": "このツールは enclave 内でだけ使えます。",
         "en": "This tool can only be used inside an enclave.",

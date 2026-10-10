@@ -7,11 +7,11 @@
 
 """Read-only MySQL query tools for the enclave runtime.
 
-``enclave_sql_query`` runs a validated read-only SELECT and registers the
-returned string values in the egress known-value ledger *before* returning
-them, so that the exit stage can redact them.  ``enclave_sql_schema``
-reads table / column metadata (no ledger registration).  Connections are
-made to the read-only data sources declared in ``enclave.sql_sources``.
+``enclave_sql_query`` runs a validated read-only SELECT, optionally decrypts
+configured Laravel-encrypted columns, and stores the complete result inside
+the enclave before returning bounded rows. ``enclave_sql_schema`` reads table
+and column metadata. Connections use the read-only sources declared in
+``enclave.sql_sources``.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import logging
 import re
 from typing import Any
 
+from core.enclave.raw_store import try_save_raw
 from core.i18n import t
 from core.integrations._base import dispatch_by_table
 
@@ -37,8 +38,6 @@ _DISALLOWED_TOKENS = (
     "BENCHMARK(",
     "GET_LOCK(",
 )
-_NUMERIC_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
-_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?$")
 
 
 class _EnclaveDisabledError(ValueError):
@@ -92,28 +91,6 @@ def _validate_sql(sql: str) -> str | None:
     return None
 
 
-def _is_numeric(value: str) -> bool:
-    return bool(_NUMERIC_RE.match(value))
-
-
-def _is_datetime(value: str) -> bool:
-    return bool(_DATETIME_RE.match(value))
-
-
-def _is_boolean(value: str) -> bool:
-    return value.strip().casefold() in {"true", "false"}
-
-
-def _is_exempt(column: str, patterns: list[str]) -> bool:
-    for pattern in patterns:
-        try:
-            if re.search(pattern, column):
-                return True
-        except re.error:
-            logger.debug("Invalid ledger_exempt_column regex %r", pattern)
-    return False
-
-
 def _connect(source: Any, host: str, port: int, password: str) -> Any:
     """Open a read-only PyMySQL connection for *source*."""
     import pymysql
@@ -158,41 +135,55 @@ def _run_query(source: Any, host: str, port: int, password: str, sql: str) -> tu
         connection.close()
 
 
-def _cell_to_string(value: Any, max_chars: int) -> str:
+def _format_cell(value: Any, max_chars: int) -> tuple[str, bool]:
     if value is None:
-        return ""
+        return "", False
     if isinstance(value, bytes):
-        return f"<binary {len(value)} bytes>"
+        return f"<binary {len(value)} bytes>", False
     text = str(value)
     if len(text) > max_chars:
-        text = text[:max_chars]
-    return text
+        return text[:max_chars], True
+    return text, False
 
 
-def _register_ledger_values(
-    config: Any,
-    source_name: str,
+def _cell_to_string(value: Any, max_chars: int) -> str:
+    return _format_cell(value, max_chars)[0]
+
+
+def _decrypt_rows(
     columns: list[str],
     rows: list[tuple],
-    exempt_patterns: list[str],
-) -> None:
-    """Register non-trivial string cells in the known-value ledger before release."""
-    from core.enclave.egress.ledger import record_known_values
+    patterns: list[str],
+    keys: list[bytes],
+) -> tuple[list[tuple], int, int]:
+    from core.enclave.laravel_crypt import decrypt_string
 
-    values: list[str] = []
+    decrypt_indices: set[int] = set()
+    for index, column in enumerate(columns):
+        for pattern in patterns:
+            try:
+                if re.search(pattern, column):
+                    decrypt_indices.add(index)
+                    break
+            except re.error:
+                logger.debug("Skipping invalid decrypt_columns pattern")
+
+    updated_rows: list[tuple] = []
+    decrypted_cells = 0
+    undecryptable_cells = 0
     for row in rows:
-        for column, cell in zip(columns, row, strict=False):
-            if not isinstance(cell, str):
+        updated = list(row)
+        for index in decrypt_indices:
+            if index >= len(updated) or not isinstance(updated[index], str):
                 continue
-            if _is_exempt(column, exempt_patterns):
-                continue
-            if _is_numeric(cell) or _is_datetime(cell) or _is_boolean(cell):
-                continue
-            values.append(cell)
-    if values:
-        from core.paths import get_data_dir
-
-        record_known_values(get_data_dir(), values, source=f"sql:{source_name}")
+            plaintext = decrypt_string(updated[index], keys)
+            if plaintext is None:
+                undecryptable_cells += 1
+            else:
+                updated[index] = plaintext
+                decrypted_cells += 1
+        updated_rows.append(tuple(updated))
+    return updated_rows, decrypted_cells, undecryptable_cells
 
 
 def _format_result(
@@ -202,13 +193,26 @@ def _format_result(
     truncated: bool,
     max_chars: int,
 ) -> dict[str, Any]:
-    return {
+    formatted_rows: list[list[str]] = []
+    cells_truncated = False
+    for row in rows:
+        formatted_row: list[str] = []
+        for cell in row:
+            formatted, cell_truncated = _format_cell(cell, max_chars)
+            formatted_row.append(formatted)
+            cells_truncated = cells_truncated or cell_truncated
+        formatted_rows.append(formatted_row)
+
+    result: dict[str, Any] = {
         "source": source_name,
         "columns": columns,
-        "rows": [[_cell_to_string(cell, max_chars) for cell in row] for row in rows],
+        "rows": formatted_rows,
         "row_count": len(rows),
         "truncated": truncated,
     }
+    if cells_truncated:
+        result["cells_truncated"] = True
+    return result
 
 
 def _tool_error(exc: Exception, source_name: str) -> str:
@@ -233,7 +237,7 @@ def _write_endpoint(source_name: str, source: Any) -> tuple[str, int]:
 
 
 def enclave_sql_query(source: str, sql: str) -> dict[str, Any] | str:
-    """Run a validated read-only query and return rows with ledger registration."""
+    """Run a validated read-only query, optionally decrypting configured columns."""
     if not isinstance(source, str) or not source:
         return t("enclave.sql.source_required")
     if not isinstance(sql, str) or not sql.strip():
@@ -244,18 +248,39 @@ def enclave_sql_query(source: str, sql: str) -> dict[str, Any] | str:
         if validation_error is not None:
             return validation_error
 
-        config, source_config = _source_context(source)
+        _, source_config = _source_context(source)
         password = _read_source_password(source_config)
         host, port = _write_endpoint(source, source_config)
         columns, rows, truncated = _run_query(source_config, host, port, password, sql)
-        _register_ledger_values(
-            config,
-            source,
-            columns,
-            rows,
-            source_config.ledger_exempt_columns,
+
+        decrypt_configured = bool(source_config.app_key_secret and source_config.decrypt_columns)
+        decrypted_cells = 0
+        undecryptable_cells = 0
+        if decrypt_configured:
+            from core.enclave.laravel_crypt import parse_app_keys
+            from core.enclave.secrets import read_enclave_secret
+
+            app_keys = parse_app_keys(read_enclave_secret(source_config.app_key_secret))
+            rows, decrypted_cells, undecryptable_cells = _decrypt_rows(
+                columns,
+                rows,
+                source_config.decrypt_columns,
+                app_keys,
+            )
+
+        result = _format_result(source, columns, rows, truncated, source_config.cell_max_chars)
+        if decrypt_configured:
+            result["decrypted_cells"] = decrypted_cells
+            result["undecryptable_cells"] = undecryptable_cells
+
+        raw_path = try_save_raw(
+            "enclave_sql_query",
+            {"source": source, "sql": sql, "columns": columns, "rows": rows},
         )
-        return _format_result(source, columns, rows, truncated, source_config.cell_max_chars)
+        if raw_path is not None:
+            result["raw_path"] = str(raw_path)
+            result["note"] = t("enclave.sql.raw_note")
+        return result
     except Exception as exc:  # noqa: BLE001 - map to a short, secret-free message
         return _tool_error(exc, source)
 

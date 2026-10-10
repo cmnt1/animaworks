@@ -12,15 +12,14 @@ flowchart LR
     S --> G[隔離側 gateway]
     G --> A[entry anima]
     A -->|enclave_records_search / get| D[(設定済み JSONL)]
-    D --> L[既知値台帳]
+    A -->|取得結果| R[(隔離 raw ディレクトリ)]
     A -->|回答| E[egress パイプライン]
-    L --> E
     E -->|検査済み facts| G
     G -->|監査 ID と facts| H
     E --> Q[(監査ログ)]
 ```
 
-隔離側の `enclave_records_search` と `enclave_records_get` は設定済みデータセットだけを読み、返すレコードの `sensitive_fields` を既知値台帳へ登録してから応答する。データセットのパスは `ANIMAWORKS_DATA_DIR` 内に制限される。ホスト側には JSONL の本文を返さず、Web UI には接続状態と当日の成功・遮断件数だけを表示する。
+隔離側の `enclave_records_search` と `enclave_records_get` は設定済みデータセットだけを読み、取得レコードと各種ツールの全文を `raw_dir` に保存して `raw_path` を返す。検索結果は `records`、単件取得結果は `record` に格納される。保存先は既定で `ANIMAWORKS_DATA_DIR/raw/YYYYMMDD`、ディレクトリ mode `0700`・ファイル mode `0600` である。データセットのパスは `ANIMAWORKS_DATA_DIR` 内に制限される。ホスト側には JSONL の本文を返さず、Web UI には接続状態と当日の成功・遮断件数だけを表示する。
 
 ## OS ユーザーとグループ
 
@@ -50,6 +49,7 @@ id -u "$HOST_USER"
 {
   "enclave": {
     "enabled": true,
+    "raw_dir": "raw",
     "name": "saas-data",
     "socket_path": "/run/animaworks-enclave/aw-enclave.sock",
     "socket_group": "animaworks-enclave",
@@ -62,21 +62,16 @@ id -u "$HOST_USER"
       "customers": {
         "path": "data/customers.jsonl",
         "id_field": "customer_id",
-        "sensitive_fields": ["name", "kana", "address", "phone", "email"],
         "searchable_fields": ["customer_id", "name", "kana", "email"]
       },
       "tickets": {
         "path": "data/tickets.jsonl",
         "id_field": "ticket_id",
-        "sensitive_fields": ["customer_id", "body"],
         "searchable_fields": ["ticket_id", "customer_id", "category", "body"]
       }
     },
     "egress": {
-      "stages": [
-        {"type": "known_values", "sources": []},
-        {"type": "masker", "profile": "default"}
-      ]
+      "stages": [{"type": "masker", "profile": "default"}]
     }
   }
 }
@@ -157,7 +152,7 @@ animaworks enclave doctor --json
 animaworks enclave status
 ```
 
-`status` は当日の成功・遮断件数だけを出力し、質問や回答の本文を表示しない。egress 監査ログは `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`、既知値台帳は `~/.animaworks/enclave/ledger/known_values.jsonl` に保存される。監査ログには処理対象の facts が含まれるため、ファイルと親ディレクトリのアクセス権を維持し、隔離環境外へコピーしない。
+`status` は当日の成功・遮断件数だけを出力し、質問や回答の本文を表示しない。egress 監査ログは `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`、取得結果の全文は `~/.animaworks/raw/YYYYMMDD/` に保存される。監査ログと raw ファイルには処理対象の facts や生データが含まれるため、アクセス権を維持し、隔離環境外へコピーしない。
 
 ## 実データ源の接続
 
@@ -165,7 +160,7 @@ animaworks enclave status
 
 ### 秘密の置き方
 
-DB パスワードと AWS アクセスキーは、`enclave.secrets_dir` か systemd の `LoadCredential=` で隔離プロセスにだけ渡します。秘密ファイルは root 所有・`0600` にしてください。パスワードの漏えいを防ぐため、設定ファイルに平文で書いてはいけません。
+DB パスワード、AWS アクセスキー、Laravel APP_KEY は、`enclave.secrets_dir` か systemd の `LoadCredential=` で隔離プロセスにだけ渡します。秘密ファイルは root 所有・`0600` にしてください。秘密の値を設定ファイルに平文で書いてはいけません。Laravel APP_KEY のファイルは 1 行 1 鍵にし、現行鍵を先頭、旧鍵を後続行に置きます。
 
 - systemd を使う場合: `animaworks-enclave@.service` の `LoadCredential=` で `/etc/credstore/animaworks-enclave/<name>/db-password` などを読み込み、`$CREDENTIALS_DIRECTORY` から読めるようにします。
 - 別のディレクトリを `enclave.secrets_dir` に指定した場合も同じ形式で、名前をファイル名にした値を配置します。
@@ -196,7 +191,8 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
         "max_rows": 200,
         "timeout_s": 30,
         "cell_max_chars": 2000,
-        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "app_key_secret": "laravel-app-keys",
+        "decrypt_columns": ["^request$", "^body$", "^title$"],
         "tunnel": {
           "type": "ssm_port_forward",
           "region": "example-region-1",
@@ -211,7 +207,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 }
 ```
 
-`ledger_exempt_columns` は正規表現のリストで、**出口で伏字にしない列（ID・状態など）**を指定します。ここで指定した列の値は既知値台帳へ積まれません。残りの文字列セルは、数値・ISO 日時・真偽値だけのものを除いて、結果を返す前に既知値台帳へ登録され、回答に再出現したときに伏字になります。SSL は既定で必須です。RDS の CA を使う場合は `ssl_ca` に CA のパス、ホスト名検証の無効化が必要なら `ssl_verify_identity: false`（既定）のままトンネル越しのためホスト名一致しない点を考慮してください。
+`app_key_secret` は Laravel の APP_KEY を 1 行 1 鍵で保存した秘密ファイル名です。`base64:` 形式と UTF-8 の鍵を扱い、先頭行を現行鍵、後続行を旧鍵として試します。`decrypt_columns` は結果列名（alias 適用後）に `re.search` で照合する正規表現です。対応する列の文字列セルは Laravel AES-256-CBC 形式の復号を試し、復号できない値はそのまま返します。SQL の取得行は復号後・セル切り詰め前に raw ファイルへ保存され、ツール結果の `raw_path` から全文を Read できます。SSL は既定で必須です。RDS の CA を使う場合は `ssl_ca` に CA のパス、ホスト名検証の無効化が必要なら `ssl_verify_identity: false`（既定）のままトンネル越しのためホスト名一致しない点を考慮してください。
 
 ### doctor の見方
 
@@ -240,15 +236,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
         "pi_resource_id": "db-example-resource",
         "rds_instance_id": "db-example-instance",
         "s3_buckets": ["example-placeholder-bucket"],
-        "max_bytes": 200000,
-        "ledger_register": true,
-        "ledger_exempt_keys": [
-          "level", "timestamp", "time", "message_type", "message", "msg",
-          "error", "exception", "stack_trace", "status", "method", "path",
-          "route", "duration", "request_id", "requestid", "req_id", "reqid",
-          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
-          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
-        ]
+        "max_bytes": 200000
       }
     }
   }
@@ -261,9 +249,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 {"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
 ```
 
-`log_groups` は完全一致か、末尾の `*` による前方一致で許可します。PI・RDS の各ツールはそれぞれ設定されたリソース ID だけを使い、S3 は `s3_buckets` に列挙したバケットだけにアクセスします。時刻は ISO8601 または `-1h` / `-24h` の相対指定です。Logs Insights クエリは最大 60 秒ポーリングし、各ツールの返却テキストは `max_bytes` で制限されます。テキスト以外、または上限を超える S3 オブジェクトは本文をツール応答に含めず、隔離 data directory の `enclave/downloads/<bucket>/<key-sha256>` に mode `0600` で保存します。
-
-`ledger_register` が有効でも、自由文すべてを既知値台帳へ登録するわけではありません。JSON として解釈できるログの各行は、`ledger_exempt_keys` に含まれない文字列値だけを登録します。PI の SQL 全文は文字列リテラル（`'...'`）の内容だけを登録します。JSON ではない通常のログ本文やその他の自由文は登録されず、出口の masker と `regex_denylist` が担います。このため、自由文の伏字化は既知値台帳だけでは保証されません。`ledger_register: false` にすると AWS 読み取り結果の登録を無効化できます。
+`log_groups` は完全一致か、末尾の `*` による前方一致で許可します。PI・RDS の各ツールはそれぞれ設定されたリソース ID だけを使い、S3 は `s3_buckets` に列挙したバケットだけにアクセスします。時刻は ISO8601 または `-1h` / `-24h` の相対指定です。Logs Insights クエリは最大 60 秒ポーリングし、各ツールの返却テキストは `max_bytes` で制限されます。AWS ツールは切り詰め前の全文・レコードを `raw_dir` に保存し、結果の `raw_path` から読めます。テキスト以外、または上限を超える S3 オブジェクトは本文をツール応答に含めず、既存の `enclave/downloads/<bucket>/<key-sha256>` にも mode `0600` で保存します。
 
 AWS ソースの `doctor` 検査は `aws_sources.<name>.secret` と `.deps`（`boto3`）を確認します。実 AWS へ接続せず、秘密の存在と SDK の import 可否だけを調べます。
 

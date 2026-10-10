@@ -69,14 +69,15 @@ class _S3Body(io.BytesIO):
     pass
 
 
-def test_aws_source_config_defaults_and_validation() -> None:
-    config = EnclaveConfig.model_validate({"aws_sources": {"logs": _source()}})
+def test_aws_source_config_defaults_and_ignores_legacy_ledger_fields() -> None:
+    legacy_source = _source(ledger_register=False, ledger_exempt_keys=["timestamp"])
+    config = EnclaveConfig.model_validate({"aws_sources": {"logs": legacy_source}})
     source = config.aws_sources["logs"]
 
     assert source.max_bytes == 200_000
-    assert source.ledger_register is True
-    assert "timestamp" in source.ledger_exempt_keys
     assert source.log_groups == ["/example/application/*"]
+    assert not hasattr(source, "ledger_register")
+    assert not hasattr(source, "ledger_exempt_keys")
     with pytest.raises(ValueError):
         EnclaveAwsSourceConfig(region="example-region-1", aws_secret="secret", max_bytes=0)
 
@@ -124,7 +125,9 @@ def test_aws_session_uses_secret_credentials_only(monkeypatch: pytest.MonkeyPatc
     }
 
 
-def test_logs_query_polls_and_records_structured_values(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_logs_query_polls_and_saves_full_rows_before_byte_truncation(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     message = json.dumps(
         {"email": "person@example.invalid", "status": "ok", "message": "free-form text"}, ensure_ascii=False
     )
@@ -143,7 +146,7 @@ def test_logs_query_polls_and_records_structured_values(data_dir: Path, monkeypa
             },
         ]
     )
-    _write_config(data_dir, {"logs": _source()})
+    _write_config(data_dir, {"logs": _source(max_bytes=40)})
     _patch_clients(monkeypatch, logs=logs)
     monkeypatch.setattr(enclave_aws.time, "sleep", lambda _seconds: None)
 
@@ -158,13 +161,13 @@ def test_logs_query_polls_and_records_structured_values(data_dir: Path, monkeypa
 
     assert isinstance(result, dict)
     assert result["status"] == "Complete"
-    assert result["truncated"] is False
+    assert result["truncated"] is True
     assert len(logs.query_requests) == 3
     assert logs.start_request is not None
     assert logs.start_request["startTime"] < logs.start_request["endTime"]
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    values = {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()}
-    assert values == {"person@example.invalid"}
+    raw_path = Path(result["raw_path"])
+    assert "person@example.invalid" in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_logs_query_rejects_source_command_that_could_escape_log_group_allowlist(
@@ -191,9 +194,7 @@ def test_logs_query_rejects_unconfigured_log_group_before_aws_call(
     assert "許可" in result or "allowed" in result
 
 
-def test_logs_filter_uses_milliseconds_and_only_ledgers_json_message(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_logs_filter_saves_full_events_before_byte_truncation(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     event_message = json.dumps(
         {"record_value": "structured-secret", "status": "ok", "message": "free text"}, ensure_ascii=False
     )
@@ -216,7 +217,7 @@ def test_logs_filter_uses_milliseconds_and_only_ledgers_json_message(
             }
 
     logs = Logs()
-    _write_config(data_dir, {"logs": _source()})
+    _write_config(data_dir, {"logs": _source(max_bytes=40)})
     _patch_clients(monkeypatch, logs=logs)
 
     result = enclave_aws.enclave_logs_filter("logs", "/example/application/worker", "", "-1h", "-1m", limit=20)
@@ -227,9 +228,9 @@ def test_logs_filter_uses_milliseconds_and_only_ledgers_json_message(
     assert logs.request is not None
     assert logs.request["endTime"] > logs.request["startTime"]
     assert "filterPattern" not in logs.request
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    values = {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()}
-    assert values == {"structured-secret"}
+    raw_path = Path(result["raw_path"])
+    assert "structured-secret" in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_performance_insights_top_sql_uses_configured_resource_and_caps_response(
@@ -259,8 +260,9 @@ def test_performance_insights_top_sql_uses_configured_resource_and_caps_response
     assert pi.request["Metric"] == "db.load.avg"
     assert pi.request["GroupBy"] == {"Group": "db.sql"}
     assert pi.request["MaxResults"] == 5
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    assert {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()} == {"sql-literal"}
+    raw_path = Path(result["raw_path"])
+    assert "sql-literal" in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_performance_insights_rejects_limit_above_api_maximum(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,9 +275,7 @@ def test_performance_insights_rejects_limit_above_api_maximum(data_dir: Path, mo
     assert "invalid" in result.casefold() or "無効" in result
 
 
-def test_performance_insights_detail_ledgers_only_sql_string_literals(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_performance_insights_detail_saves_full_response(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sql = "SELECT * FROM logs WHERE address = 'sample street' AND owner = 'O''Reilly' /* 'ignore me' */"
 
     class Pi:
@@ -299,14 +299,12 @@ def test_performance_insights_detail_ledgers_only_sql_string_literals(
         "Group": "db.sql",
         "GroupIdentifier": "sql-group",
     }
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    values = {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()}
-    assert values == {"sample street", "O'Reilly"}
+    raw_path = Path(result["raw_path"])
+    assert sql in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
-def test_rds_logs_returns_portion_and_ledgers_only_structured_json(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rds_logs_returns_portion_and_saves_full_text(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class Rds:
         request: dict[str, Any] | None = None
 
@@ -319,7 +317,7 @@ def test_rds_logs_returns_portion_and_ledgers_only_structured_json(
             }
 
     rds = Rds()
-    _write_config(data_dir, {"logs": _source()})
+    _write_config(data_dir, {"logs": _source(max_bytes=20)})
     _patch_clients(monkeypatch, rds=rds)
 
     result = enclave_aws.enclave_rds_logs("logs", log_file_name="error.log", lines=12)
@@ -332,9 +330,9 @@ def test_rds_logs_returns_portion_and_ledgers_only_structured_json(
         "LogFileName": "error.log",
         "NumberOfLines": 12,
     }
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    values = {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()}
-    assert values == {"person@example.invalid"}
+    raw_path = Path(result["raw_path"])
+    assert "person@example.invalid" in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_rds_logs_can_list_configured_instance_files(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -349,7 +347,7 @@ def test_rds_logs_can_list_configured_instance_files(data_dir: Path, monkeypatch
             }
 
     rds = Rds()
-    _write_config(data_dir, {"logs": _source()})
+    _write_config(data_dir, {"logs": _source(max_bytes=20)})
     _patch_clients(monkeypatch, rds=rds)
 
     result = enclave_aws.enclave_rds_logs("logs", lines=5)
@@ -358,10 +356,14 @@ def test_rds_logs_can_list_configured_instance_files(data_dir: Path, monkeypatch
     assert result["next_page_available"] is True
     assert result["marker"] == "more"
     assert rds.request == {"DBInstanceIdentifier": "db-example-instance", "MaxRecords": 20}
-    assert '"LogFileName":"error.log"' in result["text"]
+    assert result["text"].startswith('{"LogFileName":"')
+    assert len(result["text"].encode("utf-8")) <= 20
+    raw_path = Path(result["raw_path"])
+    assert "error.log" in raw_path.read_text(encoding="utf-8")
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
-def test_s3_small_text_is_returned_and_structured_value_registered(
+def test_s3_small_text_is_returned_and_saved_without_byte_truncation(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = _S3Body(b'{"name":"sample-value","status":"ok"}')
@@ -384,9 +386,10 @@ def test_s3_small_text_is_returned_and_structured_value_registered(
     assert result["text"] == '{"name":"sample-value","status":"ok"}'
     assert result["truncated"] is False
     assert body.closed
-    ledger = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    values = {json.loads(line)["value"] for line in ledger.read_text(encoding="utf-8").splitlines()}
-    assert values == {"sample-value"}
+    raw_path = Path(result["raw_path"])
+    assert raw_path.suffix == ".json"
+    assert raw_path.read_bytes() == b'{"name":"sample-value","status":"ok"}'
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_s3_binary_is_saved_under_hashed_contained_mode_0600_path(
@@ -421,6 +424,10 @@ def test_s3_binary_is_saved_under_hashed_contained_mode_0600_path(
     assert target.resolve().is_relative_to(data_dir.resolve())
     assert target.read_bytes() == payload
     assert target.stat().st_mode & 0o777 == 0o600
+    raw_path = Path(result["raw_path"])
+    assert raw_path.suffix == ".wav"
+    assert raw_path.read_bytes() == payload
+    assert raw_path.stat().st_mode & 0o777 == 0o600
     assert result["text"] == ""
     assert body.closed
 
@@ -447,6 +454,10 @@ def test_s3_object_larger_than_max_bytes_is_saved_without_returning_body(
     assert isinstance(result, dict)
     assert result["text"] == ""
     assert Path(result["saved_path"]).read_bytes() == payload
+    raw_path = Path(result["raw_path"])
+    assert raw_path.suffix == ".txt"
+    assert raw_path.read_bytes() == payload
+    assert raw_path.stat().st_mode & 0o777 == 0o600
     assert result["truncated"] is False
     assert body.closed
 
@@ -465,7 +476,7 @@ def test_s3_list_uses_allowlisted_bucket_and_reports_more_pages(
             }
 
     s3 = S3()
-    _write_config(data_dir, {"logs": _source()})
+    _write_config(data_dir, {"logs": _source(max_bytes=20)})
     _patch_clients(monkeypatch, s3=s3)
 
     result = enclave_aws.enclave_s3_list("logs", "example-placeholder-bucket", prefix="prefix/", limit=3)
@@ -475,6 +486,9 @@ def test_s3_list_uses_allowlisted_bucket_and_reports_more_pages(
     assert result["next_page_available"] is True
     assert result["truncated"] is True
     assert s3.request == {"Bucket": "example-placeholder-bucket", "Prefix": "prefix/", "MaxKeys": 3}
+    raw_path = Path(result["raw_path"])
+    assert json.loads(raw_path.read_text(encoding="utf-8")) == [{"Key": "prefix/item.txt", "Size": 3}]
+    assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_aws_service_errors_never_return_exception_or_secret_text(
@@ -501,16 +515,3 @@ def test_parse_time_accepts_now() -> None:
 
     assert abs(_parse_time("now") - int(time.time())) <= 2
     assert _parse_time("NOW") >= _parse_time("-1h")
-
-
-def test_numbers_and_timestamps_are_not_registered(monkeypatch) -> None:
-    from types import SimpleNamespace
-
-    import core.enclave.egress.ledger as ledger
-    from core.integrations import enclave_aws
-
-    captured: list[str] = []
-    monkeypatch.setattr(ledger, "record_known_values", lambda _d, values, source: captured.extend(values))
-    config = SimpleNamespace(ledger_register=True)
-    enclave_aws._record_values("prod", config, ["12", "3.5", "2026-10-10T07:00:00Z", "true", "Taro Example"])
-    assert captured == ["Taro Example"]

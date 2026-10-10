@@ -10,30 +10,17 @@ whose ``reason`` (a stable, data-free category) makes the pipeline fail closed.
 
 from __future__ import annotations
 
-import csv
 import json
-import logging
 import re
 import subprocess
-import unicodedata
 from pathlib import Path
 from typing import Any
 
-from core.enclave.egress.config import (
-    CommandStage,
-    KnownValuesStage,
-    MaskerStage,
-    PseudonymizeStage,
-    RegexDenylistStage,
-    Stage,
-)
+from core.enclave.egress.config import CommandStage, MaskerStage, PseudonymizeStage, RegexDenylistStage, Stage
 from core.enclave.egress.fs import ensure_dir_0700
 from core.enclave.egress.masker import MaskerUnavailableError, mask_text
-from core.enclave.egress.masker.facts import _kata_to_hira, normalize_known_value
 from core.enclave.egress.models import Fact
 from core.platform.atomic_io import atomic_write_json
-
-logger = logging.getLogger(__name__)
 
 
 class EgressStageError(Exception):
@@ -131,228 +118,6 @@ def _run_pseudonymize(
     new_facts, total = _map_facts(facts, _apply_patterns)
     atomic_write_json(map_path, mapping, mode=0o600, ensure_ascii=False)
     return new_facts, total
-
-
-# ---------------------------------------------------------------------------
-# known_values
-# ---------------------------------------------------------------------------
-
-
-def _normalize_known(value: str) -> str:
-    """Normalize a known value for matching (shared with the masker module)."""
-    return normalize_known_value(value)
-
-
-def _known_variants(raw: str, min_length: int, ngram: int):
-    norm = _normalize_known(raw)
-    if len(norm) < min_length or not norm:
-        return
-    # A value longer than the n-gram is fully covered by its overlapping n-grams,
-    # and overlapping spans merge, so the whole value adds no redaction. Skipping
-    # it keeps the number of distinct match lengths small for long free text.
-    if not (ngram > 0 and len(norm) > ngram):
-        yield norm
-    if len(norm) >= ngram and ngram > 0:
-        for i in range(len(norm) - ngram + 1):
-            yield norm[i : i + ngram]
-
-
-def _add_known(known: set[str], raw: str, min_length: int, ngram: int) -> None:
-    """Compatibility helper that expands a raw value into a flat known set."""
-    known.update(_known_variants(raw, min_length, ngram))
-
-
-def _add_known_buckets(known: dict[int, set[str]], raw: str, min_length: int, ngram: int) -> None:
-    """Add normalized variants to buckets keyed by their exact match length."""
-    for value in _known_variants(raw, min_length, ngram):
-        known.setdefault(len(value), set()).add(value)
-
-
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(raw, list):
-        return [r for r in raw if isinstance(r, dict)]
-    if isinstance(raw, dict):
-        for key in ("records", "data", "items"):
-            if isinstance(raw.get(key), list):
-                return [r for r in raw[key] if isinstance(r, dict)]
-        return []
-    return []
-
-
-def _collect_source_values(record: dict[str, Any], fields: list[str], out: list[str]) -> None:
-    if fields:
-        for field in fields:
-            value = record.get(field)
-            if isinstance(value, str):
-                out.append(value)
-    else:
-        for value in record.values():
-            if isinstance(value, str):
-                out.append(value)
-
-
-def _read_source_values(path: Path, fmt: str, fields: list[str]) -> list[str]:
-    values: list[str] = []
-    if fmt == "jsonl":
-        with path.open(encoding="utf-8") as stream:
-            for line in stream:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except Exception:
-                    continue
-                if isinstance(record, dict):
-                    _collect_source_values(record, fields, values)
-    elif fmt == "csv":
-        with path.open(encoding="utf-8", newline="") as stream:
-            reader = csv.DictReader(stream)
-            for record in reader:
-                if record is None:
-                    continue
-                _collect_source_values(record, fields, values)
-    elif fmt == "json":
-        for record in _load_json_records(path):
-            _collect_source_values(record, fields, values)
-    else:
-        raise EgressStageError("known_values_bad_format")
-    return values
-
-
-def _run_known_values(
-    stage: KnownValuesStage,
-    facts: list[Fact],
-    *,
-    data_dir: Path,
-) -> tuple[list[Fact], int]:
-    min_length = stage.min_length
-    ngram = stage.ngram
-    known: dict[int, set[str]] = {}
-
-    for source in stage.sources:
-        path = data_dir / source.path
-        if not path.exists():
-            raise EgressStageError("known_values_source_missing")
-        for value in _read_source_values(path, source.format, source.fields):
-            _add_known_buckets(known, value, min_length, ngram)
-
-    ledger_path = data_dir / "enclave" / "ledger" / "known_values.jsonl"
-    if ledger_path.exists():
-        with ledger_path.open(encoding="utf-8") as stream:
-            for line in stream:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    # A skipped line could hide a value that must be redacted.
-                    raise EgressStageError("known_values_ledger_corrupt") from exc
-                value = record.get("value") if isinstance(record, dict) else None
-                if isinstance(value, str):
-                    _add_known_buckets(known, value, min_length, ngram)
-
-    if not known:
-        return facts, 0
-
-    def _redact(text: str) -> tuple[str, int]:
-        return _redact_known_patterns(text, known)
-
-    new_facts, total = _map_facts(facts, _redact)
-    return new_facts, total
-
-
-def _normalize_with_positions(text: str) -> tuple[str, list[int]]:
-    chars: list[str] = []
-    positions: list[int] = []
-    for idx, ch in enumerate(text):
-        for norm in unicodedata.normalize("NFKC", ch):
-            if norm.isspace():
-                continue
-            chars.append(_kata_to_hira(norm).lower())
-            positions.append(idx)
-    return "".join(chars), positions
-
-
-def _redact_known_patterns(text: str, known: dict[int, set[str]]) -> tuple[str, int]:
-    """Find known values without building one enormous regular expression.
-
-    The longest matching value is selected at every normalized character
-    position, matching the ordered alternation used by the former regex path.
-    The resulting source spans are merged with the same overlap/touch rule.
-    """
-    normalized, positions = _normalize_with_positions(text)
-    if not normalized:
-        return text, 0
-
-    lengths = sorted((length for length in known if length > 0), reverse=True)
-    if not lengths:
-        return text, 0
-
-    spans: list[tuple[int, int]] = []
-    text_length = len(normalized)
-    for start in range(text_length):
-        remaining = text_length - start
-        for length in lengths:
-            if length > remaining:
-                continue
-            if normalized[start : start + length] in known[length]:
-                spans.append((positions[start], positions[start + length - 1] + 1))
-                break
-
-    merged: list[tuple[int, int]] = []
-    for start, end in spans:
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-
-    if not merged:
-        return text, 0
-
-    out: list[str] = []
-    last = 0
-    for start, end in merged:
-        out.append(text[last:start])
-        out.append("[REDACTED]")
-        last = end
-    out.append(text[last:])
-    return "".join(out), len(merged)
-
-
-def _redact_known(text: str, regex: re.Pattern) -> tuple[str, int]:
-    """Legacy regex implementation retained for differential regression tests."""
-    normalized, positions = _normalize_with_positions(text)
-    if not normalized:
-        return text, 0
-
-    spans: list[tuple[int, int]] = []
-    for match in regex.finditer(normalized):
-        ns, ne = match.span(1)
-        if ns >= ne:
-            continue
-        spans.append((positions[ns], positions[ne - 1] + 1))
-
-    merged: list[tuple[int, int]] = []
-    for start, end in sorted(spans):
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-
-    if not merged:
-        return text, 0
-
-    out: list[str] = []
-    last = 0
-    for start, end in merged:
-        out.append(text[last:start])
-        out.append("[REDACTED]")
-        last = end
-    out.append(text[last:])
-    return "".join(out), len(merged)
 
 
 # ---------------------------------------------------------------------------
@@ -462,8 +227,6 @@ def run_stage(
     """Run one configured stage over *facts* and return (new_facts, count)."""
     if isinstance(stage, PseudonymizeStage):
         return _run_pseudonymize(stage, facts, data_dir=data_dir, case_id=case_id)
-    if isinstance(stage, KnownValuesStage):
-        return _run_known_values(stage, facts, data_dir=data_dir)
     if isinstance(stage, MaskerStage):
         return _run_masker(stage, facts)
     if isinstance(stage, RegexDenylistStage):

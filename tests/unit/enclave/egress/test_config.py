@@ -30,14 +30,29 @@ def test_all_stage_types_parse() -> None:
         {
             "stages": [
                 {"type": "pseudonymize_ids", "patterns": [{"name": "x", "regex": r"\bx\d{2}\b", "prefix": "P"}]},
-                {"type": "known_values", "sources": [], "min_length": 2, "ngram": 8},
                 {"type": "masker", "profile": "default"},
                 {"type": "regex_denylist", "patterns": [{"regex": r"\d+", "action": "redact"}]},
                 {"type": "command", "argv": ["true"], "timeout_s": 5},
             ]
         }
     )
-    assert len(cfg.stages) == 5
+    assert len(cfg.stages) == 4
+
+
+def test_legacy_known_values_stage_is_ignored_with_one_warning(caplog: pytest.LogCaptureFixture) -> None:
+    from core.enclave.egress import config as egress_config
+
+    egress_config._WARNED_LEGACY_STAGE = False
+    old_config = {"stages": [{"type": "known_values", "sources": []}]}
+
+    parsed = load_egress_config(old_config)
+    assert len(parsed.stages) == 1
+    assert parsed.stages[0].type == "masker"
+    assert caplog.text.count("Ignoring legacy enclave egress known_values stage configuration") == 1
+
+    caplog.clear()
+    load_egress_config(old_config)
+    assert "Ignoring legacy enclave egress" not in caplog.text
 
 
 def test_empty_stages_is_error() -> None:

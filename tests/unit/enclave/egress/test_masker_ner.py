@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from core.enclave.egress.masker import MaskerUnavailableError, NERMasker
+from core.enclave.egress.masker import MaskerUnavailableError, NERMasker, mask_text
 
 
 class _Node:
@@ -176,3 +176,20 @@ def test_real_fugashi_masks_person_and_place() -> None:
     assert "[MASK-LOC]" in result
     assert "田中" not in result
     assert "東京" not in result
+
+
+def test_default_masker_preserves_source_paths_and_code_identifiers() -> None:
+    text = "原因は app/Services/AI/AIRequestBuilder.php:101 の分岐で、few_shot_count が 0 のとき system_body が空になる"
+    try:
+        result = mask_text("default", text)
+    except MaskerUnavailableError as exc:
+        if "not available" in str(exc):
+            pytest.skip("fugashi / ipadic are not available")
+        raise
+
+    for code_token in (
+        "app/Services/AI/AIRequestBuilder.php:101",
+        "few_shot_count",
+        "system_body",
+    ):
+        assert code_token in result

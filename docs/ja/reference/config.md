@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 6852baad82d3a1c1d8470cedadbc3ab16dac5005aa681e9e4715de8ee8d1cb8d -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: da74430e9dcb018eb9d74fd74bc8eaa2ff172b1cf932f7e95b3fc097fb496855 -->
 
 # 設定リファレンス
 
@@ -815,7 +815,6 @@
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
-| `enclave.datasets.sensitive_fields` | `list[str]` | `[]` | 返却前に既知値台帳へ登録するフィールド。 |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 部分一致検索を許可するフィールド。 |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
@@ -835,10 +834,12 @@
 | `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
+| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
-| `enclave.sql_sources.ledger_exempt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
+| `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -847,9 +848,8 @@
 | `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
 | `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
-| `enclave.aws_sources.ledger_register` | `bool` | `true` | — |
-| `enclave.aws_sources.ledger_exempt_keys` | `list[str]` | `…` | — |
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
+| `enclave.raw_dir` | `str` | `"raw"` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
 
 ### `enclaves`

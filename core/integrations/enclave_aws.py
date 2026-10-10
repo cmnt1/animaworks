@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.enclave.raw_store import try_save_raw
 from core.i18n import t
 from core.integrations._base import dispatch_by_table
 
@@ -37,10 +38,6 @@ _MAX_LOG_LIMIT = 10_000
 _MAX_PI_LIMIT = 25  # RDS Performance Insights MaxResults API maximum.
 _MAX_S3_LIST_LIMIT = 1_000
 _RELATIVE_TIME_RE = re.compile(r"^-(\d+)([smhd])$", re.IGNORECASE)
-_SQL_START_RE = re.compile(
-    r"^\s*(?:SELECT|WITH|INSERT|UPDATE|DELETE|MERGE|CALL|REPLACE|CREATE|ALTER|DROP|SHOW|DESCRIBE|EXPLAIN)\b",
-    re.IGNORECASE,
-)
 
 
 class _AwsToolError(ValueError):
@@ -191,90 +188,22 @@ def _text_result(
     source_config: Any,
     text: str,
     *,
+    tool: str,
+    raw_payload: Any | None = None,
+    raw_suffix: str = "json",
     extra: dict[str, Any] | None = None,
     truncated: bool = False,
 ) -> dict[str, Any]:
+    raw_path = try_save_raw(tool, text if raw_payload is None else raw_payload, suffix=raw_suffix)
     bounded, text_truncated = _bounded_text(text, source_config.max_bytes)
     result: dict[str, Any] = {"source": source_name}
     if extra:
         result.update(extra)
     result["text"] = bounded
     result["truncated"] = truncated or text_truncated
+    if raw_path is not None:
+        result["raw_path"] = str(raw_path)
     return result
-
-
-def _ledger_exempt_keys(source_config: Any) -> set[str]:
-    return {str(key).casefold() for key in source_config.ledger_exempt_keys}
-
-
-def _parse_json_string(value: str) -> Any | None:
-    stripped = value.lstrip()
-    if not stripped.startswith(("{", "[")):
-        return None
-    try:
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _collect_json_values(value: Any, exempt_keys: set[str], out: list[str]) -> None:
-    """Collect structured JSON string values, never free-form exempt fields."""
-    if isinstance(value, dict):
-        for key, child in value.items():
-            exempt = str(key).casefold() in exempt_keys
-            if isinstance(child, str):
-                nested = _parse_json_string(child)
-                if nested is not None:
-                    _collect_json_values(nested, exempt_keys, out)
-                elif not exempt and child:
-                    out.append(child)
-            elif not exempt and isinstance(child, (dict, list)):
-                _collect_json_values(child, exempt_keys, out)
-    elif isinstance(value, list):
-        for child in value:
-            _collect_json_values(child, exempt_keys, out)
-    elif isinstance(value, str) and value:
-        out.append(value)
-
-
-def _json_line_values(text: str, source_config: Any) -> list[str]:
-    """Extract ledger-safe values from JSON/JSONL object records only."""
-    values: list[str] = []
-    exempt_keys = _ledger_exempt_keys(source_config)
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(record, (dict, list)):
-            _collect_json_values(record, exempt_keys, values)
-    return values
-
-
-def _record_values(source_name: str, source_config: Any, values: list[str]) -> None:
-    if not source_config.ledger_register:
-        return
-    from core.integrations.enclave_sql import _is_boolean, _is_datetime, _is_numeric
-
-    # Counts, timestamps and flags are not personal data; registering them would
-    # redact ordinary numbers (e.g. an error count) from every later answer.
-    values = [
-        value
-        for value in values
-        if not (_is_numeric(value.strip()) or _is_datetime(value.strip().rstrip("Zz")) or _is_boolean(value))
-    ]
-    if not values:
-        return
-    from core.enclave.egress.ledger import record_known_values
-    from core.paths import get_data_dir
-
-    record_known_values(get_data_dir(), values, source=f"aws:{source_name}")
-
-
-def _record_json_lines(source_name: str, source_config: Any, text: str) -> None:
-    _record_values(source_name, source_config, _json_line_values(text, source_config))
 
 
 def _json_text(value: Any) -> str:
@@ -373,15 +302,12 @@ def enclave_logs_query(
 
         rows = _log_query_rows(result.get("results", []))
         text = "\n".join(_json_text(row) for row in rows)
-        values: list[str] = []
-        exempt_keys = _ledger_exempt_keys(source_config)
-        for row in rows:
-            _collect_json_values(row, exempt_keys, values)
-        _record_values(source, source_config, values)
         return _text_result(
             source,
             source_config,
             text,
+            tool="enclave_logs_query",
+            raw_payload=rows,
             extra={"query_id": query_id, "status": "Complete"},
             truncated=len(rows) >= limit,
         )
@@ -419,13 +345,14 @@ def enclave_logs_filter(
         events = response.get("events", []) if isinstance(response, dict) else []
         safe_events = [event for event in events if isinstance(event, dict)]
         text = "\n".join(_json_text(event) for event in safe_events)
-        _record_json_lines(source, source_config, text)
 
         next_token = response.get("nextToken") if isinstance(response, dict) else None
         return _text_result(
             source,
             source_config,
             text,
+            tool="enclave_logs_filter",
+            raw_payload=safe_events,
             extra={"next_page_available": bool(next_token)},
             truncated=bool(next_token),
         )
@@ -461,96 +388,18 @@ def enclave_pi_top_sql(
             MaxResults=limit,
         )
         text = _json_text(response)
-        _record_sql_values(source, source_config, response)
         next_token = response.get("NextToken") if isinstance(response, dict) else None
         return _text_result(
             source,
             source_config,
             text,
+            tool="enclave_pi_top_sql",
+            raw_payload=response,
             extra={"next_page_available": bool(next_token)},
             truncated=bool(next_token),
         )
     except Exception as exc:  # noqa: BLE001 - do not expose AWS responses or credentials
         return _tool_error(exc, source)
-
-
-def _looks_like_sql(value: str) -> bool:
-    candidate = value.lstrip().lstrip("\ufeff")
-    while True:
-        if candidate.startswith("/*"):
-            close = candidate.find("*/", 2)
-            if close < 0:
-                return False
-            candidate = candidate[close + 2 :].lstrip()
-            continue
-        if candidate.startswith(("--", "#")):
-            newline = candidate.find("\n")
-            if newline < 0:
-                return False
-            candidate = candidate[newline + 1 :].lstrip()
-            continue
-        return bool(_SQL_START_RE.match(candidate))
-
-
-def _iter_sql_texts(value: Any):
-    if isinstance(value, str):
-        if _looks_like_sql(value):
-            yield value
-    elif isinstance(value, dict):
-        for child in value.values():
-            yield from _iter_sql_texts(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _iter_sql_texts(child)
-
-
-def _sql_string_literals(sql: str) -> list[str]:
-    """Extract single-quoted SQL literals while skipping comments/identifiers."""
-    literals: list[str] = []
-    index = 0
-    length = len(sql)
-    while index < length:
-        if sql.startswith("--", index) or sql[index] == "#":
-            newline = sql.find("\n", index)
-            index = length if newline < 0 else newline + 1
-            continue
-        if sql.startswith("/*", index):
-            close = sql.find("*/", index + 2)
-            index = length if close < 0 else close + 2
-            continue
-        if sql[index] != "'":
-            index += 1
-            continue
-
-        index += 1
-        literal: list[str] = []
-        closed = False
-        while index < length:
-            char = sql[index]
-            if char == "\\" and index + 1 < length:
-                literal.append(sql[index + 1])
-                index += 2
-            elif char == "'":
-                if index + 1 < length and sql[index + 1] == "'":
-                    literal.append("'")
-                    index += 2
-                else:
-                    index += 1
-                    closed = True
-                    break
-            else:
-                literal.append(char)
-                index += 1
-        if closed:
-            value = "".join(literal)
-            if value:
-                literals.append(value)
-    return literals
-
-
-def _record_sql_values(source_name: str, source_config: Any, response: Any) -> None:
-    values = [literal for sql in _iter_sql_texts(response) for literal in _sql_string_literals(sql)]
-    _record_values(source_name, source_config, values)
 
 
 def enclave_pi_sql_detail(source: str, group_identifier: str) -> dict[str, Any] | str:
@@ -567,8 +416,13 @@ def enclave_pi_sql_detail(source: str, group_identifier: str) -> dict[str, Any] 
             Group="db.sql",
             GroupIdentifier=group_identifier,
         )
-        _record_sql_values(source, source_config, response)
-        return _text_result(source, source_config, _json_text(response))
+        return _text_result(
+            source,
+            source_config,
+            _json_text(response),
+            tool="enclave_pi_sql_detail",
+            raw_payload=response,
+        )
     except Exception as exc:  # noqa: BLE001 - do not expose AWS responses or credentials
         return _tool_error(exc, source)
 
@@ -607,6 +461,7 @@ def enclave_rds_logs(
             response = client.describe_db_log_files(**request)
             files = response.get("DescribeDBLogFiles", []) if isinstance(response, dict) else []
             records = [record for record in files[:lines] if isinstance(record, dict)]
+            raw_records = [record for record in files if isinstance(record, dict)]
             text = "\n".join(_json_text(record) for record in records)
             next_marker = response.get("Marker") if isinstance(response, dict) else None
             more_files = len(files) > lines
@@ -614,6 +469,8 @@ def enclave_rds_logs(
                 source,
                 source_config,
                 text,
+                tool="enclave_rds_logs",
+                raw_payload=raw_records,
                 extra={"marker": next_marker, "next_page_available": bool(next_marker)},
                 truncated=bool(next_marker) or more_files,
             )
@@ -629,13 +486,14 @@ def enclave_rds_logs(
         text = response.get("LogFileData", "") if isinstance(response, dict) else ""
         if not isinstance(text, str):
             text = ""
-        _record_json_lines(source, source_config, text)
         next_marker = response.get("Marker") if isinstance(response, dict) else None
         pending = bool(response.get("AdditionalDataPending")) if isinstance(response, dict) else False
         return _text_result(
             source,
             source_config,
             text,
+            tool="enclave_rds_logs",
+            raw_suffix="log",
             extra={"marker": next_marker, "additional_data_pending": pending},
             truncated=pending,
         )
@@ -695,6 +553,22 @@ def _save_s3_body(body: Any, target: Path, initial: bytes = b"") -> None:
             close()
 
 
+def _s3_raw_suffix(key: str, *, is_text: bool) -> str:
+    suffix = Path(key).suffix.lstrip(".")
+    if suffix:
+        return suffix
+    return "txt" if is_text else "bin"
+
+
+def _save_download_as_raw(path: Path, suffix: str) -> Path | None:
+    try:
+        with path.open("rb") as stream:
+            return try_save_raw("enclave_s3_get", stream, suffix=suffix)
+    except Exception as exc:
+        logger.warning("Could not read enclave S3 object for raw storage (%s)", type(exc).__name__)
+        return None
+
+
 def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
     """Read a small text object or save a non-text/large object inside enclave data."""
     body = None
@@ -719,7 +593,6 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
                 raise RuntimeError("invalid S3 response body")
             if len(raw) <= source_config.max_bytes:
                 text = raw.decode("utf-8", errors="replace")
-                _record_json_lines(source, source_config, text)
                 close = getattr(body, "close", None)
                 if callable(close):
                     close()
@@ -728,13 +601,16 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
                     source,
                     source_config,
                     text,
+                    tool="enclave_s3_get",
+                    raw_payload=raw,
+                    raw_suffix=_s3_raw_suffix(key, is_text=True),
                     extra={"bucket": bucket, "key": key, "content_type": content_type, "content_length": size},
                 )
             # The object changed after HEAD or exceeded its advertised size; preserve it locally.
             target, digest = _download_path(_get_data_dir(), bucket, key)
             _save_s3_body(body, target, raw)
             body = None
-            return {
+            result: dict[str, Any] = {
                 "source": source,
                 "bucket": bucket,
                 "key": key,
@@ -745,6 +621,10 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
                 "text": "",
                 "truncated": False,
             }
+            raw_path = _save_download_as_raw(target, _s3_raw_suffix(key, is_text=True))
+            if raw_path is not None:
+                result["raw_path"] = str(raw_path)
+            return result
 
         obj = client.get_object(Bucket=bucket, Key=key)
         body = obj.get("Body")
@@ -753,7 +633,7 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
         target, digest = _download_path(_get_data_dir(), bucket, key)
         _save_s3_body(body, target)
         body = None
-        return {
+        result = {
             "source": source,
             "bucket": bucket,
             "key": key,
@@ -764,6 +644,10 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
             "text": "",
             "truncated": False,
         }
+        raw_path = _save_download_as_raw(target, _s3_raw_suffix(key, is_text=is_text))
+        if raw_path is not None:
+            result["raw_path"] = str(raw_path)
+        return result
     except Exception as exc:  # noqa: BLE001 - do not expose AWS responses or credentials
         if body is not None:
             close = getattr(body, "close", None)
@@ -794,6 +678,8 @@ def enclave_s3_list(source: str, bucket: str, prefix: str = "", limit: int = 100
             source,
             source_config,
             text,
+            tool="enclave_s3_list",
+            raw_payload=entries,
             extra={"bucket": bucket, "key_count": len(entries), "next_page_available": has_more},
             truncated=has_more,
         )

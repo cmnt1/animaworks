@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.enclave.config import EnclaveDatasetConfig
+from core.enclave.raw_store import try_save_raw
 from core.i18n import t
 from core.integrations._base import dispatch_by_table
 
@@ -87,28 +88,6 @@ def _iter_records(path: Path, dataset_name: str) -> Iterator[dict[str, Any]]:
                 yield record
 
 
-def _register_sensitive_values(
-    data_dir: Path,
-    dataset_name: str,
-    dataset: EnclaveDatasetConfig,
-    records: list[dict[str, Any]],
-) -> None:
-    """Record the sensitive string values from returned records before release."""
-    values: list[str] = []
-    for record in records:
-        for field in dataset.sensitive_fields:
-            value = record.get(field)
-            if isinstance(value, str) and value:
-                values.append(value)
-            elif isinstance(value, list):
-                values.extend(item for item in value if isinstance(item, str) and item)
-
-    if values:
-        from core.enclave.egress.ledger import record_known_values
-
-        record_known_values(data_dir, values, source=f"dataset:{dataset_name}")
-
-
 def _tool_error(exc: Exception, dataset_name: str) -> str:
     if isinstance(exc, _EnclaveDisabledError):
         return t("enclave.records.only")
@@ -118,8 +97,8 @@ def _tool_error(exc: Exception, dataset_name: str) -> str:
     return t("enclave.records.unavailable")
 
 
-def enclave_records_search(dataset: str, query: str, limit: int = 20) -> list[dict[str, Any]] | str:
-    """Search configured searchable fields and return matching records."""
+def enclave_records_search(dataset: str, query: str, limit: int = 20) -> dict[str, Any] | str:
+    """Search configured searchable fields and save matching records privately."""
     if not isinstance(dataset, str) or not dataset:
         return t("enclave.records.dataset_required")
     if not isinstance(query, str) or not query.strip():
@@ -128,7 +107,7 @@ def enclave_records_search(dataset: str, query: str, limit: int = 20) -> list[di
         return t("enclave.records.limit_integer")
 
     try:
-        data_dir, path, dataset_config = _dataset_context(dataset)
+        _, path, dataset_config = _dataset_context(dataset)
         needle = query.strip().casefold()
         matches: list[dict[str, Any]] = []
         for record in _iter_records(path, dataset):
@@ -139,8 +118,11 @@ def enclave_records_search(dataset: str, query: str, limit: int = 20) -> list[di
                     break
             if len(matches) >= max(1, min(limit, _MAX_SEARCH_LIMIT)):
                 break
-        _register_sensitive_values(data_dir, dataset, dataset_config, matches)
-        return matches
+        result: dict[str, Any] = {"records": matches}
+        raw_path = try_save_raw("enclave_records_search", matches)
+        if raw_path is not None:
+            result["raw_path"] = str(raw_path)
+        return result
     except Exception as exc:
         return _tool_error(exc, dataset)
 
@@ -153,18 +135,21 @@ def enclave_records_get(dataset: str, record_id: str) -> dict[str, Any] | str:
         return t("enclave.records.id_required")
 
     try:
-        data_dir, path, dataset_config = _dataset_context(dataset)
+        _, path, dataset_config = _dataset_context(dataset)
         for record in _iter_records(path, dataset):
             value = record.get(dataset_config.id_field)
             if isinstance(value, (str, int, float)) and str(value) == record_id:
-                _register_sensitive_values(data_dir, dataset, dataset_config, [record])
-                return record
+                result: dict[str, Any] = {"record": record}
+                raw_path = try_save_raw("enclave_records_get", record)
+                if raw_path is not None:
+                    result["raw_path"] = str(raw_path)
+                return result
         return t("enclave.records.not_found", record_id=record_id)
     except Exception as exc:
         return _tool_error(exc, dataset)
 
 
-def _dispatch_search(args: dict[str, Any]) -> list[dict[str, Any]] | str:
+def _dispatch_search(args: dict[str, Any]) -> dict[str, Any] | str:
     return enclave_records_search(
         dataset=args.get("dataset", ""),
         query=args.get("query", ""),

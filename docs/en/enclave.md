@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=6180702228ee9130f88f8ee743f43290528d080237780c8224d9faa4d5a3b5bf generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=e0e849bf679433cb0719115b1647f8ecdaab5449752603969f8a9185295cc2de generated=2026-10-10 engine=luna model=gpt-6-luna translator=2 -->
 
 > Confirmed commit: f448d7b0
 
@@ -15,15 +15,14 @@ flowchart LR
     S --> G[隔離側 gateway]
     G --> A[entry anima]
     A -->|enclave_records_search / get| D[(設定済み JSONL)]
-    D --> L[既知値台帳]
+    A -->|取得結果| R[(隔離 raw ディレクトリ)]
     A -->|回答| E[egress パイプライン]
-    L --> E
     E -->|検査済み facts| G
     G -->|監査 ID と facts| H
     E --> Q[(監査ログ)]
 ```
 
-The `enclave_records_search` and `enclave_records_get` on the isolated side read only the configured datasets, register the `sensitive_fields` of returned records in the known-value ledger, and then respond. Dataset paths are restricted to within `ANIMAWORKS_DATA_DIR`. The host side does not receive the JSONL body; the Web UI only displays the connection status and the day's success and blocked counts.
+On the isolated side, `enclave_records_search` and `enclave_records_get` read only configured datasets, save retrieved records and the full text of various tools to `raw_dir`, and return `raw_path`. Search results are stored in `records`, and single-record retrieval results in `record`. The default save location is `ANIMAWORKS_DATA_DIR/raw/YYYYMMDD`, with directory mode `0700` and file mode `0600`. Dataset paths are restricted to `ANIMAWORKS_DATA_DIR`. The host receives no JSONL contents, and the Web UI displays only the connection status and the number of successful and blocked operations for the current day.
 
 ## OS Users and Groups
 
@@ -47,12 +46,13 @@ Specify the displayed UID in `allowed_peer_uids` on the isolated side. After add
 
 ## Isolated-Side Configuration
 
-Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<name>.path` is a relative path from the data directory and specifies the `.jsonl` file. Items not in `searchable_fields` are not search targets.
+Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<name>.path` is a relative path from the data directory and specifies a `.jsonl` file. Items not in `searchable_fields` are not included in search.
 
 ```json
 {
   "enclave": {
     "enabled": true,
+    "raw_dir": "raw",
     "name": "saas-data",
     "socket_path": "/run/animaworks-enclave/aw-enclave.sock",
     "socket_group": "animaworks-enclave",
@@ -65,29 +65,24 @@ Set `enclave` in the isolated user's `~/.animaworks/config.json`. `datasets.<nam
       "customers": {
         "path": "data/customers.jsonl",
         "id_field": "customer_id",
-        "sensitive_fields": ["name", "kana", "address", "phone", "email"],
         "searchable_fields": ["customer_id", "name", "kana", "email"]
       },
       "tickets": {
         "path": "data/tickets.jsonl",
         "id_field": "ticket_id",
-        "sensitive_fields": ["customer_id", "body"],
         "searchable_fields": ["ticket_id", "customer_id", "category", "body"]
       }
     },
     "egress": {
-      "stages": [
-        {"type": "known_values", "sources": []},
-        {"type": "masker", "profile": "default"}
-      ]
+      "stages": [{"type": "masker", "profile": "default"}]
     }
   }
 }
 ```
 
-In `allowed_llm_credentials`, list only the authentication information names that each anima on the isolated side actually uses. `external_tasks.enabled` has an initial value of `true`, so set it to `false` on the isolated side. Since the `permissions.json` of a newly created anima has `file_roots` set to `["/"]`, rewrite it to the necessary scope, such as the anima's own directory (if left as is, the startup guard will refuse to start). In isolated mode, the Slack, Discord, Zoom, and GitHub Webhook gateways are not started. Other startup guards must also be satisfied, so do not enable event export or external message integration, and restrict file access to the necessary scope in each anima's `permissions.json`. To restrict external tools for the entry anima, allow `enclave_records`.
+In `allowed_llm_credentials`, list only the authentication credential names actually used by each anima on the isolated side. `external_tasks.enabled` defaults to `true`, so set it to `false` on the isolated side. For newly created anima, `permissions.json` is set to `["/"]` by `file_roots`, so change it to the necessary scope, such as the anima's own directory (otherwise, the startup guard will reject startup). In isolated mode, the Slack, Discord, Zoom, and GitHub Webhook gateways are not started. Other startup guards must also be satisfied, so do not enable event exports or external messaging integrations, and restrict file access to the necessary scope in each anima's `permissions.json`. If restricting external tools for the entry anima, allow `enclave_records`.
 
-For authentication, use the password mode of `auth.json` and configure it not to trust localhost. Do not store plaintext passwords; set the Argon2id hash generated by the app in `password_hash`.
+For authentication, use password mode in `auth.json` and configure it not to trust localhost. Do not store the password in plaintext; set `password_hash` to the Argon2id hash generated by the application.
 
 ```json
 {
@@ -105,7 +100,7 @@ For authentication, use the password mode of `auth.json` and configure it not to
 }
 ```
 
-The value of `password_hash` is a placeholder indicating the format; do not use it as is. If you create an authentication user in the Web UI user settings, keep the generated hash.
+The value of `password_hash` is a format placeholder and must not be used as-is. If you created an authentication user in the Web UI's user settings, retain the generated hash.
 
 ## Starting with systemd
 
@@ -152,7 +147,7 @@ If external tools are restricted in the main-side anima's `permissions.json`, ad
 
 ## Inspection and Audit
 
-On the isolated side, run the following. `doctor` checks the startup guard, socket type, mode, and group, the gateway's `/v1/health`, the egress pipeline configuration, and the imports of `fugashi` and `ipadic`. If `enclaves` is configured on the main side, it also checks each socket's connection and health response. If there is a problem, exit code 1 is returned, and `--json` returns machine-readable results.
+Run the following on the isolated side. `doctor` checks the startup guards, socket types, modes, and groups, gateway `/v1/health`, egress pipeline configuration, and imports of `fugashi` and `ipadic`. If `enclaves` is configured on the main side, it also checks each socket's connection and health response. On problems, it exits with code 1; with `--json`, it returns machine-readable results.
 
 ```bash
 animaworks enclave doctor
@@ -160,18 +155,18 @@ animaworks enclave doctor --json
 animaworks enclave status
 ```
 
-`status` outputs only the day's success and blocked counts and does not display the question or answer body. The egress audit log is saved in `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the known-value ledger in `~/.animaworks/enclave/ledger/known_values.jsonl`. The audit log contains the facts being processed, so maintain the access permissions of the file and parent directory, and do not copy it outside the isolated environment.
+`status` outputs only the number of successful and blocked operations for the current day and does not display the contents of questions or answers. The egress audit log is saved to `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`, and the full text of retrieved results to `~/.animaworks/raw/YYYYMMDD/`. Because the audit log and raw files contain the facts and raw data being processed, maintain access permissions and do not copy them outside the isolated environment.
 
 ## Connecting to Real Data Sources
 
 From the isolated side, you can reference a production MySQL-compatible DB in read-only mode. The connection cannot be written with real examples of the data handled (since this is a public repository, do not write customer names, industries, real host names, IPs, or account IDs). Everything below is a placeholder using `example`.
 
-### How to Store Secrets
+### Where to Store Secrets
 
-DB passwords and AWS access keys should be passed only to isolated processes via `enclave.secrets_dir` or systemd's `LoadCredential=`. Secret files should be owned by root with permissions set to `0600`. To prevent password leakage, do not write them in plain text in configuration files.
+Pass the DB password, AWS access key, and Laravel APP_KEY only to the isolated process through `enclave.secrets_dir` or systemd's `LoadCredential=`. Secret files should be root-owned and have mode `0600`. Do not write secret values in plaintext in configuration files. Put one key per line in the Laravel APP_KEY file, with the current key first and old keys on subsequent lines.
 
-- When using systemd: use `animaworks-enclave@.service`'s `LoadCredential=` to load values such as `/etc/credstore/animaworks-enclave/<name>/db-password`, making them readable from `$CREDENTIALS_DIRECTORY`.
-- If a different directory is specified for `enclave.secrets_dir`, use the same format, placing values in files named after the corresponding keys.
+- When using systemd: use `LoadCredential=` in `animaworks-enclave@.service` to load `/etc/credstore/animaworks-enclave/<name>/db-password` and other secrets, making them readable from `$CREDENTIALS_DIRECTORY`.
+- If you specify a different directory for `enclave.secrets_dir`, use the same format and place each value in a file named after the secret.
 
 ```bash
 install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
@@ -180,7 +175,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 
 ### sql_sources Configuration Example
 
-Define a read-only data source in `enclave.sql_sources`. `password_secret` is the secret name. Setting `tunnel` connects to RDS via SSM Session Manager port forwarding (through a bastion). The contents of `aws_secret` are the JSON of `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`.
+Define a read-only data source in `enclave.sql_sources`. `password_secret` is the secret name. If you set `tunnel`, it connects to RDS through SSM Session Manager port forwarding (via a bastion host). The contents of `aws_secret` are JSON in the `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}` format.
 
 ```json
 {
@@ -199,7 +194,8 @@ Define a read-only data source in `enclave.sql_sources`. `password_secret` is th
         "max_rows": 200,
         "timeout_s": 30,
         "cell_max_chars": 2000,
-        "ledger_exempt_columns": ["id", ".*_id", "status"],
+        "app_key_secret": "laravel-app-keys",
+        "decrypt_columns": ["^request$", "^body$", "^title$"],
         "tunnel": {
           "type": "ssm_port_forward",
           "region": "example-region-1",
@@ -214,7 +210,7 @@ Define a read-only data source in `enclave.sql_sources`. `password_secret` is th
 }
 ```
 
-`ledger_exempt_columns` is a list of regular expressions that specifies **columns not to be masked at the exit (such as IDs and statuses)**. Values in columns specified here are not added to the known-value ledger. The remaining string cells, except those containing only numbers, ISO dates, or booleans, are registered in the known-value ledger before returning results and are masked when they reappear in the answer. SSL is required by default. If using the RDS CA, specify the CA path in `ssl_ca`; if hostname verification needs to be disabled, note that the hostname will not match because it is over a tunnel with `ssl_verify_identity: false` (default) left as is.
+`app_key_secret` is the name of the secret file that stores Laravel APP_KEY values, one key per line. It handles `base64:` format and UTF-8 keys, trying the first line as the current key and subsequent lines as old keys. `decrypt_columns` is a regular expression used to match result column names (after aliases are applied) with `re.search`. For string cells in matching columns, it attempts decryption in Laravel AES-256-CBC format; values that cannot be decrypted are returned unchanged. SQL result rows are saved to a raw file after decryption and before cell truncation, and the full text can be read from `raw_path` in the tool result. SSL is required by default. If using an RDS CA, set `ssl_ca` to the CA path. If host name verification must be disabled, consider that the host name will not match through the tunnel, and leave `ssl_verify_identity: false` at its default value.
 
 ### Reading the doctor
 
@@ -226,9 +222,9 @@ Setting `sql_sources` adds an inspection of each source to `animaworks enclave d
 
 It does not connect to the actual DB or AWS.
 
-## AWS Read Sources
+## AWS Read-Only Sources
 
-Register CloudWatch Logs, RDS Performance Insights, RDS log files, and S3 read targets in `enclave.aws_sources`. Authentication information is loaded from the secret file specified in `aws_secret`; AWS keys are not included in configuration files or tool output. All names and values below are placeholders for illustration purposes.
+Register CloudWatch Logs, RDS Performance Insights, RDS log files, and S3 read targets in `enclave.aws_sources`. Credentials are loaded from the secret file specified in `aws_secret`; AWS keys are not included in configuration files or tool output. All names and values below are explanatory placeholders.
 
 ```json
 {
@@ -243,32 +239,22 @@ Register CloudWatch Logs, RDS Performance Insights, RDS log files, and S3 read t
         "pi_resource_id": "db-example-resource",
         "rds_instance_id": "db-example-instance",
         "s3_buckets": ["example-placeholder-bucket"],
-        "max_bytes": 200000,
-        "ledger_register": true,
-        "ledger_exempt_keys": [
-          "level", "timestamp", "time", "message_type", "message", "msg",
-          "error", "exception", "stack_trace", "status", "method", "path",
-          "route", "duration", "request_id", "requestid", "req_id", "reqid",
-          "trace_id", "traceid", "correlation_id", "@timestamp", "@message",
-          "@ptr", "@log", "@logstream", "@ingestiontime", "eventid", "logstreamname"
-        ]
+        "max_bytes": 200000
       }
     }
   }
 }
 ```
 
-The file contents for secret `aws-readonly` should follow the JSON format below. The values are example placeholders and should not be used as-is.
+Set the contents of the secret `aws-readonly` file to the following JSON format. The values are illustrative placeholders; do not use them as-is.
 
 ```json
 {"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
 ```
 
-`log_groups` allows exact matches or prefix matches using the trailing `*`. Each PI and RDS tool uses only its configured resource ID, and S3 accesses only the buckets listed in `s3_buckets`. Time is specified in ISO8601 or as relative values using `-1h` / `-24h`. Logs Insights queries poll for up to 60 seconds, and each tool's returned text is limited by `max_bytes`. S3 objects that are non-text or exceed the limit do not include their content in the tool response; instead, they are saved to `enclave/downloads/<bucket>/<key-sha256>` in the isolated data directory with mode `0600`.
+`log_groups` permits exact matches or prefix matches using a trailing `*`. The PI and RDS tools each use only their configured resource IDs, and S3 accesses only the buckets listed in `s3_buckets`. Times can be specified in ISO8601 or relative `-1h` / `-24h` format. Logs Insights queries are polled for up to 60 seconds, and the text returned by each tool is limited by `max_bytes`. AWS tools save the full text and records before truncation to `raw_dir`, which can be read from `raw_path` in the result. For non-text S3 objects or objects exceeding the limit, the contents are not included in the tool response; they are also saved to the existing `enclave/downloads/<bucket>/<key-sha256>` with mode `0600`.
 
-Even when `ledger_register` is enabled, not all free text is registered in the known-value ledger. For each log line that can be interpreted as JSON, only string values not included in `ledger_exempt_keys` are registered. For PI SQL full text, only the contents of string literals (`'...'`) are registered. Regular log bodies that are not JSON and other free text are not registered; this is handled by the egress masker and `regex_denylist`. Therefore, redaction of free text is not guaranteed by the known-value ledger alone. Setting `ledger_register: false` disables registration of AWS read results.
-
-The `doctor` check for AWS sources verifies `aws_sources.<name>.secret` and `.deps` (`boto3`). It does not connect to real AWS; it only checks for the existence of secrets and whether the SDK can be imported.
+The AWS source `doctor` check verifies `aws_sources.<name>.secret` and `.deps` (`boto3`). It does not connect to AWS; it only checks that the secret exists and that the SDK can be imported.
 
 ## Verification with Mock Data
 
