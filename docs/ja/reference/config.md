@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 6852baad82d3a1c1d8470cedadbc3ab16dac5005aa681e9e4715de8ee8d1cb8d -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: da74430e9dcb018eb9d74fd74bc8eaa2ff172b1cf932f7e95b3fc097fb496855 -->
 
 # 設定リファレンス
 
@@ -804,7 +804,6 @@
 |---|---|---|---|
 | `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 隔離された enclave モードのサーバー設定。有効時は起動時にセキュリティガードを検査する。 |
 | `enclave.enabled` | `bool` | `false` | この実行環境を隔離 enclave として起動する。 |
-| `enclave.raw_dir` | `str` | `"raw"` | raw 結果の保存先。`ANIMAWORKS_DATA_DIR` からの相対パスまたは絶対パス。 |
 | `enclave.name` | `str` | `""` | enclave gateway が返す識別名。 |
 | `enclave.socket_path` | `str` | `""` | gateway が待ち受ける Unix ドメインソケットのパス。 |
 | `enclave.socket_group` | `str` | `""` | gateway ソケットに設定する OS グループ。 |
@@ -835,11 +834,12 @@
 | `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
+| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
-| `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | Laravel アプリ鍵を保存した秘密の名前。 |
-| `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | 復号対象の結果列名に照合する正規表現。 |
+| `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
+| `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -849,6 +849,7 @@
 | `enclave.aws_sources.s3_buckets` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
+| `enclave.raw_dir` | `str` | `"raw"` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
 
 ### `enclaves`

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=6180702228ee9130f88f8ee743f43290528d080237780c8224d9faa4d5a3b5bf generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=e0e849bf679433cb0719115b1647f8ecdaab5449752603969f8a9185295cc2de generated=2026-10-10 engine=luna model=gpt-6-luna translator=2 -->
 
 > 확인한 커밋: f448d7b0
 
@@ -14,15 +14,15 @@ flowchart LR
     H[本体側 Anima] -->|enclave_ask| S[Unix ソケット]
     S --> G[隔離側 gateway]
     G --> A[entry anima]
-    A -->|enclave_records_search / get| D[(설정된 JSONL)]
-    A -->|조회 결과| R[(격리 raw 디렉터리)]
-    A -->|답변| E[egress 파이프라인]
-    E -->|검사된 facts| G
+    A -->|enclave_records_search / get| D[(設定済み JSONL)]
+    A -->|取得結果| R[(隔離 raw ディレクトリ)]
+    A -->|回答| E[egress パイプライン]
+    E -->|検査済み facts| G
     G -->|監査 ID と facts| H
     E --> Q[(監査ログ)]
 ```
 
-격리 측의 `enclave_records_search`와 `enclave_records_get`는 설정된 데이터세트만 읽는다. 검색 결과는 `records`, 단건 조회 결과는 `record`에 담아 반환한다. 조회한 레코드와 데이터 도구의 전체 결과는 `raw_dir`에 저장하고 도구 응답에 `raw_path`를 반환한다. 기본 저장 위치는 `ANIMAWORKS_DATA_DIR/raw/YYYYMMDD`이며 디렉터리 mode는 `0700`, 파일 mode는 `0600`이다. 데이터세트 경로는 `ANIMAWORKS_DATA_DIR` 내로 제한된다. 호스트 측에는 JSONL 본문을 반환하지 않으며, Web UI에는 연결 상태와 당일 성공·차단 건수만 표시한다.
+격리 측의 `enclave_records_search` 및 `enclave_records_get`는 설정된 데이터셋만 읽고, 검색한 레코드와 각종 도구의 전체 내용을 `raw_dir`에 저장한 뒤 `raw_path`를 반환한다. 검색 결과는 `records`에, 단건 조회 결과는 `record`에 저장된다. 저장 위치는 기본적으로 `ANIMAWORKS_DATA_DIR/raw/YYYYMMDD`이며, 디렉터리 mode는 `0700`, 파일 mode는 `0600`이다. 데이터셋 경로는 `ANIMAWORKS_DATA_DIR` 내부로 제한된다. 호스트 측에는 JSONL 본문을 반환하지 않으며, Web UI에는 연결 상태와 당일 성공·차단 건수만 표시한다.
 
 ## OS 사용자 및 그룹
 
@@ -46,7 +46,7 @@ id -u "$HOST_USER"
 
 ## 격리 측 설정
 
-격리 사용자의 `~/.animaworks/config.json`에 `enclave`을 설정한다. `datasets.<name>.path`는 data directory를 기준으로 한 상대 경로이며, `.jsonl` 파일을 지정한다. `searchable_fields`에 없는 항목은 검색 대상이 되지 않는다.
+격리 사용자의 `~/.animaworks/config.json`에 `enclave`을 설정한다. `datasets.<name>.path`는 data directory 기준 상대 경로이며, `.jsonl` 파일을 지정한다. `searchable_fields`에 없는 항목은 검색 대상이 되지 않는다.
 
 ```json
 {
@@ -80,9 +80,9 @@ id -u "$HOST_USER"
 }
 ```
 
-`allowed_llm_credentials`에는 격리 측의 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. `external_tasks.enabled`은 초기값이 `true`이므로 격리 측에서는 `false`으로 설정한다. 새로 만든 anima의 `permissions.json`은 `file_roots`가 `["/"]`으로 설정되어 있으므로 anima 자체의 디렉터리 등 필요한 범위로 변경한다. 그대로 두면 시작 시 가드가 시작을 거부한다. 격리 모드에서는 Slack·Discord·Zoom·GitHub Webhook 게이트웨이를 시작하지 않는다. 다른 시작 시 가드도 충족해야 하므로 이벤트 내보내기나 외부 메시지 연계를 활성화하지 말고, 각 anima의 `permissions.json`에서 파일 액세스를 필요한 범위로 제한한다. entry anima의 외부 도구를 제한하는 경우에는 `enclave_records`를 허용한다.
+`allowed_llm_credentials`에는 격리 측의 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. `external_tasks.enabled`의 초기값은 `true`이므로 격리 측에서는 `false`으로 설정한다. 새로 만든 anima의 `permissions.json`은 `file_roots`가 `["/"]`으로 설정되어 있으므로 anima 자체의 디렉터리 등 필요한 범위로 수정한다(그대로 두면 시작 시 가드가 시작을 거부한다). 격리 모드에서는 Slack·Discord·Zoom·GitHub Webhook 게이트웨이를 시작하지 않는다. 다른 시작 시 가드도 충족해야 하므로 이벤트 내보내기나 외부 메시지 연동을 활성화하지 말고, 각 anima의 `permissions.json`에서 파일 액세스를 필요한 범위로 제한한다. entry anima의 외부 도구를 제한할 때는 `enclave_records`를 허용한다.
 
-인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호 평문은 저장하지 않고, `password_hash`에는 앱이 생성한 Argon2id 해시를 설정한다.
+인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호 평문은 저장하지 말고, `password_hash`에는 애플리케이션이 생성한 Argon2id 해시를 설정한다.
 
 ```json
 {
@@ -147,7 +147,7 @@ systemctl enable --now animaworks-enclave@aw-enclave.service
 
 ## 점검 및 감사
 
-격리 측에서 다음을 실행한다. `doctor`은 시작 시 가드, 소켓의 종류·mode·그룹, gateway의 `/v1/health`, egress 파이프라인 설정, `fugashi` 및 `ipadic`의 import를 확인한다. 본체 측에서 `enclaves`를 설정한 경우에는 각 소켓의 연결과 health 응답도 확인한다. 문제가 있으면 exit code 1이 반환되고, `--json`에서는 기계 판독 가능한 결과를 반환한다.
+격리 측에서 다음을 실행한다. `doctor`은 시작 시 가드, 소켓의 종류·mode·그룹, gateway의 `/v1/health`, egress 파이프라인 설정, `fugashi` 및 `ipadic`의 import를 확인한다. 본체 측에서 `enclaves`를 설정한 경우에는 각 소켓의 연결과 health 응답도 확인한다. 문제가 있으면 exit code 1이 되고, `--json`에서는 기계 판독 가능한 결과를 반환한다.
 
 ```bash
 animaworks enclave doctor
@@ -155,18 +155,18 @@ animaworks enclave doctor --json
 animaworks enclave status
 ```
 
-`status`은 당일 성공·차단 건수만 출력하며 질문이나 답변의 본문은 표시하지 않는다. egress 감사 로그는 `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`에, 조회 결과 전문은 `~/.animaworks/raw/YYYYMMDD/`에 저장된다. 감사 로그와 raw 파일에는 처리 대상 facts와 원본 데이터가 포함될 수 있으므로 접근 권한을 유지하고 격리 환경 밖으로 복사하지 않는다.
+`status`은 당일 성공·차단 건수만 출력하며, 질문이나 답변의 본문은 표시하지 않는다. egress 감사 로그는 `~/.animaworks/enclave/audit/egress/YYYYMMDD.jsonl`에, 검색 결과 전체 내용은 `~/.animaworks/raw/YYYYMMDD/`에 저장된다. 감사 로그와 raw 파일에는 처리 대상인 facts나 원시 데이터가 포함되므로 액세스 권한을 유지하고 격리 환경 밖으로 복사하지 않는다.
 
 ## 실제 데이터 소스 연결
 
 격리 측에서 운영 MySQL 호환 DB를 읽기 전용으로 참조할 수 있습니다. 연결은 다루는 데이터를 실제 예시로 작성할 수 없습니다(공개 리포지토리이므로 고객명·업종·실제 호스트명·IP·계정 ID는 작성하지 마세요). 아래는 모두 `example`을 사용한 플레이스홀더입니다.
 
-### 비밀값 배치 방법
+### 비밀 정보 배치 방법
 
-DB 비밀번호, AWS 액세스 키, Laravel APP_KEY는 `enclave.secrets_dir` 또는 systemd의 `LoadCredential=`로 격리 프로세스에만 전달합니다. 비밀 파일은 root 소유·`0600`로 설정하고 설정 파일에는 비밀값을 평문으로 기록하지 마세요. Laravel APP_KEY 파일은 한 줄에 하나씩 저장하고, 현재 키를 첫 줄에, 이전 키를 뒤에 둡니다.
+DB 비밀번호, AWS 액세스 키, Laravel APP_KEY는 `enclave.secrets_dir` 또는 systemd의 `LoadCredential=`를 통해 격리 프로세스에만 전달한다. 비밀 파일은 root 소유로 하고 mode를 `0600`으로 설정한다. 비밀 값을 설정 파일에 평문으로 작성해서는 안 된다. Laravel APP_KEY 파일은 한 줄에 하나의 키를 넣고, 현재 키를 첫 줄에, 이전 키를 그 다음 줄부터 배치한다.
 
-- systemd를 사용하는 경우: `animaworks-enclave@.service`의 `LoadCredential=`로 `/etc/credstore/animaworks-enclave/<name>/db-password` 등을 읽어 `$CREDENTIALS_DIRECTORY`에서 읽을 수 있게 합니다.
-- 다른 디렉터리를 `enclave.secrets_dir`로 지정한 경우도 같은 형식으로, 이름을 파일명으로 한 값을 배치합니다.
+- systemd를 사용하는 경우: `animaworks-enclave@.service`의 `LoadCredential=`에서 `/etc/credstore/animaworks-enclave/<name>/db-password` 등을 불러오고, `$CREDENTIALS_DIRECTORY`에서 읽을 수 있도록 한다.
+- 다른 디렉터리를 `enclave.secrets_dir`로 지정한 경우에도 같은 형식으로, 이름을 파일명으로 사용해 값을 배치한다.
 
 ```bash
 install -m 0600 -o root -g root db-password /etc/credstore/animaworks-enclave/aw-enclave/db-password
@@ -175,7 +175,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 
 ### sql_sources 설정 예시
 
-`enclave.sql_sources`에 읽기 전용 데이터 소스를 정의합니다. `password_secret`는 비밀값의 이름입니다. `tunnel`을 설정하면 SSM Session Manager의 포트 전달(배스천 경유)로 RDS에 연결합니다. `aws_secret`의 내용은 `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`의 JSON입니다.
+`enclave.sql_sources`에 읽기 전용 데이터 소스를 정의한다. `password_secret`는 비밀 정보의 이름이다. `tunnel`을 설정하면 SSM Session Manager의 포트 포워딩(배스천 경유)으로 RDS에 연결한다. `aws_secret`의 내용은 `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`의 JSON이다.
 
 ```json
 {
@@ -210,7 +210,7 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 }
 ```
 
-`app_key_secret`은 Laravel APP_KEY를 한 줄에 하나씩 저장한 비밀 파일 이름이다. `base64:` 형식과 UTF-8 키를 지원하며 첫 줄의 키를 현재 키로, 이후 키를 이전 암호문용으로 차례대로 시도한다. `decrypt_columns`는 결과 열 이름(alias 적용 후)에 `re.search`로 적용하는 정규식 목록이다. 일치한 열의 문자열 셀은 Laravel AES-256-CBC 복호화를 시도하고 실패한 값은 그대로 반환한다. SQL 행은 복호화 후 셀을 자르기 전에 raw 파일로 저장하며 도구 결과의 `raw_path`에서 전체 결과를 읽을 수 있다. SSL은 기본적으로 필수입니다. RDS의 CA를 사용하는 경우 `ssl_ca`에 CA의 경로, 호스트명 검증 비활성화가 필요하면 `ssl_verify_identity: false`(기본값) 그대로 터널 경유이므로 호스트명이 일치하지 않는 점을 고려하세요.
+`app_key_secret`은 Laravel의 APP_KEY를 한 줄에 하나씩 저장한 비밀 파일 이름이다. `base64:` 형식과 UTF-8 키를 처리하며, 첫 줄을 현재 키로, 그 다음 줄부터 이전 키로 사용해 복호화를 시도한다. `decrypt_columns`은 결과 열 이름(alias 적용 후)을 `re.search`로 대조하는 정규식이다. 해당 열의 문자열 셀은 Laravel AES-256-CBC 형식으로 복호화를 시도하며, 복호화할 수 없는 값은 그대로 반환한다. SQL 조회 행은 복호화 후, 셀을 자르기 전에 raw 파일에 저장되며 도구 결과의 `raw_path`에서 전체 내용을 Read할 수 있다. SSL은 기본적으로 필수다. RDS CA를 사용하는 경우 `ssl_ca`에 CA 경로를 지정한다. 호스트 이름 검증을 비활성화해야 한다면 `ssl_verify_identity: false`(기본값)을 그대로 두되, 터널을 경유하기 때문에 호스트 이름이 일치하지 않는 점을 고려한다.
 
 ### doctor 보는 방법
 
@@ -222,9 +222,9 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 
 실제 DB·AWS에는 연결하지 않습니다.
 
-## AWS 읽기 소스
+## AWS 읽기 전용 소스
 
-`enclave.aws_sources`에는 CloudWatch Logs, RDS Performance Insights, RDS 로그 파일, S3의 읽기 대상을 등록합니다. 인증 정보는 `aws_secret`으로 지정한 비밀 파일에서 읽어오며, 설정 파일이나 도구 출력에는 AWS 키를 포함하지 않습니다. 아래의 이름과 값은 모두 설명용 플레이스홀더입니다.
+`enclave.aws_sources`에는 CloudWatch Logs, RDS Performance Insights, RDS 로그 파일, S3의 읽기 대상을 등록한다. 인증 정보는 `aws_secret`에서 지정한 비밀 파일에서 읽으며, 설정 파일이나 도구 출력에 AWS 키를 포함하지 않는다. 아래 이름과 값은 모두 설명용 플레이스홀더다.
 
 ```json
 {
@@ -246,15 +246,15 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
 }
 ```
 
-비밀값 `aws-readonly`의 파일 내용은 다음 JSON 형식으로 합니다. 값은 예시용 플레이스홀더이며 그대로 사용하지 마세요.
+비밀 정보 `aws-readonly`의 파일 내용은 다음 JSON 형식으로 작성한다. 값은 예시용 플레이스홀더이므로 그대로 사용하지 않는다.
 
 ```json
 {"aws_access_key_id":"<access-key>","aws_secret_access_key":"<secret-key>"}
 ```
 
-`log_groups`는 완전 일치 또는 끝부분의 `*`에 의한 전방 일치로 허용합니다. PI·RDS 각 도구는 각각 설정된 리소스 ID만 사용하고, S3는 `s3_buckets`에 나열한 버킷만 접근합니다. 시간은 ISO8601 또는 `-1h` / `-24h`의 상대 지정입니다. Logs Insights 쿼리는 최대 60초 폴링하며, 각 도구의 반환 텍스트는 `max_bytes`으로 제한됩니다. AWS 도구는 `max_bytes`로 자르기 전의 전체 응답과 레코드를 `raw_dir`에 저장하고, 결과의 `raw_path`에서 읽을 수 있습니다. 텍스트가 아니거나 상한을 초과하는 S3 객체는 본문을 도구 응답에 포함하지 않고 격리 data 디렉터리의 `enclave/downloads/<bucket>/<key-sha256>`에도 mode `0600`으로 저장합니다.
+`log_groups`은 완전 일치 또는 끝의 `*`을 사용한 접두사 일치로 허용한다. PI·RDS 도구는 각각 설정된 리소스 ID만 사용하고, S3는 `s3_buckets`에 나열된 버킷에만 액세스한다. 시간은 ISO8601 또는 `-1h` / `-24h` 형식의 상대 지정이다. Logs Insights 쿼리는 최대 60초 동안 폴링하며, 각 도구의 반환 텍스트는 `max_bytes`으로 제한된다. AWS 도구는 자르기 전의 전체 내용·레코드를 `raw_dir`에 저장하며, 결과의 `raw_path`에서 읽을 수 있다. 텍스트가 아니거나 상한을 초과하는 S3 객체는 본문을 도구 응답에 포함하지 않고 기존 `enclave/downloads/<bucket>/<key-sha256>`에도 mode `0600`로 저장한다.
 
-AWS 소스의 `doctor` 검사는 `aws_sources.<name>.secret`와 `.deps`(`boto3`)을 확인합니다. 실제 AWS에 연결하지 않고, 비밀값의 존재와 SDK의 import 가능 여부만 확인합니다.
+AWS 소스의 `doctor` 검사는 `aws_sources.<name>.secret` 및 `.deps`(`boto3`)을 확인한다. 실제 AWS에 연결하지 않고 비밀 정보의 존재와 SDK를 import할 수 있는지만 검사한다.
 
 ## 모의 데이터로 동작 확인
 

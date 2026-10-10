@@ -59,7 +59,6 @@ enclave.egress: 外部へ返す facts を処理する egress ステージ設定�
 enclave.datasets: enclave 内の anima が参照できる JSONL データセット。
 enclave.datasets.path: data directory 内にある JSONL ファイルの相対パス。
 enclave.datasets.id_field: レコードを一意に取得するための ID フィールド。
-enclave.datasets.sensitive_fields: 返却前に既知値台帳へ登録するフィールド。
 enclave.datasets.searchable_fields: 部分一致検索を許可するフィールド。
 enclaves: 外部の enclave インスタンスに接続するクライアント側の設定。
 enclaves.socket_path: 接続先 enclave の Unix ドメインソケット。

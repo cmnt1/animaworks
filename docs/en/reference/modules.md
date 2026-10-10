@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=e7e5c9663efa9ba4d8570a1d21f347312344008a917ec0dbe3813046be0ba6a2 generated=2026-10-09 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=e0f4b7973a801025a03faa6e22866c604329f59421d4f9c7007133060c18719e generated=2026-10-10 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -212,12 +212,12 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration model for isolated enclave mode and startup security guards.
+Configuration models for isolated enclave mode and startup security guards.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 154 | Configuration models for enclave mode. |
+| `core.enclave.config` | 160 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -231,9 +231,9 @@ Configuration model for isolated enclave mode and startup security guards.
 | `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
-| `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel encrypted strings. |
+| `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
-| `core.enclave.raw_store` | 150 | Private storage for unmodified enclave tool results. |
+| `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
 | `core.enclave.secrets` | 103 | Read secrets from the enclave credentials store. |
 | `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
@@ -269,7 +269,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 546 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -368,12 +368,12 @@ Tool execution, command execution, and safety controls.
 
 Translation catalog and language selection.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 650 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 654 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -419,7 +419,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integration and implementation of animaworks-tool.
+External service integrations and animaworks-tool implementation.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
