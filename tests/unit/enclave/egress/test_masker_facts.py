@@ -67,3 +67,10 @@ def test_phone_pattern_keeps_record_ids_and_short_numbers() -> None:
     assert mask_record_facts("連絡先 090-1234-5678") == "連絡先 [MASK-PHONE]"
     assert mask_record_facts("0312345678") == "[MASK-PHONE]"
     assert mask_record_facts("+81 90 1234 5678") == "[MASK-PHONE]"
+
+
+def test_line_ranges_in_code_locations_are_not_postal_codes() -> None:
+    out = mask_record_facts("code:app/Services/Builder.php:1234-1250 と :101-1050")
+    assert "1234-1250" in out
+    assert ":101-1050" in out
+    assert "[MASK-POSTAL]" not in out
