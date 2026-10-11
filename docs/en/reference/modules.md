@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=e0f4b7973a801025a03faa6e22866c604329f59421d4f9c7007133060c18719e generated=2026-10-10 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=7a0715938a87dafdac7cb15f662b5b281f0a53b8a531912cf49ea643037e466f generated=2026-10-11 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -373,7 +373,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 654 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 658 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
