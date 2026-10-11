@@ -336,11 +336,15 @@ STRINGS: dict[str, dict[str, str]] = {
     "enclave.gateway.answer_instruction": {
         "ja": (
             '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
-            "根拠ID を必ず付ける。個人を特定できる値は書かない"
+            "根拠ID を必ず付ける。個人を特定できる値は書かない。"
+            "JSON として正しく読めるように、fact と evidence の文字列には改行・二重引用符・バックスラッシュを入れず、"
+            "コードや引用は地の文で言い換える。fact は1文ずつ短く分ける"
         ),
         "en": (
             'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
-            "Always attach evidence IDs. Do not write values that identify a specific person."
+            "Always attach evidence IDs. Do not write values that identify a specific person. "
+            "Keep the JSON valid: no line breaks, double quotes or backslashes inside fact and evidence strings; "
+            "paraphrase code and quotations. Split facts into short single sentences."
         ),
     },
     "enclave.tool.unknown_enclave": {
