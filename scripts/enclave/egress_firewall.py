@@ -66,6 +66,7 @@ def build_ruleset(uid: int, region: str, loopback_ports: list[int]) -> str:
         f"    meta skuid != {uid} accept",
         "    ct state established,related accept",
         f"    oif lo meta l4proto {{ tcp, udp }} th dport {{ {ports} }} accept",
+        f"    oif lo meta l4proto {{ tcp, udp }} th sport {{ {ports} }} accept",
         "    ip daddr @aws_v4 tcp dport 443 accept",
     ]
     if v6:
