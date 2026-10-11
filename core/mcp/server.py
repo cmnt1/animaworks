@@ -703,7 +703,14 @@ async def main() -> None:
     # the server URLs and routes via the host proxy, which forwards phase3
     # requests to that owner.
     logger.info("AnimaWorks MCP server starting (name=aw)")
-    async with stdio_server() as (read_stream, write_stream):
+    # On Windows the SDK's blocking stdin read stalls C-extension imports in
+    # tool calls; see core.mcp.win_stdin.
+    stdin = None
+    if sys.platform == "win32":
+        from core.mcp.win_stdin import open_pipe_stdin
+
+        stdin = open_pipe_stdin()
+    async with stdio_server(stdin=stdin) as (read_stream, write_stream):
         await server.run(
             read_stream,
             write_stream,
