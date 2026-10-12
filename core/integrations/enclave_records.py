@@ -212,4 +212,11 @@ def get_tool_schemas() -> list[dict[str, Any]]:
     ]
 
 
-__all__ = ["dispatch", "enclave_records_get", "enclave_records_search", "get_tool_schemas"]
+def cli_main(argv: list[str] | None = None) -> None:
+    """Run ``animaworks-tool enclave_records <schema_name> --<property> VALUE``."""
+    from core.integrations._base import schema_cli_main
+
+    schema_cli_main("animaworks-tool enclave_records", get_tool_schemas(), dispatch, argv)
+
+
+__all__ = ["cli_main", "dispatch", "enclave_records_get", "enclave_records_search", "get_tool_schemas"]

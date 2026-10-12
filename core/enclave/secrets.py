@@ -101,3 +101,28 @@ def secret_exists(name: str) -> bool:
 
 
 __all__ = ["EnclaveSecretError", "read_enclave_secret", "secret_exists"]
+
+
+def aws_keys_from_secret(name: object) -> dict[str, str]:
+    """Return AWS keys from a JSON secret named *name* (``{}`` when unset or unreadable).
+
+    The secret holds ``{"aws_access_key_id", "aws_secret_access_key"}`` (and
+    optionally ``aws_session_token``), so LLM credentials can point at it with
+    ``keys.aws_secret`` instead of keeping the keys in config.json.
+    """
+    if not isinstance(name, str) or not name:
+        return {}
+    import json
+
+    try:
+        payload = json.loads(read_enclave_secret(name))
+    except Exception:  # noqa: BLE001 - never surface secret contents
+        logger.warning("Could not read the AWS secret for an LLM credential")
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: str(payload[key])
+        for key in ("aws_access_key_id", "aws_secret_access_key", "aws_session_token")
+        if payload.get(key)
+    }

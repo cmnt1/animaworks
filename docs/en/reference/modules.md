@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7a0715938a87dafdac7cb15f662b5b281f0a53b8a531912cf49ea643037e466f generated=2026-10-11 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -18,7 +18,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
 | `cli.parser` | 867 | — |
-| `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
+| `cli.tool_dispatch` | 414 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
 
@@ -212,7 +212,7 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration models for isolated enclave mode and startup security guards.
+Configuration models and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -234,7 +234,7 @@ Configuration models for isolated enclave mode and startup security guards.
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
-| `core.enclave.secrets` | 103 | Read secrets from the enclave credentials store. |
+| `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
 | `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
@@ -269,7 +269,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -419,14 +419,14 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integrations and animaworks-tool implementation.
+Implementation of external service integrations and animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.integrations` | 79 | Core integration tool discovery and registry. |
 | `core.integrations._anima_icon_url（非公開）` | 322 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
-| `core.integrations._base（非公開）` | 158 | — |
+| `core.integrations._base（非公開）` | 200 | — |
 | `core.integrations._cache（非公開）` | 172 | Shared SQLite message cache base class for communication tools. |
 | `core.integrations._chatwork_cache（非公開）` | 324 | SQLite message cache for Chatwork offline search and unreplied detection. |
 | `core.integrations._chatwork_client（非公開）` | 235 | HTTP client for the Chatwork v2 API. |
@@ -454,9 +454,9 @@ External service integrations and animaworks-tool implementation.
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
-| `core.integrations.enclave_aws` | 909 | Read-only AWS data tools for the enclave runtime. |
-| `core.integrations.enclave_records` | 215 | Read configured JSONL datasets from inside an enclave runtime. |
-| `core.integrations.enclave_sql` | 389 | Read-only MySQL query tools for the enclave runtime. |
+| `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
+| `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -499,7 +499,7 @@ Anima lifecycle: startup, shutdown, and initialization.
 
 ## `core.llm`
 
-Common utilities for LLM error classification, rate control, and retries.
+Shared utilities for LLM error classification, rate limiting, and retries.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -508,7 +508,7 @@ Common utilities for LLM error classification, rate control, and retries.
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 927 | Shared LLM helper utilities for memory-management modules. |
+| `core.llm.oneshot` | 943 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
 

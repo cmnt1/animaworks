@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7a0715938a87dafdac7cb15f662b5b281f0a53b8a531912cf49ea643037e466f generated=2026-10-11 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -15,10 +15,10 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._anima_tool（非公開）` | 33 | — |
 | `cli._gateway（非公開）` | 93 | — |
-| `cli.codex_command_hook` | 64 | Codex의 ``PreToolUse`` 명령 정책 훅을 위한 CLI 어댑터. |
+| `cli.codex_command_hook` | 64 | Codex의 ``PreToolUse`` 명령 정책 훅용 CLI 어댑터. |
 | `cli.demo` | 407 | 네이티브 ``animaworks demo`` 명령. |
 | `cli.parser` | 867 | — |
-| `cli.tool_dispatch` | 412 | 외부 도구, 작업 제출, 명령 별칭을 위한 CLI 디스패치. |
+| `cli.tool_dispatch` | 414 | 외부 도구, 작업 제출 및 명령 별칭을 위한 CLI 디스패치. |
 
 ## `cli.commands`
 
@@ -214,27 +214,27 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 격리된 엔클레이브 모드의 설정 모델과 시작 시 보안 가드.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.enclave` | 54 | 엔클레이브 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
+| `core.enclave` | 54 | 전용 소켓에 바인딩되는 격리된 런타임 인스턴스인 엔클레이브 모드. |
 | `core.enclave.config` | 160 | 엔클레이브 모드의 설정 모델. |
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로그. |
+| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로깅. |
 | `core.enclave.egress.config` | 115 | 이그레스 파이프라인의 설정 모델. |
-| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 작은 파일 시스템 헬퍼. |
-| `core.enclave.egress.masker.dispatch` | 36 | 기본 마스커의 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 133 | 레코드 정보를 규칙 기반으로 마스킹. |
+| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 강제하는 간단한 파일 시스템 도우미. |
+| `core.enclave.egress.masker.dispatch` | 36 | 기본 제공 마스커의 프로필 디스패치. |
+| `core.enclave.egress.masker.facts` | 133 | 레코드 사실의 규칙 기반 마스킹. |
 | `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
 | `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
 | `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류가 발생하면 모두 차단한다. |
+| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류가 발생하면 안전하게 차단. |
 | `core.enclave.egress.stages` | 236 | 이그레스 파이프라인의 단계 구현. |
 | `core.enclave.gateway` | 288 | 게이트웨이: 엔클레이브 인스턴스의 인그레스 지점. |
-| `core.enclave.gateway_server` | 186 | 엔클레이브 게이트웨이의 수명 주기 및 Unix 소켓 연결. |
+| `core.enclave.gateway_server` | 186 | 엔클레이브 게이트웨이의 수명 주기 및 유닉스 소켓 연결. |
 | `core.enclave.guards` | 237 | 엔클레이브 모드의 시작 가드. |
-| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드를 복호화하는 헬퍼. |
-| `core.enclave.ops` | 78 | 엔클레이브 상태 점검 및 감사 요약을 위한 운영 헬퍼. |
-| `core.enclave.raw_store` | 150 | 엔클레이브 도구가 읽는 수정되지 않은 결과의 비공개 저장소. |
-| `core.enclave.secrets` | 103 | 엔클레이브 자격 증명 저장소에서 비밀 정보를 읽는다. |
+| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 도우미. |
+| `core.enclave.ops` | 78 | 엔클레이브 상태 점검 및 감사 요약을 위한 운영 도우미. |
+| `core.enclave.raw_store` | 150 | 엔클레이브 도구가 읽는 수정되지 않은 결과를 위한 비공개 저장소. |
+| `core.enclave.secrets` | 128 | 엔클레이브 자격 증명 저장소에서 비밀 정보 읽기. |
 | `core.enclave.ssm_tunnel` | 306 | 엔클레이브 SQL 소스를 위한 SSM Session Manager 포트 포워딩 터널. |
 
 ## `core.enclave.egress`
@@ -257,19 +257,19 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 도구 실행, 명령 실행, 안전 제어.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.execution` | 57 | — |
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 99 | — |
 | `core.execution.base` | 915 | — |
-| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델(vLLM ``/metrics``)의 혼잡도 탐지. |
+| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델(vLLM ``/metrics``)의 혼잡도 프로브. |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -287,8 +287,8 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution.engines.litellm.executor` | 1048 | — |
 | `core.execution.events` | 255 | — |
 | `core.execution.fallback_activity` | 290 | 임시 런타임 모델 대체를 위한 활동 로그 통합. |
-| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub ID 확인. |
-| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)를 위한 루프 내 가드 메커니즘. |
+| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub 신원 확인. |
+| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)의 루프 내 가드 메커니즘. |
 | `core.execution.mcp_env` | 39 | — |
 | `core.execution.process_runner` | 184 | — |
 | `core.execution.reminder` | 128 | — |
@@ -421,63 +421,63 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 외부 서비스 연동 및 animaworks-tool 구현.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.integrations` | 79 | 핵심 통합 도구 검색 및 레지스트리. |
+| `core.integrations` | 79 | 핵심 연동 도구 검색 및 레지스트리. |
 | `core.integrations._anima_icon_url（非公開）` | 322 | Anima 아이콘 URL 확인 — 대시보드, 아웃바운드, Slack, 알림, 도구 등. |
 | `core.integrations._async_compat（非公開）` | 41 | 동기식 HTTP 클라이언트를 사용하는 도구를 위한 비동기 호환성 헬퍼. |
-| `core.integrations._base（非公開）` | 158 | — |
+| `core.integrations._base（非公開）` | 200 | — |
 | `core.integrations._cache（非公開）` | 172 | 통신 도구를 위한 공유 SQLite 메시지 캐시 기본 클래스. |
-| `core.integrations._chatwork_cache（非公開）` | 324 | Chatwork 오프라인 검색 및 미응답 감지를 위한 SQLite 메시지 캐시. |
+| `core.integrations._chatwork_cache（非公開）` | 324 | Chatwork 오프라인 검색 및 미답변 감지를 위한 SQLite 메시지 캐시. |
 | `core.integrations._chatwork_client（非公開）` | 235 | Chatwork v2 API용 HTTP 클라이언트. |
-| `core.integrations._chatwork_cli（非公開）` | 633 | Chatwork 도구용 독립형 CLI 진입점. |
-| `core.integrations._chatwork_identity（非公開）` | 76 | Chatwork ID 및 위임 확인. |
-| `core.integrations._chatwork_markdown（非公開）` | 162 | Markdown을 Chatwork 형식으로 변환하는 유틸리티. |
+| `core.integrations._chatwork_cli（非公開）` | 633 | Chatwork 도구의 독립 실행형 CLI 진입점. |
+| `core.integrations._chatwork_identity（非公開）` | 76 | Chatwork 신원 및 위임 확인. |
+| `core.integrations._chatwork_markdown（非公開）` | 162 | Markdown에서 Chatwork 형식으로 변환하는 유틸리티. |
 | `core.integrations._comm_cli（非公開）` | 64 | — |
 | `core.integrations._discord_cache（非公開）` | 293 | Discord용 SQLite 메시지 캐시(오프라인 검색, 동기화 상태). |
 | `core.integrations._discord_client（非公開）` | 47 | 하위 호환성을 위한 Discord 클라이언트 가져오기 경로. |
-| `core.integrations._discord_cli（非公開）` | 297 | Discord 도구용 독립형 CLI 진입점. |
+| `core.integrations._discord_cli（非公開）` | 297 | Discord 도구의 독립 실행형 CLI 진입점. |
 | `core.integrations._discord_markdown（非公開）` | 138 | Discord 마크업 헬퍼: 일반 텍스트 정리 및 길이 제한. |
 | `core.integrations._google_auth（非公開）` | 175 | Google 연동을 위한 공유 OAuth2 자격 증명 처리. |
-| `core.integrations._image_clients（非公開）` | 93 | image/3D 생성용 API 클라이언트 및 공유 상수. |
-| `core.integrations._image_cli（非公開）` | 371 | ``animaworks-tool image_gen``용 CLI 진입점. |
-| `core.integrations._image_glb（非公開）` | 473 | GLB/FBX 자산 변환, 최적화 및 압축. |
-| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – 캐릭터 자산 생성 전체 과정을 조율합니다. |
-| `core.integrations._image_schemas（非公開）` | 42 | 이미지 생성용 도구 스키마 및 CLI 가이드. |
-| `core.integrations._retry（非公開）` | 170 | AnimaWorks 도구용 공유 retry/backoff 유틸리티. |
-| `core.integrations._slack_cache（非公開）` | 435 | Slack용 SQLite 메시지 캐시(오프라인 검색, 미응답 감지). |
+| `core.integrations._image_clients（非公開）` | 93 | image/3D 생성을 위한 API 클라이언트 및 공유 상수. |
+| `core.integrations._image_cli（非公開）` | 371 | ``animaworks-tool image_gen``의 CLI 진입점. |
+| `core.integrations._image_glb（非公開）` | 473 | GLB/FBX 에셋 변환, 최적화 및 압축. |
+| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – 캐릭터 에셋 생성 전체 과정을 조율합니다. |
+| `core.integrations._image_schemas（非公開）` | 42 | 이미지 생성을 위한 도구 스키마 및 CLI 가이드. |
+| `core.integrations._retry（非公開）` | 170 | AnimaWorks 도구를 위한 공유 retry/backoff 유틸리티. |
+| `core.integrations._slack_cache（非公開）` | 435 | Slack용 SQLite 메시지 캐시(오프라인 검색, 미답변 감지). |
 | `core.integrations._slack_client（非公開）` | 308 | 속도 제한 재시도 및 페이지네이션을 지원하는 Slack Web API 클라이언트. |
-| `core.integrations._slack_cli（非公開）` | 308 | Slack 도구용 독립형 CLI 진입점. |
+| `core.integrations._slack_cli（非公開）` | 308 | Slack 도구의 독립 실행형 CLI 진입점. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack 마크다운 변환 및 서식 지정 유틸리티. |
 | `core.integrations.aws_collector` | 408 | AnimaWorks AWS 수집기 도구 — ECS 상태, CloudWatch 로그 및 메트릭. |
 | `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | AnimaWorks용 Chatwork 연동. |
 | `core.integrations.discord` | 284 | AnimaWorks용 Discord 연동. |
 | `core.integrations.enclave` | 213 | enclave_ask 도구 — 호스트 측에서 격리된 enclave 인스턴스에 질문합니다. |
-| `core.integrations.enclave_aws` | 909 | enclave 런타임용 읽기 전용 AWS 데이터 도구. |
-| `core.integrations.enclave_records` | 215 | enclave 런타임 내부에서 설정된 JSONL 데이터 세트를 읽습니다. |
-| `core.integrations.enclave_sql` | 389 | enclave 런타임용 읽기 전용 MySQL 쿼리 도구. |
+| `core.integrations.enclave_aws` | 917 | enclave 런타임용 읽기 전용 AWS 데이터 도구. |
+| `core.integrations.enclave_records` | 222 | enclave 런타임 내부에서 구성된 JSONL 데이터 세트를 읽습니다. |
+| `core.integrations.enclave_sql` | 396 | enclave 런타임용 읽기 전용 MySQL 쿼리 도구. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub 도구 — gh CLI 래퍼. |
-| `core.integrations.gmail` | 1254 | AnimaWorks Gmail 도구 -- Gmail API 직접 액세스. |
+| `core.integrations.gmail` | 1254 | AnimaWorks Gmail 도구 -- Gmail API에 직접 액세스합니다. |
 | `core.integrations.google_calendar` | 615 | — |
 | `core.integrations.google_sheets` | 470 | — |
-| `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks 도구 -- Google Tasks API 액세스. |
-| `core.integrations.image.atlascloud` | 156 | 캐릭터 이미지 및 참조 이미지 편집을 위한 선택형 Atlas Cloud 백엔드. |
+| `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks 도구 -- Google Tasks API에 액세스합니다. |
+| `core.integrations.image.atlascloud` | 156 | 캐릭터 이미지 및 참조 이미지 편집을 위한 선택적 Atlas Cloud 백엔드. |
 | `core.integrations.image.codex` | 327 | Codex CLI 이미지 생성 클라이언트(로컬 codex를 통한 image_gen 도구). |
-| `core.integrations.image.constants` | 57 | image/3D 생성을 위한 URL 상수, 시간 제한 및 실행 프로필. |
+| `core.integrations.image.constants` | 57 | image/3D 생성을 위한 URL 상수, 타임아웃 및 실행 프로필. |
 | `core.integrations.image.diffusers_local` | 905 | 로컬 Diffusers 기반 이미지 생성 헬퍼. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext 및 Flux Pro 텍스트-이미지 API 클라이언트. |
 | `core.integrations.image.meshy` | 311 | Meshy 이미지-3D 변환, 리깅 및 애니메이션 API 클라이언트. |
-| `core.integrations.image.novelai` | 193 | 애니메이션 전신 이미지 생성을 위한 NovelAI V4.5 API 클라이언트. |
+| `core.integrations.image.novelai` | 193 | 애니메이션풍 전신 이미지 생성을 위한 NovelAI V4.5 API 클라이언트. |
 | `core.integrations.image.prompts` | 197 | 상반신, 치비 및 표정 변형을 위한 프롬프트 상수. |
-| `core.integrations.image.utils` | 135 | image/3D 생성 클라이언트용 공유 유틸리티. |
+| `core.integrations.image.utils` | 135 | image/3D 생성 클라이언트를 위한 공유 유틸리티. |
 | `core.integrations.image_gen` | 425 | AnimaWorks용 캐릭터 이미지 및 3D 모델 생성 도구. |
 | `core.integrations.local_llm` | 552 | AnimaWorks 로컬 LLM 도구 -- Ollama API 클라이언트. |
 | `core.integrations.notion` | 862 | AnimaWorks용 Notion 연동. |
 | `core.integrations.slack` | 262 | AnimaWorks용 Slack 연동. |
 | `core.integrations.transcribe` | 429 | AnimaWorks 음성 전사 도구 -- LLM 보정 기능을 갖춘 Whisper 음성-텍스트 변환. |
 | `core.integrations.web_search` | 408 | AnimaWorks용 웹 검색 도구. |
-| `core.integrations.x_search` | 348 | AnimaWorks용 X (Twitter) 검색 도구. |
+| `core.integrations.x_search` | 348 | AnimaWorks용 X(Twitter) 검색 도구. |
 
 ## `core.integrations.image`
 
@@ -499,16 +499,16 @@ anima의 시작, 종료, 초기화 라이프사이클.
 
 ## `core.llm`
 
-LLM 오류 분류, 레이트 제어, 재시도를 위한 공통 기능.
+LLM 오류 분류, 속도 제한, 재시도 공통 기능.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.llm` | 1 | LLM 관련 핵심 유틸리티. |
-| `core.llm.guard.backoff` | 42 | 조율된 LLM 재시도를 위한 백오프 타이밍 헬퍼. |
-| `core.llm.guard.error_classifier` | 805 | 조율된 복구를 위한 중앙 집중식 LLM API 오류 분류. |
-| `core.llm.guard.rate_guard` | 341 | 프로세스 간 LLM 레이트 가드(플릿 전체 회로 차단기). |
+| `core.llm.guard.backoff` | 42 | 협력형 LLM 재시도를 위한 백오프 타이밍 도우미. |
+| `core.llm.guard.error_classifier` | 805 | 협력형 복구를 위한 중앙 집중식 LLM API 오류 분류. |
+| `core.llm.guard.rate_guard` | 341 | 프로세스 간 LLM 속도 제한 가드(전체 시스템 회로 차단기). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 927 | 메모리 관리 모듈을 위한 공통 LLM 헬퍼 유틸리티. |
+| `core.llm.oneshot` | 943 | 메모리 관리 모듈을 위한 공유 LLM 도우미 유틸리티. |
 
 ## `core.llm.guard`
 
