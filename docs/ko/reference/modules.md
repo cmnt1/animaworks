@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=0d6f8030bbea2d84db0a3bdc175afd2e0e509b34acf22a303b0eaeaef63dfdc6 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -214,27 +214,27 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 격리된 엔클레이브 모드의 설정 모델과 시작 시 보안 가드.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.enclave` | 54 | 엔클레이브 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
+| `core.enclave` | 54 | 전용 소켓에 바인딩되는 격리된 런타임 인스턴스인 엔클레이브 모드. |
 | `core.enclave.config` | 160 | 엔클레이브 모드의 설정 모델. |
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로그. |
+| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로깅. |
 | `core.enclave.egress.config` | 115 | 이그레스 파이프라인의 설정 모델. |
-| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 작은 파일 시스템 헬퍼. |
-| `core.enclave.egress.masker.dispatch` | 36 | 기본 마스커의 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 133 | 레코드 정보를 규칙 기반으로 마스킹. |
+| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 강제하는 간단한 파일 시스템 도우미. |
+| `core.enclave.egress.masker.dispatch` | 36 | 기본 제공 마스커의 프로필 디스패치. |
+| `core.enclave.egress.masker.facts` | 133 | 레코드 사실의 규칙 기반 마스킹. |
 | `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
 | `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
 | `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류가 발생하면 모두 차단한다. |
+| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류가 발생하면 안전하게 차단. |
 | `core.enclave.egress.stages` | 236 | 이그레스 파이프라인의 단계 구현. |
 | `core.enclave.gateway` | 288 | 게이트웨이: 엔클레이브 인스턴스의 인그레스 지점. |
-| `core.enclave.gateway_server` | 186 | 엔클레이브 게이트웨이의 수명 주기 및 Unix 소켓 연결. |
+| `core.enclave.gateway_server` | 186 | 엔클레이브 게이트웨이의 수명 주기 및 유닉스 소켓 연결. |
 | `core.enclave.guards` | 237 | 엔클레이브 모드의 시작 가드. |
-| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드를 복호화하는 헬퍼. |
-| `core.enclave.ops` | 78 | 엔클레이브 상태 점검 및 감사 요약을 위한 운영 헬퍼. |
-| `core.enclave.raw_store` | 150 | 엔클레이브 도구가 읽는 수정되지 않은 결과의 비공개 저장소. |
-| `core.enclave.secrets` | 103 | 엔클레이브 자격 증명 저장소에서 비밀 정보를 읽는다. |
+| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 도우미. |
+| `core.enclave.ops` | 78 | 엔클레이브 상태 점검 및 감사 요약을 위한 운영 도우미. |
+| `core.enclave.raw_store` | 150 | 엔클레이브 도구가 읽는 수정되지 않은 결과를 위한 비공개 저장소. |
+| `core.enclave.secrets` | 128 | 엔클레이브 자격 증명 저장소에서 비밀 정보 읽기. |
 | `core.enclave.ssm_tunnel` | 306 | 엔클레이브 SQL 소스를 위한 SSM Session Manager 포트 포워딩 터널. |
 
 ## `core.enclave.egress`
@@ -257,19 +257,19 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 도구 실행, 명령 실행, 안전 제어.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.execution` | 57 | — |
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 99 | — |
 | `core.execution.base` | 915 | — |
-| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델(vLLM ``/metrics``)의 혼잡도 탐지. |
+| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델(vLLM ``/metrics``)의 혼잡도 프로브. |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -287,8 +287,8 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution.engines.litellm.executor` | 1048 | — |
 | `core.execution.events` | 255 | — |
 | `core.execution.fallback_activity` | 290 | 임시 런타임 모델 대체를 위한 활동 로그 통합. |
-| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub ID 확인. |
-| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)를 위한 루프 내 가드 메커니즘. |
+| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub 신원 확인. |
+| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)의 루프 내 가드 메커니즘. |
 | `core.execution.mcp_env` | 39 | — |
 | `core.execution.process_runner` | 184 | — |
 | `core.execution.reminder` | 128 | — |
@@ -499,16 +499,16 @@ anima의 시작, 종료, 초기화 라이프사이클.
 
 ## `core.llm`
 
-LLM 오류 분류, 레이트 제어, 재시도를 위한 공통 기능.
+LLM 오류 분류, 속도 제한, 재시도 공통 기능.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.llm` | 1 | LLM 관련 핵심 유틸리티. |
-| `core.llm.guard.backoff` | 42 | 조율된 LLM 재시도를 위한 백오프 타이밍 헬퍼. |
-| `core.llm.guard.error_classifier` | 805 | 조율된 복구를 위한 중앙 집중식 LLM API 오류 분류. |
-| `core.llm.guard.rate_guard` | 341 | 프로세스 간 LLM 레이트 가드(플릿 전체 회로 차단기). |
+| `core.llm.guard.backoff` | 42 | 협력형 LLM 재시도를 위한 백오프 타이밍 도우미. |
+| `core.llm.guard.error_classifier` | 805 | 협력형 복구를 위한 중앙 집중식 LLM API 오류 분류. |
+| `core.llm.guard.rate_guard` | 341 | 프로세스 간 LLM 속도 제한 가드(전체 시스템 회로 차단기). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 927 | 메모리 관리 모듈을 위한 공통 LLM 헬퍼 유틸리티. |
+| `core.llm.oneshot` | 943 | 메모리 관리 모듈을 위한 공유 LLM 도우미 유틸리티. |
 
 ## `core.llm.guard`
 

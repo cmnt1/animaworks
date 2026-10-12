@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 0ce9290927edb43fa8a8558f02dfd2c960579faa43cc1f35b851badf7c75a783 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 00f04b3dccaab47f6a5a14486e240d3705f841740debd3719ac27cc3bb9b1e5b -->
 
 # モジュール一覧
 
@@ -234,7 +234,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
-| `core.enclave.secrets` | 103 | Read secrets from the enclave credentials store. |
+| `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
 | `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
@@ -269,7 +269,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -508,7 +508,7 @@ LLM エラー分類、レート制御、リトライの共通機能。
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 927 | Shared LLM helper utilities for memory-management modules. |
+| `core.llm.oneshot` | 943 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
 

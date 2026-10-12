@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=0d6f8030bbea2d84db0a3bdc175afd2e0e509b34acf22a303b0eaeaef63dfdc6 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -212,7 +212,7 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration models for isolated enclave mode and startup security guards.
+Configuration models and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -234,7 +234,7 @@ Configuration models for isolated enclave mode and startup security guards.
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
-| `core.enclave.secrets` | 103 | Read secrets from the enclave credentials store. |
+| `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
 | `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
@@ -269,7 +269,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 590 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
@@ -499,7 +499,7 @@ Anima lifecycle: startup, shutdown, and initialization.
 
 ## `core.llm`
 
-Common utilities for LLM error classification, rate control, and retries.
+Shared utilities for LLM error classification, rate limiting, and retries.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -508,7 +508,7 @@ Common utilities for LLM error classification, rate control, and retries.
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 927 | Shared LLM helper utilities for memory-management modules. |
+| `core.llm.oneshot` | 943 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
 
