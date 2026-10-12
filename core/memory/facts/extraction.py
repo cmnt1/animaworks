@@ -369,7 +369,10 @@ async def _store_fact_records(
                 side_effect_failed = True
                 failure_stage = failure_stage or "entity_registry"
                 failure_reason = failure_reason or "entity_registry_update_failed"
-        index_ok = _index_fact_records(
+        # Vector writes are synchronous; on an owner bridge they must not run
+        # on the event loop thread.
+        index_ok = await asyncio.to_thread(
+            _index_fact_records,
             anima_dir,
             stored,
             origin=origin,

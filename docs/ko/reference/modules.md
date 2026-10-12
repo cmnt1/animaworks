@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=bd7f7909c1a1a689b2f4ee061de022bb1937d9fba3a3435d176ffbec97063262 generated=2026-10-12 engine=luna model=gpt-6-luna translator=2 -->
 
 # 모듈 목록
 
@@ -534,28 +534,28 @@ Model Context Protocol 서버와 클라이언트.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.memory` | 20 | — |
-| `core.memory._llm_parse（非公開）` | 185 | 메모리 파이프라인에서 LLM 출력을 파싱하기 위한 공통 헬퍼. |
+| `core.memory._llm_parse（非公開）` | 185 | 메모리 파이프라인을 위한 공통 LLM 출력 파싱 헬퍼. |
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 322 | 대화 기억 압축 로직. |
-| `core.memory.conversation.finalize` | 493 | 대화 기억의 세션 종료 처리. |
+| `core.memory.conversation.finalize` | 493 | 대화 기억 세션 마무리 처리. |
 | `core.memory.conversation.memory` | 349 | 대화 기억(대화 기억 / 작업 기억) 관리. |
-| `core.memory.conversation.models` | 149 | 대화 기억을 위한 데이터 클래스 및 상수. |
-| `core.memory.conversation.prompt` | 270 | 대화 기억을 위한 프롬프트 구성 함수. |
+| `core.memory.conversation.models` | 149 | 대화 기억을 위한 데이터 클래스와 상수. |
+| `core.memory.conversation.prompt` | 270 | 대화 기억을 위한 프롬프트 생성 함수. |
 | `core.memory.conversation.shortterm` | 313 | 단기 기억 관리. |
-| `core.memory.conversation.state_update` | 49 | 대화 기억 종료 처리를 위한 상태 업데이트 함수. |
+| `core.memory.conversation.state_update` | 49 | 대화 기억 마무리 처리를 위한 상태 업데이트 함수. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 526 | — |
-| `core.memory.facts.extractor` | 431 | LLM 기반 엔터티 및 사실 추출 파이프라인. |
+| `core.memory.facts.extraction` | 529 | — |
+| `core.memory.facts.extractor` | 431 | LLM 기반 개체 및 사실 추출 파이프라인. |
 | `core.memory.facts.invalidation` | 515 | — |
 | `core.memory.facts.invalidation_llm` | 154 | — |
 | `core.memory.facts.live` | 578 | — |
 | `core.memory.facts.observability` | 41 | — |
-| `core.memory.facts.ontology` | 247 | 엔터티 / 사실 추출 결과를 위한 Pydantic 모델. |
-| `core.memory.facts.prompts.en` | 133 | 엔터티 / 사실 추출용 영어 프롬프트. |
-| `core.memory.facts.prompts.ja` | 135 | 엔터티 / 사실 추출용 일본어 프롬프트. |
+| `core.memory.facts.ontology` | 247 | 개체 / 사실 추출 결과를 위한 Pydantic 모델. |
+| `core.memory.facts.prompts.en` | 133 | 개체 / 사실 추출을 위한 영어 프롬프트. |
+| `core.memory.facts.prompts.ja` | 135 | 개체 / 사실 추출을 위한 일본어 프롬프트. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
 | `core.memory.io` | 59 | — |
@@ -586,7 +586,7 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.priming.policy` | 25 | — |
 | `core.memory.priming.result` | 76 | — |
 | `core.memory.priming.utils` | 284 | — |
-| `core.memory.rag.cli_access` | 232 | 활성 소유자 또는 서버를 통해 phase3 벡터 저장소에 접근하는 CLI. |
+| `core.memory.rag.cli_access` | 232 | 활성 소유자 또는 서버를 통한 phase3 벡터 저장소 CLI 접근. |
 | `core.memory.rag.contextual_header` | 163 | — |
 | `core.memory.rag.direct_access` | 24 | — |
 | `core.memory.rag.embedding` | 393 | — |
@@ -594,10 +594,10 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.rag.episode_time` | 46 | — |
 | `core.memory.rag.exclusion` | 38 | — |
 | `core.memory.rag.facts_chunker` | 100 | — |
-| `core.memory.rag.index_signature` | 27 | 기존 임베딩 인덱스 서명의 호환성 진단. |
+| `core.memory.rag.index_signature` | 27 | 기존 임베딩 인덱스 서명에 대한 호환성 진단. |
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
-| `core.memory.rag.owner_lock` | 84 | anima의 네이티브 벡터 데이터베이스를 위한 독점 소유권 잠금. |
+| `core.memory.rag.owner_lock` | 84 | 애니마의 네이티브 벡터 데이터베이스를 위한 배타적 소유권 잠금. |
 | `core.memory.rag.repair.detect` | 743 | — |
 | `core.memory.rag.repair.rebuild` | 401 | — |
 | `core.memory.rag.repair.state` | 191 | RAG 자동 복구를 위한 영구 복구 상태 헬퍼. |
@@ -608,7 +608,7 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.rag.sqlite_health` | 359 | — |
 | `core.memory.rag.store` | 783 | — |
 | `core.memory.rag.vector_client` | 497 | — |
-| `core.memory.rag.vector_ops` | 82 | 벡터 API 요청과 MemoryService 와이어 형식 간 변환. |
+| `core.memory.rag.vector_ops` | 88 | 벡터 API 요청과 MemoryService 와이어 형식 간 변환. |
 | `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |
