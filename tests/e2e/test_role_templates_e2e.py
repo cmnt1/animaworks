@@ -138,7 +138,7 @@ class TestCreateFromMdEngineerRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Engineer defaults.json specifies these values
-        assert status["model"] == "claude-opus-4-6"
+        assert status["model"] == "claude-opus-5-5"
         assert status["context_threshold"] == 0.80
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
@@ -153,7 +153,7 @@ class TestCreateFromMdEngineerRole:
 | 項目 | 設定 |
 |------|------|
 | 英名 | testeng2 |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | 上司 | (なし) |
 | 実行モード | autonomous |
 
@@ -172,7 +172,7 @@ class TestCreateFromMdEngineerRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Character sheet model should override role default
-        assert status["model"] == "claude-sonnet-4-6"
+        assert status["model"] == "claude-sonnet-5-5"
 
 
 # ── Test 2: create_from_md with role="general" (default) ───
@@ -212,7 +212,7 @@ class TestCreateFromMdGeneralRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # general defaults.json values
-        assert status["model"] == "claude-sonnet-4-6"
+        assert status["model"] == "claude-sonnet-5-5"
         assert status["context_threshold"] == 0.50
         assert status["conversation_history_threshold"] == 0.30
 
@@ -269,7 +269,7 @@ class TestTwoLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Engineer role defaults in status.json should override global defaults
-        assert model_config.model == "claude-opus-4-6"
+        assert model_config.model == "claude-opus-5-5"
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
 
@@ -285,7 +285,7 @@ class TestTwoLayerConfigResolution:
 
         status_path = anima_dir / "status.json"
         status_data = json.loads(status_path.read_text(encoding="utf-8"))
-        status_data["model"] = "claude-sonnet-4-6"
+        status_data["model"] = "claude-sonnet-5-5"
         legacy_key = "max_turns"
         status_data[legacy_key] = 50
         status_path.write_text(
@@ -298,7 +298,7 @@ class TestTwoLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Updated fields from status.json
-        assert model_config.model == "claude-sonnet-4-6"
+        assert model_config.model == "claude-sonnet-5-5"
         assert not hasattr(model_config, legacy_key)
         # Non-updated fields still come from original status.json (engineer role)
         assert model_config.context_threshold == 0.80
@@ -326,7 +326,7 @@ class TestTwoLayerConfigResolution:
 
         # Layer 1: status.json (engineer role defaults + our override)
         assert not hasattr(resolved, legacy_key)
-        assert resolved.model == "claude-opus-4-6"
+        assert resolved.model == "claude-opus-5-5"
         assert resolved.context_threshold == 0.80
         # Layer 2: global defaults (for fields not set in status.json)
         assert resolved.max_tokens == 1024  # from test config anima_defaults

@@ -126,6 +126,7 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "claude-opus-4-6", "mode": "S", "note": "最高性能・推奨"},
     {"name": "claude-sonnet-5", "mode": "S", "note": "次世代Sonnet・最新"},
     {"name": "claude-sonnet-4-6", "mode": "S", "note": "バランス型・推奨"},
+    {"name": "claude-sonnet-5-5", "mode": "S", "note": "バランス型・推奨"},
     {"name": "claude-haiku-4-5-20251001", "mode": "S", "note": "軽量・高速"},
     # Legacy (still available)
     {"name": "claude-opus-4-5-20251101", "mode": "S", "note": "旧フラッグシップ"},

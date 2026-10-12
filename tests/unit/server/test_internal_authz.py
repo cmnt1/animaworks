@@ -69,7 +69,7 @@ def authz_client(tmp_path, monkeypatch):
     app.state.internal_auth = auth
     # Vector endpoints forward to the owning root over supervisor IPC.
     app.state.supervisor = SimpleNamespace(send_request=AsyncMock(return_value={"ok": True, "result": {}}))
-    app.state.ws_manager = MagicMock()
+    app.state.ws_manager = MagicMock(broadcast=AsyncMock(), broadcast_notification=AsyncMock())
 
     from server.routes.internal import create_internal_router
 
@@ -183,6 +183,7 @@ def _endpoint_cases(task_id: str):
             {"from_anima": "boss", "channel": "general", "text": "hello"},
             "from_anima",
         ),
+        ("post", "/api/internal/notify-web", {"anima": "boss", "subject": "s", "body": "b"}, "anima"),
         ("get", "/api/internal/tasks?anima_name=boss", None, "query:anima_name"),
         ("post", "/api/internal/submit-tasks", {"anima_name": "boss", "tasks": []}, "anima_name"),
         ("post", "/api/internal/delegate-task", delegate, "delegator"),

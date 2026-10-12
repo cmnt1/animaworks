@@ -35,6 +35,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.locks import locked_path
+
 logger = logging.getLogger(__name__)
 
 REGISTRY_NAME = "discord_debate_threads.json"
@@ -47,7 +49,6 @@ MAX_DELIVERY_CHARS = 1800  # inbox keeps ~2000 chars of a message body
 
 _turns: dict[str, int] = {}
 _turns_lock = threading.Lock()
-_record_lock = threading.Lock()
 
 
 def _shared_dir() -> Path:
@@ -98,7 +99,7 @@ def append_to_record(entry: dict, author: str, text: str, *, ck_dir: Path | None
     if path is None or not path.exists():
         return
     stamp = datetime.now().astimezone().strftime("%m/%d %H:%M")
-    with _record_lock, path.open("a", encoding="utf-8") as f:
+    with locked_path(path, thread_lock=True) as f:
         f.write(f"\n### {author}（Discord {stamp}）\n{text.strip()}\n")
 
 

@@ -73,6 +73,8 @@ export class SceneRenderer {
     this.mode = "day";
     this.instructions = [];
     this.humanFlash = 0;
+    this.highlightedActor = null;
+    this.actorHitTargets = [];
     this.signDate = new Intl.DateTimeFormat("ja-JP", {
       month: "2-digit",
       day: "2-digit",
@@ -100,6 +102,10 @@ export class SceneRenderer {
 
   setInstructions(lines) {
     this.instructions = lines.slice(-3);
+  }
+
+  setHighlight(name) {
+    this.highlightedActor = name == null ? null : String(name).toLowerCase();
   }
 
   flashHuman(duration = 1.4) {
@@ -131,6 +137,7 @@ export class SceneRenderer {
       const desk = this.scene.desks[actor.id];
       const deskFootY = desk ? (desk.tile[1] + 2) * this.tile : actor.y;
       layers.push({
+        actor,
         y: actor.isSeated
           ? deskFootY - 1
           : actor.y,
@@ -148,7 +155,23 @@ export class SceneRenderer {
     }
     layers.push(...(director?.customerLayers(ctx) || []));
     layers.sort((a, b) => (a.y - b.y) || ((a.priority ?? 1) - (b.priority ?? 1)));
-    layers.forEach((layer) => layer.draw());
+    this.actorHitTargets = [];
+    layers.forEach((layer) => {
+      if (layer.actor?.sprite?.image) {
+        const actor = layer.actor;
+        const scale = actor.renderScale();
+        const width = actor.sprite.frameW * scale;
+        const height = actor.sprite.frameH * scale;
+        this.actorHitTargets.push({
+          name: actor.id,
+          x: Math.round(actor.x + actor.shakeOffsetX()) - Math.round(width / 2),
+          y: Math.round(actor.spriteY()) - Math.round(height),
+          width,
+          height,
+        });
+      }
+      layer.draw();
+    });
 
     this.drawStaticLabels();
     this.drawWhiteboardText();
@@ -185,12 +208,43 @@ export class SceneRenderer {
     for (const layout of overlayLayouts) {
       layout.actor.drawNameOverlay(ctx, layout);
     }
+    if (this.highlightedActor) {
+      const selected = actors.get(this.highlightedActor);
+      if (selected && drawnActors.has(selected.id)) this.drawSelectionMarker(selected);
+    }
     this.drawLighting();
     this.drawPaletteUnifier();
     this.drawVignette();
     this.applyUnifiedTone();
     this.drawWorkKindLegend();
   }
+
+  drawSelectionMarker(actor) {
+    const scale = actor.renderScale();
+    const x = Math.round(actor.x + actor.shakeOffsetX());
+    const headY = actor.spriteY() - actor.sprite.frameH * scale;
+    const bounce = Math.round(Math.sin(performance.now() / 180) * 2);
+    const top = Math.round(headY - 40 + bounce);
+    const px = 2;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = "#38261d";
+    for (let row = 0; row < 6; row += 1) {
+      const half = 5 - row;
+      ctx.fillRect(x - (half + 1) * px, top + row * px, (half * 2 + 3) * px, px);
+    }
+    ctx.fillRect(x - px, top + 6 * px, px * 3, px);
+    ctx.fillStyle = "#ffe27a";
+    for (let row = 0; row < 5; row += 1) {
+      const half = 4 - row;
+      ctx.fillRect(x - half * px, top + (row + 1) * px, (half * 2 + 1) * px, px);
+    }
+    ctx.fillStyle = "#fff8e0";
+    ctx.fillRect(x - 3 * px, top + px, px * 2, px);
+    ctx.restore();
+  }
+
+
 
   drawFloor() {
     const { ctx, tile } = this;

@@ -1,6 +1,6 @@
 {
-  "model": "claude-opus-4-6",
-  "background_model": "claude-sonnet-4-6",
+  "model": "claude-opus-5-5",
+  "background_model": "claude-sonnet-5-5",
   "context_threshold": 0.60,
   "conversation_history_threshold": 0.30
 }

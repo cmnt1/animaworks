@@ -387,8 +387,26 @@ def _archive_named_file(anima_dir: Path, source: Path, filename: str) -> Path:
     return archive_path
 
 
+def _archive_processed_character_sheet(anima_dir: Path) -> None:
+    """Archive the character sheet once the run has defined the Anima.
+
+    The bootstrap prompt asks the model to delete ``character_sheet.md`` when
+    it is done, but models regularly finish the identity/injection work and
+    forget that last step.  Leaving the sheet behind is not a defect in the
+    Anima, so tidy it up here instead of parking the Anima in needs_repair.
+    """
+    character_sheet = anima_dir / "character_sheet.md"
+    if not character_sheet.exists():
+        return
+    if not (file_is_defined(anima_dir / "identity.md") and file_is_defined(anima_dir / "injection.md")):
+        return
+    timestamp = now_local().strftime("%Y%m%d_%H%M%S")
+    _archive_named_file(anima_dir, character_sheet, f"character_sheet-{timestamp}.md")
+
+
 def finalize_bootstrap_run(anima_dir: Path) -> dict[str, Any]:
     """Validate bootstrap output and persist completed or needs_repair state."""
+    _archive_processed_character_sheet(anima_dir)
     status = validate_bootstrap(anima_dir)
     if status["state"] != STATE_COMPLETED:
         payload = {k: v for k, v in status.items() if not k.startswith("needs_")}

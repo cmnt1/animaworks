@@ -25,6 +25,7 @@
 | [統合と忘却](memory/consolidation.md) | 日次・週次処理、記憶の見直し、手続き記憶。 |
 | [アクティビティログ](memory/activity-log.md) | JSONL の活動記録とストリーミング時の復旧記録。 |
 | [セキュリティ](security.md) | 権限境界、保護、セキュリティ運用。 |
+| [Enclave](enclave.md) | 隔離ランタイムの構築、データ参照、点検と監査。 |
 | [設定](operations/configuration.md) | 全体設定と Anima ごとの設定方法。 |
 | [会社管理](operations/company.md) | 組織・会社情報の管理。 |
 | [GPU 運用](operations/gpu.md) | GPU を使うコンポーネントの運用。 |

@@ -9,11 +9,11 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any
 
 from core.memory.facts.observability import warn_rate_limited
 from core.memory.facts.ontology import (
-    ENTITY_TYPES,
+    CombinedExtractionResult,
     EntityExtractionResult,
     ExtractedEntity,
     ExtractedFact,
@@ -26,10 +26,46 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
-_VALID_ENTITY_TYPES: frozenset[str] = frozenset(get_args(ENTITY_TYPES))
 # Language-agnostic fence (json / markdown / any tag / bare) so `` ```json``
 # wrapped LLM output is extracted on every path.
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
+
+
+def _filter_entities(entities: list[ExtractedEntity]) -> list[ExtractedEntity]:
+    return [entity for entity in entities if entity.name and entity.name.strip()]
+
+
+def _postprocess_facts(
+    facts: list[ExtractedFact],
+    entities: list[ExtractedEntity],
+    *,
+    anima_dir: Path | None,
+    supplement_missing_entities: bool = False,
+) -> tuple[list[ExtractedEntity], list[ExtractedFact]]:
+    """Filter entity references and canonicalize fact edge types consistently."""
+    processed_entities = _filter_entities(entities)
+    entity_names = {entity.name for entity in processed_entities}
+
+    if supplement_missing_entities:
+        for fact in facts:
+            for name in (fact.source_entity, fact.target_entity):
+                if name and name.strip() and name not in entity_names:
+                    processed_entities.append(ExtractedEntity(name=name, entity_type="Concept", summary=""))
+                    entity_names.add(name)
+
+    allowed = allowed_edge_types(anima_dir)
+    processed_facts: list[ExtractedFact] = []
+    for fact in facts:
+        if fact.source_entity not in entity_names:
+            logger.debug("Dropping fact: source %r not in entities", fact.source_entity)
+            continue
+        if fact.target_entity not in entity_names:
+            logger.debug("Dropping fact: target %r not in entities", fact.target_entity)
+            continue
+        edge_type, raw_edge_type = canonicalize_edge_type(fact.edge_type, allowed)
+        processed_facts.append(fact.model_copy(update={"edge_type": edge_type, "raw_edge_type": raw_edge_type}))
+
+    return processed_entities, processed_facts
 
 
 # ── FactExtractor ──────────────────────────────────────────
@@ -38,11 +74,8 @@ _CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
 class FactExtractor:
     """LLM-based entity and fact extraction pipeline.
 
-    3-step process following Graphiti architecture:
-
-    1. Create Episode node (caller responsibility)
-    2. Extract entities via LLM
-    3. Extract facts (relationships) via LLM
+    Entity/fact extraction can run in one call; the two legacy extraction
+    methods remain available for compatibility with existing callers.
     """
 
     def __init__(
@@ -56,6 +89,8 @@ class FactExtractor:
         anima_dir: Path | None = None,
         credential: str = "",
         max_tokens: int = 8192,
+        allow_agent_sdk_fallback: bool = False,
+        helper_model: Any | None = None,
     ) -> None:
         self._model = model
         self._locale = locale
@@ -65,6 +100,9 @@ class FactExtractor:
         self._anima_dir = Path(anima_dir) if anima_dir is not None else None
         self._credential = credential
         self._max_tokens = max_tokens
+        self._allow_agent_sdk_fallback = allow_agent_sdk_fallback
+        self._helper_model = helper_model
+        self.llm_calls = 0
         self.last_failure_stage = ""
         self.last_failure_reason = ""
 
@@ -108,13 +146,7 @@ class FactExtractor:
         if not isinstance(result, EntityExtractionResult):
             return []
 
-        entities: list[ExtractedEntity] = []
-        for ent in result.entities:
-            if not ent.name or not ent.name.strip():
-                continue
-            if ent.entity_type not in _VALID_ENTITY_TYPES:
-                ent = ent.model_copy(update={"entity_type": "Concept"})
-            entities.append(ent)
+        entities = _filter_entities(result.entities)
 
         logger.debug("Extracted %d entities from text", len(entities))
         return entities
@@ -168,22 +200,56 @@ class FactExtractor:
         if not isinstance(result, FactExtractionResult):
             return []
 
-        entity_names = {e.name for e in entities}
-        allowed = allowed_edge_types(self._anima_dir)
-        facts: list[ExtractedFact] = []
-        for fact in result.facts:
-            if fact.source_entity not in entity_names:
-                logger.debug("Dropping fact: source %r not in entities", fact.source_entity)
-                continue
-            if fact.target_entity not in entity_names:
-                logger.debug("Dropping fact: target %r not in entities", fact.target_entity)
-                continue
-            edge_type, raw_edge_type = canonicalize_edge_type(fact.edge_type, allowed)
-            fact = fact.model_copy(update={"edge_type": edge_type, "raw_edge_type": raw_edge_type})
-            facts.append(fact)
+        _processed_entities, facts = _postprocess_facts(
+            result.facts,
+            entities,
+            anima_dir=self._anima_dir,
+        )
 
         logger.debug("Extracted %d facts from text", len(facts))
         return facts
+
+    async def extract_entities_and_facts(
+        self,
+        content: str,
+        *,
+        reference_time: str | None = None,
+        previous_entities: list[dict[str, str]] | None = None,
+    ) -> tuple[list[ExtractedEntity], list[ExtractedFact]]:
+        """Extract related entities and facts in a single LLM call."""
+        self._clear_failure()
+        prompts = self._select_prompts()
+        prev_str = json.dumps(previous_entities, ensure_ascii=False) if previous_entities else "[]"
+        user_prompt = prompts.COMBINED_USER.format(
+            content=content,
+            previous_entities=prev_str,
+            edge_types_list=format_edge_types_for_prompt(self._anima_dir),
+            reference_time=reference_time or now_iso(),
+        )
+
+        try:
+            raw = await self._call_llm(prompts.COMBINED_SYSTEM, user_prompt)
+        except Exception as exc:
+            self._record_failure(
+                "combined_llm",
+                f"{type(exc).__name__}: {exc}",
+                "Combined extraction LLM call failed",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            return [], []
+
+        result = self._parse_json_response(raw, CombinedExtractionResult, stage="combined")
+        if not isinstance(result, CombinedExtractionResult):
+            return [], []
+
+        entities, facts = _postprocess_facts(
+            result.facts,
+            result.entities,
+            anima_dir=self._anima_dir,
+            supplement_missing_entities=True,
+        )
+        logger.debug("Extracted %d entities and %d facts from text", len(entities), len(facts))
+        return entities, facts
 
     # ── LLM call ───────────────────────────────────────────
 
@@ -207,18 +273,35 @@ class FactExtractor:
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):
             try:
-                text = await one_shot_completion(
-                    user_prompt,
-                    system_prompt=system_prompt,
-                    model=self._model,
-                    credential=self._credential,
-                    max_tokens=self._max_tokens,
-                    structured_output=True,
-                    temperature=0.0,
-                    timeout=self._timeout,
-                    llm_extra=self._llm_extra,
-                    allow_agent_sdk_fallback=False,
-                )
+                self.llm_calls += 1
+                if self._helper_model is not None:
+                    from core.llm.helper_completion import one_shot_helper_completion
+
+                    text = await one_shot_helper_completion(
+                        user_prompt,
+                        role="fact_extraction",
+                        anima_dir=self._anima_dir,
+                        resolved=self._helper_model,
+                        system_prompt=system_prompt,
+                        max_tokens=self._max_tokens,
+                        structured_output=True,
+                        temperature=0.0,
+                        timeout=self._timeout,
+                        llm_extra=self._llm_extra,
+                    )
+                else:
+                    text = await one_shot_completion(
+                        user_prompt,
+                        system_prompt=system_prompt,
+                        model=self._model,
+                        credential=self._credential,
+                        max_tokens=self._max_tokens,
+                        structured_output=True,
+                        temperature=0.0,
+                        timeout=self._timeout,
+                        llm_extra=self._llm_extra,
+                        allow_agent_sdk_fallback=self._allow_agent_sdk_fallback,
+                    )
                 if text is None:
                     raise RuntimeError("LLM returned no content")
                 return text
@@ -290,7 +373,15 @@ class FactExtractor:
             repaired = repair_json(body)
             if repaired is not None:
                 data = json.loads(str(repaired))
-                return model_cls.model_validate(data)
+                result = model_cls.model_validate(data)
+                # A repaired body usually means the output hit max_tokens and
+                # trailing keys were dropped silently.
+                logger.warning(
+                    "%s extraction JSON needed repair (len=%d); output may be truncated",
+                    stage.capitalize(),
+                    len(text),
+                )
+                return result
         except Exception as exc:
             if first_exc is None:
                 first_exc = exc

@@ -21,16 +21,35 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+ActivityInputProfile = Literal["full", "compact", "compact_v2"]
+# Profiles a date can be recorded with. ``compact`` is frozen so dates already
+# summarised with it keep their checkpoint hashes; new dates requesting
+# ``compact`` get the current compact version.
+INPUT_PROFILES: tuple[str, ...] = ("full", "compact", "compact_v2")
+CURRENT_COMPACT_PROFILE = "compact_v2"
+_BASH_TOOLS = frozenset({"Bash"})
+
+
+def is_compact_profile(profile: str) -> bool:
+    return profile in ("compact", "compact_v2")
+
 
 @dataclass(frozen=True)
 class ActivityCompactionSettings:
     """Settings controlling the compact daily-episode input profile."""
 
-    profile: Literal["full", "compact"] = "compact"
+    profile: ActivityInputProfile = "compact"
     cron_digest_min_runs: int = 6
     cron_digest_max_notable_runs: int = 5
     tool_use_max_bytes: int = 300
     error_tail_bytes: int = 300
+    bash_tool_use_max_bytes: int = 120
+
+    def tool_use_bytes_for(self, entry: Any) -> int:
+        """Body-size limit for a tool_use entry under this profile."""
+        if self.profile == "compact_v2" and str(getattr(entry, "tool", "") or "") in _BASH_TOOLS:
+            return min(self.tool_use_max_bytes, self.bash_tool_use_max_bytes)
+        return self.tool_use_max_bytes
 
     @classmethod
     def from_config(cls, consolidation_cfg: Any, defaults: Any | None = None) -> ActivityCompactionSettings:
@@ -41,7 +60,7 @@ class ActivityCompactionSettings:
             return getattr(consolidation_cfg, config_name, fallback)
 
         profile = value("episode_summary_input_profile", "compact")
-        if profile not in ("full", "compact"):
+        if profile not in INPUT_PROFILES:
             profile = "compact"
         return cls(
             profile=profile,
@@ -49,6 +68,7 @@ class ActivityCompactionSettings:
             cron_digest_max_notable_runs=max(0, int(value("episode_summary_cron_digest_max_notable_runs", 5))),
             tool_use_max_bytes=max(0, int(value("episode_summary_tool_use_max_bytes", 300))),
             error_tail_bytes=max(0, int(value("episode_summary_error_tail_bytes", 300))),
+            bash_tool_use_max_bytes=max(0, int(value("episode_summary_bash_tool_use_max_bytes", 120))),
         )
 
 

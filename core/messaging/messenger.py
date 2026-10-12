@@ -220,6 +220,15 @@ class InboxItem:
     path: Path
 
 
+def _restrict_dm_log_mode(filepath: Path) -> None:
+    """Keep DM logs readable by the runtime owner only (dir 0700, file 0600)."""
+    try:
+        filepath.parent.chmod(0o700)
+        filepath.chmod(0o600)
+    except OSError:
+        logger.debug("Failed to restrict dm_log mode: %s", filepath, exc_info=True)
+
+
 class Messenger:
     """File-system based messaging.
 
@@ -681,6 +690,7 @@ class Messenger:
         if intent:
             entry_dict["intent"] = intent
         append_jsonl_locked(filepath, entry_dict)
+        _restrict_dm_log_mode(filepath)
 
     def receive(self) -> list[Message]:
         known_animas: set[str] | None = None
@@ -1040,6 +1050,20 @@ class Messenger:
             msg.thread_id = msg.id
         filepath = self.inbox_dir / f"{msg.id}.json"
         atomic_write_json(filepath, msg.model_dump(mode="json"), indent=2, trailing_newline=False)
+        if source == "slack" and intent != "observe":
+            thread_ts = external_thread_ts or source_message_id
+            if external_channel_id and thread_ts:
+                try:
+                    from core.messaging.reply_grants import record_reply_grant
+
+                    anima_dir = self.shared_dir.parent / "animas" / self.anima_name
+                    record_reply_grant(anima_dir, "slack", external_channel_id, thread_ts)
+                except Exception:
+                    logger.warning(
+                        "Failed to record Slack reply grant for anima=%s",
+                        self.anima_name,
+                        exc_info=True,
+                    )
         logger.info(
             "External message received: %s -> %s (source=%s, id=%s)",
             msg.from_person,

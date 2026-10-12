@@ -420,7 +420,7 @@ class TestCompressIfNeeded:
             assert state.compressed_summary == "Compressed summary"
             assert state.compressed_turn_count > 0
 
-    async def test_primary_failure_uses_active_model_fallback(self, conv):
+    async def test_primary_failure_does_not_use_active_model_fallback(self, conv):
         # Add enough turns to trigger compression (same reasoning as above).
         for _i in range(45):
             conv.append_turn("human", "x" * 8000)
@@ -428,17 +428,16 @@ class TestCompressIfNeeded:
 
         with (
             patch("core.memory.conversation.compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
-            patch(
-                "core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock
-            ) as mock_active,
+            patch("core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock) as mock_active,
         ):
             mock_llm.side_effect = RuntimeError("API error")
             mock_active.return_value = "Active model summary"
             result = await conv.compress_if_needed_detailed()
             assert result.performed is True
-            assert result.status == "llm_active_model"
-            assert result.fallback_used == "active_model"
-            assert conv.load().compressed_summary == "Active model summary"
+            assert result.status == "deterministic_fallback"
+            assert result.fallback_used == "deterministic"
+            assert "Deterministic compression fallback" in conv.load().compressed_summary
+            mock_active.assert_not_awaited()
 
     async def test_all_llm_failures_use_deterministic_fallback(self, conv):
         # Add enough turns to trigger compression (same reasoning as above).
@@ -449,9 +448,7 @@ class TestCompressIfNeeded:
         original_count = len(conv.load().turns)
         with (
             patch("core.memory.conversation.compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
-            patch(
-                "core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock
-            ) as mock_active,
+            patch("core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock) as mock_active,
         ):
             mock_llm.side_effect = RuntimeError("API error")
             mock_active.return_value = None

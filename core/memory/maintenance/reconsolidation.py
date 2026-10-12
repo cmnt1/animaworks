@@ -157,10 +157,6 @@ class ReconsolidationEngine:
         Returns:
             Dict with counts: "updated", "skipped", "errors".
         """
-        if not model:
-            from core.llm.oneshot import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
         results: dict[str, int] = {"updated": 0, "skipped": 0, "errors": 0}
 
         for proc_path in targets:
@@ -241,11 +237,6 @@ class ReconsolidationEngine:
         Returns:
             Dict with counts: ``created``, ``skipped``, ``errors``.
         """
-        if not model:
-            from core.llm.oneshot import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
-
         results: dict[str, int] = {"created": 0, "skipped": 0, "errors": 0}
 
         # Collect resolved events
@@ -295,9 +286,15 @@ class ReconsolidationEngine:
                     existing_procedures=existing_procedures[:2000],
                 )
 
-                from core.llm.oneshot import one_shot_completion
+                from core.llm.helper_completion import one_shot_helper_completion
 
-                text = await one_shot_completion(prompt, model=model, max_tokens=2048)
+                text = await one_shot_helper_completion(
+                    prompt,
+                    role="reconsolidation",
+                    anima_dir=self.anima_dir,
+                    model_override=model or None,
+                    max_tokens=2048,
+                )
                 if text is None:
                     raise RuntimeError("LLM failed")
                 text = text or ""
@@ -377,9 +374,18 @@ class ReconsolidationEngine:
         )
 
         try:
-            from core.llm.oneshot import one_shot_completion
+            from core.llm.helper_completion import one_shot_helper_completion
 
-            text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
+            text = (
+                await one_shot_helper_completion(
+                    prompt,
+                    role="reconsolidation",
+                    anima_dir=self.anima_dir,
+                    model_override=model or None,
+                    max_tokens=2048,
+                )
+                or ""
+            )
 
             # Sanitize LLM output
             from core.memory.maintenance.consolidation import ConsolidationEngine
@@ -501,10 +507,6 @@ class ReconsolidationEngine:
         Returns:
             Dict with counts: "targets_found", "updated", "skipped", "errors".
         """
-        if not model:
-            from core.llm.oneshot import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
         targets = await self.find_knowledge_reconsolidation_targets(
             max_files=max_files,
             exclude_paths=exclude_paths,
@@ -614,9 +616,18 @@ class ReconsolidationEngine:
         )
 
         try:
-            from core.llm.oneshot import one_shot_completion
+            from core.llm.helper_completion import one_shot_helper_completion
 
-            text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
+            text = (
+                await one_shot_helper_completion(
+                    prompt,
+                    role="reconsolidation",
+                    anima_dir=self.anima_dir,
+                    model_override=model or None,
+                    max_tokens=2048,
+                )
+                or ""
+            )
 
             # Sanitize LLM output
             from core.memory.maintenance.consolidation import ConsolidationEngine

@@ -31,9 +31,12 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.maintenance.activity_compaction import (
+    CURRENT_COMPACT_PROFILE,
+    INPUT_PROFILES,
     ActivityCompactionSettings,
     ActivityCompactionStats,
     compact_activity_entries,
+    is_compact_profile,
 )
 from core.time_utils import ensure_aware, get_app_timezone, now_local
 
@@ -164,11 +167,13 @@ class ConsolidationEngine:
         checkpoint = self._load_episode_checkpoint()
         iso = target_date.isoformat()
         if not checkpoint.get(iso, []):
-            return requested_profile if requested_profile in ("full", "compact") else "compact"
+            if requested_profile == "full":
+                return "full"
+            return CURRENT_COMPACT_PROFILE
         recorded_by_date = checkpoint.get(_INPUT_PROFILE_KEY, {})
         if isinstance(recorded_by_date, dict):
             recorded = recorded_by_date.get(iso)
-            if recorded in ("full", "compact"):
+            if recorded in INPUT_PROFILES:
                 return recorded
         return "full"
 
@@ -185,9 +190,7 @@ class ConsolidationEngine:
         for key, value in data.items():
             if key == _INPUT_PROFILE_KEY and isinstance(value, dict):
                 profiles = {
-                    day: profile
-                    for day, profile in value.items()
-                    if isinstance(day, str) and profile in ("full", "compact")
+                    day: profile for day, profile in value.items() if isinstance(day, str) and profile in INPUT_PROFILES
                 }
                 if profiles:
                     checkpoint[key] = profiles
@@ -224,7 +227,7 @@ class ConsolidationEngine:
             filtered = set(checkpoint.get(_NOOP_FILTER_KEY, []))
             filtered.add(key)
             checkpoint[_NOOP_FILTER_KEY] = sorted(filtered)
-        if input_profile in ("full", "compact"):
+        if input_profile in INPUT_PROFILES:
             profiles = checkpoint.get(_INPUT_PROFILE_KEY, {})
             if not isinstance(profiles, dict):
                 profiles = {}
@@ -601,14 +604,16 @@ class ConsolidationEngine:
                 if model is None:
                     raise
         if model is None:
-            model = cfg.consolidation.llm_model
+            from core.config.helper_models import resolve_helper_model
+
+            model = resolve_helper_model("episode_summary", self.anima_dir, config=cfg).model
         if settings is None:
             settings = (
                 ActivityCompactionSettings.from_config(getattr(cfg, "consolidation", None))
                 if cfg is not None
                 else ActivityCompactionSettings()
             )
-        if settings.profile not in ("full", "compact"):
+        if settings.profile not in INPUT_PROFILES:
             raise ValueError(f"Unknown activity input profile: {settings.profile!r}")
 
         # Keep chunk boundaries stable so existing checkpoint hashes remain valid;
@@ -686,14 +691,14 @@ class ConsolidationEngine:
                 continue
             included.append(e)
 
-        if settings.profile == "compact":
+        if is_compact_profile(settings.profile):
             formatted_entries, compaction_stats = compact_activity_entries(
                 included,
                 settings=settings,
                 format_full=lambda entry: self._format_entry_full(entry, max_content_bytes=entry_content_bytes),
                 format_tool_use=lambda entry: self._format_entry_full(
                     entry,
-                    max_content_bytes=settings.tool_use_max_bytes,
+                    max_content_bytes=settings.tool_use_bytes_for(entry),
                 ),
             )
         else:
@@ -707,7 +712,12 @@ class ConsolidationEngine:
             input_bytes = sum(len(text.encode("utf-8")) + 1 for _, text in formatted_entries)
             compaction_stats = ActivityCompactionStats(bytes_before=input_bytes, bytes_after=input_bytes)
 
-        if settings.profile == "compact" or noop_llm_excluded or noop_command_excluded or noop_tool_entries_excluded:
+        if (
+            is_compact_profile(settings.profile)
+            or noop_llm_excluded
+            or noop_command_excluded
+            or noop_tool_entries_excluded
+        ):
             logger.info(
                 "Phase A input filter anima=%s excluded_noop_cron llm=%d command=%d entries=%d "
                 "profile=%s bytes_before=%d bytes_after=%d cron_digests=%d cron_runs_folded=%d "
@@ -819,6 +829,8 @@ class ConsolidationEngine:
 
             all_records: list = []
             all_duplicates = 0
+            all_extract_llm_calls = 0
+            all_reconcile_llm_calls = 0
             failed = False
             failure_stage = ""
             failure_reason = ""
@@ -854,6 +866,8 @@ class ConsolidationEngine:
 
                 all_records.extend(outcome.records)
                 all_duplicates += outcome.duplicates
+                all_extract_llm_calls += outcome.extract_llm_calls
+                all_reconcile_llm_calls += outcome.reconcile_llm_calls
                 if outcome.failed:
                     failed = True
                     failed_chunks += 1
@@ -878,18 +892,23 @@ class ConsolidationEngine:
                 failed_chunks=failed_chunks,
                 total_chunks=total_chunks,
                 duplicates=all_duplicates,
+                extract_llm_calls=all_extract_llm_calls,
+                reconcile_llm_calls=all_reconcile_llm_calls,
             )
             first_failure = f" first_failure={failure_reason[:300].replace(chr(10), ' ')}" if failed else ""
             logger.info(
                 (
                     "Consolidation atomic fact extraction complete for anima=%s: "
-                    "facts_extracted=%d facts_failed=%d chunks=%d%s"
+                    "facts_extracted=%d facts_failed=%d chunks=%d%s "
+                    "extract_llm_calls=%d reconcile_llm_calls=%d"
                 ),
                 self.anima_name,
                 outcome.facts_extracted,
                 outcome.facts_failed,
                 outcome.total_chunks,
                 first_failure,
+                outcome.extract_llm_calls,
+                outcome.reconcile_llm_calls,
             )
             return outcome
         except Exception as exc:
@@ -907,7 +926,8 @@ class ConsolidationEngine:
             logger.info(
                 (
                     "Consolidation atomic fact extraction complete for anima=%s: "
-                    "facts_extracted=0 facts_failed=1 chunks=1 first_failure=%s"
+                    "facts_extracted=0 facts_failed=1 chunks=1 first_failure=%s "
+                    "extract_llm_calls=0 reconcile_llm_calls=0"
                 ),
                 self.anima_name,
                 reason[:300].replace(chr(10), " "),

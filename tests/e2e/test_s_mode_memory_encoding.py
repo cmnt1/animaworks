@@ -120,11 +120,13 @@ class TestSModeAppendTurn:
         """
         import core.anima.digital_anima as anima_module
 
-        source = inspect.getsource(anima_module.DigitalAnima.process_message)
+        wrapper_source = inspect.getsource(anima_module.DigitalAnima.process_message)
+        stream_source = inspect.getsource(anima_module.DigitalAnima.process_message_stream)
 
-        # Must contain append_turn calls (both pre-save and post-save)
-        assert "append_turn" in source, "process_message should call append_turn"
-        assert "conv_memory.save()" in source, "process_message should call conv_memory.save()"
+        # process_message drains the stream (18b30d5c); StateWriter owns persistence (169aca61).
+        assert "process_message_stream" in wrapper_source
+        assert "append_turn" in stream_source, "process_message_stream should append turns"
+        assert "_persist_conversation" in stream_source, "process_message_stream should persist turns"
 
     def test_s_mode_streaming_saves_turns(self) -> None:
         """Verify process_message_stream code path saves turns for S-mode."""
@@ -464,7 +466,12 @@ def test_consolidation_uses_2phase_pipeline() -> None:
     phase_a_source = inspect.getsource(
         anima_module.DigitalAnima._run_daily_episode_summaries,
     )
-    assert "collect_activity_chunks" in phase_a_source, "Phase A episode extraction should use collect_activity_chunks"
+    # Checkpoint-aware collection replaced direct chunk collection (4ea286fc).
+    assert "collect_pending_activity_chunks" in phase_a_source
+    from core.memory.maintenance.consolidation import ConsolidationEngine
+
+    collector_source = inspect.getsource(ConsolidationEngine.collect_pending_activity_chunks)
+    assert "collect_activity_chunks" in collector_source, "Pending collection should use activity chunks"
     assert "_complete_episode_prompt" in phase_a_source, (
         "Phase A episode extraction should complete prompts via _complete_episode_prompt"
     )

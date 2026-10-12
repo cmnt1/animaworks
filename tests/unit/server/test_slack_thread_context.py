@@ -390,7 +390,7 @@ class TestBuildReplyInstruction:
             external_thread_ts="",
         )
         result = _build_reply_instruction(m)
-        assert "thread_ts=" not in result
+        assert "--thread" not in result
 
     def test_observe_intent_returns_observe_hint(self):
         from core.anima.inbox import _build_reply_instruction

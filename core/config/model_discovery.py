@@ -445,9 +445,9 @@ def write_shared_cache(models: list[DiscoveredModel]) -> list[dict[str, Any]]:
     document.setdefault("version", 1)
 
     path = _shared_cache_path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    from core.platform.atomic_io import atomic_write_json
+
+    atomic_write_json(path, document)
     return rows
 
 
@@ -541,12 +541,21 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
     if not result:
         result = _dedupe_and_sort([*_static_fallback(config), *_probe_shared_cache(config)])
     else:
-        from core.config.model_catalog import _configured_model_entries
+        from core.config.model_catalog import _configured_model_entries, model_credential_available
 
+        # When a CLI listed its own models (Codex / Grok), that list is the
+        # source of truth; static catalog names for that mode are stale.
+        cli_listed_modes = {model.mode for model in result if model.mode in {"c", "x"}}
         configured = []
         for entry in _configured_model_entries(config):
             model = entry["id"]
             mode = resolve_execution_mode(config, model, entry.get("mode") or None).lower()
+            # models.json lists every routable model; only offer the ones this
+            # install can run. Models an Anima is configured with always stay.
+            if entry.get("origin") == "catalog" and (
+                mode in cli_listed_modes or not model_credential_available(model, mode, config)
+            ):
+                continue
             configured.append(
                 DiscoveredModel(
                     id=f"{mode}:{model}",
@@ -560,7 +569,12 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
         # One successful probe (e.g. nanoGPT) must not hide the curated
         # KNOWN_MODELS, which carry the full Claude/Codex ids that the CLI
         # probes only expose as aliases or not at all.
-        result = _dedupe_and_sort([*result, *configured, *_static_fallback(config), *_probe_shared_cache(config)])
+        fallback = [
+            model
+            for model in [*_static_fallback(config), *_probe_shared_cache(config)]
+            if model.mode not in cli_listed_modes
+        ]
+        result = _dedupe_and_sort([*result, *configured, *fallback])
     return result
 
 

@@ -34,8 +34,9 @@ export function render(container) {
     </div>
 
     <div class="usage-panel-header">
+      <h3 class="usage-panel-title">${t("home.usage_title")}</h3>
       <div class="usage-panel-actions">
-        <button class="btn-secondary usage-refresh-btn" id="usageRefreshBtn">&#x21BB; Refresh</button>
+        <button class="btn-secondary usage-refresh-btn" id="usageRefreshBtn">&#x21BB; ${t("home.usage_refresh")}</button>
         <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
       </div>
     </div>
@@ -112,6 +113,10 @@ export function render(container) {
         </div>
       </div>
     </div>
+    <div class="home-enclave-strip" id="homeEnclaveStatus" hidden aria-live="polite"></div>
+    <!-- Legacy IDs kept for compatibility with pure helpers / tests -->
+    <div id="homeServerStatusBody" hidden></div>
+    <div id="homeSchedulerStatus" hidden></div>
 
     <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">${t("home.recent_activity")}</div>
@@ -196,14 +201,14 @@ async function _loadAll() {
  * @param {object|null|undefined} summary - TaskBoard summary payload with pending and in_progress counts
  * @param {number} [extCount=0] - External resource open/in_progress count
  * @param {(key: string, params?: object) => string} [translate]
- * @returns {Array<{ key: string, label: string, count: number, href: string, emphasis: boolean }>}
+ * @returns {Array<{ key: string, label: string, title?: string, count: number, href: string, emphasis: boolean }>}
  */
 export function attentionSummaryChips(summary, extCount = 0, translate = t) {
   const s = summary && typeof summary === "object" ? summary : {};
   const pending = Number(s.pending) || 0;
   const inProgress = Number(s.in_progress) || 0;
   const ext = Number(extCount) || 0;
-  return [
+  const chips = [
     {
       key: "pending",
       label: translate("home.attention_pending", { count: pending }),
@@ -218,14 +223,20 @@ export function attentionSummaryChips(summary, extCount = 0, translate = t) {
       href: "#/task-board",
       emphasis: false,
     },
-    {
+  ];
+  // Open items from connected services (GitHub, Slack, Gmail...). A fresh
+  // install has none, and a bare "External 0" only raises questions.
+  if (ext > 0) {
+    chips.push({
       key: "external",
       label: translate("home.attention_external", { count: ext }),
+      title: translate("home.attention_external_hint"),
       count: ext,
       href: "#homeExternalTasksCard",
       emphasis: false,
-    },
-  ];
+    });
+  }
+  return chips;
 }
 
 /**
@@ -239,7 +250,8 @@ export function attentionChipsHtml(chips) {
   return chips
     .map((c) => {
       const cls = c.emphasis ? "home-chip home-chip--danger" : "home-chip";
-      return `<a class="${cls}" href="${escapeAttr(c.href)}" data-attention="${escapeAttr(c.key)}">${escapeHtml(c.label)}</a>`;
+      const title = c.title ? ` title="${escapeAttr(c.title)}"` : "";
+      return `<a class="${cls}" href="${escapeAttr(c.href)}" data-attention="${escapeAttr(c.key)}"${title}>${escapeHtml(c.label)}</a>`;
     })
     .join("");
 }
@@ -393,6 +405,48 @@ function _applyStatusBar(model) {
   }
 }
 
+export function enclaveStatusHtml(data, translate = t) {
+  const enclave = data?.enclave && typeof data.enclave === "object" ? data.enclave : null;
+  const remotes = data?.enclaves && typeof data.enclaves === "object"
+    ? Object.entries(data.enclaves)
+    : [];
+  if (!enclave?.enabled && remotes.length === 0) return "";
+
+  const chips = [];
+  if (enclave?.enabled) {
+    const name = String(enclave.name || translate("home.enclave_title"));
+    const socketOk = enclave.socket_ok === true;
+    const stateKey = socketOk ? "home.enclave_socket_ok" : "home.enclave_socket_down";
+    chips.push(
+      `<span class="home-enclave-chip ${socketOk ? "home-enclave-chip--ok" : "home-enclave-chip--warn"}">${escapeHtml(translate(stateKey, { name }))}</span>`,
+    );
+    const today = enclave.today && typeof enclave.today === "object" ? enclave.today : {};
+    const okCount = Number.isFinite(Number(today.ok)) ? Number(today.ok) : 0;
+    const blockedCount = Number.isFinite(Number(today.blocked)) ? Number(today.blocked) : 0;
+    chips.push(
+      `<span class="home-enclave-chip home-enclave-chip--meta">${escapeHtml(translate("home.enclave_today_ok", { count: okCount }))} · ${escapeHtml(translate("home.enclave_today_blocked", { count: blockedCount }))}</span>`,
+    );
+  }
+
+  for (const [name, status] of remotes) {
+    const reachable = status?.reachable === true;
+    const stateKey = reachable ? "home.enclave_client_ok" : "home.enclave_client_down";
+    chips.push(
+      `<span class="home-enclave-chip ${reachable ? "home-enclave-chip--ok" : "home-enclave-chip--warn"}">${escapeHtml(translate(stateKey, { name: String(name) }))}</span>`,
+    );
+  }
+
+  return `<span class="home-enclave-strip__label">${escapeHtml(translate("home.enclave_title"))}</span><div class="home-enclave-strip__items">${chips.join("")}</div>`;
+}
+
+function _applyEnclaveStatus(data) {
+  const el = document.getElementById("homeEnclaveStatus");
+  if (!el) return;
+  const html = enclaveStatusHtml(data);
+  el.hidden = !html;
+  el.innerHTML = html;
+}
+
 async function _loadServerStatus() {
   try {
     const [statusData, connectionsData, schedulerData] = await Promise.all([
@@ -401,6 +455,7 @@ async function _loadServerStatus() {
       api("/api/system/scheduler").catch(() => null),
     ]);
     const summary = summarizeServerStatus({ statusData, connectionsData, schedulerData });
+    _applyEnclaveStatus(statusData);
     const processes = statusData?.processes || {};
     const processCount = Object.values(processes).filter((p) => p?.status === "running").length;
     const model = systemStatusBarModel({
@@ -418,6 +473,7 @@ async function _loadServerStatus() {
       body.innerHTML = serverStatusTableHtml(serverStatusDisplayRows(summary));
     }
   } catch (err) {
+    _applyEnclaveStatus(null);
     const model = systemStatusBarModel({
       reachable: false,
       schedulerRunning: false,
@@ -741,8 +797,9 @@ function _renderGovernorReason(reasonText) {
 }
 
 function _renderUsageError(provider, data, msg) {
+  // Only Claude and OpenAI (Codex) have a relogin flow.
   const showButton = (provider === "claude" || provider === "openai") && _usageCanRelogin(data.error);
-  const buttonLabel = provider === "claude" ? "Claude 再認証" : "Codex ログイン";
+  const buttonLabel = provider === "claude" ? t("home.usage_relogin_claude") : t("home.usage_relogin_codex");
   return `
     <div class="usage-error">${escapeHtml(msg)}</div>
     ${showButton ? `
@@ -1048,6 +1105,9 @@ function _openJevEditor(data) {
 function _renderNanogptUsage(data, opts = {}) {
   const el = document.getElementById("usageNanogptBody");
   if (!el) return;
+  // nanoGPT is optional: without credentials it is simply not in use.
+  const card = document.getElementById("usageCardNanogpt");
+  if (card) card.style.display = data.error === "no_credentials" ? "none" : "";
 
   if (data.error) {
     const msg = data.error === "no_credentials"
@@ -1491,12 +1551,15 @@ async function _loadOrgChart() {
       const color = companyColor(key);
       if (color) group.style.setProperty("--company-color", color);
 
-      const label = document.createElement("div");
-      label.className = "org-company-label";
-      label.textContent = key
-        ? (companiesMeta[key]?.display_name || key)
-        : t("home.org_unassigned");
-      group.appendChild(label);
+      // A single org without companies needs no "unassigned" heading.
+      if (key || groups.size > 1) {
+        const label = document.createElement("div");
+        label.className = "org-company-label";
+        label.textContent = key
+          ? (companiesMeta[key]?.display_name || key)
+          : t("home.org_unassigned");
+        group.appendChild(label);
+      }
 
       const groupRow = document.createElement("div");
       groupRow.className = "org-tree-top-row";

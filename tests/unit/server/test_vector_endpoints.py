@@ -23,9 +23,9 @@ from server.routes.internal import create_internal_router
         ("upsert", {"collection": "c", "documents": []}, "memory.upsert", {"collection": "c", "documents": []}),
         (
             "update-metadata",
-            {"collection": "c", "ids": ["id"], "metadatas": [{"k": "v"}]},
+            {"collection": "c", "ids": ["id"], "metadatas": [{"k": "v", "entities": ["a", "b"]}]},
             "memory.update_metadata",
-            {"collection": "c", "ids": ["id"], "metadatas": [{"k": "v"}]},
+            {"collection": "c", "ids": ["id"], "metadatas": [{"k": "v", "entities": ["a", "b"]}]},
         ),
         (
             "delete-documents",

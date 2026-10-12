@@ -45,7 +45,7 @@ def _make_app(setup_complete: bool, tmp_path: Path):
     # startup_progress reports "ready".  These tests exercise the setup/auth
     # guards, not the readiness gate, and never run the app lifespan, so pin the
     # phase to "ready" to stay isolated from any phase left over by other tests.
-    from core import startup_progress
+    from core.infra import startup_progress
 
     startup_progress._reset_for_testing()
 
@@ -216,6 +216,18 @@ class TestSetupCacheControl:
 
         assert resp.status_code == 200
         assert "image/svg+xml" in resp.headers.get("content-type", "")
+
+    async def test_setup_api_module_accessible(self, tmp_path: Path):
+        """Wizard steps import /modules/api.js; it must not redirect to /setup/."""
+        app = _make_app(False, tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/modules/api.js")
+            other = await client.get("/modules/state.js")
+
+        assert resp.status_code == 200
+        assert "javascript" in resp.headers.get("content-type", "")
+        assert other.status_code == 307
 
     async def test_setup_api_no_cache_control_header(self, tmp_path: Path):
         """Setup API responses (/api/setup/*) should NOT get cache-control headers."""

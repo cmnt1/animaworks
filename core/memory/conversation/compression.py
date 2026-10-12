@@ -13,6 +13,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from core.i18n import t
@@ -48,17 +49,22 @@ async def _call_llm(
     system: str,
     user_content: str,
     max_tokens: int = 1000,
+    *,
+    helper_role: str = "episode_summary",
+    anima_dir: Path | None = None,
 ) -> str:
-    """Common LLM helper with automatic backend selection.
+    """Call a registry-selected helper model or raise when all candidates fail."""
+    from core.llm.helper_completion import one_shot_helper_completion
 
-    Raises RuntimeError when all LLM backends fail so callers
-    can keep raw turns instead of saving an empty summary.
-    """
-    from core.llm.oneshot import one_shot_completion
-
-    result = await one_shot_completion(user_content, system_prompt=system, max_tokens=max_tokens)
+    result = await one_shot_helper_completion(
+        user_content,
+        role=helper_role,
+        anima_dir=anima_dir,
+        system_prompt=system,
+        max_tokens=max_tokens,
+    )
     if result is None:
-        raise RuntimeError("All LLM backends failed for conversation LLM call")
+        raise RuntimeError("All helper-model backends failed for conversation LLM call")
     return result
 
 
@@ -78,6 +84,8 @@ def _format_turns_for_compression(turns: list[ConversationTurn]) -> str:
 async def _call_compression_llm(
     old_summary: str,
     new_turns: str,
+    *,
+    anima_dir: Path | None = None,
 ) -> str:
     """Call the LLM to produce a compressed conversation summary."""
     system = load_prompt("memory/conversation_compression")
@@ -88,7 +96,13 @@ async def _call_compression_llm(
     user_content += f"{t('conversation.new_turns_header')}\n\n{new_turns}\n\n"
     user_content += t("conversation.integrate_instruction")
 
-    return await _call_llm(system, user_content, max_tokens=2000)
+    return await _call_llm(
+        system,
+        user_content,
+        max_tokens=2000,
+        helper_role="conversation_compression",
+        anima_dir=anima_dir,
+    )
 
 
 def _truncate_text(text: str, limit: int) -> str:
@@ -138,45 +152,24 @@ async def _generate_compression_summary(
     turn_text: str,
     turns: list[ConversationTurn],
     model_config: Any,
+    *,
+    anima_dir: Path | None = None,
 ) -> tuple[str, str, str, str]:
-    """Generate compressed summary via primary, active-model, then deterministic fallback."""
-    errors: list[str] = []
-
+    """Use the conversation-compression role, then deterministic compression only."""
+    del model_config  # Main-lane models are deliberately not a helper fallback.
     try:
-        summary = await _call_compression_llm(old_summary, turn_text)
+        summary = await _call_compression_llm(old_summary, turn_text, anima_dir=anima_dir)
         if summary and summary.strip():
             return summary, "llm_primary", "", ""
-        errors.append("primary returned empty summary")
-    except Exception as e:
-        errors.append(f"primary failed: {type(e).__name__}: {e}")
-
-    try:
-        from core.llm.oneshot import one_shot_completion_with_model_config
-
-        system = load_prompt("memory/conversation_compression")
-        user_content = ""
-        if old_summary:
-            user_content += f"{t('conversation.existing_summary_header')}\n\n{old_summary}\n\n---\n\n"
-        user_content += f"{t('conversation.new_turns_header')}\n\n{turn_text}\n\n"
-        user_content += t("conversation.integrate_instruction")
-
-        active_summary = await one_shot_completion_with_model_config(
-            user_content,
-            system_prompt=system,
-            model_config=model_config,
-            max_tokens=2000,
-        )
-        if active_summary and active_summary.strip():
-            return active_summary, "llm_active_model", "active_model", "; ".join(errors)
-        errors.append("active model returned empty summary")
-    except Exception as e:
-        errors.append(f"active model failed: {type(e).__name__}: {e}")
+        error = "helper model returned empty summary"
+    except Exception as exc:
+        error = f"helper model failed: {type(exc).__name__}: {exc}"
 
     return (
         _build_deterministic_summary(old_summary, turns),
         "deterministic_fallback",
         "deterministic",
-        "; ".join(errors),
+        error,
     )
 
 
@@ -215,6 +208,7 @@ async def compress_if_needed(
     load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
     save_fn: Callable[[], Any],
     anima_name: str = "",
+    anima_dir: Path | None = None,
 ) -> bool:
     """Compress older conversation turns if the threshold is exceeded.
 
@@ -226,6 +220,7 @@ async def compress_if_needed(
         load_context_window_overrides_fn,
         save_fn,
         anima_name,
+        anima_dir,
     )
     return result.performed
 
@@ -236,6 +231,7 @@ async def compress_if_needed_detailed(
     load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
     save_fn: Callable[[], Any],
     anima_name: str = "",
+    anima_dir: Path | None = None,
 ) -> CompressionResult:
     """Compress older turns if needed and return a detailed outcome."""
     if not needs_compression(state, model_config, load_context_window_overrides_fn):
@@ -246,7 +242,7 @@ async def compress_if_needed_detailed(
             raw_turns_before=raw_turns,
             raw_turns_after=raw_turns,
         )
-    return await _compress(state, model_config, save_fn, anima_name)
+    return await _compress(state, model_config, save_fn, anima_name, anima_dir)
 
 
 async def _compress(
@@ -254,6 +250,7 @@ async def _compress(
     model_config: Any,
     save_fn: Callable[[], Any],
     anima_name: str = "",
+    anima_dir: Path | None = None,
 ) -> CompressionResult:
     """Perform LLM-based compression of older conversation turns."""
     raw_turns_before = len(state.turns)
@@ -278,6 +275,7 @@ async def _compress(
         turn_text,
         to_compress,
         model_config,
+        anima_dir=anima_dir,
     )
 
     removed_count = len(to_compress)

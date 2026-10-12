@@ -43,8 +43,8 @@ class TestBackgroundModelLifecycle:
         anima_dir = self._make_anima_dir(
             tmp_path,
             {
-                "model": "claude-opus-4-6",
-                "background_model": "claude-sonnet-4-6",
+                "model": "claude-opus-5-5",
+                "background_model": "claude-sonnet-5-5",
                 "enabled": True,
             },
         )
@@ -52,15 +52,15 @@ class TestBackgroundModelLifecycle:
         config = AnimaWorksConfig()
         resolved, _cred = resolve_anima_config(config, "test", anima_dir)
 
-        assert resolved.model == "claude-opus-4-6"
-        assert resolved.background_model == "claude-sonnet-4-6"
+        assert resolved.model == "claude-opus-5-5"
+        assert resolved.background_model == "claude-sonnet-5-5"
 
     def test_update_then_resolve_cycle(self, tmp_path: Path):
         """update_status_model → _load_status_json → resolve_anima_config round-trip."""
         anima_dir = self._make_anima_dir(
             tmp_path,
             {
-                "model": "claude-opus-4-6",
+                "model": "claude-opus-5-5",
                 "enabled": True,
             },
         )
@@ -79,8 +79,8 @@ class TestBackgroundModelLifecycle:
         anima_dir = self._make_anima_dir(
             tmp_path,
             {
-                "model": "claude-opus-4-6",
-                "background_model": "claude-sonnet-4-6",
+                "model": "claude-opus-5-5",
+                "background_model": "claude-sonnet-5-5",
                 "enabled": True,
             },
         )
@@ -105,7 +105,7 @@ class TestGlobalDefaultPropagation:
         """When per-anima is unset, _resolve_background_config uses global."""
         from core.anima.heartbeat import HeartbeatMixin
 
-        mc = ModelConfig(model="claude-opus-4-6")
+        mc = ModelConfig(model="claude-opus-5-5")
 
         class FakeMixin(HeartbeatMixin):
             pass
@@ -116,13 +116,13 @@ class TestGlobalDefaultPropagation:
 
         with patch("core.config.models.load_config") as mock_config:
             mock_cfg = MagicMock()
-            mock_cfg.heartbeat.default_model = "claude-sonnet-4-6"
+            mock_cfg.heartbeat.default_model = "claude-sonnet-5-5"
             mock_config.return_value = mock_cfg
 
             result = mixin._resolve_background_config()
 
         assert result is not None
-        assert result.model == "claude-sonnet-4-6"
+        assert result.model == "claude-sonnet-5-5"
 
     @pytest.mark.parametrize("credential_available", [False, True])
     def test_per_anima_overrides_global(self, credential_available):
@@ -131,7 +131,7 @@ class TestGlobalDefaultPropagation:
         from core.config.models import CredentialConfig
 
         mc = ModelConfig(
-            model="claude-opus-4-6",
+            model="claude-opus-5-5",
             background_model="openai/gpt-4.1",
             api_key="synthetic-main-provider-key",
         )
@@ -146,7 +146,7 @@ class TestGlobalDefaultPropagation:
         config = AnimaWorksConfig(
             credentials={"openai": CredentialConfig(api_key="synthetic-openai-key")} if credential_available else {}
         )
-        config.heartbeat.default_model = "claude-sonnet-4-6"
+        config.heartbeat.default_model = "claude-sonnet-5-5"
         with patch("core.config.models.load_config", return_value=config):
             if not credential_available:
                 with pytest.raises(ValueError, match="No credential configured"):
@@ -175,7 +175,7 @@ class TestRoleDefaultsMerge:
 
         data = json.loads(defaults_path.read_text(encoding="utf-8"))
         assert "background_model" in data
-        assert data["background_model"] == "claude-sonnet-4-6"
+        assert data["background_model"] == "claude-sonnet-5-5"
 
     def test_manager_defaults_include_background_model(self):
         defaults_path = (
@@ -186,7 +186,7 @@ class TestRoleDefaultsMerge:
 
         data = json.loads(defaults_path.read_text(encoding="utf-8"))
         assert "background_model" in data
-        assert data["background_model"] == "claude-sonnet-4-6"
+        assert data["background_model"] == "claude-sonnet-5-5"
 
     def test_general_defaults_no_background_model(self):
         defaults_path = (
@@ -210,7 +210,7 @@ class TestCrossProviderCredential:
         from core.config.models import CredentialConfig
 
         mc = ModelConfig(
-            model="claude-opus-4-6",
+            model="claude-opus-5-5",
             background_model="azure/gpt-4.1-mini",
             background_credential="azure",
         )
@@ -245,7 +245,7 @@ class TestCrossProviderCredential:
         from core.anima.heartbeat import HeartbeatMixin
 
         mc = ModelConfig(
-            model="claude-opus-4-6",
+            model="claude-opus-5-5",
             background_model="openai/gpt-4.1",
             background_credential="nonexistent",
             api_key="main-key",
@@ -280,8 +280,8 @@ class TestInboxBackgroundModelResolution:
         from core.anima.inbox import InboxMixin
 
         mc = ModelConfig(
-            model="claude-opus-4-6",
-            background_model="claude-sonnet-4-6",
+            model="claude-opus-5-5",
+            background_model="claude-sonnet-5-5",
         )
 
         class FakeAnima(HeartbeatMixin, InboxMixin):
@@ -294,7 +294,7 @@ class TestInboxBackgroundModelResolution:
         result = obj._resolve_background_config()
 
         assert result is not None
-        assert result.model == "claude-sonnet-4-6"
+        assert result.model == "claude-sonnet-5-5"
 
     def test_inbox_credential_resolution_e2e(self, tmp_path: Path):
         """Full E2E: status.json with background_model + credential → inbox resolution."""
@@ -307,7 +307,7 @@ class TestInboxBackgroundModelResolution:
         (anima_dir / "status.json").write_text(
             json.dumps(
                 {
-                    "model": "claude-opus-4-6",
+                    "model": "claude-opus-5-5",
                     "background_model": "azure/gpt-4.1-mini",
                     "background_credential": "azure",
                     "enabled": True,

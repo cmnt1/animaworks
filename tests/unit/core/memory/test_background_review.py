@@ -159,7 +159,15 @@ async def test_existing_episode_model_fallback_is_used_and_all_failures_are_repo
 
     attempts: list[str] = []
 
-    async def completion(_prompt: str, *, model: str, credential: str, max_tokens: int) -> str | None:
+    async def completion(
+        _prompt: str,
+        *,
+        model: str,
+        credential: str,
+        max_tokens: int,
+        allow_agent_sdk_fallback: bool,
+    ) -> str | None:
+        assert allow_agent_sdk_fallback is False
         attempts.append(model)
         if model == "primary":
             raise RuntimeError("primary unavailable")
@@ -175,7 +183,15 @@ async def test_existing_episode_model_fallback_is_used_and_all_failures_are_repo
 
     attempts.clear()
 
-    async def fail_all(_prompt: str, *, model: str, credential: str, max_tokens: int) -> str | None:
+    async def fail_all(
+        _prompt: str,
+        *,
+        model: str,
+        credential: str,
+        max_tokens: int,
+        allow_agent_sdk_fallback: bool,
+    ) -> str | None:
+        assert allow_agent_sdk_fallback is False
         attempts.append(model)
         raise RuntimeError("unavailable")
 

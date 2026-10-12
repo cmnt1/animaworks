@@ -104,7 +104,9 @@ def test_rag_repair_status_healthy_table_returns_success(
     assert "LAST SIGNAL" in output
 
 
-def test_rag_repair_status_json_exits_one_for_stale_repair(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_rag_repair_status_json_exits_one_for_stale_repair(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     now = utc_now()
     animas_dir = tmp_path / "animas"
     _write_state(

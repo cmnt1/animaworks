@@ -12,7 +12,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from core.tooling.policy.registry import TOOL_MODULES, discover_core_tools, load_tool_module  # noqa: F401
+from core.tooling.policy.registry import (  # noqa: F401
+    TOOL_MODULES,
+    discover_core_tools,
+    get_tool_modules,
+    load_tool_module,
+)
 
 logger = logging.getLogger("animaworks.tools")
 
@@ -30,11 +35,12 @@ def discover_common_tools(data_dir: Path | None = None) -> dict[str, str]:
     if not tools_dir.is_dir():
         return {}
     common: dict[str, str] = {}
+    core_tools = get_tool_modules()
     for file_path in sorted(tools_dir.glob("*.py")):
         if file_path.name.startswith("_"):
             continue
         tool_name = file_path.stem
-        if tool_name in TOOL_MODULES:
+        if tool_name in core_tools:
             logger.warning(
                 "Common tool '%s' shadows core tool — skipped",
                 tool_name,
@@ -56,11 +62,12 @@ def discover_personal_tools(anima_dir: Path) -> dict[str, str]:
     if not tools_dir.is_dir():
         return {}
     personal: dict[str, str] = {}
+    core_tools = get_tool_modules()
     for file_path in sorted(tools_dir.glob("*.py")):
         if file_path.name.startswith("_"):
             continue
         tool_name = file_path.stem
-        if tool_name in TOOL_MODULES:
+        if tool_name in core_tools:
             logger.warning(
                 "Personal tool '%s' shadows core tool — skipped",
                 tool_name,

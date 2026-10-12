@@ -33,7 +33,10 @@ export class BattleLiveClient extends LiveClient {
     const timeout = setTimeout(() => this.controller?.abort(), 12000);
     const revision = this.taskRevision;
     try {
+      // The battle view shows its own sign-in message; api()'s default
+      // reload-on-401 would loop instead of telling the user why.
       const get = (path) => api(path, {
+        redirectOnUnauthorized: false,
         headers: { Accept: "application/json" },
         signal: this.controller.signal,
         cache: "no-store",
@@ -54,7 +57,8 @@ export class BattleLiveClient extends LiveClient {
         else { clearTimeout(this.syncTimer); this.syncTimer = setTimeout(() => this.refresh(), 1000); }
       }
       const failure = results.find(result => result.status === 'rejected');
-      this.onDataError(failure ? failure.reason.message : null);
+      // view.js keys its auth message on the status code ("401"/"403").
+      this.onDataError(failure ? String(failure.reason.status || failure.reason.message) : null);
     } catch (error) {
       if (!this.stopped) this.onDataError(error.message);
     } finally {

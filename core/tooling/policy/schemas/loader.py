@@ -30,14 +30,15 @@ def load_external_schemas(tool_registry: list[str]) -> list[dict[str, Any]]:
     if not tool_registry:
         return []
 
-    from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
+    from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
+    tool_modules = get_tool_modules()
     schemas: list[dict[str, Any]] = []
     for tool_name in tool_registry:
-        if tool_name not in TOOL_MODULES:
+        if tool_name not in tool_modules:
             continue
         try:
-            mod = load_tool_module(tool_name)
+            mod = load_tool_module(tool_name, tool_modules)
             if not hasattr(mod, "get_tool_schemas"):
                 continue
             for s in mod.get_tool_schemas():
@@ -83,9 +84,9 @@ def load_external_schemas_by_category(
     *categories* is a set of tool module names (e.g. ``{"chatwork", "slack"}``).
     Only schemas belonging to those modules are returned.
     """
-    from core.tooling.policy.registry import TOOL_MODULES
+    from core.tooling.policy.registry import get_tool_modules
 
-    filtered_registry = [name for name in TOOL_MODULES if name in categories]
+    filtered_registry = [name for name in get_tool_modules() if name in categories]
     return load_external_schemas(filtered_registry)
 
 

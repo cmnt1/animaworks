@@ -205,6 +205,9 @@ def can_build_model_override(mode: str, model: str, config: AnimaWorksConfig) ->
     log line records it.
     """
     resolved_mode = mode.upper()
+    if is_claude_cli_alias(model) and resolved_mode != "S":
+        logger.warning("Claude CLI alias %r requires execution mode S", model)
+        return False
     if resolved_mode in _CLI_AUTH_MODES:
         return True
     name = _fallback_credential_name(model, config) or _mode_s_default_credential(resolved_mode)
@@ -233,6 +236,9 @@ def build_model_override_config(
     back to the base config rather than risk an auth error).
     """
     resolved_mode = mode.upper()
+    if is_claude_cli_alias(model) and resolved_mode != "S":
+        logger.warning("Claude CLI alias %r requires execution mode S", model)
+        return None
     if resolved_mode in _CLI_AUTH_MODES and credential_name is None:
         # CLI-auth engines (codex/cursor/gemini/grok) authenticate via their own
         # CLI credential stores, so the base credential fields are stale here.

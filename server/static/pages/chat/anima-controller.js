@@ -5,6 +5,7 @@ import {
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
   syncModelSelect,
 } from "./ctx.js";
+import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
 import { openVoicePopup } from "./voice-popup.js";
@@ -110,7 +111,7 @@ export function createAnimaController(ctx) {
 
     let html = "";
     for (const p of sorted) {
-      const statusLabel = p.status ? ` (${p.status})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
       const openLabel = isTabOpen(ctx, p.name) ? t("animas.tab_viewing") : "";
       const disabled = p.status === "bootstrapping" || p.bootstrapping;
       const sleepBadge = p.status === "not_found" || p.status === "stopped" ? "\uD83D\uDCA4 " : "";
@@ -418,7 +419,9 @@ export function createAnimaController(ctx) {
         openOrSelectAnima(paneState.anima);
       } else if (state.animas.length > 0 && !state.selectedAnima) {
         const firstTab = state.animaTabs[0]?.name;
-        openOrSelectAnima(firstTab || state.animas[0].name);
+        // With nothing remembered, start with the organization's leader.
+        const leader = state.animas.find(a => !a.supervisor && a.enabled !== false);
+        openOrSelectAnima(firstTab || leader?.name || state.animas[0].name);
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }

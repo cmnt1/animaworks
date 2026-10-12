@@ -45,6 +45,7 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         result.resident_knowledge,
         result.recent_activity,
         result.related_knowledge,
+        result.recent_facts,
         result.related_knowledge_untrusted,
         result.pending_tasks,
         result.recent_outbound,
@@ -99,6 +100,10 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
                 )
             )
             parts.append("")
+
+    if result.recent_facts.strip():
+        parts.append(_wrap("recent_facts", result.recent_facts, trust="medium"))
+        parts.append("")
 
     if result.episodes.strip():
         parts.append(t("priming.episodes_header"))

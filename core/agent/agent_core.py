@@ -221,15 +221,16 @@ class AgentCore(
             from core.notification.notifier import HumanNotifier
 
             config = load_config()
-            if not config.human_notification.enabled:
-                return None
 
             # Only top-level animas (no supervisor) get the notifier
             anima_cfg = config.animas.get(self.anima_dir.name)
             if anima_cfg is not None and anima_cfg.supervisor is not None:
                 return None
 
-            notifier = HumanNotifier.from_config(config.human_notification)
+            notifier = HumanNotifier.from_config(
+                config.human_notification,
+                include_external=config.human_notification.enabled,
+            )
             if notifier.channel_count == 0:
                 return None
 
@@ -264,10 +265,10 @@ class AgentCore(
             if not config.background_task.enabled:
                 return None
 
-            from core.integrations import TOOL_MODULES
+            from core.integrations import get_tool_modules
             from core.integrations._base import load_execution_profiles
 
-            profiles = load_execution_profiles(TOOL_MODULES)
+            profiles = load_execution_profiles(get_tool_modules())
             config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
 
             return BackgroundTaskManager.from_profiles(

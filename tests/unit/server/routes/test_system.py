@@ -301,6 +301,32 @@ class TestReloadAnimas:
         assert "status:thinking" in data["skipped_busy"][0]["reasons"]
         app.state.supervisor.restart_anima.assert_not_awaited()
 
+    async def test_reload_skips_bootstrapping_anima(self, tmp_path):
+        """A new hire still setting up must not be restarted by reload."""
+        animas_dir = tmp_path / "animas"
+        animas_dir.mkdir()
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir()
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+
+        app = _make_test_app(
+            animas={},
+            animas_dir=animas_dir,
+            shared_dir=tmp_path / "shared",
+            anima_names=["alice"],
+        )
+        app.state.supervisor.send_request = AsyncMock(return_value={"status": "idle", "active_label": ""})
+        app.state.supervisor.is_bootstrapping = MagicMock(side_effect=lambda name: name == "alice")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/system/reload")
+
+        data = resp.json()
+        assert "alice" not in data["refreshed"]
+        assert "bootstrapping" in data["skipped_busy"][0]["reasons"]
+        app.state.supervisor.restart_anima.assert_not_awaited()
+
     async def test_reload_no_animas_dir(self, tmp_path):
         animas_dir = tmp_path / "nonexistent"
         shared_dir = tmp_path / "shared"

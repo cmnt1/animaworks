@@ -65,8 +65,14 @@ export class Director {
     this.manualLighting = false;
     this.mode = "day";
     this.dayNightButton = controls.dayNightButton || null;
+    this.dayNightIcon = controls.dayNightIcon || this.dayNightButton?.querySelector("#dayNightIcon") || null;
+    this.dayNightLabel = controls.dayNightLabel || this.dayNightButton?.querySelector("#dayNightLabel") || null;
+    this.dayLabel = controls.dayLabel || "昼";
+    this.nightLabel = controls.nightLabel || "夜";
+    this.disposed = false;
+    this.handleDayNightClick = () => this.toggleLighting();
     this.applyAutomaticLighting();
-    this.dayNightButton?.addEventListener("click", () => this.toggleLighting());
+    this.dayNightButton?.addEventListener("click", this.handleDayNightClick);
   }
 
   dispatch(type, payload = {}) {
@@ -88,12 +94,14 @@ export class Director {
   }
 
   enqueue(name, run) {
+    if (this.disposed) return;
     this.queue.push({ name, run });
     while (this.queue.length > MAX_QUEUED) this.queue.shift();
     this.pump();
   }
 
   pump() {
+    if (this.disposed) return;
     while (this.active.size < MAX_ACTIVE && this.queue.length) {
       const job = this.queue.shift();
       const task = Promise.resolve()
@@ -126,6 +134,7 @@ export class Director {
   }
 
   addEffect(effect) {
+    if (this.disposed) return Promise.resolve();
     return new Promise((resolve) => {
       this.effects.push({
         elapsed: 0,
@@ -296,13 +305,24 @@ export class Director {
   setLighting(mode) {
     this.mode = mode === "night" ? "night" : "day";
     this.renderer.setLighting(this.mode);
-    if (this.dayNightButton) {
-      const icon = this.dayNightButton.querySelector("#dayNightIcon");
-      const label = this.dayNightButton.querySelector("#dayNightLabel");
-      if (icon) icon.src = this.mode === "day" ? "assets/fx/sun.png" : "assets/fx/moon.png";
-      if (label) label.textContent = this.mode === "day" ? "昼" : "夜";
-      this.dayNightButton.dataset.mode = this.mode;
+    if (this.dayNightIcon) {
+      const iconName = this.mode === "day" ? "sun" : "moon";
+      const image = this.assets.fxDefinition(iconName).image;
+      if (image?.src) this.dayNightIcon.src = image.src;
     }
+    if (this.dayNightLabel) {
+      this.dayNightLabel.textContent = this.mode === "day" ? this.dayLabel : this.nightLabel;
+    }
+    if (this.dayNightButton) this.dayNightButton.dataset.mode = this.mode;
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.dayNightButton?.removeEventListener("click", this.handleDayNightClick);
+    this.queue.length = 0;
+    for (const effect of this.effects) effect.resolve?.();
+    this.effects.length = 0;
   }
 
   draw(ctx) {

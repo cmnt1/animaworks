@@ -390,7 +390,25 @@ def test_checkpoint_uses_compact_profile_for_unprocessed_date(tmp_path: Path) ->
     )
 
     assert pending == ["new compact chunk"]
+    assert engine.collect_activity_chunks.call_args.kwargs["compaction_settings"].profile == "compact_v2"
+
+
+def test_checkpoint_keeps_recorded_compact_profile(tmp_path: Path) -> None:
+    engine = ConsolidationEngine(tmp_path, "test-anima")
+    day = now_local().date()
+    engine.record_consolidated_chunks(day, ["old compact chunk"], input_profile="compact")
+    engine.collect_activity_chunks = MagicMock(return_value=["old compact chunk"])
+
+    pending, _applied = engine.collect_pending_activity_chunks(
+        day,
+        model="test-model",
+        compaction_settings=ActivityCompactionSettings(profile="compact"),
+    )
+
+    assert pending == []
     assert engine.collect_activity_chunks.call_args.kwargs["compaction_settings"].profile == "compact"
+    engine.record_consolidated_chunks(day, ["v2 chunk"], input_profile="compact_v2")
+    assert engine.resolve_input_profile_for_date(day, "compact") == "compact_v2"
 
 
 def test_checkpoint_legacy_hash_uses_full_profile_and_matching_chunk_hash(tmp_path: Path) -> None:

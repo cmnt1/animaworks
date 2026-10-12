@@ -1260,7 +1260,9 @@ class TestTerminalPaths:
         from core.execution.watchdog import Watchdog
 
         with (
-            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
+            # Leave time for cold CLI setup before the intentionally stalled
+            # read. A 10 ms deadline could expire before any child was spawned.
+            patch("core.execution.events.Watchdog", return_value=Watchdog(1.0)),
             pytest.raises(TimeoutError, match="idle"),
         ):
             await _stream(executor, proc)

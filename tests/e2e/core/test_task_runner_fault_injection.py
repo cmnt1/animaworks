@@ -17,10 +17,9 @@ import pytest
 from core.anima.digital_anima import DigitalAnima
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-from core.schemas import CronTask
 from core.runtime import task_runner_supervisor
 from core.runtime.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
-from core.tasks.queue import TaskQueueManager
+from core.schemas import CronTask
 
 pytestmark = [
     pytest.mark.timeout(60),
@@ -38,6 +37,9 @@ def fault_anima(
 ) -> tuple[Path, Path]:
     anima_dir = make_anima(_ANIMA)
     monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://127.0.0.1:9")
+    # Task runners require explicit vector and rerank URLs after the service split (a2f29ea0).
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://127.0.0.1:9")
     return anima_dir, data_dir / "shared"
 
 

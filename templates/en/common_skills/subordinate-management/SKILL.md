@@ -52,21 +52,21 @@ disable_subordinate(name="taro", reason="業務縮小のため一時休止")
 enable_subordinate(name="aoi")
 ```
 
-### Model changes and restart
+### Model Change and Restart
 
-These tools request root to update root-owned `status.json`. Do not edit directly from the Anima process. The main model is reloaded into running processes, and stopped Anima instances read the new configuration at next startup:
-
-```
-set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
-```
-
-The background model (for heartbeat/cron) is applied from the next task runner startup, and running tasks continue to completion:
+These tools request root-owned updates from root `status.json`. Do not edit directly from the Anima process. The main model is reloaded into the running process, and a stopped Anima reads the new configuration at next startup:
 
 ```
-set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
+set_subordinate_model(name="aoi", model="claude-sonnet-5-5", reason="負荷分散のため")
 ```
 
-To clear the background model and revert to the main model:
+The background model (for heartbeat/cron) takes effect from the next task runner startup, and running tasks complete as-is:
+
+```
+set_subordinate_background_model(name="aoi", model="claude-sonnet-5-5", reason="heartbeat負荷軽減")
+```
+
+To clear the background model and return to the main model:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")

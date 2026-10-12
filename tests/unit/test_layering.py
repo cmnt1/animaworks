@@ -38,7 +38,9 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.infra.runtime_init", 6),
     ("core.tooling.handler", 5),
     ("core.lifecycle", 5),
+    ("core.voice.emotion_style", 4),  # Shared prompt policy used by the lower-level prompt builder.
     ("core.voice", 5),
+    ("core.phone", 5),  # Phone channel built on the voice stack (TTS, voice config).
     ("core.mcp", 5),
     ("core.execution.session.session_types", 2),
     ("core.execution.session.session_context", 2),
@@ -47,6 +49,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.text", 2),  # Planned package; no current modules expected.
     ("core.llm.guard", 2),  # Planned package; no current modules expected.
     ("core.llm.oneshot", 3),  # Shared one-shot adapter used by memory and execution flows.
+    ("core.llm.helper_completion", 3),  # Registry-aware one-shot adapter shared by helper call sites.
     ("core.credentials", 2),  # Planned package; no current modules expected.
     ("core.platform", 0),
     ("core.exceptions", 0),
@@ -54,6 +57,7 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.paths", 0),
     ("core.i18n", 0),
     ("core.config", 1),
+    ("core.enclave", 1),  # Config-level enclave models + guards, used by core.config.
     ("core.auth", 1),
     ("core.schemas", 1),
     ("core.memory", 3),

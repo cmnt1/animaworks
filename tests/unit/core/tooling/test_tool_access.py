@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -200,6 +199,38 @@ class TestEvaluateCommonPersonal:
         assert decision.allowed is False
         assert decision.reason == "action_gated"
 
+    def test_reply_grant_override_is_limited_to_slack_reply_actions(self) -> None:
+        slack_send = evaluate_tool_access(
+            "slack",
+            "send",
+            config=_config(allow_all=True),
+            origin="core",
+            profile={"send": {"gated": True}},
+            reply_grant_ok=True,
+        )
+        other_send = evaluate_tool_access(
+            "gmail",
+            "send",
+            config=_config(allow_all=True),
+            origin="core",
+            profile={"send": {"gated": True}},
+            reply_grant_ok=True,
+        )
+        slack_update = evaluate_tool_access(
+            "slack",
+            "channel_update",
+            config=_config(allow_all=True),
+            origin="core",
+            profile={"channel_update": {"gated": True}},
+            reply_grant_ok=True,
+        )
+
+        assert slack_send.allowed is True
+        assert other_send.allowed is False
+        assert other_send.reason == "action_gated"
+        assert slack_update.allowed is False
+        assert slack_update.reason == "action_gated"
+
 
 # ── get_permitted_tools (moved parse cases) ───────────────
 
@@ -312,6 +343,133 @@ class TestDispatcherFailClosed:
         assert parsed["status"] == "error"
 
 
+class TestSlackReplyGrantGate:
+    def test_manual_timestamp_gate_sample(self, cli_anima: Path) -> None:
+        from core.messaging.reply_grants import record_reply_grant
+        from core.tooling.dispatch import ExternalToolDispatcher
+
+        assert record_reply_grant(cli_anima, "slack", "C123", "1791155828.085789") is True
+        dispatcher = ExternalToolDispatcher(tool_registry=["slack"])
+
+        allowed = dispatcher._check_access(
+            "slack_send",
+            {
+                "anima_dir": str(cli_anima),
+                "channel": "C123",
+                "message": "reply",
+                "thread_ts": "1791155828.085789",
+            },
+        )
+        channel_post_allowed = dispatcher._check_access(
+            "slack_channel_post",
+            {
+                "anima_dir": str(cli_anima),
+                "channel_id": "C123",
+                "text": "reply",
+                "thread_ts": "1791155828.085789",
+            },
+        )
+        denied = dispatcher._check_access(
+            "slack_send",
+            {
+                "anima_dir": str(cli_anima),
+                "channel": "C123",
+                "message": "reply",
+                "thread_ts": "9999.0001",
+            },
+        )
+
+        assert allowed is None
+        assert channel_post_allowed is None
+        assert denied is not None
+        assert json.loads(denied)["error_type"] == "PermissionDenied"
+
+    @pytest.mark.parametrize(
+        ("schema_name", "reply_args"),
+        [
+            ("slack_send", {"channel": "C123", "thread_ts": "wrong-ts"}),
+            ("slack_send", {"channel": "C123"}),
+            ("slack_send", {"channel": "C999", "thread_ts": "parent-ts"}),
+            ("slack_send", {"channel": "#general", "thread_ts": "parent-ts"}),
+            ("slack_channel_post", {"channel_id": "C123", "thread_ts": "wrong-ts"}),
+            ("slack_channel_post", {"channel_id": "C123"}),
+            ("slack_channel_post", {"channel_id": "C999", "thread_ts": "parent-ts"}),
+        ],
+    )
+    def test_mismatched_target_keeps_gate(self, cli_anima: Path, schema_name: str, reply_args: dict[str, str]) -> None:
+        from core.messaging.reply_grants import record_reply_grant
+        from core.tooling.dispatch import ExternalToolDispatcher
+
+        assert record_reply_grant(cli_anima, "slack", "C123", "parent-ts") is True
+        dispatcher = ExternalToolDispatcher(tool_registry=["slack"])
+        error = dispatcher._check_access(schema_name, {"anima_dir": str(cli_anima), **reply_args})
+
+        assert error is not None
+        assert json.loads(error)["error_type"] == "PermissionDenied"
+
+    @pytest.mark.parametrize(
+        ("denied_name", "schema_name", "reply_args"),
+        [
+            ("slack", "slack_send", {"channel": "C123", "message": "reply", "thread_ts": "parent-ts"}),
+            ("slack_send", "slack_send", {"channel": "C123", "message": "reply", "thread_ts": "parent-ts"}),
+            (
+                "slack_channel_post",
+                "slack_channel_post",
+                {"channel_id": "C123", "text": "reply", "thread_ts": "parent-ts"},
+            ),
+        ],
+    )
+    def test_explicit_deny_still_wins(
+        self,
+        cli_anima: Path,
+        denied_name: str,
+        schema_name: str,
+        reply_args: dict[str, str],
+    ) -> None:
+        from core.messaging.reply_grants import record_reply_grant
+        from core.tooling.dispatch import ExternalToolDispatcher
+
+        (cli_anima / "permissions.json").write_text(
+            json.dumps({"external_tools": {"allow_all": True, "deny": [denied_name]}}),
+            encoding="utf-8",
+        )
+        assert record_reply_grant(cli_anima, "slack", "C123", "parent-ts") is True
+        dispatcher = ExternalToolDispatcher(tool_registry=["slack"])
+        error = dispatcher._check_access(schema_name, {"anima_dir": str(cli_anima), **reply_args})
+
+        assert error is not None
+        assert json.loads(error)["error_type"] == "PermissionDenied"
+
+    @pytest.mark.parametrize(
+        ("action", "tool_args"),
+        [
+            ("send", {"channel": "C123", "message": "reply", "thread_ts": "parent-ts"}),
+            ("channel_post", {"channel_id": "C123", "text": "reply", "thread_ts": "parent-ts"}),
+        ],
+    )
+    def test_use_tool_handler_checks_reply_grant(self, cli_anima: Path, action: str, tool_args: dict[str, str]) -> None:
+        from core.messaging.reply_grants import record_reply_grant
+        from core.tooling.handler import ToolHandler
+
+        assert record_reply_grant(cli_anima, "slack", "C123", "parent-ts") is True
+        handler = ToolHandler(anima_dir=cli_anima, memory=MagicMock(), tool_registry=["slack"])
+        with (
+            patch("core.integrations.slack.dispatch", return_value="posted") as slack_dispatch,
+            patch.object(handler, "_attach_action_rules", side_effect=lambda _name, _args, result: result),
+        ):
+            result = handler._handle_use_tool(
+                {
+                    "tool_name": "slack",
+                    "action": action,
+                    "args": tool_args,
+                }
+            )
+
+        assert result == "posted"
+        slack_dispatch.assert_called_once()
+        assert slack_dispatch.call_args.args[0] == f"slack_{action}"
+
+
 # ── cli_dispatch ─────────────────────────────────────────
 
 
@@ -388,62 +546,146 @@ class TestCliDispatch:
         cli_dispatch()  # must not raise SystemExit
         mock_cli.assert_called_once()
 
+    def test_slack_send_with_matching_grant_reaches_mock_api(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cli_anima: Path,
+    ) -> None:
+        from core.integrations import _slack_cli, _slack_client
+        from core.messaging.reply_grants import record_reply_grant
 
-# ── internal check-permissions ───────────────────────────
-
-
-class TestCmdCheckPermissions:
-    def test_denied_tool_reported(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(
-            json.dumps({"external_tools": {"allow_all": True, "deny": ["gmail"]}}),
-            encoding="utf-8",
+        thread_ts = "1791155828.085789"
+        assert record_reply_grant(cli_anima, "slack", "C123", thread_ts) is True
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["animaworks-tool", "slack", "send", "C123", "<@U123> reply", "--thread", thread_ts],
         )
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        monkeypatch.setattr(_slack_cli, "_require_slack_sdk", lambda: None)
+        monkeypatch.setattr(_slack_client, "SlackApiError", type("FakeSlackApiError", (Exception,), {}))
+        monkeypatch.setattr(_slack_cli, "_resolve_cli_token", lambda: "xoxb-test")
+        monkeypatch.setattr(_slack_cli, "_resolve_cli_identity", lambda: ("alice", ""))
+        mock_client = MagicMock()
+        mock_client.resolve_channel.return_value = "C123"
+        mock_client.post_message.return_value = {"channel": "C123", "ts": "new-ts"}
+        mock_client_factory = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(_slack_cli, "SlackClient", mock_client_factory)
 
-        args = argparse.Namespace(tool_name="gmail", action=None)
-        _cmd_check_permissions(args, anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "tool_denied"
+        from cli.tool_dispatch import cli_dispatch
 
-    def test_gated_action_not_allowed(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(json.dumps({"external_tools": {"allow_all": True}}), encoding="utf-8")
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        cli_dispatch()
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="gmail", action="send"), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "action_gated"
-        assert out["action"] == "send"
+        mock_client_factory.assert_called_once_with(token="xoxb-test")
+        mock_client.resolve_channel.assert_called_once_with("C123")
+        mock_client.post_message.assert_called_once()
+        assert mock_client.post_message.call_args.args == ("C123", "<@U123> reply")
+        assert mock_client.post_message.call_args.kwargs["thread_ts"] == thread_ts
 
-    def test_allowed_gated_action(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(
-            json.dumps({"external_tools": {"allow_all": True, "allow": ["gmail_send"]}}),
-            encoding="utf-8",
+    def test_slack_send_with_duplicate_thread_options_does_not_use_a_grant(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cli_anima: Path,
+    ) -> None:
+        from core.integrations import _slack_cli
+        from core.messaging.reply_grants import record_reply_grant
+
+        assert record_reply_grant(cli_anima, "slack", "C123", "parent-ts") is True
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "animaworks-tool",
+                "slack",
+                "send",
+                "C123",
+                "reply",
+                "--thread",
+                "parent-ts",
+                "--thread",
+                "other-ts",
+            ],
         )
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        mock_client_factory = MagicMock()
+        monkeypatch.setattr(_slack_cli, "SlackClient", mock_client_factory)
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="gmail", action="send"), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is True
-        assert out["reason"] == "ok"
+        from cli.tool_dispatch import cli_dispatch
 
-    def test_unknown_tool(self, tmp_path: Path, capsys) -> None:
-        anima = tmp_path / "a"
-        anima.mkdir()
-        (anima / "permissions.json").write_text(json.dumps({"external_tools": {"allow_all": True}}), encoding="utf-8")
-        from cli.commands.internal_cmd import _cmd_check_permissions
+        with pytest.raises(SystemExit) as exc_info:
+            cli_dispatch()
 
-        _cmd_check_permissions(argparse.Namespace(tool_name="no_such_tool_xyz", action=None), anima)
-        out = json.loads(capsys.readouterr().out)
-        assert out["permitted"] is False
-        assert out["reason"] == "unknown_tool"
+        assert exc_info.value.code == 1
+        mock_client_factory.assert_not_called()
+
+    def test_slack_send_without_grant_is_blocked_before_api(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cli_anima: Path,
+        capsys,
+    ) -> None:
+        from core.integrations import _slack_cli
+
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["animaworks-tool", "slack", "send", "C123", "reply", "--thread", "parent-ts"],
+        )
+        mock_client_factory = MagicMock()
+        monkeypatch.setattr(_slack_cli, "SlackClient", mock_client_factory)
+
+        from cli.tool_dispatch import cli_dispatch
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_dispatch()
+
+        assert exc_info.value.code == 1
+        assert "Error" in capsys.readouterr().err
+        mock_client_factory.assert_not_called()
+
+
+# ── focused check_permissions tool query ──────────────────
+
+
+class TestCheckPermissionsToolQuery:
+    def _handler(self, anima: Path):
+        from core.tooling.handler import ToolHandler
+
+        return ToolHandler(anima_dir=anima, memory=MagicMock(), tool_registry=[])
+
+    def test_known_tool_query_uses_shared_access_checker(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        anima = tmp_path / "animas" / "worker"
+        anima.mkdir(parents=True)
+        handler = self._handler(anima)
+        decision = ToolAccessDecision(False, "action_gated")
+
+        with (
+            patch("core.integrations.TOOL_MODULES", {"gmail": "core.integrations.gmail"}),
+            patch("core.tooling.permissions.check_tool_access", return_value=decision) as check,
+        ):
+            result = json.loads(handler.handle("check_permissions", {"tool_name": "gmail", "action": "send"}))
+
+        check.assert_called_once_with(anima, "gmail", "send", origin="core", tool_file=None)
+        assert result == {"tool": "gmail", "action": "send", "permitted": False, "reason": "action_gated"}
+
+    def test_unknown_tool_query_returns_narrow_denial(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        anima = tmp_path / "animas" / "worker"
+        anima.mkdir(parents=True)
+        handler = self._handler(anima)
+
+        with (
+            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
+            patch("core.tooling.permissions.check_tool_access") as check,
+        ):
+            result = json.loads(handler.handle("check_permissions", {"tool_name": "unknown"}))
+
+        check.assert_not_called()
+        assert result == {"tool": "unknown", "action": None, "permitted": False, "reason": "unknown_tool"}
 
 
 # ── _handle_web_search ──────────────────────────────────

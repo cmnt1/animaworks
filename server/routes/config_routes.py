@@ -57,6 +57,9 @@ def _mask_secrets(obj: object) -> object:
 def _mask_value(key: str, value: object) -> object:
     """Mask a value if its key suggests it contains a secret."""
     if isinstance(value, str) and any(kw in key.lower() for kw in ("key", "token", "secret", "password")):
+        if not value:
+            # An unset secret stays visibly unset ("***" would read as configured).
+            return value
         if len(value) > 8:
             return value[:3] + "..." + value[-4:]
         return "***"

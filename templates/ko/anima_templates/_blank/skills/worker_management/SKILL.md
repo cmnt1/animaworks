@@ -46,12 +46,12 @@ animaworks anima delete <name>
 animaworks anima restart aoi
 
 # モデルを変更して起動中プロセスに自動reload
-animaworks anima set-model aoi claude-sonnet-4-6
+animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
 ## API 참조 (CLI를 사용할 수 없는 경우)
 
-베이스 URL: `http://localhost:18500`
+기본 URL: `$ANIMAWORKS_SERVER_URL` (설정되지 않았다면 `http://localhost:18500`)
 
 | 엔드포인트 | 메서드 | 용도 |
 |--------------|---------|------|
@@ -68,13 +68,13 @@ animaworks anima set-model aoi claude-sonnet-4-6
 ## 리로드 절차 (프로그램 업데이트 후)
 
 ```bash
-curl -s -X POST http://localhost:18500/api/system/reload | python3 -m json.tool
+curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload | python3 -m json.tool
 ```
 
 - `added`: 새로 감지된 anima
-- `refreshed`: 다시 불러온 anima (파일 변경이 반영됨)
+- `refreshed`: 다시 로드된 anima (파일 변경이 반영됨)
 - `removed`: 디스크에서 삭제된 anima
-- **서버 재시작은 불필요. 이 엔드포인트로 설정·프롬프트 변경이 즉시 반영됨**
+- **서버 재시작은 필요 없음. 이 엔드포인트로 설정·프롬프트 변경이 즉시 반영됨**
 
 ## 주의사항
 

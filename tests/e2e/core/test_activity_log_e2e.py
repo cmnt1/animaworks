@@ -237,7 +237,8 @@ async def test_priming_result_format(
         priming_result = await engine.prime_memories(
             message="sakuraさんとの会話について確認したい",
             sender_name="human",
-            channel="chat",
+            # Recent-activity recall runs only for background triggers (aba8aa05).
+            channel="heartbeat",
         )
 
     # PrimingResult should have recent_activity populated

@@ -300,6 +300,14 @@ class TestImageGenerationErrorReporting:
         assert "Codex" in result.errors[0]
         assert "backend configured" not in result.errors[0]
 
+    def test_codex_failure_reason_is_shown_instead_of_login_hint(self) -> None:
+        result = PipelineResult()
+        exc = RuntimeError("FAL_KEY required for realistic image generation. (codex: ERROR: exec command failed)")
+        _append_image_error(result, "fullbody", exc)
+
+        assert "exec command failed" in result.errors[0]
+        assert result.retryable is False
+
 
 class TestPipelineResult:
     def test_defaults(self):

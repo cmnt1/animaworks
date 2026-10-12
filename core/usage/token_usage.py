@@ -27,6 +27,37 @@ logger = logging.getLogger("animaworks.token_usage")
 # ── Default pricing (USD per 1M tokens, as of 2026-03) ─────
 # Override via ~/.animaworks/pricing.json
 DEFAULT_PRICING: dict[str, dict[str, float]] = {
+    # Claude 5 family (claude-api skill model table, 2026-09-25).
+    "claude-fable-5": {
+        "input": 10.0,
+        "output": 50.0,
+        "cache_read": 0.25,
+        "cache_write": 12.5,
+    },
+    "claude-opus-5-5": {
+        "input": 4.0,
+        "output": 20.0,
+        "cache_read": 0.20,
+        "cache_write": 5.0,
+    },
+    "claude-opus-5": {
+        "input": 5.0,
+        "output": 25.0,
+        "cache_read": 0.50,
+        "cache_write": 6.25,
+    },
+    "claude-sonnet-5-5": {
+        "input": 2.0,
+        "output": 10.0,
+        "cache_read": 0.20,
+        "cache_write": 2.5,
+    },
+    "claude-sonnet-5": {
+        "input": 2.0,
+        "output": 10.0,
+        "cache_read": 0.20,
+        "cache_write": 2.5,
+    },
     # Opus 4.7 / 4.8 share Opus 4.5/4.6 pricing ($5/$25 per 1M in/out).
     # Source: ~/.claude/skills/claude-api (SKILL.md model table, 2026-07).
     # cache_read = 0.1x input, cache_write = 1.25x input (5-min TTL).

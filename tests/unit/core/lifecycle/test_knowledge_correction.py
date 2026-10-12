@@ -124,6 +124,6 @@ async def test_system_consolidation_helper_uses_configured_limits(tmp_path: Path
         )
 
     _, _, kwargs = mock_run.mock_calls[0]
-    assert kwargs["model"] == "test-model"
+    assert kwargs["model"] == ""
     assert kwargs["limits"].max_reconsolidation_files == 3
     assert kwargs["limits"].timeout_seconds == 11

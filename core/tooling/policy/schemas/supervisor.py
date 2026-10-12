@@ -234,7 +234,16 @@ def _check_permissions_tools() -> list[dict[str, Any]]:
             "description": _t("schema.check_permissions.desc"),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": _t("schema.check_permissions.tool_name"),
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": _t("schema.check_permissions.action"),
+                    },
+                },
             },
         },
     ]
@@ -257,7 +266,7 @@ def _vault_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.vault_get.key"),
                     },
                 },
-                "required": ["section", "key"],
+                "required": ["key"],
             },
         },
         {
@@ -279,7 +288,7 @@ def _vault_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.vault_store.value"),
                     },
                 },
-                "required": ["section", "key", "value"],
+                "required": ["key", "value"],
             },
         },
         {

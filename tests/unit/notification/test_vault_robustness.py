@@ -1,7 +1,6 @@
 """Tests for notification channel vault/shared credential resolution and robustness fixes.
 
 Covers:
-- call_human._get_bot_token vault/shared lookup
 - HumanNotifier partial failure logging
 - ChatworkChannel room_id type safety
 - TelegramChannel truncate-before-escape
@@ -310,56 +309,6 @@ class TestTelegramTruncateBeforeEscape:
         text = captured_payload["text"]
         assert "Hello &amp; World" in text
         assert "Body &amp; More" in text
-
-
-# ── call_human._get_bot_token vault lookup ───────────────────
-
-
-class TestCallHumanGetBotToken:
-    def test_direct_token_returned(self):
-        from core.integrations.call_human import _get_bot_token
-
-        assert _get_bot_token({"bot_token": "xoxb-direct"}) == "xoxb-direct"
-
-    def test_env_var_returned(self, monkeypatch):
-        from core.integrations.call_human import _get_bot_token
-
-        monkeypatch.setenv("MY_SLACK_TOKEN", "xoxb-env")
-        assert _get_bot_token({"bot_token_env": "MY_SLACK_TOKEN"}) == "xoxb-env"
-
-    def test_vault_per_anima_returned(self, monkeypatch, tmp_path):
-        from core.integrations.call_human import _get_bot_token
-
-        anima_dir = tmp_path / "animas" / "alice"
-        anima_dir.mkdir(parents=True)
-        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-        monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
-
-        with (
-            patch("core.credentials._lookup_vault_credential") as mock_vault,
-            patch("core.credentials._lookup_shared_credentials", return_value=None),
-            patch("core.credentials.get_credential", side_effect=Exception("no cred")),
-        ):
-            mock_vault.side_effect = lambda k: "xoxb-vault" if k == "SLACK_BOT_TOKEN__alice" else None
-            result = _get_bot_token({})
-
-        assert result == "xoxb-vault"
-
-    def test_vault_not_found_falls_back_to_get_credential(self, monkeypatch, tmp_path):
-        from core.integrations.call_human import _get_bot_token
-
-        anima_dir = tmp_path / "animas" / "bob"
-        anima_dir.mkdir(parents=True)
-        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-
-        with (
-            patch("core.credentials._lookup_vault_credential", return_value=None),
-            patch("core.credentials._lookup_shared_credentials", return_value=None),
-            patch("core.credentials.get_credential", return_value="xoxb-cred"),
-        ):
-            result = _get_bot_token({})
-
-        assert result == "xoxb-cred"
 
 
 # ── Channel vault credential integration ─────────────────────

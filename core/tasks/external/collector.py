@@ -114,11 +114,13 @@ def collect_all(
             # every collection interval (e.g. every 5 minutes).
             same_error = prev_health is not None and prev_health.error is not None and prev_health.error == err_code
             log_fn = logger.debug if same_error else logger.warning
+            # A missing credential/optional package is a configuration state,
+            # not a crash: keep the one-line hint and skip the traceback.
             log_fn(
                 "External tasks source %s failed: %s",
                 source_name,
                 exc,
-                exc_info=True,
+                exc_info=not isinstance(exc, CredentialNotFoundError),
             )
             for task in previous_by_source.get(source_name, []):
                 # Carry-over: sanitize only; do not re-apply priority decay.

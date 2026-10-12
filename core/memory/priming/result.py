@@ -24,6 +24,7 @@ class PrimingResult:
     episodes: str = ""
     pending_human_notifications: str = ""
     resident_knowledge: str = ""
+    recent_facts: str = ""
 
     def is_empty(self) -> bool:
         """Return True if no memories were primed."""
@@ -32,6 +33,7 @@ class PrimingResult:
             and not self.resident_knowledge
             and not self.recent_activity
             and not self.related_knowledge
+            and not self.recent_facts
             and not self.related_knowledge_untrusted
             and not self.pending_tasks
             and not self.recent_outbound
@@ -46,6 +48,7 @@ class PrimingResult:
             + len(self.resident_knowledge)
             + len(self.recent_activity)
             + len(self.related_knowledge)
+            + len(self.recent_facts)
             + len(self.related_knowledge_untrusted)
             + len(self.pending_tasks)
             + len(self.recent_outbound)
@@ -62,6 +65,7 @@ class PrimingResult:
                     self.resident_knowledge,
                     self.recent_activity,
                     self.related_knowledge,
+                    self.recent_facts,
                     self.related_knowledge_untrusted,
                     self.pending_tasks,
                     self.recent_outbound,

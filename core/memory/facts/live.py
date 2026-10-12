@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from weakref import WeakKeyDictionary
 
+from core.config.helper_models import ResolvedHelperModel, resolve_helper_model
 from core.platform.atomic_io import atomic_write_json
 from core.time_utils import ensure_aware, get_app_timezone, now_local
 
@@ -75,6 +76,8 @@ class LiveFactRunResult:
     duplicates: int = 0
     failed: bool = False
     skipped_reason: str = ""
+    extract_llm_calls: int = 0
+    reconcile_llm_calls: int = 0
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class _LiveFactOptions:
     min_input_chars: int
     max_input_chars: int
     debounce_seconds: int
+    helper_model: ResolvedHelperModel | None = None
 
 
 def _parse_datetime(value: datetime | str | None, *, fallback: datetime | None = None) -> datetime:
@@ -99,18 +103,19 @@ def _parse_datetime(value: datetime | str | None, *, fallback: datetime | None =
     return ensure_aware(fallback or now_local())
 
 
-def _load_options() -> _LiveFactOptions:
+def _load_options(anima_dir: Path | None = None) -> _LiveFactOptions:
     from core.config import load_config
     from core.config.schemas import ConsolidationConfig
 
     config = load_config()
     consolidation = getattr(config, "consolidation", None)
     defaults = ConsolidationConfig()
-    model, credential = resolve_live_fact_model_and_credential(consolidation or defaults)
+    helper_model = resolve_helper_model("fact_extraction", anima_dir, config=config)
     return _LiveFactOptions(
         enabled=bool(getattr(consolidation, "live_fact_extraction_enabled", defaults.live_fact_extraction_enabled)),
-        model=model,
-        credential=credential,
+        model=helper_model.model,
+        credential=helper_model.credential or "",
+        helper_model=helper_model,
         min_input_chars=max(
             0, int(getattr(consolidation, "live_fact_min_input_chars", defaults.live_fact_min_input_chars))
         ),
@@ -125,21 +130,14 @@ def _load_options() -> _LiveFactOptions:
 
 
 def resolve_live_fact_model_and_credential(consolidation: Any) -> tuple[str, str]:
-    """Resolve the live model and credential before reconciliation/daily defaults."""
-    model = ""
-    for field in ("live_fact_model", "fact_reconcile_model", "llm_model"):
-        candidate = getattr(consolidation, field, None)
-        if isinstance(candidate, str) and candidate.strip():
-            model = candidate.strip()
-            break
+    """Compatibility facade for the former live-fact model resolver."""
+    from types import SimpleNamespace
 
-    credential = ""
-    for field in ("live_fact_credential", "fact_reconcile_credential", "llm_credential"):
-        candidate = getattr(consolidation, field, None)
-        if candidate is not None:
-            credential = str(candidate)
-            break
-    return model, credential
+    helper_model = resolve_helper_model(
+        "fact_extraction",
+        config=SimpleNamespace(consolidation=consolidation),
+    )
+    return helper_model.model, helper_model.credential or ""
 
 
 def _is_consolidation_active(anima_dir: Path) -> bool:
@@ -322,6 +320,7 @@ def _make_fact_extractor(anima_dir: Path, options: _LiveFactOptions) -> Any:
         DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
     )
     locale = str(getattr(config, "locale", "") or "ja")
+    helper_model = options.helper_model or resolve_helper_model("fact_extraction", anima_dir, config=config)
     return FactExtractor(
         model=options.model,
         credential=options.credential,
@@ -329,13 +328,26 @@ def _make_fact_extractor(anima_dir: Path, options: _LiveFactOptions) -> Any:
         timeout=timeout,
         llm_extra={},
         anima_dir=anima_dir,
-        max_tokens=_resolve_extraction_max_tokens(),
+        max_tokens=helper_model.max_output_tokens or _resolve_extraction_max_tokens(),
+        allow_agent_sdk_fallback=helper_model.allow_agent_sdk_fallback,
+        helper_model=helper_model,
     )
+
+
+def build_background_fact_extractor(anima_dir: Path) -> Any:
+    """Build the extractor used outside the conversation lanes.
+
+    Daily consolidation and live extraction share the registered
+    ``fact_extraction`` role so fact calls remain separate from episode-summary
+    calls unless the configured role explicitly assigns them the same model.
+    """
+    return _make_fact_extractor(anima_dir, _load_options(anima_dir))
 
 
 def _log_run(result: LiveFactRunResult, elapsed_seconds: float) -> None:
     logger.info(
-        "Live fact extraction: trigger=%s range=%s~%s input_chars=%d facts_extracted=%d duplicates=%d elapsed=%.2fs",
+        "Live fact extraction: trigger=%s range=%s~%s input_chars=%d facts_extracted=%d duplicates=%d "
+        "elapsed=%.2fs extract_llm_calls=%d reconcile_llm_calls=%d",
         result.trigger,
         result.since.isoformat(),
         result.until.isoformat(),
@@ -343,6 +355,8 @@ def _log_run(result: LiveFactRunResult, elapsed_seconds: float) -> None:
         result.facts_extracted,
         result.duplicates,
         elapsed_seconds,
+        result.extract_llm_calls,
+        result.reconcile_llm_calls,
     )
 
 
@@ -358,7 +372,7 @@ async def run_live_fact_extraction(
 
     started_mono = time.monotonic()
     anima_dir = Path(anima_dir)
-    options = _load_options()
+    options = _load_options(anima_dir)
     end = _parse_datetime(until, fallback=now_local())
     start_hint = _parse_datetime(session_started_at, fallback=end)
     checkpoint = _read_checkpoint(anima_dir)
@@ -412,7 +426,10 @@ async def run_live_fact_extraction(
         facts_extracted=outcome.facts_extracted,
         duplicates=outcome.duplicates,
         failed=outcome.failed,
+        extract_llm_calls=outcome.extract_llm_calls,
+        reconcile_llm_calls=outcome.reconcile_llm_calls,
     )
+    _log_run(result, time.monotonic() - started_mono)
     if outcome.failed:
         reason = (outcome.failure_reason or outcome.failure_stage or "extraction failed").replace("\n", " ")
         logger.warning(
@@ -425,7 +442,6 @@ async def run_live_fact_extraction(
         return result
 
     _write_checkpoint(anima_dir, end)
-    _log_run(result, time.monotonic() - started_mono)
     return result
 
 
@@ -536,8 +552,8 @@ def schedule_live_fact_extraction(
         return False
 
     try:
-        options = _load_options()
         anima_dir = Path(anima_dir)
+        options = _load_options(anima_dir)
         if not options.enabled or _is_consolidation_active(anima_dir):
             return False
     except Exception as exc:  # noqa: BLE001 - scheduling must not affect the completed session

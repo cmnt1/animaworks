@@ -7,7 +7,7 @@ from __future__ import annotations
 """Temporal reconciliation for legacy atomic facts."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -15,14 +15,13 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.facts.invalidation_llm import classify_fact_relation as _classify_fact_relation
+from core.memory.facts.invalidation_llm import classify_fact_relations as _classify_fact_relations
 from core.memory.facts.store import (
     FactRecord,
     FactRecordUpdate,
-    fact_entity_names,
     find_fact_record,
     is_fact_active,
     read_fact_records,
-    update_fact_record_by_id,
     update_fact_records_and_append,
 )
 from core.time_utils import ensure_aware, now_iso
@@ -74,9 +73,11 @@ class ReconcileResult:
     updated_records: tuple[FactRecord, ...] = ()
     appended_records: tuple[FactRecord, ...] = ()
     error: str = ""
+    reconcile_llm_calls: int = 0
 
 
 FactClassifier = Callable[[FactRecord, list[FactCandidate], Path], str]
+BatchFactClassifier = Callable[[FactRecord, list[FactCandidate], Path], Mapping[str, str]]
 FactCandidateSearch = Callable[[Path, FactRecord, int], list[FactCandidate]]
 
 
@@ -85,6 +86,7 @@ class CandidateLabelResult:
     labels: tuple[tuple[FactCandidate, str], ...] = ()
     error_reason: str = ""
     error: str = ""
+    reconcile_llm_calls: int = 0
 
 
 def reconcile_new_fact(
@@ -95,6 +97,7 @@ def reconcile_new_fact(
     classifier: FactClassifier | None = None,
     candidate_search: FactCandidateSearch | None = None,
     config: ReconcileConfig | None = None,
+    batch_classifier: BatchFactClassifier | None = None,
 ) -> ReconcileResult:
     """Reconcile a new fact before append.
 
@@ -138,6 +141,8 @@ def reconcile_new_fact(
         above_threshold,
         Path(anima_dir),
         classifier or _classify_fact_relation,
+        batch_classify=batch_classifier or _classify_fact_relations,
+        use_batch=classifier is None,
     )
     if labels_result.error_reason:
         return _result(
@@ -146,6 +151,7 @@ def reconcile_new_fact(
             should_append=True,
             reason=labels_result.error_reason,
             error=labels_result.error,
+            reconcile_llm_calls=labels_result.reconcile_llm_calls,
         )
 
     contradictions = [candidate for candidate, label in labels_result.labels if label == "CONTRADICT"]
@@ -158,6 +164,7 @@ def reconcile_new_fact(
             effective_time,
             label="CONTRADICT",
             append_fact=not duplicates,
+            reconcile_llm_calls=labels_result.reconcile_llm_calls,
         )
 
     if duplicates:
@@ -169,13 +176,27 @@ def reconcile_new_fact(
             label="DUPLICATE",
             reason="duplicate",
             affected_fact_ids=(best.record.fact_id,),
+            reconcile_llm_calls=labels_result.reconcile_llm_calls,
         )
 
     complements = [candidate for candidate, label in labels_result.labels if label == "COMPLEMENT"]
     if complements:
-        return _apply_complement(Path(anima_dir), fact, complements, label="COMPLEMENT")
+        return _apply_complement(
+            Path(anima_dir),
+            fact,
+            complements,
+            label="COMPLEMENT",
+            reconcile_llm_calls=labels_result.reconcile_llm_calls,
+        )
 
-    return _result(ReconcileAction.ADD, fact, should_append=True, label="ADD", reason="classified_add")
+    return _result(
+        ReconcileAction.ADD,
+        fact,
+        should_append=True,
+        label="ADD",
+        reason="classified_add",
+        reconcile_llm_calls=labels_result.reconcile_llm_calls,
+    )
 
 
 def _load_reconcile_config() -> ReconcileConfig:
@@ -259,22 +280,56 @@ def _classify_candidate_labels(
     candidates: list[FactCandidate],
     anima_dir: Path,
     classify: FactClassifier,
+    *,
+    batch_classify: BatchFactClassifier,
+    use_batch: bool,
 ) -> CandidateLabelResult:
     labels: list[tuple[FactCandidate, str]] = []
+    candidates_to_classify: list[FactCandidate] = []
     for candidate in candidates:
         if candidate.record.fact_id == fact.fact_id or candidate.record.dedup_key == fact.dedup_key:
             labels.append((candidate, "DUPLICATE"))
-            continue
+        else:
+            candidates_to_classify.append(candidate)
+
+    if use_batch and len(candidates_to_classify) >= 2:
         try:
+            batch_labels = batch_classify(fact, candidates_to_classify, anima_dir)
+        except Exception as exc:
+            logger.warning("Fact relation classification failed; adding fact", exc_info=True)
+            return CandidateLabelResult(
+                error_reason="classifier_failed",
+                error=str(exc),
+                reconcile_llm_calls=1,
+            )
+        if not isinstance(batch_labels, Mapping):
+            logger.warning("Fact relation classifier returned invalid labels; adding fact")
+            return CandidateLabelResult(error_reason="invalid_label", reconcile_llm_calls=1)
+        for candidate in candidates_to_classify:
+            label = _parse_label(batch_labels.get(candidate.record.fact_id, ""))
+            if not label:
+                logger.warning("Fact relation classifier returned invalid label; adding fact")
+                return CandidateLabelResult(error_reason="invalid_label", reconcile_llm_calls=1)
+            labels.append((candidate, label))
+        return CandidateLabelResult(labels=tuple(labels), reconcile_llm_calls=1)
+
+    reconcile_llm_calls = 0
+    for candidate in candidates_to_classify:
+        try:
+            reconcile_llm_calls += 1
             label = _parse_label(classify(fact, [candidate], anima_dir))
         except Exception as exc:
             logger.warning("Fact relation classification failed; adding fact", exc_info=True)
-            return CandidateLabelResult(error_reason="classifier_failed", error=str(exc))
+            return CandidateLabelResult(
+                error_reason="classifier_failed",
+                error=str(exc),
+                reconcile_llm_calls=reconcile_llm_calls,
+            )
         if not label:
             logger.warning("Fact relation classifier returned invalid label; adding fact")
-            return CandidateLabelResult(error_reason="invalid_label")
+            return CandidateLabelResult(error_reason="invalid_label", reconcile_llm_calls=reconcile_llm_calls)
         labels.append((candidate, label))
-    return CandidateLabelResult(labels=tuple(labels))
+    return CandidateLabelResult(labels=tuple(labels), reconcile_llm_calls=reconcile_llm_calls)
 
 
 def _apply_contradictions(
@@ -285,6 +340,7 @@ def _apply_contradictions(
     *,
     label: str,
     append_fact: bool = True,
+    reconcile_llm_calls: int = 0,
 ) -> ReconcileResult:
     candidate_by_id = {candidate.record.fact_id: candidate for candidate in candidates}
 
@@ -314,6 +370,7 @@ def _apply_contradictions(
             affected_fact_ids=tuple(candidate_by_id),
             affected_paths=tuple(sorted({candidate.path for candidate in candidates})),
             error=str(exc),
+            reconcile_llm_calls=reconcile_llm_calls,
         )
 
     if len(updates) < len(candidate_by_id):
@@ -327,6 +384,7 @@ def _apply_contradictions(
             affected_fact_ids=tuple(candidate_by_id),
             affected_paths=tuple(sorted({candidate.path for candidate in candidates})),
             error=f"missing updates for: {', '.join(missing)}",
+            reconcile_llm_calls=reconcile_llm_calls,
         )
 
     return _result(
@@ -339,6 +397,7 @@ def _apply_contradictions(
         affected_paths=tuple(sorted({update.path for update in updates})),
         updated_records=tuple(update.record for update in updates),
         appended_records=tuple(stored),
+        reconcile_llm_calls=reconcile_llm_calls,
     )
 
 
@@ -348,65 +407,22 @@ def _apply_complement(
     candidates: list[FactCandidate],
     *,
     label: str,
+    reconcile_llm_calls: int = 0,
 ) -> ReconcileResult:
+    """Keep a complementary fact as its own atomic record.
+
+    Concatenating it onto the existing fact grew single records into
+    multi-topic blobs that crowded retrieval and the priming budget.
+    """
     best = max(candidates, key=lambda candidate: candidate.score)
-    try:
-        update = update_fact_record_by_id(
-            anima_dir,
-            best.record.fact_id,
-            lambda current: _merge_complement(current, fact),
-            path=best.path,
-        )
-    except Exception as exc:
-        logger.warning("Failed to persist complementary fact update; adding new fact", exc_info=True)
-        return _result(
-            ReconcileAction.ADD,
-            fact,
-            should_append=True,
-            label=label,
-            reason="complement_update_failed",
-            affected_fact_ids=(best.record.fact_id,),
-            affected_paths=(best.path,),
-            error=str(exc),
-        )
-
-    if update is None:
-        return _result(
-            ReconcileAction.ADD,
-            fact,
-            should_append=True,
-            label=label,
-            reason="complement_target_missing",
-            affected_fact_ids=(best.record.fact_id,),
-            affected_paths=(best.path,),
-        )
-
     return _result(
-        ReconcileAction.UPDATE,
+        ReconcileAction.ADD,
         fact,
-        should_append=False,
+        should_append=True,
         label=label,
-        reason="complement",
-        affected_fact_ids=(update.record.fact_id,),
-        affected_paths=(update.path,),
-        updated_records=(update.record,),
-    )
-
-
-def _merge_complement(old: FactRecord, new: FactRecord) -> FactRecord:
-    text = old.text
-    if new.text and new.text.casefold() not in old.text.casefold():
-        text = f"{old.text} {new.text}".strip()
-    return _record_with(
-        old,
-        text=text,
-        source_entity=old.source_entity or new.source_entity,
-        target_entity=old.target_entity or new.target_entity,
-        edge_type=old.edge_type if old.edge_type != "RELATES_TO" else new.edge_type,
-        raw_edge_type=old.raw_edge_type or new.raw_edge_type,
-        valid_at=old.valid_at or new.valid_at,
-        entities=_unique_strings([*fact_entity_names(old), *fact_entity_names(new)]),
-        confidence=max(old.confidence, new.confidence),
+        reason="complement_kept_separate",
+        affected_fact_ids=(best.record.fact_id,),
+        reconcile_llm_calls=reconcile_llm_calls,
     )
 
 
@@ -482,6 +498,7 @@ def _result(
     updated_records: tuple[FactRecord, ...] = (),
     appended_records: tuple[FactRecord, ...] = (),
     error: str = "",
+    reconcile_llm_calls: int = 0,
 ) -> ReconcileResult:
     return ReconcileResult(
         action=action,
@@ -494,4 +511,5 @@ def _result(
         updated_records=updated_records,
         appended_records=appended_records,
         error=error,
+        reconcile_llm_calls=reconcile_llm_calls,
     )

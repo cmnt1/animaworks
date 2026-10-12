@@ -40,7 +40,7 @@ class TestCronTask:
 class TestModelConfig:
     def test_defaults(self):
         mc = ModelConfig()
-        assert mc.model == "claude-sonnet-4-6"
+        assert mc.model == "claude-sonnet-5-5"
         assert mc.fallback_model is None
         assert mc.max_tokens == 8192
         assert mc.api_key is None

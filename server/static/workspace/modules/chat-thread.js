@@ -4,7 +4,7 @@
 
 import { getState, setState } from "./state.js";
 import { escapeHtml } from "./utils.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import {
   renderThreadTabsHtml, createThread as sharedCreateThread,
   closeThread as sharedCloseThread,

@@ -200,7 +200,7 @@ Heartbeat / Cron は明示設定された background_model を使える。Inbox 
 | foreground | メインモデル、または明示されたタスク固有モデル | Chat、Inbox、TaskExec |
 | background | 明示設定の background_model、未設定ならメインモデル | Heartbeat、Cron |
 
-設定: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
+設定: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
 
 ### Activity Level
 

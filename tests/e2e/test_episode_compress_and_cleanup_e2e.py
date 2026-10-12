@@ -46,6 +46,7 @@ class TestStaleRunningTaskCleanup:
         )
 
         bg_dir = anima_dir / "state" / "background_tasks"
+        bg_dir.mkdir(parents=True, exist_ok=True)
 
         # Create a stale running task (created 72 hours ago)
         stale_task = {
@@ -126,6 +127,7 @@ class TestRecentRunningTaskPreservation:
         )
 
         bg_dir = anima_dir / "state" / "background_tasks"
+        bg_dir.mkdir(parents=True, exist_ok=True)
 
         # Create a running task from 12 hours ago
         task = {

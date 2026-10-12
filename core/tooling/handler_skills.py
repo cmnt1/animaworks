@@ -297,12 +297,17 @@ class SkillsToolsMixin:
         domains = args.get("domains")
         routing_examples = args.get("routing_examples")
 
-        if not skill_name:
-            return t("handler.skill_name_required")
+        if not isinstance(skill_name, str) or not skill_name.strip():
+            return _error_result("InvalidArguments", t("handler.skill_name_required"))
+        skill_name = skill_name.strip()
+        if skill_name in {".", ".."} or "/" in skill_name or "\\" in skill_name or ".." in skill_name:
+            return _error_result("InvalidArguments", "skill_name must be a simple directory name")
+        if not isinstance(location, str) or location not in {"personal", "common"}:
+            return _error_result("InvalidArguments", "location must be 'personal' or 'common'")
         if not description:
-            return t("handler.description_param_required")
+            return _error_result("InvalidArguments", t("handler.description_param_required"))
         if not body:
-            return t("handler.body_param_required")
+            return _error_result("InvalidArguments", t("handler.body_param_required"))
 
         if location == "common":
             base_dir = get_common_skills_dir()
@@ -640,19 +645,19 @@ class SkillsToolsMixin:
     # ── Task queue handlers ───────────────────────────────────
 
     def _handle_backlog_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
-        from core.tasks.queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager, normalize_task_queue_fields
 
         manager = TaskQueueManager(self._anima_dir)
         source = args.get("source", "anima")
-        instruction = args.get("original_instruction", "")
-        assignee = args.get("assignee", "")
-        summary = args.get("summary", "") or instruction[:100]
         relay_chain = args.get("relay_chain", [])
-
-        if not instruction:
-            return _error_result("InvalidArguments", "original_instruction is required")
-        if not assignee:
-            return _error_result("InvalidArguments", "assignee is required")
+        try:
+            instruction, assignee, summary = normalize_task_queue_fields(
+                args.get("original_instruction", ""),
+                args.get("assignee", ""),
+                args.get("summary"),
+            )
+        except ValueError as e:
+            return _error_result("InvalidArguments", str(e))
 
         try:
             entry = manager.add_task(

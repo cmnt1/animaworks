@@ -422,6 +422,31 @@ class TestSupervisorBootstrap:
         assert failed_data["data"]["name"] == "alice"
 
     @pytest.mark.asyncio
+    async def test_failed_bootstrap_is_retried_up_to_the_limit(self, tmp_path: Path):
+        """A failed background setup is retried (the UI promises it), then stops."""
+        import asyncio
+
+        supervisor = _make_supervisor(tmp_path)
+        supervisor._bootstrap_retry_delay_s = 0
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "bootstrap.md").write_text("bootstrap", encoding="utf-8")
+        supervisor._save_bootstrap_retries = MagicMock()
+
+        handle = _make_mock_handle("alice")
+        handle.send_request = AsyncMock(
+            return_value=IPCResponse(id="test", error={"code": "EXECUTION_ERROR", "message": "Boom"})
+        )
+        supervisor.processes["alice"] = handle
+
+        await supervisor._run_bootstrap("alice")
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+
+        assert handle.send_request.await_count == supervisor._bootstrap_max_retries
+        assert (anima_dir / "bootstrap.md.failed").exists()
+
+    @pytest.mark.asyncio
     async def test_supervisor_run_bootstrap_broadcasts_failed_on_exception(self, tmp_path: Path):
         """When send_request raises an exception, broadcasts 'failed'."""
         ws_manager = MagicMock()

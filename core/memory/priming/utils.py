@@ -104,6 +104,17 @@ class RetrieverCache:
 # ── Trigger normalization ─────────────────────────────────────────
 
 
+def get_min_retrieval_score() -> float:
+    """Return the configured RAG score floor, matching Channel C's policy."""
+    try:
+        from core.config.models import load_config
+
+        return float(load_config().rag.min_retrieval_score)
+    except Exception:
+        logger.debug("Failed to load rag.min_retrieval_score from config, using default")
+        return 0.0
+
+
 def normalize_trigger(trigger: str) -> str:
     """Normalize a priming trigger/channel to a ``TRIGGER_POLICIES`` key.
 
@@ -117,7 +128,7 @@ def normalize_trigger(trigger: str) -> str:
     return key if key in TRIGGER_POLICIES else "chat"
 
 
-# ── Unified searcher builder (shared by Channel C and Channel F) ──
+# ── Unified searcher builder (shared by Channels C, F, and G) ──
 
 
 def build_unified_searcher(
@@ -127,7 +138,7 @@ def build_unified_searcher(
 ) -> Any:
     """Build a UnifiedMemorySearch, reusing an injected retriever and indexer when available.
 
-    Shared by Channel C and Channel F so both reuse the runtime/test retriever
+    Shared by Channels C, F, and G so they reuse the runtime/test retriever
     cache instead of constructing a cold searcher on every priming run.  The
     concrete ``UnifiedMemorySearch`` class is passed in by the caller so module
     level patches in tests continue to take effect.

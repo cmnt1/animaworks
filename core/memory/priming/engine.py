@@ -7,7 +7,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""PrimingEngine - slim orchestrator for memory priming."""
+"""PrimingEngine - orchestrator for priming channels A, B, C, E, F, and G."""
 
 import asyncio
 import logging
@@ -32,12 +32,15 @@ from core.memory.priming import (
     channel_f as _channel_f,
 )
 from core.memory.priming import (
+    channel_g as _channel_g,
+)
+from core.memory.priming import (
     outbound as _outbound,
 )
 from core.memory.priming.constants import _DEFAULT_MAX_PRIMING_TOKENS
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
-from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
+from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
 from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
@@ -55,6 +58,7 @@ class PrimingEngine:
       A. Sender profile (direct file read)
       B. Recent activity (unified activity log, replaces old episodes + channels)
       C. Related knowledge (dense vector search)
+      G. Recent facts (dense vector search over atomic facts)
       E. Pending tasks (persistent task queue summary)
       F. Episodes (dense vector search over episode memory)
     """
@@ -176,7 +180,7 @@ class PrimingEngine:
         related = channel in {"chat", "task"} or intent in {"question", "request", "delegation"}
         background_settings = self._compact_background_recall_settings(channel)
         has_query = bool(message.strip())
-        if (
+        should_search_related = (
             include_related
             and has_query
             and (
@@ -189,18 +193,32 @@ class PrimingEngine:
                     )
                 )
             )
-        ):
+        )
+        if should_search_related:
+            keywords = self._extract_keywords(message)
             calls.append(
                 (
                     "C",
                     self._channel_c_related_knowledge(
-                        self._extract_keywords(message),
+                        keywords,
                         message=message,
                         recent_human_messages=recent_human_messages,
                         trigger=channel,
                     ),
                 )
             )
+            recent_facts_enabled, recent_facts_max_tokens = self._recent_facts_settings()
+            if recent_facts_enabled and recent_facts_max_tokens > 0:
+                calls.append(
+                    (
+                        "G",
+                        self._channel_g_recent_facts(
+                            build_queries(message, keywords, recent_human_messages),
+                            budget_tokens=recent_facts_max_tokens,
+                            trigger=channel,
+                        ),
+                    )
+                )
         if (
             background_settings is not None
             and background_settings.recent_activity_max_items > 0
@@ -323,6 +341,11 @@ class PrimingEngine:
                 min(remaining, background_settings.episodes_max_tokens),
                 background_settings.episodes_max_items,
             )[0]
+
+        # Channel G owns a dedicated budget outside the shared compact recall
+        # budget; assigning it last prevents it from displacing Channel C or
+        # changing the established trimming order for other channels.
+        result.recent_facts = content("G")
         logger.info(
             "Priming compact: channels=%s related_searches=%d activity_chars=%d elapsed=%.3fs tokens=%d",
             ",".join(results),
@@ -352,6 +375,27 @@ class PrimingEngine:
         if not bool(getattr(priming, "compact_background_recall_enabled", True)):
             return None
         return getattr(priming, "compact_background_recall", defaults.compact_background_recall)
+
+    def _recent_facts_settings(self) -> tuple[bool, int]:
+        """Return whether Channel G is enabled and its dedicated token budget."""
+        from core.config.schemas import PrimingConfig
+
+        defaults = PrimingConfig()
+        try:
+            from core.config.models import load_config
+
+            priming = load_config().priming
+        except Exception:
+            logger.debug("Failed to load recent facts priming config; using defaults", exc_info=True)
+            priming = defaults
+
+        enabled = bool(getattr(priming, "recent_facts_enabled", defaults.recent_facts_enabled))
+        raw_budget = getattr(priming, "recent_facts_max_tokens", defaults.recent_facts_max_tokens)
+        try:
+            budget = max(0, int(raw_budget))
+        except (TypeError, ValueError):
+            budget = defaults.recent_facts_max_tokens
+        return enabled, budget
 
     # ── Channel wrappers (delegate to modules; tests may patch these) ────
 
@@ -433,6 +477,21 @@ class PrimingEngine:
             keywords,
             message=message,
             recent_human_messages=recent_human_messages,
+            trigger=trigger,
+        )
+
+    async def _channel_g_recent_facts(
+        self,
+        queries: list[str],
+        *,
+        budget_tokens: int = 500,
+        trigger: str = "chat",
+    ) -> str:
+        return await _channel_g.collect_recent_facts(
+            self.anima_dir,
+            self._get_retriever,
+            queries,
+            budget_tokens=budget_tokens,
             trigger=trigger,
         )
 

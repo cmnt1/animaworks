@@ -71,8 +71,14 @@ def test_read_state_returns_subordinate_state(runtime: Path) -> None:
     assert "working on sub task" in out
 
 
-def test_read_state_non_descendant_returns_tool_handler_error(runtime: Path) -> None:
-    out = _run(["supervisor", "read-state", "other"])
+def test_read_state_non_descendant_returns_tool_handler_error(
+    runtime: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _parser().parse_args(["supervisor", "read-state", "other"])
+    with pytest.raises(SystemExit) as exc_info:
+        args.func(args)
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
     assert "PermissionDenied" in out or "error" in out
 
 

@@ -136,11 +136,11 @@ Example for communications:
 
 ### Execution Model (Cost Optimization)
 
-If `background_model` is configured, Heartbeat / Inbox / Cron run on that model instead of the main model.
-Chat (conversations with humans) and TaskExec (actual work) keep the main model.
+Heartbeat / Inbox / Cron are executed with `background_model` when it is configured, instead of the main model.
+Chat (interaction with humans) and TaskExec (actual work) continue to use the main model.
 
-Configuration method: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
-See the "Background Model" section of `reference/operations/model-guide.md` for details.
+Configuration method: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
+For details, refer to the "Background Model" section in `reference/operations/model-guide.md`.
 
 ### Heartbeat internal behavior
 

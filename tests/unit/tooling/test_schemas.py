@@ -13,6 +13,8 @@ from core.tooling.policy.schemas import (
     load_external_schemas,
     to_litellm_format,
 )
+from core.tooling.policy.schemas.channel import _channel_tools
+from core.tooling.policy.schemas.supervisor import _check_permissions_tools
 
 # ── Canonical schema structure ─────────────────────────────────
 
@@ -60,6 +62,19 @@ class TestMemoryTools:
         assert "to" in props
         assert "content" in props
         assert set(schema["parameters"]["required"]) == {"to", "content", "intent"}
+
+
+class TestInternalToolSchemaExtensions:
+    def test_manage_channel_schema_exposes_archive(self):
+        schema = next(tool for tool in _channel_tools() if tool["name"] == "manage_channel")
+        action = schema["parameters"]["properties"]["action"]
+        assert "archive" in action["enum"]
+        assert "archive" in action["description"].lower() or "アーカイブ" in action["description"]
+        assert "archive" in schema["description"].lower() or "アーカイブ" in schema["description"]
+
+    def test_check_permissions_schema_accepts_focused_query(self):
+        schema = _check_permissions_tools()[0]
+        assert set(schema["parameters"]["properties"]) == {"tool_name", "action"}
 
 
 class TestSendMessageSchema:
@@ -122,7 +137,9 @@ class TestLoadExternalSchemas:
         ]
 
         with (
-            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(
+                core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True
+            ),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = load_external_schemas(["web_search"])
@@ -138,7 +155,9 @@ class TestLoadExternalSchemas:
         mock_mod = MagicMock(spec=[])  # No get_tool_schemas attribute
 
         with (
-            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(
+                core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True
+            ),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = load_external_schemas(["web_search"])
@@ -147,7 +166,9 @@ class TestLoadExternalSchemas:
 
     def test_handles_import_error(self):
         with (
-            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(
+                core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True
+            ),
             patch("importlib.import_module", side_effect=ImportError("no module")),
         ):
             result = load_external_schemas(["web_search"])
@@ -155,7 +176,9 @@ class TestLoadExternalSchemas:
         assert result == []
 
     def test_skips_tool_not_in_registry(self):
-        with patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True):
+        with patch.dict(
+            core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True
+        ):
             result = load_external_schemas(["slack"])
 
         assert result == []

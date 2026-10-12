@@ -6,111 +6,239 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+def _create_anima(animas_dir: Path, name: str, company: str = "") -> Path:
+    anima_dir = animas_dir / name
+    anima_dir.mkdir(parents=True, exist_ok=True)
+    status = {"company": company} if company else {}
+    (anima_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    return anima_dir
+
+
+def _make_handler(anima_dir: Path, shared_dir: Path):
+    from core.tooling.handler import ToolHandler
+
+    messenger = MagicMock()
+    messenger.anima_name = anima_dir.name
+    messenger.shared_dir = shared_dir
+    message = MagicMock()
+    message.type = "message"
+    message.id = "msg001"
+    message.thread_id = "thread001"
+    messenger.send.return_value = message
+    handler = ToolHandler(
+        anima_dir=anima_dir,
+        memory=MagicMock(),
+        messenger=messenger,
+        tool_registry=[],
+    )
+    return handler, messenger
+
+
 # ── cmd_send ─────────────────────────────────────────────
 
 
 class TestCmdSend:
-    @patch("cli.commands.messaging._notify_server_message_sent")
-    @patch("core.messaging.messenger.Messenger")
-    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.infra.runtime_init.ensure_runtime_dir")
-    def test_send_success(
-        self,
-        mock_ensure,
-        mock_shared,
-        mock_messenger_cls,
-        mock_notify,
-        capsys,
-    ):
+    def test_anima_send_routes_through_send_message(self, tmp_path: Path, capsys) -> None:
         from cli.commands.messaging import cmd_send
 
-        mock_msg = MagicMock()
-        mock_msg.from_person = "alice"
-        mock_msg.to_person = "bob"
-        mock_msg.id = "msg001"
-        mock_msg.thread_id = "thread001"
-
-        mock_messenger = MagicMock()
-        mock_messenger.send.return_value = mock_msg
-        mock_messenger_cls.return_value = mock_messenger
-
+        anima_dir = tmp_path / "animas" / "alice"
         args = argparse.Namespace(
             from_person="alice",
             to_person="bob",
             message="Hello Bob",
+            thread_id="thread-1",
+            reply_to="msg-0",
+            intent="question",
+        )
+        with (
+            patch("cli.commands.messaging.current_anima_dir", return_value=anima_dir),
+            patch("cli._anima_tool.run_anima_tool", return_value="Message sent to bob") as run_tool,
+        ):
+            cmd_send(args)
+
+        run_tool.assert_called_once_with(
+            "send_message",
+            {
+                "to": "bob",
+                "content": "Hello Bob",
+                "intent": "question",
+                "thread_id": "thread-1",
+                "reply_to": "msg-0",
+            },
+        )
+        assert capsys.readouterr().out.strip() == "Message sent to bob"
+
+    def test_anima_send_refuses_impersonation(self, tmp_path: Path, capsys) -> None:
+        from cli.commands.messaging import cmd_send
+
+        args = argparse.Namespace(
+            from_person="bob",
+            to_person="carol",
+            message="Hello",
             thread_id=None,
             reply_to=None,
+            intent="report",
         )
+        with (
+            patch("cli.commands.messaging.current_anima_dir", return_value=tmp_path / "animas" / "alice"),
+            patch("cli._anima_tool.run_anima_tool") as run_tool,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            cmd_send(args)
+
+        assert exc_info.value.code == 1
+        assert "alice" in capsys.readouterr().err
+        run_tool.assert_not_called()
+
+    def test_anima_send_prints_handler_error_and_exits_nonzero(self, tmp_path: Path, capsys) -> None:
+        from cli.commands.messaging import cmd_send
+
+        error = json.dumps({"status": "error", "error_type": "Blocked", "message": "cross-company"})
+        args = argparse.Namespace(
+            from_person="alice",
+            to_person="bob",
+            message="Hello",
+            thread_id=None,
+            reply_to=None,
+            intent="report",
+        )
+        with (
+            patch("cli.commands.messaging.current_anima_dir", return_value=tmp_path / "animas" / "alice"),
+            patch("cli._anima_tool.run_anima_tool", return_value=error),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            cmd_send(args)
+
+        assert exc_info.value.code == 1
+        assert capsys.readouterr().out.strip() == error
+
+    def test_self_send_is_rejected_by_tool_handler(
+        self,
+        tmp_path: Path,
+        data_dir_at_tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
+    ) -> None:
+        from cli.commands.messaging import cmd_send
+
+        anima_dir = _create_anima(data_dir_at_tmp_path / "animas", "alice")
+        shared_dir = data_dir_at_tmp_path / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        handler, messenger = _make_handler(anima_dir, shared_dir)
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
+        args = argparse.Namespace(
+            from_person="alice",
+            to_person="alice",
+            message="note to self",
+            thread_id=None,
+            reply_to=None,
+            intent="report",
+        )
+
+        with patch("core.tooling.standalone._standalone_handler", return_value=handler), pytest.raises(SystemExit) as exc_info:
+            cmd_send(args)
+
+        assert exc_info.value.code == 1
+        assert "Error:" in capsys.readouterr().out
+        messenger.send.assert_not_called()
+
+    def test_cross_company_error_is_returned_from_tool_handler(
+        self,
+        tmp_path: Path,
+        data_dir_at_tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
+    ) -> None:
+        from cli.commands.messaging import cmd_send
+
+        animas_dir = data_dir_at_tmp_path / "animas"
+        anima_dir = _create_anima(animas_dir, "alice", "company-a")
+        _create_anima(animas_dir, "bob", "company-b")
+        shared_dir = data_dir_at_tmp_path / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        handler, messenger = _make_handler(anima_dir, shared_dir)
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
+        args = argparse.Namespace(
+            from_person="alice",
+            to_person="bob",
+            message="Hello",
+            thread_id=None,
+            reply_to=None,
+            intent="report",
+        )
+
+        with patch("core.tooling.standalone._standalone_handler", return_value=handler), pytest.raises(SystemExit) as exc_info:
+            cmd_send(args)
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().out
+        assert "bob" in output or "company" in output.lower() or "会社" in output
+        messenger.send.assert_not_called()
+
+    @patch("core.messaging.sender.resolve_sender_source", return_value="human")
+    @patch("cli.commands.messaging._notify_server_message_sent")
+    @patch("core.messaging.messenger.Messenger")
+    @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
+    @patch("cli.commands.messaging.current_anima_dir", return_value=None)
+    def test_operator_send_still_uses_messenger(
+        self,
+        mock_context,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_notify,
+        mock_sender_source,
+        capsys,
+    ) -> None:
+        from cli.commands.messaging import cmd_send
+
+        mock_message = MagicMock()
+        mock_message.from_person = "operator"
+        mock_message.to_person = "bob"
+        mock_message.id = "msg001"
+        mock_message.thread_id = "thread001"
+        mock_messenger = MagicMock()
+        mock_messenger.send.return_value = mock_message
+        mock_messenger_cls.return_value = mock_messenger
+        args = argparse.Namespace(
+            from_person="operator",
+            to_person="bob",
+            message="Hello Bob",
+            thread_id=None,
+            reply_to=None,
+            intent="report",
+        )
+
         cmd_send(args)
 
-        captured = capsys.readouterr()
-        assert "alice" in captured.out
-        assert "bob" in captured.out
-        mock_notify.assert_called_once_with("alice", "bob", "Hello Bob", "msg001")
+        mock_sender_source.assert_called_once_with("operator")
+        mock_messenger.send.assert_called_once_with(
+            to="bob",
+            content="Hello Bob",
+            thread_id="",
+            reply_to="",
+            intent="report",
+            source="human",
+        )
+        mock_notify.assert_called_once_with("operator", "bob", "Hello Bob", "msg001")
+        assert "operator (human)" in capsys.readouterr().out
 
 
-# ── _notify_server_message_sent ──────────────────────────
+def test_operator_message_notification_uses_shared_core_path() -> None:
+    from cli.commands.messaging import _notify_server_message_sent
 
-
-class TestNotifyServer:
-    @patch("core.platform.process.is_process_alive", return_value=False)
-    @patch("core.platform.pid.read_server_pid", return_value=123)
-    def test_server_not_alive(self, mock_pid, mock_alive):
-        from cli.commands.messaging import _notify_server_message_sent
-
-        # Should return silently
-        _notify_server_message_sent("alice", "bob", "test")
-
-    @patch("core.platform.pid.read_server_pid", return_value=None)
-    def test_no_pid(self, mock_pid):
-        from cli.commands.messaging import _notify_server_message_sent
-
-        _notify_server_message_sent("alice", "bob", "test")
-
-    @patch("cli.commands.messaging.gateway_request")
-    @patch("core.platform.process.is_process_alive", return_value=True)
-    @patch("core.platform.pid.read_server_pid", return_value=123)
-    def test_successful_notification(self, mock_pid, mock_alive, mock_post):
-        from cli.commands.messaging import _notify_server_message_sent
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
-
-        _notify_server_message_sent("alice", "bob", "hello")
-
-        mock_post.assert_called_once()
-
-    @patch("cli.commands.messaging.gateway_request")
-    @patch("core.platform.process.is_process_alive", return_value=True)
-    @patch("core.platform.pid.read_server_pid", return_value=123)
-    def test_message_id_in_payload(self, mock_pid, mock_alive, mock_post):
-        from cli.commands.messaging import _notify_server_message_sent
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
-
+    with patch("cli.commands.messaging.notify_server_message_sent") as notify:
         _notify_server_message_sent("alice", "bob", "hello", "msg_123")
 
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args
-        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert payload["message_id"] == "msg_123"
-
-    @patch("cli.commands.messaging.gateway_request", side_effect=Exception("connection error"))
-    @patch("core.platform.process.is_process_alive", return_value=True)
-    @patch("core.platform.pid.read_server_pid", return_value=123)
-    def test_notification_failure_silent(self, mock_pid, mock_alive, mock_post):
-        from cli.commands.messaging import _notify_server_message_sent
-
-        # Should not raise
-        _notify_server_message_sent("alice", "bob", "hello")
+    notify.assert_called_once_with("alice", "bob", "hello", "msg_123")
 
 
 # ── cmd_status ───────────────────────────────────────────

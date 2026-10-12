@@ -46,12 +46,12 @@ animaworks anima delete <name>
 animaworks anima restart aoi
 
 # モデルを変更して起動中プロセスに自動reload
-animaworks anima set-model aoi claude-sonnet-4-6
+animaworks anima set-model aoi claude-sonnet-5-5
 ```
 
 ## API Reference (When CLI Is Unavailable)
 
-Base URL: `http://localhost:18500`
+Base URL: `$ANIMAWORKS_SERVER_URL` (if not set, `http://localhost:18500`)
 
 | Endpoint | Method | Purpose |
 |--------------|---------|------|
@@ -59,22 +59,22 @@ Base URL: `http://localhost:18500`
 | `/api/system/reload` | POST | **Hot reload all anima** |
 | `/api/animas` | GET | List anima |
 | `/api/animas/{name}` | GET | Anima details |
-| `/api/animas/{name}/restart` | POST | Restart individual |
-| `/api/animas/{name}/stop` | POST | Shutdown individual |
+| `/api/animas/{name}/restart` | POST | Restart individual anima |
+| `/api/animas/{name}/stop` | POST | Stop individual anima |
 | `/api/animas/{name}/start` | POST | Start stopped anima |
 | `/api/animas/{name}/chat` | POST | Send message |
 | `/api/animas/{name}/trigger` | POST | Execute heartbeat immediately |
 
-## Reload Procedure (After Program Updates)
+## Reload Procedure (After Program Update)
 
 ```bash
-curl -s -X POST http://localhost:18500/api/system/reload | python3 -m json.tool
+curl -s -X POST "${ANIMAWORKS_SERVER_URL:-http://localhost:18500}"/api/system/reload | python3 -m json.tool
 ```
 
 - `added`: Newly detected anima
 - `refreshed`: Reloaded anima (file changes are reflected)
 - `removed`: Anima deleted from disk
-- **No server restart required. Configuration and prompt changes are applied immediately via this endpoint**
+- **No server restart required. Configuration and prompt changes are reflected immediately via this endpoint**
 
 ## Notes
 

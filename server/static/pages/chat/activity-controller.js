@@ -65,7 +65,11 @@ export function createActivityController(ctx) {
     if (!el) return;
     const d = state.animaDetail;
     if (!d || !d.state) { el.textContent = t("animas.no_state"); return; }
-    el.textContent = typeof d.state === "string" ? d.state : JSON.stringify(d.state, null, 2);
+    if (typeof d.state === "string") {
+      el.innerHTML = deps.renderMarkdown(d.state, state.selectedAnima);
+    } else {
+      el.textContent = JSON.stringify(d.state, null, 2);
+    }
   }
 
   async function loadHeartbeatConfig() {

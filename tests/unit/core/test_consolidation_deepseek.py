@@ -36,9 +36,7 @@ def test_reconcile_uses_fact_reconcile_model_when_set() -> None:
         locale="ja",
     )
     with patch("core.config.load_config", return_value=defs):
-        model, _extra, timeout, credential = invalidation_llm._resolve_reconcile_llm_config(
-            "/tmp/no-status"
-        )
+        model, _extra, timeout, credential = invalidation_llm._resolve_reconcile_llm_config("/tmp/no-status")
     assert model == "anthropic/claude-sonnet-4-6"
     assert credential == "bsky-cred"
     assert timeout == 30
@@ -79,11 +77,12 @@ def test_episode_summary_fallback_model_sits_right_after_primary() -> None:
     cfg = _fallback_cfg()
     candidates = _episode_summary_model_configs(base, "openai/deepseek-v4-flash", cfg)
 
-    # primary, then the explicit fallback, then the anima background model.
-    assert candidates[0].model == "openai/deepseek-v4-flash"
-    assert "claude-sonnet-4-6" in candidates[1].model  # llm_fallback_model
-    assert len(candidates) >= 3
-    assert "claude-opus-5-5" in candidates[2].model
+    # Only the primary and explicit consolidation fallback are helper candidates.
+    assert [candidate.model for candidate in candidates] == [
+        "openai/deepseek-v4-flash",
+        "anthropic/claude-sonnet-4-6",
+    ]
+    assert all("claude-opus-5-5" not in candidate.model for candidate in candidates)
 
 
 # ── T4: allow_agent_sdk_fallback=False skips Agent SDK ──────────────────────

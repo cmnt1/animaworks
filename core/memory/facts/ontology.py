@@ -9,9 +9,9 @@ import logging
 import re
 from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +201,15 @@ class ExtractedEntity(BaseModel):
     entity_type: ENTITY_TYPES = Field(default="Concept")
     summary: str = Field(default="", description="1-2 sentence summary")
 
+    @field_validator("entity_type", mode="before")
+    @classmethod
+    def _coerce_unknown_type(cls, value: object) -> object:
+        # Models invent types such as "Issue" or "PullRequest"; rejecting them
+        # here would discard every entity in the response, so fall back instead.
+        if value not in get_args(ENTITY_TYPES):
+            return "Concept"
+        return value
+
 
 class ExtractedFact(BaseModel):
     """A relationship between two entities."""
@@ -228,4 +237,11 @@ class EntityExtractionResult(BaseModel):
 class FactExtractionResult(BaseModel):
     """LLM response for fact extraction."""
 
+    facts: list[ExtractedFact] = Field(default_factory=list)
+
+
+class CombinedExtractionResult(BaseModel):
+    """LLM response for combined entity and fact extraction."""
+
+    entities: list[ExtractedEntity] = Field(default_factory=list)
     facts: list[ExtractedFact] = Field(default_factory=list)

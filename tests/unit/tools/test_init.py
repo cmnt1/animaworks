@@ -48,6 +48,7 @@ class TestToolModules:
             "google_sheets",
             "notion",
             "discord",
+            "enclave",
         }
         assert expected | {"property_portal_scraper", "bluesky", "notebooklm", "daily_ops_runner"} == set(TOOL_MODULES.keys())
 

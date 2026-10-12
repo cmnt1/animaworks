@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from server.events import emit
+from server.events import emit, emit_notification
 
 logger = logging.getLogger("animaworks.routes.internal")
 
@@ -41,6 +41,12 @@ class MessageSentNotification(BaseModel):
     content: str = ""
     message_id: str = ""
     source: str = ""
+
+
+class PhoneAlertRequest(BaseModel):
+    anima: str
+    subject: str
+    body: str
 
 
 class EmbedRequest(BaseModel):
@@ -73,7 +79,9 @@ class VectorUpdateMetadataRequest(BaseModel):
     anima_name: str
     collection: str
     ids: list[str]
-    metadatas: list[dict[str, str | int | float]]
+    # Same shape as upsert metadata: the store serialises list values such as
+    # fact ``entities``, so rejecting them here 422'd every fact refresh.
+    metadatas: list[dict[str, Any]]
 
 
 class VectorDeleteDocumentsRequest(BaseModel):
@@ -207,6 +215,14 @@ class InternalPostChannelRequest(BaseModel):
     text: str
     source: str = "anima"
     from_name: str | None = None
+
+
+class InternalNotifyWebRequest(BaseModel):
+    anima: str
+    subject: str
+    body: str
+    priority: str = "normal"
+    timestamp: str = ""
 
 
 class UpdateTaskPersistRequest(BaseModel):
@@ -662,6 +678,31 @@ def create_internal_router() -> APIRouter:
             callback_id=body.callback_id,
         )
         return {"ok": ok}
+
+    @internal.post("/internal/phone/alert")
+    async def internal_phone_alert(body: PhoneAlertRequest, request: Request):
+        """Start an urgent phone alert for the configured Anima."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima, path=request.url.path)
+        if denied is not None:
+            return denied
+
+        from core.config import load_config
+        from core.phone.alert import start_alert
+
+        phone_config = load_config().phone
+        if not phone_config.enabled:
+            return {"status": "skipped", "reason": "phone channel is disabled"}
+        if body.anima != phone_config.anima:
+            return {"status": "skipped", "reason": "Anima is not the configured phone target"}
+        try:
+            await start_alert(body.anima, body.subject, body.body, phone_config=phone_config)
+        except Exception:
+            logger.warning("Unable to queue phone alert for anima=%s", body.anima)
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "reason": "phone alert could not be started"},
+            )
+        return {"status": "calling"}
 
     @internal.post("/internal/call-human/confirm")
     async def internal_call_human_confirm(body: CallHumanConfirmRequest, request: Request):
@@ -1188,6 +1229,20 @@ def create_internal_router() -> APIRouter:
         except ChannelAccessDeniedError as exc:
             return JSONResponse(status_code=403, content={"detail": str(exc)})
         logger.info("internal post-channel: %s -> #%s", body.from_anima, body.channel)
+        return {"ok": True}
+
+    @internal.post("/internal/notify-web")
+    async def internal_notify_web(body: InternalNotifyWebRequest, request: Request):
+        """Push a call_human notification into connected Web UI clients."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima, path=request.url.path)
+        if denied is not None:
+            return denied
+        from core.anima.factory import validate_anima_name
+
+        if validate_anima_name(body.anima):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        await emit_notification(request, body.model_dump())
+        logger.info("internal notify-web: %s (%s)", body.anima, body.priority)
         return {"ok": True}
 
     @internal.get("/internal/tasks")

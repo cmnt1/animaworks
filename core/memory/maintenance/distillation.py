@@ -79,11 +79,6 @@ class ProceduralDistiller:
             Dict with ``procedures_created`` (list of file paths) and
             ``patterns_detected`` (int).
         """
-        if not model:
-            from core.llm.oneshot import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
-
         # 1. Load activity entries
         entries = self._load_activity_entries(days=days)
         if not entries:
@@ -134,9 +129,16 @@ class ProceduralDistiller:
         )
 
         try:
-            from core.llm.oneshot import one_shot_completion
+            from core.llm.helper_completion import one_shot_helper_completion
 
-            text = await one_shot_completion(prompt, model=model, max_tokens=2048, structured_output=True)
+            text = await one_shot_helper_completion(
+                prompt,
+                role="distillation",
+                anima_dir=self.anima_dir,
+                model_override=model or None,
+                max_tokens=2048,
+                structured_output=True,
+            )
             if text is None:
                 raise RuntimeError("LLM failed")
             text = text or "[]"

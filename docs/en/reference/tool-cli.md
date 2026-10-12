@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=2dd0bf986da2e5faac901c75f9ef3b0bda08cbfbe7cb2552c07e2a246dbb3261 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=b9ff04d94def616cd790e1887ca962f78541de300e8469605ed371561a1b9716 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Tool CLI Reference: `animaworks-tool`
 
@@ -26,6 +26,16 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 |---|---|---|---|
 | `channel_id` | string | No | Discord channel ID to search (optional — searches all cached channels if omitted) |
 | `limit` | integer | No | Maximum number of results (default: 10) |
+
+## `enclave_ask`
+
+Ask an isolated enclave a question and get an answer containing only facts and evidence IDs
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `case_id` | string | No | Optional case identifier (generated from the anima name and date if omitted) |
+| `enclave` | string | Yes | Configuration name of the enclave to connect to |
+| `question` | string | Yes | Question to send to the isolated instance |
 
 ## `google_sheets_append_values`
 

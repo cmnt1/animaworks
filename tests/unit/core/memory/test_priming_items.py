@@ -279,6 +279,7 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
     monkeypatch.setattr(engine, "_channel_b_recent_activity", empty)
     monkeypatch.setattr(engine, "_channel_c0_important_knowledge", empty)
     monkeypatch.setattr(engine, "_channel_c_related_knowledge", related)
+    monkeypatch.setattr(engine, "_channel_g_recent_facts", empty)
     monkeypatch.setattr(engine, "_channel_e_pending_tasks", empty)
     monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
@@ -292,7 +293,7 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
     assert high.text in result.related_knowledge
     assert low.text not in result.related_knowledge
     assert "..." not in result.related_knowledge
-    assert "G" not in scheduled_channels
+    assert "G" in scheduled_channels
 
 
 async def empty_pair() -> tuple[str, str]:

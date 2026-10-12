@@ -5,6 +5,7 @@ core.anima: Digital Anima のライフサイクルと実行時オブジェクト
 core.auth: ユーザー認証、セッション、認証情報の管理。
 core.channels: Slack、Discord、Chatwork の共通送信クライアントとトークン解決。
 core.config: アプリケーション設定のスキーマ、読み込み、検証、移行。
+core.enclave: 隔離された enclave モードの設定モデルと起動時セキュリティガード。
 core.execution: ツール実行、コマンド実行、安全制御。
 core.i18n: 翻訳カタログと言語選択。
 core.infra: ログ、データベース、キャッシュなどの基盤機能。
@@ -18,6 +19,7 @@ core.migrations: 実行時データ形式の段階的な移行。
 core.notification: 通知の生成と配送。
 core.org: 会社、部署、役割などの組織モデル。
 core.platform: 実行エンジンや OS ごとの差異を吸収する連携層。
+core.phone: Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 core.prompt: システムプロンプトとコンテキストの構築。
 core.reports: 成果物レポートの検証、公開、レビュー督促。
 core.skills: スキルの発見、読み込み、実行支援。

@@ -51,10 +51,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.vault_get.desc": {
         "ja": (
-            "暗号化されたクレデンシャルvaultから値を取得する。APIキー、パスワード、トークンなどの秘密情報を安全に保管・取得できる。sectionとkeyを指定して値を取得する。"
+            "暗号化されたクレデンシャルvaultから値を取得する。自分の名前空間とsharedのみ読み取り可能。section省略時は自分の名前空間、次にsharedを検索する。"
         ),
         "en": (
-            "Retrieve a value from the encrypted credential vault. Securely stores and retrieves secrets such as API keys, passwords, and tokens. Specify section and key to get a value."
+            "Retrieve a value from the encrypted credential vault. Only your own namespace and shared are readable. If section is omitted, your namespace is searched before shared."
         ),
     },
     "schema.vault_get.key": {
@@ -62,23 +62,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Key name (e.g. 'api_key', 'master_password')",
     },
     "schema.vault_get.section": {
-        "ja": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
-        "en": "Section name (e.g. 'shared', 'bitwarden', 'bank')",
+        "ja": "自分の名前空間またはshared（省略時は両方を検索）",
+        "en": "Your own namespace or shared (omit to search both)",
     },
     "schema.vault_list.desc": {
-        "ja": "暗号化されたクレデンシャルvaultのセクション・キー一覧を表示する。値は表示されない（セクション名とキー名のみ）。",
-        "en": (
-            "List sections and keys in the encrypted credential vault. Values are not shown (section and key names only)."
-        ),
+        "ja": "自分の名前空間とsharedにあるキー名だけを一覧表示する。他のAnimaの名前空間は表示されず、値も表示されない。",
+        "en": ("List key names in your own namespace and shared. Other Animas' namespaces and all values are hidden."),
     },
     "schema.vault_list.section": {
-        "ja": "セクション名（省略時は全セクション一覧）",
-        "en": "Section name (omit to list all sections)",
+        "ja": "自分の名前空間またはshared（省略時は両方を一覧表示）",
+        "en": "Your own namespace or shared (omit to list both)",
     },
     "schema.vault_store.desc": {
-        "ja": "暗号化されたクレデンシャルvaultに値を保存する。APIキー、パスワード、トークンなどの秘密情報を暗号化して保管する。",
+        "ja": "自分の名前空間に値を暗号化して保存する。sharedや他のAnimaの名前空間には書き込めない。",
         "en": (
-            "Store a value in the encrypted credential vault. Encrypts and stores secrets such as API keys, passwords, and tokens."
+            "Encrypt and store a value in your own namespace. Animas cannot write to shared or another Anima's namespace."
         ),
     },
     "schema.vault_store.key": {
@@ -86,8 +84,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Key name (e.g. 'api_key', 'master_password')",
     },
     "schema.vault_store.section": {
-        "ja": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
-        "en": "Section name (e.g. 'shared', 'bitwarden', 'bank')",
+        "ja": "自分の名前空間（省略時は自動選択）",
+        "en": "Your own namespace (selected automatically when omitted)",
     },
     "schema.vault_store.value": {
         "ja": "保存する値（暗号化されて保存される）",

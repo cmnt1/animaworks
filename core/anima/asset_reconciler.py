@@ -16,7 +16,6 @@ Missing assets are generated with the ImageGenPipeline and
 import asyncio
 import hashlib
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -686,21 +685,22 @@ async def _synthesize_prompt_via_llm(
         system_prompt_name = "fragments/asset_synthesis_system"
         user_prompt_key = "asset_reconciler.llm_user_prompt"
 
-    from core.llm.oneshot import one_shot_completion
+    from core.config.helper_models import resolve_helper_model
+    from core.llm.helper_completion import one_shot_helper_completion
 
     system_content = load_prompt(system_prompt_name)
     user_content = t(user_prompt_key, character_text=character_text)
-    model, credential = _resolve_prompt_synthesis_model(anima_dir)
+    helper_model = resolve_helper_model("asset_reconcile", anima_dir)
 
     try:
         result = (
-            await one_shot_completion(
+            await one_shot_helper_completion(
                 user_content,
+                role="asset_reconcile",
+                anima_dir=anima_dir,
+                resolved=helper_model,
                 system_prompt=system_content,
-                model=model or "",
-                credential=credential,
-                # thinking系モデルはreasoningだけで数百トークン消費するため、
-                # 256だとcontentが空のままfinish_reason=lengthになる
+                # thinking models can spend several hundred tokens on reasoning.
                 max_tokens=4096,
             )
             or ""
@@ -735,37 +735,11 @@ async def _synthesize_prompt_via_llm(
 
 
 def _resolve_prompt_synthesis_model(anima_dir: Path) -> tuple[str | None, str]:
-    """Choose a prompt-synthesis model that avoids Anthropic API-key hard dependency.
+    """Compatibility facade for the asset-reconcile helper role."""
+    from core.config.helper_models import resolve_helper_model
 
-    Priority:
-      1. Configured local model (Ollama, or a gateway named by ``local_llm.credential``)
-      2. The anima's own configured model (e.g. ``codex/...``)
-      3. ``None`` to let one_shot_completion fall back to consolidation model
-
-    Returns the model and the credential name to bill it to ("" when the
-    provider prefix alone is enough to resolve one).
-    """
-    try:
-        from core.config.models import load_config, load_model_config
-        from core.config.schemas import DEFAULT_LOCAL_LLM_BASE_URL
-
-        cfg = load_config()
-        local_llm = getattr(cfg, "local_llm", None)
-        local_model = getattr(local_llm, "default_model", "") or ""
-        local_base = getattr(local_llm, "base_url", "") or ""
-        local_cred = getattr(local_llm, "credential", "") or ""
-        local_selected = getattr(cfg.anima_defaults, "credential", "") == "ollama"
-        custom_endpoint = bool(local_base and local_base.rstrip("/") != DEFAULT_LOCAL_LLM_BASE_URL.rstrip("/"))
-        if local_model and (local_selected or custom_endpoint or local_cred or os.environ.get("OLLAMA_SERVERS")):
-            return local_model, local_cred
-
-        model_config = load_model_config(anima_dir)
-        if getattr(model_config, "model", ""):
-            credential = getattr(model_config, "credential", "")
-            return str(model_config.model), credential if isinstance(credential, str) else ""
-    except Exception:
-        logger.debug("Prompt synthesis model resolution failed for %s", anima_dir.name, exc_info=True)
-    return None, ""
+    helper_model = resolve_helper_model("asset_reconcile", anima_dir)
+    return helper_model.model, helper_model.credential or ""
 
 
 def _summarise_result(result: Any) -> dict[str, list[str]]:

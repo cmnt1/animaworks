@@ -715,11 +715,14 @@ def extract_config() -> tuple[str, Any, list[str]]:
         "`AnimaWorksConfig`、per-anima `ModelConfig`、`models.json` の定義から生成しています。",
         "",
         "## `config.json`",
-        "",
-        "| キー | 型 | 既定値 | 説明 |",
-        "|---|---|---|---|",
     ]
+    # One heading per top-level key keeps each translation section small.
+    current_group: str | None = None
     for row in rows:
+        group = row["key"].split(".", 1)[0]
+        if group != current_group:
+            current_group = group
+            lines.extend(["", f"### `{group}`", "", "| キー | 型 | 既定値 | 説明 |", "|---|---|---|---|"])
         lines.append(
             f"| `{row['key']}` | `{_markdown_cell(row['type'])}` | `{_markdown_cell(row['default'])}` | {_markdown_cell(row['description'])} |"
         )

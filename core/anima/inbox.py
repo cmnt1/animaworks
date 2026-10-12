@@ -169,7 +169,7 @@ def _build_reply_instruction(m: Any) -> str:
 
     When Slack ``auto_response`` is enabled, returns an ``[auto_reply: ...]``
     annotation instead, telling the LLM that the reply will be sent
-    automatically and it should NOT call ``slack_channel_post``.
+    automatically and it should NOT run the Slack CLI reply command.
 
     When intent is ``observe``, returns an observation-only annotation
     discouraging the LLM from taking action.

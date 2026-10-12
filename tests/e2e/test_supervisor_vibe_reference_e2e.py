@@ -75,8 +75,6 @@ def _dispatch_generate(args: dict, config: AnimaWorksConfig, animas_dir: Path):
 
     captured_configs: list[ImageGenConfig] = []
 
-    original_init = None
-
     def capture_pipeline_init(self, anima_dir, config=None):
         captured_configs.append(config)
         self._anima_dir = anima_dir
@@ -251,13 +249,15 @@ class TestSupervisorVibeReferenceE2E:
         assert config.image_gen.style_reference == original_ref
 
     def test_dispatch_accepts_supervisor_name_param(self):
-        """The image_gen dispatch should accept supervisor_name parameter."""
+        """The registered image-gen handler should accept supervisor_name."""
         import inspect
 
-        from core.integrations.image_gen import dispatch
+        from core.integrations import image_gen
 
-        src = inspect.getsource(dispatch)
-        assert "supervisor_name" in src, "dispatch() should handle supervisor_name for Vibe Transfer"
+        # Dispatch is table-driven after the integration refactor (9d611ac8).
+        handler = image_gen._DISPATCH_HANDLERS["generate_character_assets"]
+        assert handler is image_gen._dispatch_character_assets
+        assert "supervisor_name" in inspect.getsource(handler)
 
     def test_multiple_subordinates_get_same_supervisor_reference(
         self,

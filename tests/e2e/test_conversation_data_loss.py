@@ -52,6 +52,16 @@ def _read_transcript(anima_dir: Path) -> list[dict]:
     return entries
 
 
+def _cycle_stream(*, result: dict | None = None, error: Exception | None = None):
+    async def _stream(*args, **kwargs):
+        if error is not None:
+            raise error
+        if result is not None:
+            yield {"type": "cycle_done", "cycle_result": result}
+
+    return _stream
+
+
 def _make_anima_with_mocks(anima_dir: Path, shared_dir: Path):
     """Construct a DigitalAnima with mocked AgentCore/MemoryManager/Messenger.
 
@@ -61,7 +71,7 @@ def _make_anima_with_mocks(anima_dir: Path, shared_dir: Path):
     model_config = ModelConfig(model="claude-sonnet-4-6")
 
     with (
-        patch("core.anima.digital_anima.AgentCore") as MockAgent,
+        patch("core.anima.digital_anima.AgentCore"),
         patch("core.anima.digital_anima.MemoryManager") as MockMM,
         patch("core.anima.digital_anima.Messenger") as MockMessenger,
     ):
@@ -89,6 +99,8 @@ def _make_anima_with_mocks(anima_dir: Path, shared_dir: Path):
 class TestConversationDataLossProtection:
     """Verify that conversation turns survive agent errors."""
 
+    # process_message now drains run_cycle_streaming (18b30d5c).
+
     async def test_process_message_error_preserves_user_input(
         self,
         make_anima,
@@ -101,9 +113,7 @@ class TestConversationDataLossProtection:
         dp = _make_anima_with_mocks(anima_dir, shared_dir)
 
         # Agent execution fails
-        dp.agent.run_cycle = AsyncMock(
-            side_effect=RuntimeError("LLM unavailable"),
-        )
+        dp.agent.run_cycle_streaming = _cycle_stream(error=RuntimeError("LLM unavailable"))
 
         with pytest.raises(RuntimeError, match="LLM unavailable"):
             await dp.process_message("test message")
@@ -133,12 +143,12 @@ class TestConversationDataLossProtection:
         dp = _make_anima_with_mocks(anima_dir, shared_dir)
 
         # Agent execution succeeds
-        dp.agent.run_cycle = AsyncMock(
-            return_value=CycleResult(
+        dp.agent.run_cycle_streaming = _cycle_stream(
+            result=CycleResult(
                 trigger="message:human",
                 action="responded",
                 summary="Hello! Nice to meet you.",
-            ),
+            ).model_dump(mode="json"),
         )
 
         result = await dp.process_message("hello")
@@ -233,9 +243,7 @@ class TestConversationDataLossProtection:
         dp = _make_anima_with_mocks(anima_dir, shared_dir)
 
         # Agent execution fails
-        dp.agent.run_cycle = AsyncMock(
-            side_effect=RuntimeError("Transcript test error"),
-        )
+        dp.agent.run_cycle_streaming = _cycle_stream(error=RuntimeError("Transcript test error"))
 
         with pytest.raises(RuntimeError, match="Transcript test error"):
             await dp.process_message("transcript input")

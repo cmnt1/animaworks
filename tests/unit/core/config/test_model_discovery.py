@@ -198,6 +198,36 @@ class TestDiscoverModels:
 
         assert any(model.id == "x:grok/grok-4.6" for model in models)
 
+    def test_catalog_models_without_credentials_are_hidden(self, monkeypatch):
+        """models.json lists every routable model; only usable ones are offered."""
+        _configure_discovery_backends(monkeypatch, grok=True)
+        monkeypatch.setattr(
+            "core.config.model_mode._load_models_json",
+            lambda: {"deepseek/deepseek-chat": {}, "grok-4.6": {}},
+        )
+        config = AnimaWorksConfig()
+        config.anima_defaults.model = "deepseek/deepseek-chat"
+
+        ids = {model.model for model in discover_models(config=config)}
+
+        # Configured for an Anima → stays; catalog-only without a key → hidden.
+        assert "deepseek/deepseek-chat" in ids
+
+        config.anima_defaults.model = "grok/grok-4.6"
+        invalidate_cache()
+        ids = {model.model for model in discover_models(config=config, refresh=True)}
+        assert "deepseek/deepseek-chat" not in ids
+
+    def test_cli_listed_mode_drops_stale_catalog_names(self, monkeypatch):
+        _configure_discovery_backends(monkeypatch, codex=True)
+        monkeypatch.setattr("core.config.model_mode._load_models_json", lambda: {"codex/o3": {}})
+        monkeypatch.setattr(model_catalog, "is_codex_login_available", lambda: True)
+
+        ids = {model.model for model in discover_models(config=AnimaWorksConfig())}
+
+        assert "codex/gpt-6-astra" in ids
+        assert "codex/o3" not in ids
+
     def test_discovered_model_ids_include_three_forms(self):
         models = [
             DiscoveredModel("c:codex/gpt-5.6-sol", "c", "codex/gpt-5.6-sol", "GPT-5.6-Sol", "Codex", source="codex-cli")

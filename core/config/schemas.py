@@ -18,6 +18,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from core.enclave.config import EnclaveClientConfig, EnclaveConfig
+
 logger = logging.getLogger("animaworks.config")
 
 # ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ class AnimaModelConfig(BaseModel):
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
-DEFAULT_ANIMA_MODEL: str = "claude-sonnet-4-6"
+DEFAULT_ANIMA_MODEL: str = "claude-sonnet-5-5"
 DEFAULT_CONSOLIDATION_MODEL: str = DEFAULT_ANIMA_MODEL
 
 
@@ -202,6 +204,10 @@ class RAGConfig(BaseModel):
         ge=1024,
         description="Maximum output tokens for legacy atomic fact extraction LLM calls.",
     )
+    facts_extraction_single_call: bool = Field(
+        default=True,
+        description="Extract legacy atomic facts and their entities in one LLM call when supported.",
+    )
     facts_reconcile_enabled: bool = Field(
         default=True,
         description="Enable legacy atomic fact reconciliation before append; failures fall back to ADD.",
@@ -295,6 +301,8 @@ class PrimingConfig(BaseModel):
 
     max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
+    recent_facts_enabled: bool = True
+    recent_facts_max_tokens: int = Field(default=500, ge=0)
     compact_background_recall_enabled: bool = True
     compact_background_recall: CompactBackgroundRecallConfig = Field(default_factory=CompactBackgroundRecallConfig)
 
@@ -340,7 +348,7 @@ class ConsolidationConfig(BaseModel):
         description="Look back this many local days for unprocessed daily episode activity.",
     )
     episode_summary_backfill_max_days_per_run: int = Field(
-        default=3,
+        default=1,
         ge=0,
         description="Maximum older days to backfill during one daily consolidation (yesterday is separate).",
     )
@@ -378,6 +386,8 @@ class ConsolidationConfig(BaseModel):
     episode_summary_cron_digest_min_runs: int = Field(default=6, ge=1)
     episode_summary_cron_digest_max_notable_runs: int = Field(default=5, ge=0)
     episode_summary_tool_use_max_bytes: int = Field(default=300, ge=0)
+    # Bash tool_use bodies are cut further for dates summarised with compact_v2.
+    episode_summary_bash_tool_use_max_bytes: int = Field(default=120, ge=0)
     episode_summary_error_tail_bytes: int = Field(default=300, ge=0)
     episode_summary_max_output_tokens: int = Field(default=4096, ge=1)
     live_fact_extraction_enabled: bool = True
@@ -386,6 +396,46 @@ class ConsolidationConfig(BaseModel):
     live_fact_min_input_chars: int = Field(default=200, ge=0)
     live_fact_max_input_chars: int = Field(default=24000, ge=0)
     live_fact_debounce_seconds: int = Field(default=120, ge=0)
+
+
+class HelperModelFallback(BaseModel):
+    """A fallback model and its optional named credential for one helper role."""
+
+    model: str = Field(..., min_length=1, description="Fallback model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the fallback model.")
+
+
+class HelperModelRole(BaseModel):
+    """Model selection and one-shot policy for a single helper role."""
+
+    model: str | None = Field(default=None, description="Primary helper model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the primary model.")
+    fallbacks: list[HelperModelFallback] = Field(default_factory=list, description="Ordered explicit fallback models.")
+    allow_agent_sdk_fallback: bool = Field(
+        default=False,
+        description="Allow one-shot calls for this role to fall back to the Claude Agent SDK.",
+    )
+    max_output_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum output tokens for one-shot calls made by this role.",
+    )
+
+
+class HelperModelsConfig(BaseModel):
+    """Named helper-model roles plus a shared fallback role configuration."""
+
+    episode_summary: HelperModelRole | None = None
+    fact_extraction: HelperModelRole | None = None
+    fact_reconcile: HelperModelRole | None = None
+    weekly_consolidation: HelperModelRole | None = None
+    project_consolidation: HelperModelRole | None = None
+    conversation_compression: HelperModelRole | None = None
+    distillation: HelperModelRole | None = None
+    reconsolidation: HelperModelRole | None = None
+    asset_reconcile: HelperModelRole | None = None
+    meeting_summary: HelperModelRole | None = None
+    default: HelperModelRole = Field(default_factory=HelperModelRole)
 
 
 class ImageGenConfig(BaseModel):
@@ -432,6 +482,7 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+    web_ui: bool = True  # built-in channel: push call_human into the Web UI chat
 
 
 class InteractionConfig(BaseModel):
@@ -922,6 +973,29 @@ class HeartbeatConfig(BaseModel):
 # ── Voice Chat Config ───────────────────────────────────────────────────────
 
 
+class PhoneConfig(BaseModel):
+    """Twilio-backed phone channel for one Anima."""
+
+    enabled: bool = False
+    anima: str = "aoi"
+    public_base_url: str = "https://zoomhook.kk-a.jp"
+    from_number: str = "+16073257655"
+    owner_numbers: list[str] = Field(default_factory=lambda: ["+819060943763"])
+    from_person: str = "human"
+    thread_id: str = "phone"
+    pin_vault_key: str = "AOI_PHONE_PIN"
+    account_sid_vault_key: str = "TWILIO_ACCOUNT_SID"
+    auth_token_vault_key: str = "TWILIO_AUTH_TOKEN"
+    alert_max_attempts: int = Field(default=3, ge=1)
+    alert_retry_interval_sec: float = Field(default=120, ge=0)
+    turn_timeout_sec: float = Field(
+        default=300,
+        gt=0,
+        description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
+    )
+    turn_end_silence_ms: int = Field(default=1200, ge=300, le=5000)
+
+
 class VoicevoxConfig(BaseModel):
     """VOICEVOX Engine connection settings."""
 
@@ -976,6 +1050,8 @@ class VoiceConfig(BaseModel):
     proactive_lead_sec: float = 5.0
     """Start the next monologue this many seconds before the current playback ends
     (so speech is continuous but never more than one utterance is queued)."""
+    notify_delegations_on_web_disconnect: bool = False
+    """Send pending voice-front delegation results to humans when a Web voice session closes."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
@@ -991,6 +1067,14 @@ class UIConfig(BaseModel):
 
     theme: str = "default"
     demo_mode: bool = False
+
+
+class CLIConfig(BaseModel):
+    """Command-line client settings."""
+
+    # Anima opened by a bare ``animaworks`` / ``animaworks chat``.
+    # Empty = the single enabled top-level anima, if there is exactly one.
+    default_anima: str = ""
 
 
 # ── Activity Schedule ───────────────────────────────────────────────────────
@@ -1344,6 +1428,10 @@ class AnimaWorksConfig(BaseModel):
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
+    helper_models: HelperModelsConfig = Field(
+        default_factory=HelperModelsConfig,
+        description="Resolved model, credential, fallbacks, and one-shot policy for each helper role.",
+    )
     background_review: BackgroundReviewConfig = BackgroundReviewConfig()
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
@@ -1367,6 +1455,7 @@ class AnimaWorksConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     voice: VoiceConfig = VoiceConfig()
+    phone: PhoneConfig = PhoneConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
@@ -1396,6 +1485,9 @@ class AnimaWorksConfig(BaseModel):
     )
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
+    cli: CLIConfig = CLIConfig()
+    enclave: EnclaveConfig = EnclaveConfig()
+    enclaves: dict[str, EnclaveClientConfig] = Field(default_factory=dict)
 
 
 __all__ = [
@@ -1407,6 +1499,7 @@ __all__ = [
     "BackgroundReviewConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
+    "CLIConfig",
     "ChatworkToolConfig",
     "ConsolidationConfig",
     "CompactBackgroundRecallConfig",
@@ -1426,6 +1519,9 @@ __all__ = [
     "GitHubWebhookConfig",
     "GPUConfig",
     "HeartbeatConfig",
+    "HelperModelFallback",
+    "HelperModelRole",
+    "HelperModelsConfig",
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
@@ -1442,6 +1538,7 @@ __all__ = [
     "MemoryConfig",
     "FactEdgeTypeConfig",
     "NotificationChannelConfig",
+    "PhoneConfig",
     "PrimingConfig",
     "PromptConfig",
     "RAGConfig",

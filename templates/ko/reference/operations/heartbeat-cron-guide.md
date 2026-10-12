@@ -134,13 +134,13 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 - 何もなければ何もしない（HEARTBEAT_OK）
 ```
 
-### 실행 모델(비용 최적화)
+### 실행 모델 (비용 최적화)
 
-Heartbeat / Inbox / Cron은 `background_model`이 설정되어 있는 경우, 메인 모델 대신 그 모델로 실행된다.
-Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한다.
+Heartbeat / Inbox / Cron은 `background_model`가 설정되어 있는 경우, 메인 모델 대신 해당 모델로 실행된다.
+Chat(인간과의 대화)과 TaskExec(실작업)은 메인 모델을 유지한다.
 
-설정 방법: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
-상세는 `reference/operations/model-guide.md`의 "백그라운드 모델" 섹션을 참조.
+설정 방법: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
+자세한 내용은 `reference/operations/model-guide.md`의 "백그라운드 모델" 섹션을 참조.
 
 ### 하트비트 내부 동작
 

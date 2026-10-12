@@ -11,8 +11,8 @@ import pytest
 
 
 def test_activity_log_only_anima_passes_daily_consolidation_gate(tmp_path: Path) -> None:
-    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
     from core.activity.logger import ActivityLogger
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
 
     anima_dir = tmp_path / "animas" / "ritsu"
     anima_dir.mkdir(parents=True)
@@ -140,4 +140,4 @@ async def test_consolidation_post_processing_does_not_rebuild_rag_index(monkeypa
     )
 
     knowledge_correction.assert_awaited_once()
-    weekly_distillation.assert_awaited_once_with(tmp_path / "alice", "alice", model="test-model")
+    weekly_distillation.assert_awaited_once_with(tmp_path / "alice", "alice", model="")

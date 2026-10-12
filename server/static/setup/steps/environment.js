@@ -78,8 +78,8 @@ function render() {
       <div class="env-detection-list">
         ${renderDetectionRow("env.claude_code", envData.claude_code_available, envData.claude_code_authenticated, envData.claude_subscription_type)}
         ${renderDetectionRow("env.codex_cli", envData.codex_cli_available, envData.codex_login_available)}
-        ${renderDetectionRow("env.cursor_agent", envData.cursor_agent_available, envData.cursor_agent_authenticated)}
-        ${renderDetectionRow("env.gemini_cli", envData.gemini_cli_available, envData.gemini_authenticated)}
+        ${renderDetectionRow("env.cursor_agent", envData.cursor_agent_available, envData.cursor_agent_authenticated, null, { optional: true })}
+        ${renderDetectionRow("env.gemini_cli", envData.gemini_cli_available, envData.gemini_authenticated, null, { optional: true })}
       </div>
       ${!envData.claude_code_available && !envData.codex_cli_available ? renderInstallHint() : ""}
     </div>
@@ -117,11 +117,14 @@ function render() {
   bindEvents();
 }
 
-function renderDetectionRow(nameKey, available, authenticated, plan = null) {
+function renderDetectionRow(nameKey, available, authenticated, plan = null, { optional = false } = {}) {
   let icon = "\u2b1c";
   let statusClass = "not-found";
   let status = t("env.status.not_installed");
-  if (authenticated) {
+  if (optional && !authenticated) {
+    // Cursor / Gemini are extras; an unconfigured one is not a problem.
+    status = t("env.status.optional_unused");
+  } else if (authenticated) {
     icon = "\u2705";
     statusClass = "found";
     status = plan ? t("env.status.logged_in_plan").replace("{plan}", plan) : t("env.status.logged_in");

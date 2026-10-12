@@ -7,7 +7,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -178,7 +178,7 @@ globalThis.document = {
 
 // Import module under test
 const { createPageTabs } = await import(
-  resolve(__dirname, "../../../server/static/shared/page-tabs.js")
+  pathToFileURL(resolve(__dirname, "../../../server/static/shared/page-tabs.js")).href
 );
 
 describe("createPageTabs", () => {

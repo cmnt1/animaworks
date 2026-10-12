@@ -17,9 +17,29 @@ export function initLeaderStep(panel) {
         value="${leaderName}"
         autocomplete="off" />
       <p class="form-hint" data-i18n="leader.hint">${t("leader.hint")}</p>
+      <div class="leader-suggestions">
+        ${["sakura", "hana", "aoi", "ren"].map((n) => `<button type="button" class="leader-suggestion" data-name="${n}">${n}</button>`).join("")}
+      </div>
       <p class="error-message" id="leaderError" style="display: none;"></p>
     </div>
+    <div class="leader-next">
+      <div class="leader-next-title" data-i18n="leader.next_title">${t("leader.next_title")}</div>
+      <ul>
+        <li data-i18n="leader.next_1">${t("leader.next_1")}</li>
+        <li data-i18n="leader.next_2">${t("leader.next_2")}</li>
+        <li data-i18n="leader.next_3">${t("leader.next_3")}</li>
+      </ul>
+    </div>
   `;
+
+  panel.querySelectorAll(".leader-suggestion").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const field = panel.querySelector("#leaderNameInput");
+      field.value = btn.dataset.name;
+      field.dispatchEvent(new Event("input"));
+      field.focus();
+    });
+  });
 
   const input = panel.querySelector("#leaderNameInput");
   input.addEventListener("input", () => {

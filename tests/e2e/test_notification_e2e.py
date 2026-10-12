@@ -36,6 +36,7 @@ def _call_human_preconfirmed(monkeypatch):
 @pytest.fixture
 def notification_config() -> HumanNotificationConfig:
     return HumanNotificationConfig(
+        web_ui=False,  # these tests count external channels only
         enabled=True,
         channels=[
             NotificationChannelConfig(
@@ -127,6 +128,7 @@ class TestNotificationE2EFlow:
         monkeypatch.setenv("CHATWORK_API_TOKEN", "cw-test-token")
 
         config = HumanNotificationConfig(
+            web_ui=False,  # these tests count external channels only
             enabled=True,
             channels=[
                 NotificationChannelConfig(
@@ -165,6 +167,7 @@ class TestNotificationE2EFlow:
         # Patch all three channel HTTP clients
         with (
             patch("core.config.models.load_config") as mock_load_config,
+            patch("core.phone.urgent.request_phone_alert", return_value="phone: calling") as phone_alert,
             patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls,
             patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls,
             patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls,
@@ -188,11 +191,15 @@ class TestNotificationE2EFlow:
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
-        assert len(parsed["results"]) == 3
+        # Urgent priority also places a phone alert alongside the three channels.
+        assert len(parsed["results"]) == 4
+        assert "phone: calling" in parsed["results"]
+        phone_alert.assert_called_once()
 
     def test_disabled_channels_skipped(self, anima_dir, memory):
         """Disabled channels in config are not included in the notifier."""
         config = HumanNotificationConfig(
+            web_ui=False,  # these tests count external channels only
             enabled=True,
             channels=[
                 NotificationChannelConfig(

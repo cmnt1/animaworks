@@ -26,13 +26,13 @@ Use the following Markdown format. Separate sections by time period using `## HH
 - HH:MM Next event
 ```
 
-## Rules
+## 규칙
 
-1. **Group by time period**: Cluster related activities into 30-minute to 2-hour blocks
-2. **Be concise and use bullets**: Keep only facts useful for later reference; do not copy email bodies or tool output. For each tool execution, record only what was done, whether it succeeded, and the conclusion
-3. **Eliminate redundant repetition**: Deduplicate repeated `current_state.md` dumps or duplicate REFLECTION blocks — keep only one instance
-4. **Tool execution results**: State what was done, success/failure, and the conclusion without copying output. Summarize periodic checks with no changes in one line
-5. **Communication content**: Record the key points of sent/received messages (who, to whom, about what)
-6. **No speculation**: Record only facts from the activity log. Do not add inferences or interpretations
-7. **Use existing content for deduplication**: If existing episode content is provided, absorb overlapping details into the timeline and avoid repeating the same facts twice
-8. **Use only `##` markdown headers**: Do not use `#` or `###`
+1. **시간대별로 그룹화**: 관련 활동을 30분~2시간 정도의 시간대로 묶는다
+2. **글머리 기호 목록으로 간결하게 작성**: 나중에 참고할 수 있는 사실만 남기고, 이메일 본문이나 도구 출력을 옮겨 적지 않는다. 도구 실행은 ‘무엇을 했는지·성공 여부·결론’만 기록한다
+3. **불필요한 반복 제거**: 동일한 `current_state.md` 덤프나 중복된 REFLECTION은 한 번만 남긴다
+4. **도구 실행 결과**: 무엇을 했는지·성공/실패 여부·결론만 기록하고, 출력 내용은 옮겨 적지 않는다. 정기 점검에서 변화가 없던 항목은 한 줄로 정리한다
+5. **통신 내용**: 송수신 메시지의 요점을 기록한다(누가 누구에게 무엇에 관해 보냈는지)
+6. **추측을 덧붙이지 않는다**: 행동 기록에 있는 사실만 기록한다. 추론이나 해석은 하지 않는다
+7. **기존 내용은 중복 제거에 활용**: 기존 에피소드 내용이 있는 경우, 중복되는 정보는 타임라인에 반영하고 같은 사실을 두 번 기록하지 않는다
+8. **마크다운의 `##` 헤더만 사용**: `#`나 `###`은 사용하지 않는다

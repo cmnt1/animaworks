@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 
 # ── Create Anima ─────────────────────────────────────────
@@ -117,6 +118,44 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
 # ── Chat ───────────────────────────────────────────────────
 
 
+def resolve_default_anima() -> str | None:
+    """Return the anima a bare ``animaworks chat`` should open.
+
+    ``cli.default_anima`` in config.json wins; otherwise the only enabled
+    anima without a supervisor. Returns None when that is ambiguous.
+    """
+    from core.config import load_config
+    from core.config.anima_registry import read_anima_supervisor
+    from core.paths import get_animas_dir
+
+    try:
+        configured = load_config().cli.default_anima.strip()
+    except Exception:
+        configured = ""
+    if configured:
+        return configured
+
+    heads: list[str] = []
+    animas_dir = get_animas_dir()
+    if animas_dir.is_dir():
+        for anima_dir in sorted(animas_dir.iterdir()):
+            status_path = anima_dir / "status.json"
+            if not status_path.is_file():
+                continue
+            try:
+                status = json.loads(status_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if status.get("enabled", True) and read_anima_supervisor(anima_dir) is None:
+                heads.append(anima_dir.name)
+    if len(heads) == 1:
+        return heads[0]
+    if heads:
+        print(f"multiple top-level animas: {', '.join(heads)}", file=sys.stderr)
+        print("set one with: animaworks config set cli.default_anima NAME", file=sys.stderr)
+    return None
+
+
 def cmd_chat(args: argparse.Namespace) -> None:
     """Chat with an anima (via gateway or direct)."""
     thread_id = getattr(args, "thread_id", "default") or "default"
@@ -134,8 +173,10 @@ def cmd_chat(args: argparse.Namespace) -> None:
         return
 
     if args.anima is None and resume is None:
-        print("an anima name or --resume is required", file=sys.stderr)
-        sys.exit(2)
+        args.anima = resolve_default_anima()
+        if args.anima is None:
+            print("an anima name or --resume is required", file=sys.stderr)
+            sys.exit(2)
 
     if resume and not args.local:
         from cli.tui.session import latest_session, load_session

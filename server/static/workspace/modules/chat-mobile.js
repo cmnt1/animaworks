@@ -2,7 +2,7 @@
 // Mobile responsive helpers, voice chat callback builder, greeting trigger, draft save/load.
 
 import { getState, setState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { greetAnima } from "./api.js";
 import { getCurrentUser } from "./login.js";
 import { setExpression } from "./live2d.js";

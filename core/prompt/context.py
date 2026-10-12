@@ -43,7 +43,11 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "opus": 200_000,
     "sonnet": 200_000,
     "haiku": 200_000,
-    # Anthropic (current generation — conservative default; override via config)
+    # Anthropic (current generation — 1M on the API; Mode S runs them at the
+    # Claude Code window, so stay at the conservative 200K like models.json)
+    "claude-fable-5": 200_000,
+    "claude-opus-5": 200_000,
+    "claude-sonnet-5": 200_000,
     "claude-opus-4-6": 128_000,
     "claude-sonnet-4-6": 128_000,
     # Anthropic (previous generation)

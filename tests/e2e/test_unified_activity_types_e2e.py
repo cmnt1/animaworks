@@ -153,7 +153,13 @@ class TestMessageReceivedSummary:
             MockConvMem.return_value = mock_conv
 
             mock_agent = MockAgent.return_value
-            mock_agent.run_cycle = AsyncMock(return_value=_make_cycle_result())
+
+            # process_message drains run_cycle_streaming after 18b30d5c.
+            async def mock_stream(*args, **kwargs):
+                result = _make_cycle_result(trigger="message:user").model_dump(mode="json")
+                yield {"type": "cycle_done", "cycle_result": result}
+
+            mock_agent.run_cycle_streaming = mock_stream
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 

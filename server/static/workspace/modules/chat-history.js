@@ -3,7 +3,7 @@
 // Now delegates data management to ChatSessionManager.
 
 import { getState, setState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { escapeHtml, renderSimpleMarkdown, smartTimestamp } from "./utils.js";
 import { renderChatImages } from "../../shared/image-input.js";
 import {

@@ -112,6 +112,20 @@ class _DeterministicReranker:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_runtime_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep E2E tests that bypass ``data_dir`` away from the host runtime."""
+    from core.config import invalidate_cache
+    from core.paths import _prompt_cache
+
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "_e2e_runtime"))
+    invalidate_cache()
+    _prompt_cache.clear()
+    yield
+    invalidate_cache()
+    _prompt_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
     """Point the process-wide LLM rate guard at a per-test temp file."""
     from core.config.schemas import LlmRateGuardConfig

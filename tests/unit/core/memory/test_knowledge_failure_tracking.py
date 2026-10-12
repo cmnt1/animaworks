@@ -333,10 +333,15 @@ class TestKnowledgeReconsolidation:
 
 
 class TestIndexerMetadataExtraction:
-    def test_extracts_failure_tracking_fields(self, tmp_path: Path) -> None:
+    def test_extracts_failure_tracking_fields(self, tmp_path: Path, monkeypatch) -> None:
         """Verify that indexing picks up the new tracking fields in ChromaDB."""
         pytest.importorskip("chromadb")
-        pytest.importorskip("sentence_transformers")
+        # This verifies persisted metadata, not the embedding model or its
+        # download/cache. Keep real chunking and Chroma storage in the test.
+        monkeypatch.setattr(
+            "core.memory.rag.embedding.generate_embeddings",
+            lambda texts, **kwargs: [[0.1] * 384 for _ in texts],
+        )
 
         # Set up a full data dir structure for model loading
         data_dir = tmp_path / "data"

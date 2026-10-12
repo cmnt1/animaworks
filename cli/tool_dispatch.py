@@ -14,6 +14,7 @@ from core.integrations import (
     TOOL_MODULES,
     discover_common_tools,
     discover_personal_tools,
+    get_tool_modules,
     load_tool_module,
 )
 from core.platform.env import anima_dir_env
@@ -117,6 +118,43 @@ def _gated_action_candidates(
         if isinstance(info, dict) and info.get("gated") is True:
             gated.append(candidate)
     return gated
+
+
+def _slack_cli_reply_grant_ok(
+    anima_dir: Path | None,
+    tool_name: str,
+    action: str,
+    argv: list[str],
+) -> bool:
+    """Check the grant for ``animaworks-tool slack send ... --thread``."""
+    if tool_name != "slack" or action != "send" or len(argv) < 2 or argv[0] != "send":
+        return False
+
+    channel_id = argv[1]
+    thread_ts = ""
+    thread_count = 0
+    for index, argument in enumerate(argv[2:], start=2):
+        if argument == "--thread":
+            if index + 1 >= len(argv):
+                return False
+            thread_count += 1
+            thread_ts = argv[index + 1]
+        elif argument.startswith("--thread="):
+            thread_count += 1
+            thread_ts = argument.partition("=")[2]
+        if thread_count > 1:
+            return False
+    if not thread_ts:
+        return False
+
+    from core.messaging.reply_grants import reply_grant_ok_for_action
+
+    return reply_grant_ok_for_action(
+        anima_dir,
+        "slack",
+        "send",
+        {"channel": channel_id, "thread_ts": thread_ts},
+    )
 
 
 def _handle_submit(argv: list[str]) -> None:
@@ -246,7 +284,8 @@ def cli_dispatch() -> None:
     common = discover_common_tools()
     anima_dir_str = anima_dir_env() or ""
     personal = discover_personal_tools(Path(anima_dir_str)) if anima_dir_str else {}
-    all_tools = set(TOOL_MODULES) | set(common) | set(personal)
+    core_modules = get_tool_modules()
+    all_tools = set(core_modules) | set(common) | set(personal)
 
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         tools = ", ".join(sorted(all_tools))
@@ -301,7 +340,7 @@ def cli_dispatch() -> None:
     if anima_dir_str and tool_name in all_tools:
         from core.tooling.permissions import check_tool_access
 
-        if tool_name in TOOL_MODULES:
+        if tool_name in core_modules:
             origin = "core"
             tool_file: Path | None = None
         elif tool_name in personal:
@@ -322,20 +361,27 @@ def cli_dispatch() -> None:
         action_candidates = [arg for arg in sys.argv[2:] if not arg.startswith("-")]
         gated_candidates = _gated_action_candidates(origin, tool_name, tool_file, action_candidates)
         for candidate in gated_candidates:
+            anima_path = Path(anima_dir_str)
             check = check_tool_access(
-                Path(anima_dir_str),
+                anima_path,
                 tool_name,
                 candidate,
                 origin=origin,
                 tool_file=tool_file,
+                reply_grant_ok=_slack_cli_reply_grant_ok(
+                    anima_path,
+                    tool_name,
+                    candidate,
+                    sys.argv[2:],
+                ),
             )
             if not check.allowed:
                 print(f"Error: {check.message}", file=sys.stderr)
                 sys.exit(1)
 
     # Try core tools first.
-    if tool_name in TOOL_MODULES:
-        mod = load_tool_module(tool_name, TOOL_MODULES)
+    if tool_name in core_modules:
+        mod = load_tool_module(tool_name, core_modules)
         if not hasattr(mod, "cli_main"):
             print(f"Tool '{tool_name}' has no CLI interface")
             sys.exit(1)

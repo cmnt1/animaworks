@@ -3,7 +3,7 @@
 // Now delegates stream/queue state to ChatSessionManager; keeps Live2D hooks.
 
 import { getState, setState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { getCurrentUser } from "./login.js";
 import { escapeHtml } from "./utils.js";
 import { setExpression, setTalking } from "./live2d.js";

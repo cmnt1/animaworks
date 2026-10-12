@@ -363,6 +363,7 @@ class TestCallHumanHandler:
                     "interactive": True,
                     "category": "approval",
                     "options": ["approve", "reject"],
+                    "callback_id": "cb_test_1",
                     "allowed_users": ["U1"],
                 },
             )
@@ -374,6 +375,7 @@ class TestCallHumanHandler:
         mock_create.assert_called_once()
         _cargs, ckwargs = mock_create.call_args
         assert ckwargs["allowed_users"] == {"slack": ["U1", "U9"]}
+        assert ckwargs["callback_id"] == "cb_test_1"
 
     def test_ops_post_without_interactive_call_human_falls_back_to_general(
         self,

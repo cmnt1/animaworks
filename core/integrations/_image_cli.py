@@ -48,7 +48,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     # -- pipeline --
     p_pipe = sub.add_parser("pipeline", help="Run full 7-step pipeline")
     p_pipe.add_argument("prompt", help="Character appearance tags")
-    p_pipe.add_argument("-n", "--negative", default="", help="Negative prompt")
+    p_pipe.add_argument("-n", "--negative", "--negative-prompt", dest="negative", default="", help="Negative prompt")
     p_pipe.add_argument(
         "-d",
         "--anima-dir",
@@ -71,7 +71,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     # -- fullbody --
     p_full = sub.add_parser("fullbody", help="Generate full-body image only")
     p_full.add_argument("prompt", help="Character appearance tags")
-    p_full.add_argument("-n", "--negative", default="", help="Negative prompt")
+    p_full.add_argument("-n", "--negative", "--negative-prompt", dest="negative", default="", help="Negative prompt")
     p_full.add_argument("-o", "--output", default="avatar_fullbody.png")
     p_full.add_argument("-W", "--width", type=int, default=1024)
     p_full.add_argument("-H", "--height", type=int, default=1536)

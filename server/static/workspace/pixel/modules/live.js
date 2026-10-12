@@ -54,6 +54,7 @@ export class LiveClient {
     const poll = async () => {
       if (this.stopped) return;
       const animas = await this.fetchInitial();
+      if (this.stopped) return;
       for (const anima of animas) {
         const busy = anima?.busy;
         if (!busy?.is_busy || !anima.name || this.actors.isHuman(anima.name)) continue;
@@ -121,7 +122,7 @@ export class LiveClient {
   }
 
   markUnavailable() {
-    if (this.everConnected || this.unavailableTimer) return;
+    if (this.stopped || this.everConnected || this.unavailableTimer) return;
     this.unavailableTimer = setTimeout(() => {
       this.unavailableTimer = null;
       if (!this.everConnected) this.onUnavailable();

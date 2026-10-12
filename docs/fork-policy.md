@@ -27,6 +27,12 @@ Governor suspensions are transient supervisor state: automatic recovery and
 reconciliation must respect them without changing an Anima's persisted enabled
 setting. Resume clears the suspension before starting the process.
 
+The 2026-10-12 integration retains that Governor contract alongside upstream's
+helper-model registry and unified tool entry points. Keep the fork's Discord
+thread/debate routing, CLI model aliases and Codex dependency pins. Enclave mode
+is opt-in and requires Linux; importing its CLI or gateway must remain safe in
+normal Windows mode. Phone support remains disabled unless explicitly configured.
+
 ---
 
 ## 2. Notion is disabled by default

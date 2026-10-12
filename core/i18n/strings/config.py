@@ -329,4 +329,350 @@ STRINGS: dict[str, dict[str, str]] = {
             "작업 디렉터리를 data_dir 밖에 두거나 companies/<회사>/shared를 사용하세요."
         ),
     },
+    "enclave.guard.name_required": {
+        "ja": "enclave に name が設定されていません",
+        "en": "enclave has no name set",
+    },
+    "enclave.guard.socket_path_required": {
+        "ja": "enclave に socket_path が設定されていません",
+        "en": "enclave has no socket_path set",
+    },
+    "enclave.guard.entry_anima_required": {
+        "ja": "enclave に entry_anima が設定されていません",
+        "en": "enclave has no entry_anima set",
+    },
+    "enclave.guard.egress_invalid": {
+        "ja": "enclave の egress 設定が不正です（stages を1つ以上、既知の type で設定する必要があります）",
+        "en": "enclave egress config is invalid (at least one stage of a known type is required)",
+    },
+    "enclave.guard.peer_uids_required": {
+        "ja": "enclave の allowed_peer_uids が空です（少なくとも1つ設定する必要があります）",
+        "en": "enclave allowed_peer_uids is empty (at least one must be set)",
+    },
+    "enclave.guard.socket_group_missing": {
+        "ja": "enclave の socket_group '{group}' が存在しません",
+        "en": "enclave socket_group '{group}' does not exist",
+    },
+    "enclave.gateway.answer_instruction": {
+        "ja": (
+            '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
+            "根拠ID を必ず付ける。個人を特定できる値は書かない。"
+            "JSON として正しく読めるように、fact と evidence の文字列には改行・二重引用符・バックスラッシュを入れず、"
+            "コードや引用は地の文で言い換える。fact は1文ずつ短く分ける"
+        ),
+        "en": (
+            'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
+            "Always attach evidence IDs. Do not write values that identify a specific person. "
+            "Keep the JSON valid: no line breaks, double quotes or backslashes inside fact and evidence strings; "
+            "paraphrase code and quotations. Split facts into short single sentences."
+        ),
+    },
+    "enclave.tool.unknown_enclave": {
+        "ja": "エラー: enclave '{enclave}' が設定に存在しません",
+        "en": "error: enclave '{enclave}' is not configured",
+    },
+    "enclave.tool.anima_not_allowed": {
+        "ja": "エラー: この anima は enclave へのアクセスを許可されていません",
+        "en": "error: this anima is not allowed to access the enclave",
+    },
+    "enclave.tool.unreachable": {
+        "ja": "エラー: enclave に接続できません",
+        "en": "error: could not reach the enclave",
+    },
+    "enclave.tool.failed": {
+        "ja": "エラー: enclave が応答を返しませんでした (code={code})",
+        "en": "error: enclave returned an error (code={code})",
+    },
+    "enclave.tool.schema_description": {
+        "ja": "隔離された enclave に質問し、事実と根拠IDだけの回答を得る",
+        "en": "Ask an isolated enclave a question and get a fact-only answer with evidence IDs",
+    },
+    "enclave.tool.schema_enclave": {
+        "ja": "接続する enclave の設定名",
+        "en": "name of the enclave config to connect to",
+    },
+    "enclave.tool.schema_question": {
+        "ja": "隔離インスタンスに送る質問",
+        "en": "the question to send to the isolated instance",
+    },
+    "enclave.tool.schema_case_id": {
+        "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",
+        "en": "optional case identifier (defaults to anima name plus date)",
+    },
+    "enclave.tool.fact_line": {
+        "ja": "- {text}（根拠: {evidence}）",
+        "en": "- {text} (evidence: {evidence})",
+    },
+    "enclave.records.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.records.dataset_required": {
+        "ja": "データセット名を指定してください。",
+        "en": "A dataset name is required.",
+    },
+    "enclave.records.query_required": {
+        "ja": "検索語を指定してください。",
+        "en": "A search query is required.",
+    },
+    "enclave.records.limit_integer": {
+        "ja": "limit は整数で指定してください。",
+        "en": "limit must be an integer.",
+    },
+    "enclave.records.id_required": {
+        "ja": "record_id を指定してください。",
+        "en": "record_id is required.",
+    },
+    "enclave.records.dataset_not_configured": {
+        "ja": "データセット '{dataset}' は enclave に設定されていません。",
+        "en": "Dataset '{dataset}' is not configured in the enclave.",
+    },
+    "enclave.records.not_found": {
+        "ja": "ID '{record_id}' のレコードは見つかりません。",
+        "en": "No record was found for ID '{record_id}'.",
+    },
+    "enclave.records.unavailable": {
+        "ja": "データセットを安全に参照できません。設定とファイルを確認してください。",
+        "en": "The dataset could not be read safely. Check its configuration and file.",
+    },
+    "enclave.records.schema_search": {
+        "ja": "隔離 enclave 内の設定済み JSONL データを、検索可能な項目から検索します。",
+        "en": "Search configured JSONL datasets using their searchable fields inside the enclave.",
+    },
+    "enclave.records.schema_get": {
+        "ja": "隔離 enclave 内の設定済み JSONL データから、ID を指定して 1 件取得します。",
+        "en": "Fetch one configured JSONL record by ID from inside the enclave.",
+    },
+    "enclave.records.schema_dataset": {
+        "ja": "設定済みデータセット名",
+        "en": "Configured dataset name",
+    },
+    "enclave.records.schema_query": {
+        "ja": "検索する文字列",
+        "en": "Text to search for",
+    },
+    "enclave.records.schema_limit": {
+        "ja": "返すレコードの最大件数（1〜100）",
+        "en": "Maximum records to return (1-100)",
+    },
+    "enclave.records.schema_record_id": {
+        "ja": "データセットの ID フィールド値",
+        "en": "Value of the dataset's ID field",
+    },
+    "enclave.sql.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.sql.source_required": {
+        "ja": "データソース名を指定してください。",
+        "en": "A data source name is required.",
+    },
+    "enclave.sql.source_not_configured": {
+        "ja": "データソース '{source}' は enclave に設定されていません。",
+        "en": "Data source '{source}' is not configured in the enclave.",
+    },
+    "enclave.sql.sql_required": {
+        "ja": "SQL を指定してください。",
+        "en": "An SQL statement is required.",
+    },
+    "enclave.sql.multiple_statements": {
+        "ja": "SQL は 1 文で指定してください（セミコロン区切りの複数文は使えません）。",
+        "en": "Provide a single SQL statement (semicolon-separated statements are not allowed).",
+    },
+    "enclave.sql.sql_not_allowed": {
+        "ja": "この SQL は読み取り専用の安全な形式ではありません。",
+        "en": "This SQL is not in a safe read-only form.",
+    },
+    "enclave.sql.unavailable": {
+        "ja": "データソースを安全に参照できません。設定と秘密を確認してください。",
+        "en": "The data source could not be read safely. Check its configuration and secrets.",
+    },
+    "enclave.sql.schema_query": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB に、検証済みの SELECT を実行します。",
+        "en": "Run a validated read-only query against a configured enclave database.",
+    },
+    "enclave.sql.schema_schema": {
+        "ja": "隔離 enclave 内の設定済み読取専用 DB のスキーマ（テーブル一覧か列定義）を返します。",
+        "en": "Return the schema (table list or column definitions) of a configured enclave database.",
+    },
+    "enclave.sql.schema_source": {
+        "ja": "設定済みデータソース名",
+        "en": "Configured data source name",
+    },
+    "enclave.sql.schema_sql": {
+        "ja": "実行する検証済み SELECT 文",
+        "en": "Validated SELECT statement to run",
+    },
+    "enclave.sql.schema_table": {
+        "ja": "省略可なテーブル名（指定時は列定義を返す）",
+        "en": "Optional table name (returns column definitions when set)",
+    },
+    "enclave.sql.raw_note": {
+        "ja": "全文は raw_path のファイルを Read で読んでください。",
+        "en": "Read the file at raw_path to access the full query result.",
+    },
+    "enclave.aws.only": {
+        "ja": "このツールは enclave 内でだけ使えます。",
+        "en": "This tool can only be used inside an enclave.",
+    },
+    "enclave.aws.source_required": {
+        "ja": "AWS データソース名を指定してください。",
+        "en": "An AWS data source name is required.",
+    },
+    "enclave.aws.source_not_configured": {
+        "ja": "AWS データソースが enclave に設定されていません。",
+        "en": "The AWS data source is not configured in the enclave.",
+    },
+    "enclave.aws.target_not_allowed": {
+        "ja": "対象の AWS リソースは設定または許可されていません。",
+        "en": "The requested AWS resource is not configured or allowed.",
+    },
+    "enclave.aws.invalid_input": {
+        "ja": "AWS 読み取りツールの引数が無効です。",
+        "en": "An AWS read-tool argument is invalid.",
+    },
+    "enclave.aws.query_timeout": {
+        "ja": "Logs Insights クエリが制限時間内に完了しませんでした。",
+        "en": "The Logs Insights query did not complete within the time limit.",
+    },
+    "enclave.aws.invalid_secret": {
+        "ja": "AWS 認証情報の秘密が有効な形式ではありません。",
+        "en": "The AWS credential secret is not in a valid format.",
+    },
+    "enclave.aws.dependencies_missing": {
+        "ja": "AWS 読み取りに必要な依存パッケージがありません。",
+        "en": "A dependency required for AWS reads is unavailable.",
+    },
+    "enclave.aws.unavailable": {
+        "ja": "AWS データを安全に読み取れません。設定と秘密を確認してください。",
+        "en": "AWS data could not be read safely. Check the configuration and secrets.",
+    },
+    "enclave.aws.schema_source": {
+        "ja": "enclave.aws_sources に設定された AWS データソース名",
+        "en": "AWS data source configured under enclave.aws_sources",
+    },
+    "enclave.aws.schema_time": {
+        "ja": "now、ISO8601 時刻、または -1h / -24h 形式の相対時刻",
+        "en": "now, an ISO8601 time, or a relative duration such as -1h or -24h",
+    },
+    "enclave.aws.schema_logs_query": {
+        "ja": "許可された CloudWatch Logs グループで Logs Insights クエリを実行します。",
+        "en": "Run a Logs Insights query against an allowed CloudWatch Logs group.",
+    },
+    "enclave.aws.schema_logs_filter": {
+        "ja": "許可された CloudWatch Logs グループからイベントを取得します。",
+        "en": "Fetch events from an allowed CloudWatch Logs group.",
+    },
+    "enclave.aws.schema_log_group": {
+        "ja": "enclave.aws_sources で許可されたロググループ名",
+        "en": "Log group allowed by enclave.aws_sources",
+    },
+    "enclave.aws.schema_query": {
+        "ja": "実行する Logs Insights クエリ",
+        "en": "Logs Insights query to run",
+    },
+    "enclave.aws.schema_filter_pattern": {
+        "ja": "CloudWatch Logs のフィルターパターン（空文字は全イベント）",
+        "en": "CloudWatch Logs filter pattern (empty means all events)",
+    },
+    "enclave.aws.schema_pi_top_sql": {
+        "ja": "RDS Performance Insights から負荷上位の SQL ディメンションを取得します。",
+        "en": "Return top SQL dimensions from RDS Performance Insights.",
+    },
+    "enclave.aws.schema_pi_sql_detail": {
+        "ja": "Performance Insights の SQL ディメンション詳細（SQL 全文）を取得します。",
+        "en": "Fetch Performance Insights SQL dimension details, including the full SQL text.",
+    },
+    "enclave.aws.schema_group_identifier": {
+        "ja": "enclave_pi_top_sql が返した SQL グループ識別子",
+        "en": "SQL group identifier returned by enclave_pi_top_sql",
+    },
+    "enclave.aws.schema_rds_logs": {
+        "ja": "設定済み RDS インスタンスのログファイル一覧または一部を取得します。",
+        "en": "List log files or fetch a portion of a configured RDS instance log.",
+    },
+    "enclave.aws.schema_log_file_name": {
+        "ja": "取得する RDS ログファイル名（省略時は一覧）",
+        "en": "RDS log file name to fetch (omit to list files)",
+    },
+    "enclave.aws.schema_marker": {
+        "ja": "前回応答の継続マーカー",
+        "en": "Continuation marker from the previous response",
+    },
+    "enclave.aws.schema_s3_get": {
+        "ja": "許可された S3 バケットからオブジェクトを読み取ります。",
+        "en": "Read an object from an allowed S3 bucket.",
+    },
+    "enclave.aws.schema_s3_list": {
+        "ja": "許可された S3 バケットのオブジェクトキーを一覧します。",
+        "en": "List object keys in an allowed S3 bucket.",
+    },
+    "enclave.aws.schema_bucket": {
+        "ja": "enclave.aws_sources で許可されたバケット名",
+        "en": "Bucket allowed by enclave.aws_sources",
+    },
+    "enclave.aws.schema_key": {
+        "ja": "S3 オブジェクトキー",
+        "en": "S3 object key",
+    },
+    "enclave.cli.doctor_json": {
+        "ja": "機械可読な JSON 形式で出力する",
+        "en": "Output in machine-readable JSON format",
+    },
+    "enclave.guard.entry_anima_missing": {
+        "ja": "entry_anima '{anima}' のディレクトリが存在しません",
+        "en": "entry_anima '{anima}' directory does not exist",
+    },
+    "enclave.guard.event_export_url": {
+        "ja": "event_export.url が設定されています（enclave では外部送信を無効にする必要があります）",
+        "en": "event_export.url is set (external export must be disabled in an enclave)",
+    },
+    "enclave.guard.external_enabled": {
+        "ja": "外部連携 {channel} が有効になっています（enclave では無効にする必要があります）",
+        "en": "external integration {channel} is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.dir_owner": {
+        "ja": "ディレクトリ {path} の所有者が現在のユーザーではありません",
+        "en": "directory {path} is not owned by the current user",
+    },
+    "enclave.guard.dir_mode": {
+        "ja": "ディレクトリ {path} に group/other のパーミッションビットがあります",
+        "en": "directory {path} has group/other permission bits set",
+    },
+    "enclave.guard.llm_credentials_required": {
+        "ja": "allowed_llm_credentials が空です（少なくとも1つ設定する必要があります）",
+        "en": "allowed_llm_credentials is empty (at least one must be set)",
+    },
+    "enclave.guard.llm_credential_not_allowed": {
+        "ja": "LLM クレデンシャル '{credential}' が許可リストに含まれていません",
+        "en": "LLM credential '{credential}' is not in the allow-list",
+    },
+    "enclave.guard.status_unreadable": {
+        "ja": "anima {anima} の status.json を読み込めません",
+        "en": "could not read status.json for anima {anima}",
+    },
+    "enclave.guard.file_root_unreadable": {
+        "ja": "anima {anima} の permissions を読み込めません",
+        "en": "could not read permissions for anima {anima}",
+    },
+    "enclave.guard.file_root_full_access": {
+        "ja": 'anima {anima} の file_roots に "/" があります（danger-full-access）',
+        "en": 'anima {anima} has "/" in file_roots (danger-full-access)',
+    },
+    "enclave.guard.auth_unreadable": {
+        "ja": "認証設定 (auth) を読み込めません",
+        "en": "could not read authentication config (auth)",
+    },
+    "enclave.guard.auth_mode": {
+        "ja": "auth_mode が '{mode}' です（password または multi_user が必要です）",
+        "en": "auth_mode is '{mode}' (password or multi_user required)",
+    },
+    "enclave.guard.auth_trust_localhost": {
+        "ja": "trust_localhost が有効です（enclave では無効にする必要があります）",
+        "en": "trust_localhost is enabled (must be disabled in an enclave)",
+    },
+    "enclave.guard.host": {
+        "ja": "bind host '{host}' が loopback アドレスではありません",
+        "en": "bind host '{host}' is not a loopback address",
+    },
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -72,15 +73,15 @@ def test_per_anima_token_logging_preserves_service_message(
     assert "Using per-Anima Slack token for 'mei'" in caplog.text
 
 
-def test_call_human_preserves_custom_env_and_credentials_precedence(
+@pytest.mark.asyncio
+async def test_notification_slack_channel_preserves_configured_token_precedence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     from core.config.io import invalidate_cache
-    from core.integrations.call_human import _get_bot_token
+    from core.notification.channels.slack import SlackChannel
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(tmp_path / "animas" / "mei"))
     monkeypatch.setenv("SLACK_BOT_TOKEN", "shared-environment-token")
     monkeypatch.setenv("SLACK_BOT_TOKEN__mei", "per-anima-environment-token")
     monkeypatch.setenv("CALL_HUMAN_TOKEN", "channel-specific-environment-token")
@@ -88,12 +89,18 @@ def test_call_human_preserves_custom_env_and_credentials_precedence(
         json.dumps({"credentials": {"slack": {"api_key": "config-credentials-token"}}}),
         encoding="utf-8",
     )
+    post_message = AsyncMock(return_value={"ok": True})
+    monkeypatch.setattr("core.channels.slack.post_message", post_message)
     invalidate_cache()
     try:
-        # An explicit bot_token_env stays ahead of generic credential lookup.
-        assert _get_bot_token({"bot_token_env": "CALL_HUMAN_TOKEN"}) == "channel-specific-environment-token"
-        # The legacy call_human fallback ignores the per-Anima env key and
-        # get_credential keeps config credentials ahead of the shared env.
-        assert _get_bot_token({}) == "config-credentials-token"
+        custom = SlackChannel({"bot_token_env": "CALL_HUMAN_TOKEN", "channel": "C123"})
+        assert await custom.send("Subject", "Body", anima_name="mei") == "slack: OK"
+        assert post_message.call_args.args[0] == "channel-specific-environment-token"
+
+        monkeypatch.delenv("SLACK_BOT_TOKEN__mei")
+        configured = SlackChannel({"channel": "C123"})
+        assert await configured.send("Subject", "Body", anima_name="mei") == "slack: OK"
+        assert post_message.call_args.args[0] == "config-credentials-token"
+        assert post_message.await_count == 2
     finally:
         invalidate_cache()

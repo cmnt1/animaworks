@@ -25,7 +25,7 @@ async def test_extract_and_store_facts_with_outcome_duplicate_reconcile_skips_ap
     )
 
     async def fake_extract(*args, **kwargs):
-        return fact_extraction.FactExtractionOutcome([record])
+        return fact_extraction.FactExtractionOutcome([record], extract_llm_calls=2)
 
     def fail_append(*args, **kwargs):
         raise AssertionError("duplicate reconcile should skip append")
@@ -40,6 +40,7 @@ async def test_extract_and_store_facts_with_outcome_duplicate_reconcile_skips_ap
             fact=record,
             should_append=False,
             reason="duplicate",
+            reconcile_llm_calls=1,
         ),
     )
 
@@ -52,6 +53,8 @@ async def test_extract_and_store_facts_with_outcome_duplicate_reconcile_skips_ap
 
     assert outcome.records == []
     assert outcome.duplicates == 1
+    assert outcome.extract_llm_calls == 2
+    assert outcome.reconcile_llm_calls == 1
 
 
 @pytest.mark.asyncio

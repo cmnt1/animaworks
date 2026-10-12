@@ -13,7 +13,11 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
+import io
+import logging
 import struct
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -96,6 +100,75 @@ def _front_lane_stub(*, healthy: bool = True) -> AsyncMock:
 
     lane.stream = _stream
     return lane
+
+
+class _RecordingVoiceTransport:
+    def __init__(self) -> None:
+        self.items: list[tuple[str, object]] = []
+
+    async def send_event(self, event: dict) -> None:
+        self.items.append(("event", event))
+
+    async def send_audio(self, data: bytes) -> None:
+        self.items.append(("audio", data))
+
+
+def _wav_blob(value: int) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24_000)
+        wav_file.writeframes(struct.pack("<h", value) * 2400)
+    return buffer.getvalue()
+
+
+def _whole_reply_phone_session(
+    transport: _RecordingVoiceTransport,
+    *,
+    tmp_path: Path,
+    synthesize_full,
+    channel: str = "phone",
+):
+    stt = AsyncMock()
+    stt.transcribe_buffer_async = AsyncMock(return_value={"raw_text": "質問です", "language": "ja"})
+    tts = MagicMock()
+    tts.prefers_whole_reply = True
+    tts.health_check = AsyncMock(return_value=True)
+    synthesized: list[str] = []
+    answer_audio = _wav_blob(2200)
+
+    async def _synthesize(text: str, _config: object):
+        synthesized.append(text)
+        yield answer_audio
+
+    tts.synthesize = _synthesize
+    tts.synthesize_full = synthesize_full
+    session = VoiceSession(
+        "test",
+        transport,
+        stt,
+        tts,
+        TTSConfig(provider="gemini", voice_id="test-voice"),
+        MagicMock(),
+        VoiceConfig(stt_refine_enabled=False),
+        front_model="openai/test",
+        front_api_base="http://front.test/v1",
+        channel=channel,
+        animas_dir=tmp_path,
+    )
+    lane = AsyncMock()
+    lane.check_health = AsyncMock(return_value=True)
+    lane.reset_turn = MagicMock()
+
+    async def _stream(_text: str, **_kwargs):
+        yield "回答です。"
+
+    lane.stream = _stream
+    session._front_lane = lane
+    session._front_conversation.record_pending_turn = AsyncMock()
+    session._audio_buffer.extend(_audio_frames())
+    return session, synthesized, answer_audio
 
 
 # ── Prompt building (prefix-fixed) ─────────────────────────────
@@ -188,6 +261,23 @@ class TestVoiceFrontLane:
             {"role": "user", "content": "こんにちは"},
             {"role": "assistant", "content": "こんにちは。"},
         ]
+
+    @pytest.mark.asyncio
+    async def test_reasoning_model_kwargs_pass_litellm_checks(self) -> None:
+        lane = VoiceFrontLane(model="azure/gpt-6-luna", api_base="https://x", system_prompt="S")
+
+        async def _mc(**kwargs):  # type: ignore[no-untyped-def]
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="はい"))])
+
+        with patch("core.voice.front.litellm.acompletion", side_effect=_mc) as mock_ac:
+            got = [d async for d in lane.stream("こんにちは")]
+        assert "".join(got) == "はい"
+        call = mock_ac.await_args.kwargs
+        assert call["reasoning_effort"] == "none"
+        assert call["allowed_openai_params"] == ["reasoning_effort"]
+        assert "max_tokens" not in call
+        assert call["max_completion_tokens"] > 0
+        assert "temperature" not in call
 
     @pytest.mark.asyncio
     async def test_check_health_returns_false_on_error(self) -> None:
@@ -516,3 +606,195 @@ def test_reasoning_model_flags_and_api_version() -> None:
     assert not VoiceFrontLane(model="openai/qwen3.6-35b-a3b", api_base="http://x", system_prompt="s")._reasoning_model
     assert VoiceFrontLane(model="azure/gpt-6-luna", api_base="https://x", system_prompt="s")._reasoning_model
     assert not VoiceFrontLane(model="azure/gpt-4.1", api_base="https://x", system_prompt="s")._reasoning_model
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("prefers_whole_reply", "expected_calls"), [(True, 1), (False, 2)])
+async def test_front_reply_synthesis_respects_tts_whole_reply_preference(
+    prefers_whole_reply: bool,
+    expected_calls: int,
+) -> None:
+    session = _make_voice_session(front_model="openai/qwen3.6-35b-a3b")
+    session._tts.prefers_whole_reply = prefers_whole_reply
+    synthesized: list[str] = []
+
+    async def _synthesize(text: str, _config: object):
+        synthesized.append(text)
+        yield b"audio"
+
+    session._tts.synthesize = _synthesize
+    lane = AsyncMock()
+    lane.reset_turn = MagicMock()
+
+    async def _stream(_text: str, **_kwargs):
+        yield "一文目。"
+        yield "二文目。"
+
+    lane.stream = _stream
+    session._front_conversation.record_pending_turn = AsyncMock()
+
+    assert await session._run_front_turn(lane, "質問", "human", True)
+
+    assert len(synthesized) == expected_calls
+    if prefers_whole_reply:
+        assert synthesized == ["一文目。二文目。"]
+    else:
+        assert synthesized == ["一文目。", "二文目。"]
+
+
+@pytest.mark.asyncio
+async def test_fixed_text_uses_whole_reply_tts_policy() -> None:
+    session = _make_voice_session()
+    session._tts.prefers_whole_reply = True
+    synthesized: list[str] = []
+
+    async def _synthesize(text: str, _config: object):
+        synthesized.append(text)
+        yield b"audio"
+
+    session._tts.synthesize = _synthesize
+
+    assert await session.speak_text("一文目。二文目。")
+
+    assert synthesized == ["一文目。二文目。"]
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_phone_cached_filler_is_sent_before_front_reply(tmp_path: Path, monkeypatch, caplog) -> None:
+    monkeypatch.setattr("core.paths.get_data_dir", lambda: tmp_path / "data")
+    transport = _RecordingVoiceTransport()
+    filler_audio = _wav_blob(1200)
+
+    async def _unexpected_cache_synthesis(_text: str, _config: object) -> bytes:
+        raise AssertionError("pre-cached fillers should not be synthesized again")
+
+    session, synthesized, answer_audio = _whole_reply_phone_session(
+        transport,
+        tmp_path=tmp_path,
+        synthesize_full=_unexpected_cache_synthesis,
+    )
+    for text in session._voice_filler_phrases:
+        cache_path = session._voice_filler_cache_path(text)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(filler_audio)
+
+    caplog.set_level(logging.INFO, logger="core.voice.session")
+    await session.handle_speech_end()
+
+    audio_items = [(index, item) for index, (kind, item) in enumerate(transport.items) if kind == "audio"]
+    response_text_index = next(
+        index
+        for index, (kind, item) in enumerate(transport.items)
+        if kind == "event" and isinstance(item, dict) and item.get("type") == "response_text"
+    )
+    assert [item for _, item in audio_items] == [filler_audio, answer_audio]
+    assert audio_items[0][0] < response_text_index
+    assert any(text in session._recent_tts_text for text in session._voice_filler_phrases)
+    assert session._front_conversation.last_full_text == "回答です。"
+    assert session._playback_end_at > 0
+    assert any(
+        "voice_filler" in record.getMessage() and "cached=true" in record.getMessage() for record in caplog.records
+    )
+    assert synthesized == ["回答です。"]
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_phone_without_cached_filler_does_not_wait_for_prewarm(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("core.paths.get_data_dir", lambda: tmp_path / "data")
+    cache_started = asyncio.Event()
+    release_cache = asyncio.Event()
+    transport = _RecordingVoiceTransport()
+
+    async def _blocked_cache_synthesis(_text: str, _config: object) -> bytes:
+        cache_started.set()
+        await release_cache.wait()
+        return _wav_blob(1200)
+
+    session, _synthesized, answer_audio = _whole_reply_phone_session(
+        transport,
+        tmp_path=tmp_path,
+        synthesize_full=_blocked_cache_synthesis,
+    )
+    await asyncio.wait_for(cache_started.wait(), timeout=1)
+
+    await asyncio.wait_for(session.handle_speech_end(), timeout=1)
+
+    audio_items = [item for kind, item in transport.items if kind == "audio"]
+    assert audio_items == [answer_audio]
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_web_session_does_not_send_phone_filler(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("core.paths.get_data_dir", lambda: tmp_path / "data")
+    transport = _RecordingVoiceTransport()
+
+    async def _unused_cache_synthesis(_text: str, _config: object) -> bytes:
+        return _wav_blob(1200)
+
+    session, _synthesized, answer_audio = _whole_reply_phone_session(
+        transport,
+        tmp_path=tmp_path,
+        synthesize_full=_unused_cache_synthesis,
+        channel="web",
+    )
+
+    await session.handle_speech_end()
+
+    assert session._voice_filler_phrases == ()
+    assert [item for kind, item in transport.items if kind == "audio"] == [answer_audio]
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_voice_turn_and_processing_ignore_are_logged(tmp_path: Path, caplog) -> None:
+    session = _make_voice_session(front_model="openai/qwen3.6-35b-a3b")
+    session._front_lane = _front_lane_stub(healthy=True)
+    session._front_conversation.record_pending_turn = AsyncMock()
+    caplog.set_level(logging.INFO, logger="core.voice.session")
+
+    session._audio_buffer.extend(_audio_frames())
+    await session.handle_speech_end()
+
+    turn_log = next(record.getMessage() for record in caplog.records if record.getMessage().startswith("voice_turn "))
+    assert 'anima=test channel=web transcript="こんにちは"' in turn_log
+    assert "speech_end_to_stt_sec=" in turn_log
+    assert "stt_to_first_token_sec=" in turn_log
+    assert "first_token_to_audio_sec=" in turn_log
+    assert "reply_chars=" in turn_log
+    assert "ask_anima=false" in turn_log
+
+    session._processing = True
+    await session.handle_speech_end()
+    assert any("speech_end ignored (processing)" in record.getMessage() for record in caplog.records)
+    session._processing = False
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_voice_turn_log_records_ask_anima_call(caplog) -> None:
+    session = _make_voice_session(front_model="openai/qwen3.6-35b-a3b")
+    session._front_conversation._on_delegation = None
+    lane = AsyncMock()
+    lane.check_health = AsyncMock(return_value=True)
+    lane.reset_turn = MagicMock()
+
+    async def _stream(_text: str, **_kwargs):
+        session._front_conversation.ask_anima("調べて")
+        yield "対応します。"
+
+    lane.stream = _stream
+    session._front_lane = lane
+    session._front_conversation.record_pending_turn = AsyncMock()
+    session._audio_buffer.extend(_audio_frames())
+    caplog.set_level(logging.INFO, logger="core.voice.session")
+
+    await session.handle_speech_end()
+
+    turn_log = next(record.getMessage() for record in caplog.records if record.getMessage().startswith("voice_turn "))
+    assert "ask_anima=true" in turn_log
+    if session._delegation_jobs:
+        await asyncio.gather(*list(session._delegation_jobs.values()))
+    await session.close()

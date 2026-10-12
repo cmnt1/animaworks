@@ -183,12 +183,3 @@ def test_image_generation_credential_presence_uses_env_fallback(tmp_path, monkey
     from core.integrations.image_gen import _has_image_credential
 
     assert _has_image_credential("fal", "FAL_KEY")
-
-
-def test_call_human_reads_configured_bot_token_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("CUSTOM_SLACK_TOKEN", "env-slack-token")
-
-    from core.integrations.call_human import _get_bot_token
-
-    assert _get_bot_token({"bot_token_env": "CUSTOM_SLACK_TOKEN"}) == "env-slack-token"

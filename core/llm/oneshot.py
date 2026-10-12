@@ -178,6 +178,13 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
         kwargs["api_key"] = api_key
     if cred and cred.base_url:
         kwargs["api_base"] = cred.base_url
+    if resolved_model.startswith("bedrock/") and cred and cred.keys:
+        from core.enclave.secrets import aws_keys_from_secret
+
+        keys = {**cred.keys, **aws_keys_from_secret(cred.keys.get("aws_secret"))}
+        for key in ("aws_access_key_id", "aws_secret_access_key", "aws_session_token", "aws_region_name"):
+            if keys.get(key):
+                kwargs[key] = keys[key]
 
     return kwargs
 
@@ -260,6 +267,9 @@ def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
             if val:
                 kwargs[key] = val
     elif model.startswith("bedrock/"):
+        from core.enclave.secrets import aws_keys_from_secret
+
+        extra = {**extra, **aws_keys_from_secret(extra.get("aws_secret"))}
         for key in (
             "aws_access_key_id",
             "aws_secret_access_key",
@@ -357,6 +367,12 @@ def _build_sdk_env() -> dict[str, str]:
     elif auth == "bedrock":
         env["ANTHROPIC_API_KEY"] = ""
         env["CLAUDE_CODE_USE_BEDROCK"] = "1"
+        env["DISABLE_TELEMETRY"] = "1"
+        env["DISABLE_ERROR_REPORTING"] = "1"
+        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        from core.enclave.secrets import aws_keys_from_secret
+
+        extra = {**extra, **aws_keys_from_secret(extra.get("aws_secret"))}
         for env_key, extra_key in (
             ("AWS_ACCESS_KEY_ID", "aws_access_key_id"),
             ("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"),

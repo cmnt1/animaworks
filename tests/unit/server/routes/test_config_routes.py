@@ -55,6 +55,10 @@ class TestMaskSecrets:
         result = _mask_secrets({"api_key": "12345678"})
         assert result["api_key"] == "***"
 
+    def test_empty_secret_stays_empty(self):
+        result = _mask_secrets({"api_key": ""})
+        assert result["api_key"] == ""
+
     def test_nine_chars_gets_masked(self):
         result = _mask_secrets({"api_key": "123456789"})
         assert result["api_key"] == "123...6789"

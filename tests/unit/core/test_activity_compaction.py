@@ -408,3 +408,15 @@ def test_consolidation_config_defaults_to_compact_profile_and_reduced_output() -
     assert config.episode_summary_tool_use_max_bytes == 300
     assert config.episode_summary_error_tail_bytes == 300
     assert config.episode_summary_max_output_tokens == 4096
+
+
+def test_compact_v2_cuts_only_bash_tool_use_bodies() -> None:
+    bash = FakeEntry(ts="2026-10-02T12:00:00+00:00", type="tool_use", tool="Bash")
+    other = FakeEntry(ts="2026-10-02T12:00:00+00:00", type="tool_use", tool="mcp__aw__send_message")
+    v2 = ActivityCompactionSettings(profile="compact_v2", tool_use_max_bytes=300, bash_tool_use_max_bytes=120)
+    v1 = ActivityCompactionSettings(profile="compact", tool_use_max_bytes=300, bash_tool_use_max_bytes=120)
+
+    assert v2.tool_use_bytes_for(bash) == 120
+    assert v2.tool_use_bytes_for(other) == 300
+    assert v1.tool_use_bytes_for(bash) == 300
+    assert ActivityCompactionSettings.from_config(ConsolidationConfig()).bash_tool_use_max_bytes == 120

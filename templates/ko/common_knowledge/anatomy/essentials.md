@@ -193,14 +193,14 @@ command: /usr/local/bin/health-check.sh
 
 ### background_model
 
-Heartbeat / Cron은 명시적으로 설정된 background_model을 사용할 수 있다. Inbox는 메인 모델을 사용하고, 작업 고유의 모델 지정은 해당 작업에서 우선된다. 저렴하다는 이유만으로 자동 선택하지 않는다.
+Heartbeat / Cron은 명시적으로 설정된 background_model을 사용할 수 있다. Inbox는 메인 모델을 사용하며, 작업별 모델 지정은 해당 작업에서 우선된다. 저렴하다는 이유만으로 자동 선택하지 않는다.
 
 | 구분 | 사용 모델 | 대상 |
 |------|-----------|------|
-| foreground | 메인 모델, 또는 명시된 작업 고유 모델 | Chat, Inbox, TaskExec |
-| background | 명시 설정의 background_model, 미설정이면 메인 모델 | Heartbeat, Cron |
+| foreground | 메인 모델, 또는 명시된 작업별 모델 | Chat, Inbox, TaskExec |
+| background | 명시 설정된 background_model, 미설정 시 메인 모델 | Heartbeat, Cron |
 
-설정: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
+설정: `animaworks anima set-background-model {名前} claude-sonnet-5-5`
 
 ### Activity Level
 
