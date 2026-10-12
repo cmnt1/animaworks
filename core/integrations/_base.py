@@ -156,3 +156,45 @@ def get_eligible_tools_from_profiles(
                 raw = info.get("expected_seconds", 60)
                 eligible[f"{tool_name}:{subcmd}"] = int(str(raw)) if raw is not None else 60
     return eligible
+
+
+def schema_cli_main(
+    prog: str,
+    schemas: list[dict[str, Any]],
+    dispatch: Callable[[str, dict[str, Any]], Any],
+    argv: list[str] | None = None,
+) -> None:
+    """Run a CLI whose sub-commands and options mirror tool *schemas*.
+
+    ``animaworks-tool <tool> <schema_name> --<property> VALUE ...``; integer
+    and boolean properties are converted by their JSON-schema type, and the
+    result is printed as JSON.
+    """
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(prog=prog)
+    sub = parser.add_subparsers(dest="command", required=True)
+    for schema in schemas:
+        props = schema.get("input_schema", {}).get("properties", {})
+        required = set(schema.get("input_schema", {}).get("required", []))
+        cmd = sub.add_parser(schema["name"], help=schema.get("description", ""))
+        for prop, spec in props.items():
+            kind = spec.get("type")
+            arg_type: Callable[[str], Any] = str
+            if kind == "integer":
+                arg_type = int
+            elif kind == "boolean":
+                arg_type = lambda v: v.strip().lower() in {"1", "true", "yes"}  # noqa: E731
+            cmd.add_argument(
+                f"--{prop.replace('_', '-')}",
+                dest=prop,
+                type=arg_type,
+                required=prop in required,
+                help=spec.get("description", ""),
+            )
+    ns = vars(parser.parse_args(argv))
+    name = ns.pop("command")
+    args = {key: value for key, value in ns.items() if value is not None}
+    result = dispatch(name, args)
+    print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=1, default=str))

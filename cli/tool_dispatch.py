@@ -14,6 +14,7 @@ from core.integrations import (
     TOOL_MODULES,
     discover_common_tools,
     discover_personal_tools,
+    get_tool_modules,
     load_tool_module,
 )
 from core.platform.env import anima_dir_env
@@ -283,7 +284,8 @@ def cli_dispatch() -> None:
     common = discover_common_tools()
     anima_dir_str = anima_dir_env() or ""
     personal = discover_personal_tools(Path(anima_dir_str)) if anima_dir_str else {}
-    all_tools = set(TOOL_MODULES) | set(common) | set(personal)
+    core_modules = get_tool_modules()
+    all_tools = set(core_modules) | set(common) | set(personal)
 
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         tools = ", ".join(sorted(all_tools))
@@ -338,7 +340,7 @@ def cli_dispatch() -> None:
     if anima_dir_str and tool_name in all_tools:
         from core.tooling.permissions import check_tool_access
 
-        if tool_name in TOOL_MODULES:
+        if tool_name in core_modules:
             origin = "core"
             tool_file: Path | None = None
         elif tool_name in personal:
@@ -378,8 +380,8 @@ def cli_dispatch() -> None:
                 sys.exit(1)
 
     # Try core tools first.
-    if tool_name in TOOL_MODULES:
-        mod = load_tool_module(tool_name, TOOL_MODULES)
+    if tool_name in core_modules:
+        mod = load_tool_module(tool_name, core_modules)
         if not hasattr(mod, "cli_main"):
             print(f"Tool '{tool_name}' has no CLI interface")
             sys.exit(1)
