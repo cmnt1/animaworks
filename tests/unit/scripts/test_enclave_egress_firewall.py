@@ -32,3 +32,18 @@ def test_log_is_rate_limited_before_logging(firewall) -> None:
     log_line = next(line for line in ruleset.splitlines() if "log prefix" in line)
     assert log_line.strip().startswith("limit rate")
     assert ruleset.rstrip().splitlines()[-3].strip() == "reject"
+
+
+def test_allowed_endpoints_are_opened_per_port(firewall) -> None:
+    endpoints = firewall._parse_endpoints("192.0.2.10:8888, [2001:db8::5]:8002")
+    assert endpoints == [("192.0.2.10", 8888), ("2001:db8::5", 8002)]
+    ruleset = firewall.build_ruleset(993, "ap-northeast-1", [18610], endpoints)
+    enclave_chain = ruleset.split("chain enclave {", 1)[1]
+    assert "ip daddr 192.0.2.10 tcp dport 8888 accept" in enclave_chain
+    assert "ip6 daddr 2001:db8::5 tcp dport 8002 accept" in enclave_chain
+    assert enclave_chain.index("8888 accept") < enclave_chain.index("reject")
+
+
+def test_endpoint_names_are_rejected(firewall) -> None:
+    with pytest.raises(ValueError):
+        firewall._parse_endpoints("llm.example.com:8888")
