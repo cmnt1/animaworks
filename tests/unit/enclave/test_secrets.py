@@ -116,3 +116,34 @@ def test_secret_exists_false_when_disabled(data_dir: Path) -> None:
     _write_secret(credentials_dir, "present", "val")
     _write_config(data_dir, enabled=False, secrets_dir=str(credentials_dir))
     assert secret_exists("present") is False
+
+
+def test_aws_keys_from_secret_feeds_bedrock_litellm_kwargs(tmp_path, monkeypatch) -> None:
+    from unittest.mock import patch
+
+    from core.config.schemas import CredentialConfig
+    from core.llm import oneshot
+
+    secret = '{"aws_access_key_id": "AKIA_X", "aws_secret_access_key": "sec_x"}'
+
+    class _Consolidation:
+        llm_model = "bedrock/jp.anthropic.claude-opus-5-5"
+        llm_credential = "bedrock-pii"
+
+    class _Cfg:
+        consolidation = _Consolidation()
+        credentials = {
+            "bedrock-pii": CredentialConfig(
+                type="bedrock", keys={"aws_secret": "aws-x", "aws_region_name": "ap-northeast-1"}
+            )
+        }
+
+    with (
+        patch("core.config.load_config", return_value=_Cfg()),
+        patch.object(oneshot, "ensure_credentials_in_env"),
+        patch("core.enclave.secrets.read_enclave_secret", return_value=secret),
+    ):
+        kwargs = oneshot.get_llm_kwargs_for_model("")
+    assert kwargs["aws_access_key_id"] == "AKIA_X"
+    assert kwargs["aws_secret_access_key"] == "sec_x"
+    assert kwargs["aws_region_name"] == "ap-northeast-1"
