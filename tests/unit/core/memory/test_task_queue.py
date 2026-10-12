@@ -603,8 +603,8 @@ def test_update_status_terminal_marks_task_terminal(tmp_path: Path, monkeypatch:
     assert result.status == "done"
 
 
-def test_update_status_terminal_then_pending_reactivates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A terminal task can be re-queued to pending."""
+def test_update_status_completed_task_requires_explicit_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review notes cannot silently reactivate completed work."""
     tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
@@ -617,8 +617,9 @@ def test_update_status_terminal_then_pending_reactivates(tmp_path: Path, monkeyp
     result = tqm.update_status(entry.task_id, "done")
     assert result is not None and result.status == "done"
 
-    result = tqm.update_status(entry.task_id, "pending")
-    assert result is not None and result.status == "pending"
+    with pytest.raises(ValueError, match="Completed task"):
+        tqm.update_status(entry.task_id, "pending")
+    assert tqm.get_task_by_id(entry.task_id).status == "done"
 
 
 def test_update_status_terminal_succeeds_without_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,9 +23,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": ("Filter (all: all tasks, active: in-progress, completed: finished). Default: active"),
     },
     "schema.update_task.desc": {
-        "ja": ("タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。"),
-        "en": ("Update a task's status. Set status='done' on completion, status='cancelled' on abort."),
-        "ko": ("작업 상태를 업데이트한다. 완료 시 status='done', 중단 시 status='cancelled'로 설정한다."),
+        "ja": (
+            "依頼された作業を検証して完了したら status='done'、中止なら status='cancelled'。"
+            "承認・レビュー・報告・Inbox整理は別タスクで管理し、完了済み作業をpendingへ戻さない。"
+            "元の作業自体を再実行する場合のみ status='pending', resume=true を明示する。"
+        ),
+        "en": (
+            "Set status='done' after verifying the requested work, or 'cancelled' on abort. "
+            "Track approval, review, reporting and inbox cleanup as separate tasks; do not reopen completed work. "
+            "Only to rerun the original work, explicitly set status='pending', resume=true."
+        ),
+        "ko": (
+            "요청된 작업을 검증한 후 done, 중단 시 cancelled로 설정한다. "
+            "승인·검토·보고·Inbox 정리는 별도 작업으로 관리하고 완료된 작업을 pending으로 되돌리지 않는다. "
+            "원래 작업 자체를 재실행할 때만 status='pending', resume=true를 명시한다."
+        ),
     },
     "schema.update_task.status": {
         "ja": "新しいステータス",

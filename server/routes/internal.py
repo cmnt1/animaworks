@@ -1507,20 +1507,26 @@ def create_internal_router() -> APIRouter:
 
             manager = TaskQueueManager(anima_dir)
             with attempt_scope(body.attempt_identity), manager.store.transaction():
+                if body.resume:
+                    if body.status != "pending":
+                        raise ValueError("resume requires status='pending'")
+                    manager.store.resume(manager.anima_dir.name, body.task_id)
                 entry = manager.update_meta(body.task_id, body.meta, summary=body.summary)
                 if entry is None:
                     return None
                 entry = manager.update_status(body.task_id, body.status, summary=body.summary)
                 if entry is None:
                     return None
-                if body.resume:
-                    return manager.store.resume(manager.anima_dir.name, body.task_id)
                 return entry
 
         try:
             loop = asyncio.get_running_loop()
             entry = await loop.run_in_executor(_native_executor, _persist)
         except Exception as exc:
+            from core.tasks.board.tasks import TaskReopenError
+
+            if isinstance(exc, TaskReopenError):
+                return JSONResponse(status_code=409, content={"detail": str(exc)})
             logger.exception("internal update-task failed")
             return JSONResponse(status_code=500, content={"detail": str(exc)})
         if entry is None:

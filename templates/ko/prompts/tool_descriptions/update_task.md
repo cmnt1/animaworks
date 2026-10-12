@@ -1,1 +1,1 @@
-태스크 결과를 선언합니다. 검증 후 status='done', 대기 사유가 있으면 'pending', 중지 시 'cancelled'를 사용하세요. in_progress는 호스트가 관리하므로 설정하지 마세요. 중단된 미종료 태스크를 의도적으로 재개하려면 submit_tasks에 기존 task_id와 resume=true를 전달하세요. 저장된 입력과 이력을 보존합니다.
+요청된 작업을 검증한 후 status='done', 미완료 작업은 'pending', 중지 시 'cancelled'를 사용하세요. in_progress는 호스트가 관리합니다. 승인·검토·최종 보고·Inbox 정리는 별도 작업으로 관리하고 완료된 수정이나 증거 제출 작업을 pending으로 되돌리지 마세요. 원래 작업 자체를 재실행할 때만 update_task(status='pending', resume=true)를 명시하세요. 저장된 입력과 이력을 보존합니다. done은 요청된 작업의 완료이며 정식 승인이나 배포 허가가 아닙니다.

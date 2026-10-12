@@ -1,1 +1,1 @@
-タスクの結果を宣言する。検証後は status='done'、待機理由があれば 'pending'、中止時は 'cancelled'。in_progress はホスト管理で設定しない。中断した未終了タスクを意図的に再開するには submit_tasks に既存 task_id と resume=true を渡す。保存済み入力と履歴を保持する。
+タスクの結果を宣言する。依頼された作業を検証して完了したら status='done'、未完了なら 'pending'、中止時は 'cancelled'。in_progress はホスト管理で設定しない。成果物全体の承認・レビュー・最終報告・Inbox整理は別タスクで管理し、完了済みの修正・証跡提出タスクを pending に戻さない。元の作業そのものを再実行する場合だけ update_task(status='pending', resume=true) を明示する。保存済み入力と履歴を保持する。done は依頼された作業の完了であり、成果物の正式承認や本番適用の許可ではない。

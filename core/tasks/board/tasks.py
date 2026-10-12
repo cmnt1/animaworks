@@ -195,6 +195,10 @@ def identity_liveness(identity: dict[str, Any]) -> str:
         return "unknown"
 
 
+class TaskReopenError(ValueError):
+    """A status update attempted to reopen completed work without explicit resume."""
+
+
 class TaskStore:
     """Short SQLite transactions; no connection is held during model work."""
 
@@ -358,6 +362,12 @@ class TaskStore:
                     return
                 entry = json.loads(existing["entry_json"])
                 new_status = event.get("status", entry["status"])
+                if entry["status"] == "done" and new_status in {"pending", "in_progress", "delegated"}:
+                    raise TaskReopenError(
+                        "Completed task cannot be reopened by a status update. "
+                        "Use resume=True only to repeat the original work; "
+                        "record review, approval, reporting and inbox cleanup as separate follow-up tasks."
+                    )
                 if entry["status"] == "cancelled" and new_status == "pending" and existing["current_attempt"]:
                     raise ValueError("Cannot reopen a cancelled task until its active attempt stops")
                 if entry["status"] == "cancelled" and new_status not in {"cancelled", "pending"}:

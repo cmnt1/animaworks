@@ -94,6 +94,42 @@ async def test_host_updates_are_fenced_inside_executor_thread(tmp_path, monkeypa
 
 
 @pytest.mark.anyio
+async def test_host_reopen_requires_explicit_resume_and_rolls_back_notes(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+
+    from server.routes.internal import create_internal_router
+
+    anima_dir = tmp_path / "animas" / "rin"
+    anima_dir.mkdir(parents=True)
+    monkeypatch.setattr("core.paths.get_animas_dir", lambda: anima_dir.parent)
+    manager = TaskQueueManager(anima_dir)
+    original = {"task_id": "owned", "title": "Correction", "description": "Correct only"}
+    manager.submit(original)
+    manager.update_status("owned", "done", summary="Correction verified")
+    app = FastAPI()
+    app.include_router(create_internal_router(), prefix="/api")
+    body = {
+        "anima_name": "rin",
+        "task_id": "owned",
+        "status": "pending",
+        "summary": "Review remains",
+        "meta": {"followup": "inbox cleanup"},
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        refused = await client.post("/api/internal/update-task", json=body)
+        assert refused.status_code == 409
+        entry = manager.get_task_by_id("owned")
+        assert entry.status == "done"
+        assert entry.summary == "Correction verified"
+        assert "followup" not in entry.meta
+        body["resume"] = True
+        resumed = await client.post("/api/internal/update-task", json=body)
+        assert resumed.status_code == 200
+        assert manager.store.pending("rin") == [original]
+        assert manager.get_task_by_id("owned").summary == "Review remains"
+
+
+@pytest.mark.anyio
 async def test_host_submit_and_read_resume_saved_input(tmp_path, monkeypatch):
     from fastapi import FastAPI
 

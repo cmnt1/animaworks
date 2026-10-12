@@ -124,6 +124,45 @@ def test_resume_requires_pending_status(anima_dir):
         update_task(manager, "task-one", "done", resume=True)
 
 
+def test_review_cannot_silently_reopen_completed_work(anima_dir):
+    original = payload()
+    publish_tasks(anima_dir, [original])
+    manager = TaskQueueManager(anima_dir)
+    update_task(manager, "task-one", "done", result="Correction verified")
+
+    with pytest.raises(ValueError, match="separate follow-up tasks"):
+        update_task(manager, "task-one", "pending", summary="Approval and inbox cleanup remain")
+
+    entry = manager.get_task_by_id("task-one")
+    assert entry.status == "done"
+    assert entry.summary == "Correction verified"
+    assert manager.store.pending("worker") == []
+    assert manager.store.get_input("worker", "task-one") == original
+
+
+def test_explicit_resume_of_completed_work_preserves_input_and_summary(anima_dir):
+    original = payload()
+    publish_tasks(anima_dir, [original])
+    manager = TaskQueueManager(anima_dir)
+    update_task(manager, "task-one", "done", result="Verified")
+
+    entry = update_task(manager, "task-one", "pending", resume=True, summary="Rerun original work")
+
+    assert entry.status == "pending"
+    assert entry.summary == "Rerun original work"
+    assert manager.store.pending("worker") == [original]
+
+
+def test_low_level_status_update_cannot_reopen_completed_work(anima_dir):
+    publish_tasks(anima_dir, [payload()])
+    manager = TaskQueueManager(anima_dir)
+    update_task(manager, "task-one", "done", result="Verified")
+    for status in ["pending", "in_progress", "delegated"]:
+        with pytest.raises(ValueError, match="Completed task"):
+            manager.update_status("task-one", status)
+    assert manager.get_task_by_id("task-one").status == "done"
+
+
 def test_update_without_resume_does_not_clear_ready(anima_dir):
     original = payload()
     publish_tasks(anima_dir, [original])

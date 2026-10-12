@@ -102,13 +102,13 @@ def update_task(
             meta["result_note"] = summary
     try:
         with manager.store.transaction():
+            if resume:
+                manager.store.resume(manager.anima_dir.name, task_id)
             if meta and manager.update_meta(task_id, meta, summary=summary) is None:
                 return None
             entry = manager.update_status(task_id, status, summary=summary)
             if entry is None:
                 return None
-            if resume:
-                return manager.store.resume(manager.anima_dir.name, task_id)
             return entry
     except Exception as exc:
         if not is_task_permission_error(exc):
