@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 00f04b3dccaab47f6a5a14486e240d3705f841740debd3719ac27cc3bb9b1e5b -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: f2937a769ac155349c64a6c2822177ae37f5a11cf37070467a51383729d930c5 -->
 
 # モジュール一覧
 
@@ -547,7 +547,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 526 | — |
+| `core.memory.facts.extraction` | 529 | — |
 | `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 515 | — |
 | `core.memory.facts.invalidation_llm` | 154 | — |
@@ -608,7 +608,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.sqlite_health` | 359 | — |
 | `core.memory.rag.store` | 783 | — |
 | `core.memory.rag.vector_client` | 497 | — |
-| `core.memory.rag.vector_ops` | 82 | Conversion between vector API requests and the MemoryService wire format. |
+| `core.memory.rag.vector_ops` | 88 | Conversion between vector API requests and the MemoryService wire format. |
 | `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |

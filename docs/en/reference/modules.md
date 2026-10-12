@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=72a45563c3336bf59041932f656f23f8cd6d665114e7da6bf61a342f23ab7fc3 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=bd7f7909c1a1a689b2f4ee061de022bb1937d9fba3a3435d176ffbec97063262 generated=2026-10-12 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -529,7 +529,7 @@ Model Context Protocol server and client.
 
 ## `core.memory`
 
-Storage, search, and organization of conversational and episodic memories.
+Saving, searching, and organizing conversation and episode memories.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -541,13 +541,13 @@ Storage, search, and organization of conversational and episodic memories.
 | `core.memory.conversation.memory` | 349 | Conversation memory (conversation memory / working memory) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
-| `core.memory.conversation.shortterm` | 313 | Short-term memory (short-term memory) management. |
+| `core.memory.conversation.shortterm` | 313 | Short-term memory management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 526 | — |
+| `core.memory.facts.extraction` | 529 | — |
 | `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 515 | — |
 | `core.memory.facts.invalidation_llm` | 154 | — |
@@ -608,7 +608,7 @@ Storage, search, and organization of conversational and episodic memories.
 | `core.memory.rag.sqlite_health` | 359 | — |
 | `core.memory.rag.store` | 783 | — |
 | `core.memory.rag.vector_client` | 497 | — |
-| `core.memory.rag.vector_ops` | 82 | Conversion between vector API requests and the MemoryService wire format. |
+| `core.memory.rag.vector_ops` | 88 | Conversion between vector API requests and the MemoryService wire format. |
 | `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |

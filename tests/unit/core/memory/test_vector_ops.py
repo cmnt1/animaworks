@@ -65,6 +65,33 @@ async def test_bridge_transport_rejects_calls_on_loop_thread() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bridge_built_in_worker_thread_serves_that_worker_later() -> None:
+    """A bridge created lazily inside a pooled worker must not mark that worker as the loop."""
+    loop = asyncio.get_running_loop()
+
+    async def handler(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
+        return {"count": 3}
+
+    def build_then_call() -> dict[str, Any] | None:
+        transport = bridge_transport(handler, loop)
+        return transport("/count", {"anima_name": "sora"})
+
+    assert await asyncio.to_thread(build_then_call) == {"count": 3}
+
+
+@pytest.mark.asyncio
+async def test_bridge_built_in_worker_thread_still_rejects_loop_thread() -> None:
+    loop = asyncio.get_running_loop()
+
+    async def handler(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
+        return {"results": []}
+
+    transport = await asyncio.to_thread(bridge_transport, handler, loop)
+    with pytest.raises(RuntimeError, match="event loop"):
+        transport("/query", {"anima_name": "sora"})
+
+
+@pytest.mark.asyncio
 async def test_bridge_transport_maps_path_and_payload() -> None:
     received: list[tuple[str, dict[str, Any]]] = []
 

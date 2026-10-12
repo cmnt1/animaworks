@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -283,6 +284,11 @@ async def test_extract_and_store_facts_with_outcome_appends_and_indexes(
         extra_paths: set[Path] | None = None,
     ) -> None:
         calls["index"] = (anima_dir, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
+        try:
+            asyncio.get_running_loop()
+            calls["index_on_loop"] = True
+        except RuntimeError:
+            calls["index_on_loop"] = False
 
     monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
@@ -304,6 +310,8 @@ async def test_extract_and_store_facts_with_outcome_appends_and_indexes(
     assert calls["append"] == (tmp_path / "alice", [record])
     assert calls["upsert"] == (tmp_path / "alice", [record])
     assert calls["index"] == (tmp_path / "alice", [record], "episode", True, None, None, set())
+    # Synchronous vector writes must stay off the event loop thread.
+    assert calls["index_on_loop"] is False
     assert calls["extract_kwargs"]["source_session_id"] == "session-1"
 
 
