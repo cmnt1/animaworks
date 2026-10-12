@@ -395,6 +395,11 @@ class CommsToolsMixin:
             return f"Error: {msg.content}"
 
         logger.info("send_message to=%s thread=%s", internal_to, msg.thread_id)
+        from core.messaging.discord_origin_threads import active_origin, record_origin
+
+        discord_origin = active_origin(self._anima_dir, self._current_discord_origin, self._trigger)
+        if discord_origin:
+            record_origin(self._anima_dir, msg.thread_id, discord_origin)
         self._replied_to.setdefault(active_session_type.get(), set()).add(internal_to)
         self._persist_replied_to(internal_to, success=True)
 

@@ -510,6 +510,26 @@ class InboxMixin:
                                 }
                                 break
 
+                    # Replies from colleagues in a thread this Anima opened for a
+                    # Discord request: the response goes back to that Discord
+                    # thread, and further delegation keeps the link.
+                    from core.messaging.discord_origin_threads import lookup_origin, set_active_origin
+
+                    _linked_discord_origins: list[dict[str, str]] = []
+                    for _item in inbox_result.inbox_items:
+                        _m = _item.msg
+                        if getattr(_m, "source", "") == "discord":
+                            continue
+                        _origin = lookup_origin(self.anima_dir, getattr(_m, "thread_id", ""))
+                        if _origin is not None:
+                            _linked_discord_origins.append(_origin)
+                    if _linked_discord_origins:
+                        _marker_path.parent.mkdir(parents=True, exist_ok=True)
+                        _marker_path.touch()
+                        if not self.agent._tool_handler._current_discord_origin:
+                            self.agent._tool_handler._current_discord_origin = dict(_linked_discord_origins[0])
+                    set_active_origin(self.anima_dir, self.agent._tool_handler._current_discord_origin)
+
                     # Set session origin from the most untrusted message
                     _batch_origins: list[str] = []
                     _batch_chains: list[str] = []
@@ -696,6 +716,7 @@ class InboxMixin:
                                 response_text=accumulated_text,
                                 inbox_items=inbox_result.inbox_items,
                                 already_posted=_already_discord,
+                                linked_origins=_linked_discord_origins,
                             )
                         except Exception:
                             logger.warning(
@@ -835,6 +856,10 @@ class InboxMixin:
                     # Clean up discord auto-reply marker
                     _marker = self.agent.anima_dir / "run" / "discord_auto_reply_active"
                     _marker.unlink(missing_ok=True)
+                    self.agent._tool_handler._current_discord_origin = {}
+                    from core.messaging.discord_origin_threads import set_active_origin
+
+                    set_active_origin(self.agent.anima_dir, None)
         finally:
             self._notify_lock_released()
 
@@ -1010,6 +1035,15 @@ class InboxMixin:
                 reply_instr = _build_reply_instruction(m)
                 if reply_instr:
                     line += f"\n{reply_instr}"
+            elif _is_auto_response_enabled_discord():
+                from core.messaging.discord_origin_threads import lookup_origin
+
+                if lookup_origin(self.anima_dir, m.thread_id) is not None:
+                    line += (
+                        "\n  [auto_reply: このメッセージはDiscordの依頼から始まったスレッドへの返信です。"
+                        "あなたの応答テキストは依頼元のDiscordスレッドへ自動投稿されるので、"
+                        "依頼者向けの報告として書くこと]"
+                    )
             lines.append(line)
         # Deferred messages (no InboxItem) are appended without counter
         for m in messages:

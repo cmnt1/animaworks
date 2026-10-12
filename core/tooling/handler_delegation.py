@@ -36,6 +36,7 @@ class DelegationMixin(OrgHelpersMixin):
     _messenger: Messenger | None
     _session_origin: str
     _session_origin_chain: list[str]
+    _current_discord_origin: dict[str, str]
 
     def _handle_delegate_task(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Delegate a task to a direct subordinate."""
@@ -160,7 +161,7 @@ class DelegationMixin(OrgHelpersMixin):
                 dm_result = t("handler.delegation_dm_skipped")
             else:
                 try:
-                    self._messenger.send(
+                    dm = self._messenger.send(
                         to=target_name,
                         content=t(
                             "handler.delegation_dm_content",
@@ -171,6 +172,13 @@ class DelegationMixin(OrgHelpersMixin):
                         origin_chain=outgoing_chain,
                         meta={"task_id": sub_task_id},
                     )
+                    from core.messaging.discord_origin_threads import active_origin, record_origin
+
+                    discord_origin = active_origin(
+                        self._anima_dir, self._current_discord_origin, getattr(self, "_trigger", "")
+                    )
+                    if discord_origin:
+                        record_origin(self._anima_dir, dm.thread_id, discord_origin)
                     dm_result = t("handler.dm_sent")
                 except Exception as e:
                     dm_result = t("handler.dm_send_failed", e=e)

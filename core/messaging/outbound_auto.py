@@ -261,8 +261,12 @@ class DiscordAutoResponder:
         inbox_items: list[InboxItem],
         *,
         already_posted: set[str] | None = None,
+        linked_origins: list[dict[str, str]] | None = None,
     ) -> list[str]:
         """Post *response_text* to each Discord-sourced message's channel via webhook.
+
+        *linked_origins* are Discord threads that internal replies in this
+        batch belong to (see ``core.messaging.discord_origin_threads``).
 
         Returns list of Discord message IDs for successfully posted messages.
         """
@@ -271,7 +275,7 @@ class DiscordAutoResponder:
             return []
 
         posted_keys = already_posted or set()
-        targets = self._collect_discord_targets(inbox_items, posted_keys)
+        targets = self._collect_discord_targets(inbox_items, posted_keys, linked_origins or [])
         if not targets:
             return []
 
@@ -400,6 +404,7 @@ class DiscordAutoResponder:
     def _collect_discord_targets(
         inbox_items: list[InboxItem],
         already_posted: set[str],
+        linked_origins: list[dict[str, str]] | None = None,
     ) -> list[dict[str, str]]:
         """Extract unique Discord targets from inbox items.
 
@@ -452,6 +457,29 @@ class DiscordAutoResponder:
                     "channel_id": channel_id,
                     "thread_id": thread_id,
                     "mention_prefix": mention,
+                }
+            )
+
+        for origin in linked_origins or []:
+            channel_id = origin.get("channel_id", "")
+            if not channel_id:
+                continue
+            thread_id = origin.get("thread_ts", "")
+            dedup_key = f"{channel_id}:{thread_id}" if thread_id else channel_id
+            if dedup_key in seen or dedup_key in already_posted:
+                continue
+            seen.add(dedup_key)
+            logger.info(
+                "DiscordAutoResponder: linked target channel_id=%s thread_id=%s",
+                channel_id,
+                thread_id or "(none)",
+            )
+            user_id = origin.get("user_id", "")
+            targets.append(
+                {
+                    "channel_id": channel_id,
+                    "thread_id": thread_id,
+                    "mention_prefix": f"<@{user_id}> " if user_id else "",
                 }
             )
         return targets
