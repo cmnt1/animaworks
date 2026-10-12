@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=bd7f7909c1a1a689b2f4ee061de022bb1937d9fba3a3435d176ffbec97063262 generated=2026-10-12 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=1904f91b2feeaea3a3c200818d16f5484819566f2df5d812c9ca8f61cfad18c1 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -212,7 +212,7 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration models and startup security guards for isolated enclave mode.
+Configuration model and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -221,8 +221,8 @@ Configuration models and startup security guards for isolated enclave mode.
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
-| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 133 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |

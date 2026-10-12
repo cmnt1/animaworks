@@ -28,6 +28,26 @@ _DATE_PATTERNS = [
     r"(?<![\d/])(?:0?[1-9]|1[0-2])月(?:0?[1-9]|[12]\d|3[01])日",
     r"(?<![\d/])(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])(?![\d/])",
 ]
+# Dates that identify a person: a date next to a birth label, a Japanese era
+# date (昭和/平成/... birthdays), or any full date before _OLD_YEAR_LIMIT, which
+# predates every system event and so is almost always a birth date.
+_PERSONAL_DATE_LABEL = r"(?:生年月日|誕生日|生まれ|出生|date\s+of\s+birth|birth\s*date|birthday|DOB)"
+_ANY_DATE = (
+    r"(?:(?:明治|大正|昭和|平成|令和|[MTSHR])\s*(?:元|\d{1,2})[年./-]\s*\d{1,2}[月./-]\s*\d{1,2}日?"
+    r"|(?:19|20)\d{2}\s*[年/.-]\s*\d{1,2}\s*[月/.-]\s*\d{1,2}日?"
+    r"|(?:１９|２０)[０-９]{2}[／－][０-９]{1,2}[／－][０-９]{1,2}"
+    r"|\d{1,2}月\d{1,2}日)"
+)
+_PERSONAL_DATE_PATTERNS = [
+    # label before the date: 生年月日: 1980年5月3日 / birthday 1980-05-03
+    re.compile(r"(" + _PERSONAL_DATE_LABEL + r"[^\d\n明大昭平令MTSHR１２]{0,6})" + _ANY_DATE, re.IGNORECASE),
+    # date followed by a birth word: 1980/5/3生まれ / 昭和55年5月3日生
+    re.compile(_ANY_DATE + r"(?=\s*(?:生まれ|生|出生))"),
+    # Japanese era dates on their own.
+    re.compile(r"(?:明治|大正|昭和|平成)\s*(?:元|\d{1,2})年\s*\d{1,2}月\s*\d{1,2}日"),
+]
+_OLD_YEAR_LIMIT = 2015
+_FULL_DATE_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})\s*[年/.-]\s*\d{1,2}\s*[月/.-]\s*\d{1,2}日?(?!\d)")
 # Script variants for [一-龯] style classes used across patterns.
 _KANJI = r"一-龯々"
 
@@ -112,13 +132,22 @@ def _mask_dates(text: str) -> str:
     return text
 
 
+def _mask_personal_dates(text: str) -> str:
+    """Mask only dates that point at a person; keep event and log timestamps."""
+    labeled, birth_suffix, era = _PERSONAL_DATE_PATTERNS
+    text = labeled.sub(lambda m: m.group(1) + "[MASK-DATE]", text)
+    text = birth_suffix.sub("[MASK-DATE]", text)
+    text = era.sub("[MASK-DATE]", text)
+    return _FULL_DATE_RE.sub(lambda m: "[MASK-DATE]" if int(m.group(1)) < _OLD_YEAR_LIMIT else m.group(0), text)
+
+
 def _mask_identifiers(text: str) -> str:
     for pattern, replacement in _IDENTIFIER_COMPILED:
         text = pattern.sub(replacement, text)
     return text
 
 
-def mask_record_facts(text: str) -> str:
+def mask_record_facts(text: str, *, dates: str = "all") -> str:
     """Mask record-level personal information in *text*.
 
     Dates, identifiers, names, contact details, addresses, measurement
@@ -126,7 +155,7 @@ def mask_record_facts(text: str) -> str:
     surrounding (contextual) wording is preserved. Raises ``re.error`` (a
     ``ValueError``) if a pattern is malformed so callers can fail closed.
     """
-    text = _mask_dates(text)
+    text = _mask_personal_dates(text) if dates == "personal" else _mask_dates(text)
     text = _mask_identifiers(text)
     text = _VALUE_RE.sub("[MASK-VAL]", text)
     text = _FACILITY_RE.sub(r"\g<1>[MASK-LOC]", text)

@@ -74,3 +74,26 @@ def test_line_ranges_in_code_locations_are_not_postal_codes() -> None:
     assert "1234-1250" in out
     assert ":101-1050" in out
     assert "[MASK-POSTAL]" not in out
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "生年月日: 1980年5月3日の方",
+        "誕生日は 1975/04/01",
+        "昭和55年5月3日生",
+        "1990-02-03生まれ",
+        "DOB 2001-01-01",
+        "2012-01-05 の記録",
+    ],
+)
+def test_personal_dates_mode_masks_dates_that_point_at_a_person(text: str) -> None:
+    out = mask_record_facts(text, dates="personal")
+    assert "[MASK-DATE]" in out
+    assert not any(year in out for year in ("1980", "1975", "55年", "1990", "2001", "2012"))
+
+
+def test_personal_dates_mode_keeps_event_timestamps() -> None:
+    text = "失敗は2026-10-11 10:16:51に発生し、10月11日に修正、記録 2026/10/12"
+    assert mask_record_facts(text, dates="personal") == text
+    assert "[MASK-DATE]" in mask_record_facts(text)

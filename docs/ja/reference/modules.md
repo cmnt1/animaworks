@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: f2937a769ac155349c64a6c2822177ae37f5a11cf37070467a51383729d930c5 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 7d823d1b89dca9a71248265024be67eb50212edf8dedfd00c65a5a60d01ff2cf -->
 
 # モジュール一覧
 
@@ -221,8 +221,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
-| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 133 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
