@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/README.md -->
-<!-- i18n: source-sha256=bd5b06b1675b5f119ba192c6269df5413399dd2d19e934275a0d024d39f006ce generated=2026-10-11 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=5e71f6d1b57e6430a4b30c39bea8c8594622ca780745ff48378b1937129c65dd generated=2026-10-12 engine=luna model=gpt-6-luna translator=2 -->
 
 # Reference
 

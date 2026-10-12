@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7a0715938a87dafdac7cb15f662b5b281f0a53b8a531912cf49ea643037e466f generated=2026-10-11 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=0d6f8030bbea2d84db0a3bdc175afd2e0e509b34acf22a303b0eaeaef63dfdc6 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -18,7 +18,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 407 | Native ``animaworks demo`` command. |
 | `cli.parser` | 867 | — |
-| `cli.tool_dispatch` | 412 | CLI dispatch for external tools, submit tasks, and command aliases. |
+| `cli.tool_dispatch` | 414 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
 
@@ -419,14 +419,14 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integrations and animaworks-tool implementation.
+Implementation of external service integrations and animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.integrations` | 79 | Core integration tool discovery and registry. |
 | `core.integrations._anima_icon_url（非公開）` | 322 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
-| `core.integrations._base（非公開）` | 158 | — |
+| `core.integrations._base（非公開）` | 200 | — |
 | `core.integrations._cache（非公開）` | 172 | Shared SQLite message cache base class for communication tools. |
 | `core.integrations._chatwork_cache（非公開）` | 324 | SQLite message cache for Chatwork offline search and unreplied detection. |
 | `core.integrations._chatwork_client（非公開）` | 235 | HTTP client for the Chatwork v2 API. |
@@ -454,9 +454,9 @@ External service integrations and animaworks-tool implementation.
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
-| `core.integrations.enclave_aws` | 909 | Read-only AWS data tools for the enclave runtime. |
-| `core.integrations.enclave_records` | 215 | Read configured JSONL datasets from inside an enclave runtime. |
-| `core.integrations.enclave_sql` | 389 | Read-only MySQL query tools for the enclave runtime. |
+| `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
+| `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
