@@ -12,7 +12,9 @@ The enclave user may only reach:
   an AWS API from a host someone runs on EC2 in that region; it closes the
   LAN, the host's other local services and the rest of the internet.
 
-Everything else from that uid is rejected, including the host's other local
+Only packets owned by that uid enter the restricting chain; packets without a
+socket (FIN/ACK of closed sockets of other users) pass untouched.  Everything
+else from that uid is rejected, including the host's other local
 services (e.g. the main AnimaWorks API) and the LAN.  Run as root::
 
     python3 egress_firewall.py --user aw-enclave --region ap-northeast-1 \
@@ -63,7 +65,12 @@ def build_ruleset(uid: int, region: str, loopback_ports: list[int]) -> str:
     lines += [
         "  chain output {",
         "    type filter hook output priority filter; policy accept;",
-        f"    meta skuid != {uid} accept",
+        # Packets without an owning socket (FIN/ACK from closed sockets,
+        # kernel-generated ICMPv6) never match skuid, so only the enclave
+        # user's own traffic enters the restricting chain.
+        f"    meta skuid {uid} jump enclave",
+        "  }",
+        "  chain enclave {",
         "    ct state established,related accept",
         f"    oif lo meta l4proto {{ tcp, udp }} th dport {{ {ports} }} accept",
         f"    oif lo meta l4proto {{ tcp, udp }} th sport {{ {ports} }} accept",
@@ -72,7 +79,7 @@ def build_ruleset(uid: int, region: str, loopback_ports: list[int]) -> str:
     if v6:
         lines.append("    ip6 daddr @aws_v6 tcp dport 443 accept")
     lines += [
-        '    log prefix "aw-enclave-egress-drop " limit rate 6/minute',
+        '    limit rate 6/minute burst 5 packets log prefix "aw-enclave-egress-drop "',
         "    reject",
         "  }",
         "}",
