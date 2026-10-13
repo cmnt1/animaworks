@@ -2,13 +2,14 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for the enclave gateway (Unix-socket HTTP ingress)."""
+"""Tests for the enclave gateway (Unix-socket HTTP ingress, async jobs)."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,12 +32,24 @@ _EGRESS = {
 
 
 class FakeSupervisor:
-    """A stand-in for ProcessSupervisor that returns a canned answer."""
+    """A stand-in for ProcessSupervisor that returns a canned answer.
 
-    def __init__(self, answer: str, *, delay: float = 0.0, bootstrapping: bool = False) -> None:
+    When ``gate`` (an :class:`asyncio.Event`) is given, ``send_request``
+    blocks until it is set — used to simulate a long-running job.
+    """
+
+    def __init__(
+        self,
+        answer: str,
+        *,
+        delay: float = 0.0,
+        bootstrapping: bool = False,
+        gate: asyncio.Event | None = None,
+    ) -> None:
         self.answer = answer
         self.delay = delay
         self.bootstrapping = bootstrapping
+        self.gate = gate
         self.sent: list[dict] = []
         self.active = 0
         self.max_active = 0
@@ -49,6 +62,8 @@ class FakeSupervisor:
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:
+            if self.gate is not None:
+                await self.gate.wait()
             if self.delay:
                 await asyncio.sleep(self.delay)
             return {"response": self.answer}
@@ -66,7 +81,7 @@ async def _running_gateway(tmp_path: Path, supervisor: FakeSupervisor, **config_
         "entry_anima": "main",
         "allowed_peer_uids": [os.getuid()],
         "max_concurrency": 2,
-        "request_timeout_s": 30,
+        "request_timeout_s": 0,
         "egress": _EGRESS,
     }
     params.update(config_overrides)
@@ -99,6 +114,40 @@ def _payload(question: str = "is it ok?", case_id: str = "case-1") -> dict:
     return {"request_id": "req-1", "from_anima": "host", "case_id": case_id, "question": question}
 
 
+async def _wait_running(
+    client: httpx.AsyncClient,
+    job_id: str,
+    from_anima: str = "host",
+    timeout: float = 10.0,
+) -> dict:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        resp = await client.get(f"http://enclave/v1/ask/{job_id}?from_anima={from_anima}")
+        data = resp.json()
+        if data["status"] == "running":
+            return data
+        if data["status"] in ("done", "failed", "cancelled"):
+            return data
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not start in time")
+
+
+async def _wait_done(
+    client: httpx.AsyncClient,
+    job_id: str,
+    from_anima: str = "host",
+    timeout: float = 10.0,
+) -> dict:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        resp = await client.get(f"http://enclave/v1/ask/{job_id}?from_anima={from_anima}")
+        data = resp.json()
+        if data["status"] in ("done", "failed", "cancelled"):
+            return data
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish in time")
+
+
 _GOOD_ANSWER = '{"facts": [{"fact": "ping is fine", "evidence": ["record:42"]}]}'
 
 
@@ -110,53 +159,70 @@ async def test_health(tmp_path: Path) -> None:
 
 
 async def test_ask_success(tmp_path: Path) -> None:
-    sup = FakeSupervisor(_GOOD_ANSWER)
+    gate = asyncio.Event()
+    sup = FakeSupervisor(_GOOD_ANSWER, gate=gate)
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["request_id"] == "req-1"
-    assert body["audit_id"]
-    assert body["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
-    # The instruction + question were forwarded.
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["job_id"]
+        assert body["status"] == "queued"
+        job_id = body["job_id"]
+        # The job is kept running until the gate is released.
+        running = await _wait_running(client, job_id)
+        assert running["status"] == "running"
+        gate.set()
+        done = await _wait_done(client, job_id)
+    assert done["status"] == "done"
+    assert done["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
+    assert done.get("audit_id")
+    # The instruction + progress note + question were forwarded.
     sent = _sup.sent[0]
     assert sent["method"] == "process_message"
     assert sent["params"]["from_person"] == "enclave:host"
     assert sent["params"]["thread_id"] == "enclave-case-1"
     assert sent["params"]["intent"] == "question"
     assert "facts" in sent["params"]["message"]
+    assert job_id in sent["params"]["message"]
 
 
 async def test_ask_unparseable_answer(tmp_path: Path) -> None:
     sup = FakeSupervisor("the answer is yes, but not valid json")
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 422
-    body = resp.json()
-    assert body["error"] == "answer_unparseable"
-    assert body["audit_id"]
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert resp.status_code == 202
+    assert done["status"] == "failed"
+    assert done["error"] == "answer_unparseable"
+    assert done.get("audit_id")
     # No answer body leaked into the response.
-    assert "answer" not in body
-    assert "yes" not in str(body)
+    assert "answer" not in done
+    assert "yes" not in str(done)
 
 
 async def test_ask_bad_fact_structure(tmp_path: Path) -> None:
     sup = FakeSupervisor('{"facts": "not-a-list"}')
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 422
-    assert resp.json()["error"] == "answer_unparseable"
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert resp.status_code == 202
+    assert done["status"] == "failed"
+    assert done["error"] == "answer_unparseable"
 
 
 async def test_ask_egress_blocked(tmp_path: Path) -> None:
     sup = FakeSupervisor('{"facts": [{"fact": "contains SECRET value", "evidence": ["record:1"]}]}')
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 422
-    body = resp.json()
-    assert body["error"] == "egress_blocked"
-    assert body["audit_id"]
-    assert "SECRET" not in str(body)
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert resp.status_code == 202
+    assert done["status"] == "failed"
+    assert done["error"] == "egress_blocked"
+    assert done.get("audit_id")
+    assert "SECRET" not in str(done)
 
 
 async def test_ask_unauthorized_peer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,25 +253,20 @@ async def test_ask_concurrency_limit(tmp_path: Path) -> None:
     # max_concurrency=1 serialises requests.
     sup = FakeSupervisor(_GOOD_ANSWER, delay=0.3)
     async with _running_gateway(tmp_path, sup, max_concurrency=1, request_timeout_s=60) as (client, _sup):
-        results = await asyncio.gather(
-            client.post("http://enclave/v1/ask", json=_payload(question="q1")),
-            client.post("http://enclave/v1/ask", json=_payload(question="q2")),
-        )
-    assert all(r.status_code == 200 for r in results)
+        r1 = await client.post("http://enclave/v1/ask", json=_payload(question="q1"))
+        r2 = await client.post("http://enclave/v1/ask", json=_payload(question="q2"))
+        assert r1.status_code == 202 and r2.status_code == 202
+        await _wait_done(client, r1.json()["job_id"])
+        await _wait_done(client, r2.json()["job_id"])
     assert sup.max_active == 1
-
-
-async def test_ask_timeout(tmp_path: Path) -> None:
-    sup = FakeSupervisor(_GOOD_ANSWER, delay=5)
-    async with _running_gateway(tmp_path, sup, request_timeout_s=1) as (client, _sup):
-        resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 504
-    assert resp.json() == {"error": "timeout"}
 
 
 async def test_ask_bootstrapping(tmp_path: Path) -> None:
     sup = FakeSupervisor(_GOOD_ANSWER, bootstrapping=True)
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
-    assert resp.status_code == 503
-    assert resp.json() == {"error": "entry_bootstrapping"}
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert resp.status_code == 202
+    assert done["status"] == "failed"
+    assert done["error"] == "entry_bootstrapping"

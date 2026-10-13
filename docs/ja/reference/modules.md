@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: dbdb9495f68e9d90df5fd107cdd45f8d44fc0f68baf3edf1896116a78e16bf63 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 34728d94e5e158e59015b048f513e1cad0e07dee0007f2c547720ccfa9e41fbf -->
 
 # モジュール一覧
 
@@ -231,20 +231,21 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 160 | Configuration models for enclave mode. |
+| `core.enclave.config` | 162 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
-| `core.enclave.egress.masker.dispatch` | 36 | Profile dispatch for the built-in masker. |
-| `core.enclave.egress.masker.facts` | 133 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 99 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 191 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 240 | Startup guards for enclave mode. |
+| `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
@@ -390,7 +391,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 678 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 826 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 54 | — |
 | `core.i18n.strings.execution` | 254 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -408,7 +409,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 494 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 130 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling_schema_ext` | 142 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -472,8 +473,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.daily_ops_runner` | 131 | Daily Ops Dashboard runner control CLI. |
 | `core.integrations.discord` | 366 | Discord integration for AnimaWorks. |
-| `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
+| `core.integrations.enclave` | 489 | Host-side tools for submitting and managing enclave ask jobs. |
 | `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
@@ -572,7 +574,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
 | `core.memory.facts.entity_index` | 452 | — |
-| `core.memory.facts.extraction` | 526 | — |
+| `core.memory.facts.extraction` | 529 | — |
 | `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 515 | — |
 | `core.memory.facts.invalidation_llm` | 154 | — |
@@ -633,7 +635,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.sqlite_health` | 413 | — |
 | `core.memory.rag.store` | 804 | — |
 | `core.memory.rag.vector_client` | 497 | — |
-| `core.memory.rag.vector_ops` | 82 | Conversion between vector API requests and the MemoryService wire format. |
+| `core.memory.rag.vector_ops` | 88 | Conversion between vector API requests and the MemoryService wire format. |
 | `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |
@@ -956,7 +958,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.board.models` | 39 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 120 | — |
 | `core.tasks.board.readiness` | 34 | Read-only boundary between legacy task files and canonical execution. |
-| `core.tasks.board.tasks` | 1356 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.tasks` | 1366 | Durable execution records; the single source of truth for the TaskBoard. |
 | `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
 | `core.tasks.dispatch` | 346 | — |
 | `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
@@ -1032,7 +1034,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 465 | — |
-| `core.tooling.policy.registry` | 64 | — |
+| `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
 | `core.tooling.policy.schemas.channel` | 118 | — |
@@ -1115,8 +1117,9 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1392 | — |
+| `server.app` | 1425 | — |
 | `server.avatar_upload` | 178 | — |
+| `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
@@ -1167,7 +1170,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.ci_autofix` | 245 | — |
 | `server.routes.config_routes` | 464 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1531 | — |
+| `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |

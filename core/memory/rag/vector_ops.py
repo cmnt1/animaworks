@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -57,10 +56,17 @@ def bridge_transport(
     timeout: float = _REQUEST_TIMEOUT_SECONDS,
 ) -> VectorTransport:
     """Bridge synchronous VectorStore calls to an async memory handler."""
-    loop_thread = threading.get_ident()
 
     def transport(path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-        if threading.get_ident() == loop_thread:
+        # Blocking on the future from the loop's own thread would deadlock.
+        # Check the loop actually running here, not the thread that built the
+        # bridge: a bridge created lazily inside a worker thread used to mark
+        # that pooled worker as "the loop" and reject its later calls.
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
             raise RuntimeError("synchronous memory operation attempted on the root event loop")
         if loop.is_closed() or not loop.is_running():
             raise VectorStoreRetryableError("memory event loop is unavailable")
