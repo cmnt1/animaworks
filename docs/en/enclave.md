@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=9796c1a8ba5fee5f209246303f3086977f0ba7be53c927e3354c981721ddb745 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=1f523aa42f5636da66534cdfb08863e012b06b6081397a8429265faac4b24276 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 > Confirmed commit: f448d7b0
 
@@ -258,18 +258,18 @@ Set the contents of the secret `aws-readonly` file to the following JSON format.
 
 The AWS source `doctor` check verifies `aws_sources.<name>.secret` and `.deps` (`boto3`). It does not connect to AWS; it only checks that the secret exists and that the SDK can be imported.
 
-## Verification with Mock Data
+## Verifying Operation with Mock Data
 
-The mock data generation script uses a fixed seed and regenerates the same 100 customer records and 300 inquiry tickets. Some tickets include names and phone numbers in the body. No real data is used, and the output destination is within the isolated side's data directory.
+The mock data generation script uses a fixed seed to regenerate the same 100 customer records and 300 inquiry tickets. Some tickets include names and phone numbers in their text. Do not use real data, and place the output in the isolated side’s data directory.
 
 ```bash
 DATA_DIR="$HOME/.animaworks"
 uv run python scripts/enclave/make_mock_dataset.py --out "$DATA_DIR/data"
 ```
 
-Confirm that `datasets` in the isolated-side config points to the above `data/customers.jsonl` and `data/tickets.jsonl`, and make the entry anima able to use `enclave_records_search` and `enclave_records_get`. Then proceed with the following.
+Confirm that `datasets` in the isolated side’s config points to the `data/customers.jsonl` and `data/tickets.jsonl` above, and allow the entry anima to use `enclave_records_search` and `enclave_records_get`. Then do the following:
 
-1. Run `animaworks enclave doctor` on the isolated side and check the guard and gateway status.
-2. Register the connection destination in `config.json` on the main side, and allow `enclave` for the main-side anima.
-3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. It returns a `job_id` immediately; check it with `animaworks-tool enclave status --enclave saas-data --job-id <job_id>`. The completed result is delivered to the caller's inbox. Use `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>` if cancellation is needed.
-4. Run `animaworks enclave status` on the isolated side and confirm that the success count has increased. The Web UI home screen displays only the connection status and aggregated counts.
+1. On the isolated side, run `animaworks enclave doctor` and check the status of the guard and gateway.
+2. Register the destination in `config.json` on the main side, and allow the main-side anima to use `enclave`.
+3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. Use the `job_id` returned immediately to check the status with `animaworks-tool enclave status --enclave saas-data --job-id <job_id>`. The completion result will arrive in the caller’s inbox. If needed, cancel it with `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>`.
+4. On the isolated side, run `animaworks enclave status` and confirm that the number of successes has increased. The Web UI home screen displays only the connection status and aggregate counts.

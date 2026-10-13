@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py tool-cli -->
-<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: 531d130e0394fc6f886d37c2e29331f077729647ef144702c55f7b931fe183a1 -->
+<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: bac6730d232c36258ddff2de68ee3466937ecb21c30d845004e51f23a350dbd6 -->
 
 # ツール CLI リファレンス: `animaworks-tool`
 
@@ -29,13 +29,32 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 
 ## `enclave_ask`
 
-隔離された enclave に質問し、事実と根拠IDだけの回答を得る
+隔離された enclave に質問を送り、job_id をすぐ受け取る。状態を確認でき、完了結果は inbox に届く
 
 | 引数 | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `case_id` | string | いいえ | 省略可なケース識別子（省略時は anima 名と日付から生成） |
 | `enclave` | string | はい | 接続する enclave の設定名 |
 | `question` | string | はい | 隔離インスタンスに送る質問 |
+| `wait_s` | integer | いいえ | 結果確認のために待つ最大秒数（既定値: 0。0 の場合はすぐ戻る） |
+
+## `enclave_cancel`
+
+実行中または待機中の enclave ジョブをキャンセルする
+
+| 引数 | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `enclave` | string | はい | 接続する enclave の設定名 |
+| `job_id` | string | はい | enclave ask が返したジョブID |
+
+## `enclave_status`
+
+enclave ジョブの状態・経過時間・途中経過・完了時の事実を確認する
+
+| 引数 | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `enclave` | string | はい | 接続する enclave の設定名 |
+| `job_id` | string | はい | enclave ask が返したジョブID |
 
 ## `google_sheets_append_values`
 

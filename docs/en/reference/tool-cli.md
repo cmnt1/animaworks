@@ -1,13 +1,13 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=b9ff04d94def616cd790e1887ca962f78541de300e8469605ed371561a1b9716 generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=9c2335e77cff73749f11da1520d3e894593a72258ca7a4a3d326539b74dd728a generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Tool CLI Reference: `animaworks-tool`
 
-`animaworks-tool` is generated from the core external tool schema. Common / personal tools are excluded because they depend on the runtime.
+`animaworks-tool` is generated from the core external tool schema. Common and personal tools are excluded because they depend on the runtime.
 
 ## Background Execution with `submit`
 
-`animaworks-tool submit <tool_name> [args...]` registers long-running tools as pending tasks and delivers the completion result to your inbox. Execution requires `ANIMAWORKS_ANIMA_DIR`.
+`animaworks-tool submit <tool_name> [args...]` registers long-running tools as pending tasks and delivers completion results to the inbox. Execution requires `ANIMAWORKS_ANIMA_DIR`.
 
 ## `discord_channel_post`
 
@@ -29,13 +29,32 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 
 ## `enclave_ask`
 
-Ask an isolated enclave a question and get an answer containing only facts and evidence IDs
+Send a question to an isolated enclave and receive a job_id immediately. You can check its status, and the completion result will arrive in the inbox.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `case_id` | string | No | Optional case identifier (generated from the anima name and date if omitted) |
 | `enclave` | string | Yes | Configuration name of the enclave to connect to |
 | `question` | string | Yes | Question to send to the isolated instance |
+| `wait_s` | integer | No | Maximum number of seconds to wait for a result (default: 0. If 0, returns immediately) |
+
+## `enclave_cancel`
+
+Cancel a running or queued enclave job.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `enclave` | string | Yes | Configuration name of the enclave to connect to |
+| `job_id` | string | Yes | Job ID returned by enclave ask |
+
+## `enclave_status`
+
+Check an enclave job's status, elapsed time, progress updates, and facts upon completion.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `enclave` | string | Yes | Configuration name of the enclave to connect to |
+| `job_id` | string | Yes | Job ID returned by enclave ask |
 
 ## `google_sheets_append_values`
 
