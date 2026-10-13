@@ -16,6 +16,7 @@ _ENCLAVE_ONLY_TOOL_MODULES = {
     "enclave_records": "core.integrations.enclave_records",
     "enclave_sql": "core.integrations.enclave_sql",
     "enclave_aws": "core.integrations.enclave_aws",
+    "enclave_progress": "core.integrations.enclave_progress",
 }
 
 

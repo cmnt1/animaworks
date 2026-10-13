@@ -142,7 +142,9 @@ class EnclaveConfig(BaseModel):
     entry_anima: str = ""
     allowed_peer_uids: list[int] = Field(default_factory=list)
     max_concurrency: int = 2
-    request_timeout_s: int = 900
+    # 0 means no per-job timeout (a long analysis runs until it finishes); a
+    # positive value fails a job with error=timeout after that many seconds.
+    request_timeout_s: int = 0
     allowed_llm_credentials: list[str] = Field(default_factory=list)
     datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
     sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)

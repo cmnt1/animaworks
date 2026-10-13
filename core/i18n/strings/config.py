@@ -347,6 +347,54 @@ STRINGS: dict[str, dict[str, str]] = {
             "paraphrase code and quotations. Split facts into short single sentences."
         ),
     },
+    "enclave.gateway.progress_instruction": {
+        "ja": (
+            "この仕事の識別子（job_id）は {job_id} です。"
+            "分析が長引く場合は、対象の特定・データ取得・原因の候補など節目ごとに、"
+            "途中経過を1〜2文だけ書きなさい。書き方: "
+            "`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text \"...\"`。"
+            "途中経過は伏字処理を通って依頼者に見えるので、個人を特定できる値は書かないこと。"
+        ),
+        "en": (
+            "The job identifier for this work is {job_id}. "
+            "If this analysis will take a while, write a short interim update (one or two sentences) "
+            "at milestones such as target identification, data retrieval, or candidate causes: "
+            "`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text \"...\"`. "
+            "Updates are masked and shown to the requester, so never include identifying values."
+        ),
+    },
+    "enclave.progress.job_required": {
+        "ja": "job_id を指定してください。",
+        "en": "A job_id is required.",
+    },
+    "enclave.progress.text_required": {
+        "ja": "text に途中経過を1〜2文で指定してください。",
+        "en": "Provide a one-to-two sentence progress text.",
+    },
+    "enclave.progress.not_found": {
+        "ja": "job '{job_id}' が見つかりません。",
+        "en": "job '{job_id}' was not found.",
+    },
+    "enclave.progress.not_running": {
+        "ja": "このジョブは実行中ではないため、途中経過を書けません。",
+        "en": "This job is not running, so progress cannot be written.",
+    },
+    "enclave.progress.unavailable": {
+        "ja": "途中経過を書き込めませんでした。設定と job の状態を確認してください。",
+        "en": "Could not write progress. Check the configuration and job state.",
+    },
+    "enclave.progress.schema_description": {
+        "ja": "実行中の enclave ask ジョブに途中経過を1〜2文だけ書き込みます。",
+        "en": "Write a short interim progress note to a running enclave ask job.",
+    },
+    "enclave.progress.schema_job_id": {
+        "ja": "ゲートウェイから渡された job_id",
+        "en": "The job_id given by the gateway",
+    },
+    "enclave.progress.schema_text": {
+        "ja": "途中経過の短文（1〜2文）",
+        "en": "A short progress note (one or two sentences)",
+    },
     "enclave.tool.unknown_enclave": {
         "ja": "エラー: enclave '{enclave}' が設定に存在しません",
         "en": "error: enclave '{enclave}' is not configured",
