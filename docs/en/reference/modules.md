@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=9b5b2dcb18d9329e0c27aac25fae536fb061fccb6057e9d6af8114ac6c82be2a generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=eb8ad67019a3d08f5818cdbe1fad6a531c840d00bbfb2cf2a4a0410f2f2519c2 generated=2026-10-13 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -212,7 +212,7 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration model and startup security guards for isolated enclave mode.
+Configuration models for isolated enclave mode and startup security guards.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -231,7 +231,6 @@ Configuration model and startup security guards for isolated enclave mode.
 | `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
-| `core.enclave.host_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
@@ -1069,6 +1068,7 @@ Voice input/output and voice conversation.
 |---|---:|---|
 | `server` | 7 | — |
 | `server.app` | 1473 | — |
+| `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

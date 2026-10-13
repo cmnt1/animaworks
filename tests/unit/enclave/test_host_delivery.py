@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 import pytest
 
-from core.enclave import host_delivery
+from server import enclave_delivery as host_delivery
 
 
 def _client_config(allowed_animas: list[str] | None = None) -> SimpleNamespace:

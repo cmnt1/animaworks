@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=9b5b2dcb18d9329e0c27aac25fae536fb061fccb6057e9d6af8114ac6c82be2a generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=eb8ad67019a3d08f5818cdbe1fad6a531c840d00bbfb2cf2a4a0410f2f2519c2 generated=2026-10-13 engine=luna model=gpt-6-luna translator=2 -->
 
 # 모듈 목록
 
@@ -212,32 +212,31 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.enclave`
 
-격리된 엔클레이브 모드의 설정 모델과 시작 시 보안 가드.
+격리된 enclave 모드의 설정 모델과 시작 시 보안 가드.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.enclave` | 54 | 엔클레이브 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
-| `core.enclave.config` | 162 | 엔클레이브 모드의 설정 모델. |
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로깅. |
-| `core.enclave.egress.config` | 115 | 이그레스 파이프라인의 설정 모델. |
-| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 간단한 파일 시스템 헬퍼. |
-| `core.enclave.egress.masker.dispatch` | 40 | 내장 마스커의 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 162 | 레코드 사실의 규칙 기반 마스킹. |
-| `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
-| `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
-| `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 모두 차단. |
-| `core.enclave.egress.stages` | 236 | 이그레스 파이프라인의 단계 구현. |
-| `core.enclave.gateway` | 523 | 게이트웨이: 엔클레이브 인스턴스의 인그레스 지점. |
-| `core.enclave.gateway_server` | 186 | 엔클레이브 게이트웨이의 수명 주기 및 Unix 소켓 연결 구성. |
-| `core.enclave.guards` | 237 | 엔클레이브 모드의 시작 가드. |
-| `core.enclave.host_delivery` | 327 | 완료된 엔클레이브 ask 작업을 수집하여 호스트 받은 편지함으로 전달. |
-| `core.enclave.jobs` | 252 | 엔클레이브 게이트웨이의 영구 쿼리 작업. |
-| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 헬퍼. |
-| `core.enclave.ops` | 78 | 엔클레이브 상태 점검 및 감사 요약을 위한 운영 헬퍼. |
-| `core.enclave.raw_store` | 150 | 엔클레이브 도구가 읽는 수정되지 않은 결과를 위한 비공개 저장소. |
-| `core.enclave.secrets` | 128 | 엔클레이브 자격 증명 저장소에서 비밀 정보를 읽기. |
-| `core.enclave.ssm_tunnel` | 306 | 엔클레이브 SQL 소스를 위한 SSM Session Manager 포트 포워딩 터널. |
+| `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
+| `core.enclave.config` | 162 | Configuration models for enclave mode. |
+| `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
+| `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
+| `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
+| `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
+| `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
+| `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
+| `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
+| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
+| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.guards` | 237 | Startup guards for enclave mode. |
+| `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
+| `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
+| `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
+| `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
+| `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
+| `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -1065,15 +1064,16 @@ LLM 사용량과 비용의 기록·집계.
 
 —
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server` | 7 | — |
 | `server.app` | 1473 | — |
+| `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
 | `server.reload_manager` | 115 | — |
-| `server.room_manager` | 542 | 회의실 수명 주기, 오케스트레이션 및 회의록 생성. |
+| `server.room_manager` | 542 | Meeting room lifecycle, orchestration, and minutes generation. |
 | `server.stream_registry` | 489 | — |
 | `server.websocket` | 165 | — |
 

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 41a3a7e1cc56eb67ee51e50f3443acb4773ecd6266bd160f38f47ef3891aaf86 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 28431a43a0b98c8ecd34e12752554dce90b5e6d0b592fddd95138976f0bd7b6f -->
 
 # モジュール一覧
 
@@ -231,7 +231,6 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
-| `core.enclave.host_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
@@ -1069,6 +1068,7 @@ LLM 利用量とコストの記録・集計。
 |---|---:|---|
 | `server` | 7 | — |
 | `server.app` | 1473 | — |
+| `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

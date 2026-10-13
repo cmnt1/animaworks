@@ -958,7 +958,7 @@ async def lifespan(app: FastAPI):
 
     await start_gateway(app)
 
-    from core.enclave.host_delivery import host_delivery_loop, should_start_host_delivery
+    from server.enclave_delivery import host_delivery_loop, should_start_host_delivery
 
     delivery_config = load_config()
     app.state.enclave_host_delivery_task = None
