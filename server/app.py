@@ -17,6 +17,7 @@ import uuid
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from threading import Event
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -956,8 +957,40 @@ async def lifespan(app: FastAPI):
     from core.enclave.gateway_server import start_gateway
 
     await start_gateway(app)
+
+    from core.enclave.host_delivery import host_delivery_loop, should_start_host_delivery
+
+    delivery_config = load_config()
+    app.state.enclave_host_delivery_task = None
+    app.state.enclave_host_delivery_stop = None
+    if should_start_host_delivery(delivery_config):
+        delivery_stop = Event()
+        delivery_warnings: dict[str, str] = {}
+        app.state.enclave_host_delivery_stop = delivery_stop
+        app.state.enclave_host_delivery_task = asyncio.create_task(
+            host_delivery_loop(
+                delivery_config.enclaves,
+                app.state.anima_names,
+                app.state.shared_dir,
+                stop_event=delivery_stop,
+                warning_state=delivery_warnings,
+                interval_s=60.0,
+            ),
+            name="enclave-host-delivery",
+        )
+        logger.info("Enclave host result delivery started")
+
     yield
     # Shutdown
+    delivery_stop = getattr(app.state, "enclave_host_delivery_stop", None)
+    delivery_task = getattr(app.state, "enclave_host_delivery_task", None)
+    if delivery_stop is not None:
+        delivery_stop.set()
+    if delivery_task is not None:
+        try:
+            await delivery_task
+        except asyncio.CancelledError:
+            pass
     if app.state.setup_complete:
         # Cancel background startup if still running
         startup_task = getattr(app.state, "_anima_startup_task", None)

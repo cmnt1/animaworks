@@ -271,5 +271,5 @@ Confirm that `datasets` in the isolated-side config points to the above `data/cu
 
 1. Run `animaworks enclave doctor` on the isolated side and check the guard and gateway status.
 2. Register the connection destination in `config.json` on the main side, and allow `enclave` for the main-side anima.
-3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. Confirm that the entry anima searches the mock data and returns an egress-inspected answer.
+3. Run `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` from the main side. It returns a `job_id` immediately; check it with `animaworks-tool enclave status --enclave saas-data --job-id <job_id>`. The completed result is delivered to the caller's inbox. Use `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>` if cancellation is needed.
 4. Run `animaworks enclave status` on the isolated side and confirm that the success count has increased. The Web UI home screen displays only the connection status and aggregated counts.
