@@ -271,5 +271,5 @@ uv run python scripts/enclave/make_mock_dataset.py --out "$DATA_DIR/data"
 
 1. 격리 측에서 `animaworks enclave doctor`을 실행해 가드와 gateway의 상태를 확인한다.
 2. 본체 측의 `config.json`에 연결 대상을 등록하고, 본체 측 anima에 `enclave`을 허용한다.
-3. 본체 측에서 `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"`을 실행한다. entry anima가 모의 데이터를 검색하고 egress 검사를 마친 답변을 반환하는지 확인한다.
+3. 본체 측에서 `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"`을 실행한다. 즉시 반환된 `job_id`를 사용해 `animaworks-tool enclave status --enclave saas-data --job-id <job_id>`로 상태를 확인한다. 완료 결과는 요청한 Anima의 inbox로 전달된다. 취소가 필요하면 `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>`을 실행한다.
 4. 격리 측에서 `animaworks enclave status`을 실행해 성공 건수가 늘었는지 확인한다. Web UI 홈 화면에는 연결 상태와 집계 건수만 표시된다.

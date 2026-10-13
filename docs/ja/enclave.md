@@ -268,5 +268,5 @@ uv run python scripts/enclave/make_mock_dataset.py --out "$DATA_DIR/data"
 
 1. 隔離側で `animaworks enclave doctor` を実行し、ガードと gateway の状態を確認する。
 2. 本体側の `config.json` に接続先を登録し、本体側 anima に `enclave` を許可する。
-3. 本体側から `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` を実行する。entry anima がモックデータを検索し、egress 検査済みの回答を返すことを確認する。
+3. 本体側から `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"` を実行する。すぐに返る `job_id` を使って `animaworks-tool enclave status --enclave saas-data --job-id <job_id>` で状態を確認する。完了結果は呼び手の inbox に届く。必要なら `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>` で取り消す。
 4. 隔離側で `animaworks enclave status` を実行し、成功件数が増えたことを確認する。Web UI のホーム画面には接続状態と集計件数だけが表示される。

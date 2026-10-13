@@ -412,8 +412,108 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "error: enclave returned an error (code={code})",
     },
     "enclave.tool.schema_description": {
-        "ja": "隔離された enclave に質問し、事実と根拠IDだけの回答を得る",
-        "en": "Ask an isolated enclave a question and get a fact-only answer with evidence IDs",
+        "ja": "隔離された enclave に質問を送り、job_id をすぐ受け取る。状態を確認でき、完了結果は inbox に届く",
+        "en": "Submit a question to an isolated enclave and get a job ID immediately. Check its status; completed results arrive in the inbox.",
+    },
+    "enclave.tool.job_submitted": {
+        "ja": "enclave のジョブを受け付けました。job_id: {job_id} / 状態: {status}\n状態確認: {status_command}\n完了時に結果が inbox に届きます。",
+        "en": "Enclave job accepted. job_id: {job_id} / status: {status}\nCheck status: {status_command}\nThe result will be delivered to your inbox when complete.",
+    },
+    "enclave.tool.job_done_no_facts": {
+        "ja": "ジョブ {job_id} は完了しましたが、事実は返されませんでした。",
+        "en": "Job {job_id} completed without returning facts.",
+    },
+    "enclave.tool.job_status_header": {
+        "ja": "ジョブ状態: {status} (job_id: {job_id}, case_id: {case_id})",
+        "en": "Job status: {status} (job_id: {job_id}, case_id: {case_id})",
+    },
+    "enclave.tool.elapsed": {
+        "ja": "経過時間: {elapsed}",
+        "en": "Elapsed: {elapsed}",
+    },
+    "enclave.tool.queued_ahead": {
+        "ja": "先行待ちジョブ数: {queued_ahead}",
+        "en": "Jobs queued ahead: {queued_ahead}",
+    },
+    "enclave.tool.last_activity": {
+        "ja": "最終アクティビティ: {last_activity_at}",
+        "en": "Last activity: {last_activity_at}",
+    },
+    "enclave.tool.progress_line": {
+        "ja": "- [{at}] {text}",
+        "en": "- [{at}] {text}",
+    },
+    "enclave.tool.job_error": {
+        "ja": "エラー: {error}",
+        "en": "Error: {error}",
+    },
+    "enclave.tool.job_cancelled": {
+        "ja": "キャンセル要求を処理しました。job_id: {job_id} / 状態: {status}",
+        "en": "Cancellation request processed. job_id: {job_id} / status: {status}",
+    },
+    "enclave.tool.job_id_required": {
+        "ja": "エラー: job_id を指定してください",
+        "en": "error: job_id is required",
+    },
+    "enclave.tool.audit_id": {
+        "ja": "audit_id: {audit_id}",
+        "en": "audit_id: {audit_id}",
+    },
+    "enclave.tool.schema_status_description": {
+        "ja": "enclave ジョブの状態・経過時間・途中経過・完了時の事実を確認する",
+        "en": "Check an enclave job's status, elapsed time, progress, and facts when complete",
+    },
+    "enclave.tool.schema_cancel_description": {
+        "ja": "実行中または待機中の enclave ジョブをキャンセルする",
+        "en": "Cancel a queued or running enclave job",
+    },
+    "enclave.tool.schema_job_id": {
+        "ja": "enclave ask が返したジョブID",
+        "en": "Job ID returned by enclave ask",
+    },
+    "enclave.tool.schema_wait_s": {
+        "ja": "結果確認のために待つ最大秒数（既定値: 0。0 の場合はすぐ戻る）",
+        "en": "Maximum seconds to wait for a result (default: 0, which returns immediately)",
+    },
+    "enclave.delivery.case_id": {
+        "ja": "case_id: {case_id}",
+        "en": "case_id: {case_id}",
+    },
+    "enclave.delivery.job_id": {
+        "ja": "job_id: {job_id}",
+        "en": "job_id: {job_id}",
+    },
+    "enclave.delivery.status": {
+        "ja": "状態: {status}",
+        "en": "status: {status}",
+    },
+    "enclave.delivery.audit_id": {
+        "ja": "audit_id: {audit_id}",
+        "en": "audit_id: {audit_id}",
+    },
+    "enclave.delivery.error": {
+        "ja": "エラー: {error}",
+        "en": "error: {error}",
+    },
+    "enclave.delivery.no_facts": {
+        "ja": "事実は返されませんでした。",
+        "en": "No facts were returned.",
+    },
+    "enclave.delivery.invalid_sender": {
+        "ja": "enclave {enclave} からの未配達ジョブ {job_id} は、許可されていない呼び手または存在しない anima のため破棄しました。",
+        "en": "Discarded undelivered enclave job {job_id} from {enclave}: the caller is not allowed or does not exist on this host.",
+    },
+    "enclave.delivery.gateway_warning": {
+        "ja": "enclave {enclave} の結果取り込みに失敗しました: {reason}",
+        "en": "Could not collect enclave results from {enclave}: {reason}",
+    },
+    "enclave.delivery.job_warning": {
+        "ja": "enclave {enclave} のジョブ {job_id} の配達に失敗しました: {reason}",
+        "en": "Could not deliver enclave job {job_id} from {enclave}: {reason}",
+    },
+    "enclave.delivery.ack_warning": {
+        "ja": "enclave {enclave} のジョブ {job_id} を配達済みにできませんでした: HTTP {code}",
+        "en": "Could not acknowledge enclave job {job_id} from {enclave}: HTTP {code}",
     },
     "enclave.tool.schema_enclave": {
         "ja": "接続する enclave の設定名",
