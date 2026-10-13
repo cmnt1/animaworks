@@ -352,14 +352,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "この仕事の識別子（job_id）は {job_id} です。"
             "分析が長引く場合は、対象の特定・データ取得・原因の候補など節目ごとに、"
             "途中経過を1〜2文だけ書きなさい。書き方: "
-            "`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text \"...\"`。"
+            '`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text "..."`。'
             "途中経過は伏字処理を通って依頼者に見えるので、個人を特定できる値は書かないこと。"
         ),
         "en": (
             "The job identifier for this work is {job_id}. "
             "If this analysis will take a while, write a short interim update (one or two sentences) "
             "at milestones such as target identification, data retrieval, or candidate causes: "
-            "`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text \"...\"`. "
+            '`animaworks-tool enclave_progress enclave_progress --job-id {job_id} --text "..."`. '
             "Updates are masked and shown to the requester, so never include identifying values."
         ),
     },
