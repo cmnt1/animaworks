@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=9796c1a8ba5fee5f209246303f3086977f0ba7be53c927e3354c981721ddb745 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=1f523aa42f5636da66534cdfb08863e012b06b6081397a8429265faac4b24276 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 > 확인한 커밋: f448d7b0
 
@@ -260,16 +260,16 @@ AWS 소스의 `doctor` 검사는 `aws_sources.<name>.secret` 및 `.deps`(`boto3`
 
 ## 모의 데이터로 동작 확인
 
-모의 데이터 생성 스크립트는 고정 시드를 사용해 같은 고객 데이터 100건과 문의 티켓 300건을 다시 생성한다. 본문에 이름이나 전화번호가 포함된 티켓도 있다. 실제 데이터는 사용하지 말고, 출력 대상은 격리 측의 data directory 내로 지정한다.
+모의 데이터 생성 스크립트는 고정 시드를 사용해 동일한 고객 데이터 100건과 문의 티켓 300건을 다시 생성한다. 이름이나 전화번호가 본문에 포함된 티켓도 있다. 실제 데이터는 사용하지 않고, 출력 대상은 격리된 쪽의 데이터 디렉터리 안으로 한다.
 
 ```bash
 DATA_DIR="$HOME/.animaworks"
 uv run python scripts/enclave/make_mock_dataset.py --out "$DATA_DIR/data"
 ```
 
-격리 측 config의 `datasets`이 위의 `data/customers.jsonl` 및 `data/tickets.jsonl`을 가리키는지 확인하고, entry anima가 `enclave_records_search` 및 `enclave_records_get`를 사용할 수 있도록 한다. 이어서 다음을 수행한다.
+격리된 쪽 config의 `datasets`이 위의 `data/customers.jsonl`와 `data/tickets.jsonl`을 가리키는지 확인하고, entry anima가 `enclave_records_search`와 `enclave_records_get`를 이용할 수 있도록 한다. 이어서 다음을 수행한다.
 
-1. 격리 측에서 `animaworks enclave doctor`을 실행해 가드와 gateway의 상태를 확인한다.
-2. 본체 측의 `config.json`에 연결 대상을 등록하고, 본체 측 anima에 `enclave`을 허용한다.
-3. 본체 측에서 `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"`을 실행한다. entry anima가 모의 데이터를 검색하고 egress 검사를 마친 답변을 반환하는지 확인한다.
-4. 격리 측에서 `animaworks enclave status`을 실행해 성공 건수가 늘었는지 확인한다. Web UI 홈 화면에는 연결 상태와 집계 건수만 표시된다.
+1. 격리된 쪽에서 `animaworks enclave doctor`을 실행하고 가드와 게이트웨이의 상태를 확인한다.
+2. 본체 쪽의 `config.json`에 접속 대상을 등록하고, 본체 쪽 anima에 `enclave`을 허용한다.
+3. 본체 쪽에서 `animaworks-tool enclave ask --enclave saas-data --question "問い合わせをカテゴリ別に要約して"`를 실행한다. 즉시 반환되는 `job_id`을 사용해 `animaworks-tool enclave status --enclave saas-data --job-id <job_id>`에서 상태를 확인한다. 완료 결과는 호출자의 inbox에 도착한다. 필요하다면 `animaworks-tool enclave cancel --enclave saas-data --job-id <job_id>`로 취소한다.
+4. 격리된 쪽에서 `animaworks enclave status`을 실행하고 성공 건수가 늘어난 것을 확인한다. 웹 UI 홈 화면에는 연결 상태와 집계 건수만 표시된다.

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=1904f91b2feeaea3a3c200818d16f5484819566f2df5d812c9ca8f61cfad18c1 generated=2026-10-12 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=eb8ad67019a3d08f5818cdbe1fad6a531c840d00bbfb2cf2a4a0410f2f2519c2 generated=2026-10-13 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -212,12 +212,12 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration model and startup security guards for isolated enclave mode.
+Configuration models for isolated enclave mode and startup security guards.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 160 | Configuration models for enclave mode. |
+| `core.enclave.config` | 162 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -228,9 +228,10 @@ Configuration model and startup security guards for isolated enclave mode.
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 288 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
+| `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
@@ -373,7 +374,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 658 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 806 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -419,7 +420,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-Implementation of external service integrations and animaworks-tool.
+External service integrations and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -453,8 +454,9 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
-| `core.integrations.enclave` | 213 | enclave_ask tool — ask an isolated enclave instance from the host side. |
+| `core.integrations.enclave` | 489 | Host-side tools for submitting and managing enclave ask jobs. |
 | `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
@@ -983,7 +985,7 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 455 | — |
-| `core.tooling.policy.registry` | 64 | — |
+| `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
 | `core.tooling.policy.schemas.channel` | 118 | — |
@@ -1065,7 +1067,8 @@ Voice input/output and voice conversation.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1440 | — |
+| `server.app` | 1473 | — |
+| `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
