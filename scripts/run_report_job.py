@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Run repo-managed report generation jobs from runtime wrappers or cron."""
 
 from __future__ import annotations
@@ -27,6 +26,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--job", required=True, choices=sorted(JOBS))
     parser.add_argument("--report-date")
     parser.add_argument("--task-results-dir", type=Path)
+    parser.add_argument("--task-code")
+    parser.add_argument("--local-only", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -36,6 +37,10 @@ def build_job_args(args: argparse.Namespace) -> list[str]:
         job_args.extend(["--report-date", args.report_date])
     if args.task_results_dir:
         job_args.extend(["--task-results-dir", str(args.task_results_dir)])
+    if getattr(args, "task_code", None):
+        job_args.extend(["--task-code", args.task_code])
+    if getattr(args, "local_only", False):
+        job_args.append("--local-only")
     return job_args
 
 

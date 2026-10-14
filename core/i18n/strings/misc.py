@@ -464,4 +464,36 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "[ask_anima job {job}: 30分以内に完了を確認できませんでした。依頼: {request}]",
         "en": "[ask_anima job {job}: still running after 30 minutes. Request: {request}]",
     },
+    "review_surfacer.approval_gate": {
+        "ja": (
+            "⚠ 承認判断がファイル上で確定していません（review_hold: {hold}）。"
+            "この状態では status / submitted / confirmed の変更と Discord 等への完了投稿をしてはいけません。"
+            "承認する場合は、先に frontmatter に review_hold: false をインプレースで書き、"
+            "読み戻して確認してから下の手順に進んでください。"
+            "保留する場合は review_hold: true と保留理由を書き、完了扱いにせず終了してください。\n"
+        ),
+        "en": (
+            "WARNING: the approval decision is not recorded in the file (review_hold: {hold}). "
+            "Until it is, do not change status / submitted / confirmed and do not post a completion report. "
+            "To approve, first write review_hold: false in the frontmatter in place, read it back, "
+            "then follow the steps below. "
+            "To hold, write review_hold: true with the reason and stop without completing.\n"
+        ),
+    },
+    "review_surfacer.approve_condition_released": {
+        "ja": "問題なければ",
+        "en": "If acceptable,",
+    },
+    "review_surfacer.approve_condition_gated": {
+        "ja": "review_hold: false を frontmatter に書いて読み戻し確認できた場合に限り",
+        "en": "Only after review_hold: false has been written to the frontmatter and read back,",
+    },
+    "review_surfacer.post_condition_gated": {
+        "ja": "2 の承認更新を読み戻し確認した後に限り、",
+        "en": "Only after the approval update in step 2 has been read back, ",
+    },
+    "review_surfacer.confirmed_owner_managed": {
+        "ja": "confirmed はオーナー管理のため変更しない。",
+        "en": "Do not change confirmed (owner-managed). ",
+    },
 }

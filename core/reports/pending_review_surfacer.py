@@ -35,6 +35,30 @@ REVIEW_KIND = "pending_product_review"
 PENDING_STATUS = "レビュー待ち"
 DEFAULT_OLDER_THAN_MINUTES = 30
 
+# review_hold is the deterministic approval marker shared with the reviewer's
+# deterministic review cron jobs.  "held" items must never be nudged toward
+# completion; "unknown" (missing / unparseable) is treated fail-closed.
+HOLD_HELD = "held"
+HOLD_RELEASED = "released"
+HOLD_UNKNOWN = "unknown"
+_HOLD_TRUE = {"true", "yes", "on", "1"}
+_HOLD_FALSE = {"false", "no", "off", "0"}
+
+
+def review_hold_state(fm: dict[str, str]) -> str:
+    """Classify the ``review_hold`` frontmatter value (fail-closed).
+
+    Returns ``HOLD_HELD`` for an explicit true, ``HOLD_RELEASED`` only for an
+    explicit false, and ``HOLD_UNKNOWN`` for anything else (missing key, empty,
+    mojibake, typos).  Callers must not instruct completion unless released.
+    """
+    raw = str(fm.get("review_hold", "")).split("#", 1)[0].strip().strip("'\"").lower()
+    if raw in _HOLD_TRUE:
+        return HOLD_HELD
+    if raw in _HOLD_FALSE:
+        return HOLD_RELEASED
+    return HOLD_UNKNOWN
+
 
 def _read_frontmatter_block(path: Path, *, max_lines: int = 500) -> str:
     """Read only the leading ``---``…``---`` block, not the (potentially large) body.
@@ -156,8 +180,15 @@ def find_pending_reviews(
     *,
     older_than_minutes: int = DEFAULT_OLDER_THAN_MINUTES,
     now: datetime | None = None,
+    held_out: list[dict[str, Any]] | None = None,
+    task_code: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return product drafts awaiting review past the staleness threshold."""
+    """Return product drafts awaiting review past the staleness threshold.
+
+    Drafts with ``review_hold: true`` are excluded (the reviewer has already
+    decided to hold them); they are appended to *held_out* when given so the
+    caller can report them without nudging toward completion.
+    """
     now = now or datetime.now(JST)
     cutoff = now - timedelta(minutes=older_than_minutes)
     found: list[dict[str, Any]] = []
@@ -170,13 +201,21 @@ def find_pending_reviews(
         fm = _parse_frontmatter(block)
         if fm.get("type") != "product":
             continue
+        if task_code is not None and fm.get("task_code") != task_code:
+            continue
         is_pending, is_corrupt = _status_is_pending(fm.get("status", ""))
         if not is_pending:
             continue
         reviewer = fm.get("reviewer", "")
         if not reviewer:
             continue
-        if str(fm.get("confirmed", "")).lower() == "true":
+        if str(fm.get("confirmed", "")).lower() == "true" and task_code is None:
+            continue
+        hold = review_hold_state(fm)
+        if hold == HOLD_HELD:
+            if held_out is not None:
+                held_out.append({"path": str(path), "code": fm.get("code", path.stem), "review_hold": hold})
+            logger.info("review_surfacer: %s is on review_hold; not surfacing", fm.get("code", path.stem))
             continue
         updated = _parse_dt(fm.get("updated", "")) or _parse_dt(fm.get("created", ""))
         if updated is not None and updated > cutoff:
@@ -192,6 +231,7 @@ def find_pending_reviews(
                 "discord_thread_id": fm.get("review_discord_thread_id", ""),
                 "report_date": fm.get("report_date", ""),
                 "corrupt": is_corrupt,
+                "review_hold": hold,
             }
         )
     return found
@@ -210,16 +250,28 @@ def _build_instruction(item: dict[str, Any]) -> str:
             "まず Python で生バイトを読み、`encoding='utf-8'` で UTF-8 として書き戻して文字化けを修復し、"
             "`type: product` / `status: レビュー待ち` が正しく1個ずつ読めることを確認してから次に進んでください。\n"
         )
+    from core.i18n import t
+
+    gate_line = ""
+    released = item.get("review_hold") == HOLD_RELEASED
+    if not released:
+        gate_line = t("review_surfacer.approval_gate", hold=item.get("review_hold") or HOLD_UNKNOWN)
+    approve_condition = t(
+        "review_surfacer.approve_condition_released" if released else "review_surfacer.approve_condition_gated"
+    )
+    post_condition = "" if released else t("review_surfacer.post_condition_gated")
     return (
         f"成果物 {item['code']}（{item['title']}）が status:レビュー待ち のまま滞留しています。"
         f"ファイル: {item['path']}\n"
+        f"{gate_line}"
         f"{corrupt_line}"
         "次を1ターンで最後まで実行してください（『委任した』『追跡中』は完了報告として認められません）:\n"
         "1. 本文と数値を確認する。\n"
-        "2. 問題なければ frontmatter を *インプレース編集* で status:完了 / submitted:報告日 に更新する。"
+        f"2. {approve_condition} frontmatter を *インプレース編集* で status:完了 / submitted:報告日 に更新する。"
+        f"{t('review_surfacer.confirmed_owner_managed')}"
         "重複キーを追記しないこと。UTF-8 を壊さないこと（PowerShell の Set-Content/Add-Content を素で使わない。"
         "必要なら Python で encoding='utf-8' で書き戻す）。\n"
-        f"3. {thread_line}\n"
+        f"3. {post_condition}{thread_line}\n"
         "4. 差し戻しが必要なら理由を明記して assignee に再依頼する。"
     )
 
@@ -231,6 +283,8 @@ def surface_pending_reviews(
     older_than_minutes: int = DEFAULT_OLDER_THAN_MINUTES,
     now: datetime | None = None,
     write_pending: bool = True,
+    task_code: str | None = None,
+    local_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Enqueue an idempotent urgent review task per stuck draft. Returns surfaced items."""
     from core.paths import get_animas_dir
@@ -240,8 +294,29 @@ def surface_pending_reviews(
     animas_dir = animas_dir or get_animas_dir()
 
     surfaced: list[dict[str, Any]] = []
-    for item in find_pending_reviews(products_root, older_than_minutes=older_than_minutes, now=now):
+    for item in find_pending_reviews(
+        products_root, older_than_minutes=older_than_minutes, now=now, task_code=task_code
+    ):
         reviewer = item["reviewer"]
+        # Re-read the frontmatter right before enqueuing: the reviewer may have
+        # placed (or removed) a hold, or finished the review, after the scan.
+        # The re-read state is authoritative for the instruction and the meta;
+        # the scan-time value must never be carried over (a scan-time
+        # "released" followed by a missing/empty/garbled marker is "unknown").
+        current_block = _read_frontmatter_block(Path(item["path"]))
+        current = _parse_frontmatter(current_block) if current_block else {}
+        if not current:
+            logger.info("review_surfacer: %s frontmatter unreadable on re-read; skipped", item["code"])
+            continue
+        still_pending, _ = _status_is_pending(current.get("status", ""))
+        if not still_pending or (str(current.get("confirmed", "")).lower() == "true" and task_code is None):
+            logger.info("review_surfacer: %s is no longer pending on re-read; skipped", item["code"])
+            continue
+        current_hold = review_hold_state(current)
+        if current_hold == HOLD_HELD:
+            logger.info("review_surfacer: %s was put on review_hold during scan; skipped", item["code"])
+            continue
+        item = {**item, "review_hold_at_scan": item.get("review_hold", HOLD_UNKNOWN), "review_hold": current_hold}
         reviewer_dir = animas_dir / reviewer
         if not reviewer_dir.exists():
             logger.warning("review_surfacer: reviewer dir missing for %s (code=%s)", reviewer, item["code"])
@@ -249,6 +324,15 @@ def surface_pending_reviews(
         tqm = TaskQueueManager(reviewer_dir)
         code = item["code"]
         instruction = _build_instruction(item)
+        if local_only:
+            instruction = instruction.replace(
+                (
+                    f"Discordスレッド `{item['discord_thread_id']}` に完成本文を投稿する。"
+                    if item.get("discord_thread_id")
+                    else "指定の投稿先に完成本文を投稿する。"
+                ),
+                "ローカルのレビュー証跡を保存する。外部への投稿・通知は行わない。",
+            )
 
         def _already_open(task: Any, _code: str = code) -> bool:
             meta = getattr(task, "meta", None) or {}
@@ -267,6 +351,8 @@ def surface_pending_reviews(
                 "product_path": item["path"],
                 "discord_thread_id": item["discord_thread_id"],
                 "report_date": item["report_date"],
+                "review_hold": item["review_hold"],
+                "review_hold_at_scan": item["review_hold_at_scan"],
             },
         )
         if entry is None:
@@ -281,8 +367,9 @@ def surface_pending_reviews(
             "context": "",
             "acceptance_criteria": [
                 "Read the Products body and frontmatter; verify there is no mojibake or duplicate key",
-                "If acceptable, update status/submitted/confirmed in place without corrupting UTF-8",
-                "Post the completion report to Discord or the configured destination, or send back a concrete rejection reason",
+                "Do not change status/submitted/confirmed or post a completion report unless review_hold: false is recorded and read back",
+                "If approved, update status/submitted in place without corrupting UTF-8 (confirmed is owner-managed)",
+                "Post the completion report only after approval, or record review_hold: true / a concrete rejection reason",
                 "Include task_closure JSON in the final answer with performed checks and remaining blockers",
             ],
             "constraints": [],
@@ -295,11 +382,20 @@ def surface_pending_reviews(
             "priority": "urgent",
             "closure_required": True,
         }
+        if local_only:
+            task_desc["acceptance_criteria"][3] = (
+                "Save the local review evidence; do not send any external notification"
+            )
+            task_desc["constraints"].append("Local-only recovery: no Discord or other external messages")
         try:
             tqm.update_meta(entry.task_id, {"task_desc": task_desc})
         except Exception:
             logger.warning("review_surfacer: failed to persist task_desc for %s", entry.task_id, exc_info=True)
         if write_pending:
+            # TaskExec reads SQLite after migration; a legacy JSON file alone
+            # leaves this task at ready=0 forever. Publish the execution input
+            # through the queue's supported API, preserving the review metadata.
+            tqm.submit(task_desc, source="anima", meta={**(entry.meta or {}), "task_desc": task_desc})
             try:
                 from core.urgent import add_urgent
 
@@ -322,15 +418,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--products-root", type=Path, default=DEFAULT_PRODUCT_ROOT)
     parser.add_argument("--older-than-minutes", type=int, default=DEFAULT_OLDER_THAN_MINUTES)
     parser.add_argument("--dry-run", action="store_true", help="List stuck drafts without enqueuing tasks.")
+    parser.add_argument("--task-code", help="Limit recovery to one product task code.")
+    parser.add_argument("--local-only", action="store_true", help="Review locally without external notifications.")
     args = parser.parse_args(argv)
 
     if args.dry_run:
-        items = find_pending_reviews(args.products_root, older_than_minutes=args.older_than_minutes)
+        items = find_pending_reviews(
+            args.products_root, older_than_minutes=args.older_than_minutes, task_code=args.task_code
+        )
         print(json.dumps({"status": "dry_run", "pending": items}, ensure_ascii=False, indent=2))
         return 0
 
-    surfaced = surface_pending_reviews(args.products_root, older_than_minutes=args.older_than_minutes)
-    print(json.dumps({"status": "done", "surfaced": surfaced}, ensure_ascii=False, indent=2))
+    held: list[dict[str, Any]] = []
+    find_pending_reviews(
+        args.products_root, older_than_minutes=args.older_than_minutes, held_out=held, task_code=args.task_code
+    )
+    surfaced = surface_pending_reviews(
+        args.products_root,
+        older_than_minutes=args.older_than_minutes,
+        task_code=args.task_code,
+        local_only=args.local_only,
+    )
+    print(json.dumps({"status": "done", "surfaced": surfaced, "held_skipped": held}, ensure_ascii=False, indent=2))
     return 0
 
 
