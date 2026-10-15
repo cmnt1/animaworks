@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=eb8ad67019a3d08f5818cdbe1fad6a531c840d00bbfb2cf2a4a0410f2f2519c2 generated=2026-10-13 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=12bce7c5dbdb67f447bb4ce71d7d61518c38e0878b155c98f4f3b102a2b7d460 generated=2026-10-15 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -32,7 +32,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
-| `cli.commands.cost_cmd` | 232 | — |
+| `cli.commands.cost_cmd` | 326 | — |
 | `cli.commands.enclave_cmd` | 323 | Operational commands for enclave runtimes. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
@@ -212,9 +212,9 @@ Application configuration schemas, loading, validation, and migration.
 
 ## `core.enclave`
 
-Configuration models for isolated enclave mode and startup security guards.
+Configuration model and startup security guards for isolated enclave mode.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
 | `core.enclave.config` | 162 | Configuration models for enclave mode. |
@@ -228,8 +228,8 @@ Configuration models for isolated enclave mode and startup security guards.
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
-| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.gateway` | 575 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
@@ -420,7 +420,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integrations and implementation of animaworks-tool.
+External service integration and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -454,7 +454,7 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
-| `core.integrations.enclave` | 489 | Host-side tools for submitting and managing enclave ask jobs. |
+| `core.integrations.enclave` | 542 | Host-side tools for submitting and managing enclave ask jobs. |
 | `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
@@ -1024,12 +1024,12 @@ Tool schemas, permissions, and execution infrastructure.
 
 ## `core.usage`
 
-LLM usage and cost recording and aggregation.
+Recording and aggregation of LLM usage and costs.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
-| `core.usage.token_budget` | 55 | — |
+| `core.usage.token_budget` | 73 | — |
 | `core.usage.token_usage` | 587 | — |
 
 ## `core.voice`
@@ -1067,7 +1067,7 @@ Voice input/output and voice conversation.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1473 | — |
+| `server.app` | 1483 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
