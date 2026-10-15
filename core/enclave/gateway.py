@@ -71,6 +71,16 @@ def _request_uid(request: Request) -> int | None:
     return uid if isinstance(uid, int) else None
 
 
+UsageReader = Callable[[Path, int], dict[str, Any]]
+
+
+def _valid_anima_name(name: str) -> bool:
+    """Return whether *name* is a safe single anima folder name."""
+    if not name:
+        return False
+    return not (("/" in name) or ("\\" in name) or (".." in name))
+
+
 def _balanced_json(text: str, start: int) -> str:
     """Return the smallest ``{...}`` substring starting at *start*."""
     depth = 0
@@ -176,10 +186,17 @@ def _write_block_audit(
 class _Gateway:
     """Holds the per-instance state (semaphore + job store) for one gateway."""
 
-    def __init__(self, config: EnclaveConfig, data_dir: Path, get_supervisor: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        config: EnclaveConfig,
+        data_dir: Path,
+        get_supervisor: Callable[[], Any],
+        usage_reader: UsageReader | None = None,
+    ) -> None:
         self.config = config
         self.data_dir = data_dir
         self.get_supervisor = get_supervisor
+        self.usage_reader = usage_reader
         self.semaphore = asyncio.Semaphore(config.max_concurrency)
         self.pipeline: EgressPipeline | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -456,6 +473,31 @@ class _Gateway:
         self._mark_finished(job, "cancelled")
         return JSONResponse({"job_id": job.job_id, "status": "cancelled"})
 
+    async def usage(self, days: int, anima: str | None, request: Request) -> JSONResponse:
+        """Return per-anima token usage (tokens + cost, no conversation text)."""
+        if not self._check_peer(request):
+            return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
+        if self.usage_reader is None:
+            return JSONResponse({"error": "usage_unavailable"}, status_code=503)
+        if days < 1 or days > 366:
+            return JSONResponse({"error": "invalid_days"}, status_code=400)
+
+        if anima is not None:
+            if not _valid_anima_name(anima):
+                return JSONResponse({"error": "invalid_anima"}, status_code=400)
+            anima_dir = self.data_dir / "animas" / anima
+            if not (anima_dir / "token_usage").is_dir():
+                return JSONResponse({"error": "not_found"}, status_code=404)
+            result = await asyncio.to_thread(self.usage_reader, anima_dir, days)
+            return JSONResponse({"name": self.config.name, "days": days, "animas": {anima: result}})
+
+        animas_root = self.data_dir / "animas"
+        animas: dict[str, Any] = {}
+        if animas_root.is_dir():
+            for item in sorted(p for p in animas_root.iterdir() if p.is_dir() and (p / "token_usage").is_dir()):
+                animas[item.name] = await asyncio.to_thread(self.usage_reader, item, days)
+        return JSONResponse({"name": self.config.name, "days": days, "animas": animas})
+
     async def list_undelivered(self, from_anima: str | None, request: Request) -> JSONResponse:
         if not self._check_peer(request):
             return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
@@ -486,9 +528,15 @@ def create_gateway_app(
     get_supervisor: Callable[[], Any],
     config: EnclaveConfig,
     data_dir: Path,
+    usage_reader: UsageReader | None = None,
 ) -> FastAPI:
-    """Build the FastAPI application that serves one enclave instance."""
-    gateway = _Gateway(config, data_dir, get_supervisor)
+    """Build the FastAPI application that serves one enclave instance.
+
+    *usage_reader* summarises one anima dir's token usage for ``/v1/usage``.
+    It is injected by the server layer so this module stays below
+    ``core.usage``; without it the endpoint answers 503.
+    """
+    gateway = _Gateway(config, data_dir, get_supervisor, usage_reader)
     app = FastAPI(title=f"enclave-{config.name}", docs_url=None, redoc_url=None, openapi_url=None)
     router = APIRouter()
 
@@ -515,6 +563,10 @@ def create_gateway_app(
     @router.get("/v1/jobs")
     async def jobs_list(request: Request, from_anima: str = "", undelivered: int = 0) -> JSONResponse:
         return await gateway.list_undelivered(from_anima or None, request)
+
+    @router.get("/v1/usage")
+    async def usage(request: Request, days: int = 30, anima: str | None = None) -> JSONResponse:
+        return await gateway.usage(days, anima, request)
 
     app.include_router(router)
     return app

@@ -69,7 +69,9 @@ class FakeSupervisor:
 
 
 @asynccontextmanager
-async def _running_gateway(tmp_path: Path, supervisor: FakeSupervisor, **config_overrides: object):
+async def _running_gateway(
+    tmp_path: Path, supervisor: FakeSupervisor, *, usage_reader: object = None, **config_overrides: object
+):
     sock_path = tmp_path / "gateway.sock"
     params: dict = {
         "enabled": True,
@@ -83,7 +85,9 @@ async def _running_gateway(tmp_path: Path, supervisor: FakeSupervisor, **config_
     }
     params.update(config_overrides)
     cfg = EnclaveConfig(**params)
-    app = create_gateway_app(get_supervisor=lambda: supervisor, config=cfg, data_dir=tmp_path)
+    app = create_gateway_app(
+        get_supervisor=lambda: supervisor, config=cfg, data_dir=tmp_path, usage_reader=usage_reader
+    )
     sock = prepare_socket(cfg)
     server = uvicorn.Server(
         uvicorn.Config(app, lifespan="off", http=PeerCredHttpProtocol, ws=None, log_level="warning")
