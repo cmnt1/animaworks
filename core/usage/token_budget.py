@@ -23,6 +23,24 @@ class TokenBudgetStatus:
     exceeded: bool
 
 
+def read_budget_fields(anima_dir: Path, *, now: datetime | None = None) -> dict[str, object]:
+    """Return JSON-ready current-month budget fields for one Anima.
+
+    Shared by the local ``animaworks cost`` CLI and the enclave gateway so
+    both produce the same budget overlay (month, budget, consumed,
+    remaining, exceeded) for a usage summary.
+    """
+    current = now or now_local()
+    status = read_token_budget_status(anima_dir, now=current)
+    return {
+        "month": current.strftime("%Y-%m"),
+        "budget": status.budget,
+        "consumed": status.consumed,
+        "remaining": status.remaining,
+        "exceeded": status.exceeded,
+    }
+
+
 def calculate_token_budget_status(
     budget: int | None,
     consumed: int,

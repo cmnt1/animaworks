@@ -34,6 +34,19 @@ from core.integrations._comm_cli import cli_main_safely
 
 logger = logging.getLogger(__name__)
 
+
+class EnclaveUnreachable(Exception):
+    """Raised when an enclave gateway socket cannot be reached."""
+
+    def __init__(self, enclave_name: str) -> None:
+        super().__init__(enclave_name)
+        self.enclave_name = enclave_name
+
+
+class EnclavePermissionError(EnclaveUnreachable):
+    """Raised when the socket is reachable but access is denied."""
+
+
 # ── Execution Profile ─────────────────────────────────────
 
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
@@ -95,6 +108,37 @@ def _gateway_client(client_cfg: Any) -> httpx.Client:
     # timeout_s is kept in configuration for compatibility but is not a job
     # wait timeout. Every gateway request should return quickly.
     return httpx.Client(transport=transport, timeout=_HTTP_TIMEOUT_S)
+
+
+def fetch_enclave_usage(
+    enclave_name: str,
+    client_cfg: Any,
+    days: int,
+    anima: str | None = None,
+) -> dict[str, Any] | None:
+    """Fetch token-usage summaries from an enclave gateway.
+
+    Returns the full gateway response (``{"name", "days", "animas"}``) on
+    success, ``None`` when the requested anima does not exist on the encore
+    (HTTP 404).  Raises :class:`EnclavePermissionError` on a socket
+    permission failure and :class:`EnclaveUnreachable` when the socket
+    cannot be connected to at all.
+    """
+    params: dict[str, Any] = {"days": days}
+    if anima:
+        params["anima"] = anima
+    try:
+        with _gateway_client(client_cfg) as http:
+            response = http.get("http://enclave/v1/usage", params=params)
+    except PermissionError as exc:
+        raise EnclavePermissionError(enclave_name) from exc
+    except (OSError, httpx.TransportError) as exc:
+        raise EnclaveUnreachable(enclave_name) from exc
+
+    if response.status_code != 200:
+        return None
+    data = _response_json(response)
+    return data
 
 
 def _job_url(job_id: str) -> str:
@@ -486,4 +530,13 @@ def cli_main(argv: list[str] | None = None) -> None:
     print(dispatch(schema_name, args))
 
 
-__all__ = ["cli_main", "dispatch", "format_facts", "get_cli_guide", "get_tool_schemas"]
+__all__ = [
+    "cli_main",
+    "dispatch",
+    "fetch_enclave_usage",
+    "format_facts",
+    "get_cli_guide",
+    "get_tool_schemas",
+    "EnclaveUnreachable",
+    "EnclavePermissionError",
+]

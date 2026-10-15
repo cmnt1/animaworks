@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 28431a43a0b98c8ecd34e12752554dce90b5e6d0b592fddd95138976f0bd7b6f -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 96415446f3a27af529470cd42f7d72cf434a1bdf3bf88c7af443aab0f168e2e6 -->
 
 # モジュール一覧
 
@@ -32,7 +32,7 @@
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
-| `cli.commands.cost_cmd` | 232 | — |
+| `cli.commands.cost_cmd` | 326 | — |
 | `cli.commands.enclave_cmd` | 323 | Operational commands for enclave runtimes. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
@@ -228,8 +228,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
-| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.gateway` | 575 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
@@ -454,7 +454,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
-| `core.integrations.enclave` | 489 | Host-side tools for submitting and managing enclave ask jobs. |
+| `core.integrations.enclave` | 542 | Host-side tools for submitting and managing enclave ask jobs. |
 | `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
@@ -1029,7 +1029,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
-| `core.usage.token_budget` | 55 | — |
+| `core.usage.token_budget` | 73 | — |
 | `core.usage.token_usage` | 587 | — |
 
 ## `core.voice`
@@ -1067,7 +1067,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1473 | — |
+| `server.app` | 1483 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
