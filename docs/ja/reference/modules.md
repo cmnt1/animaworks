@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: e89344ed884bfb9f434c4221ae4ba5e3eb209fc39f748c8287e15a74fee22dd8 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 8590cb8ff4d66eb9f38a765a2b47558a80d65508876fd508ea1d9345b339c029 -->
 
 # モジュール一覧
 
@@ -1030,7 +1030,7 @@ LLM 利用量とコストの記録・集計。
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 73 | — |
-| `core.usage.token_usage` | 587 | — |
+| `core.usage.token_usage` | 605 | — |
 
 ## `core.voice`
 
