@@ -20,9 +20,7 @@ bodies.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -44,8 +42,6 @@ from core.enclave.jobs import EnclaveJob, EnclaveJobStore, make_thread_id, utcno
 from core.i18n import t
 
 logger = logging.getLogger(__name__)
-
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 
 _MASKED_LINE = "(masked)"
 
@@ -79,86 +75,6 @@ def _valid_anima_name(name: str) -> bool:
     if not name:
         return False
     return not (("/" in name) or ("\\" in name) or (".." in name))
-
-
-def _balanced_json(text: str, start: int) -> str:
-    """Return the smallest ``{...}`` substring starting at *start*."""
-    depth = 0
-    in_str = False
-    esc = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    raise ValueError("unbalanced json")
-
-
-def _extract_answer_json(text: str) -> Any:
-    """Extract a JSON object from an anima answer string.
-
-    Tries, in order: the whole trimmed string, a fenced code block, and the
-    substring from the first ``{`` to its matching ``}``.  Raises
-    :class:`ValueError` when no valid JSON object can be recovered.
-    """
-    if not isinstance(text, str):
-        raise ValueError("empty answer")
-    stripped = text.strip()
-    if stripped:
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError:
-            pass
-    match = _JSON_FENCE_RE.search(text)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    start = text.find("{")
-    if start != -1:
-        try:
-            return json.loads(_balanced_json(text, start))
-        except json.JSONDecodeError:
-            pass
-    raise ValueError("no json object in answer")
-
-
-def _parse_facts(parsed: Any) -> list[Fact]:
-    """Convert a parsed answer into a list of :class:`Fact`.
-
-    Raises :class:`ValueError` when the structure is invalid.
-    """
-    if not isinstance(parsed, dict):
-        raise ValueError("answer not an object")
-    raw_facts = parsed.get("facts")
-    if not isinstance(raw_facts, list):
-        raise ValueError("facts not a list")
-    facts: list[Fact] = []
-    for item in raw_facts:
-        if not isinstance(item, dict):
-            raise ValueError("fact not an object")
-        fact = item.get("fact")
-        evidence = item.get("evidence", [])
-        if not isinstance(fact, str):
-            raise ValueError("fact not a string")
-        if not isinstance(evidence, list) or not all(isinstance(e, str) for e in evidence):
-            raise ValueError("evidence not a string list")
-        facts.append(Fact(fact=fact, evidence=list(evidence)))
-    return facts
 
 
 def _write_block_audit(
@@ -371,10 +287,11 @@ class _Gateway:
             if job.status == "cancelled":
                 return
             answer_text = answer.get("response") if isinstance(answer, dict) else None
-            try:
-                parsed = _extract_answer_json(answer_text)
-                facts = _parse_facts(parsed)
-            except (ValueError, TypeError):
+            # The whole answer goes out as one fact, JSON or not; the masker
+            # is the only gate on its content.
+            text = answer_text.strip() if isinstance(answer_text, str) else ""
+            facts = [Fact(fact=text, evidence=[])] if text else None
+            if facts is None:
                 audit_id = uuid4().hex
                 _write_block_audit(
                     self.data_dir,
@@ -382,9 +299,9 @@ class _Gateway:
                     case_id=body.case_id,
                     from_anima=body.from_anima,
                     audit_id=audit_id,
-                    reason="answer_unparseable",
+                    reason="answer_empty",
                 )
-                self._mark_failed(job, "answer_unparseable", audit_id=audit_id)
+                self._mark_failed(job, "answer_empty", audit_id=audit_id)
                 return
 
             try:
