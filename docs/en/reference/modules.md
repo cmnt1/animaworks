@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=f7260fe1648c3b5250dfe6352ba4f40342c6ca73cd46c7aa9ef196f896f3e27d generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=7202f64b6108561f8cadebbd4c96442558c8ae0d3fdc5ea49ac26344050d5d4c generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -455,7 +455,7 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
 | `core.integrations.enclave` | 554 | Host-side tools for submitting and managing enclave ask jobs. |
-| `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave_aws` | 866 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
