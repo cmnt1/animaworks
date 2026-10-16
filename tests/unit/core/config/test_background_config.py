@@ -15,6 +15,7 @@ from core.config.models import (
     PrimingConfig,
     ServerConfig,
     resolve_background_worker_pool_size,
+    resolve_chat_max_concurrency,
 )
 
 # ── ServerConfig ─────────────────────────────────────────────
@@ -33,6 +34,7 @@ class TestServerConfig:
         assert sc.spawn_timeout == 300
         assert sc.supervisor_respawn_max_retries == 3
         assert sc.supervisor_respawn_retry_interval_seconds == 30.0
+        assert sc.chat_max_concurrency == 1
 
     def test_server_config_rejects_invalid_intervals(self):
         """keepalive_interval must be less than ipc_stream_timeout."""
@@ -241,7 +243,35 @@ class TestAnimaWorksConfigBackground:
 
         # Verify server round-trip
         assert restored.server.ipc_stream_timeout == 600
+        assert restored.server.chat_max_concurrency == 1
 
         # Verify default eligible tools survived round-trip
         assert "generate_character_assets" in restored.background_task.eligible_tools
         assert restored.background_task.eligible_tools["generate_character_assets"].threshold_s == 30
+
+
+class TestSchemasChatMaxConcurrency:
+    def test_chat_max_concurrency_status_override(self, tmp_path):
+        (tmp_path / "status.json").write_text('{"chat_max_concurrency": 4}', encoding="utf-8")
+
+        assert resolve_chat_max_concurrency(tmp_path, default=2) == 4
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            '{"chat_max_concurrency": 0}',
+            '{"chat_max_concurrency": 11}',
+            '{"chat_max_concurrency": true}',
+            '{"chat_max_concurrency": "3"}',
+            "not-json",
+        ],
+    )
+    def test_invalid_chat_max_concurrency_override_uses_default(self, tmp_path, status):
+        (tmp_path / "status.json").write_text(status, encoding="utf-8")
+
+        assert resolve_chat_max_concurrency(tmp_path, default=2) == 2
+
+    @pytest.mark.parametrize("value", [0, 11])
+    def test_server_config_rejects_invalid_chat_max_concurrency(self, value):
+        with pytest.raises(ValueError):
+            ServerConfig(chat_max_concurrency=value)
