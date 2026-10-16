@@ -69,13 +69,13 @@ def test_pipeline_stage_error_blocks_with_audit(tmp_path: Path) -> None:
     assert records[0]["stages"][0]["error"] == "denylist_match"
 
 
-def test_pipeline_blocks_too_many_facts(tmp_path: Path) -> None:
-    cfg = load_egress_config({"stages": [{"type": "regex_denylist", "patterns": []}], "max_facts": 1})
+def test_pipeline_has_no_size_limits(tmp_path: Path) -> None:
+    cfg = load_egress_config({"stages": [{"type": "regex_denylist", "patterns": []}]})
     pipe = EgressPipeline(cfg, tmp_path)
-    with pytest.raises(EgressBlockedError) as exc:
-        pipe.run(_req([Fact("あ", []), Fact("い", [])]))
-    assert exc.value.reason == "too_many_facts"
-    assert _audit_records(tmp_path)[0]["blocked"] is True
+    facts = [Fact(f"項目{i}", []) for i in range(200)] + [Fact("あ" * 20000, ["record:1" * 1000])]
+    result = pipe.run(_req(facts))
+    assert len(result.facts) == 201
+    assert _audit_records(tmp_path)[0]["blocked"] is False
 
 
 def test_pipeline_blocks_on_bad_command_structure(tmp_path: Path) -> None:

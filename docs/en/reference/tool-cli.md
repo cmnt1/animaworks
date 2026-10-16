@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=658df3f85c8666e262c051000087778fe185fc827a30ab7bc1a82f8131c61935 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=658df3f85c8666e262c051000087778fe185fc827a30ab7bc1a82f8131c61935 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Tool CLI Reference: `animaworks-tool`
 
@@ -29,15 +29,15 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 
 ## `enclave_ask`
 
-Send a question to an isolated enclave and receive a job_id immediately. You can check its status, and the completion result will arrive in your inbox.
+Send a question to an isolated enclave and immediately receive a job_id. You can check the status, and the completion result will arrive in your inbox.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `case_id` | string | No | Optional case identifier (generated from the anima name and date if omitted) |
 | `enclave` | string | Yes | Configuration name of the enclave to connect to |
-| `model` | string | No | Optional model selection (the name of a model profile on the enclave, e.g., luna-max / opus-high. Defaults to the enclave’s default if omitted) |
+| `model` | string | No | Optional model specification (the name of a model_profiles entry on the enclave, e.g., luna-max / opus-high. Defaults to the enclave's default if omitted) |
 | `question` | string | Yes | Question to send to the isolated instance |
-| `wait_s` | integer | No | Maximum number of seconds to wait to check the result (default: 0. Returns immediately when set to 0) |
+| `wait_s` | integer | No | Maximum number of seconds to wait before checking the result (default: 0. Returns immediately when set to 0) |
 
 ## `enclave_cancel`
 
