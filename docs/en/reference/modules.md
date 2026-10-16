@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=3a194c0800159a0da25e434116361699f9cdd7e1dab52bc5a14fb35d7f621c09 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=ac243f52a1211838f49017296237c3afc3e8b0170146a8e8f0411fc6a3aa969b generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -1024,13 +1024,13 @@ Tool schemas, permissions, and execution infrastructure.
 
 ## `core.usage`
 
-LLM usage and cost tracking and aggregation.
+Logging and aggregation of LLM usage and costs.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 73 | — |
-| `core.usage.token_usage` | 587 | — |
+| `core.usage.token_usage` | 605 | — |
 
 ## `core.voice`
 
