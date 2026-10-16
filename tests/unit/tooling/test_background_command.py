@@ -292,3 +292,19 @@ class TestHandleExecuteCommandBackground:
         assert "file_content_test" in content
         assert "--- FINISHED ---" in content
         assert "exit_code: 0" in content
+
+
+def test_background_command_does_not_wait_on_inherited_stdin(tmp_path: Path) -> None:
+    """A stdin reader (cat, jq with no file) gets EOF instead of hanging."""
+    runner = CommandRunner("cat", tmp_path, timeout=10)
+    output_dir = tmp_path / "state" / "cmd_output"
+    cmd_id = runner.start(output_dir)
+    deadline = time.time() + 10
+    content = ""
+    while time.time() < deadline:
+        content = (output_dir / f"{cmd_id}.txt").read_text()
+        if "--- FINISHED ---" in content:
+            break
+        time.sleep(0.1)
+    assert "--- FINISHED ---" in content
+    assert "exit_code: 0" in content

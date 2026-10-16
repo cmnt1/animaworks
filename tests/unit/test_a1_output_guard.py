@@ -42,6 +42,31 @@ class TestGuardBash:
         assert "_OUTF=" in result["command"]
         assert "exit $_EC" in result["command"]
 
+    def test_command_does_not_wait_on_inherited_stdin(self, tmp_path: Path) -> None:
+        """A stdin reader ends at EOF even when the parent's stdin never closes."""
+        import subprocess
+
+        result = _guard_bash({"command": "cat; echo after"}, tmp_path)
+        proc = subprocess.Popen(
+            ["/bin/bash", "-c", result["command"]],
+            stdin=subprocess.PIPE,  # kept open, like the SDK's socket
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            out = proc.stdout.read()
+        finally:
+            proc.stdin.close()
+            proc.wait(timeout=10)
+        assert "after" in out
+
+    def test_heredoc_still_feeds_stdin(self, tmp_path: Path) -> None:
+        import subprocess
+
+        result = _guard_bash({"command": "cat <<'EOF'\nfrom-heredoc\nEOF"}, tmp_path)
+        out = subprocess.run(["/bin/bash", "-c", result["command"]], capture_output=True, text=True, timeout=10)
+        assert "from-heredoc" in out.stdout
+
     def test_preserves_other_keys(self, tmp_path: Path) -> None:
         """Other tool_input keys are preserved."""
         result = _guard_bash(
@@ -84,7 +109,7 @@ class TestGuardBash:
         )
         assert "echo a && echo b" in result["command"]
         # Wrapped in { ... ; }
-        assert "{ echo a && echo b ; }" in result["command"]
+        assert "{ echo a && echo b\n}" in result["command"]
 
     def test_pipe_command(self, tmp_path: Path) -> None:
         """Piped commands are wrapped correctly."""
