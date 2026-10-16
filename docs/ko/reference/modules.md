@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=12bce7c5dbdb67f447bb4ce71d7d61518c38e0878b155c98f4f3b102a2b7d460 generated=2026-10-15 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d154791c953a294e2b3d6f80888750d690871f1eb1215b5cd0ab8ebc8c789f55 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -212,31 +212,31 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.enclave`
 
-격리된 enclave 모드의 설정 모델과 시작 시 보안 가드.
+격리된 enclave 모드의 설정 모델 및 시작 시 보안 가드.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
-| `core.enclave.config` | 162 | enclave 모드용 설정 모델. |
-| `core.enclave.egress.audit` | 62 | 이그레스 파이프라인용 감사 로깅. |
-| `core.enclave.egress.config` | 115 | 이그레스 파이프라인용 설정 모델. |
-| `core.enclave.egress.fs` | 38 | enclave file/directory 권한을 강제하는 소형 파일시스템 헬퍼. |
-| `core.enclave.egress.masker.dispatch` | 40 | 내장 마스커용 프로필 디스패치. |
+| `core.enclave.config` | 162 | Enclave 모드의 설정 모델. |
+| `core.enclave.egress.audit` | 62 | 송신 파이프라인의 감사 로그 기록. |
+| `core.enclave.egress.config` | 113 | 송신 파이프라인의 설정 모델. |
+| `core.enclave.egress.fs` | 38 | Enclave file/directory 권한을 적용하는 간단한 파일 시스템 도우미. |
+| `core.enclave.egress.masker.dispatch` | 40 | 내장 마스커의 프로필 디스패치. |
 | `core.enclave.egress.masker.facts` | 162 | 레코드 사실의 규칙 기반 마스킹. |
 | `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
 | `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
-| `core.enclave.egress.models` | 57 | 이그레스 파이프라인용 데이터 구조. |
-| `core.enclave.egress.pipeline` | 102 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 시 폐쇄. |
-| `core.enclave.egress.stages` | 236 | 이그레스 파이프라인용 단계 구현. |
-| `core.enclave.gateway` | 575 | 게이트웨이: enclave 인스턴스의 수신 지점. |
-| `core.enclave.gateway_server` | 187 | enclave 게이트웨이의 수명 주기 및 Unix 소켓 연결. |
-| `core.enclave.guards` | 237 | enclave 모드용 시작 가드. |
-| `core.enclave.jobs` | 252 | enclave 게이트웨이용 지속 쿼리 작업. |
-| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 헬퍼. |
-| `core.enclave.ops` | 78 | enclave 상태 점검 및 감사 요약용 운영 헬퍼. |
-| `core.enclave.raw_store` | 150 | enclave 도구가 읽는 수정되지 않은 결과의 개인 저장소. |
-| `core.enclave.secrets` | 128 | enclave 자격 증명 저장소에서 비밀 읽기. |
-| `core.enclave.ssm_tunnel` | 306 | enclave SQL 소스용 SSM Session Manager 포트 포워드 터널. |
+| `core.enclave.egress.models` | 57 | 송신 파이프라인의 데이터 구조. |
+| `core.enclave.egress.pipeline` | 96 | 송신 파이프라인: 설정된 단계를 적용하고 오류 발생 시 폐쇄 상태를 유지. |
+| `core.enclave.egress.stages` | 236 | 송신 파이프라인의 단계 구현. |
+| `core.enclave.gateway` | 492 | 게이트웨이: enclave 인스턴스의 진입점. |
+| `core.enclave.gateway_server` | 187 | Enclave 게이트웨이의 수명 주기 및 Unix 소켓 연결. |
+| `core.enclave.guards` | 237 | Enclave 모드의 시작 가드. |
+| `core.enclave.jobs` | 252 | Enclave 게이트웨이의 영구 쿼리 작업. |
+| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드를 복호화하는 도우미. |
+| `core.enclave.ops` | 78 | Enclave 상태 점검 및 감사 요약을 위한 운영 도우미. |
+| `core.enclave.raw_store` | 150 | Enclave 도구가 읽는 수정되지 않은 결과를 위한 비공개 저장소. |
+| `core.enclave.secrets` | 128 | Enclave 자격 증명 저장소에서 비밀 정보를 읽음. |
+| `core.enclave.ssm_tunnel` | 306 | Enclave SQL 소스용 SSM Session Manager 포트 포워딩 터널. |
 
 ## `core.enclave.egress`
 
@@ -369,28 +369,28 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 번역 카탈로그 및 언어 선택.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원. |
 | `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화된 문자열. |
-| `core.i18n.strings.config` | 806 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.company` | 14 | 회사 관리를 위한 지역화 문자열. |
+| `core.i18n.strings.config` | 804 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.handler` | 382 | 도메인별 i18n 문자열(핸들러 파트 1). |
-| `core.i18n.strings.handler_ext` | 368 | 도메인별 i18n 문자열(핸들러 파트 2). |
+| `core.i18n.strings.handler` | 382 | 도메인별 i18n 문자열(handler 파트 1). |
+| `core.i18n.strings.handler_ext` | 368 | 도메인별 i18n 문자열(handler 파트 2). |
 | `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.migrate` | 99 | — |
 | `core.i18n.strings.misc` | 467 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 경로 모듈). |
-| `core.i18n.strings.models` | 70 | 모델 검사를 위한 현지화된 CLI 메시지. |
+| `core.i18n.strings.models` | 70 | 모델 검사를 위한 지역화된 CLI 메시지. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | 회의실 관리자를 위한 i18n 문자열. |
 | `core.i18n.strings.server` | 241 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.supervisor` | 91 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능). |
+| `core.i18n.strings.tooling` | 125 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 관련 기능). |
 | `core.i18n.strings.tooling_schema` | 488 | 도메인별 i18n 문자열(schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 130 | 도메인별 i18n 문자열(schema.* 파트 2). |
 | `core.i18n.strings.zoom` | 26 | — |
