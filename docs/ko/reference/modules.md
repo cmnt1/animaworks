@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=3a194c0800159a0da25e434116361699f9cdd7e1dab52bc5a14fb35d7f621c09 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=ac243f52a1211838f49017296237c3afc3e8b0170146a8e8f0411fc6a3aa969b generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -1024,13 +1024,13 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 ## `core.usage`
 
-LLM 사용량과 비용의 기록·집계.
+LLM 사용량 및 비용 기록·집계.
 
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
+| `core.usage` | 1 | 토큰 사용량 계산 및 Anima별 토큰 예산. |
 | `core.usage.token_budget` | 73 | — |
-| `core.usage.token_usage` | 587 | — |
+| `core.usage.token_usage` | 605 | — |
 
 ## `core.voice`
 
