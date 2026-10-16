@@ -79,6 +79,8 @@ id -u "$HOST_USER"
 
 `allowed_llm_credentials` には、隔離側の各 anima が実際に使う認証情報名だけを列挙する。`external_tasks.enabled` は初期値が `true` なので、隔離側では `false` にする。新しく作った anima の `permissions.json` は `file_roots` が `["/"]` になっているため、anima 自身のディレクトリなど必要な範囲に書き換える（そのままだと起動時ガードが起動を拒否する）。隔離モードでは Slack・Discord・Zoom・GitHub Webhook のゲートウェイを起動しない。ほかの起動時ガードも満たす必要があるため、イベントエクスポートや外部メッセージ連携を有効にせず、各 anima の `permissions.json` でファイルアクセスを必要な範囲に制限する。entry anima の外部ツールを制限する場合は `enclave_records` を許可する。
 
+異なる thread の ask を gateway の `max_concurrency` まで並列実行するには、entry anima の `status.json` に `chat_max_concurrency`（1〜10）を設定し、gateway の `max_concurrency` 以上にする。SQL ソースの SSM トンネルを固定ポート（`tunnel.local_port`）で使う場合は、`tunnel.local_port_count` を同時実行数にそろえる。各プロセスは `local_port` から始まる連続ポートのうち空いているものを1つ予約して使う。egress firewall の `--loopback-ports` にはその範囲を `33061-33070` のように渡す。
+
 masker の `profile` は `default` と `personal_dates` から選ぶ。`default` は日付をすべて `[MASK-DATE]` にする。`personal_dates` は、生年月日などの見出しが付いた日付・「生まれ」が続く日付・和暦の日付・2015年より前の日付だけを伏字にし、障害の発生日時のような日付は残す。不具合の調査結果を返す用途では `personal_dates` を使う。
 
 認証には `auth.json` の password モードを使い、localhost を信頼しない設定にする。パスワードの平文は保存せず、`password_hash` にはアプリが生成した Argon2id ハッシュを設定する。

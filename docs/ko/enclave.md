@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=1f523aa42f5636da66534cdfb08863e012b06b6081397a8429265faac4b24276 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=e6ba47c1f3fa66648ee8af16b56530f654445787e285dabc7e9d5c6d6baa3355 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
 
 > 확인한 커밋: f448d7b0
 
@@ -80,11 +80,13 @@ id -u "$HOST_USER"
 }
 ```
 
-`allowed_llm_credentials`에는 격리 측의 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. `external_tasks.enabled`은 초기값이 `true`이므로, 격리 측에서는 `false`으로 설정한다. 새로 만든 anima의 `permissions.json`은 `file_roots`가 `["/"]`으로 설정되어 있으므로, anima 자체의 디렉터리 등 필요한 범위로 수정한다(그대로 두면 시작 시 가드가 시작을 거부한다). 격리 모드에서는 Slack·Discord·Zoom·GitHub Webhook 게이트웨이를 시작하지 않는다. 다른 시작 시 가드도 충족해야 하므로, 이벤트 내보내기나 외부 메시지 연동을 활성화하지 않고 각 anima의 `permissions.json`에서 파일 접근을 필요한 범위로 제한한다. entry anima의 외부 도구를 제한하는 경우에는 `enclave_records`를 허용한다.
+`allowed_llm_credentials`에는 격리 측의 각 anima가 실제로 사용하는 인증 정보 이름만 나열한다. `external_tasks.enabled`은 초기값이 `true`이므로, 격리 측에서는 `false`으로 설정한다. 새로 만든 anima의 `permissions.json`은 `file_roots`가 `["/"]`으로 되어 있으므로, anima 자체의 디렉터리 등 필요한 범위로 수정한다(그대로 두면 시작 시 가드가 시작을 거부한다). 격리 모드에서는 Slack·Discord·Zoom·GitHub Webhook 게이트웨이를 시작하지 않는다. 다른 시작 시 가드도 충족해야 하므로 이벤트 내보내기나 외부 메시지 연동을 활성화하지 말고, 각 anima의 `permissions.json`에서 파일 접근을 필요한 범위로 제한한다. entry anima의 외부 도구를 제한할 경우 `enclave_records`를 허용한다.
 
-masker의 `profile`은 `default`과 `personal_dates` 중에서 선택한다. `default`는 날짜를 모두 `[MASK-DATE]`으로 만든다. `personal_dates`은 생년월일 등의 제목이 붙은 날짜, ‘년생’이 뒤따르는 날짜, 일본 연호 날짜, 2015년 이전 날짜만 마스킹하고, 장애 발생 일시와 같은 날짜는 남긴다. 버그 조사 결과를 반환하는 용도에는 `personal_dates`를 사용한다.
+서로 다른 thread의 ask를 gateway의 `max_concurrency`까지 병렬 실행하려면, entry anima의 `status.json`에 `chat_max_concurrency`(1~10)을 설정하고 gateway의 `max_concurrency` 이상으로 설정한다. SQL 소스의 SSM 터널을 고정 포트(`tunnel.local_port`)로 사용하는 경우에는 `tunnel.local_port_count`을 동시 실행 수에 맞춘다. 각 프로세스는 `local_port`에서 시작하는 연속 포트 중 비어 있는 포트 하나를 예약해 사용한다. egress firewall의 `--loopback-ports`에는 해당 범위를 `33061-33070`와 같이 전달한다.
 
-인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호 평문은 저장하지 않고, `password_hash`에는 앱이 생성한 Argon2id 해시를 설정한다.
+masker의 `profile`는 `default`과 `personal_dates` 중에서 선택한다. `default`은 모든 날짜를 `[MASK-DATE]`로 바꾼다. `personal_dates`은 생년월일과 같은 제목이 붙은 날짜, ‘출생’이 뒤따르는 날짜, 일본 연호 날짜, 2015년 이전 날짜만 가리고, 장애 발생 시각과 같은 날짜는 남긴다. 버그 조사 결과를 반환하는 용도라면 `personal_dates`을 사용한다.
+
+인증에는 `auth.json`의 password 모드를 사용하고, localhost를 신뢰하지 않도록 설정한다. 비밀번호의 평문은 저장하지 말고, `password_hash`에는 애플리케이션이 생성한 Argon2id 해시를 설정한다.
 
 ```json
 {
@@ -102,7 +104,7 @@ masker의 `profile`은 `default`과 `personal_dates` 중에서 선택한다. `de
 }
 ```
 
-`password_hash`의 값은 형식을 나타내는 플레이스홀더이므로 그대로 사용하지 않는다. 인증 사용자를 Web UI의 사용자 설정에서 생성한 경우에는 생성된 해시를 유지한다.
+`password_hash`의 값은 형식을 나타내는 플레이스홀더이므로 그대로 사용하지 않는다. 인증 사용자를 Web UI의 사용자 설정에서 만들었다면 생성된 해시를 유지한다.
 
 ## systemd로 시작하기
 

@@ -658,6 +658,7 @@ class ServerConfig(BaseModel):
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
     runner_liveness_timeout: int = Field(default=900, ge=1)
+    chat_max_concurrency: int = Field(default=1, ge=1, le=10)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
@@ -782,6 +783,53 @@ def resolve_background_worker_pool_size(
 
     logger.warning(
         "Ignoring invalid background_worker_pool_size=%r for anima %s; using %d",
+        override,
+        anima_dir.name,
+        default,
+    )
+    return default
+
+
+def resolve_chat_max_concurrency(
+    anima_dir: Path,
+    default: int | None = None,
+) -> int:
+    """Resolve the isolated chat limit, including a per-Anima status override.
+
+    ``status.json`` may set ``chat_max_concurrency`` to allow concurrent chat
+    jobs for different threads. Invalid or unreadable overrides are ignored.
+    """
+    if default is None:
+        try:
+            from core.config.io import load_config
+
+            default = load_config().server.chat_max_concurrency
+        except Exception:
+            logger.debug(
+                "Failed to load chat max concurrency default for %s",
+                anima_dir.name,
+                exc_info=True,
+            )
+            default = 1
+
+    if isinstance(default, bool) or not isinstance(default, int) or not 1 <= default <= 10:
+        default = 1
+
+    status_path = anima_dir / "status.json"
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+    if not isinstance(status, dict) or "chat_max_concurrency" not in status:
+        return default
+
+    override = status["chat_max_concurrency"]
+    if isinstance(override, int) and not isinstance(override, bool) and 1 <= override <= 10:
+        return override
+
+    logger.warning(
+        "Ignoring invalid chat_max_concurrency=%r for anima %s; using %d",
         override,
         anima_dir.name,
         default,

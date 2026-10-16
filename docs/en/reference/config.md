@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=b49d9d6a9cc5f74eda3a1a26826445b9098048ac8043ffe15264d1f4300315ac generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=7ea90c4961726fdedaa89b0e51f316c77ea7220ea7afef04cca9d5bf42d287a3 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
 
 # Configuration Reference
 
@@ -441,13 +441,14 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `server`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
-| `server` | `ServerConfig` | `{ServerConfig}` | HTTP server, authentication, and usage control configuration. |
+| `server` | `ServerConfig` | `{ServerConfig}` | Configuration for the HTTP server, authentication, and usage limits. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
+| `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
@@ -800,24 +801,24 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `enclave`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks the security guard during startup. |
-| `enclave.enabled` | `bool` | `false` | Start this runtime as an isolated enclave. |
-| `enclave.name` | `str` | `""` | Identifier returned by the enclave gateway. |
-| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket that the gateway listens on. |
-| `enclave.socket_group` | `str` | `""` | OS group to assign to the gateway socket. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, security guards are checked at startup. |
+| `enclave.enabled` | `bool` | `false` | Start this runtime environment as an isolated enclave. |
+| `enclave.name` | `str` | `""` | Name returned by the enclave gateway. |
+| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket the gateway listens on. |
+| `enclave.socket_group` | `str` | `""` | OS group to set on the gateway socket. |
 | `enclave.entry_anima` | `str` | `""` | Entry anima that handles questions inside the enclave. |
 | `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UID allowed to connect to the gateway. |
-| `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway processes concurrently. |
-| `enclave.request_timeout_s` | `int` | `0` | Timeout in seconds for question processing and gateway responses. |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of authentication credentials available to animas inside the enclave. |
+| `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway handles concurrently. |
+| `enclave.request_timeout_s` | `int` | `0` | Timeout in seconds for question handling and gateway responses. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of credentials available to the anima inside the enclave. |
 | `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
 | `enclave.default_model_profile` | `str` | `""` | — |
-| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that animas inside the enclave can access. |
-| `enclave.datasets.path` | `str` | `"—"` | Relative path to a JSONL file within the data directory. |
-| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to uniquely retrieve records. |
-| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields for which partial-match search is allowed. |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that the anima inside the enclave can access. |
+| `enclave.datasets.path` | `str` | `"—"` | Relative path to the JSONL file within the data directory. |
+| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve a record uniquely. |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields that allow partial-match search. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
 | `enclave.sql_sources.host` | `str` | `"—"` | Tunnel target (or direct) host |
@@ -837,6 +838,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
 | `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
+| `enclave.sql_sources.tunnel.local_port_count` | `int` | `1` | Number of consecutive loopback ports starting at local_port; concurrent processes each reserve a different one |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |

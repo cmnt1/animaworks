@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=7202f64b6108561f8cadebbd4c96442558c8ae0d3fdc5ea49ac26344050d5d4c generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=3a194c0800159a0da25e434116361699f9cdd7e1dab52bc5a14fb35d7f621c09 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -149,7 +149,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 693 | — |
+| `core.anima.digital_anima` | 694 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -187,7 +187,7 @@ Shared send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Application configuration schema, loading, validation, and migration.
+Schema, loading, validation, and migration of application configuration.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -204,20 +204,20 @@ Application configuration schema, loading, validation, and migration.
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 99 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1474 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1522 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
-Configuration model and startup security guards for isolated enclave mode.
+Configuration models and startup security guards for isolated enclave mode.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 174 | Configuration models for enclave mode. |
+| `core.enclave.config` | 183 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -236,7 +236,7 @@ Configuration model and startup security guards for isolated enclave mode.
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
 | `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
-| `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
+| `core.enclave.ssm_tunnel` | 371 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -831,11 +831,11 @@ Anima main runtime components, inter-process communication, and task execution.
 | `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
 | `core.runtime.runner` | 1389 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 827 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.scheduler_manager` | 828 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1042 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1386 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner_supervisor` | 1445 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
