@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=12bce7c5dbdb67f447bb4ce71d7d61518c38e0878b155c98f4f3b102a2b7d460 generated=2026-10-15 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d154791c953a294e2b3d6f80888750d690871f1eb1215b5cd0ab8ebc8c789f55 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -214,21 +214,21 @@ Application configuration schemas, loading, validation, and migration.
 
 Configuration model and startup security guards for isolated enclave mode.
 
-| Module | Lines | First docstring line |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
 | `core.enclave.config` | 162 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
-| `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
 | `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
 | `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
-| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.pipeline` | 96 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 575 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway` | 492 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 237 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
@@ -369,12 +369,12 @@ Tool execution, command execution, and safety controls.
 
 Translation catalog and language selection.
 
-| Module | Lines | First line of docstring |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 806 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 804 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |

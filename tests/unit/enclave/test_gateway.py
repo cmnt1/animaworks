@@ -149,7 +149,7 @@ async def _wait_done(
     raise AssertionError(f"job {job_id} did not finish in time")
 
 
-_GOOD_ANSWER = '{"facts": [{"fact": "ping is fine", "evidence": ["record:42"]}]}'
+_GOOD_ANSWER = "ping is fine (record:42)"
 
 
 async def test_health(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ async def test_ask_success(tmp_path: Path) -> None:
         gate.set()
         done = await _wait_done(client, job_id)
     assert done["status"] == "done"
-    assert done["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
+    assert done["facts"] == [{"fact": _GOOD_ANSWER, "evidence": []}]
     assert done.get("audit_id")
     # The instruction + progress note + question were forwarded.
     sent = _sup.sent[0]
@@ -183,34 +183,31 @@ async def test_ask_success(tmp_path: Path) -> None:
     assert sent["params"]["from_person"] == "enclave:host"
     assert sent["params"]["thread_id"] == "enclave-case-1"
     assert sent["params"]["intent"] == "question"
-    assert "facts" in sent["params"]["message"]
+    assert "record:" in sent["params"]["message"]
     assert job_id in sent["params"]["message"]
 
 
-async def test_ask_unparseable_answer(tmp_path: Path) -> None:
+async def test_ask_plain_text_answer_is_delivered(tmp_path: Path) -> None:
     sup = FakeSupervisor("the answer is yes, but not valid json")
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
         job_id = resp.json()["job_id"]
         done = await _wait_done(client, job_id)
     assert resp.status_code == 202
-    assert done["status"] == "failed"
-    assert done["error"] == "answer_unparseable"
-    assert done.get("audit_id")
-    # No answer body leaked into the response.
-    assert "answer" not in done
-    assert "yes" not in str(done)
+    assert done["status"] == "done"
+    assert done["facts"] == [{"fact": "the answer is yes, but not valid json", "evidence": []}]
 
 
-async def test_ask_bad_fact_structure(tmp_path: Path) -> None:
-    sup = FakeSupervisor('{"facts": "not-a-list"}')
+async def test_ask_empty_answer(tmp_path: Path) -> None:
+    sup = FakeSupervisor("   ")
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
         job_id = resp.json()["job_id"]
         done = await _wait_done(client, job_id)
     assert resp.status_code == 202
     assert done["status"] == "failed"
-    assert done["error"] == "answer_unparseable"
+    assert done["error"] == "answer_empty"
+    assert done.get("audit_id")
 
 
 async def test_ask_egress_blocked(tmp_path: Path) -> None:

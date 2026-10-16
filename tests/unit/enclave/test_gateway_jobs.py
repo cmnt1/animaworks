@@ -104,7 +104,7 @@ def _payload(question: str = "is it ok?", case_id: str = "case-1", from_anima: s
     return {"request_id": "req-1", "from_anima": from_anima, "case_id": case_id, "question": question}
 
 
-_GOOD_ANSWER = '{"facts": [{"fact": "ping is fine", "evidence": ["record:42"]}]}'
+_GOOD_ANSWER = "ping is fine (record:42)"
 _THREAD_RE = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 
 
@@ -141,7 +141,7 @@ async def test_post_is_immediate_and_get_reports_done(tmp_path: Path) -> None:
         gate.set()
         done = await _wait_done(client, job_id)
     assert done["status"] == "done"
-    assert done["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
+    assert done["facts"] == [{"fact": _GOOD_ANSWER, "evidence": []}]
 
 
 async def test_long_job_is_not_cut_off_with_default_timeout(tmp_path: Path) -> None:
@@ -164,7 +164,7 @@ async def test_long_job_is_not_cut_off_with_default_timeout(tmp_path: Path) -> N
         gate.set()
         done = await _wait_done(client, job_id)
     assert done["status"] == "done"
-    assert done["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
+    assert done["facts"] == [{"fact": _GOOD_ANSWER, "evidence": []}]
 
 
 async def test_duplicate_post_reuses_job_and_calls_send_request_once(tmp_path: Path) -> None:
