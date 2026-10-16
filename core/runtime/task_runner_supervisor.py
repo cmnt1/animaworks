@@ -13,6 +13,7 @@ import signal
 import sys
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -125,6 +126,7 @@ class TaskRunnerSupervisor:
         shared_dir: Path,
         *,
         max_concurrent: int | None = None,
+        chat_max_concurrency: int = 1,
         runner_liveness_timeout_sec: float = 900.0,
         busy_status_owner: Any | None = None,
         memory_service: MemoryService | None = None,
@@ -154,7 +156,51 @@ class TaskRunnerSupervisor:
         pool = max_concurrent if isinstance(max_concurrent, int) and max_concurrent >= 1 else None
         self._max_concurrent = pool
         self._spawn_semaphore = asyncio.Semaphore(pool) if pool is not None else None
-        self._chat_lock = asyncio.Lock()
+        chat_pool = (
+            chat_max_concurrency
+            if isinstance(chat_max_concurrency, int)
+            and not isinstance(chat_max_concurrency, bool)
+            and 1 <= chat_max_concurrency <= 10
+            else 1
+        )
+        self._chat_semaphore = asyncio.Semaphore(chat_pool)
+        self._chat_thread_locks: dict[str, asyncio.Lock] = {}
+        self._chat_thread_lock_users: dict[str, int] = {}
+
+    @property
+    def _chat_lock(self) -> asyncio.Lock:
+        """Compatibility accessor for the default-thread lock used by older tests."""
+        return self._chat_thread_locks.get("default", asyncio.Lock())
+
+    @asynccontextmanager
+    async def _chat_slot(self, thread_id: str) -> AsyncIterator[None]:
+        """Serialize one thread, then acquire a process-wide chat slot."""
+        key = thread_id or "default"
+        lock = self._chat_thread_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._chat_thread_locks[key] = lock
+            self._chat_thread_lock_users[key] = 0
+        self._chat_thread_lock_users[key] += 1
+        acquired = False
+        try:
+            await lock.acquire()
+            acquired = True
+            await self._chat_semaphore.acquire()
+            try:
+                yield
+            finally:
+                self._chat_semaphore.release()
+        finally:
+            if acquired:
+                lock.release()
+            users = self._chat_thread_lock_users[key] - 1
+            if users == 0:
+                self._chat_thread_lock_users.pop(key, None)
+                if self._chat_thread_locks.get(key) is lock:
+                    self._chat_thread_locks.pop(key, None)
+            else:
+                self._chat_thread_lock_users[key] = users
 
     def _queue_live_facts(self, trigger: str, started_at: str) -> None:
         """Schedule live fact extraction in this long-lived process.
@@ -366,7 +412,8 @@ class TaskRunnerSupervisor:
             if found:
                 await self._interrupt_active_chat(str(payload.get("thread_id") or "default"))
 
-        async with self._chat_lock:
+        thread_id = str(payload.get("thread_id") or "default")
+        async with self._chat_slot(thread_id):
             started_at = _now_iso()
             result = await self._run_isolated_job(
                 lane="chat",
@@ -398,7 +445,7 @@ class TaskRunnerSupervisor:
         if found:
             await self._interrupt_active_chat(thread_id)
 
-        async with self._chat_lock:
+        async with self._chat_slot(thread_id):
             queue = asyncio.Queue()
 
             async def _produce() -> dict[str, Any]:
@@ -440,7 +487,13 @@ class TaskRunnerSupervisor:
         """Attempt one inject_message event; report whether an active chat existed."""
         thread_id = str(payload.get("thread_id") or "default")
         active = next(
-            (job for job in self._jobs.values() if job.identity.lane == "chat" and not job.result.done()),
+            (
+                job
+                for job in self._jobs.values()
+                if job.identity.lane == "chat"
+                and not job.result.done()
+                and str((job.params.get("payload") or {}).get("thread_id") or "default") == thread_id
+            ),
             None,
         )
         if active is None:
@@ -489,14 +542,16 @@ class TaskRunnerSupervisor:
 
     async def _interrupt_active_chat(self, thread_id: str) -> None:
         """Match legacy auto-interrupt-before-lock behavior for a queued turn."""
-        for job in self._jobs.values():
-            if job.identity.lane != "chat":
+        for job in list(self._jobs.values()):
+            if job.identity.lane != "chat" or job.result.done():
+                continue
+            active_payload = job.params.get("payload") or {}
+            if str(active_payload.get("thread_id") or "default") != (thread_id or "default"):
                 continue
             if job.connection is None:
                 job.interrupt_thread_id = thread_id
             else:
                 await job.connection.send_event("interrupt", {"thread_id": thread_id})
-            return
 
     async def cancel_consolidation(self) -> dict[str, Any]:
         """Best-effort cancel any running consolidation (background) job.
@@ -527,9 +582,13 @@ class TaskRunnerSupervisor:
     async def interrupt_chat(self, thread_id: str | None = None) -> dict[str, Any]:
         """Forward an explicit Anima-main interrupt to active chat children."""
         interrupted = False
-        for job in self._jobs.values():
-            if job.identity.lane != "chat":
+        for job in list(self._jobs.values()):
+            if job.identity.lane != "chat" or job.result.done():
                 continue
+            if thread_id:
+                active_payload = job.params.get("payload") or {}
+                if str(active_payload.get("thread_id") or "default") != thread_id:
+                    continue
             interrupted = True
             if job.connection is None:
                 job.interrupt_thread_id = thread_id or "default"

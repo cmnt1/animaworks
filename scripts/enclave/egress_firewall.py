@@ -23,7 +23,7 @@ else from that uid is rejected, including the host's other local
 services (e.g. the main AnimaWorks API) and the LAN.  Run as root::
 
     python3 egress_firewall.py --user aw-enclave --region ap-northeast-1 \
-        --loopback-ports 18610,33061 --apply
+        --loopback-ports 18610,33061-33070 --apply
 
 Without ``--apply`` the ruleset is printed.  ``--remove`` deletes the table.
 Re-run periodically (e.g. weekly) to refresh the AWS ranges.
@@ -55,6 +55,21 @@ def _aws_ranges(region: str) -> tuple[list[str], list[str]]:
     v4 = _collect(data["prefixes"], "ip_prefix")
     v6 = _collect(data["ipv6_prefixes"], "ipv6_prefix")
     return v4, v6
+
+
+def _parse_ports(value: str) -> list[int]:
+    """Parse ``18610,33061-33070`` into a list of ports."""
+    ports: list[int] = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        low, sep, high = item.partition("-")
+        if sep:
+            ports.extend(range(int(low), int(high) + 1))
+        else:
+            ports.append(int(item))
+    return ports
 
 
 def build_ruleset(
@@ -140,7 +155,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--user", required=True)
     parser.add_argument("--region", required=True)
-    parser.add_argument("--loopback-ports", default="", help="comma-separated loopback TCP ports to allow")
+    parser.add_argument(
+        "--loopback-ports", default="", help="comma-separated loopback TCP ports or LOW-HIGH ranges to allow"
+    )
     parser.add_argument(
         "--allow-endpoints",
         default="",
@@ -160,7 +177,7 @@ def main() -> int:
         return 0
 
     uid = pwd.getpwnam(args.user).pw_uid
-    ports = [int(p) for p in args.loopback_ports.split(",") if p.strip()]
+    ports = _parse_ports(args.loopback_ports)
     endpoints = _parse_endpoints(args.allow_endpoints) + _resolve_hosts(args.allow_hosts)
     ruleset = build_ruleset(uid, args.region, ports, endpoints)
     if not args.apply:

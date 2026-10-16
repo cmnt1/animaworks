@@ -52,6 +52,15 @@ class EnclaveSsmTunnelConfig(BaseModel):
         le=65535,
         description="Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset",
     )
+    local_port_count: int = Field(
+        default=1,
+        ge=1,
+        le=64,
+        description=(
+            "Number of consecutive loopback ports starting at local_port; concurrent processes each "
+            "reserve a different one"
+        ),
+    )
 
     @model_validator(mode="after")
     def _require_target(self) -> EnclaveSsmTunnelConfig:

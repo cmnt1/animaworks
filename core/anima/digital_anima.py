@@ -137,9 +137,10 @@ class DigitalAnima(
             "background": self._create_lane_agent("background"),
             "inbox": self._create_lane_agent("inbox"),
         }
-        from core.config.models import resolve_background_worker_pool_size
+        from core.config.models import resolve_background_worker_pool_size, resolve_chat_max_concurrency
 
         self._background_worker_pool_size = resolve_background_worker_pool_size(self.anima_dir)
+        self._chat_max_concurrency = resolve_chat_max_concurrency(self.anima_dir)
         self._background_worker_slots: list[BackgroundWorkerSlot] = []
         self._background_worker_queue: asyncio.Queue[BackgroundWorkerSlot] = asyncio.Queue()
         self._active_background_workers: dict[int, str] = {}
