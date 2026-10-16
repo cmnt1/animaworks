@@ -155,6 +155,9 @@ def _response_json(response: httpx.Response) -> dict[str, Any] | None:
 
 def _response_error(response: httpx.Response) -> str:
     data = _response_json(response)
+    if data is not None and data.get("error") == "unknown_model_profile":
+        available = ", ".join(str(name) for name in data.get("available") or []) or "-"
+        return t("enclave.tool.unknown_model_profile", available=available)
     audit_id = str(data.get("audit_id") or "") if data is not None else ""
     message = t("enclave.tool.failed", code=response.status_code)
     if audit_id:
@@ -192,6 +195,8 @@ def _format_job_status(data: dict[str, Any]) -> str:
         t("enclave.tool.queued_ahead", queued_ahead=data.get("queued_ahead", 0)),
         t("enclave.tool.last_activity", last_activity_at=str(data.get("last_activity_at") or "-")),
     ]
+    if data.get("model_profile"):
+        lines.append(t("enclave.tool.model_profile", model_profile=str(data["model_profile"])))
 
     progress = data.get("progress")
     if isinstance(progress, list):
@@ -282,6 +287,7 @@ def _ask(
     anima_name: str,
     enclave: str,
     wait_s: Any = 0,
+    model_profile: str = "",
 ) -> str:
     """POST a question and optionally poll its job for a bounded period."""
     payload = {
@@ -290,6 +296,8 @@ def _ask(
         "case_id": case_id,
         "question": question,
     }
+    if model_profile:
+        payload["model_profile"] = model_profile
     try:
         wait_seconds = max(0.0, float(wait_s or 0))
     except (TypeError, ValueError):
@@ -353,6 +361,7 @@ def _dispatch_enclave_ask(args: dict[str, Any]) -> str:
         anima_name,
         enclave,
         args.get("wait_s", 0),
+        str(args.get("model") or ""),
     )
 
 
@@ -426,6 +435,7 @@ def get_tool_schemas() -> list[dict[str, Any]]:
                     "enclave": {"type": "string", "description": t("enclave.tool.schema_enclave")},
                     "question": {"type": "string", "description": t("enclave.tool.schema_question")},
                     "case_id": {"type": "string", "description": t("enclave.tool.schema_case_id")},
+                    "model": {"type": "string", "description": t("enclave.tool.schema_model")},
                     "wait_s": {
                         "type": "integer",
                         "minimum": 0,
@@ -470,7 +480,7 @@ def get_cli_guide() -> str:
 機密の質問を隔離された enclave に送り、job_id を受け取ります。状態・途中経過を確認でき、完了結果は inbox に届きます。
 
 ```bash
-animaworks-tool enclave ask --enclave <名前> --question "<質問>" [--case-id <ID>] [--wait <秒>]
+animaworks-tool enclave ask --enclave <名前> --question "<質問>" [--case-id <ID>] [--model <モデル名>] [--wait <秒>]
 animaworks-tool enclave status --enclave <名前> --job-id <job_id>
 animaworks-tool enclave cancel --enclave <名前> --job-id <job_id>
 ```
@@ -488,7 +498,7 @@ def cli_main(argv: list[str] | None = None) -> None:
 
     Sub-commands::
 
-        ask --enclave NAME --question TEXT [--case-id ID] [--wait SECONDS]
+        ask --enclave NAME --question TEXT [--case-id ID] [--model PROFILE] [--wait SECONDS]
         status --enclave NAME --job-id ID
         cancel --enclave NAME --job-id ID
     """
@@ -499,6 +509,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_ask.add_argument("--enclave", required=True, help="Enclave config name")
     p_ask.add_argument("--question", required=True, help="Question to ask")
     p_ask.add_argument("--case-id", default="", help="Optional stable case id")
+    p_ask.add_argument("--model", default="", help="Model profile defined by the enclave (e.g. luna-max, opus-high)")
     p_ask.add_argument("--wait", dest="wait_s", type=int, default=0, help="Wait up to this many seconds for completion")
     p_ask.add_argument("-j", "--json", action="store_true", help="Output raw JSON (unused placeholder)")
 
@@ -520,6 +531,7 @@ def cli_main(argv: list[str] | None = None) -> None:
             {
                 "question": ns.question,
                 "case_id": ns.case_id,
+                "model": ns.model,
                 "wait_s": ns.wait_s,
             }
         )

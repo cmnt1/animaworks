@@ -407,3 +407,12 @@ def test_start_foreground_exits_without_uvicorn(data_dir: Path, monkeypatch: pyt
     assert called["uvicorn"] is False
     # Refused before any side effects (PID file, watchdog).
     assert not (data_dir / "server.pid").exists()
+
+
+def test_guard5_model_profile_credential_must_be_allowed(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    profiles = {"luna-max": "a:azure/responses/gpt-6-luna", "opus-high": ""}
+    config = _make_config(enclave=_enclave(model_profiles=profiles))
+    assert _has(_violations(config, data_dir), "azure")
+    config = _make_config(enclave=_enclave(allowed_llm_credentials=["anthropic", "azure"], model_profiles=profiles))
+    assert not _has(_violations(config, data_dir), "azure")

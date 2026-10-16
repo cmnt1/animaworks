@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=e86300b25bfc210b2aa89a78a6bceb84e2e2fca862aa3a0b917b0dbc8af4c142 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=b49d9d6a9cc5f74eda3a1a26826445b9098048ac8043ffe15264d1f4300315ac generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -802,19 +802,21 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 엔클레이브 모드의 서버 설정입니다. 활성화하면 시작 시 보안 가드를 검사합니다. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 엔클레이브 모드의 서버 설정입니다. 활성화하면 시작 시 보안 가드를 확인합니다. |
 | `enclave.enabled` | `bool` | `false` | 이 실행 환경을 격리된 엔클레이브로 시작합니다. |
 | `enclave.name` | `str` | `""` | 엔클레이브 게이트웨이가 반환하는 식별 이름입니다. |
-| `enclave.socket_path` | `str` | `""` | 게이트웨이가 수신 대기하는 Unix 도메인 소켓 경로입니다. |
+| `enclave.socket_path` | `str` | `""` | 게이트웨이가 수신 대기하는 유닉스 도메인 소켓 경로입니다. |
 | `enclave.socket_group` | `str` | `""` | 게이트웨이 소켓에 설정할 OS 그룹입니다. |
-| `enclave.entry_anima` | `str` | `""` | 엔클레이브 내에서 질문을 처리하는 entry anima입니다. |
-| `enclave.allowed_peer_uids` | `list[int]` | `[]` | 게이트웨이 연결을 허용할 OS 사용자 UID입니다. |
-| `enclave.max_concurrency` | `int` | `2` | 게이트웨이가 동시에 처리할 수 있는 질문의 최대 개수입니다. |
-| `enclave.request_timeout_s` | `int` | `0` | 질문 처리 및 게이트웨이 응답 시간 제한(초)입니다. |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | 엔클레이브 내 anima가 사용할 수 있는 인증 정보 이름입니다. |
-| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | 엔클레이브 내 anima가 참조할 수 있는 JSONL 데이터 세트입니다. |
-| `enclave.datasets.path` | `str` | `"—"` | data directory 내 JSONL 파일의 상대 경로입니다. |
-| `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 검색하기 위한 ID 필드입니다. |
+| `enclave.entry_anima` | `str` | `""` | 엔클레이브 내에서 질문을 처리하는 엔트리 애니마입니다. |
+| `enclave.allowed_peer_uids` | `list[int]` | `[]` | 게이트웨이에 연결할 수 있는 OS 사용자 UID입니다. |
+| `enclave.max_concurrency` | `int` | `2` | 게이트웨이가 동시에 처리할 수 있는 질문의 최대 수입니다. |
+| `enclave.request_timeout_s` | `int` | `0` | 질문 처리 및 게이트웨이 응답의 제한 시간(초)입니다. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | 엔클레이브 내 애니마가 사용할 수 있는 인증 정보 이름입니다. |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | 엔클레이브 내 애니마가 참조할 수 있는 JSONL 데이터 세트입니다. |
+| `enclave.datasets.path` | `str` | `"—"` | 데이터 디렉터리 내 JSONL 파일의 상대 경로입니다. |
+| `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 가져오기 위한 ID 필드입니다. |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 부분 일치 검색을 허용할 필드입니다. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
@@ -824,17 +826,17 @@
 | `enclave.sql_sources.user` | `str` | `"—"` | — |
 | `enclave.sql_sources.password_secret` | `str` | `"—"` | — |
 | `enclave.sql_sources.ssl` | `bool` | `true` | — |
-| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | TLS 검증을 위한 선택적 CA 번들 경로 |
+| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | TLS 인증서 확인을 위한 선택적 CA 번들 경로 |
 | `enclave.sql_sources.ssl_verify_identity` | `bool` | `false` | — |
 | `enclave.sql_sources.tunnel` | `EnclaveSsmTunnelConfig \| None` | `null` | — |
 | `enclave.sql_sources.tunnel.type` | `Literal['ssm_port_forward']` | `"ssm_port_forward"` | — |
 | `enclave.sql_sources.tunnel.region` | `str` | `"—"` | SSM 및 대상 확인을 위한 AWS 리전 |
 | `enclave.sql_sources.tunnel.target_instance_id` | `str \| None` | `null` | — |
 | `enclave.sql_sources.tunnel.target_tag_name` | `str \| None` | `null` | — |
-| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON을 보관하는 시크릿 이름 |
+| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON이 저장된 시크릿 이름 |
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
-| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | 터널에 사용할 고정 루프백 포트(호스트 방화벽에서 허용할 수 있음)입니다. 설정하지 않으면 무작위 포트를 사용합니다. |
+| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | 터널의 고정 루프백 포트(호스트 방화벽에서 허용할 수 있음)입니다. 설정하지 않으면 임의의 포트를 사용합니다. |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
@@ -842,7 +844,7 @@
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
-| `enclave.aws_sources.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON을 보관하는 시크릿 이름 |
+| `enclave.aws_sources.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON이 저장된 시크릿 이름 |
 | `enclave.aws_sources.log_groups` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.pi_resource_id` | `str \| None` | `null` | — |
 | `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
@@ -850,7 +852,7 @@
 | `enclave.aws_sources.max_bytes` | `int` | `200000` | — |
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.raw_dir` | `str` | `"raw"` | — |
-| `enclave.egress` | `dict[str, Any]` | `{}` | 외부로 반환할 facts를 처리하는 egress 단계 설정입니다. |
+| `enclave.egress` | `dict[str, Any]` | `{}` | 외부로 반환할 facts를 처리하는 이그레스 단계 설정입니다. |
 
 ### `enclaves`
 

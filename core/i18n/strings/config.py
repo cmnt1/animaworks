@@ -521,6 +521,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "隔離インスタンスに送る質問",
         "en": "the question to send to the isolated instance",
     },
+    "enclave.tool.schema_model": {
+        "ja": "省略可なモデル指定（enclave 側の model_profiles の名前。例: luna-max / opus-high。省略時は enclave の既定）",
+        "en": "optional model profile name from the enclave's model_profiles (e.g. luna-max / opus-high; defaults to the enclave's default)",
+    },
+    "enclave.tool.unknown_model_profile": {
+        "ja": "エラー: 未知のモデル指定です。使えるもの: {available}",
+        "en": "error: unknown model profile. Available: {available}",
+    },
+    "enclave.tool.model_profile": {
+        "ja": "モデル: {model_profile}",
+        "en": "Model: {model_profile}",
+    },
     "enclave.tool.schema_case_id": {
         "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",
         "en": "optional case identifier (defaults to anima name plus date)",

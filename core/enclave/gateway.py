@@ -53,6 +53,8 @@ class AskRequest(BaseModel):
     from_anima: str
     case_id: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")
     question: str = Field(min_length=1, max_length=8000)
+    # Name of an entry in ``EnclaveConfig.model_profiles``; "" means the default.
+    model_profile: str = Field(default="", pattern=r"^[A-Za-z0-9_.-]{0,32}$")
 
 
 def _request_uid(request: Request) -> int | None:
@@ -187,6 +189,7 @@ class _Gateway:
             "case_id": job.case_id,
             "from_anima": job.from_anima,
             "status": job.status,
+            "model_profile": job.model_profile,
             "queued_ahead": self._queued_ahead(job),
             "created_at": job.created_at,
             "started_at": job.started_at,
@@ -272,6 +275,7 @@ class _Gateway:
                         "from_person": f"enclave:{body.from_anima}",
                         "intent": "question",
                         "thread_id": job.thread_id,
+                        **({"model": model} if (model := self.config.model_profiles.get(job.model_profile)) else {}),
                     },
                     timeout=self._job_timeout(),
                 )
@@ -337,6 +341,12 @@ class _Gateway:
     async def ask(self, body: AskRequest, request: Request) -> JSONResponse:
         if not self._check_peer(request):
             return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
+        profile = body.model_profile or self.config.default_model_profile
+        if profile and profile not in self.config.model_profiles:
+            return JSONResponse(
+                {"error": "unknown_model_profile", "available": sorted(self.config.model_profiles)},
+                status_code=400,
+            )
         existing = self.jobs.find_active(body.from_anima, body.case_id)
         if existing is not None:
             return JSONResponse(
@@ -351,6 +361,7 @@ class _Gateway:
             question=body.question,
             thread_id=make_thread_id(body.case_id),
             status="queued",
+            model_profile=profile,
             created_at=now,
             last_activity_at=now,
         )

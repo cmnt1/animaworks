@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=9c2335e77cff73749f11da1520d3e894593a72258ca7a4a3d326539b74dd728a generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=658df3f85c8666e262c051000087778fe185fc827a30ab7bc1a82f8131c61935 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 도구 CLI 참조: `animaworks-tool`
 
@@ -29,14 +29,15 @@ Discord 텍스트 채널에 메시지를 게시합니다. 메시지는 Anima ID(
 
 ## `enclave_ask`
 
-격리된 enclave에 질문을 보내고 job_id를 즉시 받습니다. 상태를 확인할 수 있으며, 완료 결과는 받은 편지함으로 전달됩니다.
+격리된 enclave에 질문을 보내고 job_id를 즉시 받습니다. 상태를 확인할 수 있으며, 완료 결과는 inbox에 도착합니다.
 
 | 인수 | 유형 | 필수 | 설명 |
 |---|---|---|---|
-| `case_id` | string | 아니요 | 선택적 사례 식별자(생략하면 anima 이름과 날짜를 바탕으로 생성) |
+| `case_id` | string | 아니요 | 선택적 케이스 식별자(생략하면 anima 이름과 날짜를 바탕으로 생성) |
 | `enclave` | string | 예 | 연결할 enclave의 설정 이름 |
-| `question` | string | 예 | 격리 인스턴스에 보낼 질문 |
-| `wait_s` | integer | 아니요 | 결과 확인을 위해 기다릴 최대 시간(초)(기본값: 0. 0이면 즉시 반환) |
+| `model` | string | 아니요 | 선택적 모델 지정(enclave 측 model_profiles의 이름. 예: luna-max / opus-high. 생략하면 enclave의 기본값) |
+| `question` | string | 예 | 격리된 인스턴스에 보낼 질문 |
+| `wait_s` | integer | 아니요 | 결과 확인을 위해 대기할 최대 시간(초)(기본값: 0. 0이면 즉시 반환) |
 
 ## `enclave_cancel`
 

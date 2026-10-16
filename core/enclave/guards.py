@@ -212,6 +212,16 @@ def _referenced_credentials(
     if config.local_llm.credential:
         yield config.local_llm.credential
 
+    # Per-ask model profiles resolve their credential the same way a chat
+    # model override does, so they must stay inside the allow-list too.
+    from core.config.model_config import _fallback_credential_name
+    from core.config.model_mode import parse_fallback_entry
+
+    for spec in config.enclave.model_profiles.values():
+        parsed = parse_fallback_entry(spec, config) if spec else None
+        if parsed is not None:
+            yield _fallback_credential_name(parsed[1], config) or ""
+
     animas_dir = data_dir / "animas"
     if not animas_dir.is_dir():
         return
