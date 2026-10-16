@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 6d838c2584b90e5c6c79e76e9b24edf29fcb2c4f7a1e7cc7d4be3ca4590877a0 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 0fb84f097ac9065fce5d41355565d3983952e5635e149e3759463590c6b76e0c -->
 
 # 設定リファレンス
 
@@ -812,6 +812,8 @@
 | `enclave.max_concurrency` | `int` | `2` | gateway が同時に処理する質問の最大数。 |
 | `enclave.request_timeout_s` | `int` | `0` | 質問処理と gateway 応答のタイムアウト秒数。 |
 | `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 内の anima が利用できる認証情報名。 |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |

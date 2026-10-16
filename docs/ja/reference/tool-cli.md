@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py tool-cli -->
-<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: bac6730d232c36258ddff2de68ee3466937ecb21c30d845004e51f23a350dbd6 -->
+<!-- generator: gen_reference/1  kind: tool-cli  source-sha256: 056031c3ac6cb0c294aafccb8a0aabf3e101f57cd44ef5a0052366d3db02c275 -->
 
 # ツール CLI リファレンス: `animaworks-tool`
 
@@ -35,6 +35,7 @@ Find Discord messages that mention your name but have not been replied to. Usefu
 |---|---|---|---|
 | `case_id` | string | いいえ | 省略可なケース識別子（省略時は anima 名と日付から生成） |
 | `enclave` | string | はい | 接続する enclave の設定名 |
+| `model` | string | いいえ | 省略可なモデル指定（enclave 側の model_profiles の名前。例: luna-max / opus-high。省略時は enclave の既定） |
 | `question` | string | はい | 隔離インスタンスに送る質問 |
 | `wait_s` | integer | いいえ | 結果確認のために待つ最大秒数（既定値: 0。0 の場合はすぐ戻る） |
 
