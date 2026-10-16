@@ -329,3 +329,46 @@ async def test_progress_fails_closed_when_egress_unreadable(tmp_path: Path) -> N
         assert [p["text"] for p in data["progress"]] == ["(masked)"]
         assert data["last_activity_at"] == data["progress"][-1]["at"]
         gate.set()
+
+
+_PROFILES = {"luna-max": "a:azure/responses/gpt-6-luna", "opus-high": ""}
+
+
+async def test_model_profile_is_passed_as_model_override(tmp_path: Path) -> None:
+    supervisor = FakeSupervisor(_GOOD_ANSWER)
+    async with _running_gateway(tmp_path, supervisor, model_profiles=_PROFILES) as (client, _):
+        resp = await client.post("http://enclave/v1/ask", json={**_payload(), "model_profile": "luna-max"})
+        assert resp.status_code == 202
+        done = await _wait_done(client, resp.json()["job_id"])
+    assert done["model_profile"] == "luna-max"
+    assert supervisor.sent[0]["params"]["model"] == "a:azure/responses/gpt-6-luna"
+
+
+async def test_default_profile_applies_and_empty_profile_keeps_anima_model(tmp_path: Path) -> None:
+    supervisor = FakeSupervisor(_GOOD_ANSWER)
+    async with _running_gateway(tmp_path, supervisor, model_profiles=_PROFILES, default_model_profile="luna-max") as (
+        client,
+        _,
+    ):
+        first = await client.post("http://enclave/v1/ask", json=_payload(case_id="c-default"))
+        await _wait_done(client, first.json()["job_id"])
+        second = await client.post(
+            "http://enclave/v1/ask", json={**_payload(case_id="c-opus"), "model_profile": "opus-high"}
+        )
+        await _wait_done(client, second.json()["job_id"])
+    assert supervisor.sent[0]["params"]["model"] == "a:azure/responses/gpt-6-luna"
+    assert "model" not in supervisor.sent[1]["params"]
+
+
+async def test_unknown_model_profile_is_rejected(tmp_path: Path) -> None:
+    supervisor = FakeSupervisor(_GOOD_ANSWER)
+    async with _running_gateway(tmp_path, supervisor, model_profiles=_PROFILES) as (client, _):
+        resp = await client.post("http://enclave/v1/ask", json={**_payload(), "model_profile": "fable"})
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "unknown_model_profile", "available": ["luna-max", "opus-high"]}
+    assert supervisor.sent == []
+
+
+def test_default_model_profile_must_exist() -> None:
+    with pytest.raises(ValueError):
+        EnclaveConfig(model_profiles={"luna-max": "x"}, default_model_profile="opus-high")

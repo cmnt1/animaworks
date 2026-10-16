@@ -9,6 +9,9 @@ The enclave user may only reach:
 * loopback: DNS (53) and the listed ports (its own server, the SSM tunnel port);
 * the HOST:PORT pairs given with ``--allow-endpoints`` (e.g. in-house LLM
   servers), TCP only;
+* the NAME:PORT pairs given with ``--allow-hosts`` (e.g. a cloud LLM API),
+  TCP only.  Names are resolved when the rules are applied, so re-run often
+  (e.g. hourly) for endpoints whose addresses move;
 * AWS addresses of one region (the published ``AMAZON`` ranges), TCP 443
   only.  Service endpoints share these ranges with EC2, so this cannot tell
   an AWS API from a host someone runs on EC2 in that region; it closes the
@@ -32,6 +35,7 @@ import argparse
 import ipaddress
 import json
 import pwd
+import socket
 import subprocess
 import sys
 import urllib.request
@@ -101,6 +105,24 @@ def _nft(args: list[str], stdin: str | None = None) -> None:
     subprocess.run(["nft", *args], input=stdin, text=True, check=True)
 
 
+def _resolve_hosts(raw: str) -> list[tuple[str, int]]:
+    """Resolve NAME:PORT pairs to every current address (unresolvable names are skipped)."""
+    endpoints: list[tuple[str, int]] = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, _, port = item.rpartition(":")
+        try:
+            infos = socket.getaddrinfo(name, int(port), proto=socket.IPPROTO_TCP)
+        except OSError as exc:
+            sys.stderr.write(f"warning: could not resolve {name}: {exc}\n")
+            continue
+        for addr in sorted({info[4][0] for info in infos}):
+            endpoints.append((addr, int(port)))
+    return endpoints
+
+
 def _parse_endpoints(raw: str) -> list[tuple[str, int]]:
     endpoints: list[tuple[str, int]] = []
     for item in raw.split(","):
@@ -124,6 +146,11 @@ def main() -> int:
         default="",
         help="comma-separated HOST:PORT (IP literals) the enclave may also reach, e.g. in-house LLM servers",
     )
+    parser.add_argument(
+        "--allow-hosts",
+        default="",
+        help="comma-separated NAME:PORT resolved at apply time, e.g. a cloud LLM API",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--remove", action="store_true")
     args = parser.parse_args()
@@ -134,7 +161,8 @@ def main() -> int:
 
     uid = pwd.getpwnam(args.user).pw_uid
     ports = [int(p) for p in args.loopback_ports.split(",") if p.strip()]
-    ruleset = build_ruleset(uid, args.region, ports, _parse_endpoints(args.allow_endpoints))
+    endpoints = _parse_endpoints(args.allow_endpoints) + _resolve_hosts(args.allow_hosts)
+    ruleset = build_ruleset(uid, args.region, ports, endpoints)
     if not args.apply:
         sys.stdout.write(ruleset)
         return 0

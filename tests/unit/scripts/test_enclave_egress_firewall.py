@@ -47,3 +47,14 @@ def test_allowed_endpoints_are_opened_per_port(firewall) -> None:
 def test_endpoint_names_are_rejected(firewall) -> None:
     with pytest.raises(ValueError):
         firewall._parse_endpoints("llm.example.com:8888")
+
+
+def test_allowed_hosts_resolve_to_every_address(firewall, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(name, port, proto=0):
+        if name == "missing.example":
+            raise OSError("no such host")
+        return [(None, None, None, "", ("192.0.2.20", port)), (None, None, None, "", ("2001:db8::20", port, 0, 0))]
+
+    monkeypatch.setattr(firewall.socket, "getaddrinfo", fake_getaddrinfo)
+    endpoints = firewall._resolve_hosts("api.example:443, missing.example:443")
+    assert endpoints == [("192.0.2.20", 443), ("2001:db8::20", 443)]
