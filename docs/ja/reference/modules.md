@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 70ae2b880b164b091c1e61e9b16d284d69eba5b233be5fed7bb1bb295452a107 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 4090245b7e8559713fee41c6bba51f2fb9e0d9613a8273b8cb1e06c3f33087a1 -->
 
 # モジュール一覧
 
@@ -134,7 +134,7 @@ LLM エージェントの実行、会話制御、エンジン連携。
 | `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
-| `core.agent.priming` | 493 | — |
+| `core.agent.priming` | 504 | — |
 | `core.agent.prompt_log` | 151 | — |
 | `core.agent.session_compactor` | 566 | Per-Anima × per-thread_id idle compaction timer management. |
 
