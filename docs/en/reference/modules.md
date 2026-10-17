@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=f2e70153fe82d2d46f0991bae7f0f68af4fdc9ce5610f7b0ff5553ba84819a56 generated=2026-10-17 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=6a14eb552fb35dcec452b72f8e1cb2e4fb64aef241f432e0047773fb3920755b generated=2026-10-17 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -285,7 +285,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engines.litellm._litellm_context（非公開）` | 526 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
-| `core.execution.engines.litellm.executor` | 1048 | — |
+| `core.execution.engines.litellm.executor` | 1068 | — |
 | `core.execution.events` | 255 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
 | `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
