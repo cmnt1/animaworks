@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: d26076a136633b77580ff5db545357543e1e501cda68172a0c6bb36cc6fe95fe -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: ee077a6c6a96fc5aa7b4d203a2a09a2f4655dda320cbb1d4540d014c5e90e5ad -->
 
 # モジュール一覧
 
@@ -285,7 +285,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.engines.litellm._litellm_context（非公開）` | 526 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
-| `core.execution.engines.litellm.executor` | 1048 | — |
+| `core.execution.engines.litellm.executor` | 1068 | — |
 | `core.execution.events` | 255 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
 | `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
