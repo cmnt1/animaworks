@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4090245b7e8559713fee41c6bba51f2fb9e0d9613a8273b8cb1e06c3f33087a1 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: d26076a136633b77580ff5db545357543e1e501cda68172a0c6bb36cc6fe95fe -->
 
 # モジュール一覧
 
@@ -920,7 +920,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1565 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1578 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 500 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 

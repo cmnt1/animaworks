@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=99ffa08e5906ceba7fb4b290eac056b39e472ee4b69f641448eb768cc26c1f92 generated=2026-10-17 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=f2e70153fe82d2d46f0991bae7f0f68af4fdc9ce5610f7b0ff5553ba84819a56 generated=2026-10-17 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -899,30 +899,30 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 ## `core.tasks`
 
-작업 등록, 상태 관리 및 실행 제어.
+작업 등록, 상태 관리, 실행 제어.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.tasks` | 1 | 작업 큐, TaskBoard, delegated/background 작업 실행 및 외부 작업 소스. |
+| `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
 | `core.tasks.background` | 618 | — |
 | `core.tasks.board.board_actions` | 239 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
-| `core.tasks.board.models` | 39 | 단일 TaskBoard 뷰용 Pydantic 모델(TaskStore에서 직접 읽음). |
+| `core.tasks.board.models` | 39 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 120 | — |
-| `core.tasks.board.readiness` | 31 | 기존 작업 파일과 정식 실행 간 읽기 전용 경계. |
-| `core.tasks.board.tasks` | 1321 | 영속 실행 레코드; TaskBoard의 단일 기준 데이터. |
-| `core.tasks.board.view` | 119 | 정식 TaskStore에서 직접 구성한 단일 TaskBoard 뷰. |
+| `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
+| `core.tasks.board.tasks` | 1321 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
 | `core.tasks.dispatch` | 346 | — |
-| `core.tasks.external.collector` | 211 | 소스별 장애 격리를 지원하는 다중 소스 외부 작업 수집기. |
-| `core.tasks.external.models` | 47 | 외부 작업 스냅샷 저장소용 데이터 모델. |
-| `core.tasks.external.sources.chatwork` | 228 | Chatwork 외부 작업 수집기(열린 my-tasks 및 미응답 To). |
-| `core.tasks.external.sources.github` | 182 | ``gh`` CLI를 통한 GitHub 외부 작업 수집기. |
-| `core.tasks.external.sources.gmail` | 124 | Gmail 외부 작업 수집기(읽지 않은 받은편지함, 최근 7일). |
-| `core.tasks.external.sources.slack` | 184 | Slack 외부 작업 수집기(메시지 캐시를 통한 미응답 멘션). |
-| `core.tasks.external.store` | 51 | 외부 작업용 원자적 JSON 스냅샷 저장소. |
-| `core.tasks.pending_executor` | 1565 | 요청이 접수된 TaskStore 작업을 백그라운드 레인에서 실행합니다. |
+| `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
+| `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
+| `core.tasks.external.sources.chatwork` | 228 | Chatwork external tasks collector (open my-tasks + unreplied To). |
+| `core.tasks.external.sources.github` | 182 | GitHub external tasks collector via ``gh`` CLI. |
+| `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
+| `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
+| `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
+| `core.tasks.pending_executor` | 1578 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 500 | — |
-| `core.tasks.wake` | 70 | PendingTaskExecutor를 위한 프로세스 간 깨우기 이벤트 전달. |
+| `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
 ## `core.tasks.board`
 
