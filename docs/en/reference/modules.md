@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=99ffa08e5906ceba7fb4b290eac056b39e472ee4b69f641448eb768cc26c1f92 generated=2026-10-17 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=f2e70153fe82d2d46f0991bae7f0f68af4fdc9ce5610f7b0ff5553ba84819a56 generated=2026-10-17 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -920,7 +920,7 @@ Task registration, status management, and execution control.
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1565 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1578 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 500 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
