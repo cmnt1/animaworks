@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=ac243f52a1211838f49017296237c3afc3e8b0170146a8e8f0411fc6a3aa969b generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=99ffa08e5906ceba7fb4b290eac056b39e472ee4b69f641448eb768cc26c1f92 generated=2026-10-17 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -134,7 +134,7 @@ LLM agent execution, conversation control, and engine integration.
 | `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
-| `core.agent.priming` | 493 | — |
+| `core.agent.priming` | 504 | — |
 | `core.agent.prompt_log` | 151 | — |
 | `core.agent.session_compactor` | 566 | Per-Anima × per-thread_id idle compaction timer management. |
 
