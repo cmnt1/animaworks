@@ -33,6 +33,11 @@ thread/debate routing, CLI model aliases and Codex dependency pins. Enclave mode
 is opt-in and requires Linux; importing its CLI or gateway must remain safe in
 normal Windows mode. Phone support remains disabled unless explicitly configured.
 
+The 2026-10-18 integration retains the default chat concurrency of one. Enclave
+SSM port reservations require Linux, but the tunnel module must remain importable
+without `fcntl` on Windows. Firewall hostname allowances must retain the deferred
+`pwd` import and the non-Linux guard before network or firewall changes.
+
 ---
 
 ## 2. Notion is disabled by default

@@ -889,6 +889,16 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     logger.info("Server started (startup initialization running in background)")
 
 
+def _enclave_usage_summary(anima_dir: Path, days: int) -> dict[str, object]:
+    """Token usage plus budget fields for one anima, served by the enclave ``/v1/usage``."""
+    from core.usage.token_budget import read_budget_fields
+    from core.usage.token_usage import TokenUsageLogger
+
+    summary = TokenUsageLogger(anima_dir).summarize(days)
+    summary.update(read_budget_fields(anima_dir))
+    return summary
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.tasks.board.tasks import ensure_task_store_schema
@@ -904,7 +914,7 @@ async def lifespan(app: FastAPI):
     # socket-rebinding errors).
     from core.enclave.gateway_server import start_gateway
 
-    await start_gateway(app)
+    await start_gateway(app, usage_reader=_enclave_usage_summary)
 
     from server.enclave_delivery import host_delivery_loop, should_start_host_delivery
 

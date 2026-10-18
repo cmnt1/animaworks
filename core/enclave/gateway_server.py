@@ -30,7 +30,7 @@ import uvicorn
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
 from core.enclave.config import EnclaveConfig
-from core.enclave.gateway import create_gateway_app
+from core.enclave.gateway import UsageReader, create_gateway_app
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def _build_server(app: Any, config: EnclaveConfig) -> uvicorn.Server:
     return uvicorn.Server(server_config)
 
 
-async def start_gateway(app: Any) -> None:
+async def start_gateway(app: Any, *, usage_reader: UsageReader | None = None) -> None:
     """Start the enclave gateway in the current event loop, if enabled.
 
     Reads the global config, prepares the Unix socket, and runs a uvicorn
@@ -154,6 +154,7 @@ async def start_gateway(app: Any) -> None:
         get_supervisor=lambda: supervisor,
         config=config.enclave,
         data_dir=data_dir,
+        usage_reader=usage_reader,
     )
     sock = prepare_socket(config.enclave)
     server = _build_server(gateway_app, config.enclave)

@@ -52,6 +52,15 @@ class EnclaveSsmTunnelConfig(BaseModel):
         le=65535,
         description="Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset",
     )
+    local_port_count: int = Field(
+        default=1,
+        ge=1,
+        le=64,
+        description=(
+            "Number of consecutive loopback ports starting at local_port; concurrent processes each "
+            "reserve a different one"
+        ),
+    )
 
     @model_validator(mode="after")
     def _require_target(self) -> EnclaveSsmTunnelConfig:
@@ -146,12 +155,24 @@ class EnclaveConfig(BaseModel):
     # positive value fails a job with error=timeout after that many seconds.
     request_timeout_s: int = 0
     allowed_llm_credentials: list[str] = Field(default_factory=list)
+    # Named model choices a caller may pick per ask, e.g.
+    # {"luna-max": "a:azure/responses/gpt-6-luna", "opus-high": ""}.  An empty
+    # value means the entry anima's own configured model.
+    model_profiles: dict[str, str] = Field(default_factory=dict)
+    # Profile used when an ask names none; "" keeps the entry anima's model.
+    default_model_profile: str = ""
     datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
     sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)
     aws_sources: dict[str, EnclaveAwsSourceConfig] = Field(default_factory=dict)
     secrets_dir: str | None = None
     raw_dir: str = "raw"
     egress: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _default_profile_must_exist(self) -> EnclaveConfig:
+        if self.default_model_profile and self.default_model_profile not in self.model_profiles:
+            raise ValueError("default_model_profile must name an entry of model_profiles")
+        return self
 
 
 class EnclaveClientConfig(BaseModel):

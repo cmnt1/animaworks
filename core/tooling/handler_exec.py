@@ -78,6 +78,7 @@ class CommandRunner:
                 self.process = subprocess.Popen(
                     self.command,
                     shell=True,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -92,6 +93,7 @@ class CommandRunner:
                 argv = shlex.split(self.command, posix=not _is_windows)
                 self.process = subprocess.Popen(
                     argv,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -301,6 +303,7 @@ class ExecutionToolsMixin:
                 proc = subprocess.run(
                     command,
                     shell=True,
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
                     timeout=timeout,
@@ -315,6 +318,7 @@ class ExecutionToolsMixin:
                 proc = subprocess.run(
                     argv,
                     shell=False,
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
                     timeout=timeout,

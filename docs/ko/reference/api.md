@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=39cb8f724e852776da2415738b60b21148a1e8e2c53f09456cd772c1cc2fb34d generated=2026-10-06 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=39cb8f724e852776da2415738b60b21148a1e8e2c53f09456cd772c1cc2fb34d generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -132,6 +133,8 @@ def _message(text, *, author="cmnt", webhook=False, thread=True):
 
 @pytest.fixture
 def gateway(tmp_path, monkeypatch):
+    # Discord is optional; the fake channel only needs this pagination marker.
+    monkeypatch.setitem(sys.modules, "discord", SimpleNamespace(Object=SimpleNamespace))
     discord_cfg = SimpleNamespace(
         channel_members={PARENT: ["sakura", "ayane", "momoka", "airi", "rika"]},
         anima_mapping={}, board_mapping={}, default_anima="sakura", system_agents={},

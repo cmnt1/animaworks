@@ -780,6 +780,56 @@ class TestA2StreamingRunawayGuard:
         assert done["full_text"] == "Unable to generate a final response. Please try again."
         assert done["truncated"] is True
 
+    async def test_empty_final_response_is_reprompted_once(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        empty = _make_litellm_a2_response(content="", tool_calls=None)
+        final = _make_litellm_a2_response(content="Recovered answer", tool_calls=None)
+        mock_acompletion = AsyncMock(side_effect=[empty, final])
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="answer",
+                    tracker=tracker,
+                )
+            )
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Recovered answer"
+        assert done["truncated"] is False
+        assert mock_acompletion.call_count == 2
+
+    async def test_empty_streamed_answer_is_reprompted_once(self, litellm_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        streams = [
+            [FakeStreamChunk(finish_reason="stop")],
+            [FakeStreamChunk(text="Recovered answer"), FakeStreamChunk(finish_reason="stop")],
+        ]
+        calls: list[dict[str, Any]] = []
+
+        async def mock_acompletion(**kwargs):
+            calls.append(kwargs)
+            return _fake_async_stream(streams[len(calls) - 1])
+
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+        ):
+            events = await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="answer",
+                    tracker=tracker,
+                )
+            )
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Recovered answer"
+        assert done["truncated"] is False
+        assert len(calls) == 2
+        assert calls[1]["messages"][-1]["role"] == "user"
+
 
 class TestA2TokenLevelErrorRaisesStreamDisconnected:
     """API error during token-level streaming raises StreamDisconnectedError."""

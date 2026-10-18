@@ -11,10 +11,12 @@ BackgroundTaskManager result files and notifications.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
 import os
+import re
 import threading
 import time
 from datetime import UTC, datetime
@@ -65,10 +67,21 @@ _NON_COMPLETING_SENTINELS = {
 _DEPENDENCY_UNFINISHED = "a task this one depends on did not complete"
 
 _CANCEL_POLL_SECONDS = 5.0
+_MAX_THREAD_ID_LEN = 36
+_SAFE_THREAD_ID_RE = re.compile(rf"^[A-Za-z0-9_-]{{1,{_MAX_THREAD_ID_LEN}}}$")
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled"}
 # Statuses a runner-side sync must never walk back: the anima declared them, or
 # a subordinate now owns the work.
 _QUEUE_STICKY_STATUSES = _QUEUE_TERMINAL_STATUSES | {"delegated"}
+
+
+def _task_thread_id(task_id: str) -> str:
+    """Return a session thread id the state writer accepts for *task_id*."""
+    if _SAFE_THREAD_ID_RE.fullmatch(task_id):
+        return task_id
+    # Anima-chosen task ids can exceed 36 chars or contain other characters;
+    # the state writer rejects those, so fall back to a stable hash.
+    return f"task-{hashlib.sha1(task_id.encode('utf-8')).hexdigest()[:31]}"
 
 
 def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
@@ -1003,7 +1016,7 @@ class PendingTaskExecutor:
         else:
             agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
 
-        journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=task_id)
+        journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=_task_thread_id(task_id))
         await asyncio.to_thread(journal.open, trigger=trigger)
 
         model_config_override = self._task_model_config_override(task_desc)
@@ -1050,7 +1063,7 @@ class PendingTaskExecutor:
                     async for chunk in agent.run_cycle_streaming(
                         prompt,
                         trigger=trigger,
-                        thread_id=task_id,
+                        thread_id=_task_thread_id(task_id),
                         model_config_override=model_config_override,
                     ):
                         # A cancel written to TaskStore by another process

@@ -18,6 +18,8 @@ from core.enclave import ssm_tunnel
 from core.enclave.config import EnclaveSsmTunnelConfig
 from tests.helpers.filesystem import DEFAULT_TEST_CONFIG
 
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Enclave requires Linux")
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -253,6 +255,44 @@ def test_configured_local_port_is_used(
     config = _tunnel_config(local_port=33061)
 
     assert ssm_tunnel.ensure_tunnel("main", config, "rds.example", 3306) == 33061
+
+
+def test_concurrent_processes_reserve_distinct_ports(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _setup(data_dir, monkeypatch)
+    config = _tunnel_config(local_port=33061, local_port_count=2)
+
+    first, first_fd = ssm_tunnel._reserve_port(config)
+    second, second_fd = ssm_tunnel._reserve_port(config)
+    try:
+        assert {first, second} == {33061, 33062}
+        with pytest.raises(ssm_tunnel.TunnelError):
+            ssm_tunnel._reserve_port(config)
+    finally:
+        ssm_tunnel._release_port(first_fd)
+        ssm_tunnel._release_port(second_fd)
+
+    port, fd = ssm_tunnel._reserve_port(config)
+    ssm_tunnel._release_port(fd)
+    assert port == 33061
+
+
+def test_stopped_tunnel_releases_its_port(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _setup(data_dir, monkeypatch)
+    config = _tunnel_config(local_port=33061)
+
+    assert ssm_tunnel.ensure_tunnel("main", config, "rds.example", 3306) == 33061
+    with pytest.raises(ssm_tunnel.TunnelError):
+        ssm_tunnel._reserve_port(config)
+    ssm_tunnel.stop_tunnel("main")
+    port, fd = ssm_tunnel._reserve_port(config)
+    ssm_tunnel._release_port(fd)
+    assert port == 33061
 
 
 def test_dead_process_is_reestablished(
