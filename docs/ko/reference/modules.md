@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=e2e41d5f08b4ca071b4a1fd88107838cf30b7ec7cb2d6d6f37fb91f963f4b060 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=2be5e90a27a81db3a05ea6e6b657e4b3f45bae33b680d76d7e810269ffa5cae7 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -214,29 +214,29 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 격리된 엔클레이브 모드의 설정 모델과 시작 시 보안 가드.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.enclave` | 54 | 엔클레이브 모드: 전용 소켓에 바인딩되는 격리된 런타임 인스턴스. |
+| `core.enclave` | 54 | 전용 소켓에 바인딩되는 격리된 런타임 인스턴스인 엔클레이브 모드. |
 | `core.enclave.config` | 183 | 엔클레이브 모드의 설정 모델. |
 | `core.enclave.egress.audit` | 62 | 이그레스 파이프라인의 감사 로깅. |
 | `core.enclave.egress.config` | 113 | 이그레스 파이프라인의 설정 모델. |
-| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 간단한 파일시스템 헬퍼. |
-| `core.enclave.egress.masker.dispatch` | 40 | 내장 마스커의 프로필 디스패치. |
-| `core.enclave.egress.masker.facts` | 162 | 레코드 팩트의 규칙 기반 마스킹. |
+| `core.enclave.egress.fs` | 38 | 엔클레이브 file/directory 권한을 적용하는 간단한 파일 시스템 도우미. |
+| `core.enclave.egress.masker.dispatch` | 40 | 기본 제공 마스커의 프로필 디스패치. |
+| `core.enclave.egress.masker.facts` | 162 | 레코드 사실의 규칙 기반 마스킹. |
 | `core.enclave.egress.masker.log_pii` | 115 | log/audit PII 마스킹. |
 | `core.enclave.egress.masker.ner` | 97 | MeCab(fugashi + IPADIC)을 사용한 개체명 인식 마스킹. |
 | `core.enclave.egress.models` | 57 | 이그레스 파이프라인의 데이터 구조. |
-| `core.enclave.egress.pipeline` | 96 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류 발생 시 fail-closed 처리. |
+| `core.enclave.egress.pipeline` | 96 | 이그레스 파이프라인: 설정된 단계를 적용하고 오류가 발생하면 안전하게 차단합니다. |
 | `core.enclave.egress.stages` | 236 | 이그레스 파이프라인의 단계 구현. |
-| `core.enclave.gateway` | 517 | 게이트웨이: 엔클레이브 인스턴스의 인그레스 지점. |
-| `core.enclave.gateway_server` | 187 | 엔클레이브 게이트웨이의 수명 주기와 Unix 소켓 연결 설정. |
-| `core.enclave.guards` | 247 | 엔클레이브 모드의 시작 시 보안 가드. |
+| `core.enclave.gateway` | 521 | 게이트웨이: 엔클레이브 인스턴스의 인그레스 지점. |
+| `core.enclave.gateway_server` | 187 | 엔클레이브 게이트웨이의 수명 주기 및 유닉스 소켓 연결. |
+| `core.enclave.guards` | 247 | 엔클레이브 모드의 시작 가드. |
 | `core.enclave.jobs` | 254 | 엔클레이브 게이트웨이의 영구 쿼리 작업. |
-| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 헬퍼. |
-| `core.enclave.ops` | 78 | 엔클레이브 상태 검사와 감사 요약을 위한 운영 헬퍼. |
+| `core.enclave.laravel_crypt` | 115 | Laravel ``Crypt::encryptString`` 페이로드 복호화 도우미. |
+| `core.enclave.ops` | 78 | 엔클레이브 상태 확인 및 감사 요약을 위한 운영 도우미. |
 | `core.enclave.raw_store` | 150 | 엔클레이브 도구에서 읽는 수정되지 않은 결과를 위한 비공개 저장소. |
-| `core.enclave.secrets` | 128 | 엔클레이브 자격 증명 저장소에서 비밀 정보를 읽음. |
-| `core.enclave.ssm_tunnel` | 371 | 엔클레이브 SQL 소스를 위한 SSM Session Manager 포트 포워딩 터널. |
+| `core.enclave.secrets` | 128 | 엔클레이브 자격 증명 저장소에서 비밀 정보 읽기. |
+| `core.enclave.ssm_tunnel` | 371 | 엔클레이브 SQL 소스용 SSM 세션 매니저 포트 포워딩 터널. |
 
 ## `core.enclave.egress`
 

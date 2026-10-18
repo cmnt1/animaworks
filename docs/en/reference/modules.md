@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=e2e41d5f08b4ca071b4a1fd88107838cf30b7ec7cb2d6d6f37fb91f963f4b060 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=2be5e90a27a81db3a05ea6e6b657e4b3f45bae33b680d76d7e810269ffa5cae7 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -212,7 +212,7 @@ Schema, loading, validation, and migration of application configuration.
 
 ## `core.enclave`
 
-Configuration model and startup security guards for isolated enclave mode.
+Configuration models and startup security guards for isolated enclave mode.
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
@@ -228,7 +228,7 @@ Configuration model and startup security guards for isolated enclave mode.
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 96 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 517 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway` | 521 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 247 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 254 | Persistent query jobs for the enclave gateway. |

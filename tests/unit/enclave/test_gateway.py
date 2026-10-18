@@ -210,6 +210,13 @@ async def test_ask_empty_answer(tmp_path: Path) -> None:
     assert done.get("audit_id")
 
 
+async def test_final_response_error_text_matches_engine() -> None:
+    from core.enclave import gateway
+    from core.execution.loop_guards import FINAL_RESPONSE_ERROR_TEXT
+
+    assert gateway._FINAL_RESPONSE_ERROR_TEXT == FINAL_RESPONSE_ERROR_TEXT
+
+
 @pytest.mark.parametrize(
     ("answer", "reason"),
     [
