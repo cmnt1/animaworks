@@ -210,6 +210,24 @@ async def test_ask_empty_answer(tmp_path: Path) -> None:
     assert done.get("audit_id")
 
 
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        ("Unable to generate a final response. Please try again.", "answer_unfinished"),
+        ("[Error: prompt too large for azure/responses/gpt-6-luna]", "context_overflow"),
+    ],
+)
+async def test_ask_engine_error_answer_is_failed(tmp_path: Path, answer: str, reason: str) -> None:
+    sup = FakeSupervisor(answer)
+    async with _running_gateway(tmp_path, sup) as (client, _sup):
+        resp = await client.post("http://enclave/v1/ask", json=_payload())
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert done["status"] == "failed"
+    assert done["error"] == reason
+    assert not done.get("facts")
+
+
 async def test_ask_egress_blocked(tmp_path: Path) -> None:
     sup = FakeSupervisor('{"facts": [{"fact": "contains SECRET value", "evidence": ["record:1"]}]}')
     async with _running_gateway(tmp_path, sup) as (client, _sup):

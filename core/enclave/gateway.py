@@ -39,6 +39,7 @@ from core.enclave.egress.config import load_egress_config
 from core.enclave.egress.pipeline import EgressPipeline
 from core.enclave.egress.stages import EgressStageError, run_stage
 from core.enclave.jobs import EnclaveJob, EnclaveJobStore, make_thread_id, utcnow_iso
+from core.execution.loop_guards import FINAL_RESPONSE_ERROR_TEXT
 from core.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,15 @@ def _valid_anima_name(name: str) -> bool:
     if not name:
         return False
     return not (("/" in name) or ("\\" in name) or (".." in name))
+
+
+def _engine_error_reason(text: str) -> str:
+    """Map an engine placeholder answer to a failure reason ("" if it is a real answer)."""
+    if text == FINAL_RESPONSE_ERROR_TEXT:
+        return "answer_unfinished"
+    if text.startswith("[Error: prompt too large"):
+        return "context_overflow"
+    return ""
 
 
 def _write_block_audit(
@@ -295,6 +305,10 @@ class _Gateway:
             # is the only gate on its content.
             text = answer_text.strip() if isinstance(answer_text, str) else ""
             facts = [Fact(fact=text, evidence=[])] if text else None
+            engine_error = _engine_error_reason(text)
+            if engine_error:
+                self._mark_failed(job, engine_error)
+                return
             if facts is None:
                 audit_id = uuid4().hex
                 _write_block_audit(
