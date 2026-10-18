@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.AUTOFIX_TOKEN }}
+          token: ${{ secrets.AUTOFIX_TOKEN || github.token }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -39,10 +39,16 @@ jobs:
           ruff format core/ cli/ server/
 
       - name: Push fixes if needed
+        env:
+          AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
         run: |
           if git diff --quiet; then
             echo "No fixes needed."
             exit 0
+          fi
+          if [ -z "$AUTOFIX_TOKEN" ]; then
+            echo "::error::Formatting changes are needed. Apply ruff locally or configure AUTOFIX_TOKEN to push fixes."
+            exit 1
           fi
           git config user.name "animaworks-dev-team"
           git config user.email "animaworks-dev-team@users.noreply.github.com"
