@@ -99,4 +99,5 @@ from core.config.schemas import (
     _format_permissions_for_prompt,
     load_permissions,
     resolve_background_worker_pool_size,
+    resolve_chat_max_concurrency,
 )

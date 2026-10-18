@@ -186,6 +186,19 @@ class TestEstimateCost:
         expected = (1_000_000 * 5.0 + 500_000 * 25.0 + 200_000 * 0.50 + 100_000 * 6.25) / 1_000_000
         assert cost == pytest.approx(expected)
 
+    def test_azure_luna_cache_is_subset_of_input(self, tul: TokenUsageLogger):
+        model = "azure/responses/gpt-6-luna"
+        cost = tul.estimate_cost(
+            model,
+            mode="a",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            cache_read_tokens=800_000,
+        )
+        assert cost == pytest.approx((200_000 * 0.20 + 800_000 * 0.02 + 1_000_000 * 1.20) / 1_000_000)
+        assert tul._resolve_pricing(model) is not None
+        assert tul._input_includes_cache(model, "a") is True
+
     def test_unknown_model_returns_zero(self, tul: TokenUsageLogger):
         cost = tul.estimate_cost("unknown-model-xyz", input_tokens=1_000_000)
         assert cost == 0.0

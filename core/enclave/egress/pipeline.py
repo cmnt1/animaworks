@@ -84,19 +84,13 @@ class EgressPipeline:
         return EgressResult(audit_id=audit_id, facts=out_facts)
 
     def _validate_output(self, facts: list[Fact]) -> list[Fact]:
-        """Structural checks; any violation blocks the answer."""
-        if len(facts) > self.config.max_facts:
-            raise EgressStageError("too_many_facts")
+        """Type checks only; size is never a reason to drop a masked answer."""
         for fact in facts:
             if not isinstance(fact.fact, str):
                 raise EgressStageError("non_string_fact")
-            if len(fact.fact) > self.config.max_fact_chars:
-                raise EgressStageError("fact_too_long")
             if not isinstance(fact.evidence, list):
                 raise EgressStageError("non_list_evidence")
             for item in fact.evidence:
                 if not isinstance(item, str):
                     raise EgressStageError("non_string_evidence")
-                if len(item) > self.config.max_fact_chars:
-                    raise EgressStageError("fact_too_long")
         return facts

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 9fd7a2900a851ebd9c8138835b51a8f77e059398684f19efc1579a87846a5bfa -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 9dc2f1b11e305379ccecc07a257224f2818fcfa58e1869e63365e8250d933bc3 -->
 
 # 設定リファレンス
 
@@ -451,6 +451,7 @@
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
+| `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_socket_create_timeout` | `int` | `30` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
@@ -850,6 +851,8 @@
 | `enclave.max_concurrency` | `int` | `2` | gateway が同時に処理する質問の最大数。 |
 | `enclave.request_timeout_s` | `int` | `0` | 質問処理と gateway 応答のタイムアウト秒数。 |
 | `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 内の anima が利用できる認証情報名。 |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
@@ -873,6 +876,7 @@
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
 | `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
+| `enclave.sql_sources.tunnel.local_port_count` | `int` | `1` | Number of consecutive loopback ports starting at local_port; concurrent processes each reserve a different one |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |

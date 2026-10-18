@@ -296,6 +296,7 @@ class SchedulerManager:
             anima_dir=anima_dir,
             shared_dir=Path(anima.shared_dir),
             max_concurrent=pool_size,
+            chat_max_concurrency=getattr(anima, "_chat_max_concurrency", 1),
             runner_liveness_timeout_sec=float(load_config().server.runner_liveness_timeout),
             busy_status_owner=anima,
             memory_service=MemoryService(anima_name, anima_dir),

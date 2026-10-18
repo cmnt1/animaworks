@@ -20,10 +20,13 @@ from __future__ import annotations
 import atexit
 import json
 import logging
+import os
 import socket
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from core.enclave.config import EnclaveSsmTunnelConfig
@@ -40,7 +43,7 @@ class TunnelError(RuntimeError):
 
 
 class _Tunnel:
-    __slots__ = ("config", "local_port", "process", "session", "last_used", "ssm")
+    __slots__ = ("config", "local_port", "process", "session", "last_used", "ssm", "port_lock_fd")
 
     def __init__(
         self, config: EnclaveSsmTunnelConfig, local_port: int, process: subprocess.Popen, session: dict[str, Any]
@@ -51,6 +54,7 @@ class _Tunnel:
         self.session = session
         self.last_used = time.monotonic()
         self.ssm: Any = None
+        self.port_lock_fd: int | None = None
 
 
 _LOCKS: dict[str, threading.Lock] = {}
@@ -62,6 +66,66 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def _port_lock_dir() -> Path:
+    from core.paths import get_data_dir
+
+    path = get_data_dir() / "run" / "ssm-ports"
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
+def _reserve_port(config: EnclaveSsmTunnelConfig) -> tuple[int, int | None]:
+    """Pick the loopback port for a new tunnel.
+
+    Without ``local_port`` a random free port is used.  With it, the first of
+    ``local_port_count`` consecutive ports that no other process has reserved
+    (an exclusive ``flock`` held for the tunnel's lifetime) and that is free to
+    bind is returned together with the lock descriptor.
+    """
+    if sys.platform != "linux":
+        raise TunnelError("Enclave SSM tunnels require Linux")
+
+    import fcntl
+
+    if config.local_port is None:
+        return _free_port(), None
+    lock_dir = _port_lock_dir()
+    for port in range(config.local_port, config.local_port + config.local_port_count):
+        fd = os.open(lock_dir / f"{port}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            continue
+        if not _port_bindable(port):
+            # Held by something outside this reservation scheme; leave it alone.
+            _release_port(fd)
+            continue
+        return port, fd
+    raise TunnelError("no free loopback port for the SSM tunnel")
+
+
+def _port_bindable(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def _release_port(fd: int | None) -> None:
+    if fd is None:
+        return
+
+    import fcntl
+
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _port_open(port: int) -> bool:
@@ -207,11 +271,16 @@ def ensure_tunnel(
             _stop_tunnel(current)
 
         credentials = _read_aws_credentials(config)
-        local_port = config.local_port or _free_port()
-        session, request, ssm = _start_session(config, credentials, local_port, remote_host, remote_port)
-        process = _start_plugin(config, session, request)
+        local_port, port_lock_fd = _reserve_port(config)
+        try:
+            session, request, ssm = _start_session(config, credentials, local_port, remote_host, remote_port)
+            process = _start_plugin(config, session, request)
+        except BaseException:
+            _release_port(port_lock_fd)
+            raise
         tunnel = _Tunnel(config, local_port, process, session)
         tunnel.ssm = ssm
+        tunnel.port_lock_fd = port_lock_fd
         _TUNNELS[source_name] = tunnel
         try:
             _wait_for_port(local_port)
@@ -230,23 +299,27 @@ def ensure_tunnel(
 
 
 def _stop_tunnel(tunnel: _Tunnel) -> None:
-    session_id = tunnel.session.get("SessionId")
-    if tunnel.ssm is not None and session_id:
-        try:
-            tunnel.ssm.terminate_session(SessionId=session_id)
-        except Exception:  # noqa: BLE001 - best-effort; the session also times out server-side
-            logger.debug("Could not terminate SSM session", exc_info=True)
     try:
-        tunnel.process.terminate()
-    except OSError:
-        pass
-    try:
-        tunnel.process.wait(timeout=5)
-    except Exception:  # noqa: BLE001 - best-effort cleanup
+        session_id = tunnel.session.get("SessionId")
+        if tunnel.ssm is not None and session_id:
+            try:
+                tunnel.ssm.terminate_session(SessionId=session_id)
+            except Exception:  # noqa: BLE001 - best-effort; the session also times out server-side
+                logger.debug("Could not terminate SSM session", exc_info=True)
         try:
-            tunnel.process.kill()
+            tunnel.process.terminate()
         except OSError:
             pass
+        try:
+            tunnel.process.wait(timeout=5)
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            try:
+                tunnel.process.kill()
+            except OSError:
+                pass
+    finally:
+        _release_port(tunnel.port_lock_fd)
+        tunnel.port_lock_fd = None
 
 
 def stop_tunnel(source_name: str) -> None:

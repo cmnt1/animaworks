@@ -355,16 +355,14 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "enclave.gateway.answer_instruction": {
         "ja": (
-            '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
-            "根拠ID を必ず付ける。個人を特定できる値は書かない。"
-            "JSON として正しく読めるように、fact と evidence の文字列には改行・二重引用符・バックスラッシュを入れず、"
-            "コードや引用は地の文で言い換える。fact は日本語で、1文ずつ短く分ける"
+            "結論を日本語でそのまま書いて返す（形式は自由）。"
+            "根拠には record: などの ID を添える。個人を特定できる値は書かない。"
+            "回答は伏字処理を通ってから依頼者に届く"
         ),
         "en": (
-            'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
-            "Always attach evidence IDs. Do not write values that identify a specific person. "
-            "Keep the JSON valid: no line breaks, double quotes or backslashes inside fact and evidence strings; "
-            "paraphrase code and quotations. Split facts into short single sentences."
+            "Write the conclusion as plain text in any format. "
+            "Cite evidence IDs such as record:. Do not write values that identify a specific person. "
+            "The answer is masked before it reaches the requester."
         ),
     },
     "enclave.gateway.progress_instruction": {
@@ -542,6 +540,18 @@ STRINGS: dict[str, dict[str, str]] = {
     "enclave.tool.schema_question": {
         "ja": "隔離インスタンスに送る質問",
         "en": "the question to send to the isolated instance",
+    },
+    "enclave.tool.schema_model": {
+        "ja": "省略可なモデル指定（enclave 側の model_profiles の名前。例: luna-max / opus-high。省略時は enclave の既定）",
+        "en": "optional model profile name from the enclave's model_profiles (e.g. luna-max / opus-high; defaults to the enclave's default)",
+    },
+    "enclave.tool.unknown_model_profile": {
+        "ja": "エラー: 未知のモデル指定です。使えるもの: {available}",
+        "en": "error: unknown model profile. Available: {available}",
+    },
+    "enclave.tool.model_profile": {
+        "ja": "モデル: {model_profile}",
+        "en": "Model: {model_profile}",
     },
     "enclave.tool.schema_case_id": {
         "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",

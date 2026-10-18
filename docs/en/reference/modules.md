@@ -1,9 +1,9 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=eb8ad67019a3d08f5818cdbe1fad6a531c840d00bbfb2cf2a4a0410f2f2519c2 generated=2026-10-13 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=2be5e90a27a81db3a05ea6e6b657e4b3f45bae33b680d76d7e810269ffa5cae7 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
-Lists the Python files tracked in `git ls-files core cli server`. Private modules are marked.
+The Python files tracked in `git ls-files core cli server` are listed here. Private modules are marked.
 
 ## `cli`
 
@@ -24,7 +24,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
@@ -32,7 +32,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
-| `cli.commands.cost_cmd` | 232 | — |
+| `cli.commands.cost_cmd` | 326 | — |
 | `cli.commands.enclave_cmd` | 323 | Operational commands for enclave runtimes. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
@@ -110,7 +110,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 Activity log recording, playback, and timeline display.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
@@ -128,13 +128,13 @@ Activity log recording, playback, and timeline display.
 
 LLM agent execution, conversation control, and engine integration.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.agent` | 23 | — |
 | `core.agent.agent_core` | 325 | — |
 | `core.agent.cycle` | 1523 | — |
 | `core.agent.executor_factory` | 176 | — |
-| `core.agent.priming` | 493 | — |
+| `core.agent.priming` | 504 | — |
 | `core.agent.prompt_log` | 151 | — |
 | `core.agent.session_compactor` | 566 | Per-Anima × per-thread_id idle compaction timer management. |
 
@@ -149,7 +149,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 693 | — |
+| `core.anima.digital_anima` | 694 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -175,9 +175,9 @@ User authentication, sessions, and credential management.
 
 ## `core.channels`
 
-Common send clients and token resolution for Slack, Discord, and Chatwork.
+Shared send clients and token resolution for Slack, Discord, and Chatwork.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.channels` | 1 | Shared clients and token resolution for external communication channels. |
 | `core.channels.chatwork` | 33 | Central Chatwork message send client. |
@@ -187,7 +187,7 @@ Common send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Application configuration schemas, loading, validation, and migration.
+Schema, loading, validation, and migration of application configuration.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -204,39 +204,39 @@ Application configuration schemas, loading, validation, and migration.
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 99 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1474 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1522 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
 
-Configuration models for isolated enclave mode and startup security guards.
+Configuration models and startup security guards for isolated enclave mode.
 
-| Module | Lines | First line of docstring |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 162 | Configuration models for enclave mode. |
+| `core.enclave.config` | 183 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
-| `core.enclave.egress.config` | 115 | Configuration model for the egress pipeline. |
+| `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
 | `core.enclave.egress.masker.dispatch` | 40 | Profile dispatch for the built-in masker. |
 | `core.enclave.egress.masker.facts` | 162 | Rule-based masking of record facts. |
 | `core.enclave.egress.masker.log_pii` | 115 | Masking of log/audit PII. |
 | `core.enclave.egress.masker.ner` | 97 | Named-entity recognition masking using MeCab (fugashi + IPADIC). |
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
-| `core.enclave.egress.pipeline` | 102 | Egress pipeline: apply configured stages and fail closed on any error. |
+| `core.enclave.egress.pipeline` | 96 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 523 | Gateway: the ingress point of an enclave instance. |
-| `core.enclave.gateway_server` | 186 | Lifecycle and Unix-socket wiring for the enclave gateway. |
-| `core.enclave.guards` | 237 | Startup guards for enclave mode. |
-| `core.enclave.jobs` | 252 | Persistent query jobs for the enclave gateway. |
+| `core.enclave.gateway` | 521 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
+| `core.enclave.guards` | 247 | Startup guards for enclave mode. |
+| `core.enclave.jobs` | 254 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
 | `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
-| `core.enclave.ssm_tunnel` | 306 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
+| `core.enclave.ssm_tunnel` | 371 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -272,7 +272,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
-| `core.execution.engines.claude._sdk_security（非公開）` | 299 | — |
+| `core.execution.engines.claude._sdk_security（非公開）` | 302 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 503 | — |
 | `core.execution.engines.claude.executor` | 867 | — |
@@ -285,7 +285,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engines.litellm._litellm_context（非公開）` | 526 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
-| `core.execution.engines.litellm.executor` | 1048 | — |
+| `core.execution.engines.litellm.executor` | 1068 | — |
 | `core.execution.events` | 255 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
 | `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
@@ -313,7 +313,7 @@ Tool execution, command execution, and safety controls.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.execution.engines.claude` | 18 | — |
 
@@ -361,7 +361,7 @@ Tool execution, command execution, and safety controls.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.execution.session` | 7 | — |
 
@@ -374,7 +374,7 @@ Translation catalog and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 806 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 816 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
@@ -405,7 +405,7 @@ Translation catalog and language selection.
 
 ## `core.infra`
 
-Core features such as logs, databases, and caches.
+Core infrastructure such as logging, databases, and caches.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -420,7 +420,7 @@ Core features such as logs, databases, and caches.
 
 ## `core.integrations`
 
-External service integrations and implementation of animaworks-tool.
+Implementation of external service integrations and animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -454,8 +454,8 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations.call_human` | 113 | — |
 | `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
 | `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
-| `core.integrations.enclave` | 489 | Host-side tools for submitting and managing enclave ask jobs. |
-| `core.integrations.enclave_aws` | 917 | Read-only AWS data tools for the enclave runtime. |
+| `core.integrations.enclave` | 554 | Host-side tools for submitting and managing enclave ask jobs. |
+| `core.integrations.enclave_aws` | 866 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
 | `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
@@ -491,7 +491,7 @@ External service integrations and implementation of animaworks-tool.
 
 ## `core.lifecycle`
 
-Anima lifecycle: startup, shutdown, and initialization.
+Lifecycle for Anima startup, shutdown, and initialization.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -501,7 +501,7 @@ Anima lifecycle: startup, shutdown, and initialization.
 
 ## `core.llm`
 
-Shared utilities for LLM error classification, rate limiting, and retries.
+Shared features for LLM error classification, rate control, and retries.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -516,22 +516,22 @@ Shared utilities for LLM error classification, rate limiting, and retries.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.llm.guard` | 1 | Provider-independent LLM retry and failure guards. |
 
 ## `core.mcp`
 
-Model Context Protocol server and client.
+Model Context Protocol servers and clients.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.mcp` | 0 | — |
 | `core.mcp.server` | 714 | — |
 
 ## `core.memory`
 
-Saving, searching, and organizing conversation and episode memories.
+Storage, search, and organization of conversation and episode memories.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -543,7 +543,7 @@ Saving, searching, and organizing conversation and episode memories.
 | `core.memory.conversation.memory` | 349 | Conversation memory (conversation memory / working memory) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
-| `core.memory.conversation.shortterm` | 313 | Short-term memory management. |
+| `core.memory.conversation.shortterm` | 313 | Short-term memory (short-term memory) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
@@ -666,7 +666,7 @@ Saving, searching, and organizing conversation and episode memories.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
-| `core.memory.priming` | 54 | Priming layer - automatic memory retrieval. |
+| `core.memory.priming` | 54 | Priming layer - automatic memory retrieval (automatic recall). |
 
 ## `core.memory.rag`
 
@@ -694,7 +694,7 @@ Saving, searching, and organizing conversation and episode memories.
 
 ## `core.messaging`
 
-Message delivery between Anima and external services.
+Message delivery between animas and to external parties.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -710,7 +710,7 @@ Message delivery between Anima and external services.
 
 ## `core.migrations`
 
-Phased migration of runtime data formats.
+Gradual migration of runtime data formats.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -724,7 +724,7 @@ Phased migration of runtime data formats.
 
 Notification generation and delivery.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.notification` | 40 | — |
 | `core.notification.channels.chatwork` | 79 | — |
@@ -749,9 +749,9 @@ Notification generation and delivery.
 
 ## `core.org`
 
-Organization models for companies, departments, roles, and more.
+Organization models such as companies, departments, and roles.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.org` | 6 | — |
 | `core.org.company` | 1212 | Company membership and cross-company boundary helpers. |
@@ -762,7 +762,7 @@ Organization models for companies, departments, roles, and more.
 
 ## `core.phone`
 
-Voice synthesis, call status, and webhook management for the Twilio phone channel.
+Speech synthesis, call status, and webhook management for the Twilio phone channel.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -778,7 +778,7 @@ Voice synthesis, call status, and webhook management for the Twilio phone channe
 
 ## `core.platform`
 
-Integration layer that abstracts differences between execution engines and operating systems.
+An integration layer that abstracts differences between runtime engines and operating systems.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -805,7 +805,7 @@ Integration layer that abstracts differences between execution engines and opera
 
 System prompt and context construction.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
@@ -831,11 +831,11 @@ Anima main runtime components, inter-process communication, and task execution.
 | `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
 | `core.runtime.runner` | 1389 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 827 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.scheduler_manager` | 828 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1042 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1386 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner_supervisor` | 1445 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
@@ -920,7 +920,7 @@ Task registration, status management, and execution control.
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1565 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1578 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 500 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
@@ -950,9 +950,9 @@ Task registration, status management, and execution control.
 
 ## `core.text`
 
-Text token estimation and budget-based truncation.
+Text token estimation and truncation to fit within budget.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.text` | 1 | Shared text processing utilities. |
 | `core.text.tokens` | 92 | — |
@@ -972,7 +972,7 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 262 | — |
-| `core.tooling.handler_exec` | 345 | — |
+| `core.tooling.handler_exec` | 349 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
@@ -1010,7 +1010,7 @@ Tool schemas, permissions, and execution infrastructure.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.tooling.policy` | 1 | Tool schemas and policy primitives shared by execution and tooling. |
 
@@ -1018,25 +1018,25 @@ Tool schemas, permissions, and execution infrastructure.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.tooling.policy.schemas` | 70 | Canonical tool schema definitions and format converters. |
 
 ## `core.usage`
 
-LLM usage and cost recording and aggregation.
+Logging and aggregation of LLM usage and costs.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
-| `core.usage.token_budget` | 55 | — |
-| `core.usage.token_usage` | 587 | — |
+| `core.usage.token_budget` | 73 | — |
+| `core.usage.token_usage` | 605 | — |
 
 ## `core.voice`
 
-Voice input/output and voice conversation.
+Audio input/output and voice conversations.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
 | `core.voice.audio_codec` | 161 | — |
@@ -1067,7 +1067,7 @@ Voice input/output and voice conversation.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1473 | — |
+| `server.app` | 1483 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
@@ -1081,7 +1081,7 @@ Voice input/output and voice conversation.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `server.gateways` | 1 | Inbound chat/meeting gateways (Slack, Discord, Zoom, GitHub) run by the server. |
 | `server.gateways.discord_channel_sync` | 278 | — |
@@ -1096,7 +1096,7 @@ Voice input/output and voice conversation.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
@@ -1137,7 +1137,7 @@ Voice input/output and voice conversation.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `server.services` | 5 | Server application services. |
 | `server.services.anima_admin` | 7 | — |
