@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: ee077a6c6a96fc5aa7b4d203a2a09a2f4655dda320cbb1d4540d014c5e90e5ad -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 0ec29a8a09fde2e4c0ba16045c7a5e2a15f624fe0cd83972caf23984adf06de5 -->
 
 # モジュール一覧
 
@@ -228,7 +228,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.models` | 57 | Data structures for the egress pipeline. |
 | `core.enclave.egress.pipeline` | 96 | Egress pipeline: apply configured stages and fail closed on any error. |
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
-| `core.enclave.gateway` | 503 | Gateway: the ingress point of an enclave instance. |
+| `core.enclave.gateway` | 521 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 187 | Lifecycle and Unix-socket wiring for the enclave gateway. |
 | `core.enclave.guards` | 247 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 254 | Persistent query jobs for the enclave gateway. |

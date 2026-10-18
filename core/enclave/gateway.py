@@ -79,6 +79,20 @@ def _valid_anima_name(name: str) -> bool:
     return not (("/" in name) or ("\\" in name) or (".." in name))
 
 
+# Mirrors core.execution.loop_guards.FINAL_RESPONSE_ERROR_TEXT (enclave must not
+# import execution); tests assert the two stay equal.
+_FINAL_RESPONSE_ERROR_TEXT = "Unable to generate a final response. Please try again."
+
+
+def _engine_error_reason(text: str) -> str:
+    """Map an engine placeholder answer to a failure reason ("" if it is a real answer)."""
+    if text == _FINAL_RESPONSE_ERROR_TEXT:
+        return "answer_unfinished"
+    if text.startswith("[Error: prompt too large"):
+        return "context_overflow"
+    return ""
+
+
 def _write_block_audit(
     data_dir: Path,
     *,
@@ -295,6 +309,10 @@ class _Gateway:
             # is the only gate on its content.
             text = answer_text.strip() if isinstance(answer_text, str) else ""
             facts = [Fact(fact=text, evidence=[])] if text else None
+            engine_error = _engine_error_reason(text)
+            if engine_error:
+                self._mark_failed(job, engine_error)
+                return
             if facts is None:
                 audit_id = uuid4().hex
                 _write_block_audit(
