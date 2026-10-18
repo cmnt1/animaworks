@@ -19,10 +19,10 @@ import time
 # from the defaults the runtime actually loads.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from core.memory.rag.singleton import _get_configured_model_name  # noqa: E402
+from core.memory.rag.embedding import get_embedding_model_name  # noqa: E402
 from core.memory.retrieval.reranker import _DEFAULT_MODEL as RERANK_MODEL  # noqa: E402
 
-EMBED_MODEL = _get_configured_model_name()
+EMBED_MODEL = get_embedding_model_name()
 MODEL_CACHE_DIR = os.environ.get("ANIMAWORKS_MODEL_CACHE_DIR")
 
 BACKOFF_SECONDS = [5, 10, 20, 40, 60, 60, 90, 120]
