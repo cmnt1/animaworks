@@ -9,3 +9,4 @@
 | [GPU の運用](gpu.md) | ローカル検索コンポーネントの GPU 選択と障害時の対応。 |
 | [開発チームの構成](dev-team.md) | 開発チーム向けテンプレートと運用上の確認。 |
 | [Task Store へのランタイム移行](slim-runtime-migration.md) | 旧タスク入力から永続 Task Store へ移行する手順。 |
+| [不動産日次レポートのDiscord報告](property-report-discord-delivery.md) | 通知の通常設定、未送信分の復旧手順、2026-10-18の検証記録。 |
