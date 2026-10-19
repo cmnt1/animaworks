@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=7ea90c4961726fdedaa89b0e51f316c77ea7220ea7afef04cca9d5bf42d287a3 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=fac42e10bbf11a91f0c70bdd0fd8e2bae34b01d8e16a79f3a1d4e9b8a5343421 generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -444,25 +444,26 @@
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증, 사용량 제어 설정. |
-| `server.session_ttl_days` | `int \| None` | `90` | None = 무제한 |
-| `server.ipc_stream_timeout` | `int` | `60` | 청크별 제한 시간(초) |
-| `server.keepalive_interval` | `int` | `30` | keep-alive 전송 간격(초) |
+| `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
+| `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
+| `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
 | `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
+| `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
 | `server.supervisor_respawn_max_retries` | `int` | `3` | — |
-| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | 기본 백오프 간격(초) |
-| `server.supervisor_respawn_backoff_max_seconds` | `float` | `1800.0` | 최대 백오프(초) |
-| `server.stream_checkpoint_enabled` | `bool` | `true` | 스트리밍 중 도구 결과 저장 |
-| `server.stream_retry_max` | `int` | `3` | 스트림 연결이 끊어졌을 때 자동 재시도 최대 횟수 |
-| `server.stream_retry_delay_s` | `float` | `5.0` | 재시도 간 지연 시간(초) |
-| `server.llm_num_retries` | `int` | `3` | LLM API 호출 재시도(429/5xx/network) |
+| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | base backoff interval (seconds) |
+| `server.supervisor_respawn_backoff_max_seconds` | `float` | `1800.0` | max backoff (seconds) |
+| `server.stream_checkpoint_enabled` | `bool` | `true` | save tool results during streaming |
+| `server.stream_retry_max` | `int` | `3` | max automatic retries on stream disconnect |
+| `server.stream_retry_delay_s` | `float` | `5.0` | delay between retries (seconds) |
+| `server.llm_num_retries` | `int` | `3` | retries for LLM API calls (429/5xx/network) |
 | `server.ollama_keep_alive` | `str` | `""` | — |
-| `server.ollama_total_timeout` | `int` | `0` | 단일 Ollama 생성 호출의 엄격한 최대 시간(초); 0 = 무제한 |
+| `server.ollama_total_timeout` | `int` | `0` | Hard upper bound (seconds) on a single Ollama generation call; 0 = unlimited |
 | `server.media_proxy` | `MediaProxyConfig` | `{MediaProxyConfig}` | — |
 | `server.media_proxy.mode` | `Literal['allowlist', 'open_with_scan']` | `"open_with_scan"` | — |
 | `server.media_proxy.allowed_domains` | `list[str]` | `["cdn.search.brave.com","images.unsplash.com","images.pexels.com","upload.wikimedia.org"]` | — |
@@ -472,8 +473,8 @@
 | `server.media_proxy.timeout_read_s` | `float` | `10.0` | — |
 | `server.media_proxy.rate_limit_requests` | `int` | `30` | — |
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
-| `server.base_path` | `str` | `""` | 리버스 프록시 하위 경로(예: "/app"); 비어 있으면 루트에 배포 |
-| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* 호출자 확인 |
+| `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
+| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
 
 ### `llm_rate_guard`
 
@@ -634,6 +635,7 @@
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | Include recent chat dialogue in heartbeat context only when the last turn is younger than this many hours; 0 = always include |
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
+| `heartbeat.cron_followup_repeat_suppress_hours` | `float` | `6.0` | Suppress a command cron's LLM follow-up when its output is identical to the previous follow-up for this many hours; 0 disables suppression |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
@@ -733,7 +735,9 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima 수신함 및 알림 표시. |
+| `inbox` | `InboxConfig` | `{InboxConfig}` | anima의 받은 편지함 및 알림 표시. |
+| `inbox.inbox_quiet_seconds` | `float` | `90.0` | — |
+| `inbox.inbox_quiet_max_wait_seconds` | `float` | `300.0` | — |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |

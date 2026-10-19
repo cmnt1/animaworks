@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=e44ded9039734977e7519866f9548175039a2bd86e957d1f7ecdcd676785683e generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -919,7 +919,7 @@ anima용 stdio MCP 서버 실행
 
 ## `restart`
 
-서버를 재시작합니다 (중지 후 시작)
+Restart the server (stop then start)
 
 `usage: animaworks restart [-h] [--host HOST] [--port PORT] [--foreground]
                           [--force]`
@@ -928,8 +928,8 @@ anima용 stdio MCP 서버 실행
 |---|---|---|---|---|
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
-| --foreground, -f | flag | false | — | 로그 출력과 함께 포그라운드로 실행 (기본값: 데몬화) |
-| --force | flag | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1122,13 +1122,13 @@ AnimaWorks 서버 시작
 
 ## `stop`
 
-실행 중인 서버 중지
+Stop the running server
 
 `usage: animaworks stop [-h] [--force]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | 플래그 | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 

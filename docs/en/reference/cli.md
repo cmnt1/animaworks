@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=e44ded9039734977e7519866f9548175039a2bd86e957d1f7ecdcd676785683e generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -929,7 +929,7 @@ Restart the server (stop then start)
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
 | --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1128,7 +1128,7 @@ Stop the running server
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 
