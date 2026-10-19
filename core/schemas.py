@@ -66,8 +66,10 @@ class CronTask(BaseModel):
     tool: str | None = None  # Command型の内部ツール名
     args: dict[str, Any] | None = None  # toolの引数
     skills: list[str] = Field(default_factory=list)  # Optional skill pointers attached to the cron task
-    skip_pattern: str | None = None  # stdoutがマッチしたらheartbeatをスキップ
-    trigger_heartbeat: bool = True  # Falseならcron出力時のHBトリガーを抑制
+    skip_pattern: str | None = (
+        None  # Command型: stdoutがマッチしたらLLM follow-upをスキップ（stderrあり/非ゼロ終了時は実行）
+    )
+    trigger_heartbeat: bool = True  # FalseならCommand型のLLM follow-upを一切起動しない（skip_patternより優先）
 
 
 class ModelConfig(BaseModel):

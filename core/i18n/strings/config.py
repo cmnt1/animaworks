@@ -129,6 +129,26 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": ("Lines containing 'schedule:' found in cron.md but not recognized by the parser. Please check format."),
     },
+    "scheduler.cron_health_high_frequency_llm": {
+        "ja": (
+            "- 「{task_name}」は高頻度で LLM を起動します。新着の有無などシェルで判定できるなら、"
+            "`type: command` ＋ `skip_pattern` にしてください。"
+        ),
+        "en": (
+            "- '{task_name}' starts an LLM very frequently. If a shell command can detect whether "
+            "there is anything new, use `type: command` + `skip_pattern`."
+        ),
+    },
+    "scheduler.cron_health_command_without_skip": {
+        "ja": (
+            "- 「{task_name}」は command 型で `skip_pattern` が無いため、出力のたびに LLM が起動します。"
+            "通知をスクリプト自身が行うなら `trigger_heartbeat: false` にしてください。"
+        ),
+        "en": (
+            "- '{task_name}' is a command task without `skip_pattern`, so every output starts an LLM. "
+            "If the script notifies by itself, set `trigger_heartbeat: false`."
+        ),
+    },
     "anima.greeting_error": {
         "ja": "[ERROR: 挨拶生成中にエラーが発生しました]",
         "en": "[ERROR: An error occurred during greeting generation]",
