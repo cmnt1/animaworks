@@ -28,3 +28,4 @@
 
 ## 指示
 完了したら `update_task(task_id="{task_id}", status="done", result="成果と検証の要約")` を呼ぶ。待機や中断が必要なら `update_task(task_id="{task_id}", status="pending", summary="理由と次に必要な条件")` で記録して終了する。不要になった仕事は `status="cancelled"` で閉じる。他 worker と共有する資源を変更するときは競合を確認し、既存の成果を上書きしない。
+合否や実施できない理由などの判定・結論を出したら `done` にして `result` に判定を書く。`pending` は返信や他タスクの完了など外部の出来事を待つときだけ使い、何を待っているかを `summary` に書く。
