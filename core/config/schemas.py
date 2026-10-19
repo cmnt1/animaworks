@@ -661,6 +661,8 @@ class ServerConfig(BaseModel):
     chat_max_concurrency: int = Field(default=1, ge=1, le=10)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
+    # Matches the 600-second TaskExec drain; 0 skips waiting for active work.
+    restart_drain_timeout_seconds: int = Field(default=600, ge=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)

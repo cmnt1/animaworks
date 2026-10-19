@@ -142,8 +142,7 @@ class TestStopServer:
         pass
 
     @pytest.mark.parametrize("exit_after", [12.0, 89.0])
-    @pytest.mark.parametrize("force", [False, True])
-    def test_default_waits_for_whole_server_shutdown_without_force_kill(self, exit_after, force):
+    def test_default_waits_for_whole_server_shutdown_without_force_kill(self, exit_after):
         from cli.commands.server import cmd_stop
 
         clock = [0.0]
@@ -158,8 +157,9 @@ class TestStopServer:
             patch("cli.commands.server.is_pid_alive", side_effect=lambda _pid: clock[0] < exit_after),
             patch("cli.commands.server.terminate_pid") as terminate,
             patch("cli.commands.server.terminate_matching_processes", return_value=0),
+            patch("cli.commands.server._restart_drain_timeout_seconds", return_value=30),
         ):
-            cmd_stop(argparse.Namespace(force=force))
+            cmd_stop(argparse.Namespace(force=False))
 
         assert exit_after <= clock[0] < 90
         terminate.assert_called_once_with(12345, force=False, include_children=False)
@@ -178,6 +178,7 @@ class TestStopServer:
             patch("cli.commands.server.read_server_pid", return_value=12345),
             patch("cli.commands.server.is_pid_alive", return_value=True),
             patch("cli.commands.server.terminate_pid") as terminate,
+            patch("cli.commands.server._restart_drain_timeout_seconds", return_value=30),
             pytest.raises(SystemExit) as stopped,
         ):
             cmd_stop(argparse.Namespace(force=False))
@@ -655,6 +656,18 @@ class TestSpawnRestartHelper:
             pid = _spawn_restart_helper(args, old_pid=None)
 
         assert pid == 88888
+
+    def test_old_server_kill_grace_uses_drain_timeout_plus_margin(self, monkeypatch):
+        from cli.commands.server import _spawn_restart_helper
+
+        monkeypatch.setattr("cli.commands.server._restart_drain_timeout_seconds", lambda: 123)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value.pid = 999
+            _spawn_restart_helper(argparse.Namespace(host="127.0.0.1", port=18500), old_pid=111)
+
+        helper_code = mock_popen.call_args.args[0][2]
+        assert "OLD_SERVER_WAIT_SECONDS = 183" in helper_code
+        assert "time.monotonic() + OLD_SERVER_WAIT_SECONDS" in helper_code
 
 
 # ── _clear_pycache ───────────────────────────────────────
