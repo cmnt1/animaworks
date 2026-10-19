@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 0ec29a8a09fde2e4c0ba16045c7a5e2a15f624fe0cd83972caf23984adf06de5 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 9c1ddfc5d994ecfdf33b0065bdb3b8353ef48f67de12a877c6f88b540f7663df -->
 
 # モジュール一覧
 
@@ -831,7 +831,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
 | `core.runtime.runner` | 1389 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 828 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.scheduler_manager` | 842 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1042 | Disposable task runner entry point. |
