@@ -228,11 +228,13 @@ class InternalNotifyWebRequest(BaseModel):
 class UpdateTaskPersistRequest(BaseModel):
     anima_name: str
     task_id: str
-    status: Literal["pending", "in_progress", "done", "cancelled"]
+    status: Literal["pending", "in_progress", "done", "cancelled"] | None = None
     meta: dict[str, Any] = {}
     summary: str | None = None
     attempt_identity: dict[str, str] | None = None
     resume: bool = False
+    waiting_for: dict[str, Any] | None = None
+    scope_note: str | None = None
 
 
 class TaskBoardActionRequest(BaseModel):
@@ -1503,6 +1505,8 @@ def create_internal_router() -> APIRouter:
                     summary=body.summary,
                     resume=body.resume,
                     meta_patch=body.meta,
+                    waiting_for=body.waiting_for,
+                    scope_note=body.scope_note,
                 )
 
         try:
@@ -1517,7 +1521,10 @@ def create_internal_router() -> APIRouter:
                     content={"error_type": "TaskOwnedByOther", "owner": exc.owner},
                 )
             if isinstance(exc, ValueError) and (
-                body.status == "in_progress" or (body.resume and body.status != "pending")
+                body.status in {None, "in_progress"}
+                or (body.resume and body.status != "pending")
+                or body.waiting_for is not None
+                or body.scope_note is not None
             ):
                 return JSONResponse(status_code=400, content={"error_type": "InvalidArguments", "detail": str(exc)})
             logger.exception("internal update-task failed")

@@ -75,6 +75,50 @@ STRINGS: dict[str, dict[str, str]] = {
             "실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
         ),
     },
+    "task_wait.label": {
+        "ja": "待ち: {target}",
+        "en": "Waiting: {target}",
+        "ko": "대기: {target}",
+    },
+    "task_wait.target_task": {
+        "ja": "タスク {ref} の完了",
+        "en": "task {ref} to finish",
+        "ko": "태스크 {ref} 완료",
+    },
+    "task_wait.target_time": {
+        "ja": "{until} まで",
+        "en": "until {until}",
+        "ko": "{until}까지",
+    },
+    "task_wait.target_message": {
+        "ja": "{ref} からの返事",
+        "en": "a reply from {ref}",
+        "ko": "{ref}의 회신",
+    },
+    "task_wait.target_external": {
+        "ja": "{ref}",
+        "en": "{ref}",
+        "ko": "{ref}",
+    },
+    "task_wait.resumed": {
+        "ja": "待っていた{target}が満たされたので再開",
+        "en": "Resumed because {target} was satisfied",
+        "ko": "기다리던 {target}이(가) 충족되어 재개",
+    },
+    "pending_executor.task_wait_satisfied_notify": {
+        "ja": (
+            "[待ち解除通知]\nタスクID: {task_id}\nタスク: {title}\n"
+            "待っていた条件が満たされました。保存済みの入力を確認して、タスクを再開してください。"
+        ),
+        "en": (
+            "[Wait Satisfied]\nTask ID: {task_id}\nTask: {title}\n"
+            "The condition you were waiting for has been satisfied. Review the saved input and resume the task."
+        ),
+        "ko": (
+            "[대기 해제 알림]\n작업 ID: {task_id}\n작업: {title}\n"
+            "기다리던 조건이 충족되었습니다. 저장된 입력을 확인하고 작업을 재개하세요."
+        ),
+    },
     "pending_executor.workspace_not_specified": {
         "ja": "(指定なし)",
         "en": "(not specified)",

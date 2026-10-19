@@ -77,16 +77,19 @@ def is_task_permission_error(exc: BaseException) -> bool:
 def update_task(
     manager: TaskQueueManager,
     task_id: str,
-    status: str,
+    status: str | None,
     *,
     summary: str | None = None,
     result: str | None = None,
     resume: bool = False,
+    waiting_for: dict[str, Any] | None = None,
+    scope_note: str | None = None,
 ) -> TaskEntry | None:
     """Update task status, proxying only sandbox storage denial.
 
     When ``resume`` is True the task is requeued under its original task_id
-    using its saved execution input (status must be 'pending').
+    using its saved execution input (status must be 'pending'). ``scope_note``
+    may be supplied without a status change.
     """
     from core.time_utils import now_iso
 
@@ -105,6 +108,8 @@ def update_task(
             summary=summary,
             resume=resume,
             meta_patch=meta or None,
+            waiting_for=waiting_for,
+            scope_note=scope_note,
         )
     except Exception as exc:
         if not is_task_permission_error(exc):
@@ -119,6 +124,8 @@ def update_task(
                     "summary": summary,
                     "meta": meta,
                     "resume": resume,
+                    "waiting_for": waiting_for,
+                    "scope_note": scope_note,
                 },
             )
         except Exception as fallback_exc:
@@ -147,40 +154,88 @@ def update_task(
 def persist_task_update(
     manager: TaskQueueManager,
     task_id: str,
-    status: str,
+    status: str | None,
     *,
     summary: str | None = None,
     resume: bool = False,
     meta_patch: dict[str, Any] | None = None,
+    waiting_for: dict[str, Any] | None = None,
+    scope_note: str | None = None,
 ) -> TaskEntry | None:
     """Persist a task update locally and send the matching task notices."""
     from core.i18n import t
+    from core.tasks.waiting import normalize_waiting_for
+    from core.time_utils import now_iso
 
     actor = manager.anima_dir.name
+    if status is None and scope_note is None:
+        raise ValueError("status is required unless scope_note is provided")
+    normalized_wait: dict[str, str] | None = None
+    if waiting_for is not None:
+        normalized_wait = normalize_waiting_for(waiting_for, status)
+    note: str | None = None
+    if scope_note is not None:
+        if not isinstance(scope_note, str) or not scope_note.strip():
+            raise ValueError("scope_note must be a non-empty string")
+        note = scope_note.strip()
     with manager.store.transaction():
-        delegated_target = manager.assert_task_update_owner(task_id, status)
-        if resume and status != "pending":
-            raise ValueError("resume requires status='pending'")
-        if status in {"blocked", "failed"}:
-            raise ValueError(
-                f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."
-            )
-        if status == "in_progress":
-            raise ValueError(
-                "status 'in_progress' is written only by the running TaskExec. "
-                "To (re)start a task, submit it with the submit_tasks tool. "
-                "To close it, use --status done or cancelled."
-            )
-        if status not in {"pending", "delegated", "done", "cancelled"}:
-            raise ValueError(f"Invalid task update status: {status}")
-        if meta_patch is not None and manager.update_meta(task_id, meta_patch, summary=summary) is None:
+        delegated_target = manager.delegated_task_target(task_id)
+        if note is not None and delegated_target is not None:
+            raise TaskOwnedByOther(delegated_target[0])
+        if status is not None:
+            delegated_target = manager.assert_task_update_owner(task_id, status)
+            if resume and status != "pending":
+                raise ValueError("resume requires status='pending'")
+            if status in {"blocked", "failed"}:
+                raise ValueError(
+                    f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."
+                )
+            if status == "in_progress":
+                raise ValueError(
+                    "status 'in_progress' is written only by the running TaskExec. "
+                    "To (re)start a task, submit it with the submit_tasks tool. "
+                    "To close it, use --status done or cancelled."
+                )
+            if status not in {"pending", "delegated", "done", "cancelled"}:
+                raise ValueError(f"Invalid task update status: {status}")
+        patch: dict[str, Any] = dict(meta_patch or {})
+        if note is not None:
+            current = manager.get_task_by_id(task_id)
+            if current is None:
+                return None
+            notes = current.meta.get("scope_notes")
+            updated_notes = list(notes) if isinstance(notes, list) else []
+            updated_notes.append({"note": note, "at": now_iso()})
+            patch["scope_notes"] = updated_notes
+        entry = manager.update_meta(task_id, patch, summary=summary) if patch else None
+        if patch and entry is None:
             return None
-        entry = manager.update_status(task_id, status, summary=summary)
-        if entry is None:
-            return None
+        if status is not None:
+            entry = manager.update_status(task_id, status, summary=summary)
+            if entry is None:
+                return None
         if resume:
             entry = manager.store.resume(actor, task_id)
+        if normalized_wait is not None:
+            # Apply the declaration after the status transition/resume so a
+            # move out of a terminal state cannot clear the row it just wrote.
+            entry = manager.update_meta(task_id, {"waiting_for": normalized_wait})
+            if entry is None:
+                return None
+            manager.store.set_waiting_for(actor, task_id, normalized_wait)
 
+    if note is not None and entry is not None:
+        payload = manager.store.get_input(actor, task_id)
+        raw_requester = payload.get("reply_to") if payload else None
+        if isinstance(raw_requester, dict):
+            raw_requester = raw_requester.get("name")
+        requester = str(raw_requester or "")
+        if requester and requester != actor:
+            from core.tasks.board.board_actions import notify_task_scope_note
+
+            warning = notify_task_scope_note(actor, requester, task_id, entry.summary or task_id, note)
+            if warning:
+                logger.warning("Task scope-note notice failed: %s", warning)
     if status == "cancelled":
         from core.tasks.board.board_actions import notify_task_delegator, notify_task_owner
 

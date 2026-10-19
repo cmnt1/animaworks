@@ -228,13 +228,17 @@ def _cmd_board(args: argparse.Namespace) -> None:
         print(json.dumps({"counts": counts, "tasks": visible, "more": more}, ensure_ascii=False, indent=2))
         return
     print(f"todo {counts['todo']} / running {counts['running']} / waiting {counts['waiting']}")
+    from core.tasks.waiting import waiting_label
+
     for row in visible:
         state = "waiting" if group(row) == 2 else ("running" if group(row) == 0 else "todo")
         lease = row.get("lease")
         lock = f"{lease['holder']} ({_remaining_lease(lease['expires_at'], now)})" if lease else "-"
         summary = str(row.get("summary", "")).replace("\n", " ")[:80]
         age = _format_age(row.get("updated_at") or row.get("ts"), now)
-        print(f"{row['task_id']}  {row['anima']}  {state}  {age}  {lock}  {summary}")
+        label = waiting_label((row.get("meta") or {}).get("waiting_for"))
+        suffix = f"  {label}" if label else ""
+        print(f"{row['task_id']}  {row['anima']}  {state}  {age}  {lock}  {summary}{suffix}")
     if more:
         print(f"… {more} more (use --limit)")
 
@@ -259,6 +263,11 @@ def _cmd_show(args: argparse.Namespace) -> None:
     print(f"Task: {details['requested_id']} (owner: {details['owner']}, canonical ID: {details['task_id']})")
     print(f"Summary: {entry.get('summary', '')}")
     print(f"Status: {entry.get('status', '')}  Assignee: {entry.get('assignee', '')}")
+    from core.tasks.waiting import waiting_label
+
+    label = waiting_label((entry.get("meta") or {}).get("waiting_for"))
+    if label:
+        print(label)
     print(f"Created: {entry.get('ts', '')}  Updated: {entry.get('updated_at', '')}")
     print("Original instruction:")
     print(entry.get("original_instruction", ""))
@@ -434,13 +443,28 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
 
 
 def _cmd_update(args: argparse.Namespace) -> None:
-    tool_args = {
+    status = getattr(args, "status", None)
+    scope_note = getattr(args, "scope_note", None)
+    tool_args: dict = {
         "task_id": getattr(args, "task_id", ""),
-        "status": getattr(args, "status", ""),
     }
+    if status:
+        tool_args["status"] = status
     summary = getattr(args, "summary", None)
     if summary is not None:
         tool_args["summary"] = summary
+    kind = getattr(args, "waiting_for_kind", None)
+    ref = getattr(args, "waiting_for_ref", None)
+    until = getattr(args, "waiting_for_until", None)
+    if kind or ref or until:
+        wait: dict[str, str] = {"kind": kind or ""}
+        if ref:
+            wait["ref"] = ref
+        if until:
+            wait["until"] = until
+        tool_args["waiting_for"] = wait
+    if scope_note is not None:
+        tool_args["scope_note"] = scope_note
     run_and_print("update_task", tool_args)
 
 
@@ -524,9 +548,20 @@ def register_task_command(subparsers) -> None:
     p_update = task_sub.add_parser("update", help="Update task status")
     p_update.add_argument("--task-id", required=True, help="Task ID")
     p_update.add_argument(
-        "--status", required=True, help="Status to declare (retired statuses are rejected by update_task)"
+        "--status",
+        default=None,
+        help="Status to declare (optional only when --scope-note is given; retired statuses are rejected)",
     )
     p_update.add_argument("--summary", default=None, help="Updated summary")
+    p_update.add_argument(
+        "--waiting-for-kind",
+        default=None,
+        choices=["task", "time", "message", "external"],
+        help="What a pending task waits for",
+    )
+    p_update.add_argument("--waiting-for-ref", default=None, help="Task ID, person, or free-text wait target")
+    p_update.add_argument("--waiting-for-until", default=None, help="ISO8601 timestamp for kind=time")
+    p_update.add_argument("--scope-note", default=None, help="Append a scope note and notify the requester")
 
     # task resume
     p_resume = task_sub.add_parser("resume", help="Requeue a task with its saved execution input")
