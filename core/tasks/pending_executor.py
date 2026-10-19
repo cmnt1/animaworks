@@ -612,10 +612,57 @@ class PendingTaskExecutor:
             if isinstance(reply_to, str) and reply_to:
                 recipients.add(reply_to)
             try:
+                entry = store.read(self._anima_name, archived=True).get(event["task_id"])
+                if completion and reply_to == self._anima_name:
+                    title = str(payload.get("title") or event["task_id"])
+                    result = str(entry.meta.get("result_note") or entry.summary) if entry else ""
+                    from core.activity.logger import ActivityLogger
+
+                    ActivityLogger(self._anima_dir).log(
+                        "task_completed",
+                        summary=t("pending_executor.task_exec_end", title=title, result=result),
+                        ctx=f"task:{event['task_id']}",
+                        meta={
+                            "task_id": event["task_id"],
+                            "attempt_token": event["attempt_token"],
+                            "result_note": result,
+                            "event": "task_completed",
+                        },
+                    )
+                    store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+                    continue
+
+                reported_to = entry.meta.get("reported_to", []) if entry else []
+                if (
+                    completion
+                    and isinstance(reply_to, str)
+                    and entry is not None
+                    and entry.meta.get("last_attempt_token") == event["attempt_token"]
+                    and isinstance(reported_to, list)
+                    and reply_to in reported_to
+                ):
+                    from core.activity.logger import ActivityLogger
+
+                    ActivityLogger(self._anima_dir).log(
+                        "task_completion_notify_skipped",
+                        summary=t(
+                            "pending_executor.completion_notify_skipped",
+                            title=str(payload.get("title") or event["task_id"]),
+                        ),
+                        ctx=f"task:{event['task_id']}",
+                        meta={
+                            "task_id": event["task_id"],
+                            "attempt_token": event["attempt_token"],
+                            "recipient": reply_to,
+                            "reason": "already_reported",
+                        },
+                    )
+                    store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+                    continue
+
                 if completion:
                     from core.paths import load_prompt
 
-                    entry = store.read(self._anima_name, archived=True).get(event["task_id"])
                     result = str(entry.meta.get("result_note") or entry.summary) if entry else ""
                     content = load_prompt(
                         "task_complete_notify",
@@ -665,6 +712,7 @@ class PendingTaskExecutor:
         cancel_watch: asyncio.Task[None] | None = None
         try:
             with attempt_scope(identity):
+                store.update_attempt_meta(token, {"reported_to": []})
                 entries = store.read(self._anima_name, archived=True)
                 task_desc = {
                     **task_desc,
@@ -1092,6 +1140,8 @@ class PendingTaskExecutor:
                                 task_failed_reason = result_summary or "task execution failed"
                             await asyncio.to_thread(journal.finalize, summary=result_summary[:500])
                 finally:
+                    if task_desc.get("_attempt_token"):
+                        self._record_attempt_reported_to(task_desc, agent)
                     agent.set_task_cwd(None)
                     if (
                         interrupt_event is not None
@@ -1252,6 +1302,22 @@ class PendingTaskExecutor:
 
         logger.info("[%s] LLM task completed: id=%s", self._anima_name, task_id)
         return result_summary
+
+    def _record_attempt_reported_to(self, task_desc: dict[str, Any], agent: Any) -> None:
+        """Persist recipients reached by successful send_message calls in this attempt."""
+        token = str(task_desc.get("_attempt_token") or "")
+        if not token:
+            return
+        handler = getattr(agent, "_tool_handler", None)
+        replied_to_for = getattr(handler, "replied_to_for", None)
+        names = replied_to_for("task") if callable(replied_to_for) else set()
+        reported_to = sorted(name for name in names if isinstance(name, str) and name)
+        try:
+            updated = self._get_task_queue_manager().store.update_attempt_meta(token, {"reported_to": reported_to})
+            if not updated:
+                logger.debug("Task attempt report tracking skipped for inactive attempt %s", token)
+        except Exception:
+            logger.warning("Could not persist task attempt report tracking for %s", token, exc_info=True)
 
     def wake(self) -> None:
         """Signal the watcher to check for new tasks immediately."""
