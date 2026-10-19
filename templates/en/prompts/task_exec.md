@@ -26,6 +26,6 @@ You are a task execution agent. Carry out the task below.
 Tasks being run in parallel by other workers of the same Anima (snapshot at start):
 {active_workers}
 
-## Instruction
-When complete, call `update_task(task_id="{task_id}", status="done", result="成果と検証の要約")`. If you need to wait or pause, record it with `update_task(task_id="{task_id}", status="pending", summary="理由と次に必要な条件")` and stop. Close work that is no longer needed with `status="cancelled"`. When changing resources shared with another worker, check for conflicts and do not overwrite existing work.
-After reaching a judgment or conclusion, such as whether something passed or why it could not be carried out, set `done` and write the judgment in `result`. Use `pending` only when waiting for an external event, such as a reply or another task’s completion, and write what you are waiting for in `summary`.
+## Instructions
+When done, call `update_task(task_id="{task_id}", status="done", result="summary of results and verification")`. If you need to wait or pause, record it with `update_task(task_id="{task_id}", status="pending", summary="reason and what is needed next")` and finish. Close work that is no longer needed with `status="cancelled"`. When changing resources shared with other workers, check for conflicts and do not overwrite existing results.
+After reaching a judgment or conclusion, including a pass/fail result or a confirmed reason work cannot be done, set the task to `done` and put the judgment in `result`. Use `pending` only while waiting for an external event such as a reply or another task to finish, and describe what you are waiting for in `summary`.
