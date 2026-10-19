@@ -4,19 +4,24 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Upload Anima avatar PNGs to XSERVER for public hosting.
+"""Upload Anima avatar PNGs to the Xserver VPS for public hosting.
 
-Avatars are uploaded via FTP to ``xs642990.xsrv.jp/public_html/animaworks-avatars/``
-making them publicly accessible at ``https://xs642990.xsrv.jp/animaworks-avatars/{name}.png``.
+Avatars are copied over SSH (tar) to ``/srv/OneDriveBiz/WebSite/animaworks-avatars/``
+and served by nginx at ``https://www.skmt2.net/animaworks-avatars/{name}.png``.
+(Until 2026-10 they were FTP-uploaded to the Xserver rental server.)
+
+Overridable via environment: AVATAR_SSH_DEST, AVATAR_SSH_KEY, AVATAR_REMOTE_DIR, AVATAR_PUBLIC_BASE_URL.
 
 This module is called:
   - At server startup (all avatars)
   - After asset adoption / avatar regeneration (single anima)
 """
 
-import ftplib
+import io
 import logging
 import os
+import subprocess
+import tarfile
 from pathlib import Path
 
 logger = logging.getLogger("animaworks.avatar_upload")
@@ -24,67 +29,31 @@ logger = logging.getLogger("animaworks.avatar_upload")
 _AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "platform-avatars"
 # Legacy fallback for migration
 _LEGACY_AVATAR_DIR = Path(__file__).resolve().parents[1] / "assets" / "slack-avatars"
-_FTP_REMOTE_DIR = "/xs642990.xsrv.jp/public_html/animaworks-avatars"
-_PUBLIC_BASE_URL = "https://xs642990.xsrv.jp/animaworks-avatars"
+_SSH_DEST = os.environ.get("AVATAR_SSH_DEST", "cmnt@xserver-vps")
+_SSH_KEY = os.environ.get("AVATAR_SSH_KEY", str(Path.home() / ".ssh" / "xserver_vps"))
+_REMOTE_DIR = os.environ.get("AVATAR_REMOTE_DIR", "/srv/OneDriveBiz/WebSite/animaworks-avatars")
+_PUBLIC_BASE_URL = os.environ.get("AVATAR_PUBLIC_BASE_URL", "https://www.skmt2.net/animaworks-avatars")
 
 
-def _get_xserver_config() -> dict | None:
-    """Load XSERVER FTP credentials from credentials cascade.
-
-    Resolution order:
-      1. Environment variables (XSERVER_FTP_HOST, _USER, _PASS)
-      2. config.json ``credentials.xserver_ftp``
-      3. Legacy abconfig bridge (if available)
-    """
-    host = os.environ.get("XSERVER_FTP_HOST")
-    user = os.environ.get("XSERVER_FTP_USER")
-    password = os.environ.get("XSERVER_FTP_PASS")
-
-    if not all((host, user, password)):
-        try:
-            from core.credentials import get_credential
-
-            host = host or get_credential("xserver_ftp", "xserver", "ftp_host", "XSERVER_FTP_HOST")
-            user = user or get_credential("xserver_ftp", "xserver", "ftp_user", "XSERVER_FTP_USER")
-            password = password or get_credential("xserver_ftp", "xserver", "ftp_pass", "XSERVER_FTP_PASS")
-        except Exception:
-            logger.debug("Avatar credential lookup failed", exc_info=True)
-
-    # Fallback: abconfig secrets_local.XSERVER dict
-    if not all((host, user, password)):
-        try:
-            import sys
-
-            abconfig_dir = r"E:\OneDriveBiz\Tools\abconfig"
-            if abconfig_dir not in sys.path:
-                sys.path.insert(0, abconfig_dir)
-            import secrets_local
-
-            xserver = getattr(secrets_local, "XSERVER", None) or {}
-            host = host or xserver.get("ftp_host", "")
-            user = user or xserver.get("ftp_user", "")
-            password = password or xserver.get("ftp_pass", "")
-        except Exception:
-            logger.debug("Legacy avatar credential lookup failed", exc_info=True)
-
-    if not all((host, user, password)):
-        logger.debug("XSERVER FTP credentials not found in env/config/abconfig")
-        return None
-
-    return {"ftp_host": host, "ftp_user": user, "ftp_pass": password}
-
-
-def _ensure_remote_dir(ftp: ftplib.FTP, path: str) -> None:
-    """Create remote directory if it doesn't exist."""
-    try:
-        ftp.cwd(path)
-    except ftplib.error_perm:
-        ftp.mkd(path)
-        ftp.cwd(path)
+def _upload_files(png_files: list[Path]) -> list[str]:
+    """Copy PNGs to the VPS in one ssh call (tar stream). Returns uploaded anima names."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for p in png_files:
+            info = tar.gettarinfo(str(p), arcname=f"{p.stem}.png")
+            info.mode = 0o644
+            with open(p, "rb") as f:
+                tar.addfile(info, f)
+    cmd = ["ssh", "-i", _SSH_KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", _SSH_DEST,
+           f"tar -xf - -C {_REMOTE_DIR}"]
+    res = subprocess.run(cmd, input=buf.getvalue(), capture_output=True, timeout=120)
+    if res.returncode != 0:
+        raise RuntimeError(f"ssh avatar upload failed (rc={res.returncode}): {res.stderr.decode('utf-8', 'replace')[-300:]}")
+    return [p.stem for p in png_files]
 
 
 def upload_avatar(anima_name: str) -> str:
-    """Upload a single anima's avatar PNG to XSERVER.
+    """Upload a single anima's avatar PNG to the VPS.
 
     Returns the public URL on success, or empty string on failure.
     """
@@ -95,29 +64,13 @@ def upload_avatar(anima_name: str) -> str:
     if not png_path.is_file():
         logger.debug("No avatar PNG for '%s' at %s", anima_name, png_path)
         return ""
-
-    xconf = _get_xserver_config()
-    if not xconf:
-        logger.warning("XSERVER config not available; cannot upload avatar for '%s'", anima_name)
-        return ""
-
     try:
-        ftp = ftplib.FTP(xconf["ftp_host"], timeout=30)
-        ftp.login(xconf["ftp_user"], xconf["ftp_pass"])
-        _ensure_remote_dir(ftp, _FTP_REMOTE_DIR)
-
-        remote_filename = f"{anima_name}.png"
-        with open(png_path, "rb") as f:
-            ftp.storbinary(f"STOR {remote_filename}", f)
-
-        ftp.quit()
-
+        _upload_files([png_path])
         url = f"{_PUBLIC_BASE_URL}/{anima_name}.png"
         logger.info("Uploaded avatar for '%s' -> %s", anima_name, url)
         return url
-
     except Exception:
-        logger.warning("FTP upload failed for avatar '%s'", anima_name, exc_info=True)
+        logger.warning("Avatar upload failed for '%s'", anima_name, exc_info=True)
         return ""
 
 
@@ -126,7 +79,6 @@ def upload_all_avatars() -> dict[str, str]:
 
     Returns dict of {anima_name: public_url} for successful uploads.
     """
-    # Collect PNGs from both new and legacy directories
     png_files: list[Path] = []
     seen: set[str] = set()
     for d in (_AVATAR_DIR, _LEGACY_AVATAR_DIR):
@@ -138,38 +90,13 @@ def upload_all_avatars() -> dict[str, str]:
     if not png_files:
         logger.info("No avatar PNGs found in %s", _AVATAR_DIR)
         return {}
-
-    xconf = _get_xserver_config()
-    if not xconf:
-        logger.warning("XSERVER config not available; skipping avatar upload")
-        return {}
-
-    results: dict[str, str] = {}
-
     try:
-        ftp = ftplib.FTP(xconf["ftp_host"], timeout=30)
-        ftp.login(xconf["ftp_user"], xconf["ftp_pass"])
-        _ensure_remote_dir(ftp, _FTP_REMOTE_DIR)
-
-        for png_path in png_files:
-            anima_name = png_path.stem
-            try:
-                with open(png_path, "rb") as f:
-                    ftp.storbinary(f"STOR {anima_name}.png", f)
-                url = f"{_PUBLIC_BASE_URL}/{anima_name}.png"
-                results[anima_name] = url
-                logger.debug("Uploaded avatar: %s -> %s", anima_name, url)
-            except Exception:
-                logger.warning("Failed to upload avatar for '%s'", anima_name, exc_info=True)
-
-        ftp.quit()
-
+        names = _upload_files(png_files)
     except Exception:
-        logger.warning("FTP connection failed for avatar upload", exc_info=True)
-
-    if results:
-        logger.info("Uploaded %d/%d avatar(s) to XSERVER", len(results), len(png_files))
-
+        logger.warning("Avatar upload to VPS failed", exc_info=True)
+        return {}
+    results = {n: f"{_PUBLIC_BASE_URL}/{n}.png" for n in names}
+    logger.info("Uploaded %d/%d avatar(s) to VPS", len(results), len(png_files))
     return results
 
 
