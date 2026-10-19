@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=2be5e90a27a81db3a05ea6e6b657e4b3f45bae33b680d76d7e810269ffa5cae7 generated=2026-10-18 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=99cb52567edd7ce5c70bc24987a687cf986e31871520757b373b0ce2766cde9e generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -819,7 +819,7 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 
 Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
-| 모듈 | 행 수 | docstring 첫째 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
 | `core.runtime.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
@@ -831,7 +831,7 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 | `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
 | `core.runtime.runner` | 1389 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 828 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.scheduler_manager` | 842 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1042 | Disposable task runner entry point. |
