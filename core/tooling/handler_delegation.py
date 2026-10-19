@@ -68,6 +68,20 @@ class DelegationMixin(OrgHelpersMixin):
             return _error_result("InvalidArguments", "model must be a string")
         model = model.strip() if isinstance(model, str) else ""
 
+        subject = args.get("subject", "")
+        if subject is None:
+            subject = ""
+        if not isinstance(subject, str):
+            return _error_result("InvalidArguments", "subject must be a string")
+        subject = subject.strip()
+
+        version = args.get("version", "")
+        if version is None:
+            version = ""
+        if not isinstance(version, str):
+            return _error_result("InvalidArguments", "version must be a string")
+        version = version.strip()
+
         if not target_name:
             return _error_result("InvalidArguments", "name is required")
         if not instruction:
@@ -109,7 +123,7 @@ class DelegationMixin(OrgHelpersMixin):
         # 1つの ID を委譲側・受け側の両方で共有する（旧データは _resolve の双方向フォールバックで解決）
         sub_task_id = uuid.uuid4().hex[:12]
         tracking_task_id = sub_task_id
-        from core.tasks.dispatch import publish_delegation
+        from core.tasks.dispatch import DelegationResult, publish_delegation
 
         task_desc = {
             "task_type": "llm",
@@ -126,9 +140,11 @@ class DelegationMixin(OrgHelpersMixin):
             "source": "delegation",
             "working_directory": resolved_wd,
             "model": model,
+            "subject": subject,
+            "version": version,
         }
         try:
-            publish_delegation(
+            published: DelegationResult = publish_delegation(
                 target_dir,
                 task_desc,
                 delegator=self._anima_name,
@@ -140,14 +156,20 @@ class DelegationMixin(OrgHelpersMixin):
             logger.exception("delegate_task persistence failed")
             return _error_result("PersistenceFailed", str(exc))
 
+        sub_task_id = published.task_id
+        tracking_task_id = published.task_id
+
         # Build outgoing origin_chain (provenance Phase 3)
         outgoing_chain = build_outgoing_origin_chain(
             self._session_origin,
             self._session_origin_chain,
         )
 
+        notified = False
         dm_result = ""
-        if self._messenger:
+        if published.deduplicated:
+            dm_result = t("handler.delegation_deduplicated", task_id=sub_task_id)
+        elif self._messenger:
             dm_enabled = True
             try:
                 from core.config.models import load_config
@@ -171,6 +193,7 @@ class DelegationMixin(OrgHelpersMixin):
                         origin_chain=outgoing_chain,
                         meta={"task_id": sub_task_id},
                     )
+                    notified = True
                     dm_result = t("handler.dm_sent")
                 except Exception as e:
                     dm_result = t("handler.dm_send_failed", e=e)
@@ -192,25 +215,50 @@ class DelegationMixin(OrgHelpersMixin):
         except Exception:
             logger.debug("Failed to check subordinate process status for %s", target_name, exc_info=True)
 
+        if published.deduplicated:
+            note = t(
+                "handler.delegation_deduplicated_note",
+                target_name=target_name,
+                task_id=sub_task_id,
+            )
+            activity_summary = t(
+                "handler.delegate_dedup_log",
+                target_name=target_name,
+                task_id=sub_task_id,
+                summary=summary[:80],
+            )
+        else:
+            note = t(
+                "handler.delegated_success",
+                target_name=target_name,
+                sub_id=sub_task_id,
+                own_id=tracking_task_id,
+                dm_result=dm_result,
+            )
+            activity_summary = t("handler.delegate_log", target_name=target_name, summary=summary[:80])
+
         self._activity.log(
             "tool_use",
             tool="delegate_task",
-            summary=t("handler.delegate_log", target_name=target_name, summary=summary[:80]),
+            summary=activity_summary,
             meta={
                 "target": target_name,
                 "own_task_id": tracking_task_id,
                 "sub_task_id": sub_task_id,
+                "deduplicated": published.deduplicated,
             },
         )
 
-        result = t(
-            "handler.delegated_success",
-            target_name=target_name,
-            sub_id=sub_task_id,
-            own_id=tracking_task_id,
-            dm_result=dm_result,
+        return _json.dumps(
+            {
+                "task_id": sub_task_id,
+                "status": published.status,
+                "deduplicated": published.deduplicated,
+                "notified": notified,
+                "note": note + process_warning,
+            },
+            ensure_ascii=False,
         )
-        return result + process_warning
 
     def _handle_task_tracker(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Track progress of delegated tasks."""

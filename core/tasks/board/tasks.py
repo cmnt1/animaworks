@@ -115,6 +115,16 @@ CREATE TABLE IF NOT EXISTS task_leases (
     expires_at TEXT NOT NULL,
     PRIMARY KEY(anima, task_id)
 );
+CREATE TABLE IF NOT EXISTS task_delegation_keys (
+    delegator TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    version TEXT NOT NULL,
+    anima TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(delegator, recipient, subject, version)
+);
 """
 
 
@@ -157,6 +167,12 @@ def ensure_task_store_schema(db_path: Path) -> None:
             "CREATE TABLE IF NOT EXISTS task_leases ("
             "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
             "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS task_delegation_keys ("
+            "delegator TEXT NOT NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, "
+            "version TEXT NOT NULL, anima TEXT NOT NULL, task_id TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "PRIMARY KEY(delegator, recipient, subject, version))"
         )
         _leave_task_store_wal_mode(db, db_path)
     finally:
@@ -615,6 +631,57 @@ class TaskStore:
             if existing and tuple(existing) != (anima, task_id):
                 raise ValueError("Task alias already names another task")
             db.execute("INSERT OR IGNORE INTO task_aliases VALUES(?,?,?,?)", (viewer, alias, anima, task_id))
+
+    def active_delegation_key(
+        self, delegator: str, recipient: str, subject: str, version: str
+    ) -> tuple[str, str] | None:
+        """Return ``(task_id, status)`` when the matching request is still open.
+
+        The caller must run this inside the publication transaction so that two
+        concurrent delegations cannot both miss the key and create a task.
+        Terminal requests are intentionally reported as absent: a new request
+        for the same subject must create fresh work.
+        """
+        if not self.has_database:
+            return None
+        with self.reader() as db:
+            key = db.execute(
+                "SELECT anima, task_id FROM task_delegation_keys "
+                "WHERE delegator=? AND recipient=? AND subject=? AND version=?",
+                (delegator, recipient, subject, version),
+            ).fetchone()
+            if key is None:
+                return None
+            task = db.execute(
+                "SELECT entry_json FROM tasks WHERE anima=? AND task_id=?",
+                (key["anima"], key["task_id"]),
+            ).fetchone()
+            if task is None:
+                return None
+            entry = json.loads(task["entry_json"])
+            status = str(entry.get("status", ""))
+            if status in _TERMINAL_STATUSES:
+                return None
+            return (str(key["task_id"]), status)
+
+    def remember_delegation_key(
+        self,
+        delegator: str,
+        recipient: str,
+        subject: str,
+        version: str,
+        anima: str,
+        task_id: str,
+    ) -> None:
+        """Point one request key at the task that currently fulfils it."""
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO task_delegation_keys"
+                "(delegator, recipient, subject, version, anima, task_id, created_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(delegator, recipient, subject, version) "
+                "DO UPDATE SET anima=excluded.anima, task_id=excluded.task_id, created_at=excluded.created_at",
+                (delegator, recipient, subject, version, anima, task_id, now_iso()),
+            )
 
     def submit(self, anima: str, entry: TaskEntry, payload: dict[str, Any], *, resume: bool = False) -> bool:
         """Atomically publish both task and complete execution input.

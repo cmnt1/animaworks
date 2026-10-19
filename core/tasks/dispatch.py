@@ -10,6 +10,7 @@ import errno
 import logging
 import re
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -375,6 +376,16 @@ def publish_tasks(
         return [TaskEntry(**item) for item in result["tasks"]]
 
 
+@dataclass(frozen=True)
+class DelegationResult:
+    """What actually happened to one delegation request."""
+
+    task_id: str
+    status: str
+    deduplicated: bool
+    via_host: bool
+
+
 def publish_delegation(
     target_dir: Path,
     payload: dict[str, Any],
@@ -382,20 +393,55 @@ def publish_delegation(
     delegator: str,
     tracking_task_id: str,
     host_fallback: bool = True,
-) -> bool:
-    """Publish task + alias atomically. Return whether the host proxy was used."""
+) -> DelegationResult:
+    """Publish task + alias atomically, consolidating an open identical request.
+
+    The recipient still decides how to handle the work; only the registration
+    is deduplicated. A request without ``subject`` always creates a new task.
+    """
     prepared = validate_task_payloads(target_dir.name, [payload])[0]
     prepared.setdefault("relay_chain", [delegator])
+    subject = str(prepared.get("subject") or "").strip()
+    version = str(prepared.get("version") or "").strip()
     try:
         manager = TaskQueueManager(target_dir)
         with manager.store.transaction():
+            if subject:
+                existing = manager.store.active_delegation_key(
+                    delegator,
+                    target_dir.name,
+                    subject,
+                    version,
+                )
+                if existing is not None:
+                    task_id, status = existing
+                    return DelegationResult(
+                        task_id=task_id,
+                        status=status,
+                        deduplicated=True,
+                        via_host=False,
+                    )
             manager.submit(prepared, meta={"model": payload.get("model", "")})
-            manager.store.alias(delegator, tracking_task_id, target_dir.name, payload["task_id"])
-        return False
+            manager.store.alias(delegator, tracking_task_id, target_dir.name, prepared["task_id"])
+            if subject:
+                manager.store.remember_delegation_key(
+                    delegator,
+                    target_dir.name,
+                    subject,
+                    version,
+                    target_dir.name,
+                    prepared["task_id"],
+                )
+        return DelegationResult(
+            task_id=prepared["task_id"],
+            status="pending",
+            deduplicated=False,
+            via_host=False,
+        )
     except (OSError, sqlite3.OperationalError, TaskPersistenceError) as exc:
         if not host_fallback or not is_task_permission_error(exc):
             raise
-        _post_tasks(
+        response = _post_tasks(
             "delegate-task",
             {
                 "delegator": delegator,
@@ -407,7 +453,14 @@ def publish_delegation(
                 "workspace": prepared.get("working_directory", ""),
                 "acceptance_criteria": prepared.get("acceptance_criteria", []),
                 "model": prepared.get("model", ""),
+                "subject": subject,
+                "version": version,
                 "execution_input": prepared,
             },
         )
-        return True
+        return DelegationResult(
+            task_id=str(response.get("task_id") or response.get("sub_task_id") or prepared["task_id"]),
+            status=str(response.get("status") or "pending"),
+            deduplicated=bool(response.get("deduplicated", False)),
+            via_host=True,
+        )

@@ -175,14 +175,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "schema.delegate_task.desc": {
         "ja": (
             "直属部下のAnimaにタスクを委譲する（部下のTaskExecが実行する）。"
+            "subject（と任意の version）を指定すると、同じ相手・同じ対象で未完了の依頼がある場合は"
+            "新しいタスクを作らず既存の依頼のタスクIDを返す。"
             "詳細は operations/task-delegation-guide.md を参照。"
         ),
         "en": (
             "Delegate a task to a direct subordinate Anima (executed by the subordinate's TaskExec). "
+            "When subject (and optionally version) is supplied and an open request for the same "
+            "recipient and subject exists, it returns the existing task ID instead of creating a new task. "
+            "A result with deduplicated=true means the request was consolidated into an existing task. "
             "See operations/task-delegation-guide.md for details."
         ),
         "ko": (
             "직속 부하 Anima에게 태스크를 위임한다(부하의 TaskExec가 실행). "
+            "subject(선택적으로 version)를 지정하면 같은 상대·같은 대상의 미완료 요청이 있을 때 "
+            "새 태스크를 만들지 않고 기존 요청의 태스크 ID를 반환한다. "
+            "deduplicated=true는 기존 요청에 통합되었다는 뜻이다. "
             "상세는 operations/task-delegation-guide.md 참조."
         ),
     },
@@ -233,6 +241,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
         "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
         "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
+    },
+    "schema.delegate_task.subject": {
+        "ja": "任意の対象キー（例: github:owner/repo#123、issue:owner/repo#45、または自由文字列）。同じ委譲元・委譲先・subject・version の未完了依頼があれば、新規作成せず既存の依頼のタスクIDを返す。未指定なら従来どおり毎回新規作成する",
+        "en": "Optional subject key (e.g. github:owner/repo#123, issue:owner/repo#45, or any free-form string). If an open request with the same delegator, recipient, subject and version exists, the existing task ID is returned instead of creating a new task. When unset, every call creates a new task as before",
+        "ko": "임의의 대상 키(예: github:owner/repo#123, issue:owner/repo#45 또는 자유 문자열). 같은 위임자·대상·subject·version의 미완료 요청이 있으면 새로 만들지 않고 기존 요청의 태스크 ID를 반환한다. 미지정이면 기존과 같이 매번 새로 만든다",
+    },
+    "schema.delegate_task.version": {
+        "ja": "任意の版キー（例: 対象の head SHA）。subject と組み合わせて依頼キーにする。版が変われば同じ対象でも別タスクになる",
+        "en": "Optional version key (e.g. the target head SHA). Combined with subject to form the request key; a different version creates a separate task even for the same subject",
+        "ko": "임의의 버전 키(예: 대상 head SHA). subject와 결합해 요청 키를 만든다. 버전이 다르면 같은 대상이라도 별도 태스크가 된다",
     },
     "schema.submit_tasks.resume": {
         "ja": "終了したpendingタスクを保存済みの実行入力で再開する。trueの場合はtask_idとresumeのみ指定。新規タスクにはtitleとdescriptionが必須。",
