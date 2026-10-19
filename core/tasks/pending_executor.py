@@ -192,6 +192,8 @@ class PendingTaskExecutor:
         self._anima_name = anima_name
         self._anima_dir = anima_dir
         self._shutdown_event = shutdown_event
+        self._accepting_claims = True
+        self._claim_gate_lock = threading.Lock()
         self._wake_event = asyncio.Event()
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
@@ -496,8 +498,21 @@ class PendingTaskExecutor:
 
     # ── Watcher loop ─────────────────────────────────────────
 
+    async def quiesce(self) -> None:
+        """Stop claiming new TaskStore work while active dispatches continue."""
+        self._accepting_claims = False
+
+        def wait_for_active_claim() -> None:
+            with self._claim_gate_lock:
+                pass
+
+        await asyncio.to_thread(wait_for_active_claim)
+        self.wake()
+
     def _claim_canonical_pending_tasks(self) -> list[dict[str, Any]]:
         """Recover and claim TaskStore inputs with blocking store I/O off-loop."""
+        if not self._accepting_claims:
+            return []
         try:
             from core.tasks.board.tasks import process_identity
 
@@ -506,12 +521,15 @@ class PendingTaskExecutor:
             self._deliver_task_wakeups(store)
             claims = []
             for payload in store.pending(self._anima_name):
-                task_desc = store.claim(
-                    self._anima_name,
-                    str(payload["task_id"]),
-                    process_identity(),
-                    max_active=self._worker_pool_size(),
-                )
+                with self._claim_gate_lock:
+                    if not self._accepting_claims:
+                        break
+                    task_desc = store.claim(
+                        self._anima_name,
+                        str(payload["task_id"]),
+                        process_identity(),
+                        max_active=self._worker_pool_size(),
+                    )
                 if task_desc is not None:
                     claims.append(task_desc)
             return claims
@@ -535,6 +553,16 @@ class PendingTaskExecutor:
 
         while not self._shutdown_event.is_set():
             try:
+                if not self._accepting_claims:
+                    try:
+                        await asyncio.wait_for(
+                            self._wake_event.wait(),
+                            timeout=_PENDING_WATCHER_POLL_INTERVAL,
+                        )
+                        self._wake_event.clear()
+                    except TimeoutError:
+                        pass
+                    continue
                 # One claim transaction owns each task input and its attempt.
                 canonical_poll = asyncio.create_task(asyncio.to_thread(self._claim_canonical_pending_tasks))
                 try:

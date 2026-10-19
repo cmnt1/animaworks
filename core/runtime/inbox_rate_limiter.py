@@ -49,6 +49,7 @@ class InboxRateLimiter:
         self._scheduler_mgr = scheduler_mgr
 
         self._pending_trigger = False
+        self._accepting_work = True
         self._inbox_run_lock = asyncio.Lock()
         self._inbox_wake_event = asyncio.Event()
         self._deferred_timer: asyncio.Handle | None = None
@@ -69,6 +70,12 @@ class InboxRateLimiter:
     def _retry_is_delayed(self) -> bool:
         """Provider failures retain unread messages without hot-looping them."""
         return time.monotonic() < self._failure_retry_until
+
+    def quiesce(self) -> None:
+        """Prevent new inbox work from starting while active work continues."""
+        self._accepting_work = False
+        self.cancel_deferred_timer()
+        self._inbox_wake_event.set()
 
     def _record_processing_failure(self) -> None:
         delay = _PROVIDER_FAILURE_RETRY_MIN_SEC
@@ -150,12 +157,17 @@ class InboxRateLimiter:
 
     async def message_triggered_inbox(self) -> None:
         """Run one inbox job; arrivals during it are coalesced into the next job."""
+        if not self._accepting_work:
+            return
         if self._inbox_run_lock.locked():
             # The active job checks for unread messages on exit and raises one
             # wake for the next batch, so parallel triggers need not queue here.
             return
 
         async with self._inbox_run_lock:
+            if not self._accepting_work:
+                self._pending_trigger = False
+                return
             if not self._anima:
                 self._pending_trigger = False
                 return
@@ -252,7 +264,7 @@ class InboxRateLimiter:
                         pass
                     self._inbox_wake_event.clear()
 
-                    if self._shutdown_event.is_set() or self._pending_trigger:
+                    if self._shutdown_event.is_set() or not self._accepting_work or self._pending_trigger:
                         continue
                     if not self._anima.messenger.has_unread():
                         quiet_wait_started_at = None
