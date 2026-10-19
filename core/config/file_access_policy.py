@@ -141,6 +141,15 @@ def effective_write_roots(
     anima_dir = Path(anima_dir)
     data_dir = anima_dir.resolve().parent.parent
     company_shared = company_shared_write_root(anima_dir)
+    # The operator may explicitly grant the installation's shared worktrees.
+    # This is not an implicit grant to shared/ or to the rest of data_dir.
+    shared = data_dir / "shared"
+    worktrees = shared / "worktrees"
+    shared_worktrees = (
+        worktrees.resolve()
+        if shared.is_dir() and worktrees.is_dir() and shared.resolve() == shared and worktrees.resolve() == worktrees
+        else None
+    )
     roots: list[Path] = []
     if company_shared is not None:
         company_shared.mkdir(parents=True, exist_ok=True)
@@ -149,7 +158,8 @@ def effective_write_roots(
     for root in file_roots:
         resolved = Path(root).expanduser().resolve()
         if resolved.is_relative_to(data_dir) and not (
-            company_shared is not None and resolved.is_relative_to(company_shared)
+            (company_shared is not None and resolved.is_relative_to(company_shared))
+            or (shared_worktrees is not None and resolved.is_relative_to(shared_worktrees))
         ):
             raise FileRootsConfigError(t("config.file_roots_inside_data_dir", path=resolved))
         roots.append(resolved)

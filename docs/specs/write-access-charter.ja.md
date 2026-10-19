@@ -18,6 +18,10 @@ anima が書き込めるのは次の**3種類の場所だけ**である。例外
 
 ## 派生規則
 
+### 2026-10-19 オーナー承認: 共通検証用worktrees
+
+会社別領域を使わない既存環境では、`data_dir/shared/worktrees/` を共通検証用の専用git worktree置き場として使用できる。オーナーの明示承認後、正規のworkspace grant APIから対象Animaの `file_roots` に登録する。自動付与ではなく、`shared/` 全体や他のdata_dir内部領域には適用しない。`shared` / `worktrees` の実パスが別領域へ転送される構成は対象外。本項は上記3・4およびdata_dir内パス禁止の、この領域に限った改定である。
+
 - `file_roots` に data_dir（`~/.animaworks`）配下のパスを書くことは**起動時エラー**とする。「宣言したのに効かない」状態を構造的に禁止する。
 - タスクで明示された workspace（`task_cwd`）は書き込み可（オプトイン）。指示で明示されたディレクトリで作業が止まってはならない。
 - deny 側（他社ディレクトリ・秘密情報・`permissions.json` 自身の保護・`shell_internal_deny_paths`）は本書の対象外で現状維持。
