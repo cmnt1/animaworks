@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.enclave.ops import check_gateway_health, count_today_egress_audits
+from core.runtime.cron_diagnostics import diagnose_cron_task
 from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
 
@@ -135,6 +136,7 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
             trigger = parse_schedule(task.schedule, warn=False)
             next_run_dt = trigger.get_next_fire_time(None, now) if trigger is not None else None
             next_run = next_run_dt.isoformat() if next_run_dt else None
+            diagnostics = diagnose_cron_task(task, trigger, base_time=now) if trigger is not None else []
             schedule = task.schedule.strip() if task.schedule else ""
             if not schedule:
                 m = re.search(r"[（(](.+?)[）)]", task.name)
@@ -150,6 +152,7 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
                     "schedule": schedule,
                     "last_run": last_runs.get(task.name),
                     "next_run": next_run,
+                    "diagnostics": diagnostics,
                 }
             )
     return jobs

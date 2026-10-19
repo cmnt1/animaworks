@@ -35,6 +35,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク実行開始: {title}",
         "en": "Task execution started: {title}",
     },
+    "pending_executor.completion_notify_skipped": {
+        "ja": "報告済みのため完了通知を省略: {title}",
+        "en": "Completion notice skipped because the result was already reported: {title}",
+        "ko": "이미 결과를 보고해 완료 알림 생략: {title}",
+    },
     "pending_executor.model_override": {
         "ja": "タスクのモデル上書き: {requested} で実行（解決: {resolved}）",
         "en": "Task model override: running with {requested} (resolved: {resolved})",

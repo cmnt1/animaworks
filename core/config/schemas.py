@@ -661,6 +661,8 @@ class ServerConfig(BaseModel):
     chat_max_concurrency: int = Field(default=1, ge=1, le=10)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
+    # Matches the 600-second TaskExec drain; 0 skips waiting for active work.
+    restart_drain_timeout_seconds: int = Field(default=600, ge=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)
@@ -904,8 +906,10 @@ class HousekeepingConfig(BaseModel):
 
 
 class InboxConfig(BaseModel):
-    """Configuration for shared inbox stale-file hygiene."""
+    """Configuration for shared inbox processing and stale-file hygiene."""
 
+    inbox_quiet_seconds: float = Field(default=90.0, ge=0)
+    inbox_quiet_max_wait_seconds: float = Field(default=300.0, ge=0)
     ttl_hours: float = Field(default=24.0, gt=0)
     expired_retention_days: int = Field(default=7, ge=1)
     processed_retention_days: int = Field(default=30, ge=1)
@@ -955,6 +959,14 @@ class HeartbeatConfig(BaseModel):
         ge=0,
         le=7200,
         description="Seconds before forcefully terminating the HB session; 0 = disabled",
+    )
+    cron_followup_repeat_suppress_hours: float = Field(
+        default=6.0,
+        ge=0,
+        description=(
+            "Suppress a command cron's LLM follow-up when its output is identical to the "
+            "previous follow-up for this many hours; 0 disables suppression"
+        ),
     )
 
     @model_validator(mode="after")

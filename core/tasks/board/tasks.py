@@ -315,6 +315,14 @@ class TaskStore:
             return (delegator["anima"], delegator["task_id"])
         return (anima, task_id)
 
+    def alias_target(self, viewer: str, alias: str) -> tuple[str, str] | None:
+        """Return the foreign canonical target for one viewer-visible task ID."""
+        if not self.has_database:
+            return None
+        with self.reader() as db:
+            owner, task_id = self._resolve(db, viewer, alias)
+        return (owner, task_id) if owner != viewer else None
+
     def read(self, anima: str, *, archived: bool = False) -> dict[str, TaskEntry]:
         if not self.has_database:
             return {}
@@ -795,6 +803,25 @@ class TaskStore:
                 return False
             merged = {**json.loads(row[0]), **identity}
             db.execute("UPDATE task_attempts SET identity_json=? WHERE token=?", (_json(merged), token))
+            return True
+
+    def update_attempt_meta(self, token: str, meta_patch: dict[str, Any]) -> bool:
+        """Merge metadata into the task owned by the matching active attempt."""
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT t.anima,t.task_id,t.entry_json FROM tasks t "
+                "JOIN task_attempts a ON a.anima=t.anima AND a.task_id=t.task_id "
+                "WHERE a.token=? AND a.ended_at IS NULL AND t.current_attempt=a.token",
+                (token,),
+            ).fetchone()
+            if not row:
+                return False
+            entry = TaskEntry(**json.loads(row["entry_json"]))
+            entry.meta = {**entry.meta, **meta_patch}
+            db.execute(
+                "UPDATE tasks SET entry_json=? WHERE anima=? AND task_id=? AND current_attempt=?",
+                (_json(entry.model_dump()), row["anima"], row["task_id"], token),
+            )
             return True
 
     def finish(

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: b6bbbacf81b7d8e42e6e27732102916a65ce1f402fef24df788b881757fc3331 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 157b4455a15611ee0a4d3562b432df3a4449e614ee633da6fb20707745e39685 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -929,7 +929,7 @@ Restart the server (stop then start)
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
 | --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1128,7 +1128,7 @@ Stop the running server
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 

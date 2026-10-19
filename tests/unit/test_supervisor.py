@@ -17,13 +17,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.time_utils import now_jst
 from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
 from server.supervisor.process_handle import ProcessHandle, ProcessState
-from core.time_utils import now_jst
 
 
 @pytest.fixture
@@ -184,6 +184,7 @@ async def test_restart_uses_configured_stop_timeout(supervisor):
     """Restart delegates its normal stop to the configured stop budget."""
     supervisor._anima_stop_timeout = 45.5
     handle = AsyncMock(spec=ProcessHandle)
+    handle.send_request.return_value = SimpleNamespace(error=None)
     supervisor.processes["test_anima"] = handle
     supervisor.start_anima = AsyncMock()
 
@@ -195,6 +196,7 @@ async def test_restart_uses_configured_stop_timeout(supervisor):
         drain_background=True,
         drain_timeout=None,
     )
+    handle.send_request.assert_awaited_once_with("quiesce", {}, timeout=5.0)
     supervisor.start_anima.assert_awaited_once_with("test_anima")
 
 

@@ -119,6 +119,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Animaが再起動中です。しばらく待ってから再試行してください。",
         "en": "Anima is restarting. Please wait and retry.",
     },
+    "cli.server_waiting_for_work": {
+        "ja": "実行中の作業を待っています（最大 {seconds} 秒）",
+        "en": "Waiting for active work to finish (up to {seconds} seconds)",
+        "ko": "실행 중인 작업이 끝날 때까지 기다립니다 (최대 {seconds}초)",
+    },
+    "activity.cron_rerun": {
+        "ja": "中断された cron を再実行します: {task_name}",
+        "en": "Rerunning interrupted cron: {task_name}",
+        "ko": "중단된 cron을 다시 실행합니다: {task_name}",
+    },
     "chat.anima_unavailable": {
         "ja": "Animaのプロセスに接続できません。再起動中の可能性があります。",
         "en": "Cannot connect to Anima process. It may be restarting.",
