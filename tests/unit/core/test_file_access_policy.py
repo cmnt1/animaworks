@@ -28,6 +28,40 @@ from core.execution.engines.claude._sdk_security import _check_a1_file_access
 from core.tooling.handler import ToolHandler
 
 
+def test_explicit_shared_worktrees_grant_is_narrow(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "worker"
+    anima_dir.mkdir(parents=True)
+    worktrees = data_dir / "shared" / "worktrees"
+    checkout = worktrees / "candidate"
+    checkout.mkdir(parents=True)
+    assert worktrees not in effective_write_roots(anima_dir, [])
+    assert worktrees in effective_write_roots(anima_dir, [str(worktrees)])
+    assert checkout in effective_write_roots(anima_dir, [str(checkout)])
+    for denied in [data_dir, data_dir / "shared", data_dir / "tmp", data_dir / "credentials"]:
+        with pytest.raises(FileRootsConfigError):
+            effective_write_roots(anima_dir, [str(denied)])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privilege on Windows")
+@pytest.mark.parametrize("redirect_shared", [False, True])
+def test_shared_worktrees_grant_cannot_redirect_into_runtime(tmp_path: Path, redirect_shared: bool) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "worker"
+    anima_dir.mkdir(parents=True)
+    private = data_dir / "credentials"
+    private.mkdir()
+    shared = data_dir / "shared"
+    if redirect_shared:
+        (private / "worktrees").mkdir()
+        shared.symlink_to(private, target_is_directory=True)
+    else:
+        shared.mkdir()
+        (shared / "worktrees").symlink_to(private, target_is_directory=True)
+    with pytest.raises(FileRootsConfigError):
+        effective_write_roots(anima_dir, [str(shared / "worktrees")])
+
+
 def test_internal_cache_matcher_only_protects_runtime_credentials(tmp_path: Path) -> None:
     anima_dir = tmp_path / "anima"
     anima_dir.mkdir()
