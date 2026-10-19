@@ -92,6 +92,14 @@ class TaskPersistenceError(MemoryIOError):
     """Failed to persist task queue data."""
 
 
+class TaskOwnedByOther(AnimaWorksError):
+    """A delegated task can only be updated by its owner, except for cancellation."""
+
+    def __init__(self, owner: str) -> None:
+        super().__init__(f"Task is owned by {owner}")
+        self.owner = owner
+
+
 # ── Process / IPC ────────────────────────────────────────────
 
 

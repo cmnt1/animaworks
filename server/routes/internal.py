@@ -1465,15 +1465,6 @@ def create_internal_router() -> APIRouter:
 
         if validate_anima_name(body.anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
-        if body.status == "in_progress":
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "detail": "status 'in_progress' is written only by the running TaskExec. "
-                    "To (re)start a task, submit it with the submit_tasks tool. "
-                    "To close it, use status done or cancelled."
-                },
-            )
         anima_dir = get_animas_dir() / body.anima_name
         if not anima_dir.is_dir():
             return JSONResponse(
@@ -1483,23 +1474,34 @@ def create_internal_router() -> APIRouter:
 
         def _persist() -> Any:
             from core.tasks.board.tasks import attempt_scope
+            from core.tasks.dispatch import persist_task_update
 
             manager = TaskQueueManager(anima_dir)
-            with attempt_scope(body.attempt_identity), manager.store.transaction():
-                entry = manager.update_meta(body.task_id, body.meta, summary=body.summary)
-                if entry is None:
-                    return None
-                entry = manager.update_status(body.task_id, body.status, summary=body.summary)
-                if entry is None:
-                    return None
-                if body.resume:
-                    return manager.store.resume(manager.anima_dir.name, body.task_id)
-                return entry
+            with attempt_scope(body.attempt_identity):
+                return persist_task_update(
+                    manager,
+                    body.task_id,
+                    body.status,
+                    summary=body.summary,
+                    resume=body.resume,
+                    meta_patch=body.meta,
+                )
 
         try:
             loop = asyncio.get_running_loop()
             entry = await loop.run_in_executor(_native_executor, _persist)
         except Exception as exc:
+            from core.exceptions import TaskOwnedByOther
+
+            if isinstance(exc, TaskOwnedByOther):
+                return JSONResponse(
+                    status_code=409,
+                    content={"error_type": "TaskOwnedByOther", "owner": exc.owner},
+                )
+            if isinstance(exc, ValueError) and (
+                body.status == "in_progress" or (body.resume and body.status != "pending")
+            ):
+                return JSONResponse(status_code=400, content={"error_type": "InvalidArguments", "detail": str(exc)})
             logger.exception("internal update-task failed")
             return JSONResponse(status_code=500, content={"detail": str(exc)})
         if entry is None:

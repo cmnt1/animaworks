@@ -13,7 +13,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 
-from core.exceptions import TaskPersistenceError
+from core.exceptions import TaskOwnedByOther, TaskPersistenceError
 from core.schemas import TaskEntry
 from core.tasks.queue import TaskQueueManager
 
@@ -82,17 +82,13 @@ def update_task(
     result: str | None = None,
     resume: bool = False,
 ) -> TaskEntry | None:
-    """Atomically declare a task result, proxying only sandbox storage denial.
+    """Update task status, proxying only sandbox storage denial.
 
     When ``resume`` is True the task is requeued under its original task_id
     using its saved execution input (status must be 'pending').
     """
     from core.time_utils import now_iso
 
-    if resume and status != "pending":
-        raise ValueError("resume requires status='pending'")
-    if status not in {"pending", "delegated", "done", "cancelled"}:
-        raise ValueError(f"Invalid task update status: {status}")
     if result is not None:
         summary = result
     meta: dict[str, Any] = {}
@@ -101,32 +97,103 @@ def update_task(
         if summary is not None:
             meta["result_note"] = summary
     try:
-        with manager.store.transaction():
-            if meta and manager.update_meta(task_id, meta, summary=summary) is None:
-                return None
-            entry = manager.update_status(task_id, status, summary=summary)
-            if entry is None:
-                return None
-            if resume:
-                return manager.store.resume(manager.anima_dir.name, task_id)
-            return entry
+        return persist_task_update(
+            manager,
+            task_id,
+            status,
+            summary=summary,
+            resume=resume,
+            meta_patch=meta or None,
+        )
     except Exception as exc:
         if not is_task_permission_error(exc):
             raise
-        response = _post_tasks(
-            "update-task",
-            {
-                "anima_name": manager.anima_dir.name,
-                "task_id": task_id,
-                "status": status,
-                "summary": summary,
-                "meta": meta,
-                "resume": resume,
-            },
-        )
+        try:
+            response = _post_tasks(
+                "update-task",
+                {
+                    "anima_name": manager.anima_dir.name,
+                    "task_id": task_id,
+                    "status": status,
+                    "summary": summary,
+                    "meta": meta,
+                    "resume": resume,
+                },
+            )
+        except Exception as fallback_exc:
+            response_obj = getattr(fallback_exc, "response", None)
+            if response_obj is not None and response_obj.status_code in {400, 409}:
+                try:
+                    payload = response_obj.json()
+                except Exception:
+                    payload = {}
+                if payload.get("error_type") == "TaskOwnedByOther":
+                    raise TaskOwnedByOther(str(payload.get("owner") or "unknown")) from fallback_exc
+                if payload.get("error_type") == "InvalidArguments":
+                    raise ValueError(str(payload.get("detail") or "Invalid task update")) from fallback_exc
+            raise
+        if response.get("ok") is False:
+            if response.get("error_type") == "TaskOwnedByOther":
+                raise TaskOwnedByOther(str(response.get("owner") or "unknown")) from None
+            if response.get("error_type") == "InvalidArguments":
+                raise ValueError(str(response.get("detail") or "Invalid task update")) from None
+            raise TaskPersistenceError("Task host rejected update-task request") from None
         if response.get("ok") is not True or not isinstance(response.get("task"), dict):
             raise TaskPersistenceError("Unexpected response from task update host") from exc
         return TaskEntry.model_validate(response["task"])
+
+
+def persist_task_update(
+    manager: TaskQueueManager,
+    task_id: str,
+    status: str,
+    *,
+    summary: str | None = None,
+    resume: bool = False,
+    meta_patch: dict[str, Any] | None = None,
+) -> TaskEntry | None:
+    """Persist a task update locally and send the matching task notices."""
+    from core.i18n import t
+
+    actor = manager.anima_dir.name
+    with manager.store.transaction():
+        delegated_target = manager.assert_task_update_owner(task_id, status)
+        if resume and status != "pending":
+            raise ValueError("resume requires status='pending'")
+        if status in {"blocked", "failed"}:
+            raise ValueError(
+                f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."
+            )
+        if status == "in_progress":
+            raise ValueError(
+                "status 'in_progress' is written only by the running TaskExec. "
+                "To (re)start a task, submit it with the submit_tasks tool. "
+                "To close it, use --status done or cancelled."
+            )
+        if status not in {"pending", "delegated", "done", "cancelled"}:
+            raise ValueError(f"Invalid task update status: {status}")
+        if meta_patch is not None and manager.update_meta(task_id, meta_patch, summary=summary) is None:
+            return None
+        entry = manager.update_status(task_id, status, summary=summary)
+        if entry is None:
+            return None
+        if resume:
+            entry = manager.store.resume(actor, task_id)
+
+    if status == "cancelled":
+        from core.tasks.board.board_actions import notify_task_delegator, notify_task_owner
+
+        reason = summary or t("task_update.cancel_reason_missing")
+        if delegated_target is not None:
+            owner, canonical_id = delegated_target
+            detail = t("task_update.cancelled_by_requester", requester=actor, reason=reason)
+            warning = notify_task_owner(actor, owner, canonical_id, "cancel", detail)
+        else:
+            detail = t("task_update.cancelled_by_owner", owner=actor, reason=reason)
+            warning = notify_task_delegator(actor, actor, entry.model_dump(), task_id, "cancel", detail)
+        if warning:
+            logger.warning("Task cancellation notice failed: %s", warning)
+    return entry
 
 
 def read_tasks_via_server(

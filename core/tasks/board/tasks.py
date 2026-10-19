@@ -315,6 +315,14 @@ class TaskStore:
             return (delegator["anima"], delegator["task_id"])
         return (anima, task_id)
 
+    def alias_target(self, viewer: str, alias: str) -> tuple[str, str] | None:
+        """Return the foreign canonical target for one viewer-visible task ID."""
+        if not self.has_database:
+            return None
+        with self.reader() as db:
+            owner, task_id = self._resolve(db, viewer, alias)
+        return (owner, task_id) if owner != viewer else None
+
     def read(self, anima: str, *, archived: bool = False) -> dict[str, TaskEntry]:
         if not self.has_database:
             return {}
