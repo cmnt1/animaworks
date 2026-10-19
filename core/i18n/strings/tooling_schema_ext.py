@@ -23,9 +23,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": ("Filter (all: all tasks, active: in-progress, completed: finished). Default: active"),
     },
     "schema.update_task.desc": {
-        "ja": ("タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。"),
-        "en": ("Update a task's status. Set status='done' on completion, status='cancelled' on abort."),
-        "ko": ("작업 상태를 업데이트한다. 완료 시 status='done', 중단 시 status='cancelled'로 설정한다."),
+        "ja": (
+            "タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。委譲したタスクには status='cancelled'（取り下げ）だけ指定できる。"
+        ),
+        "en": (
+            "Update a task's status. Set status='done' on completion, status='cancelled' on abort. For a task you delegated, only status='cancelled' (withdraw the request) is allowed."
+        ),
+        "ko": (
+            "작업 상태를 업데이트한다. 완료 시 status='done', 중단 시 status='cancelled'로 설정한다. 위임한 작업에는 status='cancelled'(요청 철회)만 지정할 수 있다."
+        ),
     },
     "schema.update_task.status": {
         "ja": "新しいステータス",

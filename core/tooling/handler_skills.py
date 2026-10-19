@@ -699,20 +699,6 @@ class SkillsToolsMixin:
         if resume is not None and not isinstance(resume, bool):
             return _error_result("InvalidArguments", "resume must be a boolean")
         resume = bool(resume)
-        if resume and status != "pending":
-            return _error_result("InvalidArguments", "resume requires status='pending'")
-        if status in ("blocked", "failed"):
-            return _error_result(
-                "InvalidArguments",
-                f"status={status!r} was retired. Use status='cancelled' and message the requester with the reason.",
-            )
-        if status == "in_progress":
-            return _error_result(
-                "InvalidArguments",
-                "status 'in_progress' is written only by the running TaskExec. "
-                "To (re)start a task, submit it with the submit_tasks tool. "
-                "To close it, use --status done or cancelled.",
-            )
         if result is not None and not isinstance(result, str):
             return _error_result("InvalidArguments", "result must be a string")
         if result is not None:
@@ -721,6 +707,14 @@ class SkillsToolsMixin:
         try:
             entry = update_task(manager, task_id, status, summary=summary, result=result, resume=resume)
         except Exception as e:
+            from core.exceptions import TaskOwnedByOther
+
+            if isinstance(e, TaskOwnedByOther):
+                return _error_result("TaskOwnedByOther", t("handler.task_owned_by_other", owner=e.owner))
+            if isinstance(e, ValueError) and (
+                status in {"blocked", "failed", "in_progress"} or (resume and status != "pending")
+            ):
+                return _error_result("InvalidArguments", str(e))
             logger.error("Task persistence failed in update_task: %s", e)
             return _error_result("PersistenceFailed", f"Failed to update task: {e}")
         if entry is None:
