@@ -121,3 +121,54 @@ def test_task_add_help_explains_difference_from_backlog_task(capsys) -> None:
     help_text = capsys.readouterr().out
     assert "executable TaskExec task" in help_text
     assert "backlog_task" in help_text
+
+
+def test_cli_update_maps_waiting_for_and_scope_note(monkeypatch, capsys) -> None:
+    run_tool = Mock(return_value="{}")
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
+
+    _cmd_update(
+        SimpleNamespace(
+            task_id="task-1",
+            status="pending",
+            summary=None,
+            waiting_for_kind="time",
+            waiting_for_ref=None,
+            waiting_for_until="2026-10-20T09:00:00+09:00",
+            scope_note="narrow to API only",
+        )
+    )
+
+    run_tool.assert_called_once_with(
+        "update_task",
+        {
+            "task_id": "task-1",
+            "status": "pending",
+            "waiting_for": {"kind": "time", "until": "2026-10-20T09:00:00+09:00"},
+            "scope_note": "narrow to API only",
+        },
+    )
+    capsys.readouterr()
+
+
+def test_cli_update_allows_scope_note_without_status(monkeypatch, capsys) -> None:
+    run_tool = Mock(return_value="{}")
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
+
+    _cmd_update(
+        SimpleNamespace(
+            task_id="task-1",
+            status=None,
+            summary=None,
+            waiting_for_kind=None,
+            waiting_for_ref=None,
+            waiting_for_until=None,
+            scope_note="split the work",
+        )
+    )
+
+    run_tool.assert_called_once_with(
+        "update_task",
+        {"task_id": "task-1", "scope_note": "split the work"},
+    )
+    capsys.readouterr()
