@@ -622,15 +622,18 @@ class SchedulerManager:
             logger.debug("Scheduled cron deferred until setup completes: %s", self._anima_name)
             return
 
-        # Detect schedule file changes and skip stale tasks
+        # Detect schedule file changes; run the reloaded definition if the task survived
         if self._check_schedule_freshness():
-            self._log_cron_event(task, "skipped", "schedule reloaded")
-            logger.info(
-                "Skipping stale cron '%s' for %s (schedule reloaded)",
-                task.name,
-                self._anima_name,
-            )
-            return
+            fresh = self._find_registered_cron(task)
+            if fresh is None:
+                self._log_cron_event(task, "skipped", "schedule reloaded")
+                logger.info(
+                    "Skipping stale cron '%s' for %s (schedule reloaded)",
+                    task.name,
+                    self._anima_name,
+                )
+                return
+            task = fresh
 
         if task.name in self._cron_running:
             self._log_cron_event(task, "skipped", "already running")
@@ -653,6 +656,17 @@ class SchedulerManager:
         except Exception:
             self._cron_running.discard(task.name)
             raise
+
+    def _find_registered_cron(self, task: CronTask) -> CronTask | None:
+        """Return the reloaded definition of *task* if it still has the same name and schedule."""
+        if not self.scheduler:
+            return None
+        for job in self.scheduler.get_jobs():
+            args = job.args or ()
+            candidate = args[0] if args else None
+            if isinstance(candidate, CronTask) and candidate.name == task.name and candidate.schedule == task.schedule:
+                return candidate
+        return None
 
     async def _run_command_cron(self, task: CronTask) -> dict[str, Any]:
         """Run a shell-command cron in this scheduler process, isolating only its LLM follow-up."""

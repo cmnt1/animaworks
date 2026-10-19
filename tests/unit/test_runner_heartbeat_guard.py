@@ -311,3 +311,57 @@ class TestRunnerHeartbeat24hDefault:
         trigger = call_kwargs[1]["trigger"] if "trigger" in (call_kwargs[1] or {}) else call_kwargs[0][1]
         hour_field = str(trigger.fields[5])
         assert "8-19" in hour_field
+
+
+class TestCronReloadedSchedule:
+    """A schedule-file edit must not silently drop the next cron firing."""
+
+    @staticmethod
+    def _mgr_with_jobs(tmp_path, registered):
+        from unittest.mock import patch
+
+        mgr = _make_scheduler_mgr(tmp_path)
+        jobs = [MagicMock(args=[t]) for t in registered]
+        mgr.scheduler = MagicMock()
+        mgr.scheduler.get_jobs.return_value = jobs
+        return mgr, patch.object(mgr, "_check_schedule_freshness", return_value=True)
+
+    @pytest.mark.asyncio
+    async def test_runs_reloaded_definition_when_task_survives(self, tmp_path):
+        from core.schemas import CronTask
+
+        old = CronTask(name="pdca", schedule="0 3 * * *", description="old body", type="llm")
+        new = CronTask(name="pdca", schedule="0 3 * * *", description="new body", type="llm")
+        mgr, freshness = self._mgr_with_jobs(tmp_path, [new])
+
+        with freshness:
+            await mgr.cron_tick(old)
+        await asyncio.sleep(0.05)
+
+        mgr._task_runner_supervisor.run_cron.assert_awaited_once_with(new)
+        events = [call.args[1] for call in mgr._anima.memory.append_cron_event.call_args_list]
+        assert "skipped" not in events
+        assert "fired" in events
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("registered_schedule", [None, "0 4 * * *"])
+    async def test_skips_when_task_removed_or_rescheduled(self, tmp_path, registered_schedule):
+        from core.schemas import CronTask
+
+        old = CronTask(name="pdca", schedule="0 3 * * *", description="body", type="llm")
+        registered = []
+        if registered_schedule:
+            registered.append(CronTask(name="pdca", schedule=registered_schedule, description="body", type="llm"))
+        mgr, freshness = self._mgr_with_jobs(tmp_path, registered)
+
+        with freshness:
+            await mgr.cron_tick(old)
+        await asyncio.sleep(0.05)
+
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
+        mgr._anima.memory.append_cron_event.assert_called_once_with(
+            "pdca",
+            "skipped",
+            reason="schedule reloaded",
+            schedule="0 3 * * *",
+        )
