@@ -24,9 +24,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.config.models import load_config
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
+from core.platform.atomic_io import atomic_write_json, atomic_write_text
 from core.platform.tasks import spawn
-from core.runtime.cron_followup import command_followup_output
+from core.runtime.cron_diagnostics import cron_diagnostics_digest, diagnose_cron_task
+from core.runtime.cron_followup import command_followup_output, should_suppress_cron_followup
 from core.runtime.memory_service import MemoryService
 from core.runtime.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
@@ -379,6 +380,7 @@ class SchedulerManager:
         tasks = parse_cron_md(config)
         registered_tasks: list[dict[str, str]] = []
         rejected_tasks: list[dict[str, str]] = []
+        diagnostics: dict[str, list[str]] = {}
         registered = 0
         for i, task in enumerate(tasks):
             trigger = parse_schedule(task.schedule)
@@ -395,6 +397,10 @@ class SchedulerManager:
                     task.schedule,
                 )
                 continue
+
+            task_diagnostics = diagnose_cron_task(task, trigger)
+            if task_diagnostics:
+                diagnostics[task.name] = task_diagnostics
 
             self.scheduler.add_job(
                 self.cron_tick,
@@ -418,7 +424,7 @@ class SchedulerManager:
             )
 
         self._write_cron_registration(registered_tasks, rejected_tasks)
-        self._check_cron_parse_health(config, tasks, registered)
+        self._check_cron_parse_health(config, tasks, registered, diagnostics)
 
     def _write_cron_registration(
         self,
@@ -614,6 +620,7 @@ class SchedulerManager:
         raw_config: str,
         tasks: list[CronTask],
         registered: int,
+        diagnostics: dict[str, list[str]] | None = None,
     ) -> None:
         """Validate cron parse results and notify the Anima if unhealthy.
 
@@ -633,8 +640,38 @@ class SchedulerManager:
         if not tasks and "schedule:" in effective_config:
             messages.append(t("scheduler.cron_health_unrecognized_schedule"))
 
+        messages.extend(self._new_cron_diagnostic_messages(diagnostics or {}))
+
         if messages:
             self._write_cron_health_notification("\n\n".join(messages))
+
+    def _new_cron_diagnostic_messages(self, diagnostics: dict[str, list[str]]) -> list[str]:
+        """Return diagnostic warnings only when the digest changed since last setup."""
+        marker_path = self._anima_dir / "state" / "cron_health_digest.sha256"
+        if not diagnostics:
+            try:
+                marker_path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to clear cron health digest marker", exc_info=True)
+            return []
+
+        digest = cron_diagnostics_digest(diagnostics)
+        try:
+            if marker_path.is_file() and marker_path.read_text(encoding="utf-8").strip() == digest:
+                return []
+        except OSError:
+            logger.debug("Failed to read cron health digest marker", exc_info=True)
+
+        try:
+            atomic_write_text(marker_path, f"{digest}\n")
+        except OSError:
+            logger.warning("Failed to persist cron health digest marker %s", marker_path, exc_info=True)
+
+        messages: list[str] = []
+        for task_name in sorted(diagnostics):
+            for code in diagnostics[task_name]:
+                messages.append(t(f"scheduler.cron_health_{code}", task_name=task_name))
+        return messages
 
     def _write_cron_health_notification(self, message: str) -> None:
         """Write a cron health warning to ``background_notifications/``."""
@@ -849,6 +886,8 @@ class SchedulerManager:
             usage: dict[str, int] | None = None
             # Preserve the legacy flag's command-output follow-up semantics; it does not call heartbeat_tick.
             command_output = command_followup_output(task, result)
+            if command_output is not None and should_suppress_cron_followup(self._anima_dir, task.name, command_output):
+                command_output = None
             if command_output is not None:
                 followup = await self._task_runner_supervisor.run_cron_followup(task, command_output)
                 followup_result = followup.get("result")

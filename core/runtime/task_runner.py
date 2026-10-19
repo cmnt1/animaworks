@@ -108,9 +108,16 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     )
     success = result.get("exit_code", 1) == 0
     usage: dict[str, int] | None = None
-    from core.runtime.cron_followup import command_followup_output
+    from core.runtime.cron_followup import command_followup_output, should_suppress_cron_followup
 
     command_output = command_followup_output(task, result)
+    anima_dir = getattr(anima, "anima_dir", None)
+    if (
+        command_output is not None
+        and isinstance(anima_dir, Path)
+        and should_suppress_cron_followup(anima_dir, task.name, command_output)
+    ):
+        command_output = None
     followup: dict[str, Any] | None = None
     if command_output is not None:
         followup_result = await anima.run_cron_task(

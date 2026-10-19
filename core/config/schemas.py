@@ -960,6 +960,14 @@ class HeartbeatConfig(BaseModel):
         le=7200,
         description="Seconds before forcefully terminating the HB session; 0 = disabled",
     )
+    cron_followup_repeat_suppress_hours: float = Field(
+        default=6.0,
+        ge=0,
+        description=(
+            "Suppress a command cron's LLM follow-up when its output is identical to the "
+            "previous follow-up for this many hours; 0 disables suppression"
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_soft_lt_hard(self) -> HeartbeatConfig:
