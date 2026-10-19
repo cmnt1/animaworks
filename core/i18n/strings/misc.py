@@ -267,6 +267,66 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "'{name}' を停止中 (pid={pid})...",
         "en": "Stopping '{name}' (pid={pid})...",
     },
+    "cli.task_autonomy_help": {
+        "ja": "委譲まわりの自律性指標を集計する（読み取り専用）",
+        "en": "Summarize delegation autonomy metrics (read-only)",
+    },
+    "cli.task_autonomy_days_help": {
+        "ja": "集計期間（日数、既定: 7）",
+        "en": "Report period in days (default: 7)",
+    },
+    "cli.task_autonomy_json_help": {
+        "ja": "JSON で出力する",
+        "en": "Emit JSON",
+    },
+    "cli.task_autonomy_anima_help": {
+        "ja": "この Anima のみを表示する",
+        "en": "Show only this anima",
+    },
+    "cli.task_autonomy_days_invalid": {
+        "ja": "Error: --days には 1 以上を指定してください",
+        "en": "Error: --days must be 1 or greater",
+    },
+    "cli.task_autonomy_title": {
+        "ja": "## 自律性レポート（過去 {days} 日間）",
+        "en": "## Autonomy report (last {days} days)",
+    },
+    "cli.task_autonomy_period": {
+        "ja": "期間: {since} 〜 {until}",
+        "en": "Period: {since} to {until}",
+    },
+    "cli.task_autonomy_no_animas": {
+        "ja": "対象の Anima がありません。",
+        "en": "No animas in scope.",
+    },
+    "cli.task_autonomy_table_header": {
+        "ja": (
+            "| Anima | 自発 | 委譲 | 人間 | 不明 | 自発比率 | "
+            "起動 (HB/cron/inbox/chat/task_exec) | 委譲キャンセル | scope_notes | waiting_for | "
+            "費用比率 | 起動比率 | DM中央値 | DM最大 |"
+        ),
+        "en": (
+            "| Anima | Self | Delegated | Human | Unknown | Self ratio | "
+            "Activations (HB/cron/inbox/chat/task_exec) | Delegated cancelled | scope_notes | waiting_for | "
+            "Cost share | Launch share | DM median | DM max |"
+        ),
+    },
+    "cli.task_autonomy_total": {
+        "ja": "合計",
+        "en": "Total",
+    },
+    "cli.task_autonomy_dm_title": {
+        "ja": "## DM往復（task_id 別 上位5件）",
+        "en": "## DM round trips (top 5 by task_id)",
+    },
+    "cli.task_autonomy_dm_header": {
+        "ja": "| Task ID | Anima | DMイベント数 |",
+        "en": "| Task ID | Anima | DM events |",
+    },
+    "cli.task_autonomy_dm_empty": {
+        "ja": "task_id 付きの DM イベントはありません。",
+        "en": "No DM events with a task_id.",
+    },
     "migrate.migration_note": {
         "ja": "<!-- MIGRATION NOTE: could not auto-convert '{schedule}' to cron expression -->",
         "en": "<!-- MIGRATION NOTE: could not auto-convert '{schedule}' to cron expression -->",
