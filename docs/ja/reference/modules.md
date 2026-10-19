@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: ca658536538308195800fea1eac4dcf984eab6434eedc9a8dc161b304fa654d4 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: ccaf64e218740b3413cdf0bbd9c5784d188f3e966099f9d1a456a8b12930568d -->
 
 # モジュール一覧
 
@@ -52,7 +52,7 @@
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 91 | — |
-| `cli.commands.task_cmd` | 539 | — |
+| `cli.commands.task_cmd` | 667 | — |
 | `cli.commands.task_store_cmd` | 258 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 309 | — |
@@ -377,22 +377,22 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 388 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.handler` | 400 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 467 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 527 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
-| `core.i18n.strings.supervisor` | 96 | Domain-specific i18n strings. |
+| `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
-| `core.i18n.strings.tooling_schema` | 488 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 136 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -906,15 +906,16 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
+| `core.tasks.autonomy_report` | 475 | — |
 | `core.tasks.background` | 618 | — |
-| `core.tasks.board.board_actions` | 239 | — |
+| `core.tasks.board.board_actions` | 260 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
 | `core.tasks.board.models` | 39 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 120 | — |
 | `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
-| `core.tasks.board.tasks` | 1348 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.tasks` | 1619 | Durable execution records; the single source of truth for the TaskBoard. |
 | `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
-| `core.tasks.dispatch` | 413 | — |
+| `core.tasks.dispatch` | 521 | — |
 | `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
 | `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
 | `core.tasks.external.sources.chatwork` | 228 | Chatwork external tasks collector (open my-tasks + unreplied To). |
@@ -922,8 +923,9 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1672 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1679 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 516 | — |
+| `core.tasks.waiting` | 81 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
 ## `core.tasks.board`
@@ -973,14 +975,14 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
-| `core.tooling.handler_delegation` | 262 | — |
+| `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 349 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 203 | — |
 | `core.tooling.handler_perms` | 446 | — |
-| `core.tooling.handler_skills` | 831 | — |
+| `core.tooling.handler_skills` | 864 | — |
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
@@ -997,8 +999,8 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.policy.schemas.notification` | 71 | — |
 | `core.tooling.policy.schemas.session_todo` | 62 | — |
 | `core.tooling.policy.schemas.skill` | 306 | — |
-| `core.tooling.policy.schemas.supervisor` | 340 | — |
-| `core.tooling.policy.schemas.task` | 180 | — |
+| `core.tooling.policy.schemas.supervisor` | 348 | — |
+| `core.tooling.policy.schemas.task` | 204 | — |
 | `core.tooling.policy.schemas.workspace` | 46 | — |
 | `core.tooling.policy.submit_tasks` | 91 | — |
 | `core.tooling.policy.surface` | 247 | — |
@@ -1117,7 +1119,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1512 | — |
+| `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |

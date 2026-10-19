@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=4686a5c9fc654245ec339a6561a4e9ead23a2e19bbbe3ccdd765771cced1ff2c generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=24b4227d6d60a1848ba4172388803c45f8534431ce5c6d67d0f85e24b4e3c65c generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
 
 # 모듈 목록
 
@@ -28,32 +28,32 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
-| `cli.commands.anima_mgmt` | 1172 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1172 | anima 프로세스 관리용 CLI 명령 |
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
-| `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
+| `cli.commands.config_cmd` | 238 | ``animaworks config``용 CLI 핸들러 및 대화형 마법사 |
 | `cli.commands.cost_cmd` | 326 | — |
-| `cli.commands.enclave_cmd` | 323 | Operational commands for enclave runtimes. |
+| `cli.commands.enclave_cmd` | 323 | 엔클레이브 런타임용 운영 명령 |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
 | `cli.commands.internal_cmd` | 156 | — |
-| `cli.commands.logs` | 209 | CLI commands for viewing anima logs. |
+| `cli.commands.logs` | 209 | anima 로그를 확인하는 CLI 명령 |
 | `cli.commands.mcp_cmd` | 66 | — |
 | `cli.commands.memory_cmd` | 56 | — |
 | `cli.commands.messaging` | 86 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
-| `cli.commands.models_cmd` | 303 | CLI commands for model information and management. |
+| `cli.commands.models_cmd` | 303 | 모델 정보 및 관리용 CLI 명령 |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
-| `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
+| `cli.commands.rag_repair_status` | 147 | 영구 RAG 복구 상태 보고 |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 91 | — |
-| `cli.commands.task_cmd` | 539 | — |
-| `cli.commands.task_store_cmd` | 258 | Operator-only, cohort-scoped task migration and current-state export. |
+| `cli.commands.task_cmd` | 667 | — |
+| `cli.commands.task_store_cmd` | 258 | 운영자 전용 코호트 범위 작업 마이그레이션 및 현재 상태 내보내기 |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 309 | — |
 
@@ -371,28 +371,28 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
-| `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
-| `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
+| `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원 |
+| `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.company` | 14 | 회사 관리용 현지화 문자열 |
+| `core.i18n.strings.config` | 836 | 도메인별 i18n 문자열 |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 388 | Domain-specific i18n strings (handler part 2). |
-| `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
-| `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
+| `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.handler` | 400 | 도메인별 i18n 문자열(핸들러 1부) |
+| `core.i18n.strings.handler_ext` | 393 | 도메인별 i18n 문자열(핸들러 2부) |
+| `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열 |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 467 | Domain-specific i18n strings. |
-| `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
-| `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
+| `core.i18n.strings.misc` | 527 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 라우트 모듈) |
+| `core.i18n.strings.models` | 70 | 모델 검사용 현지화 CLI 메시지 |
 | `core.i18n.strings.phone` | 127 | — |
-| `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
-| `core.i18n.strings.supervisor` | 96 | Domain-specific i18n strings. |
+| `core.i18n.strings.room_manager` | 29 | 회의실 관리자용 i18n 문자열 |
+| `core.i18n.strings.server` | 251 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.supervisor` | 140 | 도메인별 i18n 문자열 |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
-| `core.i18n.strings.tooling_schema` | 488 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 136 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling` | 125 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능) |
+| `core.i18n.strings.tooling_schema` | 506 | 도메인별 i18n 문자열(schema.*) |
+| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 i18n 문자열(schema.* 2부) |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -905,26 +905,28 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.tasks` | 1 | 작업 큐, TaskBoard, delegated/background 작업 실행 및 외부 작업 소스. |
+| `core.tasks` | 1 | 작업 큐, TaskBoard, delegated/background 작업 실행 및 외부 작업 소스 |
+| `core.tasks.autonomy_report` | 475 | — |
 | `core.tasks.background` | 618 | — |
-| `core.tasks.board.board_actions` | 239 | — |
+| `core.tasks.board.board_actions` | 260 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
-| `core.tasks.board.models` | 39 | 단일 TaskBoard 보기용 Pydantic 모델(TaskStore에서 직접 읽음). |
+| `core.tasks.board.models` | 39 | 단일 TaskBoard 뷰를 위한 Pydantic 모델(TaskStore에서 직접 읽음) |
 | `core.tasks.board.notices` | 120 | — |
-| `core.tasks.board.readiness` | 31 | 레거시 작업 파일과 정식 실행 사이의 읽기 전용 경계. |
-| `core.tasks.board.tasks` | 1348 | 영속적인 실행 기록. TaskBoard의 단일 진실 공급원. |
-| `core.tasks.board.view` | 119 | 정식 TaskStore에서 직접 생성한 단일 TaskBoard 보기. |
-| `core.tasks.dispatch` | 413 | — |
-| `core.tasks.external.collector` | 211 | 소스별 장애 격리 기능을 갖춘 다중 소스 외부 작업 수집기. |
-| `core.tasks.external.models` | 47 | 외부 작업 스냅샷 저장소용 데이터 모델. |
-| `core.tasks.external.sources.chatwork` | 228 | Chatwork 외부 작업 수집기(열린 내 작업 + 답변하지 않은 To). |
-| `core.tasks.external.sources.github` | 182 | ``gh`` CLI를 통한 GitHub 외부 작업 수집기. |
-| `core.tasks.external.sources.gmail` | 124 | Gmail 외부 작업 수집기(읽지 않은 받은 편지함, 최근 7일). |
-| `core.tasks.external.sources.slack` | 184 | Slack 외부 작업 수집기(메시지 캐시를 통한 답변하지 않은 멘션). |
-| `core.tasks.external.store` | 51 | 외부 작업을 위한 원자적 JSON 스냅샷 저장소. |
-| `core.tasks.pending_executor` | 1672 | TaskStore에서 가져온 작업을 백그라운드 레인에서 실행. |
+| `core.tasks.board.readiness` | 31 | 레거시 작업 파일과 정식 실행 간의 읽기 전용 경계 |
+| `core.tasks.board.tasks` | 1619 | 영속 실행 레코드. TaskBoard의 단일 진실 공급원 |
+| `core.tasks.board.view` | 119 | 정식 TaskStore에서 직접 구성한 단일 TaskBoard 뷰 |
+| `core.tasks.dispatch` | 521 | — |
+| `core.tasks.external.collector` | 211 | 소스별 장애 격리를 지원하는 다중 소스 외부 작업 수집기 |
+| `core.tasks.external.models` | 47 | 외부 작업 스냅샷 저장소용 데이터 모델 |
+| `core.tasks.external.sources.chatwork` | 228 | Chatwork 외부 작업 수집기(열린 내 작업 + 답변하지 않은 To) |
+| `core.tasks.external.sources.github` | 182 | ``gh`` CLI를 통한 GitHub 외부 작업 수집기 |
+| `core.tasks.external.sources.gmail` | 124 | Gmail 외부 작업 수집기(읽지 않은 받은편지함, 최근 7일) |
+| `core.tasks.external.sources.slack` | 184 | Slack 외부 작업 수집기(메시지 캐시를 통한 답변하지 않은 멘션) |
+| `core.tasks.external.store` | 51 | 외부 작업용 원자적 JSON 스냅샷 저장소 |
+| `core.tasks.pending_executor` | 1679 | 클레임된 TaskStore 작업을 백그라운드 레인에서 실행 |
 | `core.tasks.queue` | 516 | — |
-| `core.tasks.wake` | 70 | PendingTaskExecutor를 위한 프로세스 간 깨우기 팬아웃. |
+| `core.tasks.waiting` | 81 | — |
+| `core.tasks.wake` | 70 | PendingTaskExecutor의 프로세스 간 웨이크업 팬아웃 |
 
 ## `core.tasks.board`
 
@@ -965,22 +967,22 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.tooling` | 1 | 도구 패키지. 핸들러가 성급하게 로드되지 않도록 특정 모듈을 가져오세요. |
-| `core.tooling._handler_protocols（非公開）` | 224 | 조합형 믹스인을 위한 구조적 호스트 프로토콜. |
-| `core.tooling.codex_command_hook` | 31 | Codex의 PreToolUse 훅을 위한 핵심 명령 정책 결정. |
+| `core.tooling` | 1 | 도구 패키지. 핸들러가 미리 로드되지 않도록 필요한 모듈만 가져오세요. |
+| `core.tooling._handler_protocols（非公開）` | 224 | 컴포지셔널 믹스인을 위한 구조적 호스트 프로토콜 |
+| `core.tooling.codex_command_hook` | 31 | Codex의 PreToolUse 훅을 위한 핵심 명령 정책 결정 |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
-| `core.tooling.handler_delegation` | 262 | — |
+| `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 349 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 203 | — |
 | `core.tooling.handler_perms` | 446 | — |
-| `core.tooling.handler_skills` | 831 | — |
+| `core.tooling.handler_skills` | 864 | — |
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
@@ -997,8 +999,8 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 | `core.tooling.policy.schemas.notification` | 71 | — |
 | `core.tooling.policy.schemas.session_todo` | 62 | — |
 | `core.tooling.policy.schemas.skill` | 306 | — |
-| `core.tooling.policy.schemas.supervisor` | 340 | — |
-| `core.tooling.policy.schemas.task` | 180 | — |
+| `core.tooling.policy.schemas.supervisor` | 348 | — |
+| `core.tooling.policy.schemas.task` | 204 | — |
 | `core.tooling.policy.schemas.workspace` | 46 | — |
 | `core.tooling.policy.submit_tasks` | 91 | — |
 | `core.tooling.policy.surface` | 247 | — |
@@ -1006,7 +1008,7 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 322 | — |
-| `core.tooling.tool_context` | 17 | ToolHandler 믹스인 위임 객체에 전달되는 공유 런타임 상태. |
+| `core.tooling.tool_context` | 17 | ToolHandler 믹스인 위임 객체에 전달되는 공유 런타임 상태 |
 
 ## `core.tooling.policy`
 
@@ -1098,7 +1100,7 @@ LLM 사용량 및 비용 기록·집계.
 
 —
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
@@ -1117,7 +1119,7 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1512 | — |
+| `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |
@@ -1131,7 +1133,7 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공통 헬퍼를 사용합니다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정에 공통 헬퍼를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
