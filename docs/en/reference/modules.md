@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=4686a5c9fc654245ec339a6561a4e9ead23a2e19bbbe3ccdd765771cced1ff2c generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=24b4227d6d60a1848ba4172388803c45f8534431ce5c6d67d0f85e24b4e3c65c generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -52,7 +52,7 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 91 | — |
-| `cli.commands.task_cmd` | 539 | — |
+| `cli.commands.task_cmd` | 667 | — |
 | `cli.commands.task_store_cmd` | 258 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 309 | — |
@@ -377,22 +377,22 @@ Translation catalog and language selection.
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 388 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.handler` | 400 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 467 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 527 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
-| `core.i18n.strings.supervisor` | 96 | Domain-specific i18n strings. |
+| `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
-| `core.i18n.strings.tooling_schema` | 488 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 136 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -906,15 +906,16 @@ Task registration, status management, and execution control.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
+| `core.tasks.autonomy_report` | 475 | — |
 | `core.tasks.background` | 618 | — |
-| `core.tasks.board.board_actions` | 239 | — |
+| `core.tasks.board.board_actions` | 260 | — |
 | `core.tasks.board.housekeeping` | 188 | — |
 | `core.tasks.board.models` | 39 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 120 | — |
 | `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
-| `core.tasks.board.tasks` | 1348 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.tasks` | 1619 | Durable execution records; the single source of truth for the TaskBoard. |
 | `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
-| `core.tasks.dispatch` | 413 | — |
+| `core.tasks.dispatch` | 521 | — |
 | `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
 | `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
 | `core.tasks.external.sources.chatwork` | 228 | Chatwork external tasks collector (open my-tasks + unreplied To). |
@@ -922,8 +923,9 @@ Task registration, status management, and execution control.
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1672 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1679 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 516 | — |
+| `core.tasks.waiting` | 81 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
 ## `core.tasks.board`
@@ -973,14 +975,14 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
-| `core.tooling.handler_delegation` | 262 | — |
+| `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 349 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 203 | — |
 | `core.tooling.handler_perms` | 446 | — |
-| `core.tooling.handler_skills` | 831 | — |
+| `core.tooling.handler_skills` | 864 | — |
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
 | `core.tooling.org_helpers` | 158 | — |
@@ -997,8 +999,8 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.policy.schemas.notification` | 71 | — |
 | `core.tooling.policy.schemas.session_todo` | 62 | — |
 | `core.tooling.policy.schemas.skill` | 306 | — |
-| `core.tooling.policy.schemas.supervisor` | 340 | — |
-| `core.tooling.policy.schemas.task` | 180 | — |
+| `core.tooling.policy.schemas.supervisor` | 348 | — |
+| `core.tooling.policy.schemas.task` | 204 | — |
 | `core.tooling.policy.schemas.workspace` | 46 | — |
 | `core.tooling.policy.submit_tasks` | 91 | — |
 | `core.tooling.policy.surface` | 247 | — |
@@ -1117,7 +1119,7 @@ Audio input/output and voice conversations.
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 450 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1512 | — |
+| `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 450 | — |

@@ -199,6 +199,8 @@ class DelegateTaskPersistRequest(BaseModel):
     workspace: str = ""  # resolve_workspace absolute path string
     acceptance_criteria: list[str] = []  # verifiable acceptance criteria for pending JSON
     model: str = ""  # optional per-task LLM model override
+    subject: str = ""  # optional deduplication key: target (e.g. github:owner/repo#123)
+    version: str = ""  # optional deduplication key: revision (e.g. head SHA)
     execution_input: dict[str, Any] | None = None  # complete canonical input from sandbox callers
     attempt_identity: dict[str, str] | None = None
 
@@ -226,11 +228,13 @@ class InternalNotifyWebRequest(BaseModel):
 class UpdateTaskPersistRequest(BaseModel):
     anima_name: str
     task_id: str
-    status: Literal["pending", "in_progress", "done", "cancelled"]
+    status: Literal["pending", "in_progress", "done", "cancelled"] | None = None
     meta: dict[str, Any] = {}
     summary: str | None = None
     attempt_identity: dict[str, str] | None = None
     resume: bool = False
+    waiting_for: dict[str, Any] | None = None
+    scope_note: str | None = None
 
 
 class TaskBoardActionRequest(BaseModel):
@@ -1361,7 +1365,7 @@ def create_internal_router() -> APIRouter:
                 },
             )
 
-        def _persist() -> dict[str, str]:
+        def _persist() -> dict[str, Any]:
             from datetime import UTC, datetime
 
             from core.tasks.board.tasks import attempt_scope
@@ -1382,6 +1386,8 @@ def create_internal_router() -> APIRouter:
                 "source": "delegation",
                 "working_directory": body.workspace,
                 "model": body.model,
+                "subject": body.subject,
+                "version": body.version,
             }
             if body.execution_input is not None:
                 payload = dict(body.execution_input)
@@ -1390,15 +1396,25 @@ def create_internal_router() -> APIRouter:
                 if payload.get("submitted_by", body.delegator) != body.delegator:
                     raise ValueError("Delegated execution input must retain its delegator")
                 payload.setdefault("submitted_by", body.delegator)
+                if body.subject and "subject" not in payload:
+                    payload["subject"] = body.subject
+                if body.version and "version" not in payload:
+                    payload["version"] = body.version
             with attempt_scope(body.attempt_identity):
-                publish_delegation(
+                published = publish_delegation(
                     target_dir,
                     payload,
                     delegator=body.delegator,
                     tracking_task_id=body.tracking_task_id,
                     host_fallback=False,
                 )
-            return {"sub_task_id": body.sub_task_id, "tracking_task_id": body.tracking_task_id}
+            return {
+                "task_id": published.task_id,
+                "status": published.status,
+                "deduplicated": published.deduplicated,
+                "via_host": published.via_host,
+                "tracking_task_id": body.tracking_task_id,
+            }
 
         try:
             loop = asyncio.get_running_loop()
@@ -1411,8 +1427,12 @@ def create_internal_router() -> APIRouter:
 
         return {
             "ok": True,
-            "sub_task_id": ids["sub_task_id"],
+            "sub_task_id": ids["task_id"],
             "tracking_task_id": ids["tracking_task_id"],
+            "task_id": ids["task_id"],
+            "status": ids["status"],
+            "deduplicated": ids["deduplicated"],
+            "via_host": ids["via_host"],
         }
 
     @internal.post("/internal/task-board-action")
@@ -1485,6 +1505,8 @@ def create_internal_router() -> APIRouter:
                     summary=body.summary,
                     resume=body.resume,
                     meta_patch=body.meta,
+                    waiting_for=body.waiting_for,
+                    scope_note=body.scope_note,
                 )
 
         try:
@@ -1499,7 +1521,10 @@ def create_internal_router() -> APIRouter:
                     content={"error_type": "TaskOwnedByOther", "owner": exc.owner},
                 )
             if isinstance(exc, ValueError) and (
-                body.status == "in_progress" or (body.resume and body.status != "pending")
+                body.status in {None, "in_progress"}
+                or (body.resume and body.status != "pending")
+                or body.waiting_for is not None
+                or body.scope_note is not None
             ):
                 return JSONResponse(status_code=400, content={"error_type": "InvalidArguments", "detail": str(exc)})
             logger.exception("internal update-task failed")

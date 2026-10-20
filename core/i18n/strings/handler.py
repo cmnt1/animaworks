@@ -269,12 +269,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "{target_name}にタスク委譲: {summary}",
         "en": "Delegated task to {target_name}: {summary}",
     },
+    "handler.delegate_dedup_log": {
+        "ja": "{target_name}への委譲は既存の依頼 {task_id} にまとめました: {summary}",
+        "en": "Consolidated the delegation to {target_name} into existing task {task_id}: {summary}",
+    },
     "handler.delegated_success": {
         "ja": (
             "タスクを {target_name} に委譲しました。\n- 部下側タスクID: {sub_id}\n- 追跡用タスクID: {own_id}\n- {dm_result}"
         ),
         "en": (
             "Task delegated to {target_name}.\n- Subordinate task ID: {sub_id}\n- Tracking task ID: {own_id}\n- {dm_result}"
+        ),
+    },
+    "handler.delegation_deduplicated": {
+        "ja": "同じ依頼が未完了で登録済みのため、新規作成せず既存のタスクID {task_id} にまとめました",
+        "en": "The same request is already open, so it was consolidated into existing task {task_id}",
+    },
+    "handler.delegation_deduplicated_note": {
+        "ja": (
+            "同じ依頼が未完了で登録済みのため、{target_name} への新規タスクは作らず"
+            "既存のタスクID {task_id} にまとめました。DM は送っていません。"
+        ),
+        "en": (
+            "The same request is already open, so no new task was created for {target_name}; "
+            "it was consolidated into existing task {task_id}. No DM was sent."
         ),
     },
     "handler.delegation_dm_content": {

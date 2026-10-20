@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=e44ded9039734977e7519866f9548175039a2bd86e957d1f7ecdcd676785683e generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=97d3d44c53d0776c162aec2ac2cac8f977b24f84060ae84f6d62370cbc66635b generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -1186,7 +1186,7 @@ Track delegated tasks
 Manage persistent task queue
 
 `usage: animaworks task [-h]
-                       {board,show,claim,release,done,cancel,note,add,update,resume,list}
+                       {board,show,claim,release,done,cancel,note,add,update,resume,list,autonomy}
                        ...`
 
 | Name | Type | Default | Choices | Description |
@@ -1209,6 +1209,18 @@ Publishes an executable TaskExec task; backlog_task only queues tracking work.
 | --summary | option | — | — | 1-line summary (default: instruction[:100]) |
 | --relay-chain | option | — | — | Comma-separated relay chain |
 | --workspace | option | — | — | Workspace alias or path for the task's working_directory |
+
+## `task autonomy`
+
+Aggregate delegation-related autonomy metrics (read-only)
+
+`usage: animaworks task autonomy [-h] [--days DAYS] [--json] [--anima ANIMA]`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| --days | option | 7 | — | Aggregation period (days; default: 7) |
+| --json | flag | false | — | Output as JSON |
+| --anima | option | — | — | Show only this Anima |
 
 ## `task board`
 
@@ -1321,14 +1333,22 @@ Show complete task details
 
 Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
-                              [--summary SUMMARY]`
+`usage: animaworks task update [-h] --task-id TASK_ID [--status STATUS]
+                              [--summary SUMMARY]
+                              [--waiting-for-kind {task,time,message,external}]
+                              [--waiting-for-ref WAITING_FOR_REF]
+                              [--waiting-for-until WAITING_FOR_UNTIL]
+                              [--scope-note SCOPE_NOTE]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --task-id | option | — | — | Task ID |
-| --status | option | — | — | Status to declare (retired statuses are rejected by update_task) |
+| --status | option | — | — | Status to declare (optional only when --scope-note is given; retired statuses are rejected) |
 | --summary | option | — | — | Updated summary |
+| --waiting-for-kind | option | — | task, time, message, external | What a pending task waits for |
+| --waiting-for-ref | option | — | — | Task ID, person, or free-text wait target |
+| --waiting-for-until | option | — | — | ISO8601 timestamp for kind=time |
+| --scope-note | option | — | — | Append a scope note and notify the requester |
 
 ## `task-store`
 

@@ -684,18 +684,23 @@ class SkillsToolsMixin:
     def _handle_update_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         from core.tasks.dispatch import update_task
         from core.tasks.queue import TaskQueueManager
+        from core.tasks.waiting import normalize_waiting_for
 
         manager = TaskQueueManager(self._anima_dir)
         task_id = args.get("task_id", "")
-        status = args.get("status", "")
+        status = args.get("status")
         summary = args.get("summary")
         result = args.get("result")
         resume = args.get("resume")
+        waiting_for = args.get("waiting_for")
+        scope_note = args.get("scope_note")
 
         if not task_id:
             return _error_result("InvalidArguments", "task_id is required")
-        if not status:
-            return _error_result("InvalidArguments", "status is required")
+        if status is not None and not isinstance(status, str):
+            return _error_result("InvalidArguments", "status must be a string")
+        if not status and scope_note is None:
+            return _error_result("InvalidArguments", "status is required unless scope_note is provided")
         if resume is not None and not isinstance(resume, bool):
             return _error_result("InvalidArguments", "resume must be a boolean")
         resume = bool(resume)
@@ -703,16 +708,35 @@ class SkillsToolsMixin:
             return _error_result("InvalidArguments", "result must be a string")
         if result is not None:
             summary = result
+        if scope_note is not None and (not isinstance(scope_note, str) or not scope_note.strip()):
+            return _error_result("InvalidArguments", "scope_note must be a non-empty string")
+        if waiting_for is not None:
+            try:
+                normalize_waiting_for(waiting_for, status)
+            except ValueError as e:
+                return _error_result("InvalidArguments", str(e))
 
         try:
-            entry = update_task(manager, task_id, status, summary=summary, result=result, resume=resume)
+            entry = update_task(
+                manager,
+                task_id,
+                status or None,
+                summary=summary,
+                result=result,
+                resume=resume,
+                waiting_for=waiting_for,
+                scope_note=scope_note,
+            )
         except Exception as e:
             from core.exceptions import TaskOwnedByOther
 
             if isinstance(e, TaskOwnedByOther):
                 return _error_result("TaskOwnedByOther", t("handler.task_owned_by_other", owner=e.owner))
             if isinstance(e, ValueError) and (
-                status in {"blocked", "failed", "in_progress"} or (resume and status != "pending")
+                status in {"blocked", "failed", "in_progress"}
+                or (resume and status != "pending")
+                or waiting_for is not None
+                or scope_note is not None
             ):
                 return _error_result("InvalidArguments", str(e))
             logger.error("Task persistence failed in update_task: %s", e)
@@ -725,8 +749,14 @@ class SkillsToolsMixin:
 
         self._activity.log(
             "task_updated",
-            summary=t("handler.task_update_log", summary=entry.summary[:100], status=status),
-            meta={"task_id": task_id, "status": status, "resume": resume},
+            summary=t("handler.task_update_log", summary=entry.summary[:100], status=entry.status),
+            meta={
+                "task_id": task_id,
+                "status": status or entry.status,
+                "resume": resume,
+                "waiting_for": waiting_for,
+                "scope_note": scope_note,
+            },
         )
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
@@ -745,6 +775,7 @@ class SkillsToolsMixin:
                 "last_run_note",
                 "depends_on",
                 "batch_id",
+                "waiting_for",
             }
             projected: list[dict[str, Any]] = []
             for item in result:
@@ -767,6 +798,8 @@ class SkillsToolsMixin:
                 }
                 if meta_subset:
                     truncated["meta"] = meta_subset
+                if meta.get("waiting_for") is not None:
+                    truncated["waiting_for"] = meta["waiting_for"]
                 projected.append(truncated)
             result = projected
         mark_executability(result, self._anima_dir)

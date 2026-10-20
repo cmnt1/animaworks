@@ -354,6 +354,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "This task is owned by {owner}. {owner} must resume or complete it. If needed, ask {owner} with send_message.",
         "ko": "이 작업은 {owner}이(가) 맡고 있습니다. 재개나 완료는 {owner}이(가) 직접 해야 합니다. 필요하면 send_message로 {owner}에게 알려 주세요.",
     },
+    "task_update.scope_note_notify": {
+        "ja": "{owner} がタスク「{title}」の範囲を書き留めました: {note}",
+        "en": '{owner} noted the scope of task "{title}": {note}',
+        "ko": '{owner}이(가) 태스크 "{title}"의 범위를 기록했습니다: {note}',
+    },
     "task_update.cancel_reason_missing": {
         "ja": "理由は指定されていません",
         "en": "No reason was provided",

@@ -77,12 +77,16 @@ class TestDelegateTaskErofsFallback:
             patch("core.host_api.host_api.post", return_value=response) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
-        assert not result.strip().startswith("{")
+        parsed = json.loads(result)
+        assert parsed["task_id"]
+        assert parsed["status"] == "pending"
+        assert parsed["deduplicated"] is False
         sent = post.call_args.kwargs["json"]
         assert sent["delegator"] == "rin" and sent["target"] == "natsume"
         assert sent["instruction"] == "resolve PR conflicts"
         assert sent["sub_task_id"] in result
         assert sent["tracking_task_id"] in result
+        assert parsed["task_id"] == sent["sub_task_id"]
         assert not any(key.startswith("persist_") for key in sent)
         assert TaskQueueManager(target).list_tasks() == []
 

@@ -31,6 +31,9 @@ def cmd_task(args: argparse.Namespace) -> None:
     if sub == "board":
         _cmd_board(args)
         return
+    if sub == "autonomy":
+        _cmd_autonomy(args)
+        return
     if sub == "show":
         _cmd_show(args)
         return
@@ -69,7 +72,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_add(args, TaskQueueManager(anima_dir))
     else:
         print(
-            "Usage: animaworks-tool task {board|show|claim|release|done|cancel|note|add|update|resume|list}",
+            "Usage: animaworks-tool task {board|autonomy|show|claim|release|done|cancel|note|add|update|resume|list}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -228,13 +231,17 @@ def _cmd_board(args: argparse.Namespace) -> None:
         print(json.dumps({"counts": counts, "tasks": visible, "more": more}, ensure_ascii=False, indent=2))
         return
     print(f"todo {counts['todo']} / running {counts['running']} / waiting {counts['waiting']}")
+    from core.tasks.waiting import waiting_label
+
     for row in visible:
         state = "waiting" if group(row) == 2 else ("running" if group(row) == 0 else "todo")
         lease = row.get("lease")
         lock = f"{lease['holder']} ({_remaining_lease(lease['expires_at'], now)})" if lease else "-"
         summary = str(row.get("summary", "")).replace("\n", " ")[:80]
         age = _format_age(row.get("updated_at") or row.get("ts"), now)
-        print(f"{row['task_id']}  {row['anima']}  {state}  {age}  {lock}  {summary}")
+        label = waiting_label((row.get("meta") or {}).get("waiting_for"))
+        suffix = f"  {label}" if label else ""
+        print(f"{row['task_id']}  {row['anima']}  {state}  {age}  {lock}  {summary}{suffix}")
     if more:
         print(f"… {more} more (use --limit)")
 
@@ -259,6 +266,11 @@ def _cmd_show(args: argparse.Namespace) -> None:
     print(f"Task: {details['requested_id']} (owner: {details['owner']}, canonical ID: {details['task_id']})")
     print(f"Summary: {entry.get('summary', '')}")
     print(f"Status: {entry.get('status', '')}  Assignee: {entry.get('assignee', '')}")
+    from core.tasks.waiting import waiting_label
+
+    label = waiting_label((entry.get("meta") or {}).get("waiting_for"))
+    if label:
+        print(label)
     print(f"Created: {entry.get('ts', '')}  Updated: {entry.get('updated_at', '')}")
     print("Original instruction:")
     print(entry.get("original_instruction", ""))
@@ -434,13 +446,28 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
 
 
 def _cmd_update(args: argparse.Namespace) -> None:
-    tool_args = {
+    status = getattr(args, "status", None)
+    scope_note = getattr(args, "scope_note", None)
+    tool_args: dict = {
         "task_id": getattr(args, "task_id", ""),
-        "status": getattr(args, "status", ""),
     }
+    if status:
+        tool_args["status"] = status
     summary = getattr(args, "summary", None)
     if summary is not None:
         tool_args["summary"] = summary
+    kind = getattr(args, "waiting_for_kind", None)
+    ref = getattr(args, "waiting_for_ref", None)
+    until = getattr(args, "waiting_for_until", None)
+    if kind or ref or until:
+        wait: dict[str, str] = {"kind": kind or ""}
+        if ref:
+            wait["ref"] = ref
+        if until:
+            wait["until"] = until
+        tool_args["waiting_for"] = wait
+    if scope_note is not None:
+        tool_args["scope_note"] = scope_note
     run_and_print("update_task", tool_args)
 
 
@@ -462,6 +489,88 @@ def _cmd_list(args: argparse.Namespace) -> None:
     if status_filter:
         tool_args["status"] = status_filter
     run_and_print("list_tasks", tool_args)
+
+
+def _cmd_autonomy(args: argparse.Namespace) -> None:
+    """Print a read-only autonomy report for the selected period."""
+    from core.i18n import t
+    from core.paths import get_data_dir
+    from core.tasks.autonomy_report import DEFAULT_DAYS, build_autonomy_report
+
+    days = getattr(args, "days", DEFAULT_DAYS)
+    if days < 1:
+        print(t("cli.task_autonomy_days_invalid"), file=sys.stderr)
+        sys.exit(2)
+    try:
+        report = build_autonomy_report(get_data_dir(), days=days, anima=getattr(args, "anima", None))
+    except Exception as exc:
+        print(f"Error: failed to build autonomy report: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if getattr(args, "json", False):
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return
+    _print_autonomy_report(report)
+
+
+def _print_autonomy_report(report: dict) -> None:
+    from core.i18n import t
+
+    print(t("cli.task_autonomy_title", days=report["days"]))
+    print(t("cli.task_autonomy_period", since=report["since"], until=report["until"]))
+    print()
+    if not report["animas"]:
+        print(t("cli.task_autonomy_no_animas"))
+        return
+
+    print(t("cli.task_autonomy_table_header"))
+    print("|" + "---|" * 14)
+    for name, anima_report in report["animas"].items():
+        print(_autonomy_row(name, anima_report))
+    print(_autonomy_row(t("cli.task_autonomy_total"), report["totals"]))
+
+    print()
+    print(t("cli.task_autonomy_dm_title"))
+    top_tasks = report["totals"]["round_trips"]["top_task_ids"]
+    if not top_tasks:
+        print(t("cli.task_autonomy_dm_empty"))
+        return
+    print(t("cli.task_autonomy_dm_header"))
+    print("|---|---|---|")
+    for item in top_tasks:
+        print(f"| {item['task_id']} | {item['anima']} | {item['count']} |")
+
+
+def _autonomy_row(label: str, report: dict) -> str:
+    starts = report["task_starts"]
+    launches = report["launch_counts"]
+    discretion = report["discretion"]
+    round_trips = report["round_trips"]
+    launch_breakdown = "/".join(str(launches[kind]) for kind in ("heartbeat", "cron", "inbox", "chat", "task_exec"))
+    median_value = round_trips["median"]
+    values = [
+        label,
+        str(starts["self"]),
+        str(starts["delegated"]),
+        str(starts["human"]),
+        str(starts["unknown"]),
+        _format_ratio(report["spontaneity_ratio"]),
+        launch_breakdown,
+        str(discretion["delegated_cancelled"]),
+        str(discretion["scope_notes"]),
+        str(discretion["waiting_for"]),
+        _format_ratio(report["cost"]["cost_share"]),
+        _format_ratio(report["launch_share"]),
+        "—" if median_value is None else f"{median_value:.1f}",
+        str(round_trips["max"]),
+    ]
+    return "| " + " | ".join(values) + " |"
+
+
+def _format_ratio(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value * 100:.1f}%"
 
 
 def register_task_command(subparsers) -> None:
@@ -524,9 +633,20 @@ def register_task_command(subparsers) -> None:
     p_update = task_sub.add_parser("update", help="Update task status")
     p_update.add_argument("--task-id", required=True, help="Task ID")
     p_update.add_argument(
-        "--status", required=True, help="Status to declare (retired statuses are rejected by update_task)"
+        "--status",
+        default=None,
+        help="Status to declare (optional only when --scope-note is given; retired statuses are rejected)",
     )
     p_update.add_argument("--summary", default=None, help="Updated summary")
+    p_update.add_argument(
+        "--waiting-for-kind",
+        default=None,
+        choices=["task", "time", "message", "external"],
+        help="What a pending task waits for",
+    )
+    p_update.add_argument("--waiting-for-ref", default=None, help="Task ID, person, or free-text wait target")
+    p_update.add_argument("--waiting-for-until", default=None, help="ISO8601 timestamp for kind=time")
+    p_update.add_argument("--scope-note", default=None, help="Append a scope note and notify the requester")
 
     # task resume
     p_resume = task_sub.add_parser("resume", help="Requeue a task with its saved execution input")
@@ -535,5 +655,13 @@ def register_task_command(subparsers) -> None:
     # task list
     p_list = task_sub.add_parser("list", help="List tasks")
     p_list.add_argument("--status", default=None, choices=["pending", "in_progress", "delegated", "done", "cancelled"])
+
+    # task autonomy
+    from core.i18n import t
+
+    p_autonomy = task_sub.add_parser("autonomy", help=t("cli.task_autonomy_help"))
+    p_autonomy.add_argument("--days", type=int, default=7, help=t("cli.task_autonomy_days_help"))
+    p_autonomy.add_argument("--json", action="store_true", help=t("cli.task_autonomy_json_help"))
+    p_autonomy.add_argument("--anima", default=None, help=t("cli.task_autonomy_anima_help"))
 
     p_task.set_defaults(func=cmd_task)

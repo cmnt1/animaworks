@@ -518,6 +518,7 @@ class PendingTaskExecutor:
 
             store = self._get_task_queue_manager().store
             self._recover_task_attempts(store)
+            store.satisfy_due_time_waits(self._anima_name)
             self._deliver_task_wakeups(store)
             claims = []
             for payload in store.pending(self._anima_name):
@@ -637,7 +638,7 @@ class PendingTaskExecutor:
                 reply_to = reply_to.get("name")
             completion = event["reason"] == "completion"
             recipients = set() if completion else {self._anima_name}
-            if isinstance(reply_to, str) and reply_to:
+            if isinstance(reply_to, str) and reply_to and event["reason"] != "wait_satisfied":
                 recipients.add(reply_to)
             try:
                 entry = store.read(self._anima_name, archived=True).get(event["task_id"])
@@ -702,6 +703,12 @@ class PendingTaskExecutor:
                     # The run itself ended cleanly; only the declaration is missing.
                     content = t(
                         "pending_executor.task_undeclared_notify",
+                        task_id=event["task_id"],
+                        title=payload.get("title", event["task_id"]),
+                    )
+                elif event["reason"] == "wait_satisfied":
+                    content = t(
+                        "pending_executor.task_wait_satisfied_notify",
                         task_id=event["task_id"],
                         title=payload.get("title", event["task_id"]),
                     )
