@@ -5348,13 +5348,13 @@
     },
     "templates/en/prompts/builder/repo_work_rules.md": {
       "engine": "luna",
-      "generated": "2026-10-19",
+      "generated": "2026-10-20",
       "model": "gpt-6-luna",
       "section_hashes": [
-        "4ef0f316df655a8fdef6f7856298262611bbb376fc0ecdbb8693d5130089560a"
+        "5d719c4d781583b3b52b2ff8fd27c049539d0aa1726fb3712466a70f2efe5128"
       ],
       "source": "templates/ja/prompts/builder/repo_work_rules.md",
-      "source_sha256": "dffc5902af9eaece27a1ba3fb5f5c679c235d303d52d8d48154726137a1c6cb8",
+      "source_sha256": "3e5b1e1f88cde2edb92184b1511d2e76e9b008af42c10ede264d6a6933f8b77d",
       "statuses": [
         "translated"
       ],
@@ -11022,13 +11022,13 @@
     },
     "templates/ko/prompts/builder/repo_work_rules.md": {
       "engine": "luna",
-      "generated": "2026-10-19",
+      "generated": "2026-10-20",
       "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
-        "4ef0f316df655a8fdef6f7856298262611bbb376fc0ecdbb8693d5130089560a"
+        "5d719c4d781583b3b52b2ff8fd27c049539d0aa1726fb3712466a70f2efe5128"
       ],
       "source": "templates/ja/prompts/builder/repo_work_rules.md",
-      "source_sha256": "dffc5902af9eaece27a1ba3fb5f5c679c235d303d52d8d48154726137a1c6cb8",
+      "source_sha256": "3e5b1e1f88cde2edb92184b1511d2e76e9b008af42c10ede264d6a6933f8b77d",
       "statuses": [
         "translated"
       ],

@@ -183,6 +183,9 @@ class SDKOptionsMixin:
             "BASH_DEFAULT_TIMEOUT_MS": "1200000",
             "BASH_MAX_TIMEOUT_MS": "1200000",
         }
+        from core.execution.workspace_env import update_workspace_env
+
+        update_workspace_env(env, self._anima_dir)  # Includes ANIMAWORKS_SCRATCH_DIR and shared tool caches.
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())

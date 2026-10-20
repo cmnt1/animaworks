@@ -81,6 +81,35 @@ class TestPendingTaskExecutorInit:
         assert executor._anima_name == "standalone"
 
 
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_terminal_task_cleanup_removes_scratch(tmp_path: Path, status: str) -> None:
+    from core.execution.workspace_env import task_scratch_dir
+    from core.tasks.pending_executor import _cleanup_task_scratch
+
+    anima_dir = tmp_path / "animas" / "terminal"
+    scratch_dir = task_scratch_dir(anima_dir, "task-1")
+    scratch_dir.mkdir(parents=True)
+    (scratch_dir / "output.log").write_text("test", encoding="utf-8")
+
+    _cleanup_task_scratch(anima_dir, "task-1", status=status)
+
+    assert not scratch_dir.exists()
+
+
+def test_retryable_task_cleanup_keeps_scratch(tmp_path: Path) -> None:
+    from core.execution.workspace_env import task_scratch_dir
+    from core.tasks.pending_executor import _cleanup_task_scratch
+
+    anima_dir = tmp_path / "animas" / "pending"
+    scratch_dir = task_scratch_dir(anima_dir, "task-2")
+    scratch_dir.mkdir(parents=True)
+    (scratch_dir / "output.log").write_text("resume later", encoding="utf-8")
+
+    _cleanup_task_scratch(anima_dir, "task-2", status="pending")
+
+    assert (scratch_dir / "output.log").is_file()
+
+
 class TestTaskExecLaneIsolation:
     """Verify TaskExec uses the background lane, not the chat lane."""
 

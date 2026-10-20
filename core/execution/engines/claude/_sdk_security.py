@@ -26,6 +26,7 @@ from core.config.file_access_policy import (
     effective_write_roots,
     evaluate_file_access,
     resolve_effective_denied_roots,
+    shared_tool_cache_write_root,
 )
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -111,6 +112,7 @@ def _check_a1_file_access(
                 Path(tempfile.gettempdir()).resolve(),
                 get_common_knowledge_dir().resolve(),
                 get_common_skills_dir().resolve(),
+                *((cache_root,) if (cache_root := shared_tool_cache_write_root(anima_dir)) is not None else ()),
             )
         else:
             write_roots = ()

@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 from datetime import UTC, datetime
@@ -34,6 +35,28 @@ if TYPE_CHECKING:
     from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_task_scratch(anima_dir: Path, task_id: str, *, status: str) -> None:
+    """Remove scratch only after TaskStore confirms a terminal task state."""
+    if status not in {"done", "cancelled"}:
+        return
+
+    from core.execution.workspace_env import task_scratch_dir
+
+    scratch_root = Path(anima_dir).resolve() / "scratch"
+    scratch_dir = task_scratch_dir(anima_dir, task_id)
+    try:
+        if scratch_root.is_symlink():
+            return
+        if scratch_dir.is_symlink():
+            scratch_dir.unlink()
+        else:
+            shutil.rmtree(scratch_dir)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.debug("Could not remove task scratch directory %s", scratch_dir, exc_info=True)
 
 
 def _request_background_review(anima_dir: Path, trigger: str) -> None:
@@ -1178,6 +1201,17 @@ class PendingTaskExecutor:
                     if task_desc.get("_attempt_token"):
                         self._record_attempt_reported_to(task_desc, agent)
                     agent.set_task_cwd(None)
+                    try:
+                        terminal_entry = self._get_task_queue_entry(task_id)
+                    except Exception:
+                        logger.debug("Could not inspect task status for scratch cleanup: %s", task_id, exc_info=True)
+                    else:
+                        if terminal_entry is not None:
+                            _cleanup_task_scratch(
+                                self._anima_dir,
+                                task_id,
+                                status=terminal_entry.status,
+                            )
                     if (
                         interrupt_event is not None
                         and isinstance(interrupt_events, dict)
