@@ -881,6 +881,10 @@ class HousekeepingConfig(BaseModel):
     backup_retention_days: int = Field(default=90, ge=1)
     codex_log_max_size_mb: int = Field(default=200, ge=1)
     codex_tmp_retention_hours: int = Field(default=12, ge=1)
+    codex_sessions_retention_days: int = Field(default=7, ge=1)
+    anima_scratch_retention_hours: int = Field(default=24, ge=1)
+    shared_worktrees_idle_hours: int = Field(default=24, ge=1)
+    workspace_sweep_enabled: bool = True
     anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
     anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)
