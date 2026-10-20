@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=24b4227d6d60a1848ba4172388803c45f8534431ce5c6d67d0f85e24b4e3c65c generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=0bfb020f7d014e4db29745c6428fb50adda055c036c656e6128105d5a64452b6 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -207,7 +207,7 @@ Application configuration schemas, loading, validation, and migration.
 | `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1534 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1538 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -270,18 +270,18 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engine_base` | 76 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 564 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 567 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
-| `core.execution.engines.claude._sdk_security（非公開）` | 302 | — |
+| `core.execution.engines.claude._sdk_security（非公開）` | 304 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 586 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 503 | — |
 | `core.execution.engines.claude.executor` | 867 | — |
 | `core.execution.engines.codex.events` | 664 | — |
 | `core.execution.engines.codex.executor` | 844 | — |
-| `core.execution.engines.codex.setup` | 943 | — |
-| `core.execution.engines.cursor.executor` | 652 | — |
-| `core.execution.engines.gemini.executor` | 458 | — |
-| `core.execution.engines.grok.executor` | 1030 | — |
+| `core.execution.engines.codex.setup` | 946 | — |
+| `core.execution.engines.cursor.executor` | 655 | — |
+| `core.execution.engines.gemini.executor` | 461 | — |
+| `core.execution.engines.grok.executor` | 1033 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 526 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
@@ -300,6 +300,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.session.session_types` | 73 | — |
 | `core.execution.tool_evidence` | 182 | — |
 | `core.execution.watchdog` | 139 | — |
+| `core.execution.workspace_env` | 71 | — |
 
 ## `core.execution.engines`
 
@@ -568,7 +569,7 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.maintenance.cron_noop` | 241 | — |
 | `core.memory.maintenance.distillation` | 548 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
-| `core.memory.maintenance.housekeeping` | 1471 | — |
+| `core.memory.maintenance.housekeeping` | 1964 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 669 | — |
 | `core.memory.maintenance.resolution_tracker` | 60 | — |
@@ -779,7 +780,7 @@ Speech synthesis, call status, and webhook management for the Twilio phone chann
 
 ## `core.platform`
 
-An integration layer that abstracts differences between runtime engines and operating systems.
+An integration layer that abstracts differences between execution engines and operating systems.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -797,6 +798,7 @@ An integration layer that abstracts differences between runtime engines and oper
 | `core.platform.process` | 327 | — |
 | `core.platform.process_role` | 66 | Low-level environment access for process-role metadata. |
 | `core.platform.processing_lease` | 344 | — |
+| `core.platform.scratch` | 99 | — |
 | `core.platform.state_writer` | 1012 | — |
 | `core.platform.status_store` | 54 | — |
 | `core.platform.subprocess_entries` | 23 | — |
@@ -923,7 +925,7 @@ Task registration, status management, and execution control.
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1679 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1708 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 516 | — |
 | `core.tasks.waiting` | 81 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
@@ -976,7 +978,7 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.handler_comms` | 996 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
-| `core.tooling.handler_exec` | 349 | — |
+| `core.tooling.handler_exec` | 374 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1434 | — |
 | `core.tooling.handler_org` | 39 | — |
@@ -1157,7 +1159,7 @@ Audio input/output and voice conversations.
 | `server.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_rag_repair（非公開）` | 268 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_reconcile（非公開）` | 320 | Reconciliation mixin for ProcessSupervisor. |
-| `server.supervisor._mgr_scheduler（非公開）` | 1245 | System scheduler mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_scheduler（非公開）` | 1281 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
 | `server.supervisor.manager` | 1275 | Process Supervisor - Manages lifecycle of Anima child processes. |

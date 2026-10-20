@@ -25,13 +25,6 @@ import pytest
 
 from core.agent.executor_factory import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult, TokenUsage
-from core.execution.engines.codex.executor import (
-    CodexSDKExecutor,
-    _should_cli_exec_fallback,
-    _stderr_contains_fatal_signal,
-    clear_codex_thread_id,
-)
-from core.execution.session.session_ids import EngineSessionIds
 from core.execution.engines.codex.events import (
     _codex_item_tool_name,
     _CodexUsageAccumulator,
@@ -40,6 +33,12 @@ from core.execution.engines.codex.events import (
     _get_thread_id,
     _item_to_tool_record,
     _usage_to_dict,
+)
+from core.execution.engines.codex.executor import (
+    CodexSDKExecutor,
+    _should_cli_exec_fallback,
+    _stderr_contains_fatal_signal,
+    clear_codex_thread_id,
 )
 from core.execution.engines.codex.setup import (
     _close_codex_client,
@@ -50,6 +49,7 @@ from core.execution.engines.codex.setup import (
     default_path_env,
     resolve_codex_model,
 )
+from core.execution.session.session_ids import EngineSessionIds
 from core.prompt.context import ContextTracker
 
 _CODEX_SESSION_IDS = EngineSessionIds("codex")
@@ -509,6 +509,19 @@ class TestExecutorInit:
         assert env["ANIMAWORKS_THREAD_ID"] == "thread-1"
         assert env["ANIMAWORKS_TRIGGER"] == "message:owner"
         assert env["ANIMAWORKS_TOOL_SESSION_ID"] == ctx.tool_session_id
+
+    def test_build_env_includes_shared_workspace_env(self, executor):
+        env = executor._build_env()
+        cache_root = executor._anima_dir.resolve().parent.parent / "cache"
+
+        assert env["ANIMAWORKS_SCRATCH_DIR"] == str(executor._anima_dir.resolve() / "scratch" / "misc")
+        assert env["UV_CACHE_DIR"] == str(cache_root / "uv")
+        assert env["PIP_CACHE_DIR"] == str(cache_root / "pip")
+        assert env["npm_config_cache"] == str(cache_root / "npm")
+        assert env["npm_config_store_dir"] == str(cache_root / "pnpm-store")
+        assert env["GRADLE_USER_HOME"] == str(cache_root / "gradle")
+        assert env["NUGET_PACKAGES"] == str(cache_root / "nuget-packages")
+        assert env["COMPOSER_CACHE_DIR"] == str(cache_root / "composer")
 
     def test_build_env_codex_azure_uses_azure_api_key(self, model_config, anima_dir, monkeypatch):
         monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)

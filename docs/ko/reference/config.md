@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=fac42e10bbf11a91f0c70bdd0fd8e2bae34b01d8e16a79f3a1d4e9b8a5343421 generated=2026-10-19 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=07611040a4e544cbf7172ace0f96d907fe8cd197a2557cdd22300f89986c183b generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -720,6 +720,10 @@
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |

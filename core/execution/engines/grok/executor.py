@@ -602,6 +602,9 @@ class GrokCLIExecutor(CLIStreamExecutor):
         cmd = self._build_command()
         sandbox_enabled = self._write_sandbox_config()
         env = os.environ.copy()
+        from core.execution.workspace_env import update_workspace_env
+
+        update_workspace_env(env, self._anima_dir)  # Includes ANIMAWORKS_SCRATCH_DIR and shared tool caches.
         from core.execution.github_identity import resolve_github_token_env
 
         env.update(resolve_github_token_env(self._anima_dir))
