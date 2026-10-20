@@ -143,6 +143,72 @@ def step_permissions_migration(data_dir: Path, dry_run: bool, verbose: bool) -> 
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+# dev-engineer injection line as shipped before the scratch-dir guidance (2026-10-20).
+_SCRATCH_INJECTION_OLD_LINES: dict[str, str] = {
+    "ja": "- 他の作業と競合しないよう、作業は worktree で分離して行う。",
+    "en": "- Perform work in a separate worktree to avoid conflicts with other work.",
+    "ko": "- 다른 작업과 충돌하지 않도록 작업은 worktree에서 분리하여 수행한다.",
+}
+
+
+def _scratch_injection_new_line(locale: str) -> str | None:
+    from core.paths import TEMPLATES_DIR
+
+    template = TEMPLATES_DIR / locale / "anima_templates" / "dev-engineer" / "injection.md"
+    if not template.is_file():
+        return None
+    for line in template.read_text(encoding="utf-8").splitlines():
+        if "ANIMAWORKS_SCRATCH_DIR" in line:
+            return line
+    return None
+
+
+def step_scratch_dir_injection_20261020(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Point dev-engineer style injections at ``$ANIMAWORKS_SCRATCH_DIR`` for worktrees.
+
+    Only the unmodified template line is replaced, so customized injections are
+    left alone. Originals are copied to ``backups/<timestamp>_scratch_injection/``.
+    """
+    del verbose
+    try:
+        replacements = {
+            old: new
+            for locale, old in _SCRATCH_INJECTION_OLD_LINES.items()
+            if (new := _scratch_injection_new_line(locale)) is not None
+        }
+        targets: list[tuple[Path, str]] = []
+        for path in sorted((data_dir / "animas").glob("*/injection.md")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "ANIMAWORKS_SCRATCH_DIR" in text:
+                continue
+            lines = text.splitlines(keepends=True)
+            changed = False
+            for index, line in enumerate(lines):
+                stripped = line.rstrip("\r\n")
+                if stripped in replacements:
+                    lines[index] = replacements[stripped] + line[len(stripped) :]
+                    changed = True
+            if changed:
+                targets.append((path, "".join(lines)))
+        if not targets:
+            return StepResult(changed=0, skipped=1, details=["No dev-engineer worktree line to update"])
+        details = [str(path.relative_to(data_dir)) for path, _ in targets]
+        if dry_run:
+            return StepResult(changed=len(targets), skipped=0, details=[f"Would rewrite: {d}" for d in details])
+        backup_root = data_dir / "backups" / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_scratch_injection"
+        for (path, new_text), rel in zip(targets, details, strict=True):
+            backup = backup_root / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            path.write_text(new_text, encoding="utf-8")
+        return StepResult(changed=len(targets), skipped=0, details=[f"Rewrote: {d}" for d in details])
+    except Exception as exc:
+        logger.exception("step_scratch_dir_injection_20261020 failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 # ── Category 3: Framework template sync ──────────────────────────
 
 
@@ -1161,6 +1227,12 @@ def register_all_steps(runner: Any) -> None:
             "Drop Phase B knowledge mutation settings and carryover state",
             "structural",
             step_phase_b_removal_20260927,
+        ),
+        MigrationStep(
+            "scratch_dir_injection_20261020",
+            "Point dev-engineer injection worktree guidance at ANIMAWORKS_SCRATCH_DIR",
+            "per_anima",
+            step_scratch_dir_injection_20261020,
         ),
         MigrationStep(
             "retired_mode_to_a",

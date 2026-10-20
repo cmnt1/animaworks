@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 04b62e6caff466a8b4bfb26cac315188217c9a8cd6424bed062c707d4d200218 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 994f6fd4abb916fab96f96d43674cda96aaa6f0aeb432daf9125099b2de44492 -->
 
 # モジュール一覧
 
@@ -718,7 +718,7 @@ anima 間および外部とのメッセージ配送。
 |---|---:|---|
 | `core.migrations` | 1 | Runtime migration framework; import specific modules directly. |
 | `core.migrations.registry` | 149 | — |
-| `core.migrations.steps` | 1228 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 1300 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.template_sync` | 137 | — |
 | `core.migrations.tracker` | 143 | — |
 
