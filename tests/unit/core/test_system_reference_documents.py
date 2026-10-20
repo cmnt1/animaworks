@@ -918,6 +918,7 @@ _EXPECTED_FILES = [
     "operations/action-rules-guide.md",
     "operations/background-tasks.md",
     "operations/report-formats.md",
+    "operations/scratch-and-worktrees.md",
     "operations/task-board-guide.md",
     "operations/task-delegation-guide.md",
     "operations/workspace-guide.md",
