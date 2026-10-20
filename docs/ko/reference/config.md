@@ -720,6 +720,10 @@
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |

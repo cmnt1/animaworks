@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -35,6 +36,9 @@ _ANIMA_LOG_DATE_RE = re.compile(r"(20\d{6})")
 _CODEX_LOG_DB_NAME = "logs_2.sqlite"
 _PROTECTED_PREFIXES = ("current_session_", "streaming_journal")
 _ARCHIVE_VERSION_RE = re.compile(r"^(?P<stem>.+)_v(?P<version>\d+)_(?P<ts>\d{8}_\d{6})(?P<suffix>\.[^.]+)$")
+_WORKSPACE_SWEEP_RULE_KEYS = frozenset({"codex_sessions", "anima_scratch", "shared_worktrees"})
+_WORKTREE_DEBUG_PREFIX_RE = re.compile(r"^AI-Schreiber-debug\d+")
+_GIT_COMMAND_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +92,10 @@ _HOUSEKEEPING_RULES = (
     _rule("runtime_tmp", "*", "runtime_tmp", "tmp_retention_days", root="data", path="tmp"),
     _rule("backup_dirs", "*/*_backup_*", "backup_dirs", "backup_retention_days"),
     _rule("codex_execution_logs", "*/.codex_home/logs_2.sqlite[-wal|-shm]", "codex_execution_logs", "codex_log_max_size_mb"),
+    _rule("codex_sessions", "*/.codex_home/sessions/**/*", "codex_sessions", "codex_sessions_retention_days"),
     _rule("codex_tmp", "*/.codex_home/{.tmp,tmp}/*", "codex_tmp", "codex_tmp_retention_hours"),
+    _rule("anima_scratch", "*/scratch/*", "anima_scratch", "anima_scratch_retention_hours"),
+    _rule("shared_worktrees", "companies/*/shared/worktrees/* and shared/worktrees/*", "shared_worktrees", "shared_worktrees_idle_hours", root="data"),
     _rule("anima_runtime_artifacts", "*/tmp_gitdirs/* and */logs/**/*", "anima_runtime_artifacts", "anima_tmp_gitdirs_retention_days", "anima_local_log_retention_days"),
     _rule("taskboard_stale", "animas/*/state/{background_tasks,current_state.md}", "taskboard_stale", "pending_processing_stale_hours", "background_running_stale_hours", "current_state_stale_hours", root="data"),
     _rule("suppressed_messages", "**/suppressed_messages.jsonl[.N]", "suppressed_messages", "suppressed_messages_max_size_mb", "suppressed_messages_keep_generations", root="data"),
@@ -109,16 +116,26 @@ async def run_housekeeping(
     *,
     housekeeping: HousekeepingConfig | None = None,
     inbox: InboxConfig | None = None,
+    only: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Run all housekeeping tasks. Returns summary of actions taken."""
+    """Run housekeeping tasks, optionally restricted to named result keys."""
     if housekeeping is None:
         housekeeping = HousekeepingConfig()
     if inbox is None:
         inbox = InboxConfig()
     loop = asyncio.get_running_loop()
     results: dict[str, Any] = {}
+    rules = [rule for rule in _HOUSEKEEPING_RULES if only is None or rule.result_key in only]
+    if only is not None:
+        unknown = only - {rule.result_key for rule in _HOUSEKEEPING_RULES}
+        if unknown:
+            raise ValueError(f"Unknown housekeeping rule(s): {', '.join(sorted(unknown))}")
 
-    for rule in _HOUSEKEEPING_RULES:
+    workspace_in_use_paths: set[Path] | None = None
+    if any(rule.result_key in _WORKSPACE_SWEEP_RULE_KEYS for rule in rules):
+        workspace_in_use_paths = await loop.run_in_executor(None, _collect_workspace_in_use_paths)
+
+    for rule in rules:
         try:
             result = await loop.run_in_executor(
                 None,
@@ -127,6 +144,7 @@ async def run_housekeeping(
                 data_dir,
                 housekeeping,
                 inbox,
+                workspace_in_use_paths,
             )
             results[rule.result_key] = result
         except Exception:
@@ -141,6 +159,7 @@ def _execute_housekeeping_rule(
     data_dir: Path,
     housekeeping: HousekeepingConfig,
     inbox: InboxConfig,
+    workspace_in_use_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
     root = data_dir if rule.root == "data" else data_dir / "animas"
     target = root / rule.path
@@ -159,7 +178,10 @@ def _execute_housekeeping_rule(
             success_log=rule.success_log,
         )
 
-    result = _HOUSEKEEPING_HANDLERS[rule.method](target, *settings)
+    if rule.method in {"anima_scratch", "shared_worktrees"}:
+        result = _HOUSEKEEPING_HANDLERS[rule.method](target, *settings, in_use_paths=workspace_in_use_paths)
+    else:
+        result = _HOUSEKEEPING_HANDLERS[rule.method](target, *settings)
     if rule.count_target_file:
         result["files"] = int(target.is_file())
     return result
@@ -1373,6 +1395,473 @@ def _cleanup_codex_tmp_dirs(animas_dir: Path, retention_hours: int) -> dict[str,
     return totals
 
 
+def _cleanup_codex_sessions(animas_dir: Path, retention_days: int) -> dict[str, Any]:
+    """Delete expired Codex session files and remove empty nested directories."""
+    totals = {"deleted_files": 0, "deleted_dirs": 0, "freed_bytes": 0, "skipped": 0, "failed": 0}
+    if not animas_dir.is_dir():
+        return totals
+
+    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
+    try:
+        anima_dirs = sorted(p for p in animas_dir.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        logger.warning("Failed to list Anima directories for Codex sessions cleanup: %s", animas_dir, exc_info=True)
+        totals["failed"] += 1
+        return totals
+    for anima_dir in anima_dirs:
+        sessions_dir = anima_dir / ".codex_home" / "sessions"
+        if not sessions_dir.is_dir() or sessions_dir.is_symlink():
+            continue
+        try:
+            open_paths = _collect_open_paths(sessions_dir)
+            session_files = sorted(p for p in sessions_dir.rglob("*") if p.is_file())
+        except OSError:
+            logger.warning("Failed to scan Codex sessions directory: %s", sessions_dir, exc_info=True)
+            totals["failed"] += 1
+            continue
+        for session_file in session_files:
+            if session_file.is_symlink():
+                totals["skipped"] += 1
+                continue
+            try:
+                if session_file.stat().st_mtime >= cutoff_ts:
+                    totals["skipped"] += 1
+                    continue
+                if _path_has_open_files(session_file, open_paths):
+                    totals["skipped"] += 1
+                    continue
+                size = session_file.stat().st_size
+                session_file.unlink()
+                totals["deleted_files"] += 1
+                totals["freed_bytes"] += size
+            except OSError:
+                logger.warning("Failed to delete Codex session file: %s", session_file, exc_info=True)
+                totals["failed"] += 1
+
+        for directory in sorted(
+            (p for p in sessions_dir.rglob("*") if p.is_dir() and not p.is_symlink()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        ):
+            try:
+                directory.rmdir()
+                totals["deleted_dirs"] += 1
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                if exc.errno != errno.ENOTEMPTY:
+                    logger.warning("Failed to remove empty Codex sessions directory: %s", directory, exc_info=True)
+                    totals["failed"] += 1
+        try:
+            sessions_dir.rmdir()
+            totals["deleted_dirs"] += 1
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            if exc.errno != errno.ENOTEMPTY:
+                logger.warning("Failed to remove empty Codex sessions directory: %s", sessions_dir, exc_info=True)
+                totals["failed"] += 1
+
+    if totals["deleted_files"] or totals["deleted_dirs"]:
+        logger.info(
+            "Codex sessions cleanup: files=%d dirs=%d skipped=%d failed=%d freed=%d bytes",
+            totals["deleted_files"],
+            totals["deleted_dirs"],
+            totals["skipped"],
+            totals["failed"],
+            totals["freed_bytes"],
+        )
+    return totals
+
+
+def _collect_workspace_in_use_paths() -> set[Path]:
+    """Collect process cwd paths and bind-mount sources once for a workspace sweep."""
+    paths: set[Path] = set()
+    proc_root = Path("/proc")
+    if os.name != "posix" or not proc_root.is_dir():
+        return paths
+    try:
+        process_dirs = sorted(p for p in proc_root.iterdir() if p.name.isdigit())
+    except OSError:
+        process_dirs = []
+    for process_dir in process_dirs:
+        try:
+            raw_path = os.readlink(process_dir / "cwd")
+            if raw_path.endswith(" (deleted)"):
+                continue
+            paths.add(Path(raw_path).resolve(strict=False))
+        except (OSError, RuntimeError):
+            continue
+
+    docker = shutil.which("docker")
+    if docker:
+        try:
+            listed = subprocess.run(
+                [docker, "ps", "-q"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            container_ids = listed.stdout.splitlines() if listed.returncode == 0 else []
+            if listed.returncode != 0:
+                logger.debug("Docker container scan exited with status %s", listed.returncode)
+            if container_ids:
+                inspected = subprocess.run(
+                    [
+                        docker,
+                        "inspect",
+                        "--format",
+                        '{{range .Mounts}}{{if eq .Type "bind"}}{{println .Source}}{{end}}{{end}}',
+                        *container_ids,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                if inspected.returncode == 0:
+                    docker_paths = {Path(raw).resolve(strict=False) for raw in inspected.stdout.splitlines() if raw}
+                    paths.update(docker_paths)
+                else:
+                    logger.debug("Docker mount scan exited with status %s", inspected.returncode)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            logger.debug("Docker mount scan failed; using process cwd paths only", exc_info=True)
+    return paths
+
+
+def _path_is_in_use(path: Path, in_use_paths: set[Path] | None) -> bool:
+    if not in_use_paths:
+        return False
+    resolved = path.resolve(strict=False)
+    for in_use_path in in_use_paths:
+        candidate = in_use_path.resolve(strict=False)
+        if candidate == resolved or candidate.is_relative_to(resolved):
+            return True
+    return False
+
+
+def _cleanup_anima_scratch(
+    animas_dir: Path,
+    retention_hours: int,
+    *,
+    in_use_paths: set[Path] | None = None,
+) -> dict[str, Any]:
+    """Delete stale direct children of each Anima's scratch directory."""
+    totals = {"deleted_entries": 0, "freed_bytes": 0, "skipped": 0, "failed": 0}
+    if not animas_dir.is_dir():
+        return totals
+
+    cutoff_ts = (now_local() - timedelta(hours=retention_hours)).timestamp()
+    try:
+        anima_dirs = sorted(p for p in animas_dir.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        logger.warning("Failed to list Anima directories for scratch cleanup: %s", animas_dir, exc_info=True)
+        totals["failed"] += 1
+        return totals
+    for anima_dir in anima_dirs:
+        scratch_dir = anima_dir / "scratch"
+        if not scratch_dir.is_dir() or scratch_dir.is_symlink():
+            continue
+        try:
+            entries = sorted(scratch_dir.iterdir())
+        except OSError:
+            logger.warning("Failed to list Anima scratch directory: %s", scratch_dir, exc_info=True)
+            totals["failed"] += 1
+            continue
+        for entry in entries:
+            if entry.is_symlink():
+                totals["skipped"] += 1
+                continue
+            if _path_is_in_use(entry, in_use_paths):
+                totals["skipped"] += 1
+                continue
+            is_old = _path_tree_older_than_depth(entry, cutoff_ts, max_depth=3)
+            if is_old is None:
+                totals["failed"] += 1
+                continue
+            if not is_old:
+                totals["skipped"] += 1
+                continue
+            try:
+                size = _path_size(entry)
+                _remove_path(entry)
+                totals["deleted_entries"] += 1
+                totals["freed_bytes"] += size
+            except OSError:
+                logger.warning("Failed to delete anima scratch entry: %s", entry, exc_info=True)
+                totals["failed"] += 1
+
+    if totals["deleted_entries"] or totals["skipped"] or totals["failed"]:
+        logger.info(
+            "Anima scratch cleanup: deleted=%d skipped=%d failed=%d freed=%d bytes",
+            totals["deleted_entries"],
+            totals["skipped"],
+            totals["failed"],
+            totals["freed_bytes"],
+        )
+    return totals
+
+
+def _path_tree_older_than_depth(path: Path, cutoff_ts: float, *, max_depth: int) -> bool | None:
+    """Return whether a path tree is old through max_depth, or None on stat errors."""
+    pending = [(path, 0)]
+    while pending:
+        current, depth = pending.pop()
+        try:
+            stat_result = current.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+        if stat_result.st_mtime >= cutoff_ts:
+            return False
+        if stat.S_ISDIR(stat_result.st_mode) and depth < max_depth:
+            try:
+                with os.scandir(current) as entries:
+                    pending.extend((Path(entry.path), depth + 1) for entry in entries)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+    return True
+
+
+def _git_command(path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run git with a timeout and safe.directory configured for housekeeping."""
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": "*",
+        }
+    )
+    return subprocess.run(
+        ["git", "-C", str(path), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+        env=env,
+    )
+
+
+def _shared_worktree_roots(data_dir: Path) -> list[Path]:
+    """Return unique real shared/worktrees roots from company and global layouts."""
+    candidates = [*sorted((data_dir / "companies").glob("*/shared/worktrees")), data_dir / "shared" / "worktrees"]
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            if not candidate.is_dir():
+                continue
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(resolved)
+    return roots
+
+
+def _git_worktree_info(worktree: Path) -> dict[str, Any] | None:
+    """Return git timestamps and dirty paths; None means a broken/non-git residue."""
+    git_marker = worktree / ".git"
+    if not (git_marker.is_file() or git_marker.is_dir()):
+        return None
+    if shutil.which("git") is None:
+        raise FileNotFoundError("git executable is unavailable")
+
+    top = _git_command(worktree, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        return None
+    git_dir_result = _git_command(worktree, "rev-parse", "--absolute-git-dir")
+    common_dir_result = _git_command(worktree, "rev-parse", "--git-common-dir")
+    if git_dir_result.returncode != 0 or common_dir_result.returncode != 0:
+        return None
+    git_dir = Path(git_dir_result.stdout.strip()).resolve(strict=False)
+    common_dir = Path(common_dir_result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = (worktree / common_dir).resolve(strict=False)
+    else:
+        common_dir = common_dir.resolve(strict=False)
+
+    commit_result = _git_command(worktree, "log", "-1", "--format=%ct")
+    if commit_result.returncode == 0 and commit_result.stdout.strip():
+        try:
+            last_commit_ts = float(commit_result.stdout.strip())
+        except ValueError:
+            return None
+    elif commit_result.returncode == 128:
+        last_commit_ts = 0.0
+    else:
+        return None
+
+    status_result = _git_command(worktree, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if status_result.returncode != 0:
+        return None
+    changed_paths: list[Path] = []
+    records = status_result.stdout.split("\0")
+    record_index = 0
+    while record_index < len(records):
+        record = records[record_index]
+        record_index += 1
+        if len(record) < 4:
+            continue
+        status = record[:2]
+        changed_paths.append(worktree / record[3:])
+        if any(state in status for state in "RC") and record_index < len(records):
+            # Porcelain v1 -z emits the other rename/copy path as a bare NUL field.
+            other_path = records[record_index]
+            if other_path:
+                changed_paths.append(worktree / other_path)
+            record_index += 1
+
+    head_log = git_dir / "logs" / "HEAD"
+    try:
+        head_log_mtime = head_log.stat().st_mtime
+    except OSError:
+        head_log_mtime = 0.0
+    return {
+        "git_dir": git_dir,
+        "common_dir": common_dir,
+        "last_activity_ts": max(last_commit_ts, head_log_mtime),
+        "changed_paths": changed_paths,
+        "linked": git_marker.is_file(),
+    }
+
+
+def _cleanup_shared_worktrees(
+    data_dir: Path,
+    idle_hours: int,
+    *,
+    in_use_paths: set[Path] | None = None,
+) -> dict[str, Any]:
+    """Remove idle shared worktrees, full clones, and old non-git residues."""
+    totals = {"deleted_entries": 0, "freed_bytes": 0, "skipped": 0, "failed": 0}
+    cutoff_ts = (now_local() - timedelta(hours=idle_hours)).timestamp()
+    roots = _shared_worktree_roots(data_dir)
+    root_paths = set(roots)
+    candidates: dict[Path, list[Path]] = {}
+    for root in roots:
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            logger.warning("Failed to list shared worktrees directory: %s", root, exc_info=True)
+            totals["failed"] += 1
+            continue
+        for entry in entries:
+            if not entry.is_dir():
+                continue
+            try:
+                worktree = entry.resolve(strict=False)
+            except (OSError, RuntimeError):
+                totals["failed"] += 1
+                continue
+            if worktree.parent not in root_paths:
+                continue
+            candidates.setdefault(worktree, []).append(entry)
+
+    for worktree, aliases in sorted(candidates.items()):
+        if (
+            any(_WORKTREE_DEBUG_PREFIX_RE.match(alias.name) for alias in aliases)
+            or (worktree / ".rig-permanent-do-not-delete").exists()
+        ):
+            totals["skipped"] += 1
+            continue
+        if _path_is_in_use(worktree, in_use_paths):
+            totals["skipped"] += 1
+            continue
+
+        tree_is_old = _path_tree_older_than_depth(worktree, cutoff_ts, max_depth=3)
+        if tree_is_old is None:
+            totals["failed"] += 1
+            continue
+        if not tree_is_old:
+            totals["skipped"] += 1
+            continue
+
+        try:
+            git_info = _git_worktree_info(worktree)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Failed to inspect shared worktree %s: %s", worktree, exc, exc_info=True)
+            totals["failed"] += 1
+            continue
+
+        if git_info is not None:
+            if git_info["last_activity_ts"] >= cutoff_ts:
+                totals["skipped"] += 1
+                continue
+            recent_change = False
+            for changed_path in git_info["changed_paths"]:
+                try:
+                    if changed_path.lstat().st_mtime >= cutoff_ts:
+                        recent_change = True
+                        break
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    recent_change = True
+                    break
+            if recent_change:
+                totals["skipped"] += 1
+                continue
+
+        try:
+            size = _path_size(worktree)
+            if git_info is not None and git_info["linked"]:
+                removed = subprocess.run(
+                    [
+                        "git",
+                        f"--git-dir={git_info['common_dir']}",
+                        "worktree",
+                        "remove",
+                        "--force",
+                        str(worktree),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+                    env={
+                        **os.environ,
+                        "GIT_CONFIG_COUNT": "1",
+                        "GIT_CONFIG_KEY_0": "safe.directory",
+                        "GIT_CONFIG_VALUE_0": "*",
+                    },
+                )
+                if removed.returncode != 0 or worktree.exists():
+                    raise OSError(removed.stderr.strip() or f"git worktree remove exited {removed.returncode}")
+            else:
+                shutil.rmtree(worktree)
+            totals["deleted_entries"] += 1
+            totals["freed_bytes"] += size
+            for alias in aliases:
+                if alias != worktree and alias.is_symlink():
+                    try:
+                        alias.unlink()
+                    except OSError:
+                        logger.warning("Failed to remove shared worktree alias: %s", alias, exc_info=True)
+                        totals["failed"] += 1
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("Failed to delete shared worktree: %s", worktree, exc_info=True)
+            totals["failed"] += 1
+
+    if totals["deleted_entries"] or totals["skipped"] or totals["failed"]:
+        logger.info(
+            "Shared worktree cleanup: deleted=%d skipped=%d failed=%d freed=%d bytes",
+            totals["deleted_entries"],
+            totals["skipped"],
+            totals["failed"],
+            totals["freed_bytes"],
+        )
+    return totals
+
+
 def _cleanup_anima_runtime_artifacts(
     animas_dir: Path,
     tmp_gitdirs_retention_days: int,
@@ -1461,7 +1950,10 @@ _HOUSEKEEPING_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "runtime_tmp": _cleanup_runtime_tmp,
     "backup_dirs": _cleanup_backup_dirs,
     "codex_execution_logs": _cleanup_codex_execution_logs,
+    "codex_sessions": _cleanup_codex_sessions,
     "codex_tmp": _cleanup_codex_tmp_dirs,
+    "anima_scratch": _cleanup_anima_scratch,
+    "shared_worktrees": _cleanup_shared_worktrees,
     "anima_runtime_artifacts": _cleanup_anima_runtime_artifacts,
     "taskboard_stale": _cleanup_taskboard_stale,
     "suppressed_messages": _rotate_suppressed_message_logs,
