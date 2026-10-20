@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=0bfb020f7d014e4db29745c6428fb50adda055c036c656e6128105d5a64452b6 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=2474822e97d798d3511bb35790a518d8a029abf53f542caad03d3c98c6137682 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -718,7 +718,7 @@ Gradual migration of runtime data formats.
 |---|---:|---|
 | `core.migrations` | 1 | Runtime migration framework; import specific modules directly. |
 | `core.migrations.registry` | 149 | — |
-| `core.migrations.steps` | 1228 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 1300 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.template_sync` | 137 | — |
 | `core.migrations.tracker` | 143 | — |
 
