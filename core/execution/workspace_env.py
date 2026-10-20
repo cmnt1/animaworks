@@ -7,11 +7,9 @@ from __future__ import annotations
 """Shared scratch directory and package-cache environment for child processes."""
 
 import json
-import re
 from pathlib import Path
 
-_SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9_.-]")
-_MAX_COMPONENT_LENGTH = 64
+from core.platform.scratch import safe_scratch_component, scratch_root, task_scratch_dir
 
 _PACKAGE_CACHE_DIRS = {
     "UV_CACHE_DIR": "uv",
@@ -24,15 +22,7 @@ _PACKAGE_CACHE_DIRS = {
 }
 
 
-def _safe_component(value: str, *, fallback: str) -> str:
-    component = _SAFE_COMPONENT_RE.sub("_", value)[:_MAX_COMPONENT_LENGTH]
-    return fallback if component in {"", ".", ".."} else component
-
-
-def task_scratch_dir(anima_dir: Path, task_id: str) -> Path:
-    """Return a task scratch path without creating it."""
-    component = _safe_component(task_id, fallback="unknown")
-    return Path(anima_dir).resolve() / "scratch" / f"task-{component}"
+__all__ = ["build_workspace_env", "resolve_scratch_dir", "task_scratch_dir", "update_workspace_env"]
 
 
 def resolve_scratch_dir(anima_dir: Path) -> Path:
@@ -51,11 +41,10 @@ def resolve_scratch_dir(anima_dir: Path) -> Path:
 
         runtime_session = current_runtime_session()
         session_type = runtime_session.session_type if runtime_session is not None else "misc"
-        component = _safe_component(session_type, fallback="misc")
-        scratch_dir = Path(anima_dir).resolve() / "scratch" / component
+        scratch_dir = scratch_root(anima_dir) / safe_scratch_component(session_type, fallback="misc")
 
-    scratch_root = scratch_dir.parent
-    if scratch_root.is_symlink() or scratch_dir.is_symlink():
+    parent_dir = scratch_dir.parent
+    if parent_dir.is_symlink() or scratch_dir.is_symlink():
         raise OSError(f"Scratch directory must not be a symbolic link: {scratch_dir}")
     scratch_dir.mkdir(parents=True, exist_ok=True)
     return scratch_dir

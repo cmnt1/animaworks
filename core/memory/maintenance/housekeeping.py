@@ -28,6 +28,7 @@ from core.config.models import HousekeepingConfig, InboxConfig
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_text
 from core.platform.locks import acquire_file_lock, release_file_lock
+from core.platform.scratch import remove_scratch_entry
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping")
@@ -1587,7 +1588,7 @@ def _cleanup_anima_scratch(
                 continue
             try:
                 size = _path_size(entry)
-                _remove_path(entry)
+                remove_scratch_entry(entry)
                 totals["deleted_entries"] += 1
                 totals["freed_bytes"] += size
             except OSError:

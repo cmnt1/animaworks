@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import threading
 import time
 from datetime import UTC, datetime
@@ -42,17 +41,13 @@ def _cleanup_task_scratch(anima_dir: Path, task_id: str, *, status: str) -> None
     if status not in {"done", "cancelled"}:
         return
 
-    from core.execution.workspace_env import task_scratch_dir
+    from core.platform.scratch import remove_scratch_entry, scratch_root, task_scratch_dir
 
-    scratch_root = Path(anima_dir).resolve() / "scratch"
     scratch_dir = task_scratch_dir(anima_dir, task_id)
     try:
-        if scratch_root.is_symlink():
+        if scratch_root(anima_dir).is_symlink():
             return
-        if scratch_dir.is_symlink():
-            scratch_dir.unlink()
-        else:
-            shutil.rmtree(scratch_dir)
+        remove_scratch_entry(scratch_dir)
     except FileNotFoundError:
         pass
     except OSError:
