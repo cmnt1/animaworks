@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.i18n.engine import TranslationResponse
+from scripts.i18n.engine import EngineClient, TranslationEngineError, TranslationResponse
 from scripts.i18n.pipeline import Target, Translator
 from scripts.i18n.protect import protect_text
 from scripts.i18n.segment import split_markdown
@@ -20,6 +20,31 @@ class EchoEngine:
     def translate(self, _system: str, user: str) -> TranslationResponse:
         self.calls.append(user)
         return TranslationResponse(self.transform(user), input_tokens=17, output_tokens=11, model="fake-model")
+
+
+def test_nanogpt_translation_resolves_rotated_key_for_each_request(monkeypatch):
+    from core.config import nanogpt
+
+    monkeypatch.setenv("NANOGPT_API_KEY", "old-test-key")
+    current = ["rotated-test-key"]
+    monkeypatch.setattr(nanogpt, "nanogpt_api_key", lambda configured: current[0])
+    engine = EngineClient("nanogpt", {"kind": "nanogpt", "base_url": "https://example.invalid/v1",
+                                      "model": "translation-test", "api_key_env": "NANOGPT_API_KEY"})
+    assert engine._request_details()[1]["Authorization"] == "Bearer rotated-test-key"
+    current[0] = "newer-test-key"
+    assert engine._request_details()[1]["Authorization"] == "Bearer newer-test-key"
+
+
+def test_nanogpt_translation_sanitizes_credential_errors(monkeypatch):
+    from core.config import nanogpt
+
+    def invalid_key(configured):
+        raise ValueError("sensitive-test-source")
+    monkeypatch.setattr(nanogpt, "nanogpt_api_key", invalid_key)
+    engine = EngineClient("nanogpt", {"kind": "nanogpt"})
+    with pytest.raises(TranslationEngineError) as error:
+        engine._request_details()
+    assert "sensitive-test-source" not in str(error.value)
 
 
 def _translator(

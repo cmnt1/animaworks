@@ -30,6 +30,15 @@ class EngineClient:
     def _request_details(self) -> tuple[str, dict[str, str], dict[str, Any]]:
         api_key_env = str(self.definition.get("api_key_env", ""))
         api_key = os.environ.get(api_key_env, "") if api_key_env else ""
+        if self.kind == "nanogpt":
+            from core.config.nanogpt import nanogpt_api_key
+
+            try:
+                api_key = nanogpt_api_key(api_key)
+            except ValueError:
+                raise TranslationEngineError(f"Engine {self.name!r} has invalid nanoGPT credential configuration") from None
+            if not api_key:
+                raise TranslationEngineError(f"Engine {self.name!r} requires a nanoGPT API key")
         if self.kind == "azure_openai":
             endpoint_env = str(self.definition.get("endpoint_env", "AZURE_OPENAI_ENDPOINT"))
             endpoint = os.environ.get(endpoint_env, "").rstrip("/")
@@ -69,7 +78,10 @@ class EngineClient:
         try:
             import httpx
 
-            response = httpx.post(url, headers=headers, json=payload, timeout=self.timeout)
+            response = httpx.post(
+                url, headers=headers, json=payload,
+                timeout=httpx.Timeout(self.timeout, connect=min(10.0, self.timeout)),
+            )
         except ImportError:
             raise TranslationEngineError("The httpx package is required to call translation engines") from None
         except httpx.HTTPError as exc:
