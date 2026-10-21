@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/anima-files.md -->
-<!-- i18n: source-sha256=4058b5992b84f0303184a18c77cce99d86e2e702820420c335ccde9d598710f8 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=daf64ea97e7848803fe9645eef09e595a1a72796660b7750b35fbc74b1896fc6 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -20,15 +20,16 @@ Each Anima has a directory at `~/.animaworks/animas/{name}/`. Personality, behav
 
 `status.json` is the authoritative source for per-anima values related to ModelConfig. See the [configuration reference](../reference/config.md) for the list of corresponding keys and default values. `permissions.json` and the global `permissions.global.json` are used for permission decisions. See [security](../security.md) for permission boundaries and evaluation methods.
 
-## Runtime status
+## Runtime Status
 
 | Path | Role |
 |---|---|
-| `state/current_state.md` | Holds work status such as ongoing tasks, decisions, and next steps. It is incorporated into the prompt as needed, and updates are protected via a lock for status files. |
-| `state/task_queue.jsonl` | Migration input when legacy task data remains. The authoritative source for current tasks is the shared SQLite TaskStore, and this file is not treated as a separate runtime queue. |
-| `state/background_tasks/` | Stores the status and results of background processes started at `animaworks-tool submit`. Completion results are notified and referenced from conversations and subsequent background executions. |
+| `state/current_state.md` | Working state that holds ongoing work, decisions, next steps, and so on. It is incorporated into the prompt as needed, and updates are protected by a lock for the state file. |
+| `state/task_queue.jsonl` | Migration input used when legacy task data remains. The source of truth for current tasks is the shared SQLite TaskStore; do not treat this file as a separate runtime queue. |
+| `state/background_tasks/` | Stores the status and results of background processes started at `animaworks-tool submit`. Completion results are notified or referenced in conversations and by subsequent background runs. |
+| `scratch/` | A disposable workspace. Child processes receive either a task-specific `scratch/task-<id>/` or a session-type-specific `scratch/<種類>/` as `ANIMAWORKS_SCRATCH_DIR`. Task-specific workspaces are deleted when the task is completed or canceled; all others are deleted by housekeeping after 24 hours of inactivity. |
 
-Anima's long-term memory, conversation history, skills, and other data are organized into purpose-specific subdirectories. See the chapters in `docs/ja/memory/` for details on memory.
+Anima’s long-term memory, conversation history, skills, and other resources are organized into subdirectories by purpose. For details about memory, see the relevant sections of `docs/ja/memory/`.
 
 ## Design decisions
 

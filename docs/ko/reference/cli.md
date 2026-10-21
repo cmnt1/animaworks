@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=97d3d44c53d0776c162aec2ac2cac8f977b24f84060ae84f6d62370cbc66635b generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -919,7 +919,7 @@ anima용 stdio MCP 서버 실행
 
 ## `restart`
 
-서버를 재시작합니다 (중지 후 시작)
+Restart the server (stop then start)
 
 `usage: animaworks restart [-h] [--host HOST] [--port PORT] [--foreground]
                           [--force]`
@@ -928,8 +928,8 @@ anima용 stdio MCP 서버 실행
 |---|---|---|---|---|
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
-| --foreground, -f | flag | false | — | 로그 출력과 함께 포그라운드로 실행 (기본값: 데몬화) |
-| --force | flag | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1122,13 +1122,13 @@ AnimaWorks 서버 시작
 
 ## `stop`
 
-실행 중인 서버 중지
+Stop the running server
 
 `usage: animaworks stop [-h] [--force]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | 플래그 | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 
@@ -1183,10 +1183,10 @@ Anima용 슈퍼바이저 도구
 
 ## `task`
 
-영구 작업 큐 관리
+Manage persistent task queue
 
 `usage: animaworks task [-h]
-                       {board,show,claim,release,done,cancel,note,add,update,resume,list}
+                       {board,show,claim,release,done,cancel,note,add,update,resume,list,autonomy}
                        ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
@@ -1209,6 +1209,18 @@ Anima용 슈퍼바이저 도구
 | --summary | option | — | — | 한 줄 요약 (기본값: instruction[:100]) |
 | --relay-chain | option | — | — | 쉼표로 구분된 릴레이 체인 |
 | --workspace | option | — | — | 작업의 working_directory에 사용할 워크스페이스 별칭 또는 경로 |
+
+## `task autonomy`
+
+위임 관련 자율성 지표를 집계한다(읽기 전용)
+
+`usage: animaworks task autonomy [-h] [--days DAYS] [--json] [--anima ANIMA]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --days | option | 7 | — | 집계 기간(일수, 기본값: 7) |
+| --json | flag | false | — | JSON 형식으로 출력한다 |
+| --anima | option | — | — | 이 Anima만 표시한다 |
 
 ## `task board`
 
@@ -1319,16 +1331,24 @@ Anima용 슈퍼바이저 도구
 
 ## `task update`
 
-작업 상태 업데이트
+Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
-                              [--summary SUMMARY]`
+`usage: animaworks task update [-h] --task-id TASK_ID [--status STATUS]
+                              [--summary SUMMARY]
+                              [--waiting-for-kind {task,time,message,external}]
+                              [--waiting-for-ref WAITING_FOR_REF]
+                              [--waiting-for-until WAITING_FOR_UNTIL]
+                              [--scope-note SCOPE_NOTE]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --task-id | option | — | — | 작업 ID |
-| --status | option | — | — | 지정할 상태 (폐기된 상태는 update_task에서 거부됨) |
+| --task-id | option | — | — | Task ID |
+| --status | option | — | — | 선언할 상태(선택 사항. --scope-note가 지정된 경우에만 생략 가능하며, 폐기된 상태는 거부됨) |
 | --summary | option | — | — | 업데이트된 요약 |
+| --waiting-for-kind | option | — | task, time, message, external | 대기 중인 작업이 기다리는 대상 |
+| --waiting-for-ref | option | — | — | 작업 ID, 사람 또는 자유 형식의 대기 대상 |
+| --waiting-for-until | option | — | — | kind=time일 때 사용할 ISO8601 타임스탬프 |
+| --scope-note | option | — | — | 범위 관련 메모를 추가하고 요청자에게 알림 |
 
 ## `task-store`
 

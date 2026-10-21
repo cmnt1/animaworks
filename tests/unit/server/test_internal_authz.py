@@ -88,7 +88,10 @@ def authz_client(tmp_path, monkeypatch):
     monkeypatch.setattr("core.anima.factory.create_from_md", lambda *_a, **_k: animas_dir / "created")
     monkeypatch.setattr("core.messaging.messenger.Messenger.post_channel", lambda *_a, **_k: None)
     monkeypatch.setattr("core.tasks.dispatch.publish_tasks", lambda *_a, **_k: [])
-    monkeypatch.setattr("core.tasks.dispatch.publish_delegation", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "core.tasks.dispatch.publish_delegation",
+        lambda *_a, **_k: SimpleNamespace(task_id="aabbccddeeff", status="pending", deduplicated=False, via_host=False),
+    )
     monkeypatch.setattr(
         "core.org.company.check_company_boundary",
         lambda *_a, **_k: SimpleNamespace(cross_company=False, resolved_via="config", display_name=""),

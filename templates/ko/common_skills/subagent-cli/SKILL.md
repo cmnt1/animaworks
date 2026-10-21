@@ -108,7 +108,7 @@ codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
 
 ```bash
 codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
-  -o /tmp/codex_result.txt \
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
   "このプロジェクトのアーキテクチャを分析して改善案を出して。"
 ```
 
@@ -160,7 +160,7 @@ cursor-agent -p --trust --mode ask \
 cursor-agent -p --trust --force \
   --workspace /home/user/dev/myproject \
   --output-format text \
-  "テストカバレッジが低いモジュールを特定して改善して" > /tmp/cursor_result.txt
+  "テストカバレッジが低いモジュールを特定して改善して" > "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt
 ```
 
 ---
@@ -242,13 +242,13 @@ RESULT=$(codex exec --full-auto --ephemeral -C /path "プロンプト" 2>/dev/nu
 echo "$RESULT"
 ```
 
-### 파일 경유 (codex 권장)
+### 파일을 통한 방법(codex 권장)
 
 ```bash
 codex exec --full-auto --ephemeral -C /path \
-  -o /tmp/result.txt "プロンプト"
+  -o "$ANIMAWORKS_SCRATCH_DIR"/result.txt "プロンプト"
 # 結果を読む
-cat /tmp/result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/result.txt
 ```
 
 ### 종료 코드로 성공 여부 판정
@@ -274,8 +274,8 @@ fi
 
 ```bash
 nohup codex exec --full-auto --ephemeral -C /path/to/workspace \
-  -o /tmp/codex_result.txt \
-  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/codex_stdout.log 2>&1 &
 echo "PID: $!"
 ```
 
@@ -284,7 +284,7 @@ cursor-agent의 경우:
 ```bash
 nohup cursor-agent -p --trust --force \
   --workspace /path/to/workspace \
-  "プロンプト" > /tmp/cursor_result.txt 2>&1 &
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt 2>&1 &
 echo "PID: $!"
 ```
 
@@ -295,24 +295,24 @@ echo "PID: $!"
 ps -p <PID> > /dev/null 2>&1 && echo "実行中" || echo "完了"
 
 # 結果を読む（完了後）
-cat /tmp/codex_result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt
 # または
-cat /tmp/cursor_result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt
 ```
 
-### 타임아웃 포함 실행
+### 시간 초과를 설정한 실행
 
-폭주를 막기 위해 `timeout`을 병용한다:
+폭주를 방지하기 위해 `timeout`도 함께 사용한다:
 
 ```bash
 nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
-  -o /tmp/codex_result.txt \
-  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/codex_stdout.log 2>&1 &
 ```
 
-- 권장 타임아웃: **30분** (`30m`)
-- 작은 작업: **10분** (`10m`)
-- 큰 리팩터링: **60분** (`60m`)
+- 권장 시간 초과: **30분**（`30m`）
+- 작은 작업: **10분**（`10m`）
+- 대규모 리팩터링: **60분**（`60m`）
 
 ### 실행 중에 다른 작업 계속
 

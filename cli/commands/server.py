@@ -18,6 +18,7 @@ from pathlib import Path
 
 import psutil
 
+from core.i18n import t
 from core.platform.env import DATA_DIR_ENV, SERVER_URL_ENV, get_env, read_process_env, set_server_url
 from core.platform.pid import read_server_pid
 from core.platform.process import (
@@ -178,7 +179,7 @@ def _process_data_dir(pid: int, cmdline: list[str] | None) -> Path | None:
 
 
 def _stop_server(
-    timeout: int = 90,
+    timeout: int | None = None,
     *,
     force: bool = False,
     extra_exclude_pids: set[int] | None = None,
@@ -192,10 +193,10 @@ def _stop_server(
     still be stopped even when the PID file was lost.
 
     Args:
-        timeout: Maximum seconds to wait before reporting failure. The default
-            covers HTTP drain, parallel worker shutdown and vector cleanup;
-            a worker's individual stop budget is not the server-wide budget.
-        force: If True, escalate to SIGKILL after SIGTERM timeout.
+        timeout: Maximum seconds to wait before reporting failure. Defaults to
+            the configured Anima drain timeout plus a 60-second cleanup margin.
+        force: If True, do not wait for active work: escalate to SIGKILL after
+            90 seconds (or ``timeout``) instead of the drain-based wait.
         extra_exclude_pids: Additional PIDs to exclude from process
             scanning (e.g. the restart helper).
 
@@ -226,6 +227,9 @@ def _stop_server(
             _cleanup_orphans()
             return True
 
+    drain_timeout = 0 if force else _restart_drain_timeout_seconds()
+    if drain_timeout > 0:
+        print(t("cli.server_waiting_for_work", seconds=drain_timeout))
     print(f"Stopping server (pid={pid})...")
     if os.name == "nt" and _request_supervisor_shutdown(host=host, port=port, expected_pid=pid):
         print("Supervisor shutdown requested.")
@@ -240,7 +244,11 @@ def _stop_server(
         print(f"Error: Permission denied sending signal to pid={pid}.")
         return False
 
-    deadline = time.monotonic() + timeout
+    if timeout is not None:
+        wait_timeout = timeout
+    else:
+        wait_timeout = 90 if force else drain_timeout + 60
+    deadline = time.monotonic() + wait_timeout
     while time.monotonic() < deadline:
         if not is_pid_alive(pid):
             print("Server stopped.")
@@ -250,11 +258,11 @@ def _stop_server(
         time.sleep(0.2)
 
     if not force:
-        print(f"Error: Server (pid={pid}) did not stop within {timeout}s.")
+        print(f"Error: Server (pid={pid}) did not stop within {wait_timeout}s.")
         return False
 
     # Force mode: escalate to SIGKILL
-    print(f"Server (pid={pid}) did not stop within {timeout}s. Sending SIGKILL...")
+    print(f"Server (pid={pid}) did not stop within {wait_timeout}s. Sending SIGKILL...")
     try:
         terminate_pid(pid, force=True, include_children=True)
     except ProcessLookupError:
@@ -276,8 +284,18 @@ def _stop_server(
     print("Server force-killed.")
     _remove_pid_file()
     _cleanup_orphans()
-
     return True
+
+
+def _restart_drain_timeout_seconds() -> int:
+    """Return the configured upper bound for restart and shutdown drains."""
+    try:
+        from core.config import load_config
+
+        return max(0, int(load_config().server.restart_drain_timeout_seconds))
+    except Exception:
+        logger.debug("Could not read restart drain timeout; using the documented default", exc_info=True)
+        return 600
 
 
 # ── Orphan runner cleanup ─────────────────────────────────
@@ -632,6 +650,7 @@ def _spawn_restart_helper(args: argparse.Namespace, old_pid: int | None) -> int:
     from core.paths import get_data_dir
 
     data_dir = str(get_data_dir())
+    old_server_wait_seconds = _restart_drain_timeout_seconds() + 60
 
     helper_code = f"""
 import json, os, socket, sys, time, subprocess, traceback
@@ -655,6 +674,7 @@ STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
 old_pid = {old_pid!r}
 host = {host!r}
 port = {port!r}
+OLD_SERVER_WAIT_SECONDS = {old_server_wait_seconds}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
 MAX_RETRIES = 3
 RETRY_DELAY = 5
@@ -703,11 +723,11 @@ _log(f"Started (pid={{os.getpid()}}, old_pid={{old_pid}})")
 # Phase 1: Wait for old server to exit
 if old_pid is not None:
     _log(f"Waiting for old server (pid={{old_pid}}) to exit...")
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + OLD_SERVER_WAIT_SECONDS
     while time.monotonic() < deadline and _alive(old_pid):
         time.sleep(0.3)
     if _alive(old_pid):
-        _log(f"Old server still alive after 30s, force-killing pid={{old_pid}}")
+        _log(f"Old server still alive after {{OLD_SERVER_WAIT_SECONDS}}s, force-killing pid={{old_pid}}")
         try:
             terminate_pid(old_pid, force=True, include_children=True)
         except (OSError, ProcessLookupError):

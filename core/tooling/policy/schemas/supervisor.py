@@ -181,6 +181,14 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.delegate_task.model"),
                     },
+                    "subject": {
+                        "type": "string",
+                        "description": _t("schema.delegate_task.subject"),
+                    },
+                    "version": {
+                        "type": "string",
+                        "description": _t("schema.delegate_task.version"),
+                    },
                 },
                 "required": ["name", "instruction"],
             },
