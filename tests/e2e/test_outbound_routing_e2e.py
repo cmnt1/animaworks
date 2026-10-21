@@ -65,9 +65,9 @@ def shared_dir(data_dir: Path) -> Path:
 def config_with_aliases(data_dir: Path) -> AnimaWorksConfig:
     cfg = AnimaWorksConfig(
         external_messaging=ExternalMessagingConfig(
-            preferred_channel="slack",
+            preferred_channel="discord",
             user_aliases={
-                "user": UserAliasConfig(slack_user_id="U0TEST000001", outbound_dm=True),
+                "user": UserAliasConfig(discord_user_id="D0TEST000001", outbound_dm=True),
             },
         ),
     )
@@ -106,22 +106,22 @@ def make_handler(shared_dir: Path):
 
 
 class TestSendMessageToAlias:
-    @patch("core.messaging.outbound._send_via_slack")
-    def test_send_to_user_alias_routes_to_slack(
+    @patch("core.messaging.outbound._send_via_discord")
+    def test_send_to_user_alias_routes_to_discord(
         self,
-        mock_slack,
+        mock_discord,
         make_anima,
         animas_dir,
         config_with_aliases,
         data_dir,
         make_handler,
     ):
-        mock_slack.return_value = json.dumps(
+        mock_discord.return_value = json.dumps(
             {
                 "status": "sent",
-                "channel": "slack",
-                "recipient": "U0TEST000001",
-                "message": "Message sent via Slack DM to U0TEST000001",
+                "channel": "discord",
+                "recipient": "D0TEST000001",
+                "message": "Message sent via Discord DM to D0TEST000001",
             }
         )
         sakura_dir = make_anima("sakura")
@@ -135,7 +135,7 @@ class TestSendMessageToAlias:
 
         data = json.loads(result)
         assert data["status"] == "sent"
-        mock_slack.assert_called_once_with("U0TEST000001", "hello", "sakura", "sakura")
+        mock_discord.assert_called_once_with("D0TEST000001", "hello", "sakura", "sakura")
 
     def test_send_to_internal_anima_unchanged(
         self,
@@ -157,21 +157,21 @@ class TestSendMessageToAlias:
 
         assert "Message sent to kotoha" in result
 
-    @patch("core.messaging.outbound._send_via_slack")
-    def test_send_to_slack_prefix(
+    @patch("core.messaging.outbound._send_via_discord")
+    def test_send_to_discord_prefix(
         self,
-        mock_slack,
+        mock_discord,
         make_anima,
         animas_dir,
         config_with_aliases,
         data_dir,
         make_handler,
     ):
-        mock_slack.return_value = json.dumps(
+        mock_discord.return_value = json.dumps(
             {
                 "status": "sent",
-                "channel": "slack",
-                "recipient": "U0TEST000001",
+                "channel": "discord",
+                "recipient": "D0TEST000001",
                 "message": "OK",
             }
         )
@@ -184,7 +184,7 @@ class TestSendMessageToAlias:
         ):
             result = handler.handle(
                 "send_message",
-                {"to": "slack:U0TEST000001", "content": "hi", "intent": "report"},
+                {"to": "discord:D0TEST000001", "content": "hi", "intent": "report"},
             )
 
         data = json.loads(result)
@@ -257,17 +257,17 @@ class TestBoardSlackSyncRouting:
 
 class TestRobustRecipientHandling:
     @pytest.mark.parametrize("variant", ["USER", "User", "uSeR"])
-    @patch("core.messaging.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_discord")
     def test_case_insensitive_alias(
         self,
-        mock_slack,
+        mock_discord,
         variant,
         make_anima,
         animas_dir,
         config_with_aliases,
         make_handler,
     ):
-        mock_slack.return_value = json.dumps({"status": "sent"})
+        mock_discord.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -289,7 +289,6 @@ class TestRobustRecipientHandling:
         config_with_aliases,
         make_handler,
     ):
-        mock_slack.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -303,7 +302,9 @@ class TestRobustRecipientHandling:
             )
 
         data = json.loads(result)
-        assert data["status"] == "sent"
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        mock_slack.assert_not_called()
 
     def test_case_insensitive_anima_name(
         self,
@@ -327,16 +328,16 @@ class TestRobustRecipientHandling:
 
         assert "Message sent to sakura" in result
 
-    @patch("core.messaging.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_discord")
     def test_whitespace_in_recipient(
         self,
-        mock_slack,
+        mock_discord,
         make_anima,
         animas_dir,
         config_with_aliases,
         make_handler,
     ):
-        mock_slack.return_value = json.dumps({"status": "sent"})
+        mock_discord.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
@@ -377,10 +378,10 @@ class TestFallbackBehavior:
         assert parsed["status"] == "error"
         assert parsed["error_type"] == "RecipientResolutionError"
 
-    @patch("core.messaging.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_discord")
     def test_activity_timeline_log_on_external(
         self,
-        mock_slack,
+        mock_discord,
         make_anima,
         animas_dir,
         config_with_aliases,
@@ -389,7 +390,7 @@ class TestFallbackBehavior:
     ):
         """ToolHandler logs external sends to the unified activity log
         (dm_logs are no longer written by messenger.send)."""
-        mock_slack.return_value = json.dumps({"status": "sent"})
+        mock_discord.return_value = json.dumps({"status": "sent"})
         sakura_dir = make_anima("sakura")
         messenger = Messenger(shared_dir, "sakura")
         handler = make_handler(sakura_dir, messenger=messenger)
