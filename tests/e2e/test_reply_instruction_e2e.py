@@ -53,8 +53,8 @@ def _create_external_inbox_message(
 class TestReplyInstructionInInboxFormatting:
     """Verify [reply_instruction] appears in formatted inbox output."""
 
-    def test_slack_message_has_reply_instruction(self, tmp_path: Path) -> None:
-        """Slack inbox message gets CLI-based [reply_instruction: ...]."""
+    def test_slack_message_has_discord_migration_notice(self, tmp_path: Path) -> None:
+        """Retired Slack inbox messages direct users to Discord."""
         shared = tmp_path / "shared"
         _create_external_inbox_message(shared, "alice", source="slack")
 
@@ -67,10 +67,11 @@ class TestReplyInstructionInInboxFormatting:
 
         result = _build_reply_instruction(msg)
 
-        assert "reply_instruction" in result
-        assert "animaworks-tool slack send C67890 '<@U12345> {返信内容}'" in result
-        assert "--thread 1709123456.789012" in result
-        assert "platform=" not in result
+        assert "[auto_reply:" in result
+        assert "Slackは廃止されました" in result
+        assert "Discord" in result
+        assert "slack_channel_postは使用できません" in result
+        assert "reply_instruction" not in result
 
     def test_chatwork_message_has_reply_instruction(self, tmp_path: Path) -> None:
         """Chatwork inbox message gets [reply_instruction: ...] for chatwork."""
