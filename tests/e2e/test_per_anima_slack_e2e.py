@@ -14,7 +14,7 @@ import hmac
 import json
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -63,74 +63,51 @@ def webhook_client(webhook_app):
 # ── 1. Full Slack tool dispatch with per-Anima token ────────
 
 
-class TestSlackToolDispatchPerAnimaToken:
-    def test_dispatch_uses_per_anima_token_when_configured(self):
-        """Set up per-Anima token in vault mock; verify SlackClient gets it."""
+class TestSlackToolDispatchDisabled:
+    def test_dispatch_is_disabled_during_discord_migration(self):
+        """Per-Anima credentials do not bypass Slack migration disablement."""
         with patch("core.integrations.slack.SlackClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.resolve_channel.return_value = "C123"
-            mock_client.post_message.return_value = {"ts": "1234", "channel": "C123"}
+            result = dispatch(
+                "slack_send",
+                {
+                    "channel": "C123",
+                    "message": "test",
+                    "anima_dir": "/fake/animas/sumire",
+                },
+            )
 
-            with patch(
-                "core.integrations.slack._resolve_slack_token",
-            ) as mock_resolve:
-                mock_resolve.return_value = "xoxb-per-anima-token"
-
-                result = dispatch(
-                    "slack_send",
-                    {
-                        "channel": "C123",
-                        "message": "test",
-                        "anima_dir": "/fake/animas/sumire",
-                    },
-                )
-
-        assert result == {"ts": "1234", "channel": "C123"}
-        mock_cls.assert_called_once_with(token="xoxb-per-anima-token")
-        mock_client.resolve_channel.assert_called_once_with("C123")
-        mock_client.post_message.assert_called_once()
-        call_args = mock_client.post_message.call_args
-        assert call_args[0][0] == "C123"
-        assert "test" in call_args[0][1]
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_cls.assert_not_called()
 
 
 # ── 2. Full Slack tool dispatch with shared token fallback ──
 
 
 class TestSlackToolDispatchSharedTokenFallback:
-    def test_dispatch_uses_none_token_when_no_per_anima(self):
-        """No per-Anima token; SlackClient created with None (shared fallback)."""
+    def test_dispatch_stays_disabled_without_per_anima_token(self):
+        """A shared token fallback does not re-enable Slack dispatch."""
         with patch("core.integrations.slack.SlackClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.resolve_channel.return_value = "C123"
-            mock_client.post_message.return_value = {"ts": "5678", "channel": "C123"}
+            result = dispatch(
+                "slack_send",
+                {
+                    "channel": "C123",
+                    "message": "test",
+                    "anima_dir": "/fake/animas/sumire",
+                },
+            )
 
-            with patch(
-                "core.integrations.slack._resolve_slack_token",
-            ) as mock_resolve:
-                mock_resolve.return_value = None
-
-                result = dispatch(
-                    "slack_send",
-                    {
-                        "channel": "C123",
-                        "message": "test",
-                        "anima_dir": "/fake/animas/sumire",
-                    },
-                )
-
-        assert result == {"ts": "5678", "channel": "C123"}
-        mock_cls.assert_called_once_with(token=None)
+        assert result["status"] == "disabled"
+        assert "Discord migration" in result["message"]
+        mock_cls.assert_not_called()
 
 
 # ── 3. Outbound flow: per-Anima token skips sender prefix ───
 
 
 class TestOutboundPerAnimaSkipsPrefix:
-    def test_send_external_with_per_anima_token_no_sender_prefix(self):
-        """Per-Anima token: message text does NOT have [sender_name] prefix."""
+    def test_send_external_with_per_anima_token_is_disabled(self):
+        """Per-Anima credentials do not bypass Slack migration disablement."""
         resolved = ResolvedRecipient(
             is_internal=False,
             name="user",
@@ -139,10 +116,6 @@ class TestOutboundPerAnimaSkipsPrefix:
         )
 
         with patch("core.integrations.slack.SlackClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
-
             with (
                 patch(
                     "core.credentials._lookup_vault_credential",
@@ -161,20 +134,18 @@ class TestOutboundPerAnimaSkipsPrefix:
                 )
 
         data = json.loads(result)
-        assert data["status"] == "sent"
-        mock_client.post_message.assert_called_once()
-        text_sent = mock_client.post_message.call_args[0][1]
-        assert text_sent == "hello from sumire"
-        assert "[sakura]" not in text_sent
-        mock_cls.assert_called_once_with(token="xoxb-per-anima-token")
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        assert "Discord migration" in data["message"]
+        mock_cls.assert_not_called()
 
 
 # ── 4. Outbound flow: shared token includes sender prefix ───
 
 
 class TestOutboundSharedTokenIncludesPrefix:
-    def test_send_external_with_shared_token_has_sender_prefix(self):
-        """No per-Anima token; message text HAS [sender_name] prefix."""
+    def test_send_external_with_shared_token_is_disabled(self):
+        """A shared Slack token also does not bypass migration disablement."""
         resolved = ResolvedRecipient(
             is_internal=False,
             name="user",
@@ -183,10 +154,6 @@ class TestOutboundSharedTokenIncludesPrefix:
         )
 
         with patch("core.integrations.slack.SlackClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
-
             with (
                 patch(
                     "core.credentials._lookup_vault_credential",
@@ -205,11 +172,10 @@ class TestOutboundSharedTokenIncludesPrefix:
                 )
 
         data = json.loads(result)
-        assert data["status"] == "sent"
-        mock_client.post_message.assert_called_once()
-        text_sent = mock_client.post_message.call_args[0][1]
-        assert text_sent == "[sakura] hello"
-        mock_cls.assert_called_once_with(token=None)
+        assert data["status"] == "error"
+        assert data["error_type"] == "DeliveryFailed"
+        assert "Discord migration" in data["message"]
+        mock_cls.assert_not_called()
 
 
 # ── 5. Webhook routing: per-Anima app_id routing ────────────
