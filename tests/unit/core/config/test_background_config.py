@@ -29,6 +29,7 @@ class TestServerConfig:
         assert sc.keepalive_interval == 30
         assert sc.anima_startup_ready_timeout == 120
         assert sc.anima_stop_timeout == 60.0
+        assert sc.restart_drain_timeout_seconds == 600
         assert sc.health_check_warmup_seconds == 300
         assert sc.runner_warmup_seconds == 180
         assert sc.spawn_timeout == 300
@@ -59,6 +60,10 @@ class TestServerConfig:
     def test_server_config_custom_anima_stop_timeout(self):
         sc = ServerConfig(anima_stop_timeout=45.5)
         assert sc.anima_stop_timeout == 45.5
+
+    def test_server_config_custom_restart_drain_timeout(self):
+        sc = ServerConfig(restart_drain_timeout_seconds=0)
+        assert sc.restart_drain_timeout_seconds == 0
 
     def test_server_config_custom_warmup_and_respawn_settings(self):
         sc = ServerConfig(

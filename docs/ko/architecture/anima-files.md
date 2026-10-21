@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/anima-files.md -->
-<!-- i18n: source-sha256=4058b5992b84f0303184a18c77cce99d86e2e702820420c335ccde9d598710f8 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=daf64ea97e7848803fe9645eef09e595a1a72796660b7750b35fbc74b1896fc6 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
@@ -24,11 +24,12 @@
 
 | 경로 | 역할 |
 |---|---|
-| `state/current_state.md` | 진행 중인 작업, 판단, 다음 절차 등을 보유하는 작업 상태이다. prompt에 필요한 범위에서 포함되며, 업데이트는 상태 파일용 lock을 통해 보호된다. |
-| `state/task_queue.jsonl` | 구형식의 작업 데이터가 남아 있는 경우의 마이그레이션 입력이다. 현재 작업의 정본은 공유 SQLite TaskStore이며, 이 파일을 런타임의 별도 큐로 취급하지 않는다. |
-| `state/background_tasks/` | `animaworks-tool submit`에서 시작한 백그라운드 처리의 상태와 결과를 저장한다. 완료 결과는 대화나 후속 배경 실행에서 알림·참조된다. |
+| `state/current_state.md` | 진행 중인 작업, 판단, 다음 절차 등을 유지하는 작업 상태다. 프롬프트에 필요한 범위만 포함되며, 업데이트는 상태 파일용 잠금을 통해 보호된다. |
+| `state/task_queue.jsonl` | 구형 작업 데이터가 남아 있는 경우의 마이그레이션 입력이다. 현재 작업의 정본은 공유 SQLite TaskStore이며, 이 파일을 런타임의 별도 대기열로 취급하지 않는다. |
+| `state/background_tasks/` | `animaworks-tool submit`에서 시작한 백그라운드 처리의 상태와 결과를 저장한다. 완료 결과는 대화나 후속 백그라운드 실행을 통해 알림으로 전달되거나 참조된다. |
+| `scratch/` | 일회용 작업 공간이다. 자식 프로세스에는 `ANIMAWORKS_SCRATCH_DIR`로 작업용 `scratch/task-<id>/` 또는 세션 종류별 `scratch/<種類>/`이 전달된다. 작업용은 작업 완료·취소 시 삭제되고, 그 외에는 24시간 동안 방치되면 하우스키핑이 삭제한다. |
 
-Anima의 장기 기억, 대화 기록, 스킬 등은 용도별 하위 디렉토리로 나뉘어 있다. 기억의 상세는 `docs/ja/memory/`의 각 장을 참조한다.
+Anima의 장기 기억, 대화 기록, 스킬 등은 용도별 하위 디렉터리로 나뉘어 있다. 기억에 대한 자세한 내용은 `docs/ja/memory/`의 각 장을 참조한다.
 
 ## 설계 판단
 

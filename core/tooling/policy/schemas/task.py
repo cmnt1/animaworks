@@ -148,6 +148,30 @@ def _task_tools() -> list[dict[str, Any]]:
                         "enum": ["pending", "done", "cancelled"],
                         "description": _t("schema.update_task.status"),
                     },
+                    "waiting_for": {
+                        "type": "object",
+                        "description": _t("schema.update_task.waiting_for"),
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": ["task", "time", "message", "external"],
+                                "description": _t("schema.update_task.waiting_for_kind"),
+                            },
+                            "ref": {
+                                "type": "string",
+                                "description": _t("schema.update_task.waiting_for_ref"),
+                            },
+                            "until": {
+                                "type": "string",
+                                "description": _t("schema.update_task.waiting_for_until"),
+                            },
+                        },
+                        "required": ["kind"],
+                    },
+                    "scope_note": {
+                        "type": "string",
+                        "description": _t("schema.update_task.scope_note"),
+                    },
                     "resume": {
                         "type": "boolean",
                         "description": _t("schema.update_task.resume"),
@@ -161,7 +185,7 @@ def _task_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.update_task.result"),
                     },
                 },
-                "required": ["task_id", "status"],
+                "required": ["task_id"],
             },
         },
         {

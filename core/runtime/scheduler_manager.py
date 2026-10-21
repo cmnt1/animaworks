@@ -15,7 +15,7 @@ import logging
 import re
 import zlib
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,14 +25,15 @@ from apscheduler.triggers.cron import CronTrigger
 from core.config.model_mode import is_claude_cli_alias
 from core.config.models import load_config
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
+from core.platform.atomic_io import atomic_write_json, atomic_write_text
 from core.platform.tasks import spawn
-from core.runtime.cron_followup import command_followup_output
+from core.runtime.cron_diagnostics import cron_diagnostics_digest, diagnose_cron_task
+from core.runtime.cron_followup import command_followup_output, should_suppress_cron_followup
 from core.runtime.memory_service import MemoryService
 from core.runtime.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 from core.schemas import CronTask
-from core.time_utils import get_app_timezone, now_local
+from core.time_utils import ensure_aware, get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -281,6 +282,7 @@ class SchedulerManager:
         self.scheduler: AsyncIOScheduler | None = None
         self._heartbeat_running: bool = False
         self._cron_running: set[str] = set()
+        self._accepting_work = True
         self._direct_cron_tasks: set[asyncio.Task[Any]] = set()
         self._cron_md_mtime: float = 0.0
         self._heartbeat_md_mtime: float = 0.0
@@ -334,7 +336,10 @@ class SchedulerManager:
             self._setup_cron_tasks()
             self._setup_activity_schedule()
             self._setup_background_review_drain()
+            self._recover_interrupted_crons()
             self.scheduler.start()
+            if not self._accepting_work:
+                self.scheduler.pause()
 
             # Wire up hot-reload callback
             self._anima.set_on_schedule_changed(self.reload_schedule)
@@ -613,6 +618,7 @@ class SchedulerManager:
         tasks = parse_cron_md(config)
         registered_tasks: list[dict[str, str]] = []
         rejected_tasks: list[dict[str, str]] = []
+        diagnostics: dict[str, list[str]] = {}
         registered = 0
         for i, task in enumerate(tasks):
             trigger = parse_schedule(task.schedule)
@@ -629,6 +635,10 @@ class SchedulerManager:
                     task.schedule,
                 )
                 continue
+
+            task_diagnostics = diagnose_cron_task(task, trigger)
+            if task_diagnostics:
+                diagnostics[task.name] = task_diagnostics
 
             self.scheduler.add_job(
                 self.cron_tick,
@@ -652,7 +662,7 @@ class SchedulerManager:
             )
 
         self._write_cron_registration(registered_tasks, rejected_tasks)
-        self._check_cron_parse_health(config, tasks, registered)
+        self._check_cron_parse_health(config, tasks, registered, diagnostics)
 
     def _write_cron_registration(
         self,
@@ -685,6 +695,162 @@ class SchedulerManager:
         except Exception:
             logger.debug("Failed to record cron audit event", exc_info=True)
 
+    @property
+    def _cron_occurrences_path(self) -> Path:
+        return self._anima_dir / "state" / "cron_occurrences.json"
+
+    def _read_cron_occurrences(self) -> dict[str, dict[str, Any]]:
+        """Read the bounded per-task cron occurrence ledger."""
+        try:
+            payload = json.loads(self._cron_occurrences_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Failed to read cron occurrence ledger for %s", self._anima_name, exc_info=True)
+            return {}
+        if not isinstance(payload, dict) or not isinstance(payload.get("occurrences"), dict):
+            logger.warning("Invalid cron occurrence ledger for %s", self._anima_name)
+            return {}
+        return {
+            name: row for name, row in payload["occurrences"].items() if isinstance(name, str) and isinstance(row, dict)
+        }
+
+    def _write_cron_occurrences(self, occurrences: dict[str, dict[str, Any]]) -> bool:
+        """Atomically persist the latest occurrence for each task."""
+        try:
+            atomic_write_json(
+                self._cron_occurrences_path,
+                {"occurrences": occurrences},
+                sort_keys=True,
+            )
+            return True
+        except OSError:
+            logger.warning("Failed to persist cron occurrence ledger for %s", self._anima_name, exc_info=True)
+            return False
+
+    def _record_cron_occurrence(self, task: CronTask, *, rerun: bool = False) -> bool:
+        occurrences = self._read_cron_occurrences()
+        existing = occurrences.get(task.name)
+        if rerun:
+            if existing is None:
+                return False
+            existing["rerun"] = True
+            existing["rerun_started_at"] = now_local().isoformat()
+            existing.pop("abandoned_reason", None)
+        else:
+            started_at = now_local().isoformat()
+            occurrences[task.name] = {
+                "task_name": task.name,
+                "scheduled_at": started_at,
+                "started_at": started_at,
+                "status": "running",
+                "rerun": False,
+            }
+        return self._write_cron_occurrences(occurrences)
+
+    def _finish_cron_occurrence(self, task_name: str) -> None:
+        occurrences = self._read_cron_occurrences()
+        occurrence = occurrences.get(task_name)
+        if occurrence is None:
+            return
+        occurrence["status"] = "finished"
+        occurrence["finished_at"] = now_local().isoformat()
+        self._write_cron_occurrences(occurrences)
+
+    def _abandon_cron_occurrence(self, task_name: str, reason: str) -> None:
+        occurrences = self._read_cron_occurrences()
+        occurrence = occurrences.get(task_name)
+        if occurrence is None:
+            return
+        occurrence["status"] = "abandoned"
+        occurrence["abandoned_reason"] = reason
+        self._write_cron_occurrences(occurrences)
+
+    def _recover_interrupted_crons(self) -> None:
+        """Rerun eligible interrupted cron occurrences once after startup."""
+        if not self._accepting_work or not self.scheduler:
+            return
+        occurrences = self._read_cron_occurrences()
+        if not occurrences:
+            return
+
+        now = now_local()
+        registered: dict[str, tuple[CronTask, Any]] = {}
+        for job in self.scheduler.get_jobs():
+            args = job.args or ()
+            task = args[0] if args else None
+            if isinstance(task, CronTask):
+                registered.setdefault(task.name, (task, job))
+
+        for task_name, occurrence in occurrences.items():
+            if occurrence.get("status") != "running":
+                continue
+            registered_task = registered.get(task_name)
+            if registered_task is None:
+                reason = "task is no longer registered"
+                self._abandon_cron_occurrence(task_name, reason)
+                logger.info(
+                    "Abandoned interrupted cron: anima=%s task=%s reason=%s", self._anima_name, task_name, reason
+                )
+                continue
+
+            task, job = registered_task
+            try:
+                started_at = ensure_aware(datetime.fromisoformat(str(occurrence.get("started_at"))))
+                age_seconds = (now - started_at).total_seconds()
+                next_run = getattr(job, "next_run_time", None)
+                if next_run is None:
+                    next_run = job.trigger.get_next_fire_time(None, now)
+                next_run = ensure_aware(next_run) if next_run is not None else None
+            except (TypeError, ValueError, AttributeError):
+                age_seconds = float("inf")
+                next_run = None
+
+            if occurrence.get("rerun"):
+                reason = "already rerun"
+            elif not 0 <= age_seconds <= 6 * 60 * 60:
+                reason = "occurrence is older than six hours"
+            elif next_run is None or next_run <= now + timedelta(minutes=30):
+                reason = "next scheduled run is within 30 minutes"
+            else:
+                if not self._record_cron_occurrence(task, rerun=True):
+                    logger.warning(
+                        "Could not mark interrupted cron rerun before launch: %s -> %s", self._anima_name, task.name
+                    )
+                    continue
+                self._log_cron_event(task, "rerun", "interrupted occurrence")
+                logger.info(
+                    "Rerunning interrupted cron: anima=%s task=%s scheduled_at=%s",
+                    self._anima_name,
+                    task.name,
+                    occurrence.get("scheduled_at"),
+                )
+                self._cron_running.add(task.name)
+                try:
+                    spawn(
+                        self._run_cron_task(task, rerun=True),
+                        name=f"cron-rerun-{self._anima_name}-{task.name}",
+                    )
+                except Exception:
+                    self._cron_running.discard(task.name)
+                    self._finish_cron_occurrence(task.name)
+                    logger.exception("Failed to schedule interrupted cron rerun: %s -> %s", self._anima_name, task.name)
+                continue
+
+            self._abandon_cron_occurrence(task_name, reason)
+            logger.info(
+                "Abandoned interrupted cron: anima=%s task=%s reason=%s",
+                self._anima_name,
+                task_name,
+                reason,
+            )
+
+    def quiesce(self) -> None:
+        """Stop new scheduler work while dispatched jobs continue to finish."""
+        self._accepting_work = False
+        if self.scheduler and self.scheduler.running:
+            self.scheduler.pause()
+
     # ── Cron parse diagnostics ────────────────────────────────────
 
     def _check_cron_parse_health(
@@ -692,6 +858,7 @@ class SchedulerManager:
         raw_config: str,
         tasks: list[CronTask],
         registered: int,
+        diagnostics: dict[str, list[str]] | None = None,
     ) -> None:
         """Validate cron parse results and notify the Anima if unhealthy.
 
@@ -711,8 +878,38 @@ class SchedulerManager:
         if not tasks and "schedule:" in effective_config:
             messages.append(t("scheduler.cron_health_unrecognized_schedule"))
 
+        messages.extend(self._new_cron_diagnostic_messages(diagnostics or {}))
+
         if messages:
             self._write_cron_health_notification("\n\n".join(messages))
+
+    def _new_cron_diagnostic_messages(self, diagnostics: dict[str, list[str]]) -> list[str]:
+        """Return diagnostic warnings only when the digest changed since last setup."""
+        marker_path = self._anima_dir / "state" / "cron_health_digest.sha256"
+        if not diagnostics:
+            try:
+                marker_path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to clear cron health digest marker", exc_info=True)
+            return []
+
+        digest = cron_diagnostics_digest(diagnostics)
+        try:
+            if marker_path.is_file() and marker_path.read_text(encoding="utf-8").strip() == digest:
+                return []
+        except OSError:
+            logger.debug("Failed to read cron health digest marker", exc_info=True)
+
+        try:
+            atomic_write_text(marker_path, f"{digest}\n")
+        except OSError:
+            logger.warning("Failed to persist cron health digest marker %s", marker_path, exc_info=True)
+
+        messages: list[str] = []
+        for task_name in sorted(diagnostics):
+            for code in diagnostics[task_name]:
+                messages.append(t(f"scheduler.cron_health_{code}", task_name=task_name))
+        return messages
 
     def _write_cron_health_notification(self, message: str) -> None:
         """Write a cron health warning to ``background_notifications/``."""
@@ -814,7 +1011,7 @@ class SchedulerManager:
 
     async def heartbeat_tick(self) -> None:
         """Execute a scheduled heartbeat."""
-        if not self._anima:
+        if not self._anima or not self._accepting_work:
             return
         # A job already dispatched by APScheduler can outlive a disable/reload.
         # Only this periodic entrance is gated; messages and cron keep working.
@@ -854,21 +1051,24 @@ class SchedulerManager:
 
     async def cron_tick(self, task: CronTask) -> None:
         """Execute a scheduled cron task."""
-        if not self._anima:
+        if not self._anima or not self._accepting_work:
             return
         if self._awaiting_initial_setup():
             logger.debug("Scheduled cron deferred until setup completes: %s", self._anima_name)
             return
 
-        # Detect schedule file changes and skip stale tasks
+        # Detect schedule file changes; run the reloaded definition if the task survived
         if self._check_schedule_freshness():
-            self._log_cron_event(task, "skipped", "schedule reloaded")
-            logger.info(
-                "Skipping stale cron '%s' for %s (schedule reloaded)",
-                task.name,
-                self._anima_name,
-            )
-            return
+            fresh = self._find_registered_cron(task)
+            if fresh is None:
+                self._log_cron_event(task, "skipped", "schedule reloaded")
+                logger.info(
+                    "Skipping stale cron '%s' for %s (schedule reloaded)",
+                    task.name,
+                    self._anima_name,
+                )
+                return
+            task = fresh
 
         if task.name in self._cron_running:
             self._log_cron_event(task, "skipped", "already running")
@@ -881,6 +1081,7 @@ class SchedulerManager:
 
         logger.info("Scheduled cron: %s -> %s [%s]", self._anima_name, task.name, task.type)
         self._log_cron_event(task, "fired")
+        self._record_cron_occurrence(task)
         # Run in separate task to avoid blocking other scheduled jobs
         self._cron_running.add(task.name)
         try:
@@ -890,7 +1091,19 @@ class SchedulerManager:
             )
         except Exception:
             self._cron_running.discard(task.name)
+            self._finish_cron_occurrence(task.name)
             raise
+
+    def _find_registered_cron(self, task: CronTask) -> CronTask | None:
+        """Return the reloaded definition of *task* if it still has the same name and schedule."""
+        if not self.scheduler:
+            return None
+        for job in self.scheduler.get_jobs():
+            args = job.args or ()
+            candidate = args[0] if args else None
+            if isinstance(candidate, CronTask) and candidate.name == task.name and candidate.schedule == task.schedule:
+                return candidate
+        return None
 
     async def _run_command_cron(self, task: CronTask) -> dict[str, Any]:
         """Run a shell-command cron in this scheduler process, isolating only its LLM follow-up."""
@@ -911,6 +1124,8 @@ class SchedulerManager:
             usage: dict[str, int] | None = None
             # Preserve the legacy flag's command-output follow-up semantics; it does not call heartbeat_tick.
             command_output = command_followup_output(task, result)
+            if command_output is not None and should_suppress_cron_followup(self._anima_dir, task.name, command_output):
+                command_output = None
             if command_output is not None:
                 followup = await self._task_runner_supervisor.run_cron_followup(task, command_output)
                 followup_result = followup.get("result")
@@ -929,13 +1144,25 @@ class SchedulerManager:
             if current is not None:
                 self._direct_cron_tasks.discard(current)
 
-    async def _run_cron_task(self, task: CronTask) -> None:
+    async def _run_cron_task(self, task: CronTask, *, rerun: bool = False) -> None:
         """Run one cron task; shell commands stay in the Anima main, LLM work is isolated."""
         if not self._anima:
             return
         self._cron_running.add(task.name)
         success = False
+        interrupted = False
         try:
+            if rerun:
+                logger.info("Executing cron rerun: anima=%s task=%s", self._anima_name, task.name)
+                try:
+                    await self._anima._activity.alog(
+                        "cron_rerun",
+                        summary=t("activity.cron_rerun", task_name=task.name),
+                        ctx=f"cron:{task.name}",
+                        meta={"task_name": task.name, "rerun": True},
+                    )
+                except Exception:
+                    logger.warning("Failed to record cron rerun activity: %s -> %s", self._anima_name, task.name)
             # Raw shell crons already bypass ToolHandler policy; tool-only crons
             # stay in the runner so their existing ToolHandler checks are preserved.
             if task.type == "command" and (task.command or not task.tool):
@@ -958,6 +1185,7 @@ class SchedulerManager:
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if current is not None and current.cancelling():
+                interrupted = True
                 raise
             logger.warning("Cron task cancelled without scheduler shutdown: %s -> %s", self._anima_name, task.name)
         except Exception:
@@ -965,6 +1193,8 @@ class SchedulerManager:
         finally:
             if not success:
                 self._log_cron_event(task, "failed", "execution failed")
+            if not interrupted:
+                self._finish_cron_occurrence(task.name)
             self._cron_running.discard(task.name)
 
     async def shutdown_task_runners(self) -> None:

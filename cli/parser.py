@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_stop.add_argument(
         "--force",
         action="store_true",
-        help="Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners",
+        help="Immediately send SIGKILL without draining active work",
     )
     p_stop.set_defaults(func=_lazy_stop)
 
@@ -119,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_restart.add_argument(
         "--force",
         action="store_true",
-        help="Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners",
+        help="Immediately send SIGKILL without draining active work",
     )
     p_restart.set_defaults(func=_lazy_restart)
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=7ea90c4961726fdedaa89b0e51f316c77ea7220ea7afef04cca9d5bf42d287a3 generated=2026-10-16 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=07611040a4e544cbf7172ace0f96d907fe8cd197a2557cdd22300f89986c183b generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Configuration Reference
 
@@ -441,9 +441,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `server`
 
-| Key | Type | Default value | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
-| `server` | `ServerConfig` | `{ServerConfig}` | Configuration for the HTTP server, authentication, and usage limits. |
+| `server` | `ServerConfig` | `{ServerConfig}` | HTTP server, authentication, and usage control configuration. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
@@ -451,6 +451,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
+| `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
@@ -634,6 +635,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | Include recent chat dialogue in heartbeat context only when the last turn is younger than this many hours; 0 = always include |
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
+| `heartbeat.cron_followup_repeat_suppress_hours` | `float` | `6.0` | Suppress a command cron's LLM follow-up when its output is identical to the previous follow-up for this many hours; 0 disables suppression |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
@@ -694,7 +696,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `housekeeping`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
 | `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | Periodic cleanup of runtime data. |
 | `housekeeping.enabled` | `bool` | `true` | — |
@@ -718,6 +720,10 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
@@ -733,7 +739,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima's inbox and notification display. |
+| `inbox` | `InboxConfig` | `{InboxConfig}` | anima inbox and notification display. |
+| `inbox.inbox_quiet_seconds` | `float` | `90.0` | — |
+| `inbox.inbox_quiet_max_wait_seconds` | `float` | `300.0` | — |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |

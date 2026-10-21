@@ -103,6 +103,18 @@ CREATE TABLE IF NOT EXISTS task_wakeups (
     acknowledged_at TEXT,
     PRIMARY KEY(anima, task_id, attempt_token)
 );
+CREATE TABLE IF NOT EXISTS task_waits (
+    anima TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ref_anima TEXT,
+    ref_task_id TEXT,
+    until TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(anima, task_id)
+);
+CREATE INDEX IF NOT EXISTS task_waits_ref ON task_waits(kind, ref_anima, ref_task_id);
+CREATE INDEX IF NOT EXISTS task_waits_due ON task_waits(anima, kind, until);
 CREATE TABLE IF NOT EXISTS task_claim_control (
     anima TEXT PRIMARY KEY,
     paused INTEGER NOT NULL CHECK(paused IN (0,1))
@@ -114,6 +126,16 @@ CREATE TABLE IF NOT EXISTS task_leases (
     acquired_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     PRIMARY KEY(anima, task_id)
+);
+CREATE TABLE IF NOT EXISTS task_delegation_keys (
+    delegator TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    version TEXT NOT NULL,
+    anima TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(delegator, recipient, subject, version)
 );
 """
 
@@ -158,6 +180,20 @@ def ensure_task_store_schema(db_path: Path) -> None:
             "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
             "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
         )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS task_delegation_keys ("
+            "delegator TEXT NOT NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, "
+            "version TEXT NOT NULL, anima TEXT NOT NULL, task_id TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "PRIMARY KEY(delegator, recipient, subject, version))"
+        )
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS task_waits ("
+            "anima TEXT NOT NULL, task_id TEXT NOT NULL, kind TEXT NOT NULL, "
+            "ref_anima TEXT, ref_task_id TEXT, until TEXT, created_at TEXT NOT NULL, "
+            "PRIMARY KEY(anima, task_id))"
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS task_waits_ref ON task_waits(kind, ref_anima, ref_task_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS task_waits_due ON task_waits(anima, kind, until)")
         _leave_task_store_wal_mode(db, db_path)
     finally:
         db.close()
@@ -170,6 +206,16 @@ def connect_task_store_for_migration(db_path: Path) -> sqlite3.Connection:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
 def process_identity() -> dict[str, Any]:
@@ -319,6 +365,14 @@ class TaskStore:
             return (delegator["anima"], delegator["task_id"])
         return (anima, task_id)
 
+    def alias_target(self, viewer: str, alias: str) -> tuple[str, str] | None:
+        """Return the foreign canonical target for one viewer-visible task ID."""
+        if not self.has_database:
+            return None
+        with self.reader() as db:
+            owner, task_id = self._resolve(db, viewer, alias)
+        return (owner, task_id) if owner != viewer else None
+
     def read(self, anima: str, *, archived: bool = False) -> dict[str, TaskEntry]:
         if not self.has_database:
             return {}
@@ -377,6 +431,9 @@ class TaskStore:
                         entry[key] = event[key]
                 if "meta" in event:
                     entry["meta"] = {**entry.get("meta", {}), **event["meta"]}
+                if new_status != "pending":
+                    entry.setdefault("meta", {}).pop("waiting_for", None)
+                    db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (owner, task_id))
                 db.execute(
                     "UPDATE tasks SET entry_json=?, archived=0, ready=CASE WHEN ? IN ('done','cancelled') "
                     "THEN 0 ELSE ready END WHERE anima=? AND task_id=?",
@@ -384,6 +441,7 @@ class TaskStore:
                 )
                 if new_status in _TERMINAL_STATUSES:
                     db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (owner, task_id))
+                    self._satisfy_task_waits(db, owner, task_id)
                 return
             entry = TaskEntry(**{key: value for key, value in event.items() if key != "_event"})
             target = entry.meta.get("delegated_to")
@@ -618,6 +676,57 @@ class TaskStore:
                 raise ValueError("Task alias already names another task")
             db.execute("INSERT OR IGNORE INTO task_aliases VALUES(?,?,?,?)", (viewer, alias, anima, task_id))
 
+    def active_delegation_key(
+        self, delegator: str, recipient: str, subject: str, version: str
+    ) -> tuple[str, str] | None:
+        """Return ``(task_id, status)`` when the matching request is still open.
+
+        The caller must run this inside the publication transaction so that two
+        concurrent delegations cannot both miss the key and create a task.
+        Terminal requests are intentionally reported as absent: a new request
+        for the same subject must create fresh work.
+        """
+        if not self.has_database:
+            return None
+        with self.reader() as db:
+            key = db.execute(
+                "SELECT anima, task_id FROM task_delegation_keys "
+                "WHERE delegator=? AND recipient=? AND subject=? AND version=?",
+                (delegator, recipient, subject, version),
+            ).fetchone()
+            if key is None:
+                return None
+            task = db.execute(
+                "SELECT entry_json FROM tasks WHERE anima=? AND task_id=?",
+                (key["anima"], key["task_id"]),
+            ).fetchone()
+            if task is None:
+                return None
+            entry = json.loads(task["entry_json"])
+            status = str(entry.get("status", ""))
+            if status in _TERMINAL_STATUSES:
+                return None
+            return (str(key["task_id"]), status)
+
+    def remember_delegation_key(
+        self,
+        delegator: str,
+        recipient: str,
+        subject: str,
+        version: str,
+        anima: str,
+        task_id: str,
+    ) -> None:
+        """Point one request key at the task that currently fulfils it."""
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO task_delegation_keys"
+                "(delegator, recipient, subject, version, anima, task_id, created_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(delegator, recipient, subject, version) "
+                "DO UPDATE SET anima=excluded.anima, task_id=excluded.task_id, created_at=excluded.created_at",
+                (delegator, recipient, subject, version, anima, task_id, now_iso()),
+            )
+
     def submit(self, anima: str, entry: TaskEntry, payload: dict[str, Any], *, resume: bool = False) -> bool:
         """Atomically publish both task and complete execution input.
 
@@ -652,6 +761,7 @@ class TaskStore:
                 "UPDATE task_wakeups SET acknowledged_at=? WHERE anima=? AND task_id=? AND acknowledged_at IS NULL",
                 (now_iso(), anima, entry.task_id),
             )
+            db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (anima, entry.task_id))
             return True
 
     def resume(self, anima: str, task_id: str) -> TaskEntry:
@@ -678,16 +788,177 @@ class TaskStore:
                     "Task has no saved execution input; it is a backlog entry. Publish it with submit_tasks."
                 )
             existing = TaskEntry(**json.loads(row["entry_json"]))
+            existing.meta.pop("waiting_for", None)
             updated = existing.model_copy(update={"status": "pending", "updated_at": now_iso()})
             db.execute(
                 "UPDATE tasks SET entry_json=?, ready=1, archived=0 WHERE anima=? AND task_id=?",
                 (_json(updated.model_dump()), owner, resolved_id),
             )
+            db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (owner, resolved_id))
             db.execute(
                 "UPDATE task_wakeups SET acknowledged_at=? WHERE anima=? AND task_id=? AND acknowledged_at IS NULL",
                 (now_iso(), owner, resolved_id),
             )
             return updated
+
+    def set_waiting_for(self, anima: str, task_id: str, waiting_for: dict[str, Any]) -> None:
+        """Replace the wake table row for a pending task's declaration."""
+        with self.transaction() as db:
+            db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (anima, task_id))
+            db.execute("UPDATE tasks SET ready=0 WHERE anima=? AND task_id=?", (anima, task_id))
+            kind = str(waiting_for["kind"])
+            if kind == "task":
+                try:
+                    ref_anima, ref_task_id = self._resolve(db, anima, str(waiting_for["ref"]))
+                except ValueError:
+                    # A task may still be submitted by the time the wait is
+                    # satisfied; keep the declaration addressable until then.
+                    ref_anima, ref_task_id = anima, str(waiting_for["ref"])
+                db.execute(
+                    "INSERT INTO task_waits(anima,task_id,kind,ref_anima,ref_task_id,until,created_at) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (anima, task_id, kind, ref_anima, ref_task_id, None, now_iso()),
+                )
+                self._wake_if_ref_ended(db, anima, task_id)
+            elif kind == "time":
+                db.execute(
+                    "INSERT INTO task_waits(anima,task_id,kind,ref_anima,ref_task_id,until,created_at) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (anima, task_id, kind, None, None, str(waiting_for["until"]), now_iso()),
+                )
+
+    def clear_waiting_for(self, anima: str, task_id: str) -> bool:
+        """Remove both the declaration and its wake row, keeping other meta."""
+        with self.transaction() as db:
+            row = db.execute("SELECT entry_json FROM tasks WHERE anima=? AND task_id=?", (anima, task_id)).fetchone()
+            removed = db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (anima, task_id)).rowcount
+            if row is None:
+                return bool(removed)
+            entry = json.loads(row["entry_json"])
+            meta = entry.get("meta")
+            if isinstance(meta, dict) and "waiting_for" in meta:
+                meta.pop("waiting_for", None)
+                db.execute(
+                    "UPDATE tasks SET entry_json=? WHERE anima=? AND task_id=?",
+                    (_json(entry), anima, task_id),
+                )
+                removed = True
+            return bool(removed)
+
+    def waiting_rows(self, anima: str) -> list[dict[str, Any]]:
+        if not self.has_database:
+            return []
+        with self.reader() as db:
+            return [
+                dict(row) for row in db.execute("SELECT * FROM task_waits WHERE anima=? ORDER BY created_at", (anima,))
+            ]
+
+    def satisfy_due_time_waits(self, anima: str, *, now: datetime | None = None) -> int:
+        """Wake pending tasks whose declared time wait has passed. Returns count."""
+        if not self.has_database:
+            return 0
+        current = now or datetime.now(UTC)
+        current = current.replace(tzinfo=UTC) if current.tzinfo is None else current.astimezone(UTC)
+        woken = 0
+        with self.transaction() as db:
+            for row in db.execute(
+                "SELECT * FROM task_waits WHERE anima=? AND kind='time' ORDER BY created_at", (anima,)
+            ).fetchall():
+                until = _parse_iso(row["until"])
+                if until is None or until > current:
+                    continue
+                if self._wake_waiter(db, dict(row)):
+                    woken += 1
+        return woken
+
+    def _satisfy_task_waits(self, db: sqlite3.Connection, ref_anima: str, ref_task_id: str) -> int:
+        woken = 0
+        rows = db.execute(
+            "SELECT * FROM task_waits WHERE kind='task' AND ref_anima=? AND ref_task_id=?",
+            (ref_anima, ref_task_id),
+        ).fetchall()
+        for row in rows:
+            if self._wake_waiter(db, dict(row)):
+                woken += 1
+        return woken
+
+    def _wake_if_ref_ended(self, db: sqlite3.Connection, anima: str, task_id: str) -> bool:
+        """A wait on a task that already ended is satisfied at once."""
+        wait = db.execute(
+            "SELECT * FROM task_waits WHERE anima=? AND task_id=? AND kind='task'", (anima, task_id)
+        ).fetchone()
+        if wait is None:
+            return False
+        ref = db.execute(
+            "SELECT entry_json FROM tasks WHERE anima=? AND task_id=?", (wait["ref_anima"], wait["ref_task_id"])
+        ).fetchone()
+        if ref is None or json.loads(ref["entry_json"]).get("status") not in _TERMINAL_STATUSES:
+            return False
+        return self._wake_waiter(db, dict(wait))
+
+    def _wake_waiter(self, db: sqlite3.Connection, wait_row: dict[str, Any]) -> bool:
+        """Resume one waiter if possible, otherwise leave a durable wakeup.
+
+        The caller owns the transaction. A pending task with saved input becomes
+        ready; a backlog entry cannot run, so the owner is alerted through the
+        existing ``task_wakeups`` delivery path.
+        """
+        anima = str(wait_row["anima"])
+        task_id = str(wait_row["task_id"])
+        row = db.execute(
+            "SELECT entry_json,input_json,current_attempt FROM tasks WHERE anima=? AND task_id=?",
+            (anima, task_id),
+        ).fetchone()
+        if row is not None and row["current_attempt"]:
+            # The declaring attempt is still running; finish() re-checks the wait.
+            return False
+        db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (anima, task_id))
+        if row is None:
+            return False
+        entry = json.loads(row["entry_json"])
+        if entry.get("status") != "pending":
+            return False
+        waiting_for = entry.get("meta", {}).get("waiting_for") if isinstance(entry.get("meta"), dict) else None
+        if isinstance(entry.get("meta"), dict):
+            entry["meta"].pop("waiting_for", None)
+        resumable = bool(row["input_json"])
+        if resumable:
+            db.execute(
+                "UPDATE tasks SET entry_json=?, ready=1, archived=0 WHERE anima=? AND task_id=?",
+                (_json(entry), anima, task_id),
+            )
+        else:
+            token = f"wait-{task_id}-{wait_row['kind']}-{wait_row.get('ref_task_id') or wait_row.get('until') or ''}"
+            db.execute(
+                "INSERT OR IGNORE INTO task_wakeups VALUES(?,?,?,?,?,NULL)",
+                (anima, task_id, token, "wait_satisfied", now_iso()),
+            )
+            db.execute(
+                "UPDATE tasks SET entry_json=?, ready=0 WHERE anima=? AND task_id=?",
+                (_json(entry), anima, task_id),
+            )
+        if isinstance(waiting_for, dict):
+            self.after_commit(lambda: self._log_wait_resume(anima, task_id, waiting_for))
+        return resumable
+
+    def _log_wait_resume(self, anima: str, task_id: str, waiting_for: dict[str, Any]) -> None:
+        anima_dir = self.db_path.parent.parent / "animas" / anima
+        if not anima_dir.is_dir():
+            return
+        try:
+            from core.activity.logger import ActivityLogger
+            from core.i18n import t as _t
+            from core.tasks.waiting import waiting_target
+
+            ActivityLogger(anima_dir).log(
+                "task_wait_resumed",
+                summary=_t("task_wait.resumed", target=waiting_target(waiting_for)),
+                ctx=f"task:{task_id}",
+                meta={"task_id": task_id, "waiting_for": waiting_for, "event": "task_wait_resumed"},
+                safe=True,
+            )
+        except Exception:
+            logger.debug("Could not record task wait resume for %s/%s", anima, task_id, exc_info=True)
 
     def pending(self, anima: str) -> list[dict[str, Any]]:
         """Return ready tasks in execution order: human-sourced first,
@@ -770,6 +1041,8 @@ class TaskStore:
             # outcomes and result references remain in task_attempts.
             for key in ("last_run_stop_kind", "last_run_ended_at", "last_run_note", "last_run_declared_pending"):
                 entry.meta.pop(key, None)
+            entry.meta.pop("waiting_for", None)
+            db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (anima, task_id))
             db.execute(
                 "INSERT INTO task_attempts(token,anima,task_id,number,identity_json,started_at) VALUES(?,?,?,?,?,?)",
                 (token, anima, task_id, number, _json(identity), started),
@@ -807,6 +1080,25 @@ class TaskStore:
             db.execute("UPDATE task_attempts SET identity_json=? WHERE token=?", (_json(merged), token))
             return True
 
+    def update_attempt_meta(self, token: str, meta_patch: dict[str, Any]) -> bool:
+        """Merge metadata into the task owned by the matching active attempt."""
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT t.anima,t.task_id,t.entry_json FROM tasks t "
+                "JOIN task_attempts a ON a.anima=t.anima AND a.task_id=t.task_id "
+                "WHERE a.token=? AND a.ended_at IS NULL AND t.current_attempt=a.token",
+                (token,),
+            ).fetchone()
+            if not row:
+                return False
+            entry = TaskEntry(**json.loads(row["entry_json"]))
+            entry.meta = {**entry.meta, **meta_patch}
+            db.execute(
+                "UPDATE tasks SET entry_json=? WHERE anima=? AND task_id=? AND current_attempt=?",
+                (_json(entry.model_dump()), row["anima"], row["task_id"], token),
+            )
+            return True
+
     def finish(
         self,
         token: str,
@@ -840,6 +1132,9 @@ class TaskStore:
             if summary is not None:
                 entry.summary = summary
             entry.meta = {**entry.meta, "last_run_stop_kind": stop_kind, "last_attempt_token": token}
+            if status != "pending":
+                entry.meta.pop("waiting_for", None)
+                db.execute("DELETE FROM task_waits WHERE anima=? AND task_id=?", (row["anima"], row["task_id"]))
             db.execute(
                 "UPDATE task_attempts SET ended_at=?,stop_kind=?,result_ref=? WHERE token=?",
                 (entry.updated_at, stop_kind, result_ref, token),
@@ -860,6 +1155,9 @@ class TaskStore:
                 )
             if status in _TERMINAL_STATUSES:
                 db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (row["anima"], row["task_id"]))
+                self._satisfy_task_waits(db, row["anima"], row["task_id"])
+            elif status == "pending":
+                self._wake_if_ref_ended(db, row["anima"], row["task_id"])
             return True
 
     def active_attempts(self, anima: str) -> list[dict[str, Any]]:

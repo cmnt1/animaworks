@@ -38,6 +38,18 @@ SSM port reservations require Linux, but the tunnel module must remain importabl
 without `fcntl` on Windows. Firewall hostname allowances must retain the deferred
 `pwd` import and the non-Linux guard before network or firewall changes.
 
+The 2026-10-21 integration preserves explicit resume of completed tasks: resume
+must precede the guarded status update in the same transaction. Keep task
+completion criteria, stale wakeups and Discord origin routing alongside the new
+waiting, scope-note and delegation contracts.
+
+Automatic workspace cleanup requires Linux process tracking. Skip the new Codex
+session, scratch and shared-worktree sweep rules on Windows, including daily
+housekeeping; skip terminal-task scratch removal there too. The workspace sweep
+switch applies to both hourly and daily runs. Shared worktrees with any dirty
+paths, standalone clones, or failed Git inspection are retained regardless of
+age. Remove only clean linked worktrees through Git without `--force`.
+
 ---
 
 ## 2. Notion is disabled by default

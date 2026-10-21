@@ -10,6 +10,7 @@ from core.tooling._handler_protocols import _ExecutionToolsHost
 
 import json as _json
 import logging
+import os
 import shlex
 import subprocess
 import sys
@@ -36,6 +37,14 @@ _PIPE_THREAD_JOIN_TIMEOUT = 5.0
 _PIPE_THREAD_REJOIN_TIMEOUT = 1.0
 
 
+def _build_command_env(anima_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    from core.execution.workspace_env import update_workspace_env
+
+    update_workspace_env(env, anima_dir)  # Includes ANIMAWORKS_SCRATCH_DIR and shared tool caches.
+    return env
+
+
 class CommandRunner:
     """Manage background command execution with streaming output to file.
 
@@ -48,10 +57,17 @@ class CommandRunner:
     _counter_lock: ClassVar[threading.Lock] = threading.Lock()
     _active: ClassVar[dict[str, CommandRunner]] = {}
 
-    def __init__(self, command: str, cwd: Path, timeout: int = _BG_CMD_TIMEOUT_DEFAULT) -> None:
+    def __init__(
+        self,
+        command: str,
+        cwd: Path,
+        timeout: int = _BG_CMD_TIMEOUT_DEFAULT,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.command = command
         self.cwd = cwd
         self.timeout = timeout
+        self.env = env
         self.cmd_id = ""
         self.pid: int | None = None
         self.process: subprocess.Popen | None = None
@@ -83,6 +99,7 @@ class CommandRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(self.cwd),
+                    env=self.env,
                     # On Windows use cmd.exe (the default); on Unix use bash.
                     executable=None if _is_windows else "/bin/bash",
                     **subprocess_session_kwargs(),
@@ -98,6 +115,7 @@ class CommandRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(self.cwd),
+                    env=self.env,
                     **subprocess_session_kwargs(),
                 )
         except Exception as exc:
@@ -273,7 +291,12 @@ class ExecutionToolsMixin:
         background = args.get("background", False)
         if background:
             timeout = args.get("timeout", _BG_CMD_TIMEOUT_DEFAULT)
-            runner = CommandRunner(command, context.task_cwd or context.anima_dir, timeout)
+            runner = CommandRunner(
+                command,
+                context.task_cwd or context.anima_dir,
+                timeout,
+                env=_build_command_env(context.anima_dir),
+            )
             output_dir = context.anima_dir / "state" / "cmd_output"
             try:
                 cmd_id = runner.start(output_dir)
@@ -308,6 +331,7 @@ class ExecutionToolsMixin:
                     text=True,
                     timeout=timeout,
                     cwd=str(context.task_cwd or context.anima_dir),
+                    env=_build_command_env(context.anima_dir),
                     **shell_kwargs,
                 )
             else:
@@ -323,6 +347,7 @@ class ExecutionToolsMixin:
                     text=True,
                     timeout=timeout,
                     cwd=str(context.task_cwd or context.anima_dir),
+                    env=_build_command_env(context.anima_dir),
                 )
             output = proc.stdout
             if proc.stderr:

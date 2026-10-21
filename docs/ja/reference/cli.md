@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 0cebd3aa0fb15168c6b2b94a32d88352abcb11a8511b3477fef232a8e97473f4 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: a551fa80fc5cdc655307ef13c3cf503c172d17e765a186ce0ff26f8dbc51df6a -->
 
 # CLI リファレンス: `animaworks`
 
@@ -932,7 +932,7 @@ Restart the server (stop then start)
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
 | --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1131,7 +1131,7 @@ Stop the running server
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 
@@ -1189,7 +1189,7 @@ Track delegated tasks
 Manage persistent task queue
 
 `usage: animaworks task [-h]
-                       {board,show,claim,release,done,cancel,note,add,update,resume,list}
+                       {board,show,claim,release,done,cancel,note,add,update,resume,list,autonomy}
                        ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
@@ -1212,6 +1212,18 @@ Publishes an executable TaskExec task; backlog_task only queues tracking work.
 | --summary | option | — | — | 1-line summary (default: instruction[:100]) |
 | --relay-chain | option | — | — | Comma-separated relay chain |
 | --workspace | option | — | — | Workspace alias or path for the task's working_directory |
+
+## `task autonomy`
+
+委譲まわりの自律性指標を集計する（読み取り専用）
+
+`usage: animaworks task autonomy [-h] [--days DAYS] [--json] [--anima ANIMA]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --days | option | 7 | — | 集計期間（日数、既定: 7） |
+| --json | flag | false | — | JSON で出力する |
+| --anima | option | — | — | この Anima のみを表示する |
 
 ## `task board`
 
@@ -1324,14 +1336,22 @@ Show complete task details
 
 Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
-                              [--summary SUMMARY]`
+`usage: animaworks task update [-h] --task-id TASK_ID [--status STATUS]
+                              [--summary SUMMARY]
+                              [--waiting-for-kind {task,time,message,external}]
+                              [--waiting-for-ref WAITING_FOR_REF]
+                              [--waiting-for-until WAITING_FOR_UNTIL]
+                              [--scope-note SCOPE_NOTE]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | --task-id | option | — | — | Task ID |
-| --status | option | — | — | Status to declare (retired statuses are rejected by update_task) |
+| --status | option | — | — | Status to declare (optional only when --scope-note is given; retired statuses are rejected) |
 | --summary | option | — | — | Updated summary |
+| --waiting-for-kind | option | — | task, time, message, external | What a pending task waits for |
+| --waiting-for-ref | option | — | — | Task ID, person, or free-text wait target |
+| --waiting-for-until | option | — | — | ISO8601 timestamp for kind=time |
+| --scope-note | option | — | — | Append a scope note and notify the requester |
 
 ## `task-store`
 

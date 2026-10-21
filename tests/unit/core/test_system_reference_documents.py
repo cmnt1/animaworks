@@ -921,6 +921,7 @@ _EXPECTED_FILES = [
     "operations/heartbeat-observe-guide.md",
     "operations/knowledge-promotion-review.md",
     "operations/report-formats.md",
+    "operations/scratch-and-worktrees.md",
     "operations/task-board-guide.md",
     "operations/task-delegation-guide.md",
     "operations/workspace-guide.md",

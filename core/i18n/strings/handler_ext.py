@@ -349,6 +349,31 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク更新: {summary} → {status}",
         "en": "Task updated: {summary} → {status}",
     },
+    "handler.task_owned_by_other": {
+        "ja": "このタスクは {owner} が持っています。再開や完了は {owner} が行います。必要なら send_message で {owner} に伝えてください。",
+        "en": "This task is owned by {owner}. {owner} must resume or complete it. If needed, ask {owner} with send_message.",
+        "ko": "이 작업은 {owner}이(가) 맡고 있습니다. 재개나 완료는 {owner}이(가) 직접 해야 합니다. 필요하면 send_message로 {owner}에게 알려 주세요.",
+    },
+    "task_update.scope_note_notify": {
+        "ja": "{owner} がタスク「{title}」の範囲を書き留めました: {note}",
+        "en": '{owner} noted the scope of task "{title}": {note}',
+        "ko": '{owner}이(가) 태스크 "{title}"의 범위를 기록했습니다: {note}',
+    },
+    "task_update.cancel_reason_missing": {
+        "ja": "理由は指定されていません",
+        "en": "No reason was provided",
+        "ko": "사유가 지정되지 않았습니다",
+    },
+    "task_update.cancelled_by_requester": {
+        "ja": "依頼元の {requester} が依頼を取り下げました。理由: {reason}",
+        "en": "Requester {requester} withdrew the request. Reason: {reason}",
+        "ko": "요청자 {requester}이(가) 요청을 철회했습니다. 사유: {reason}",
+    },
+    "task_update.cancelled_by_owner": {
+        "ja": "{owner} がタスクを取り下げました。理由: {reason}",
+        "en": "{owner} cancelled the task. Reason: {reason}",
+        "ko": "{owner}이(가) 작업을 취소했습니다. 사유: {reason}",
+    },
     "handler.skill_scan_safe": {
         "ja": "🔒 セキュリティスキャン: 安全 (脅威なし)",
         "en": "🔒 Security scan: safe (no threats detected)",
