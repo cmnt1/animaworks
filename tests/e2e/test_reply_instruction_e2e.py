@@ -98,8 +98,8 @@ class TestReplyInstructionInInboxFormatting:
         assert "animaworks-tool chatwork send" in result
         assert "12345678" in result
 
-    def test_slack_no_thread_when_ts_missing(self, tmp_path: Path) -> None:
-        """Slack message without ts omits thread_ts from reply instruction."""
+    def test_slack_without_ts_keeps_discord_migration_notice(self, tmp_path: Path) -> None:
+        """Retired Slack messages direct users to Discord regardless of ts."""
         shared = tmp_path / "shared"
         _create_external_inbox_message(
             shared,
@@ -116,10 +116,11 @@ class TestReplyInstructionInInboxFormatting:
 
         result = _build_reply_instruction(msg)
         assert "--thread" not in result
-        assert "animaworks-tool slack send" in result
+        assert "Slackは廃止されました" in result
+        assert "Discord" in result
 
-    def test_slack_no_mention_when_user_id_missing(self, tmp_path: Path) -> None:
-        """Slack message without external_user_id omits @mention."""
+    def test_slack_without_user_id_keeps_discord_migration_notice(self, tmp_path: Path) -> None:
+        """Retired Slack messages direct users to Discord without user metadata."""
         shared = tmp_path / "shared"
         _create_external_inbox_message(
             shared,
@@ -136,7 +137,8 @@ class TestReplyInstructionInInboxFormatting:
 
         result = _build_reply_instruction(msg)
         assert "<@" not in result
-        assert "animaworks-tool slack send" in result
+        assert "Slackは廃止されました" in result
+        assert "Discord" in result
 
     def test_no_reply_instruction_without_channel_id(self, tmp_path: Path) -> None:
         """Message without external_channel_id gets no reply instruction (caller guard)."""
