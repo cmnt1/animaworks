@@ -361,7 +361,7 @@ class CIAutofixIntakeStore:
                     root_run_id TEXT NOT NULL DEFAULT '',
                     last_run_id TEXT NOT NULL DEFAULT '',
                     attempt_count INTEGER NOT NULL DEFAULT 0,
-                    max_attempts INTEGER NOT NULL DEFAULT 5,
+                    max_attempts INTEGER NOT NULL DEFAULT 10,
                     automation_enabled INTEGER NOT NULL DEFAULT 0,
                     next_poll_at TEXT NOT NULL DEFAULT '',
                     last_commit TEXT NOT NULL DEFAULT '',
@@ -386,7 +386,7 @@ class CIAutofixIntakeStore:
             if "attempt_count" not in columns:
                 con.execute("ALTER TABLE ci_autofix_jobs ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0")
             if "max_attempts" not in columns:
-                con.execute("ALTER TABLE ci_autofix_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 5")
+                con.execute("ALTER TABLE ci_autofix_jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 10")
             if "automation_enabled" not in columns:
                 con.execute("ALTER TABLE ci_autofix_jobs ADD COLUMN automation_enabled INTEGER NOT NULL DEFAULT 0")
             if "next_poll_at" not in columns:
@@ -436,7 +436,7 @@ class CIAutofixIntakeStore:
                     """
                     UPDATE ci_autofix_jobs
                     SET source_message_id = COALESCE(NULLIF(?, ''), source_message_id),
-                        source_date = COALESCE(NULLIF(?, ''), source_date),
+                        source_date = MAX(?, source_date),
                         subject = COALESCE(NULLIF(?, ''), subject),
                         llm_provider = COALESCE(NULLIF(?, ''), llm_provider),
                         llm_model = COALESCE(NULLIF(?, ''), llm_model),
@@ -452,8 +452,8 @@ class CIAutofixIntakeStore:
             cur = con.execute(
                 """
                 INSERT INTO ci_autofix_jobs
-                    (run_id, root_run_id, last_run_id, repo, branch, actor, status, source_message_id, source_date, subject, run_url, dry_run, llm_provider, llm_model, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, root_run_id, last_run_id, repo, branch, actor, status, source_message_id, source_date, subject, run_url, dry_run, llm_provider, llm_model, max_attempts, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -470,6 +470,7 @@ class CIAutofixIntakeStore:
                     1 if dry_run else 0,
                     llm_provider,
                     llm_model,
+                    10,
                     now,
                     now,
                 ),
@@ -528,6 +529,19 @@ class CIAutofixIntakeStore:
     ) -> IntakeJob:
         now = utc_now()
         with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            # Notifications are hints. Never roll back to an older run, or
+            # overwrite a running attempt / a wait for its exact commit.
+            if row["attempt_count"] and row["status"] in {"queued", "running", "waiting_ci", "needs_attention"}:
+                return self._job_from_row(row)
+            if (run_id.isdigit() and str(row["last_run_id"]).isdigit()
+                    and int(run_id) <= int(row["last_run_id"])):
+                return self._job_from_row(row)
+            if source_date and row["source_date"] and source_date <= row["source_date"]:
+                return self._job_from_row(row)
             con.execute(
                 """
                 UPDATE ci_autofix_jobs
@@ -536,7 +550,7 @@ class CIAutofixIntakeStore:
                     source_message_id = COALESCE(NULLIF(?, ''), source_message_id),
                     source_date = COALESCE(NULLIF(?, ''), source_date),
                     subject = COALESCE(NULLIF(?, ''), subject),
-                    status = CASE WHEN status IN ('completed', 'dismissed', 'failed', 'exhausted') THEN status ELSE 'ci_failed' END,
+                    status = CASE WHEN status IN ('completed', 'dismissed', 'failed', 'exhausted', 'queued', 'running', 'waiting_ci', 'needs_attention') THEN status ELSE 'ci_failed' END,
                     last_conclusion = 'failure',
                     updated_at = ?
                 WHERE id = ?
@@ -606,10 +620,34 @@ class CIAutofixIntakeStore:
             raise KeyError(job_id)
         return self._job_from_row(row)
 
+    def reserve_attempt(self, job_id: int) -> bool:
+        """Reserve a launcher atomically, including across dashboard processes."""
+        with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["status"] in {"queued", "running", "waiting_ci", "completed", "dismissed"}:
+                return False
+            if row["attempt_count"] >= row["max_attempts"]:
+                return False
+            busy = con.execute(
+                "SELECT id FROM ci_autofix_jobs WHERE repo = ? AND branch = ? "
+                "AND id != ? AND status IN ('queued', 'running', 'waiting_ci') LIMIT 1",
+                (row["repo"], row["branch"], job_id),
+            ).fetchone()
+            if busy:
+                return False
+            con.execute(
+                "UPDATE ci_autofix_jobs SET status = 'queued', automation_enabled = 1, "
+                "terminal_reason = '', updated_at = ? WHERE id = ?", (utc_now(), job_id),
+            )
+        return True
+
     def begin_attempt(self, job_id: int) -> IntakeJob:
         now = utc_now()
         with self._connect() as con:
-            con.execute(
+            cur = con.execute(
                 """
                 UPDATE ci_autofix_jobs
                 SET attempt_count = attempt_count + 1,
@@ -617,11 +655,13 @@ class CIAutofixIntakeStore:
                     automation_enabled = 1,
                     next_poll_at = '',
                     updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'queued' AND attempt_count < max_attempts
                 """,
                 (now, job_id),
             )
             row = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (job_id,)).fetchone()
+            if row is not None and cur.rowcount != 1:
+                raise RuntimeError("attempt is not reserved or attempt limit reached")
         if row is None:
             raise KeyError(job_id)
         job = self._job_from_row(row)

@@ -116,7 +116,11 @@ def main() -> int:
     db_path = Path(args.db)
     repo_root = Path(args.repo_root).resolve()
     store = _load_store(db_path)
-    job = store.begin_attempt(args.job_id)
+    try:
+        job = store.begin_attempt(args.job_id)
+    except RuntimeError:
+        # A duplicate launcher must not consume a second attempt.
+        return 0
     attempt = job.attempt_count
     if job.dry_run:
         store.update_job_state(job.id, status="needs_attention", terminal_reason="dry-run job; auto agent not executed")
@@ -149,6 +153,7 @@ def main() -> int:
         },
     )
 
+    before_commit = _git_head(repo_root)
     env = os.environ.copy()
     with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
         proc = subprocess.Popen(
@@ -163,6 +168,15 @@ def main() -> int:
 
     last_commit = _git_head(repo_root)
     if code == 0:
+        if not before_commit or not last_commit or before_commit == last_commit:
+            reason = "エージェントは終了しましたが、新しいコミットがありません。修正・pushの結果を確認してください。"
+            store.update_job_state(
+                job.id, status="needs_attention", automation_enabled=False,
+                last_commit=last_commit, terminal_reason=reason,
+            )
+            store.add_event(job.id, "warn", "agent made no new commit; automation stopped",
+                            {"attempt": attempt, "last_commit": last_commit, "log_path": str(log_path)})
+            return 0
         store.update_job_state(job.id, status="waiting_ci", last_commit=last_commit, terminal_reason="")
         store.add_event(
             job.id,

@@ -58,6 +58,9 @@ tr.selected{background:#e7f0de}
   <input id="runId" placeholder="run id" style="width:180px">
   <button onclick="addCandidate()">Add</button>
   <button onclick="startAuto()">Start Auto</button>
+  <label class="inline-check">試行上限 <input id="maxAttempts" type="number" min="1" max="20" step="1" value="10" style="width:75px"></label>
+  <button onclick="saveAttemptLimit()">上限を保存</button>
+  <span class="muted">累計回数（1〜20回・初期値10回）</span>
   <label class="inline-check"><input id="showHistory" type="checkbox" onchange="loadJobs()">完了履歴</label>
 </div>
 <div id="status" class="status">loading...</div>
@@ -83,6 +86,7 @@ tr.selected{background:#e7f0de}
 <script>
 let jobs=[];
 let selectedJobId=null;
+let limitJobId=null;
 let modelsByProvider={};
 const FALLBACK_MODELS=[
   {id:'claude-sonnet-4-6',provider:'Anthropic',credential:'anthropic',label:'S: Anthropic/claude-sonnet-4-6'},
@@ -145,7 +149,7 @@ function renderRunCell(j){
 }
 function renderStateCell(j){
   const phase=j.phase||'needs_start';
-  return `<span class="phase phase-${esc(phase)}">${esc(j.phase_label||j.status)}</span>${j.automation_enabled?' <span class="pill">auto</span>':''}${j.dry_run?' <span class="pill">dry</span>':''}<br><span class="muted">${esc(j.phase_detail||'')}</span><br><span class="muted">status ${esc(j.status)} / attempt ${esc(j.attempt_count||0)}/${esc(j.max_attempts||5)}</span><br><span class="muted">${esc(j.llm_provider||'')} ${esc(j.llm_model||'')}</span>`;
+  return `<span class="phase phase-${esc(phase)}">${esc(j.phase_label||j.status)}</span>${j.automation_enabled?' <span class="pill">auto</span>':''}${j.dry_run?' <span class="pill">dry</span>':''}<br><span class="muted">${esc(j.phase_detail||'')}</span><br><span class="muted">status ${esc(j.status)} / attempt ${esc(j.attempt_count||0)}/${esc(j.max_attempts||10)}</span><br><span class="muted">${esc(j.llm_provider||'')} ${esc(j.llm_model||'')}</span>`;
 }
 async function loadJobs(){
   try{
@@ -198,7 +202,7 @@ function renderJobDetail(j){
       <div class="muted">current run</div><div><a href="${esc(currentUrl)}" target="_blank">${esc(current)}</a></div>
       <div class="muted">root run</div><div><a href="${esc(rootUrl)}" target="_blank">${esc(root)}</a></div>
       <div class="muted">commit</div><div>${esc(j.last_commit||'not recorded')}</div>
-      <div class="muted">attempt</div><div>${esc(j.attempt_count||0)} / ${esc(j.max_attempts||5)} ${j.automation_enabled?'<span class="pill">auto</span>':''} ${j.dry_run?'<span class="pill">dry</span>':''}</div>
+      <div class="muted">attempt</div><div>${esc(j.attempt_count||0)} / ${esc(j.max_attempts||10)} ${j.automation_enabled?'<span class="pill">auto</span>':''} ${j.dry_run?'<span class="pill">dry</span>':''}</div>
       <div class="muted">LLM</div><div>${esc(j.llm_provider||'')} ${esc(j.llm_model||'')}</div>
       <div class="muted">mail date</div><div>${esc(j.source_date||'not recorded')}</div>
       <div class="muted">updated</div><div>${esc(j.updated_at||'')}</div>
@@ -212,6 +216,10 @@ async function selectJob(id){
       api(`/api/ci-autofix/jobs/${id}/events`)
     ]);
     renderJobDetail(jobData.job);
+    if(String(limitJobId)!==String(id)){
+      document.getElementById('maxAttempts').value=jobData.job.max_attempts??10;
+      limitJobId=id;
+    }
     const lines=(d.events||[]).map(ev=>`${ev.ts} [${ev.level}] ${ev.message} ${JSON.stringify(ev.data)}`);
     document.getElementById('events').textContent=lines.join('\\n')||'No events.';
     document.getElementById('events').className='events';
@@ -232,8 +240,22 @@ async function addCandidate(){
 }
 async function startAuto(){
   if(!selectedJobId){setStatus('Select a job first.',true);return;}
-  try{const d=await api(`/api/ci-autofix/jobs/${selectedJobId}/auto-start`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_attempts:5,dry_run:false})});setStatus(d.already_running?'auto already running':`auto launched pid ${d.pid||'-'}`);await loadJobs();await selectJob(selectedJobId);}
+  try{const maxAttempts=readAttemptLimit();const d=await api(`/api/ci-autofix/jobs/${selectedJobId}/auto-start`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_attempts:maxAttempts,dry_run:false})});await loadJobs();await selectJob(selectedJobId);setStatus(d.already_running?'auto already running':d.waiting_ci?'修正コミットのCI結果を待っています。':`auto launched pid ${d.pid||'-'}`);}
   catch(e){setStatus(String(e),true);}
+}
+function readAttemptLimit(){
+  const input=document.getElementById('maxAttempts');
+  const value=Number(input.value);
+  if(!input.value.trim()||!Number.isInteger(value)||value<1||value>20)throw new Error('試行上限は1〜20の整数で指定してください。');
+  return value;
+}
+async function saveAttemptLimit(){
+  if(!selectedJobId){setStatus('Select a job first.',true);return;}
+  try{
+    const d=await api(`/api/ci-autofix/jobs/${selectedJobId}/attempt-limit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_attempts:readAttemptLimit()})});
+    await loadJobs();await selectJob(selectedJobId);
+    setStatus(`ジョブ #${d.job.id} の試行上限を${d.job.max_attempts}回に保存しました。再開はStart Autoを押してください。`);
+  }catch(e){setStatus(String(e),true);}
 }
 loadModels();
 loadJobs();
