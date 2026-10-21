@@ -130,7 +130,7 @@ class TestCreateFromMdFullFlow:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "sakura"
-        assert status["role"] == "general"
+        assert status["role"] == "administration"
         # "autonomous" is the sheet's prose label, not a mode; pinning it would
         # force Mode A (API key) on Claude subscription hires.
         assert "execution_mode" not in status
