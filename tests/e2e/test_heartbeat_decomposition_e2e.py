@@ -320,8 +320,8 @@ class TestHeartbeatFailureWritesRecoveryNote:
         dp = _make_digital_anima(alice_dir, shared_dir)
         _attach_failing_stream(dp, RuntimeError("LLM timeout"))
 
-        with pytest.raises(RuntimeError, match="LLM timeout"):
-            await dp.run_heartbeat()
+        result = await dp.run_heartbeat()
+        assert result.action == "failed"
 
         # Verify recovery note was saved
         recovery_path = alice_dir / "state" / "recovery_note.md"
