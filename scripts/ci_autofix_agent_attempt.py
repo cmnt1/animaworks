@@ -170,7 +170,8 @@ def _record_existing_ci(store, job, run: dict) -> str:
                            last_commit=run["headSha"], last_run_id=str(run["databaseId"]),
                            run_url=f"https://github.com/{job.repo}/actions/runs/{run['databaseId']}",
                            last_conclusion=run["conclusion"], terminal_reason=reason)
-    store.add_event(job.id, "info", "existing HEAD CI verified", {"run": run, "status": status})
+    store.add_event(job.id, "info", "existing HEAD CI verified",
+                    {"run": run, "status": status, "attempt": job.attempt_count})
     if status == "waiting_ci":
         store.add_event(job.id, "info", "LLM agent attempt finished; waiting for next CI result",
                         {"attempt": job.attempt_count, "last_commit": run["headSha"], "no_new_push": True})
