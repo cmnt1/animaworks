@@ -2,11 +2,14 @@
 
 Heartbeat must expose submit_tasks: the harness never re-executes a ledger
 ``pending`` task by itself, so the anima re-submits its own pending work
-during heartbeat (2026-09-03). TaskExec / chat / cron stay closed.
+during heartbeat (2026-09-03). Inbox must publish follow-up work before replying;
+TaskExec / chat / cron stay closed.
 """
 
+import pytest
+
 from core.tooling.policy.schemas.builder import build_unified_tool_list
-from core.tooling.policy.surface import submit_tasks_enabled_for_trigger
+from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface, submit_tasks_enabled_for_trigger
 
 
 def test_heartbeat_enables_submit_tasks() -> None:
@@ -15,12 +18,17 @@ def test_heartbeat_enables_submit_tasks() -> None:
     assert submit_tasks_enabled_for_trigger("background:x")
 
 
-def test_inbox_does_not_author_tasks_directly() -> None:
-    assert not submit_tasks_enabled_for_trigger("inbox:rin")
+@pytest.mark.parametrize("trigger", ["inbox", "inbox:rin", "inbox:discord:923137796275851304"])
+def test_inbox_can_author_executable_followup_tasks(trigger: str) -> None:
+    assert submit_tasks_enabled_for_trigger(trigger)
+    for mode in ("S", "C", "D", "G", "X", "A", "B"):
+        assert "submit_tasks" in resolve_tool_surface(ToolSurfaceContext(), trigger, mode)
+    names = {tool["name"] for tool in build_unified_tool_list(trigger=trigger)}
+    assert "submit_tasks" in names
 
 
 def test_non_authoring_triggers_stay_closed() -> None:
-    for trig in ("", "chat", "task:abc", "cron:daily", "consolidation:daily"):
+    for trig in ("", "chat", "task:abc", "cron:daily", "consolidation:daily", "inboxish", "task:inbox:rin"):
         assert not submit_tasks_enabled_for_trigger(trig), trig
 
 

@@ -605,12 +605,13 @@ class TestTriggerScopedTools:
         result_names = {t.name for t in result}
         assert not result_names & self.SKILL_MANAGEMENT
 
-    def test_inbox_tool_json_total_under_16000(self) -> None:
-        """Inbox-trigger aw MCP tool definitions stay under 12,000 chars.
+    def test_inbox_tool_json_total_under_18000(self) -> None:
+        """Inbox MCP definitions, including task submission, stay compact.
 
         Simulates the published set for a normal (non-supervisor, non-newstaff)
         Anima in an inbox run: trigger scoping + supervisor + newstaff gates
-        + the runtime submit_tasks block.
+        + executable task submission. The added schema needs a 2,000-char
+        allowance over the previous 16,000-char inbox budget.
         """
         import core.mcp.server as mcp_mod
         from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
@@ -628,7 +629,8 @@ class TestTriggerScopedTools:
             )
             for n in names
         )
-        assert total <= 16000, f"inbox MCP tool JSON total {total} > 16000"
+        assert "submit_tasks" in names
+        assert total <= 18000, f"inbox MCP tool JSON total {total} > 18000"
 
     def test_create_anima_not_advertised_without_newstaff(self) -> None:
         """create_anima is not sent to an Anima without the newstaff skill."""
