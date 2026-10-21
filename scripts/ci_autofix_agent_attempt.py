@@ -63,7 +63,6 @@ Operational rules:
 def _command_for_job(job, repo_root: Path, prompt_path: Path) -> list[str]:
     provider = str(job.llm_provider or "").strip()
     model = _strip_model_prefix(provider, str(job.llm_model or "").strip())
-    prompt_arg = prompt_path.read_text(encoding="utf-8")
 
     if provider in {"anthropic", "claude_code"}:
         exe = shutil.which("claude.cmd") or shutil.which("claude") or "claude"
@@ -77,7 +76,6 @@ def _command_for_job(job, repo_root: Path, prompt_path: Path) -> list[str]:
         ]
         if model:
             cmd.extend(["--model", model])
-        cmd.append(prompt_arg)
         return cmd
 
     exe = shutil.which("codex.cmd") or shutil.which("codex") or "codex"
@@ -90,7 +88,7 @@ def _command_for_job(job, repo_root: Path, prompt_path: Path) -> list[str]:
     ]
     if model:
         cmd.extend(["-m", model])
-    cmd.append(prompt_arg)
+    cmd.extend(["--output-last-message", str(prompt_path.with_name("final.txt")), "-"])
     return cmd
 
 
@@ -214,10 +212,10 @@ def main() -> int:
     before_commit = _git_head(workspace)
     env = os.environ.copy()
     try:
-        with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
+        with log_path.open("w", encoding="utf-8", errors="replace") as log_file, prompt_path.open("rb") as prompt_input:
             proc = subprocess.Popen(
                 cmd, cwd=str(workspace), env=env, stdout=log_file,
-                stderr=subprocess.STDOUT, text=True,
+                stdin=prompt_input, stderr=subprocess.STDOUT, text=True,
                 start_new_session=os.name != "nt",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -239,6 +237,10 @@ def main() -> int:
         )
         return 0
 
+    report_path = prompt_path.with_name("final.txt")
+    report = report_path.read_text(encoding="utf-8").strip()[:1200] if report_path.exists() else ""
+    if report:
+        reason = f"{reason}\nエージェントの報告: {report}"
     store.update_job_state(
         job.id,
         status="needs_attention", automation_enabled=False,
@@ -248,7 +250,7 @@ def main() -> int:
         job.id,
         "error",
         "LLM agent attempt failed",
-        {"attempt": attempt, "exit_code": code, "last_commit": last_commit, "log_path": str(log_path)},
+        {"attempt": attempt, "exit_code": code, "last_commit": last_commit, "log_path": str(log_path), "agent_report": report},
     )
     return int(code or 1)
 
