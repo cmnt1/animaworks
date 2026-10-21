@@ -47,7 +47,7 @@ def test_store_upsert_candidate_records_event(tmp_path: Path) -> None:
     assert store.list_jobs()[0].run_id == "123"
     assert store.list_jobs()[0].last_run_id == "123"
     assert store.list_jobs()[0].attempt_count == 0
-    assert store.list_jobs()[0].max_attempts == 5
+    assert store.list_jobs()[0].max_attempts == 10
     assert store.list_events(job.id)[0].message == "candidate created"
 
 
@@ -208,7 +208,7 @@ def test_poll_gmail_links_followup_run_to_active_job(tmp_path: Path) -> None:
     assert result["linked"][0]["id"] == first.id
     assert jobs[0].run_id == "100"
     assert jobs[0].last_run_id == "101"
-    assert jobs[0].status == "ci_failed"
+    assert jobs[0].status == "waiting_ci"
     assert any(event.message == "follow-up CI run linked" for event in store.list_events(first.id))
 
 
