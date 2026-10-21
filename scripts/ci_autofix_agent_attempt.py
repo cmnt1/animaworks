@@ -54,6 +54,7 @@ Operational rules:
 - This is an isolated detached worktree prepared from origin/{job.branch}. Stay in this directory; do not switch branches or create another worktree.
 - Do not revert unrelated user changes.
 - Keep commits scoped.
+- Never pip/uv install into the global Python (D:\\Program Files\\Python\\Python311) or any shared venv (E:\\OneDriveBiz\\Tools\\abconfig\\*, the running animaworks .venv). Other tools resolve CLIs from them; a stray notebooklm-py 0.3.4 there broke NotebookLM auth for the NBO pipeline. If dependencies are needed, create a throwaway venv inside this worktree (e.g. `uv venv .venv-autofix`) and install there.
 - One attempt is ONE repair/push cycle. Do not watch, poll, rerun, or wait for CI after pushing. Do not start another repair cycle.
 - If authentication, permissions or missing information block the fix, explain the blocker and finish.
 - Final output should summarize the pushed commit SHA or the precise blocker.
