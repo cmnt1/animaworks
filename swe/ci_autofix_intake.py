@@ -566,6 +566,17 @@ class CIAutofixIntakeStore:
             ).fetchall()
         return [self._job_from_row(row) for row in rows]
 
+    def find_latest_attempted_job(self, *, repo: str, branch: str, actor: str) -> IntakeJob | None:
+        """Keep the intake watermark after an incident has stopped or exhausted."""
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM ci_autofix_jobs WHERE repo = ? AND branch = ? AND actor = ? "
+                "AND attempt_count > 0 AND status != 'dismissed' "
+                "ORDER BY CAST(last_run_id AS INTEGER) DESC, id DESC LIMIT 1",
+                (repo, branch, actor),
+            ).fetchone()
+        return self._job_from_row(row) if row else None
+
     def find_active_job(self, *, repo: str, branch: str, actor: str = "") -> IntakeJob | None:
         params: list[Any] = [repo, branch, *sorted(ACTIVE_STATUSES)]
         actor_filter = ""
@@ -892,6 +903,15 @@ def poll_gmail_for_candidates(
         run_url = f"https://github.com/{rule.repo}/actions/runs/{run_id}"
         known_job = store.find_job_for_run(repo=rule.repo, run_id=run_id)
         active_job = store.find_active_job(repo=rule.repo, branch=rule.branch, actor=rule.actor)
+        watermark = store.find_latest_attempted_job(repo=rule.repo, branch=rule.branch, actor=rule.actor)
+        if (not known_job and watermark and run_id.isdigit()
+                and watermark.last_run_id.isdigit() and int(run_id) <= int(watermark.last_run_id)):
+            # Late mail is not a new incident, even after its owner exhausts
+            # its budget. Do not infer ownership or overwrite the current run.
+            stale.append({"run_id": run_id, "message_id": message_id,
+                          "message_date": message_date, "subject": subject,
+                          "active_job_id": watermark.id})
+            continue
         if known_job:
             job, was_created, was_linked = known_job, False, False
         elif active_job and run_id not in {active_job.run_id, active_job.last_run_id}:

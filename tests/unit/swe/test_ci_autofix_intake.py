@@ -327,3 +327,19 @@ def test_parallel_duplicate_intake_creates_one_job(tmp_path):
             run_id="101", repo="cmnt1/animaworks", branch="main", actor="cmnt1"), range(4)))
     assert sum(created for _, created in results) == 1
     assert len({job.id for job, _ in results}) == 1
+
+
+def test_unknown_late_mail_after_exhaustion_does_not_create_new_incident(tmp_path):
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    first = _incident(store)
+    store.reserve_attempt(first.id)
+    store.begin_attempt(first.id)
+    store.update_job_state(first.id, status="exhausted", automation_enabled=False, last_run_id="102")
+    result = poll_gmail_for_candidates(store=store, rule=IntakeRule(), gmail_client=FollowupMail())
+    assert result["created"] == []
+    assert result["stale"][0]["run_id"] == "101"
+    assert len(store.list_jobs(include_terminal=True)) == 1
+    assert store.get_job(first.id).last_run_id == "102"
+    assert store.get_job(first.id).status == "exhausted"
+    newer, created = store.upsert_candidate(run_id="103", repo=first.repo, branch=first.branch, actor=first.actor)
+    assert created and newer.id != first.id
