@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=e6ba47c1f3fa66648ee8af16b56530f654445787e285dabc7e9d5c6d6baa3355 generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=e6ba47c1f3fa66648ee8af16b56530f654445787e285dabc7e9d5c6d6baa3355 generated=2026-10-21 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > 확인한 커밋: f448d7b0
 

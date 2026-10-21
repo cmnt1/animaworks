@@ -1,19 +1,19 @@
 # Heartbeat Observe Guide
 
-Heartbeat Observe is a lightweight observation phase for status checks and planning. Do not perform hands-on work, long research, arbitrary file exploration, or shell-based state inspection during normal Heartbeat.
+Heartbeat Observe is a lightweight observation phase for status checks and planning decisions. It does not perform normal actual work, long investigations, arbitrary file exploration, or status checks via shell.
 
-## Rules
+## Principles
 
-- MUST: If a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` is present, use it and do not call the tool again. Otherwise call `heartbeat_observe_snapshot` first as the fallback.
-- MUST: Use `heartbeat_observe_snapshot` as primary evidence for Inbox, task_queue, current_state, state/pending, state/task_results, background_notifications, peer_activity, and recent_own_files.
-- MUST NOT: Use Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` to inspect those fixed locations.
-- MUST NOT: Put Heartbeat observation values, timestamps, counts, or decision logs into TaskBoard task titles. Use existing task context / task_results / activity_log when a record is needed.
-- MUST: Only if neither snapshot path provides `status: ok`, do not repeat the same blocked path. Record the blocker in `state/current_state.md` or report it when appropriate.
+- MUST: If `status: ok` has `Current Pre-Observed Heartbeat Snapshot`, use it and do not call tools redundantly. If there is no prior observation, call `heartbeat_observe_snapshot` at the start of Observe as a fallback.
+- MUST: For Inbox, task_queue, current_state, and state/pending、state/task_results、background_notifications、peer_activity、recent_own_files, use the results of `heartbeat_observe_snapshot` as the primary basis.
+- MUST NOT: Do not use Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` for the fixed-scope checks above.
+- MUST NOT: Do not use Heartbeat observation values, times, counts, or decision logs as TaskBoard task names. If necessary, attach them to the context / task_results / activity_log of an existing task.
+- MUST: Only when `status: ok` cannot be obtained from either prior observation or a direct call, do not repeat the same blocked path; record it as a blocker in `state/current_state.md` or report it as needed.
 
-## HEARTBEAT_OK Gate
+## Conditions for HEARTBEAT_OK
 
-Return `HEARTBEAT_OK` only after fixed-scope observation via the pre-observed snapshot or direct `heartbeat_observe_snapshot` call is complete and there are no unhandled instructions, STALE/OVERDUE tasks, unexecuted pending items, unchecked task_results, or blockers that require reporting.
+`HEARTBEAT_OK` applies only when fixed-scope observation via prior observation or a direct call to `heartbeat_observe_snapshot` has been completed, and there are no unprocessed instructions, overdue tasks, unexecuted pending items, unconfirmed task_results, or blockers that should be reported.
 
 ## Additional Checks
 
-Use a dedicated tool only when you must inspect something outside the snapshot scope, such as an external service, Board, Slack, GitHub, or the web. Do not use shell as a substitute for fixed-scope snapshot observation.
+Only when it is necessary to check external services, Board, Slack, GitHub, Web, etc. outside the snapshot, use the relevant dedicated tool. Do not use shell as a substitute for the fixed scope.

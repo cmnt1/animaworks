@@ -16,8 +16,17 @@ api_version = "2025-04-01-preview"
 max_output_tokens = 16000
 timeout_seconds = 600
 
+[engines.nanogpt]
+kind = "nanogpt"
+base_url = "https://nano-gpt.com/api/subscription/v1"
+model = "deepseek/deepseek-v4.1-flash"
+api_key_env = "NANOGPT_API_KEY"
+temperature = 0.0
+max_output_tokens = 16000
+timeout_seconds = 120
+
 [defaults]
-engine = "local"
+engine = "nanogpt"
 fallback_engine = ""
 langs = ["en", "ko"]
 concurrency = 4

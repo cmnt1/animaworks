@@ -101,7 +101,7 @@ Role of each section:
 | `token_budget_monthly` | `int | None` | None |  |
 | `aliases` | `list[str]` | `[]` |  |
 
-#### Default Values (anima_defaults)
+#### Default values (anima_defaults)
 
 | Field | Type | Default | Description |
 |-----------|-----|----------|------|
@@ -128,25 +128,26 @@ Role of each section:
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `default_workspace` | `str` | `""` |  |
+| `tool_compression` | `bool` | `True` |  |
 | `consolidation_enabled` | `bool` | `True` |  |
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig Top Level
+#### AnimaWorksConfig top level
 
 | Section | Description |
 |-----------|------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
-| `locale` | Locale setting |
+| `locale` | Locale settings |
 | `system` | System settings (mode, log level) |
 | `credentials` | API authentication credentials |
 | `model_modes` | Model name → execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
-| `anima_defaults` | Anima configuration defaults |
+| `anima_defaults` | Anima configuration default values |
 | `animas` | Per-Anima configuration overrides |
-| `consolidation` | Memory consolidation settings |
+| `consolidation` | Consolidation settings |
 | `helper_models` |  |
 | `background_review` |  |
 | `rag` | RAG (retrieval-augmented generation) settings |
@@ -175,9 +176,11 @@ Role of each section:
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
+| `jev` |  |
 | `workspaces` |  |
 | `github_identities` |  |
 | `activity_level` |  |
+| `activity_level_by_provider` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |

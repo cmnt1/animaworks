@@ -1,21 +1,22 @@
 ---
 name: notebooklm-tool
 description: >-
-  Google NotebookLM integration tool. Manage notebooks, add sources, read full text,
-  chat (Q&A against sources), and generate artifacts (audio overviews, reports, etc.).
-  Use when: you need to manage NotebookLM notebooks, read source content, ask questions about sources, or generate reports.
+  Google NotebookLM integration tool. Performs notebook management, source addition, content retrieval, chat (Q&A),
+  and artifact generation (audio summaries, reports, etc.).
+  Use when: When you need to operate NotebookLM notebooks, check source content, ask questions to a notebook, or generate reports.
 tags: [research, notebooklm, knowledge, external]
 ---
 
+
 # NotebookLM Tool
 
-External tool for operating Google NotebookLM via API.
+An external tool that operates Google NotebookLM via API.
 
-## How to call
+## How to Invoke
 
-**Bash**: `animaworks-tool notebooklm <subcommand> [args]`
+**Bash**: Run with `animaworks-tool notebooklm <サブコマンド> [引数]`
 
-## Actions
+## Action List
 
 ### list — List notebooks
 ```bash
@@ -28,71 +29,71 @@ animaworks-tool notebooklm get NOTEBOOK_ID
 ```
 Returns the notebook summary and suggested question topics.
 
-### create — Create a notebook
+### create — Create notebook
 ```bash
-animaworks-tool notebooklm create "Title"
+animaworks-tool notebooklm create "タイトル"
 ```
 
-### delete — Delete a notebook
+### delete — Delete notebook
 ```bash
 animaworks-tool notebooklm delete NOTEBOOK_ID
 ```
 
-### sources — List sources in a notebook
+### sources — List sources
 ```bash
 animaworks-tool notebooklm sources NOTEBOOK_ID
 ```
 
-### source-text — Get full text of a source
+### source-text — Get source text
 ```bash
 animaworks-tool notebooklm source-text NOTEBOOK_ID SOURCE_ID
 ```
-Returns the full text content of the source. Use this to read the actual content.
+Returns the full text of a source. Use this when you want to check the content.
 
-### add-source-url — Add a URL source
+### add-source-url — Add URL source
 ```bash
 animaworks-tool notebooklm add-source-url NOTEBOOK_ID URL
 ```
 
-### add-source-text — Add a text source
+### add-source-text — Add text source
 ```bash
-animaworks-tool notebooklm add-source-text NOTEBOOK_ID --title "Title" --text "Content"
+animaworks-tool notebooklm add-source-text NOTEBOOK_ID --title "タイトル" --text "本文"
 ```
 
-### add-source-file — Add a file source
+### add-source-file — Add file source
 ```bash
 animaworks-tool notebooklm add-source-file NOTEBOOK_ID /path/to/file.pdf
 ```
 
-### chat — Ask a question against notebook sources
+### chat — Ask questions to a notebook
 ```bash
-animaworks-tool notebooklm chat NOTEBOOK_ID "Your question here"
+animaworks-tool notebooklm chat NOTEBOOK_ID "質問テキスト"
 ```
-Returns an answer with source references.
+Returns answers based on sources and their citations.
 
-### generate — Generate an artifact
+### generate — Generate artifact
 ```bash
-animaworks-tool notebooklm generate NOTEBOOK_ID --type audio_overview [--language en] [--instructions "..."]
+animaworks-tool notebooklm generate NOTEBOOK_ID --type audio_overview [--language ja] [--instructions "指示"]
 ```
 Types: `audio_overview`, `briefing_doc`, `study_guide`, `faq`, `timeline`, `mind_map`
 
-Warning: Long-running. Use `animaworks-tool submit notebooklm generate ...` for background execution.
+⚠️ Long-running process. Recommended to run in the background with `animaworks-tool submit notebooklm generate ...`.
 
 ### artifacts — List artifacts
 ```bash
 animaworks-tool notebooklm artifacts NOTEBOOK_ID [--type AUDIO]
 ```
 
-## Typical workflow
+## Typical Workflow
 
-1. `list` to get notebook IDs
-2. `get NOTEBOOK_ID` to read the summary
-3. `sources NOTEBOOK_ID` to list sources
-4. `source-text NOTEBOOK_ID SOURCE_ID` to read source full text
-5. `chat NOTEBOOK_ID "question"` to ask about the content
+1. Get the notebook list with `list` (check the IDs)
+2. Check the summary with `get NOTEBOOK_ID`
+3. Get the source list with `sources NOTEBOOK_ID`
+4. Read the source text with `source-text NOTEBOOK_ID SOURCE_ID`
+5. Ask questions about the content with `chat NOTEBOOK_ID "質問"`
 
 ## Notes
 
-- Requires initial authentication via `notebooklm login` (Google login in browser)
-- Credentials stored at `~/.notebooklm/storage_state.json`
-- Re-run `notebooklm login` if cookies expire
+- Authentication with `notebooklm login` is required before first use (Google login in the browser)
+- Credentials are saved in `~/.notebooklm/storage_state.json`
+- If the cookie expires, re-run `notebooklm login`

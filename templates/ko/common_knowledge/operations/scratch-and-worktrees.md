@@ -22,12 +22,12 @@ TMP="$(mktemp -d -p "$ANIMAWORKS_SCRATCH_DIR")"
 
 ## 자동 삭제
 
-자동 삭제는 프로세스 사용 상태를 추적할 수 있는 Linux에서만 실행한다. Windows에서는 작업 종료 시 scratch 삭제와 정기 작업 공간 정리를 건너뛴다. `workspace_sweep_enabled=false`는 매시간 및 일일 정리를 모두 비활성화한다.
+자동 삭제는 프로세스 사용 상황을 추적할 수 있는 Linux에서만 수행한다. Windows에서는 작업 종료 시 scratch 삭제와 정기 청소를 하지 않는다. `workspace_sweep_enabled=false`는 매시간·일간 정기 청소 양쪽에 적용된다.
 
-- 작업용 scratch는 작업이 완료되거나 취소되면 사라진다. 그 안에 만든 worktree의 등록도 상위 리포지토리에서 해제된다.
-- scratch는 24시간 동안 사용하지 않으면 사라진다.
-- `shared/worktrees/`에서는 24시간 이상 사용하지 않은 clean linked worktree만 Git을 통해 삭제한다. 미커밋 변경, 단독 clone, Git 상태를 확인할 수 없는 저장소는 보존한다.
-- 자동 삭제가 활성화된 Linux에서는 작업을 마칠 때 삭제 명령을 실행할 필요는 없다. 남기고 싶은 것은 위 표의 ‘나중에 다시 읽기’ 행에 있는 위치로 옮긴다.
+- 작업용 scratch는 작업이 완료·취소된 시점에 사라진다. 그 안에 만든 worktree의 등록도 부모 리포지토리에서 제외된다.
+- scratch는 24시간 동안 건드리지 않으면 사라진다.
+- `shared/worktrees/`에서는 24시간 이상 사용되지 않은 clean한 linked worktree만 Git을 통해 삭제한다. 미커밋 변경, 단독 clone, Git 상태를 확인할 수 없는 리포지토리는 보존한다.
+- 자동 삭제가 유효한 Linux에서는 작업 마지막에 삭제 명령을 입력할 필요가 없다. 남기고 싶은 것은 위 표의 「나중에 다시 읽기」 행의 위치로 옮긴다.
 
 ## 패키지 캐시
 

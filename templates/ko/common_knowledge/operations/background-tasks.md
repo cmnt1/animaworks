@@ -28,11 +28,12 @@ Anima 자식 프로세스 내의 **PendingTaskExecutor**(`core/tasks/pending_exe
 백그라운드 실행 후보로 등록된다(예: `chatwork sync` / `download` 등).
 운영 방침은 계속해서 **⚠ 표시**를 우선한다.
 
-### submit이 필요 없는 도구
+### submit 불필요 도구
 
-실행 시간이 짧은(수십 초 미만 기준) 도구:
+실행 시간이 짧은(수십 초 미만이 기준) 도구:
 
 - `web_search`, `x_search`
+- `bluesky`
 - `slack`, `chatwork`, `gmail`(일반적인 조작)
 - `github`, `aws_collector`
 

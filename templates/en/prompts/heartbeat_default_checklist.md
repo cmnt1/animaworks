@@ -1,6 +1,8 @@
-- Use a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` as evidence; call `heartbeat_observe_snapshot` only when it is absent
-- Check in-progress tasks in current_state.md and STALE / 24-hour-old waiting tasks in list_tasks, and state your evidence
-- Check your restricted channel (or general if none) with read_channel and state whether there are mentions for you. Do not post praise or acknowledgement only
-- Check whether required external tools are accessible and whether in-progress tasks have blockers
-- Report blockers such as missing files, insufficient permissions, unmet prerequisites, or unclear instructions to the requester immediately. Send call_human as well for a major blocker lasting more than 30 minutes
-- Include HEARTBEAT_OK only in responses where you have confirmed all of the above are resolved
+- Use `status: ok`'s `Current Pre-Observed Heartbeat Snapshot` as confirmation evidence. If not available, call `heartbeat_observe_snapshot`
+- Check in-progress tasks in current_state.md and STALE / tasks waiting over 24 hours in list_tasks, and provide evidence
+- Check all channels where you are a member (general and your department; ops if you are a member) with read_channel, and state whether there are any mentions of you. Do not post mere praise or approval
+- Check whether you can access the necessary external tools and whether there are any blockers in in-progress tasks
+- Immediately report blockers such as missing files, insufficient permissions, unmet prerequisites, or unclear instructions to the requester. For serious blockers exceeding 30 minutes, also send call_human
+- Include HEARTBEAT_OK only in responses where it has been confirmed that all of the above have been resolved
+
+Board posting decisions follow `common_knowledge/communication/broadcasting-guide.md`.

@@ -30,10 +30,11 @@ Operational policy should continue to prioritize the **⚠ mark**.
 
 ### Tools that do not require submit
 
-Tools with short execution times (roughly under a few tens of seconds):
+Tools with short runtime (roughly under a few tens of seconds):
 
 - `web_search`, `x_search`
-- `slack`, `chatwork`, `gmail` (normal operations)
+- `bluesky`
+- `slack`, `chatwork`, `gmail` (normal operation)
 - `github`, `aws_collector`
 
 ### Decision criteria

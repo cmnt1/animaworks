@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=07611040a4e544cbf7172ace0f96d907fe8cd197a2557cdd22300f89986c183b generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=59d4db3b183cd6d6e216e3b6b157cd470fbcbc511472756e6edbd2aef78abac8 generated=2026-10-21 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # Configuration Reference
 
@@ -65,7 +65,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and execution configuration applied to each anima. |
+| `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default values for model and execution settings applied to each anima. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-5-5"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
 | `anima_defaults.fallback_models` | `list[str]` | `[]` | — |
@@ -89,8 +89,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (default: "high") |
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
+| `anima_defaults.tool_compression` | `bool` | `true` | Enable RTK-inspired tool result compression |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. If false, only disables periodic heartbeat. Message-triggered heartbeats and cron are unaffected |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. When false, only periodic heartbeat is disabled. Message-triggered HB and cron are unaffected |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
 
 ### `animas`
@@ -443,13 +444,16 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `server` | `ServerConfig` | `{ServerConfig}` | HTTP server, authentication, and usage control configuration. |
+| `server` | `ServerConfig` | `{ServerConfig}` | Configuration for the HTTP server, authentication, and usage control. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
+| `server.usage_governor` | `UsageGovernorConfig` | `{UsageGovernorConfig}` | — |
+| `server.usage_governor.enabled` | `bool` | `false` | — |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
 | `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
+| `server.anima_socket_create_timeout` | `int` | `30` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
 | `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
@@ -498,8 +502,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | External messaging integrations such as Slack. |
-| `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
+| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | External messaging integration such as Slack. |
+| `external_messaging.preferred_channel` | `str` | `"discord"` | "slack" \| "chatwork" \| "discord" |
 | `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
 | `external_messaging.user_aliases.slack_user_id` | `str` | `""` | — |
 | `external_messaging.user_aliases.chatwork_room_id` | `str` | `""` | — |
@@ -518,6 +522,11 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_messaging.slack.board_outbound_sync_all` | `bool` | `false` | when whitelist is empty, opt in to syncing all mapped boards |
 | `external_messaging.slack.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord only) |
 | `external_messaging.slack.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord only) |
+| `external_messaging.slack.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.slack.system_agents.name` | `str` | `""` | — |
+| `external_messaging.slack.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.slack.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.slack.system_agents.route_to_animas` | `bool` | `false` | — |
 | `external_messaging.slack.default_channel_company` | `str` | `""` | company for auto-created boards (empty = no attribution) |
 | `external_messaging.chatwork` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.chatwork.enabled` | `bool` | `false` | — |
@@ -531,6 +540,11 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_messaging.chatwork.board_outbound_sync_all` | `bool` | `false` | when whitelist is empty, opt in to syncing all mapped boards |
 | `external_messaging.chatwork.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord only) |
 | `external_messaging.chatwork.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord only) |
+| `external_messaging.chatwork.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.chatwork.system_agents.name` | `str` | `""` | — |
+| `external_messaging.chatwork.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.chatwork.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.chatwork.system_agents.route_to_animas` | `bool` | `false` | — |
 | `external_messaging.chatwork.default_channel_company` | `str` | `""` | company for auto-created boards (empty = no attribution) |
 | `external_messaging.discord` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.discord.enabled` | `bool` | `false` | — |
@@ -544,6 +558,11 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_messaging.discord.board_outbound_sync_all` | `bool` | `false` | when whitelist is empty, opt in to syncing all mapped boards |
 | `external_messaging.discord.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord only) |
 | `external_messaging.discord.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord only) |
+| `external_messaging.discord.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.discord.system_agents.name` | `str` | `""` | — |
+| `external_messaging.discord.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.discord.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.discord.system_agents.route_to_animas` | `bool` | `false` | — |
 | `external_messaging.discord.default_channel_company` | `str` | `""` | company for auto-created boards (empty = no attribution) |
 | `external_messaging.zoom` | `ZoomRTMSConfig` | `{ZoomRTMSConfig}` | — |
 | `external_messaging.zoom.enabled` | `bool` | `false` | — |
@@ -696,7 +715,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `housekeeping`
 
-| Key | Type | Default value | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
 | `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | Periodic cleanup of runtime data. |
 | `housekeeping.enabled` | `bool` | `true` | — |
@@ -723,11 +742,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
 | `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
 | `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
-| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | Enable hourly and daily workspace cleanup; skipped without Linux process tracking |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
 | `housekeeping.background_running_stale_hours` | `int` | `48` | — |
+| `housekeeping.cron_queue_stale_minutes` | `int` | `30` | — |
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
@@ -759,6 +779,18 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `local_llm.presets` | `dict[str, str]` | `{"coding":"ollama/qwen2.5-coder:14b","general":"ollama/glm4:9b","reasoning":"ollama/deepseek-r1:8b"}` | — |
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 
+### `jev`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `jev` | `JevConfig` | `{JevConfig}` | Cost recording and budget configuration for the Jev provider. |
+| `jev.monthly_budget_usd` | `float \| None` | `null` | Monthly Jev spend budget in USD. None hides the budget bar. |
+| `jev.balance_usd` | `float \| None` | `null` | Credit balance in USD as read from the TypeSafe console. |
+| `jev.balance_checked_at` | `str \| None` | `null` | ISO 8601 timestamp of the balance_usd reading. Ledger rows from this moment on are subtracted from it. None means 'as of now'. |
+| `jev.input_usd_per_mtok` | `float` | `0.042` | Input price per 1M tokens, used only for ledger rows that carry no cost_usd. |
+| `jev.output_usd_per_mtok` | `float` | `0.0` | Output price per 1M tokens (free on jev-1.13.0). |
+| `jev.ledger_dir` | `str` | `""` | Spend-ledger directory override. Empty uses <abconfig>/jev_usage. |
+
 ### `workspaces`
 
 | Key | Type | Default | Description |
@@ -776,6 +808,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `activity_level` | `int` | `100` | Multiplier that adjusts the overall activity frequency. |
+
+### `activity_level_by_provider`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `activity_level_by_provider` | `dict[str, int]` | `{}` | Per-provider activity frequency override. |
 
 ### `activity_schedule`
 
@@ -912,11 +950,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ## `models.json`
 
-Execution modes and context windows for each model name pattern.
+Execution mode and context window for each model name pattern.
 
 | Model name pattern | Mode | Context window |
-|---|---:|---:|
+|---|---|---:|
 | `anthropic/claude-*` | `A` | 200000 |
+| `antigravity/*` | `A` | 1000000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |
 | `bedrock/*` | `A` | 200000 |
@@ -924,6 +963,8 @@ Execution modes and context windows for each model name pattern.
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-4-7` | `S` | 200000 |
+| `claude-opus-4-8` | `S` | 200000 |
 | `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
 | `claude-sonnet-5-5` | `S` | 200000 |
@@ -960,5 +1001,14 @@ Execution modes and context windows for each model name pattern.
 | `openai/qwen3.6-27b*` | `A` | 32768 |
 | `openai/qwen3.6-35b*` | `A` | 32768 |
 | `openai/zai.glm*` | `A` | 131072 |
+| `opencode-go/*` | `A` | 131072 |
+| `opencode-go/deepseek-v4-flash` | `A` | 131072 |
+| `opencode-go/deepseek-v4-pro` | `A` | 131072 |
+| `opencode-go/glm-5` | `A` | 202752 |
+| `opencode-go/glm-5.1` | `A` | 202752 |
+| `opencode-go/kimi-k2.5` | `A` | 262144 |
+| `opencode-go/kimi-k2.6` | `A` | 262144 |
+| `opencode-go/qwen3.5-plus` | `A` | 262144 |
+| `opencode-go/qwen3.6-plus` | `A` | 262144 |
 | `vertex_ai/*` | `A` | 1000000 |
 | `xai/*` | `A` | 256000 |

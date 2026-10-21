@@ -400,11 +400,12 @@ class TestHeartbeatFailureWritesRecoveryNote:
         dp = _make_digital_anima(alice_dir, shared_dir)
         _attach_failing_stream(dp, RuntimeError("Agent crash"))
 
-        with pytest.raises(RuntimeError):
-            await dp.run_heartbeat()
+        result = await dp.run_heartbeat()
+        assert result.action == "failed"
 
         remaining = list(inbox_dir.glob("*.json"))
         assert len(remaining) == 1, "Heartbeat failure should not touch inbox messages"
+        assert remaining[0].read_text(encoding="utf-8") == msg.model_dump_json(indent=2)
 
 
 # ── Test 5: Recovery note injected on next run ────────────

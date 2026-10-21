@@ -1,7 +1,8 @@
 {
   "version": 1,
   "file_roots": [
-    "/"
+    "/",
+    "E:\\OneDriveBiz\\Obsidian"
   ],
   "commands": {
     "allow_all": true,
@@ -14,7 +15,8 @@
       "discord_channel_post",
       "discord_send",
       "discord_channel_history",
-      "discord_unreplied"
+      "discord_unreplied",
+      "notebooklm"
     ],
     "deny": [
       "notion"

@@ -1,165 +1,171 @@
 ---
 name: obsidian-product
 description: >-
-  Write deliverable reports to the Obsidian Vault and have them aggregated by the `0_Products DB.base` Base.
-  Use when: producing a deliverable for a human (report, artifact, deploy log, etc.) or attaching supporting material.
-  Replaces the retired Notion `T_Products` DB. Reports live as plain md in the Vault; supporting files are reachable via wikilinks.
+  A skill that writes deliverable reports to an Obsidian Vault and aggregates them in Bases (`0_Products DB.base`).
+  Use when: When recording deliverables submitted to humans (reports, deliverables, deployment records, etc.) and their accompanying materials.
+  Successor to the former Notion T_Products DB. Because it is written directly to md files in the Vault, capture is easy, and accompanying materials can be traced via wikilinks.
 tags: [productivity, obsidian, report, deliverable]
 ---
 
+
 # Obsidian Product Report
 
-Deliverables now go to the **Obsidian Vault** only. The Notion `T_Products` DB is retired.
-This skill specifies *where to write*, *how to name the file*, and *what frontmatter to include*. The write itself uses the usual `Write` / `Edit` / `Bash` tools.
-Project plans, progress, decisions, and pending confirmations also use Obsidian Vault Markdown as the source of truth. Do not read/write Notion or submit deliverables to a Notion database.
+The destination for deliverables has been unified into the **Obsidian Vault**. Notion `T_Products` has been abolished.
+This skill defines the conventions for "where to write reports, with what naming, and with what frontmatter." The writing itself is done with the usual `Write` / `Edit` / `Bash` tools.
+Plans, progress, decisions, and pending confirmations for project management also use Markdown in the Obsidian Vault as the source of truth. Do not read from or write to Notion, and do not submit deliverables to Notion DBs.
 
-## Vault Paths (fixed)
+## Vault Paths (Fixed)
 
 - **Vault root**: `E:\OneDriveBiz\Obsidian\`
 - **Products root**: `E:\OneDriveBiz\Obsidian\_products\`
-- **Base file**: `E:\OneDriveBiz\Obsidian\0_Products DB.base` (do not edit; Obsidian reads it automatically)
+- **Base file**: `E:\OneDriveBiz\Obsidian\0_Products DB.base` (no editing required; Obsidian automatically reads and displays this file)
 
-## Category → Folder
+## Category → Folder Mapping
 
-| Category (frontmatter `category`) | Folder |
+| Category (frontmatter `category`) | Storage folder |
 |---|---|
 | `General` | `_products\General\` |
 | `Finance` | `_products\Finance\` |
 | `Affiliate` | `_products\Affiliate\` |
 | `Property` | `_products\Property\` |
-| `Business` | `_products\Business\` (formerly "経営") |
+| `Business` | `_products\Business\` (formerly "Management") |
 
-Default to `General` when unsure.
+If unsure, use `General`.
 
-## File Naming
+## File Naming Rules
 
-- Main report: `P-<5-digit zero-padded id>_<slug>.md`
+- Main report: `P-<5桁ゼロ埋めID>_<slug>.md`
   - Example: `P-00042_aff-recipe-v2.md`
-- Attachments: placed **in the same category folder**, sharing the main file's prefix
+- Accompanying materials: place them **directly in the same category folder** as the main, with the **same prefix** as the main
   - Example: `P-00042_aff-recipe-v2_spec.md`, `P-00042_aff-recipe-v2_data.md`
-  - Do not create subfolders. Parent/child linkage is encoded in the filename prefix.
+  - Do not create subfolders. Express parent-child relationships via filename prefixes
 
-`<slug>` is lowercase ASCII, hyphen-separated. If the title resists romanization, pick short English keywords yourself, or drop the slug and just use `P-00042.md` (the `P-` code is already unique).
+`<slug>` must be ASCII lowercase, with `-` (hyphen) as the separator. If mechanical conversion from a Japanese title is difficult, decide on an alphanumeric keyword yourself that does not lose the meaning, or omit the `slug` part and use `P-00042.md` (unique if there is a `P-` code).
 
 ## Operations
 
-### 1. create — new report
+### 1. create — Create a new report
 
-1. **Pick the next id** (allocation)
-   - Bash: scan every md under `_products\`, extract `id:`, take max, add 1. No counter file.
-   - One-liner using Python (works in Git Bash and PowerShell):
+1. **Determine the next ID** (numbering)
+   - Use Bash to extract `id:` from all md files under `_products\`, take the max, and add 1. Do not use a counter file.
+   - One-liner example (using Python to support both Git Bash / PowerShell):
      ```bash
      python -c "import re, pathlib; ids=[int(m.group(1)) for p in pathlib.Path(r'E:/OneDriveBiz/Obsidian/_products').rglob('*.md') for m in [re.search(r'^id:\s*(\d+)', p.read_text(encoding='utf-8'), re.M)] if m]; print(max(ids)+1 if ids else 1)"
      ```
    - If the result is `42`, then `code = P-00042`.
 
-2. **Choose the file path**
+2. **Determine the file path**
    - `E:\OneDriveBiz\Obsidian\_products\<Category>\P-<NNNNN>_<slug>.md`
 
-3. **Write frontmatter + body** (paste the "frontmatter template (main)" below and fill in).
+3. **Write the frontmatter + body with Write** (copy and fill in the "frontmatter template (main)" below)
 
-4. **Tell the human the code** in the completion report (e.g. `P-00042`). Compact codes like `P-42` are the whole point of this design — use them in chat.
+4. **If necessary, include the code (e.g., `P-00042`) in the completion report to the user** so they can reload Bases. The advantage of this design is that it can be called `P-42 見といて` during conversation.
 
-### 2. attach — add supporting material
+### 2. attach — Add accompanying materials
 
-1. Create `P-<NNNNN>_<slug>_<asset>.md` in the *same* category folder (`<asset>` is a short slug for the asset).
-2. Use the "frontmatter template (attachment)" below. `type: product_asset` and `parent_code: "P-<NNNNN>"` are required.
+1. Create `P-<NNNNN>_<slug>_<asset>.md` directly in the same category folder as the main (`<asset>` is the material name slug).
+2. Use the "frontmatter template (accompanying material)" for the frontmatter. `type: product_asset` and `parent_code: "P-<NNNNN>"` are required.
 3. Append a wikilink to the main report:
    ```markdown
-   ## Attachments
-   - [[P-00042_aff-recipe-v2_spec]] — spec
-   - [[P-00042_aff-recipe-v2_data]] — source data
+   ## 付随資料
+   - [[P-00042_aff-recipe-v2_spec]] — 仕様書
+   - [[P-00042_aff-recipe-v2_data]] — 元データ
    ```
-   Obsidian resolves these automatically, and the Base table skips `type: product_asset`, so attachments don't clutter the ledger.
+   Obsidian automatically turns it into a link (it does not appear in the Base table because `type: product_asset`).
 
-### 3. update — modify an existing report
+### 3. update — Update an existing report
 
 1. Read the target file.
-2. Edit the frontmatter; always bump `updated:` to the current JST timestamp.
-3. Status transitions (`未着手` → `進行中` → `完了`) and `confirmed` flips happen here.
-4. **Never change `id` or `code`.**
+2. Rewrite the frontmatter with Edit, and always update `updated:` to the current date and time (JST).
+3. Perform status transitions (`未着手` → `進行中` → `監査待`) here. Only sakura can change to `完了`. `confirmed` is for human confirmation, so Anima should in principle leave it as `false` when creating or updating, and must not change it to `true`.
+4. **Never change** `id` and `code`.
 
-### 4. list — quick listing
+### 4. list — List existing reports
 
-Ad-hoc shell listing:
+Simple listing with Bash:
 ```bash
 grep -rH "^code:" "E:/OneDriveBiz/Obsidian/_products/" | sort
 ```
-For the real view, open `0_Products DB.base` in Obsidian.
+For a full-fledged view, just open `0_Products DB.base` on the Obsidian side.
 
-## Frontmatter Template (main, paste-ready)
+## frontmatter template (main, for copy-paste)
 
 ```yaml
 ---
 type: product
 id: 42
 code: "P-00042"
-title: "Affiliate Delivery Recipe v2"
+title: "アフィリエイト配信レシピ v2"
 category: Finance              # General | Finance | Affiliate | Property | Business
 product_type: 報告書            # 報告書 | 成果物 | デプロイ記録 | その他
-status: 完了                    # 未着手 | 進行中 | 完了
-task_code: AFF-001             # corresponding task code, or "" if none
-assignee: your-anima-name       # the Anima that produced this
+status: 監査待                  # 未着手 | 進行中 | 監査待 | 完了（完了にできるのは sakura のみ）
+task_code: AFF-001             # 対応するタスクコードがあれば。無ければ空文字 ""
+assignee: 自分のAnima名          # 作成した Anima 名
 submitted: 2026-04-23
-requires_reply: false           # true if you want human confirmation before closing
-confirmed: false                # true after the human has reviewed and accepted
+requires_reply: false           # 人間からの返信・確認を待ちたい場合 true
+confirmed: false                # 人間側が確認して落着済みなら true（基本は人間が後でチェック）
 created: 2026-04-23T09:15:00+09:00
 updated: 2026-04-23T09:15:00+09:00
 tags: [product]
 ---
 
-# Affiliate Delivery Recipe v2
+# アフィリエイト配信レシピ v2
 
-## Summary
+## 要旨
 ...
 
-## Body
+## 本文
 ...
 
-## Attachments
-- [[P-00042_aff-recipe-v2_spec]] — spec
+## 付随資料
+- [[P-00042_aff-recipe-v2_spec]] — 仕様書
 ```
 
-(Note: `product_type` and `status` values are kept in Japanese so they match the Base views used by the human operator.)
-
-## Frontmatter Template (attachment, paste-ready)
+## frontmatter template (accompanying material, for copy-paste)
 
 ```yaml
 ---
 type: product_asset
 parent_code: "P-00042"
-title: "Affiliate Delivery Recipe v2 — Spec"
+title: "アフィリエイト配信レシピ v2 — 仕様書"
 created: 2026-04-23T09:15:00+09:00
 updated: 2026-04-23T09:15:00+09:00
 tags: [product-asset]
 ---
 
-# Affiliate Delivery Recipe v2 — Spec
+# アフィリエイト配信レシピ v2 — 仕様書
 
-(body)
+（本文）
 ```
 
 ## Conventions Summary
 
-- **Vault only**: both drafts and final deliverables live in `_products\<Category>\` (create drafts with `status: 未着手`, flip to `status: 完了` when finished). The former `E:\OneDriveBiz\Downloads\` workflow is retired.
-- **Immutable id / refer by code**: never change `id` or `code` after creation. Refer to products in chat as `P-00042`.
-- **Attachments stay flat**: no subfolders; the filename prefix carries parent/child.
-- **Wikilinks preferred**: internal links use `[[P-00042_xxx_yyy]]` form — no paths (Obsidian resolves by filename).
-- **`type: product` vs `type: product_asset`**: the Base ledger only shows main reports. Attachments are reachable via wikilinks only.
-- **Japanese values allowed**: `product_type`, `status`, and `title` may be Japanese. Only `category` is forced to ASCII (to match folder names).
+- **Unify in the Vault**: Place both deliverables and drafts in `_products\<Category>\` (create drafts with `status: 未着手`, update to `status: 完了` upon completion). The former `E:\OneDriveBiz\Downloads\` is abolished
+- **ID immutable, refer by code**: After creation, do not change `id`/`code`. In conversation, refer to it in the `P-00042` format
+- **Only one frontmatter at the top of the file**: The top must always be `---` → YAML containing `type: product` → `---` → body, in that order. Do not add a small frontmatter like `--- confirmed: ... ---` at the top
+- **Save as UTF-8 without BOM**: Save Markdown as UTF-8 without BOM. Avoid PowerShell 5's `Set-Content -Encoding UTF8` because it tends to add a BOM; use PowerShell 7's `utf8NoBOM`, Python's `encoding="utf-8"`, or `.NET UTF8Encoding(false)`
+- **Only sakura can set `status: 完了`**: Anima other than sakura should set `status: 監査待` after finishing the report and storing it in `_products\<Category>\`. Changing to completion status is done after sakura's audit
+- **Always send an audit request**: After setting `status: 監査待`, Anima other than sakura sends an audit request to sakura with `P-<NNNNN>`, the file path, and the perspectives to be audited
+- **`confirmed` is a human-side confirmation flag**: Anima creates new reports with `confirmed: false`. Humans change it to true after confirming in Obsidian. Anima must not append or overwrite `confirmed: true` at the top
+- **Place accompanying materials in the same folder without creating subfolders**: Express parent-child relationships via filename prefixes
+- **wikilink recommended**: Use `[[P-00042_xxx_yyy]]` notation for internal links. Do not write paths (Obsidian resolves automatically)
+- **Distinguish `type: product` / `type: product_asset`**: The Base table picks up only the main. Accompanying materials only need to be traceable via wikilinks
+- **Japanese allowed**: `title`, `product_type`, `status` remain in Japanese. Only `category` must be in English letters (to match the folder name)
 
 ## Usage Examples
 
-### Scenario: weekly report
+### Scenario: Wrote a weekly report
 
-1. Allocate next id, say `43`
-2. Write `E:\OneDriveBiz\Obsidian\_products\General\P-00043_weekly-report-2026w17.md` with frontmatter
-3. Summarize source CSV into a sibling `..._data.md` and wikilink it from the main report
-4. Notify the supervisor: `send_message(intent="report", content="P-00043 weekly report filed.")`
+1. Number the next ID: for example `43`
+2. Write to `E:\OneDriveBiz\Obsidian\_products\General\P-00043_weekly-report-2026w17.md` (with frontmatter)
+3. Attach a summary of the source CSV data: create `..._data.md` and append a wikilink
+4. Notify the supervisor via `send_message(intent="report", content="P-00043 週次レポートを提出しました。")`
 
-### Scenario: task intake → in-progress → done
+### Scenario: Task received → in progress → completed
 
-1. On intake: create with `status: 未着手` and a skeleton body
-2. On start: flip to `status: 進行中`, bump `updated`
-3. On completion: set `status: 完了`, fill `submitted`, finalize body
-4. Optionally set `requires_reply: true` to flag for human review
+1. When receiving the task, write only the skeleton with `status: 未着手` (fill in later)
+2. When starting, Edit to `status: 進行中`, update `updated`
+3. When the report is finished, non-sakura set `status: 監査待`, enter the `submitted` date, and finalize the body
+4. Send an audit request to sakura with `P-<NNNNN>` and the file path
+5. Sakura audits, makes corrections if necessary, and sets `status: 完了` if there are no problems
+6. In some cases, set `requires_reply: true` to wait for human confirmation

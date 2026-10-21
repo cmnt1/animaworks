@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/anima-files.md -->
-<!-- i18n: source-sha256=daf64ea97e7848803fe9645eef09e595a1a72796660b7750b35fbc74b1896fc6 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=daf64ea97e7848803fe9645eef09e595a1a72796660b7750b35fbc74b1896fc6 generated=2026-10-21 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 

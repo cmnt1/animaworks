@@ -67,3 +67,7 @@ TaskExec의 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`�
 ## 장시간 명령 도구는 별도 경로
 
 이미지 생성이나 run_command 등 대응하는 장시간 외부 도구에는 `animaworks-tool submit TOOL ...`를 사용한다. `submit_tasks`의 LLM 작업과 동일한 TaskStore에 `task_type="command"`로 등록되며, BackgroundTaskManager가 실행한다. 실행 시도는 TaskStore에 기록하고, 호환성을 위해 `state/background_tasks/{task_id}.json`와 완료 알림도 유지한다. `list_background_tasks` / `check_background_task`로 결과를 확인한다. 자세한 내용은 `operations/background-tasks.md`.
+
+## 업무 성과의 정본
+
+업무 성과·건건 관리의 정본은 Obsidian Vault에 둔다. `common_skills/obsidian-product/SKILL.md`에 따라, Anima 내부의 TaskStore는 실행 상태와 의존 관계를 관리한다. 양자의 역할을 지키고, Vault에 실행 큐의 복제를 쓰지 않는다.
