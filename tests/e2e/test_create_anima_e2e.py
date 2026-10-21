@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.anima.factory import create_from_md
+from core.anima.factory import _get_roles_dir, create_from_md
 from core.memory import MemoryManager
 from core.tooling.handler import ToolHandler
 
@@ -265,8 +265,11 @@ class TestCreateFromMdOmittedSections:
         permissions = anima_dir / "permissions.json"
         assert permissions.exists()
         data = json.loads(permissions.read_text(encoding="utf-8"))
+        template_permissions = json.loads(
+            (_get_roles_dir() / "administration" / "permissions.json").read_text(encoding="utf-8")
+        )
         assert data.get("version") == 1
-        assert data.get("file_roots") == ["/"]
+        assert data == template_permissions
 
 
 class TestDuplicateAnimaNameError:
