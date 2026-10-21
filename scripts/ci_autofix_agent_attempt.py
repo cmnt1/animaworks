@@ -92,6 +92,20 @@ def _command_for_job(job, repo_root: Path, prompt_path: Path) -> list[str]:
     return cmd
 
 
+def _failure_context(store, job) -> str:
+    event = store.latest_event(job.id, ("CI failure evidence captured",))
+    if not event or event.data.get("run_id") != job.last_run_id:
+        return ""
+    lines = ["\nConfirmed failed jobs (other CI jobs may still be running):"]
+    for item in event.data.get("failed_jobs", []):
+        path = Path(item["log_path"])
+        lines.append(f"\nFailed job: {item['name']}\nComplete log: {path}")
+        if path.is_file():
+            lines.append(path.read_text(encoding="utf-8", errors="replace")[-12000:])
+    lines.append("\nFix these confirmed failures now. Do not wait for other CI jobs or for run-level logs to become available.")
+    return "\n".join(lines)
+
+
 def _git_head(repo_root: Path) -> str:
     try:
         result = subprocess.run(
@@ -189,7 +203,7 @@ def main() -> int:
 
     try:
         workspace = _prepare_workspace(repo_root, run_dir / "worktree", job.branch)
-        prompt_path.write_text(_build_prompt(job, attempt), encoding="utf-8")
+        prompt_path.write_text(_build_prompt(job, attempt) + _failure_context(store, job), encoding="utf-8")
         cmd = _command_for_job(job, workspace, prompt_path)
     except Exception as exc:
         store.add_event(job.id, "error", "failed to build agent command", {"error": f"{type(exc).__name__}: {exc}"})
