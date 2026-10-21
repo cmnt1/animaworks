@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -54,6 +55,7 @@ Operational rules:
 - This is an isolated detached worktree prepared from origin/{job.branch}. Stay in this directory; do not switch branches or create another worktree.
 - Do not revert unrelated user changes.
 - Keep commits scoped.
+- If the failure is already fixed, do not create an empty commit. Report that no change is needed; the controller will verify the current HEAD's CI.
 - Never pip/uv install into the global Python (D:\\Program Files\\Python\\Python311) or any shared venv (E:\\OneDriveBiz\\Tools\\abconfig\\*, the running animaworks .venv). Other tools resolve CLIs from them; a stray notebooklm-py 0.3.4 there broke NotebookLM auth for the NBO pipeline. If dependencies are needed, create a throwaway venv inside this worktree (e.g. `uv venv .venv-autofix`) and install there.
 - One attempt is ONE repair/push cycle. Do not watch, poll, rerun, or wait for CI after pushing. Do not start another repair cycle.
 - If authentication, permissions or missing information block the fix, explain the blocker and finish.
@@ -131,6 +133,50 @@ def _prepare_workspace(source: Path, destination: Path, branch: str) -> Path:
     return destination
 
 
+def _current_head_ci(workspace: Path, job) -> dict | None:
+    """Verify the checked-out HEAD against the original workflow, not model prose."""
+    def read(args):
+        result = subprocess.run(["gh", *args, "--repo", job.repo], cwd=workspace,
+                                capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError("GitHub CI lookup failed")
+        return json.loads(result.stdout)
+
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=workspace,
+                          capture_output=True, text=True, timeout=20, check=True).stdout.strip()
+    original = read(["run", "view", job.last_run_id, "--json", "workflowName"])
+    runs = read(["run", "list", "--branch", job.branch, "--workflow", original["workflowName"],
+                 "--commit", head, "--limit", "20", "--json",
+                 "databaseId,headSha,headBranch,status,conclusion,createdAt"])
+    matching = [run for run in runs if run["headSha"] == head and run["headBranch"] == job.branch]
+    return max(matching, key=lambda run: (run["createdAt"], int(run["databaseId"]))) if matching else None
+
+
+def _record_existing_ci(store, job, run: dict) -> str:
+    owner = store.find_job_for_run(repo=job.repo, run_id=str(run["databaseId"]))
+    if owner and owner.id != job.id:
+        store.update_job_state(job.id, status="dismissed", automation_enabled=False,
+                               last_commit=run["headSha"],
+                               terminal_reason=f"同じCI案件のジョブ #{owner.id} に統合済みです。")
+        store.add_event(job.id, "info", "existing CI incident already owned",
+                        {"owner_job_id": owner.id, "run_id": str(run["databaseId"])})
+        return "dismissed"
+    status = ("completed" if run["conclusion"] == "success" else
+              "waiting_ci" if run["status"] != "completed" else "needs_attention")
+    reason = ("最新コミットのCI成功を確認しました。追加の修正pushは不要です。" if status == "completed" else
+              "" if status == "waiting_ci" else
+              "追加の修正pushはありません。最新コミットのCIも失敗しています。失敗ログの確認が必要です。")
+    store.update_job_state(job.id, status=status, automation_enabled=status == "waiting_ci",
+                           last_commit=run["headSha"], last_run_id=str(run["databaseId"]),
+                           run_url=f"https://github.com/{job.repo}/actions/runs/{run['databaseId']}",
+                           last_conclusion=run["conclusion"], terminal_reason=reason)
+    store.add_event(job.id, "info", "existing HEAD CI verified", {"run": run, "status": status})
+    if status == "waiting_ci":
+        store.add_event(job.id, "info", "LLM agent attempt finished; waiting for next CI result",
+                        {"attempt": job.attempt_count, "last_commit": run["headSha"], "no_new_push": True})
+    return status
+
+
 def _pushed_commit(workspace: Path, branch: str, before: str) -> str:
     head = _git_head(workspace)
     if not head or head == before:
@@ -204,7 +250,21 @@ def main() -> int:
 
     try:
         workspace = _prepare_workspace(repo_root, run_dir / "worktree", job.branch)
-        prompt_path.write_text(_build_prompt(job, attempt) + _failure_context(store, job), encoding="utf-8")
+        current_ci = _current_head_ci(workspace, job)
+        if current_ci:
+            owner = store.find_job_for_run(repo=job.repo, run_id=str(current_ci["databaseId"]))
+            if (current_ci["conclusion"] == "success" or current_ci["status"] != "completed"
+                    or (owner and owner.id != job.id)):
+                _record_existing_ci(store, job, current_ci)
+                return 0
+            # Repair today's failure, rather than a superseded mail notification.
+            job = store.update_job_state(job.id, last_run_id=str(current_ci["databaseId"]),
+                                         last_commit=current_ci["headSha"])
+        interpreter = repo_root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        verification = (f"\nExisting dependency environment (read-only): {interpreter}\n"
+                        "Use this interpreter for focused tests; do not install into it. "
+                        "If it lacks dependencies, create the isolated venv described above.\n") if interpreter.is_file() else ""
+        prompt_path.write_text(_build_prompt(job, attempt) + verification + _failure_context(store, job), encoding="utf-8")
         cmd = _command_for_job(job, workspace, prompt_path)
     except Exception as exc:
         store.add_event(job.id, "error", "failed to build agent command", {"error": f"{type(exc).__name__}: {exc}"})
@@ -251,6 +311,16 @@ def main() -> int:
             {"attempt": attempt, "exit_code": code, "last_commit": last_commit, "log_path": str(log_path)},
         )
         return 0
+
+    try:
+        current_ci = _current_head_ci(workspace, job)
+        if current_ci:
+            status = _record_existing_ci(store, job, current_ci)
+            if status in {"completed", "waiting_ci", "dismissed"}:
+                return 0
+            reason = store.get_job(job.id).terminal_reason
+    except Exception as exc:
+        store.add_event(job.id, "warn", "no-push CI verification unavailable", {"error": str(exc)})
 
     report_path = prompt_path.with_name("final.txt")
     report = report_path.read_text(encoding="utf-8").strip()[:1200] if report_path.exists() else ""
