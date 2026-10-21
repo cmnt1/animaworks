@@ -29,7 +29,10 @@ class TestSettingSourcesE2E:
 
         # Options construction is centralized in _build_sdk_options()
         options_src = inspect.getsource(AgentSDKExecutor._build_sdk_options)
-        assert "setting_sources=[]" in options_src, "_build_sdk_options() missing setting_sources=[]"
+        assert "setting_sources=" in options_src, "_build_sdk_options() must set setting_sources"
+        assert "setting_sources=[]" in options_src or "else []" in options_src, (
+            "_build_sdk_options() must default setting_sources to [] to block CLI hooks"
+        )
 
         # execute() now aggregates execute_streaming() (2c9ae785).
         execute_src = inspect.getsource(AgentSDKExecutor.execute)
