@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: b055a7ed5d209b15f3e163c4edd6a403c5deeb772a02fdce72db0ab57687e7a2 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: c049ed237d3d070bf63fcbb56e0afe05e2aefd9d39a6400d102c25e53eb9fa49 -->
 
 # モジュール一覧
 
@@ -1173,7 +1173,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
-| `server.routes.ci_autofix` | 267 | — |
+| `server.routes.ci_autofix` | 276 | — |
 | `server.routes.config_routes` | 464 | — |
 | `server.routes.external_tasks` | 261 | — |
 | `server.routes.internal` | 1562 | — |
