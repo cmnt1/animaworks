@@ -242,3 +242,88 @@ def test_poll_gmail_does_not_link_old_mail_to_active_job(tmp_path: Path) -> None
     assert result["created"] == []
     assert result["stale"][0]["run_id"] == "99"
     assert {job.run_id: job.last_run_id for job in jobs} == {"100": "100"}
+
+
+def _incident(store, run_id="100"):
+    return store.upsert_candidate(run_id=run_id, repo="cmnt1/animaworks", branch="main", actor="cmnt1")[0]
+
+
+class FollowupMail(FakeGmail):
+    def search_emails(self, query, max_results=20):
+        return [FakeEmail("followup", "Run failed", "actions/runs/101")]
+
+    def get_email_body(self, message_id):
+        return "https://github.com/cmnt1/animaworks/actions/runs/101"
+
+
+def test_current_and_historical_run_notifications_return_same_incident(tmp_path):
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    first = _incident(store)
+    for current in ("101", "102"):
+        store.update_job_state(first.id, status="waiting_ci", automation_enabled=True, last_run_id=current)
+        result = poll_gmail_for_candidates(store=store, rule=IntakeRule(), gmail_client=FollowupMail())
+        assert result["created"] == []
+        assert result["existing"][0]["id"] == first.id
+        assert store.get_job(first.id).last_run_id == current
+    assert len(store.list_jobs(include_terminal=True)) == 1
+    duplicate, created = store.upsert_candidate(run_id="101", repo=first.repo, branch=first.branch, actor=first.actor)
+    assert not created and duplicate.id == first.id
+
+
+def test_mail_link_is_remembered_without_overwriting_running_attempt(tmp_path):
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    first = _incident(store)
+    store.reserve_attempt(first.id)
+    store.begin_attempt(first.id)
+    for _ in range(2):
+        result = poll_gmail_for_candidates(store=store, rule=IntakeRule(), gmail_client=FollowupMail())
+        assert result["created"] == []
+        assert store.get_job(first.id).status == "running"
+        assert store.get_job(first.id).last_run_id == "100"
+    assert store.find_job_for_run(repo=first.repo, run_id="101").id == first.id
+
+
+def test_resolved_incident_is_not_recreated_by_late_mail(tmp_path):
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    first = _incident(store)
+    store.update_job_state(first.id, status="completed", last_run_id="101")
+    other = _incident(store, "200")
+    result = poll_gmail_for_candidates(store=store, rule=IntakeRule(), gmail_client=FollowupMail())
+    assert result["created"] == []
+    assert result["existing"][0]["id"] == first.id
+    assert store.get_job(other.id).last_run_id == "200"
+    assert store.get_job(first.id).status == "completed"
+
+
+def test_legacy_history_migration_merges_only_unstarted_duplicates(tmp_path):
+    path = tmp_path / "ci.sqlite3"
+    store = CIAutofixIntakeStore(path)
+    first = _incident(store)
+    store.update_job_state(first.id, status="waiting_ci", automation_enabled=True, last_run_id="102")
+    store.add_event(first.id, "info", "GitHub Actions run inspected", {"run_id": "101"})
+    with store._connect() as con:
+        cur = con.execute(
+            "INSERT INTO ci_autofix_jobs(run_id,repo,branch,actor,status,created_at,updated_at) "
+            "VALUES ('101','cmnt1/animaworks','main','cmnt1','candidate','2099-01-01','2099-01-01')"
+        )
+        duplicate_id = cur.lastrowid
+        con.execute("DROP TABLE ci_autofix_run_jobs")
+    migrated = CIAutofixIntakeStore(path)
+    assert migrated.find_job_for_run(repo=first.repo, run_id="101").id == first.id
+    assert migrated.dismiss_duplicate_candidates() == [duplicate_id]
+    assert migrated.dismiss_duplicate_candidates() == []
+    assert migrated.get_job(duplicate_id).status == "dismissed"
+    assert str(first.id) in migrated.get_job(duplicate_id).terminal_reason
+    assert migrated.get_job(first.id).status == "waiting_ci"
+    assert migrated.list_events(duplicate_id)[-1].data["owner_job_id"] == first.id
+
+
+def test_parallel_duplicate_intake_creates_one_job(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    store = CIAutofixIntakeStore(tmp_path / "ci.sqlite3")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: store.upsert_candidate(
+            run_id="101", repo="cmnt1/animaworks", branch="main", actor="cmnt1"), range(4)))
+    assert sum(created for _, created in results) == 1
+    assert len({job.id for job, _ in results}) == 1

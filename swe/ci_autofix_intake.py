@@ -413,6 +413,34 @@ class CIAutofixIntakeStore:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS ci_autofix_event_markers ON ci_autofix_events(job_id, message, id)")
+            has_run_ledger = con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ci_autofix_run_jobs'"
+            ).fetchone()
+            con.execute(
+                "CREATE TABLE IF NOT EXISTS ci_autofix_run_jobs ("
+                "repo TEXT NOT NULL, run_id TEXT NOT NULL, job_id INTEGER NOT NULL, "
+                "PRIMARY KEY(repo, run_id))"
+            )
+            if not has_run_ledger:
+                # Prefer an executing incident to an unstarted duplicate. Keep
+                # every inspected/attempted run, not just root and current run.
+                jobs = con.execute(
+                    "SELECT * FROM ci_autofix_jobs ORDER BY "
+                    "CASE WHEN status IN ('queued','running','waiting_ci') THEN 0 "
+                    "WHEN status = 'candidate' THEN 2 ELSE 1 END, attempt_count DESC, id DESC"
+                ).fetchall()
+                markers = ("auto-fix attempt started", "GitHub Actions run inspected", "follow-up CI run linked")
+                for job in jobs:
+                    run_ids = {job["run_id"], job["root_run_id"], job["last_run_id"]}
+                    for event in con.execute(
+                        "SELECT data_json FROM ci_autofix_events WHERE job_id = ? AND message IN (?,?,?)",
+                        (job["id"], *markers),
+                    ).fetchall():
+                        run_ids.add(str(json.loads(event["data_json"]).get("run_id") or ""))
+                    con.executemany(
+                        "INSERT OR IGNORE INTO ci_autofix_run_jobs(repo,run_id,job_id) VALUES (?,?,?)",
+                        [(job["repo"], run_id, job["id"]) for run_id in run_ids if run_id],
+                    )
 
     def upsert_candidate(
         self,
@@ -431,6 +459,13 @@ class CIAutofixIntakeStore:
     ) -> tuple[IntakeJob, bool]:
         now = utc_now()
         with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            owner = con.execute(
+                "SELECT j.* FROM ci_autofix_run_jobs r JOIN ci_autofix_jobs j ON j.id = r.job_id "
+                "WHERE r.repo = ? AND r.run_id = ?", (repo, run_id),
+            ).fetchone()
+            if owner and owner["run_id"] != run_id:
+                return self._job_from_row(owner), False
             row = con.execute("SELECT * FROM ci_autofix_jobs WHERE run_id = ?", (run_id,)).fetchone()
             if row:
                 con.execute(
@@ -479,8 +514,41 @@ class CIAutofixIntakeStore:
             row = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (cur.lastrowid,)).fetchone()
             assert row is not None
             job = self._job_from_row(row)
+            con.execute("INSERT INTO ci_autofix_run_jobs(repo,run_id,job_id) VALUES (?,?,?)", (repo, run_id, job.id))
         self.add_event(job.id, "info", "candidate created", {"run_id": run_id, "repo": repo})
         return job, True
+
+    def find_job_for_run(self, *, repo: str, run_id: str) -> IntakeJob | None:
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT j.* FROM ci_autofix_run_jobs r JOIN ci_autofix_jobs j ON j.id = r.job_id "
+                "WHERE r.repo = ? AND r.run_id = ?", (repo, run_id),
+            ).fetchone()
+        return self._job_from_row(row) if row else None
+
+    def dismiss_duplicate_candidates(self) -> list[int]:
+        """Retain the history of unstarted duplicates under their owning incident."""
+        dismissed = []
+        with self._connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            rows = con.execute(
+                "SELECT j.id, r.job_id FROM ci_autofix_jobs j JOIN ci_autofix_run_jobs r "
+                "ON r.repo = j.repo AND r.run_id = j.run_id WHERE j.id != r.job_id "
+                "AND j.status = 'candidate' AND j.attempt_count = 0 AND j.automation_enabled = 0"
+            ).fetchall()
+            for row in rows:
+                now = utc_now()
+                con.execute(
+                    "UPDATE ci_autofix_jobs SET status = 'dismissed', terminal_reason = ?, updated_at = ? WHERE id = ?",
+                    (f"同じCI案件のジョブ #{row['job_id']} に統合済みです。", now, row["id"]),
+                )
+                con.execute(
+                    "INSERT INTO ci_autofix_events(job_id,ts,level,message,data_json) VALUES (?,?,?,?,?)",
+                    (row["id"], now, "info", "duplicate candidate merged into existing incident",
+                     json.dumps({"owner_job_id": row["job_id"]})),
+                )
+                dismissed.append(int(row["id"]))
+        return dismissed
 
     def list_jobs(self, limit: int = 50, include_terminal: bool = False) -> list[IntakeJob]:
         with self._connect() as con:
@@ -511,7 +579,7 @@ class CIAutofixIntakeStore:
                 WHERE repo = ? AND branch = ?
                   AND status IN ({",".join("?" for _ in sorted(ACTIVE_STATUSES))})
                   {actor_filter}
-                ORDER BY updated_at DESC, id DESC
+                ORDER BY automation_enabled DESC, attempt_count DESC, updated_at DESC, id DESC
                 LIMIT 1
                 """,
                 params,
@@ -536,12 +604,14 @@ class CIAutofixIntakeStore:
                 raise KeyError(job_id)
             # Notifications are hints. Never roll back to an older run, or
             # overwrite a running attempt / a wait for its exact commit.
-            if row["attempt_count"] and row["status"] in {"queued", "running", "waiting_ci", "needs_attention"}:
-                return self._job_from_row(row)
             if (run_id.isdigit() and str(row["last_run_id"]).isdigit()
                     and int(run_id) <= int(row["last_run_id"])):
                 return self._job_from_row(row)
             if source_date and row["source_date"] and source_date <= row["source_date"]:
+                return self._job_from_row(row)
+            con.execute("INSERT OR IGNORE INTO ci_autofix_run_jobs(repo,run_id,job_id) VALUES (?,?,?)",
+                        (row["repo"], run_id, job_id))
+            if row["attempt_count"] and row["status"] in {"queued", "running", "waiting_ci", "needs_attention"}:
                 return self._job_from_row(row)
             con.execute(
                 """
@@ -617,8 +687,11 @@ class CIAutofixIntakeStore:
         with self._connect() as con:
             con.execute(f"UPDATE ci_autofix_jobs SET {', '.join(updates)} WHERE id = ?", params)
             row = con.execute("SELECT * FROM ci_autofix_jobs WHERE id = ?", (job_id,)).fetchone()
-        if row is None:
-            raise KeyError(job_id)
+            if row is None:
+                raise KeyError(job_id)
+            if last_run_id:
+                con.execute("INSERT OR IGNORE INTO ci_autofix_run_jobs(repo,run_id,job_id) VALUES (?,?,?)",
+                            (row["repo"], last_run_id, job_id))
         return self._job_from_row(row)
 
     def reserve_attempt(self, job_id: int) -> bool:
@@ -797,6 +870,7 @@ def poll_gmail_for_candidates(
     if gmail_client is None:
         gmail_client = default_gmail_client()
 
+    store.dismiss_duplicate_candidates()
     query = rule.resolved_query()
     messages = list(gmail_client.search_emails(query=query, max_results=rule.max_results))
     created: list[dict[str, Any]] = []
@@ -816,8 +890,11 @@ def poll_gmail_for_candidates(
             continue
         run_id = run_ids[0]
         run_url = f"https://github.com/{rule.repo}/actions/runs/{run_id}"
+        known_job = store.find_job_for_run(repo=rule.repo, run_id=run_id)
         active_job = store.find_active_job(repo=rule.repo, branch=rule.branch, actor=rule.actor)
-        if active_job and run_id not in {active_job.run_id, active_job.last_run_id}:
+        if known_job:
+            job, was_created, was_linked = known_job, False, False
+        elif active_job and run_id not in {active_job.run_id, active_job.last_run_id}:
             if not _is_newer_than_job(message_date, active_job):
                 store.add_event(
                     active_job.id,
