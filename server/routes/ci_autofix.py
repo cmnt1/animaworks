@@ -60,7 +60,7 @@ tr.selected{background:#e7f0de}
   <button onclick="startAuto()">Start Auto</button>
   <label class="inline-check">試行上限 <input id="maxAttempts" type="number" min="1" max="20" step="1" value="10" style="width:75px"></label>
   <button onclick="saveAttemptLimit()">上限を保存</button>
-  <span class="muted">累計回数（1〜20回・初期値10回）</span>
+  <span class="muted">累計回数（1〜20回・初期値10回）／1試行＝修正・push・CI確認の1サイクル</span>
   <label class="inline-check"><input id="showHistory" type="checkbox" onchange="loadJobs()">完了履歴</label>
 </div>
 <div id="status" class="status">loading...</div>
@@ -149,7 +149,15 @@ function renderRunCell(j){
 }
 function renderStateCell(j){
   const phase=j.phase||'needs_start';
-  return `<span class="phase phase-${esc(phase)}">${esc(j.phase_label||j.status)}</span>${j.automation_enabled?' <span class="pill">auto</span>':''}${j.dry_run?' <span class="pill">dry</span>':''}<br><span class="muted">${esc(j.phase_detail||'')}</span><br><span class="muted">status ${esc(j.status)} / attempt ${esc(j.attempt_count||0)}/${esc(j.max_attempts||10)}</span><br><span class="muted">${esc(j.llm_provider||'')} ${esc(j.llm_model||'')}</span>`;
+  return `<span class="phase phase-${esc(phase)}">${esc(j.progress?.label||j.phase_label||j.status)}</span>${j.automation_enabled?' <span class="pill">auto</span>':''}${j.dry_run?' <span class="pill">dry</span>':''}<br><span class="muted">${esc(j.phase_detail||'')}</span><br>${renderProgress(j)}<br><span class="muted">status ${esc(j.status)} / attempt ${esc(j.attempt_count||0)}/${esc(j.max_attempts||10)}</span><br><span class="muted">${esc(j.llm_provider||'')} ${esc(j.llm_model||'')}</span>`;
+}
+function renderProgress(j){
+  const p=j.progress;
+  if(!p)return '';
+  const seconds=Math.max(0,Number(p.elapsed_seconds)||0);
+  const elapsed=`${Math.floor(seconds/60)}分${seconds%60}秒`;
+  const active=['repairing','waiting_ci'].includes(p.stage);
+  return `<span class="muted">${active?`経過 ${esc(elapsed)} / `:''}${p.ci_status?`CI ${esc(p.ci_status)} / `:''}${p.commit?`修正 ${esc(String(p.commit).slice(0,12))}`:''}</span>${p.ci_url?` <a href="${esc(p.ci_url)}" target="_blank">CIを開く</a>`:''}`;
 }
 async function loadJobs(){
   try{
@@ -197,7 +205,8 @@ function renderJobDetail(j){
   const rootUrl=`https://github.com/${repo}/actions/runs/${root}`;
   document.getElementById('jobDetail').className='job-detail';
   document.getElementById('jobDetail').innerHTML=`
-    <div><span class="phase phase-${esc(j.phase||'needs_start')}">${esc(j.phase_label||j.status)}</span> <span class="muted">${esc(j.phase_detail||'')}</span></div>
+    <div><span class="phase phase-${esc(j.phase||'needs_start')}">${esc(j.progress?.label||j.phase_label||j.status)}</span> <span class="muted">${esc(j.phase_detail||'')}</span></div>
+    <div>${renderProgress(j)}</div>
     <div class="detail-grid">
       <div class="muted">current run</div><div><a href="${esc(currentUrl)}" target="_blank">${esc(current)}</a></div>
       <div class="muted">root run</div><div><a href="${esc(rootUrl)}" target="_blank">${esc(root)}</a></div>

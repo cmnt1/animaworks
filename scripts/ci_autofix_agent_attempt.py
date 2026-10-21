@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -44,16 +46,17 @@ Goal:
 2. Fix the root cause in this repository.
 3. Run focused local verification.
 4. Commit only the relevant changes.
-5. Push to origin {job.branch}.
-6. If a new CI run starts, monitor it when practical and continue fixing until it passes or the cause is genuinely blocked.
+5. Push ONCE using: git push origin HEAD:refs/heads/{job.branch}.
+6. Immediately finish after this push. The controller watches CI and starts the next attempt if necessary.
 
 Operational rules:
 - Use rtk for shell commands.
-- Work on branch {job.branch}; do not create a feature branch unless unavoidable.
+- This is an isolated detached worktree prepared from origin/{job.branch}. Stay in this directory; do not switch branches or create another worktree.
 - Do not revert unrelated user changes.
 - Keep commits scoped.
-- If the same failure repeats, use the new failure logs and continue the same incident rather than starting over.
-- Final output should summarize commit SHA, pushed branch, and CI run status.
+- One attempt is ONE repair/push cycle. Do not watch, poll, rerun, or wait for CI after pushing. Do not start another repair cycle.
+- If authentication, permissions or missing information block the fix, explain the blocker and finish.
+- Final output should summarize the pushed commit SHA or the precise blocker.
 """
 
 
@@ -106,11 +109,65 @@ def _git_head(repo_root: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _prepare_workspace(source: Path, destination: Path, branch: str) -> Path:
+    for args in (["fetch", "--no-tags", "origin", branch],
+                 ["worktree", "add", "--detach", str(destination), "FETCH_HEAD"]):
+        result = subprocess.run(["git", *args], cwd=source, capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise RuntimeError((result.stderr or result.stdout)[-2000:])
+    return destination
+
+
+def _pushed_commit(workspace: Path, branch: str, before: str) -> str:
+    head = _git_head(workspace)
+    if not head or head == before:
+        return ""
+    result = subprocess.run(
+        ["git", "ls-remote", "origin", f"refs/heads/{branch}"], cwd=workspace,
+        capture_output=True, text=True, timeout=30,
+    )
+    remote = result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+    return remote if remote.startswith(head) else ""
+
+
+def _stop_agent(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
+    else:
+        os.killpg(proc.pid, signal.SIGTERM)
+    proc.wait(timeout=30)
+
+
+def _run_one_cycle(proc, workspace: Path, branch: str, before: str, timeout: int) -> tuple[int, str, str]:
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                code = proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                code = None
+            pushed = _pushed_commit(workspace, branch, before)
+            if pushed:
+                # End this agent after its first confirmed push, even if it
+                # ignores the prompt and starts polling CI or another repair.
+                _stop_agent(proc)
+                return 0, pushed, ""
+            if code is not None:
+                return code, "", "新しいコミットのpushを確認できません。エージェントの報告を確認してください。"
+            if time.monotonic() >= deadline:
+                return 124, "", f"修正処理が制限時間（{timeout // 60}分）に達したため停止しました。"
+    finally:
+        _stop_agent(proc)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one CI autofix LLM attempt and record events.")
     parser.add_argument("--db", required=True)
     parser.add_argument("--job-id", required=True, type=int)
     parser.add_argument("--repo-root", default=str(_repo_root()))
+    parser.add_argument("--agent-timeout-seconds", type=int, default=1800)
     args = parser.parse_args()
 
     db_path = Path(args.db)
@@ -131,13 +188,14 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = run_dir / "prompt.txt"
     log_path = run_dir / "agent.log"
-    prompt_path.write_text(_build_prompt(job, attempt), encoding="utf-8")
 
     try:
-        cmd = _command_for_job(job, repo_root, prompt_path)
+        workspace = _prepare_workspace(repo_root, run_dir / "worktree", job.branch)
+        prompt_path.write_text(_build_prompt(job, attempt), encoding="utf-8")
+        cmd = _command_for_job(job, workspace, prompt_path)
     except Exception as exc:
         store.add_event(job.id, "error", "failed to build agent command", {"error": f"{type(exc).__name__}: {exc}"})
-        store.update_job_state(job.id, status="needs_attention", terminal_reason=str(exc))
+        store.update_job_state(job.id, status="needs_attention", automation_enabled=False, terminal_reason=str(exc))
         return 2
 
     store.add_event(
@@ -149,34 +207,29 @@ def main() -> int:
             "provider": job.llm_provider,
             "model": job.llm_model,
             "log_path": str(log_path),
-            "cwd": str(repo_root),
+            "cwd": str(workspace),
         },
     )
 
-    before_commit = _git_head(repo_root)
+    before_commit = _git_head(workspace)
     env = os.environ.copy()
-    with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(repo_root),
-            env=env,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        code = proc.wait()
-
-    last_commit = _git_head(repo_root)
-    if code == 0:
-        if not before_commit or not last_commit or before_commit == last_commit:
-            reason = "エージェントは終了しましたが、新しいコミットがありません。修正・pushの結果を確認してください。"
-            store.update_job_state(
-                job.id, status="needs_attention", automation_enabled=False,
-                last_commit=last_commit, terminal_reason=reason,
+    try:
+        with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
+            proc = subprocess.Popen(
+                cmd, cwd=str(workspace), env=env, stdout=log_file,
+                stderr=subprocess.STDOUT, text=True,
+                start_new_session=os.name != "nt",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            store.add_event(job.id, "warn", "agent made no new commit; automation stopped",
-                            {"attempt": attempt, "last_commit": last_commit, "log_path": str(log_path)})
-            return 0
+            store.add_event(job.id, "info", "repair agent process started",
+                            {"attempt": attempt, "pid": proc.pid, "workspace": str(workspace), "before_commit": before_commit})
+            code, last_commit, reason = _run_one_cycle(
+                proc, workspace, job.branch, before_commit, max(60, args.agent_timeout_seconds),
+            )
+    except Exception as exc:
+        code, last_commit, reason = 2, "", f"修正エージェントの実行に失敗しました: {exc}"
+
+    if last_commit:
         store.update_job_state(job.id, status="waiting_ci", last_commit=last_commit, terminal_reason="")
         store.add_event(
             job.id,
@@ -186,12 +239,10 @@ def main() -> int:
         )
         return 0
 
-    status = "exhausted" if attempt >= job.max_attempts else "needs_attention"
     store.update_job_state(
         job.id,
-        status=status,
-        last_commit=last_commit,
-        terminal_reason=f"agent exited with code {code}",
+        status="needs_attention", automation_enabled=False,
+        terminal_reason=reason or f"agent exited with code {code}",
     )
     store.add_event(
         job.id,

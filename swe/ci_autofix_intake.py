@@ -412,6 +412,7 @@ class CIAutofixIntakeStore:
                 )
                 """
             )
+            con.execute("CREATE INDEX IF NOT EXISTS ci_autofix_event_markers ON ci_autofix_events(job_id, message, id)")
 
     def upsert_candidate(
         self,
@@ -718,6 +719,18 @@ class CIAutofixIntakeStore:
             row = con.execute("SELECT * FROM ci_autofix_events WHERE id = ?", (cur.lastrowid,)).fetchone()
         assert row is not None
         return self._event_from_row(row)
+
+    def latest_event(self, job_id: int, messages: tuple[str, ...]) -> IntakeEvent | None:
+        """Read a lifecycle marker without a limit on intervening mail events."""
+        if not messages:
+            return None
+        with self._connect() as con:
+            row = con.execute(
+                f"SELECT * FROM ci_autofix_events WHERE job_id = ? "
+                f"AND message IN ({','.join('?' for _ in messages)}) ORDER BY id DESC LIMIT 1",
+                (job_id, *messages),
+            ).fetchone()
+        return self._event_from_row(row) if row else None
 
     def list_events(self, job_id: int, limit: int = 200) -> list[IntakeEvent]:
         with self._connect() as con:
