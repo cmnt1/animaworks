@@ -9,7 +9,7 @@ import pytest
 TRIGGER_CASES = (
     ("chat", "scoped", "interactive"),
     ("message:user", "scoped", "interactive"),
-    ("inbox:alice", "scoped", "normal"),
+    ("inbox:alice", "inbox", "inbox"),
     ("heartbeat", "heartbeat", "heartbeat"),
     ("cron:daily", "scoped", "normal"),
     ("task:task-42", "scoped", "normal"),
@@ -130,7 +130,7 @@ def _expected_mcp(
         names = set(MCP_FULL_WITH_SUBMIT)
     else:
         names = set(MCP_SCOPED)
-        if kind == "background":
+        if kind in {"background", "inbox"}:
             names.add("submit_tasks")
     if has_subordinates and kind != "consolidation":
         names.add("delegate_task")
@@ -156,7 +156,7 @@ def _expected_builder(
         names = set(_BUILDER_BASE)
         if kind == "interactive":
             names.add("trust_skill")
-        if kind == "background":
+        if kind in {"background", "inbox"}:
             names.add("submit_tasks")
     if include_notification_tools:
         names.add("call_human")

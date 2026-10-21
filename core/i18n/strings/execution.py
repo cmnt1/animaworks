@@ -180,14 +180,14 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "sdk_hooks.submit_tasks_unavailable": {
         "ja": (
-            "BLOCKED: submit_tasksは通常チャット/heartbeat/cron/TaskExecでは利用できません。"
+            "BLOCKED: submit_tasksは通常チャット/cron/TaskExecでは利用できません。"
             "この場ではRead/Bash/Grep/Edit等で直接作業してください。"
-            "バックグラウンド実行が必要な場合は、明示的なバックグラウンド実行ワークフローから起動してください。"
+            "タスク登録はInbox、heartbeat、または明示的なバックグラウンド実行ワークフローで行ってください。"
         ),
         "en": (
-            "BLOCKED: submit_tasks is not available in normal chat/heartbeat/cron/TaskExec sessions. "
+            "BLOCKED: submit_tasks is not available in normal chat/cron/TaskExec sessions. "
             "Do the work directly with Read/Bash/Grep/Edit here. "
-            "Use an explicit background execution workflow when background task submission is required."
+            "Submit tasks from inbox, heartbeat, or an explicit background execution workflow."
         ),
     },
     "sdk_hooks.submit_tasks_success": {
