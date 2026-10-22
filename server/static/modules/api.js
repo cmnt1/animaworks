@@ -32,10 +32,11 @@ export async function api(path, opts = {}) {
     const res = await fetch(_prefixed(path), fetchOpts);
 
     if (res.status === 401 && redirectOnUnauthorized) {
-      // Redirect to login screen on auth failure
+      // Redirect to the top-level login screen on auth failure. Reloading the
+      // current page loops on sub-apps like /workspace/ that start from a
+      // saved username and hit 401 again on every load.
       if (logErrors) logger.warn("Unauthorized, redirecting to login", { url: path });
-      window.location.hash = "";
-      window.location.reload();
+      window.location.href = `${basePath}/`;
       throw new Error("Unauthorized");
     }
 
