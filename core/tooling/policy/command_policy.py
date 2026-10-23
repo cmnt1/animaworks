@@ -218,7 +218,12 @@ def _matching_injection_pattern(command: str, injection_pattern_names: tuple[tup
 
 
 _OTHER_ANIMA_WRITE_MSG = "Command targets other anima's directory: {arg}"
-_TRAVERSAL_MSG = "Command argument resolves outside anima directory"
+_TRAVERSAL_MSG = (
+    "Command argument resolves outside anima directory: {arg} (relative '..' path from {cwd}). "
+    "This is a path heuristic, not a permission decision: if the target is legitimate, "
+    "rewrite it as an absolute path and rerun."
+)
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _EMPTY_MSG = "Empty command"
 
 
@@ -242,20 +247,56 @@ def _evaluate_allowlist(
     return None
 
 
+def _strip_heredoc_bodies(command: str) -> str:
+    """Drop heredoc bodies so file contents are not mistaken for arguments."""
+    out: list[str] = []
+    terminator: str | None = None
+    for line in command.split("\n"):
+        if terminator is not None:
+            if line.strip() == terminator:
+                terminator = None
+            continue
+        out.append(line)
+        m = _HEREDOC_START.search(line)
+        if m:
+            terminator = m.group(2)
+    return "\n".join(out)
+
+
 def _evaluate_traversal(
     ctx: CommandPolicyContext, segments: list[tuple[list[str] | None, str]]
 ) -> CommandDecision | None:
-    """Layer 8: reject ``..`` arguments that resolve outside the anima dir."""
+    """Layer 8: reject relative ``..`` paths that climb out of the anima dir.
+
+    Paths resolve against the working directory (tracking ``cd``), and only
+    while that directory is inside the anima dir: from elsewhere a relative
+    path reaches nothing an absolute path could not.  Absolute paths, quoted
+    strings with whitespace (scripts, remote ssh commands) and heredoc bodies
+    are not path arguments and are skipped.
+    """
+    cwd = ctx.cwd
     for argv, _raw in segments:
-        if argv is None:
+        if not argv:
+            continue
+        if argv[0] == "cd":
+            target = Path(argv[1]).expanduser() if len(argv) > 1 else ctx.cwd
+            cwd = target if target.is_absolute() else cwd / target
+            continue
+        try:
+            inside = cwd.resolve().is_relative_to(ctx.anima_dir)
+        except (ValueError, OSError):
+            inside = False
+        if not inside:
             continue
         for arg in argv[1:]:
-            if ".." not in arg:
+            if any(ch.isspace() for ch in arg) or arg.startswith("/"):
+                continue
+            path_part = arg.split("=", 1)[1] if arg.startswith("-") and "=" in arg else arg
+            if ".." not in Path(path_part).parts:
                 continue
             try:
-                resolved = (ctx.anima_dir / arg).resolve()
-                if not resolved.is_relative_to(ctx.anima_dir):
-                    return CommandDecision(False, "traversal", _TRAVERSAL_MSG)
+                if not (cwd / path_part).resolve().is_relative_to(ctx.anima_dir):
+                    return CommandDecision(False, "traversal", _TRAVERSAL_MSG.format(arg=arg, cwd=cwd))
             except (ValueError, OSError):
                 pass
     return None
@@ -346,7 +387,7 @@ def evaluate_command(command: str, ctx: CommandPolicyContext) -> CommandDecision
             return CommandDecision(False, "syntax", allow_decision.reason, injection_hit=injection_hit)
 
     # 8. traversal
-    trav_decision = _evaluate_traversal(ctx, segments)
+    trav_decision = _evaluate_traversal(ctx, split_segments(_strip_heredoc_bodies(command)))
     if trav_decision is not None:
         return replace(trav_decision, injection_hit=trav_decision.injection_hit or injection_hit)
 
