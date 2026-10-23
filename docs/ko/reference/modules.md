@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=2474822e97d798d3511bb35790a518d8a029abf53f542caad03d3c98c6137682 generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=26b4e5fcc89294ee20889ee790ce515a7e2cfff528ff526058ccfd63c732dead generated=2026-10-23 engine=luna model=gpt-6-luna translator=2 -->
 
 # 모듈 목록
 
@@ -990,7 +990,7 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 | `core.tooling.org_helpers` | 158 | — |
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
-| `core.tooling.policy.command_policy` | 455 | — |
+| `core.tooling.policy.command_policy` | 496 | — |
 | `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
