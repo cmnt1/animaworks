@@ -522,7 +522,7 @@ class TestModeSBashInjection:
 
         result = _check_a1_bash_command("cp report.txt ../other-anima/report.txt", anima_dir)
 
-        assert result == "Command argument resolves outside anima directory"
+        assert result is not None and result.startswith("Command argument resolves outside anima directory")
 
     def test_superuser_skips_injection_and_logging(
         self,

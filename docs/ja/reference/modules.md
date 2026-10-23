@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 994f6fd4abb916fab96f96d43674cda96aaa6f0aeb432daf9125099b2de44492 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 20ce1f7150337ffdf58a7b7128494765413151247ebd131542fe438b0837ff87 -->
 
 # モジュール一覧
 
@@ -990,7 +990,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.org_helpers` | 158 | — |
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
-| `core.tooling.policy.command_policy` | 455 | — |
+| `core.tooling.policy.command_policy` | 496 | — |
 | `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
