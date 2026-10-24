@@ -45,7 +45,11 @@ def physical_features(row: dict) -> dict:
     return {
         "building": str(float(building.replace(",", ""))) if building else "",
         "land": str(float(land.replace(",", ""))) if land else "",
-        "built": built, "units": units, "city": city.group(1) if city else "", "town": town, "address": address,
+        "built": built,
+        "units": units,
+        "city": city.group(1) if city else "",
+        "town": town,
+        "address": address,
     }
 
 
@@ -70,8 +74,12 @@ class PropertyRegistry:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.conn = sqlite3.connect(path, timeout=30)
-        self.conn.execute("CREATE TABLE IF NOT EXISTS properties (id INTEGER PRIMARY KEY AUTOINCREMENT, features TEXT NOT NULL)")
-        self.conn.execute("CREATE TABLE IF NOT EXISTS aliases (alias TEXT PRIMARY KEY, property_id INTEGER NOT NULL REFERENCES properties(id))")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS properties (id INTEGER PRIMARY KEY AUTOINCREMENT, features TEXT NOT NULL)"
+        )
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS aliases (alias TEXT PRIMARY KEY, property_id INTEGER NOT NULL REFERENCES properties(id))"
+        )
         self.conn.commit()
 
     def close(self) -> None:
@@ -96,7 +104,15 @@ class PropertyRegistry:
         # Listing/search pages may contain multiple properties. Do not treat their URL as a property ID.
         path = urlsplit(url).path
         detail = bool(path.strip("/")) and not re.search(r"/(?:area_|list|search|cs_)", path)
-        alias = url if detail else url + "|" + json.dumps(features, ensure_ascii=False, sort_keys=True) + "|" + normalized(row.get("title"))
+        alias = (
+            url
+            if detail
+            else url
+            + "|"
+            + json.dumps(features, ensure_ascii=False, sort_keys=True)
+            + "|"
+            + normalized(row.get("title"))
+        )
         existing = self.conn.execute("SELECT property_id FROM aliases WHERE alias=?", (alias,)).fetchone()
         method = "url_alias"
         if existing:
@@ -106,15 +122,22 @@ class PropertyRegistry:
             if len(features.get("address", "")) > len(old.get("address", "")):
                 enriched["address"] = features["address"]
             if enriched != old:
-                self.conn.execute("UPDATE properties SET features=? WHERE id=?", (json.dumps(enriched, ensure_ascii=False), number))
+                self.conn.execute(
+                    "UPDATE properties SET features=? WHERE id=?", (json.dumps(enriched, ensure_ascii=False), number)
+                )
         else:
-            candidates = [number for number, data in self.conn.execute("SELECT id, features FROM properties")
-                          if same_physical_property(features, json.loads(data))]
+            candidates = [
+                number
+                for number, data in self.conn.execute("SELECT id, features FROM properties")
+                if same_physical_property(features, json.loads(data))
+            ]
             method = "physical_features" if len(candidates) == 1 else "new_property"
             if len(candidates) == 1:
                 number = candidates[0]
             else:
-                cursor = self.conn.execute("INSERT INTO properties(features) VALUES (?)", (json.dumps(features, ensure_ascii=False),))
+                cursor = self.conn.execute(
+                    "INSERT INTO properties(features) VALUES (?)", (json.dumps(features, ensure_ascii=False),)
+                )
                 number = cursor.lastrowid
                 if len(candidates) > 1:
                     method = "ambiguous_separate"
@@ -137,8 +160,12 @@ def number_report(result: dict, comparison: dict | None, registry_path: Path, hi
             if comparison and key in comparison:
                 comparison[key] = registry.assign(comparison[key])
         rows = [r for run in result.get("portal_runs", []) for r in run.get("listings", [])]
-        return {"registry_path": str(registry_path), "listing_count": len(rows),
-                "property_count": len({r["property_id"] for r in rows}),
-                "listings": rows, "version": 1}
+        return {
+            "registry_path": str(registry_path),
+            "listing_count": len(rows),
+            "property_count": len({r["property_id"] for r in rows}),
+            "listings": rows,
+            "version": 1,
+        }
     finally:
         registry.close()
