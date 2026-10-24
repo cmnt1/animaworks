@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: c049ed237d3d070bf63fcbb56e0afe05e2aefd9d39a6400d102c25e53eb9fa49 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: cdba779573ec10f029e3db847c1fe906948a1e1e400f456f62bc010b10736109 -->
 
 # モジュール一覧
 
@@ -854,8 +854,10 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.reports` | 1 | Report generation modules managed in the AnimaWorks repository. |
 | `core.reports.pending_review_surfacer` | 450 | Surface product drafts that are stuck in レビュー待ち back to their reviewer. |
 | `core.reports.property._listing_runs（非公開）` | 123 | Listing-run tracking shared by the daily property reports. |
-| `core.reports.property.anjo_1k_product_draft` | 1120 | Create the Anjo 1K daily Products draft for Sakura review. |
-| `core.reports.property.daily_sale_product_report` | 763 | Create the daily property sale portal Products draft for Sakura review. |
+| `core.reports.property.anjo_1k_product_draft` | 1222 | Create the Anjo 1K daily Products draft for Sakura review. |
+| `core.reports.property.daily_sale_product_report` | 894 | Create the daily property sale portal Products draft for Sakura review. |
+| `core.reports.property.sale_investment_analysis` | 289 | Evidence-linked preliminary investment reports for newly observed sale listings. |
+| `core.reports.property.sale_property_registry` | 171 | Persistent physical-property numbers, independent of portal and asking price. |
 
 ## `core.reports.property`
 
