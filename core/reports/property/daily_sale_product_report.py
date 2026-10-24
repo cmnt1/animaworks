@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import math
@@ -238,10 +239,13 @@ if str(PROJECT_DIR) not in sys.path:
 
 from core.integrations.property_portal_scraper import result_to_dict, run_scan, write_outputs
 from core.reports.property._listing_runs import MAX_OBSERVATION_GAP_DAYS, Observation, classify_listings, days_cell
+from core.reports.property.sale_investment_analysis import SALE_DISCORD_THREAD_ID, create_bundle, validate_bundle
+from core.reports.property.sale_property_registry import listing_url, number_report
 
 PRODUCT_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_products")
 CATEGORY_DIR = PRODUCT_ROOT / "Property"
 DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\SalePortals")
+PROPERTY_NOTE_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_notes\Property")
 REPORT_OUTPUT_DIR = PROJECT_DIR / "reports" / "property_portals"
 DEFAULT_TASK_RESULTS_DIR = Path(r"E:\OneDriveBiz\AnimaWorks\.animaworks\animas\hikaru\state\task_results")
 TASK_RESULTS_DIR = Path(os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str(DEFAULT_TASK_RESULTS_DIR)))
@@ -249,7 +253,7 @@ TASK_RESULTS_DIR = Path(os.environ.get("ANIMAWORKS_REPORT_TASK_RESULTS_DIR", str
 TASK_CODE = "PROP-07"
 TASK_NAME = "デイリー売買情報レポート"
 SLUG_PREFIX = "daily-sale-info"
-DISCORD_THREAD_ID = "1491411026263146658"
+DISCORD_THREAD_ID = SALE_DISCORD_THREAD_ID
 MIN_GROSS_YIELD = 8.0
 
 
@@ -564,6 +568,76 @@ Sakuraはこの下書きと証跡JSONを確認し、問題がなければ frontm
 """
 
 
+def ensure_property_numbers(report_path: Path, result: dict, comparison: dict | None,
+                            data_dir: Path) -> dict:
+    numbering = number_report(result, comparison, DATA_ROOT / "property-registry.sqlite3", DATA_ROOT)
+    rows = numbering.pop("listings")
+    numbered_rows = list(rows)
+    if comparison:
+        for key in ("new_rows", "continued_rows", "deleted_rows", "unconfirmed_rows"):
+            numbered_rows.extend(comparison.get(key, []))
+    numbered_json = data_dir / "numbered-listings.json"
+    numbered_json.write_text(json.dumps(_sanitize_for_json(rows), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    numbered_csv = data_dir / "numbered-listings.csv"
+    fields = list(dict.fromkeys(["property_id", "property_match_method", *[k for row in rows for k in row]]))
+    with numbered_csv.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(_sanitize_for_json(rows))
+    text = report_path.read_text(encoding="utf-8-sig")
+    lines = []
+    numbered_table = False
+    for line in text.splitlines():
+        if line.startswith("| 媒体名 |") or line.startswith("| ポータル |"):
+            numbered_table = True
+            line = "| 物件番号 " + line
+        elif line.startswith("| 物件番号 |"):
+            numbered_table = False  # Already numbered on an earlier run.
+        elif numbered_table and line.startswith("|"):
+            urls = re.findall(r"\]\((https?://[^)]+)\)", line)
+            matches = [r for r in numbered_rows if listing_url(r.get("url")) in {listing_url(url) for url in urls}]
+            ids = {r["property_id"] for r in matches}
+            if len(ids) > 1:
+                ids = {r["property_id"] for r in matches if escape_md_cell(r.get("title")) in line}
+            label = next(iter(ids)) if len(ids) == 1 else "-"
+            line = ("|---" if re.match(r"^\|[-:]", line) else f"| {label} ") + line
+        elif not line.startswith("|"):
+            numbered_table = False
+        lines.append(line)
+    text = "\n".join(lines)
+    marker = "\n## 物件番号台帳\n"
+    text = re.sub(re.escape(marker) + r".*?(?=\n## |\Z)", "", text, flags=re.S)
+    inventory = [
+        "", f"掲載{len(rows)}件／重複統合後{numbering['property_count']}物件。番号は日付・媒体・価格変更をまたいで維持する。",
+        "同じ番号は、掲載URLの履歴または所在地・築年月・建物面積・土地面積・戸数の一致に基づく名寄せ。価格・利回りの相違は各掲載値を残す。",
+        "| 物件番号 | 掲載元 | 物件 | 価格 | 表面利回り |",
+        "|---|---|---|---:|---:|",
+        *[f"| {r['property_id']} | {escape_md_cell(r.get('portal_label'))} | [{escape_md_cell(r.get('title'))}]({r.get('url')}) | {yen(r.get('price_jpy'))} | {pct(r.get('gross_yield_percent'))} |" for r in rows],
+        "", f"番号付JSON: `{numbered_json}`", f"番号付CSV: `{numbered_csv}`", "",
+    ]
+    report_path.write_text(text.rstrip() + "\n" + marker + "\n".join(inventory), encoding="utf-8", newline="\n")
+    return {**numbering, "json_path": str(numbered_json), "json_sha256": sha256_file(numbered_json),
+            "csv_path": str(numbered_csv), "csv_sha256": sha256_file(numbered_csv)}
+
+
+def ensure_investment_analysis(report_path: Path, comparison: dict | None, report_date: str,
+                               source_json: Path, digest: str) -> dict:
+    if not sha256_matches(source_json, digest):
+        raise RuntimeError("Investment analysis source JSON SHA-256 mismatch")
+    bundle = create_bundle(comparison, report_date, source_json.parent, source_json, digest, note_root=PROPERTY_NOTE_ROOT)
+    text = report_path.read_text(encoding="utf-8-sig")
+    marker = "\n## 新規物件の投資可否分析（別レポート）\n"
+    if bundle.get("index_path"):
+        section = f"\n新規差分の{bundle['count']}物件の個別分析: [分析一覧]({Path(bundle['index_path']).as_posix()})\n"
+    elif bundle["status"] == "no_new_listings":
+        section = "\n新規物件なしのため、別途分析の作成対象なし。\n"
+    else:
+        section = "\n過去データとの比較不可のため新規判定を保留。新規物件の分析は未作成。\n"
+    text = re.sub(re.escape(marker) + r".*?(?=\n## |\Z)", "", text, flags=re.S)
+    report_path.write_text(text.rstrip() + "\n" + marker + section, encoding="utf-8", newline="\n")
+    return bundle
+
+
 def write_evidence(
     *,
     code: str,
@@ -582,6 +656,10 @@ def write_evidence(
     script_provenance: dict | None = None,
 ) -> dict:
     script_provenance = script_provenance or script_preflight()
+    property_numbering = ensure_property_numbers(report_path, result, comparison, data_json_copy.parent)
+    investment_analysis = ensure_investment_analysis(
+        report_path, comparison, report_date, data_json_copy, digest,
+    )
     fm = read_frontmatter(report_path)
     checks = {
         "report_exists": report_path.exists(),
@@ -602,6 +680,7 @@ def write_evidence(
         "assignee_hikaru": fm.get("assignee") == "hikaru",
         "reviewer_sakura": fm.get("reviewer") == "sakura",
         "script_preflight_ok": bool(script_provenance.get("ok")),
+        "investment_analysis_verified": validate_bundle(investment_analysis),
     }
     task_results_dir.mkdir(parents=True, exist_ok=True)
     evidence_path = task_results_dir / f"daily-sale-report-draft-{report_date.replace('-', '')}.json"
@@ -632,6 +711,8 @@ def write_evidence(
             ),
         },
         "comparison": comparison,
+        "investment_analysis": investment_analysis,
+        "property_numbering": property_numbering,
         "discord_thread_id": DISCORD_THREAD_ID,
         "script_path": script_provenance.get("script_path"),
         "script_sha256": script_provenance.get("script_sha256"),
@@ -684,6 +765,26 @@ def main(argv: list[str] | None = None) -> int:
     if existing:
         fm = read_frontmatter(existing)
         if fm.get("status") in {"レビュー待ち", "完了"}:
+            evidence_path = task_results_dir / f"daily-sale-report-draft-{report_date.replace('-', '')}.json"
+            if evidence_path.exists():
+                saved = json.loads(evidence_path.read_text(encoding="utf-8-sig"))
+                changed = False
+                if "property_numbering" not in saved:
+                    data_json = Path(saved["data_json_copy_path"])
+                    if not sha256_matches(data_json, saved["source_json_sha256"]):
+                        raise RuntimeError("Numbering source JSON SHA-256 mismatch")
+                    result = json.loads(data_json.read_text(encoding="utf-8-sig"))
+                    saved["property_numbering"] = ensure_property_numbers(existing, result, saved.get("comparison"), data_json.parent)
+                    changed = True
+                if changed or "investment_analysis" not in saved or not validate_bundle(saved["investment_analysis"]):
+                    saved["investment_analysis"] = ensure_investment_analysis(
+                        existing, saved.get("comparison"), report_date,
+                        Path(saved["data_json_copy_path"]), saved["source_json_sha256"],
+                    )
+                    saved["read_after_write_checks"]["investment_analysis_verified"] = validate_bundle(saved["investment_analysis"])
+                    changed = True
+                if changed:
+                    evidence_path.write_text(json.dumps(_sanitize_for_json(saved), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
             print(f"NOOP_ALREADY_CREATED: {existing} status={fm.get('status')}")
             return 0
 

@@ -19,7 +19,8 @@ def test_script_preflight_records_repo_source() -> None:
     assert provenance["checks"]["py_compile_ok"] is True
 
 
-def test_write_evidence_requires_outputs_and_records_provenance(tmp_path: Path) -> None:
+def test_write_evidence_requires_outputs_and_records_provenance(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(report, "DATA_ROOT", tmp_path / "history")
     report_path = tmp_path / "products" / "Property" / "P-00001_daily-sale-info-20260612.md"
     data_json = tmp_path / "data" / "P-00001_daily-sale-info-20260612.json"
     data_md = tmp_path / "data" / "P-00001_daily-sale-info-20260612.md"
@@ -68,7 +69,7 @@ reviewer: sakura
             "portal_runs": [
                 {
                     "listing_count": 1,
-                    "listings": [{"review_status": "passes_min_gross_yield"}],
+                    "listings": [{"review_status": "passes_min_gross_yield", "url": "https://example.test/a"}],
                 }
             ]
         },
