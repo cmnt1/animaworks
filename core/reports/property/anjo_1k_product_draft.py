@@ -669,42 +669,14 @@ def build_minimini_diff_section(diff: dict | None) -> str:
 """
 
 
-def render_markdown(
-    product_id: int,
-    code: str,
-    data: dict,
-    source_json: Path,
-    copy_json: Path,
-    digest: str,
-    created: str,
-    updated: str,
-    confirmed: str,
-    task_results_dir: Path = TASK_RESULTS_DIR,
-    prev_minimini_count: int | None = None,
-    minimini_diff: dict | None = None,
-) -> str:
-    d = data["latest_date"]
-    prev = data["prev_date"]
-    meta = data["meta"]
-    use_sqm_unit_price = report_uses_sqm_unit_price(d)
-    lc = data["listing_count"]
-    rent = data["rent"]
-    unit = data["unit_price"]
-    vac = data["vacancy_proxy"]
-    title = f"{TASK_NAME}（{d}）"
-    trend_rows = "\n".join(
-        f"| {x['date']} | {x['listing_count']}件 | {yen(x['avg_rent'])}円 | {yen(x['median_rent'])}円 | {yen(x['avg_unit_price'])}円/坪 |"
-        for x in data["trend_7d"]
-    )
-    comments = "\n".join(f"- {comment}" for comment in build_comments(data))
-    evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{d.replace('-', '')}.json"
-
+def build_minimini_sections(
+    data: dict, prev_minimini_count: int | None = None, minimini_diff: dict | None = None,
+) -> tuple[str, str]:
     # minimini section
     minimini = data.get("minimini_url_snapshot") or {}
     minimini_count = minimini.get("listing_count")
     minimini_summary_line = ""
     minimini_section = ""
-    minimini_gate = validate_minimini_snapshot(data)
     if minimini_count is not None:
         if prev_minimini_count is not None:
             diff = int(minimini_count) - int(prev_minimini_count)
@@ -739,6 +711,44 @@ def render_markdown(
 | HTTPステータス | {minimini.get("http_status", "-")} |
 | エラー | {minimini.get("error") or minimini.get("listings_error") or "-"} |
 """
+
+    return minimini_summary_line, minimini_section
+
+
+def render_markdown(
+    product_id: int,
+    code: str,
+    data: dict,
+    source_json: Path,
+    copy_json: Path,
+    digest: str,
+    created: str,
+    updated: str,
+    confirmed: str,
+    task_results_dir: Path = TASK_RESULTS_DIR,
+    prev_minimini_count: int | None = None,
+    minimini_diff: dict | None = None,
+) -> str:
+    d = data["latest_date"]
+    prev = data["prev_date"]
+    meta = data["meta"]
+    use_sqm_unit_price = report_uses_sqm_unit_price(d)
+    lc = data["listing_count"]
+    rent = data["rent"]
+    unit = data["unit_price"]
+    vac = data["vacancy_proxy"]
+    title = f"{TASK_NAME}（{d}）"
+    trend_rows = "\n".join(
+        f"| {x['date']} | {x['listing_count']}件 | {yen(x['avg_rent'])}円 | {yen(x['median_rent'])}円 | {yen(x['avg_unit_price'])}円/坪 |"
+        for x in data["trend_7d"]
+    )
+    comments = "\n".join(f"- {comment}" for comment in build_comments(data))
+    evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{d.replace('-', '')}.json"
+
+    minimini_gate = validate_minimini_snapshot(data)
+    minimini_summary_line, minimini_section = build_minimini_sections(
+        data, prev_minimini_count, minimini_diff
+    )
 
     # ROOF TREE (own-property) section
     roof_summary_line, roof_section = build_roof_tree_section(data)
@@ -968,6 +978,71 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def refresh_existing_minimini(
+    report_path: Path, report_date: str, task_results_dir: Path, script_provenance: dict,
+) -> dict | None:
+    """Incorporate a late local capture without rerunning DB extraction or review edits."""
+    fm = read_frontmatter(report_path)
+    source_json = Path(fm["source_json"])
+    copy_json = Path(fm["source_json_copy"])
+    data = json.loads(source_json.read_text(encoding="utf-8-sig"))
+    if validate_minimini_snapshot(data)["ok"]:
+        return None
+
+    extractor = runpy.run_path(str(EXTRACT_SCRIPT))
+    html, capture = extractor["load_minimini_capture"](report_date.replace("-", ""))
+    if html is None:
+        return None
+    snapshot = extractor["_parse_minimini_snapshot"](
+        {
+            "url": extractor["MINIMINI_URL"],
+            "fetched_at": capture.get("captured_at"),
+            "capture_path": capture["path"],
+            "final_url": capture.get("url"),
+            "method": "Chrome閲覧キャプチャ（拡張 minimini_capture）+ p.kensu strict HTML parse",
+            "fetch_status": "failed",
+            "listing_count": None,
+        },
+        html,
+        fetch_details=False,
+    )
+    refreshed = {**data, "minimini_url_snapshot": snapshot}
+    if not validate_minimini_snapshot(refreshed)["ok"]:
+        return None
+
+    summary, section = build_minimini_sections(
+        refreshed,
+        get_prev_minimini_count(data.get("prev_date", "")),
+        build_minimini_diff(report_date, snapshot, load_minimini_history(report_date)),
+    )
+    old_text = report_path.read_text(encoding="utf-8-sig")
+    text, section_count = re.subn(
+        r"^## minimini掲載状況\n.*?(?=^## |\Z)",
+        lambda _: section.strip() + "\n\n",
+        old_text, count=1, flags=re.M | re.S,
+    )
+    text, summary_count = re.subn(
+        r"^- minimini掲載(?:一覧|件数):.*$", lambda _: summary.strip(), text, count=1, flags=re.M,
+    )
+    if section_count != 1 or summary_count != 1:
+        raise ValueError(f"Cannot locate minimini section and summary in {report_path}")
+    payload = json.dumps(refreshed, ensure_ascii=False, indent=2) + "\n"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    text = text.replace(fm["source_json_sha256"], digest)
+    text = re.sub(
+        r"^updated:.*$", f"updated: {datetime.now(JST).replace(microsecond=0).isoformat()}",
+        text, count=1, flags=re.M,
+    )
+    text = text.replace(" miniminiは取得未完了の注記を残し、完了の必須条件にはしません。", "")
+    for path in (source_json, copy_json):
+        path.write_text(payload, encoding="utf-8", newline="\n")
+    report_path.write_text(text, encoding="utf-8", newline="\n")
+    return write_evidence(
+        fm["code"], report_date, report_path, copy_json, source_json, digest,
+        task_results_dir=task_results_dir, script_provenance=script_provenance,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     task_results_dir = args.task_results_dir
@@ -985,6 +1060,12 @@ def main(argv: list[str] | None = None) -> int:
     if existing_today:
         old_fm = read_frontmatter(existing_today)
         if old_fm.get("status") in {"レビュー待ち", "完了"}:
+            evidence = refresh_existing_minimini(
+                existing_today, today_iso, task_results_dir, script_provenance,
+            )
+            if evidence is not None:
+                print(json.dumps(evidence, ensure_ascii=False))
+                return 0 if evidence["status"] == "done" else 1
             print(f"NOOP_ALREADY_CREATED: {existing_today} status={old_fm.get('status')}")
             return 0
 
