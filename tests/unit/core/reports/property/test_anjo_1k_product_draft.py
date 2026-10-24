@@ -2,12 +2,137 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from core.reports.property import anjo_1k_product_draft as report
+
+
+@pytest.mark.parametrize("status", ["レビュー待ち", "完了"])
+@pytest.mark.parametrize("capture_state", ["valid", "missing", "incomplete", "already_available"])
+def test_late_capture_refresh_preserves_review_edits(tmp_path, monkeypatch, status, capture_state):
+    source = tmp_path / "source.json"
+    copied = tmp_path / "copy.json"
+    markdown = tmp_path / "P-00406_anjo-1k-20261025.md"
+    successful = {
+        "fetch_status": "success", "listing_count": 1,
+        "listings": {"room_count": 1, "rooms": [{}], "parking_enriched": {"skipped": 1}},
+    }
+    data = {
+        "latest_date": "2026-10-25", "prev_date": None, "rent": {"latest": 60055.9},
+        "minimini_url_snapshot": successful if capture_state == "already_available" else {"fetch_status": "failed"},
+    }
+    source.write_text(json.dumps(data), encoding="utf-8")
+    copied.write_bytes(source.read_bytes())
+    digest = report.sha256_file(source)
+    original = f"""---
+type: product
+code: P-00406
+category: Property
+status: {status}
+task_code: {report.TASK_CODE}
+report_date: 2026-10-25
+assignee: hikaru
+reviewer: sakura
+confirmed: true
+review_hold: false
+submitted: 2026-10-25
+source_json: {source}
+source_json_copy: {copied}
+source_json_sha256: {digest}
+updated: old
+---
+## サマリー
+- minimini掲載一覧: **取得未完了（注記付き完了可）**
+## コメント
+独立レビューで加筆した留保。平均賃料60,055.9円。
+## minimini掲載状況
+取得未完了
+## ROOF TREE
+レビュー済みのモデル留保。
+## データソース
+JSON SHA-256: `{digest}`
+"""
+    markdown.write_text(original, encoding="utf-8")
+    calls = []
+
+    def load_capture(date):
+        calls.append(date)
+        return (None, "no capture") if capture_state == "missing" else (
+            "captured HTML", {"path": "capture.html", "captured_at": "2026-10-25T07:03:40+0900"},
+        )
+
+    def parse(snapshot, html, fetch_details):
+        assert fetch_details is False
+        return {**snapshot, **successful, **({"listing_count": 2} if capture_state == "incomplete" else {})}
+
+    def extractor(path):
+        assert str(path) == str(report.EXTRACT_SCRIPT)
+        return {"load_minimini_capture": load_capture, "_parse_minimini_snapshot": parse, "MINIMINI_URL": "url"}
+
+    monkeypatch.setattr(report.runpy, "run_path", extractor)
+    monkeypatch.setattr(report, "get_prev_minimini_count", lambda _: None)
+    monkeypatch.setattr(report, "load_minimini_history", lambda _: [])
+    monkeypatch.setattr(report, "build_minimini_diff", lambda *a: None)
+    before = source.read_bytes()
+    evidence = report.refresh_existing_minimini(markdown, "2026-10-25", tmp_path / "evidence", {"ok": True})
+    if capture_state != "valid":
+        assert evidence is None
+        assert source.read_bytes() == before
+        assert copied.read_bytes() == before
+        assert markdown.read_text(encoding="utf-8") == original
+        assert calls == ([] if capture_state == "already_available" else ["20261025"])
+        return
+
+    assert calls == ["20261025"]
+    assert evidence["status"] == "done"
+    assert evidence["warnings"] == []
+    assert evidence["advisory_checks"]["minimini_available"] is True
+    assert all(evidence["read_after_write_checks"].values())
+    assert source.read_bytes() == copied.read_bytes()
+    refreshed = json.loads(source.read_text(encoding="utf-8"))
+    assert refreshed["rent"] == data["rent"]
+    assert refreshed["minimini_url_snapshot"]["listing_count"] == 1
+    text = markdown.read_text(encoding="utf-8")
+    assert "取得未完了" not in text
+    assert "minimini掲載件数: **1件**" in text
+    assert "独立レビューで加筆した留保。平均賃料60,055.9円。" in text
+    assert "レビュー済みのモデル留保。" in text
+    fm = report.read_frontmatter(markdown)
+    assert fm["status"] == status
+    assert fm["confirmed"] == "true"
+    assert fm["review_hold"] == "false"
+    assert fm["submitted"] == "2026-10-25"
+    assert fm["source_json_sha256"] == report.sha256_file(source)
 
 
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
+
+
+@pytest.mark.parametrize("refreshed", [False, True])
+def test_main_checks_late_capture_before_existing_report_skip(tmp_path, monkeypatch, capsys, refreshed):
+    markdown = tmp_path / "existing.md"
+    write_text(markdown, "---\nstatus: 完了\n---\n")
+    monkeypatch.setattr(report, "CATEGORY_DIR", tmp_path)
+    monkeypatch.setattr(report, "find_existing", lambda _: markdown)
+    monkeypatch.setattr(report, "script_preflight", lambda: {"ok": True})
+    calls = []
+
+    def refresh(*args):
+        calls.append(args)
+        return {"status": "done"} if refreshed else None
+
+    def no_db():
+        raise AssertionError("Existing reports must not rerun DB extraction")
+
+    monkeypatch.setattr(report, "refresh_existing_minimini", refresh)
+    monkeypatch.setattr(report, "read_scrape_status", no_db)
+    assert report.main(["--report-date", "2026-10-25", "--task-results-dir", str(tmp_path)]) == 0
+    assert len(calls) == 1
+    assert calls[0][:3] == (markdown, "2026-10-25", tmp_path)
+    output = capsys.readouterr().out
+    assert ("NOOP_ALREADY_CREATED:" in output) is not refreshed
 
 
 def test_script_preflight_records_repo_source() -> None:
