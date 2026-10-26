@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 20ce1f7150337ffdf58a7b7128494765413151247ebd131542fe438b0837ff87 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 2ea31221257e921d32968f101aef31461e9429db993bab6d553f759bd68d1899 -->
 
 # モジュール一覧
 
@@ -149,7 +149,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 694 | — |
+| `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -378,7 +378,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 400 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
@@ -707,6 +707,7 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging.messenger` | 1082 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
+| `core.messaging.recipient_status` | 79 | — |
 | `core.messaging.reply_grants` | 253 | — |
 | `core.messaging.sender` | 32 | — |
 
@@ -839,7 +840,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1445 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
@@ -970,12 +971,12 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
-| `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
+| `core.tooling._handler_protocols（非公開）` | 225 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 996 | — |
+| `core.tooling.handler_comms` | 1027 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 374 | — |

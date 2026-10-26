@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=26b4e5fcc89294ee20889ee790ce515a7e2cfff528ff526058ccfd63c732dead generated=2026-10-23 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af generated=2026-10-26 engine=local model=deepseek-v4.1-flash-1017 translator=2 -->
 
 # Module List
 
@@ -142,14 +142,14 @@ LLM agent execution, conversation control, and engine integration.
 
 Digital Anima lifecycle and runtime objects.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 694 | — |
+| `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -368,9 +368,9 @@ Tool execution, command execution, and safety controls.
 
 ## `core.i18n`
 
-Translation catalog and language selection.
+Translation catalogs and language selection.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
@@ -378,7 +378,7 @@ Translation catalog and language selection.
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 400 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
@@ -695,9 +695,9 @@ Storage, search, and organization of conversation and episode memories.
 
 ## `core.messaging`
 
-Message delivery between Animas and to and from external parties.
+Message delivery between Anima instances and external systems.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.messaging` | 6 | — |
 | `core.messaging.board_fanout` | 95 | — |
@@ -707,6 +707,7 @@ Message delivery between Animas and to and from external parties.
 | `core.messaging.messenger` | 1082 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
+| `core.messaging.recipient_status` | 79 | — |
 | `core.messaging.reply_grants` | 253 | — |
 | `core.messaging.sender` | 32 | — |
 
@@ -822,7 +823,7 @@ System prompt and context construction.
 
 Anima main runtime components, inter-process communication, and task execution.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
 | `core.runtime.cron_diagnostics` | 85 | Registration-time diagnostics for cron schedules that waste LLM runs. |
@@ -839,7 +840,7 @@ Anima main runtime components, inter-process communication, and task execution.
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1445 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
@@ -967,15 +968,15 @@ Text token estimation and truncation to fit within budget.
 
 Tool schemas, permissions, and execution infrastructure.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
-| `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
+| `core.tooling._handler_protocols（非公開）` | 225 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 996 | — |
+| `core.tooling.handler_comms` | 1027 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 374 | — |

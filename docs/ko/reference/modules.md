@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=26b4e5fcc89294ee20889ee790ce515a7e2cfff528ff526058ccfd63c732dead generated=2026-10-23 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af generated=2026-10-26 engine=local model=deepseek-v4.1-flash-1017 translator=2 -->
 
 # 모듈 목록
 
@@ -142,14 +142,14 @@ LLM 에이전트 실행, 대화 제어 및 엔진 연동.
 
 Digital Anima의 라이프사이클과 런타임 객체.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 764 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 694 | — |
+| `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -370,30 +370,30 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 번역 카탈로그와 언어 선택.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원 |
-| `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.company` | 14 | 회사 관리용 현지화 문자열 |
-| `core.i18n.strings.config` | 836 | 도메인별 i18n 문자열 |
+| `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
+| `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
+| `core.i18n.strings.company` | 14 | Localized strings for company management. |
+| `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.handler` | 400 | 도메인별 i18n 문자열(핸들러 1부) |
-| `core.i18n.strings.handler_ext` | 393 | 도메인별 i18n 문자열(핸들러 2부) |
-| `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
+| `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 527 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 라우트 모듈) |
-| `core.i18n.strings.models` | 70 | 모델 검사용 현지화 CLI 메시지 |
+| `core.i18n.strings.misc` | 527 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc_routes` | 21 | Domain-specific i18n strings (legacy route modules). |
+| `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
-| `core.i18n.strings.room_manager` | 29 | 회의실 관리자용 i18n 문자열 |
-| `core.i18n.strings.server` | 251 | 도메인별 i18n 문자열 |
-| `core.i18n.strings.supervisor` | 140 | 도메인별 i18n 문자열 |
+| `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
+| `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
+| `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능) |
-| `core.i18n.strings.tooling_schema` | 506 | 도메인별 i18n 문자열(schema.*) |
-| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 i18n 문자열(schema.* 2부) |
+| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -695,9 +695,9 @@ Model Context Protocol 서버와 클라이언트.
 
 ## `core.messaging`
 
-anima 간 및 외부와의 메시지 전달.
+Anima 간 및 외부와의 메시지 전달.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.messaging` | 6 | — |
 | `core.messaging.board_fanout` | 95 | — |
@@ -707,6 +707,7 @@ anima 간 및 외부와의 메시지 전달.
 | `core.messaging.messenger` | 1082 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
+| `core.messaging.recipient_status` | 79 | — |
 | `core.messaging.reply_grants` | 253 | — |
 | `core.messaging.sender` | 32 | — |
 
@@ -820,27 +821,27 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 
 ## `core.runtime`
 
-Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
+Anima 메인의 런타임 컴포넌트, 프로세스 간 통신, 작업 실행.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.runtime` | 1 | 개별 Anima 프로세스가 소유하는 런타임 구성 요소. |
-| `core.runtime.cron_diagnostics` | 85 | LLM 실행을 낭비하는 cron 일정의 등록 시 진단. |
-| `core.runtime.cron_followup` | 169 | 레거시 및 격리된 실행기를 위한 공통 command-cron 후속 정책. |
-| `core.runtime.event_bus` | 88 | Anima 메인 실행기가 발생시킨 이벤트를 위한 인프로세스 이벤트 버퍼. |
-| `core.runtime.inbox_rate_limiter` | 371 | 이벤트 기반 받은 편지함 깨우기 및 지연 트리거 관리. |
-| `core.runtime.ipc` | 508 | 플랫폼별 전송을 통해 JSON Lines를 사용하는 IPC 통신 계층. |
-| `core.runtime.ipc_v2` | 414 | Anima 메인과 작업 실행기 간에 사용되는 영속적 양방향 IPC v2. |
-| `core.runtime.memory_service` | 774 | Anima 메인이 소유하는 벡터 메모리 서비스. |
-| `core.runtime.process_role` | 25 | AnimaWorks 프로세스 진입점 간에 공유되는 프로세스 역할 메타데이터. |
-| `core.runtime.runner` | 1409 | Anima 하위 프로세스의 자식 프로세스 진입점. |
+| `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
+| `core.runtime.cron_diagnostics` | 85 | Registration-time diagnostics for cron schedules that waste LLM runs. |
+| `core.runtime.cron_followup` | 169 | Shared command-cron follow-up policy for legacy and isolated runners. |
+| `core.runtime.event_bus` | 88 | In-process event buffer for events emitted by an Anima main runner. |
+| `core.runtime.inbox_rate_limiter` | 371 | Event-driven inbox wakeups and deferred trigger management. |
+| `core.runtime.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
+| `core.runtime.ipc_v2` | 414 | Persistent duplex IPC v2 used between an Anima main and task runners. |
+| `core.runtime.memory_service` | 774 | Anima-main-owned vector memory service. |
+| `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
+| `core.runtime.runner` | 1409 | Child process entry point for Anima subprocess. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 1058 | 하트비트 및 cron 작업을 위한 APScheduler 관리. |
+| `core.runtime.scheduler_manager` | 1058 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
-| `core.runtime.streaming_handler` | 441 | 스트리밍 IPC 메시지 처리기. |
-| `core.runtime.task_runner` | 1049 | 일회용 작업 실행기 진입점. |
-| `core.runtime.task_runner_supervisor` | 1445 | 일회용 작업 실행기 프로세스의 Anima 메인 측 수명 주기 관리자. |
-| `core.runtime.transport` | 240 | IPC server/client 통신을 위한 전송 헬퍼. |
+| `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
+| `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
+| `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
 
@@ -965,17 +966,17 @@ Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
 ## `core.tooling`
 
-도구 스키마, 권한, 실행 기반.
+도구의 스키마, 권한, 실행 기반.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
-| `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
+| `core.tooling._handler_protocols（非公開）` | 225 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 996 | — |
+| `core.tooling.handler_comms` | 1027 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 374 | — |

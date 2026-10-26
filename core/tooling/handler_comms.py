@@ -295,10 +295,41 @@ class CommsToolsMixin:
             logger.exception("on_message_sent callback failed")
 
         base = f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
-        feedback = self._build_send_feedback(internal_to)
-        if feedback:
-            return f"{base}\n{feedback}"
+        extras = [
+            line
+            for line in (self._build_recipient_busy_notice(internal_to), self._build_send_feedback(internal_to))
+            if line
+        ]
+        if extras:
+            return "\n".join([base, *extras])
         return base
+
+    def _build_recipient_busy_notice(self: _CommsToolsHost, to: str) -> str:
+        """Tell the sender when *to* is stuck in a long inbox run and will read later."""
+        try:
+            from core.messaging.recipient_status import read_recipient_inbox_busy
+            from core.time_utils import now_local
+
+            busy = read_recipient_inbox_busy(Path(self._messenger.shared_dir), to)
+            if busy is None:
+                return ""
+            minutes = int((now_local() - busy.since).total_seconds() // 60)
+            notice = t(
+                "handler.send_recipient_inbox_busy",
+                to=to,
+                since=busy.since.strftime("%H:%M"),
+                elapsed=f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m",
+                count=busy.unread_count,
+            )
+            if busy.oldest_unread_at is not None:
+                notice += t(
+                    "handler.send_recipient_inbox_oldest",
+                    oldest=busy.oldest_unread_at.strftime("%H:%M"),
+                )
+            return notice
+        except Exception:
+            logger.debug("Recipient busy notice failed for %s", to, exc_info=True)
+            return ""
 
     def _build_send_feedback(self: _CommsToolsHost, to: str) -> str:
         """Build behavioral feedback showing recent send history to the same recipient.

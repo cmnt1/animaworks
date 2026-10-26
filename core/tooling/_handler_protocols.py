@@ -14,6 +14,7 @@ class _CommsToolsHost(Protocol):
     _anima_dir: Any
     _anima_name: Any
     _build_send_feedback: Any
+    _build_recipient_busy_notice: Any
     _call_human_keys: Any
     _channel_company_boundary_error: Any
     _cross_company_communication_error: Any

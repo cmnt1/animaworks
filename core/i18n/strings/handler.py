@@ -360,6 +360,22 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "[24h] {to}宛: {count}通",
         "en": "[24h] To {to}: {count} messages",
     },
+    "handler.send_recipient_inbox_busy": {
+        "ja": (
+            "⏳ {to} は {since} から別のメッセージの処理中です（経過 {elapsed}）。"
+            "このメッセージはその処理が終わるまで読まれません（未読 {count} 件）。"
+            "急ぎなら別の手段を検討してください。"
+        ),
+        "en": (
+            "⏳ {to} has been processing other messages since {since} ({elapsed} elapsed). "
+            "This message will not be read until that run ends ({count} unread). "
+            "If it is urgent, consider another route."
+        ),
+    },
+    "handler.send_recipient_inbox_oldest": {
+        "ja": "最も古い未読は {oldest} 着。",
+        "en": " Oldest unread arrived at {oldest}.",
+    },
     "handler.dm_intent_error": {
         "ja": (
             "Error: DMのintentは 'report', 'question' のみ許可されています。acknowledgment・感謝・FYIはBoardを使用してください（post_channel ツール）。"
