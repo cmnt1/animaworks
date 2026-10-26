@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=600ec76ef4e2d22428ca824bb830e28a3495e578bc227f9febaeea6fb721b9a0 generated=2026-10-21 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=7a7fd10c38325936902a7ce867a67bfc2eba571ed2e65ac728e48c63bb7a4edd generated=2026-10-26 engine=manual model=codex translator=2 -->
 
 # 모듈 목록
 
@@ -854,8 +854,10 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 | `core.reports` | 1 | Report generation modules managed in the AnimaWorks repository. |
 | `core.reports.pending_review_surfacer` | 450 | Surface product drafts that are stuck in 리뷰 대기 back to their reviewer. |
 | `core.reports.property._listing_runs（非公開）` | 123 | Listing-run tracking shared by the daily property reports. |
-| `core.reports.property.anjo_1k_product_draft` | 1120 | Create the Anjo 1K daily Products draft for Sakura review. |
-| `core.reports.property.daily_sale_product_report` | 763 | Create the daily property sale portal Products draft for Sakura review. |
+| `core.reports.property.anjo_1k_product_draft` | 1222 | Create the Anjo 1K daily Products draft for Sakura review. |
+| `core.reports.property.daily_sale_product_report` | 894 | Create the daily property sale portal Products draft for Sakura review. |
+| `core.reports.property.sale_investment_analysis` | 289 | 새로 확인된 매물에 대해 근거와 연결된 예비 투자 보고서를 생성합니다. |
+| `core.reports.property.sale_property_registry` | 171 | 포털 및 매매 호가와 무관한 영구 부동산 번호를 관리합니다. |
 
 ## `core.reports.property`
 
@@ -1039,7 +1041,7 @@ anima 메인의 런타임 컴포넌트, 프로세스 간 통신, 작업 실행.
 | `core.tooling.org_helpers` | 158 | — |
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
-| `core.tooling.policy.command_policy` | 465 | — |
+| `core.tooling.policy.command_policy` | 508 | — |
 | `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 77 | — |
