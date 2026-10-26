@@ -101,6 +101,7 @@ class TaskRunnerJob:
     external_cancelled: bool = False
     grace_acked: asyncio.Event = field(default_factory=asyncio.Event)
     process_start_time: float | None = None
+    started_at: str = field(default_factory=lambda: now_local().isoformat())
     capabilities: dict[str, bool] = field(default_factory=dict)
     stream_events: list[asyncio.Queue[dict[str, Any] | None]] = field(default_factory=list)
     inject_waiters: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)

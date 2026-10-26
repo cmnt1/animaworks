@@ -357,6 +357,7 @@ class DigitalAnima(
             path.parent.mkdir(parents=True, exist_ok=True)
             lanes: list[str] = []
             subprocesses: list[dict[str, Any]] = []
+            lane_started_at: dict[str, str] = {}
             try:
                 for key, lock in self._conversation_locks.items():
                     if lock.locked():
@@ -372,11 +373,17 @@ class DigitalAnima(
                         lanes.append("background")
                     if pid is not None:
                         subprocesses.append({"pid": pid, "kind": "cron_command"})
+                if self._inbox_lock.locked() and self._busy_since is not None:
+                    lane_started_at["inbox"] = self._busy_since.isoformat()
                 for job in self._isolated_busy_jobs().values():
                     identity = getattr(job, "identity", None)
                     lane = getattr(identity, "display_lane", None)
                     if lane and lane not in lanes:
                         lanes.append(str(lane))
+                    job_started = getattr(job, "started_at", None)
+                    if lane and isinstance(job_started, str):
+                        prev = lane_started_at.get(str(lane))
+                        lane_started_at[str(lane)] = min(prev, job_started) if prev else job_started
                     job_pid = getattr(job, "pid", None)
                     if job_pid is not None:
                         subprocesses.append({"pid": job_pid, "kind": str(getattr(identity, "lane", None) or "task")})
@@ -390,6 +397,7 @@ class DigitalAnima(
                 "last_progress_at": last_progress.isoformat(),
                 "updated_at": now.isoformat(),
                 "lanes": lanes,
+                "lane_started_at": lane_started_at,
                 "processes": subprocesses,
             }
             atomic_write_json(path, payload, indent=None, trailing_newline=False)
