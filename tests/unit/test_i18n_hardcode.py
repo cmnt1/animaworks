@@ -74,6 +74,8 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 # Fork business reports and policies intentionally retain Japanese literals.
+# Property-report counts include the Japanese Products and investment-analysis
+# output introduced on 2026-10-25; future additions still trip this ratchet.
 KNOWN_VIOLATIONS: dict[str, int] = {'cli/tool_dispatch.py': 1,
  'core/anima/factory.py': 9,
  'core/anima/inbox.py': 2,
@@ -99,8 +101,10 @@ KNOWN_VIOLATIONS: dict[str, int] = {'cli/tool_dispatch.py': 1,
  'core/prompt/org_context.py': 3,
  'core/reports/pending_review_surfacer.py': 11,
  'core/reports/property/_listing_runs.py': 1,
- 'core/reports/property/anjo_1k_product_draft.py': 52,
- 'core/reports/property/daily_sale_product_report.py': 30,
+ 'core/reports/property/anjo_1k_product_draft.py': 54,
+ 'core/reports/property/daily_sale_product_report.py': 43,
+ 'core/reports/property/sale_investment_analysis.py': 73,
+ 'core/reports/property/sale_property_registry.py': 1,
  'core/tooling/handler_memory.py': 1,
  'core/tooling/policy/schemas/admin.py': 2,
  'core/voice/emotion_style.py': 6,
