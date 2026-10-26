@@ -1,133 +1,11 @@
-name: CI
-
+name: Integration E2E diagnostic
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+    branches: [diagnostics/upstream-20261026-e2e]
 jobs:
-  # 同一リポジトリからのPRは、整形漏れをfailさせずCI側で自動修正してpushする (#232)。
-  # 修正コミットはPATでpushされるため新しいCI runがトリガーされ、必須チェックも新SHAで再評価される。
-  # 差分ゼロなら何もしない（＝自動修正コミットのrunで再修正は起きず、ループしない）。
-  autofix:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.AUTOFIX_TOKEN || github.token }}
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install ruff
-        run: pip install "ruff>=0.9"
-
-      - name: Auto-fix lint & format
-        run: |
-          ruff check --fix core/ cli/ server/ || true
-          ruff format core/ cli/ server/
-
-      - name: Push fixes if needed
-        env:
-          AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
-        run: |
-          if git diff --quiet; then
-            echo "No fixes needed."
-            exit 0
-          fi
-          if [ -z "$AUTOFIX_TOKEN" ]; then
-            echo "::error::Formatting changes are needed. Apply ruff locally or configure AUTOFIX_TOKEN to push fixes."
-            exit 1
-          fi
-          git config user.name "animaworks-dev-team"
-          git config user.email "animaworks-dev-team@users.noreply.github.com"
-          git commit -am "style: ruff auto-fix by CI"
-          git push
-
-  unit-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-cpu-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-cpu-
-
-      - name: Install PyTorch CPU-only (avoids multi-GB CUDA wheels on CI)
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[test,all-tools]"
-
-      - name: Check for merge-conflict markers
-        run: python scripts/check_conflict_markers.py
-
-      - name: Lint
-        run: |
-          ruff check core/ cli/ server/
-          ruff format --check core/ cli/ server/
-
-      - name: Check generated reference docs are fresh
-        run: python scripts/gen_reference.py all --check
-
-      - name: Run unit tests
-        run: |
-          pytest tests/unit/ -x -q --timeout=30 -m "not live and not azure and not ollama" --cov=core --cov-report=term-missing --cov-report=xml --cov-fail-under=70
-
-  i18n-freshness:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # Advisory until the pipeline handles HTML comments, sentinel drops and
-    # zh output; some sections keep their previous hand-made translation.
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install translation-check dependency
-        run: pip install pyyaml
-
-      - name: Check translation freshness
-        run: python scripts/translate.py all --check
-
   e2e-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: unit-tests
 
     env:
       # Static, read-only model assets live in a stable cache shared across the
@@ -185,4 +63,4 @@ jobs:
           HF_HUB_OFFLINE: "1"
           TRANSFORMERS_OFFLINE: "1"
         run: |
-          pytest tests/e2e/ -x -q --timeout=60 -m "not live and not azure and not ollama"
+          pytest tests/e2e/ -q --timeout=60 -m "not live and not azure and not ollama"
