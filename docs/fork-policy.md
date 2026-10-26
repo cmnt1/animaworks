@@ -50,6 +50,12 @@ switch applies to both hourly and daily runs. Shared worktrees with any dirty
 paths, standalone clones, or failed Git inspection are retained regardless of
 age. Remove only clean linked worktrees through Git without `--force`.
 
+The 2026-10-26 integration adopts cwd-relative traversal checks and the login
+redirect fix. Keep Windows shell backslashes intact and recognize native
+absolute paths (drive paths and UNC, including option values) before applying
+the relative-traversal heuristic. Other command and file-access guards remain
+in force.
+
 ---
 
 ## 2. Notion is disabled by default
