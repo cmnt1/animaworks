@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=07611040a4e544cbf7172ace0f96d907fe8cd197a2557cdd22300f89986c183b generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=07d8d27e3b6d2e9d317d098e9ef5f766d55d502b3319e3cd4d9e26e8afb4bcc6 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -396,21 +396,23 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 제공업체 및 기본 매개변수. |
+| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 공급자 및 기본 매개변수. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | codex CLI가 있으면 이미지 생성에 최우선으로 사용 |
-| `image_gen.style_reference` | `str \| None` | `null` | 조직 전체에 적용할 스타일 참조 이미지 경로 |
-| `image_gen.style_prefix` | `str` | `""` | 캐릭터 프롬프트 앞에 추가할 공통 스타일 태그 |
-| `image_gen.style_suffix` | `str` | `""` | 캐릭터 프롬프트 뒤에 추가할 공통 스타일 태그 |
-| `image_gen.negative_prompt_extra` | `str` | `""` | 네거티브 프롬프트에 추가할 태그 |
-| `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer 강도 (0.0-1.0) |
-| `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer 정보 추출 (0.0-1.0) |
+| `image_gen.style_reference` | `str \| None` | `null` | 조직 전체에서 사용할 스타일 참조 이미지 경로 |
+| `image_gen.style_prefix` | `str` | `""` | 캐릭터 프롬프트 앞에 추가되는 공통 스타일 태그 |
+| `image_gen.style_suffix` | `str` | `""` | 캐릭터 프롬프트 뒤에 추가되는 공통 스타일 태그 |
+| `image_gen.negative_prompt_extra` | `str` | `""` | 네거티브 프롬프트에 추가되는 태그 |
+| `image_gen.vibe_strength` | `float` | `0.6` | 바이브 전송 강도 (0.0-1.0) |
+| `image_gen.vibe_info_extracted` | `float` | `0.8` | 바이브 전송 정보 추출 (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | 3D 모델 생성 활성화 (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | 기본 픽셀 시트. None이면 번들로 제공되는 sample_01.png 사용 |
+| `image_gen.pixel_concurrency` | `int` | `4` | 픽셀 시트 행별 codex image_gen 호출 병렬 실행 |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
-| `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | 사실적인 스타일에 적용할 재정의 값 |
-| `image_gen.diffusers_text2img_model_anime` | `str` | `""` | 애니메이션 스타일에 적용할 재정의 값 |
+| `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | 사실적인 스타일에 대한 재정의 |
+| `image_gen.diffusers_text2img_model_anime` | `str` | `""` | 애니메이션 스타일에 대한 재정의 |
 | `image_gen.diffusers_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `image_gen.diffusers_torch_dtype` | `Literal['auto', 'float16', 'float32', 'bfloat16']` | `"auto"` | — |
 | `image_gen.diffusers_local_files_only` | `bool` | `true` | — |

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=aa73c8f763c012dbdd5335f1b697780f7ce5d92ed4875b9ca56e804623405f3c generated=2026-10-28 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=ba79af08c61e7e44d240a876ad4c6dff000724c47a3101d6cd571103a0cc0db0 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -65,21 +65,21 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/assets.py`
 
-| GET | `/api/animas/{name}/assets` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 사용 가능한 에셋 목록을 표시합니다. | `server/routes/assets.py:list_assets` |
-| POST | `/api/animas/{name}/assets/generate` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 캐릭터 에셋 생성 파이프라인을 실행합니다. | `server/routes/assets.py:generate_assets` |
-| POST | `/api/animas/{name}/assets/generate-expression` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 버스트업 표정 변형을 요청 시 생성합니다. | `server/routes/assets.py:generate_expression_on_demand` |
-| GET | `/api/animas/{name}/assets/metadata` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 사용 가능한 에셋에 대한 구조화된 메타데이터를 반환합니다. | `server/routes/assets.py:get_asset_metadata` |
-| POST | `/api/animas/{name}/assets/regenerate-step` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 파이프라인의 한 단계를 재생성합니다 (전신, 버스트업, 아이콘, 치비, 3D, 리깅, 애니메이션). | `server/routes/assets.py:regenerate_asset_step` |
-| POST | `/api/animas/{name}/assets/remake-confirm` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 미리보기를 수락하고 나머지 모든 에셋을 연쇄적으로 재구축합니다. | `server/routes/assets.py:remake_confirm` |
-| DELETE | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 가장 최근 백업에서 복원하여 리메이크 미리보기를 취소합니다. | `server/routes/assets.py:cancel_remake_preview` |
-| GET | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 생성된 미리보기 파일 목록을 표시합니다. | `server/routes/assets.py:list_remake_previews` |
-| POST | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전신 미리보기를 생성합니다. 선택적으로 Vibe Transfer를 사용할 수 있습니다. | `server/routes/assets.py:remake_preview` |
-| POST | `/api/animas/{name}/assets/upload-fullbody` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | PNG/JPEG를 업로드하여 애니마의 전신 참조 이미지를 덮어씁니다. | `server/routes/assets.py:upload_fullbody_asset` |
-| GET | `/api/animas/{name}/assets/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 에셋 디렉토리에서 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
-| HEAD | `/api/animas/{name}/assets/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 에셋 디렉토리에서 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
-| GET | `/api/animas/{name}/attachments/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 첨부 파일 디렉토리에서 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
-| HEAD | `/api/animas/{name}/attachments/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 첨부 파일 디렉토리에서 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
-| GET | `/api/media/proxy` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/assets.py:media_proxy` |
+| GET | `/api/animas/{name}/assets` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | List available assets for an anima. | `server/routes/assets.py:list_assets` |
+| POST | `/api/animas/{name}/assets/generate` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
+| POST | `/api/animas/{name}/assets/generate-expression` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
+| GET | `/api/animas/{name}/assets/metadata` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return structured metadata about a anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
+| POST | `/api/animas/{name}/assets/regenerate-step` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
+| POST | `/api/animas/{name}/assets/remake-confirm` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Accept the preview and cascade-rebuild all remaining assets. | `server/routes/assets.py:remake_confirm` |
+| DELETE | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Cancel a remake preview by restoring from the most recent backup. | `server/routes/assets.py:cancel_remake_preview` |
+| GET | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | List generated preview files. | `server/routes/assets.py:list_remake_previews` |
+| POST | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Generate a fullbody preview, optionally using Vibe Transfer. | `server/routes/assets.py:remake_preview` |
+| POST | `/api/animas/{name}/assets/upload-fullbody` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Upload a PNG/JPEG to overwrite the anima's full-body reference image. | `server/routes/assets.py:upload_fullbody_asset` |
+| GET | `/api/animas/{name}/assets/{filename}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
+| HEAD | `/api/animas/{name}/assets/{filename}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
+| GET | `/api/animas/{name}/attachments/{filename}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
+| HEAD | `/api/animas/{name}/attachments/{filename}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
+| GET | `/api/media/proxy` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/assets.py:media_proxy` |
 
 ## `server/routes/auth.py`
 

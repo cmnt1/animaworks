@@ -31,6 +31,11 @@ from core.integrations._image_glb import (
     optimize_glb,
     strip_mesh_from_glb,
 )
+from core.integrations._image_pixel import (
+    PIXEL_SHEET_FILENAME,
+    generate_pixel_sheet,
+)
+from core.integrations.image.codex import codex_available
 from core.platform.locks import file_lock
 
 if TYPE_CHECKING:
@@ -59,6 +64,7 @@ class PipelineResult:
     model_path: Path | None = None
     rigged_model_path: Path | None = None
     animation_paths: dict[str, Path] = field(default_factory=dict)
+    pixel_sheet_path: Path | None = None
     errors: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     retry_after: str | None = None
@@ -74,6 +80,7 @@ class PipelineResult:
             "model": str(self.model_path) if self.model_path else None,
             "rigged_model": str(self.rigged_model_path) if self.rigged_model_path else None,
             "animations": {k: str(v) for k, v in self.animation_paths.items()},
+            "pixel_sheet": str(self.pixel_sheet_path) if self.pixel_sheet_path else None,
             "errors": self.errors,
             "skipped": self.skipped,
             "retry_after": self.retry_after,
@@ -114,6 +121,8 @@ def _append_image_error(result: PipelineResult, step: str, exc: BaseException) -
         result.errors.append(t("image_generation.codex_failed", step=step, reason=reason))
     elif missing_backend:
         result.errors.append(t("image_generation.no_backend", step=step))
+    elif step == "pixel":
+        result.errors.append(t("image_generation.pixel_failed", step=step, error=raw))
     else:
         result.errors.append(f"{step}: {exc}")
 
@@ -166,6 +175,7 @@ class ImageGenPipeline:
         "bustup": "avatar_bustup.png",
         "icon": "icon.png",
         "chibi": "avatar_chibi.png",
+        "pixel": "pixel_sheet.png",
         "model": "avatar_chibi.glb",
         "rigged_model": "avatar_chibi_rigged.glb",
     }
@@ -412,9 +422,9 @@ class ImageGenPipeline:
         if steps:
             enabled = set(steps)
         elif self._is_realistic:
-            enabled = {"fullbody", "bustup", "icon"}
+            enabled = {"fullbody", "bustup", "icon", "pixel"}
         else:
-            enabled = {"fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"}
+            enabled = {"fullbody", "bustup", "icon", "chibi", "pixel", "3d", "rigging", "animations"}
         anim_map = animations if animations is not None else _DEFAULT_ANIMATIONS
         result = PipelineResult()
 
@@ -530,6 +540,8 @@ class ImageGenPipeline:
         # When fullbody was freshly generated, derived assets are stale
         # and must be regenerated regardless of skip_existing.
         skip_derived = skip_existing and not fullbody_freshly_generated
+        bustup_freshly_generated = False
+        chibi_freshly_generated = False
         # ── Step 2: Bust-up (expressions) ──
         chibi_bytes: bytes | None = None
 
@@ -546,6 +558,7 @@ class ImageGenPipeline:
             neutral_path = self._assets_dir / self._bustup_filename("neutral")
 
             if "neutral" in expr_list:
+                neutral_existed_before = neutral_path.exists()
                 try:
                     path = self.generate_bustup_expression(
                         reference_image=fullbody_bytes,
@@ -557,6 +570,8 @@ class ImageGenPipeline:
                         bustup_ref_bytes = path.read_bytes()
                         result.bustup_paths["neutral"] = path
                         result.bustup_path = path
+                        if not skip_derived or not neutral_existed_before:
+                            bustup_freshly_generated = True
                 except Exception as exc:
                     _append_image_error(result, "bustup_neutral", exc)
                     logger.error("Bustup neutral failed: %s", exc)
@@ -576,6 +591,8 @@ class ImageGenPipeline:
                 if expr == "neutral":
                     continue  # already handled above
                 try:
+                    expression_path = self._assets_dir / self._bustup_filename(expr)
+                    expression_existed_before = expression_path.exists()
                     path = self.generate_bustup_expression(
                         reference_image=ref_for_expressions,
                         expression=expr,
@@ -583,6 +600,8 @@ class ImageGenPipeline:
                     )
                     if path:
                         result.bustup_paths[expr] = path
+                        if not skip_derived or not expression_existed_before:
+                            bustup_freshly_generated = True
                 except Exception as exc:
                     _append_image_error(result, f"bustup_{expr}", exc)
                     logger.error("Bustup expression '%s' failed: %s", expr, exc)
@@ -654,12 +673,40 @@ class ImageGenPipeline:
                     )
                     chibi_path.write_bytes(chibi_bytes)
                     result.chibi_path = chibi_path
+                    chibi_freshly_generated = True
                     logger.info("Step 4 complete: %s", chibi_path)
                     _notify("chibi", "completed", 100)
                 except Exception as exc:
                     _append_image_error(result, "chibi", exc)
                     logger.error("Step 4 failed: %s", exc)
                     _notify("chibi", "error", 0)
+
+        # ── Pixel sheet (after bustup/chibi so identity references are fresh) ──
+        if "pixel" in enabled:
+            pixel_path = self._assets_dir / PIXEL_SHEET_FILENAME
+            pixel_skip = skip_existing and not bustup_freshly_generated and not chibi_freshly_generated
+            if not codex_available():
+                result.skipped.append("pixel")
+                logger.info("Pixel sheet skipped: codex CLI is not available")
+            elif pixel_skip and pixel_path.exists():
+                result.skipped.append("pixel")
+                result.pixel_sheet_path = pixel_path
+            else:
+                try:
+                    _notify("pixel", "generating", 0)
+                    pixel_path = generate_pixel_sheet(
+                        self._anima_dir,
+                        self._config,
+                        prompt,
+                        progress_callback,
+                    )
+                    result.pixel_sheet_path = pixel_path
+                    logger.info("Pixel sheet complete: %s", pixel_path)
+                    _notify("pixel", "completed", 100)
+                except Exception as exc:
+                    _append_image_error(result, "pixel", exc)
+                    logger.error("Pixel sheet generation failed: %s", exc)
+                    _notify("pixel", "error", 0)
 
         # ── Step 5: 3-D model from chibi ──
         meshy_task_id: str | None = None  # tracked for rigging input

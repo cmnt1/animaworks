@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: ebd3f8665e357337eaee3bd7ea54842e976aefb57712f6154707482248305d24 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 6d31d48925a1da870a7c36c765f0a159d2135c55020e19b9a249c5c7748dbce5 -->
 
 # モジュール一覧
 
@@ -47,7 +47,7 @@
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
-| `cli.commands.remake_cmd` | 272 | — |
+| `cli.commands.remake_cmd` | 279 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
@@ -147,7 +147,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
-| `core.anima.asset_reconciler` | 764 | — |
+| `core.anima.asset_reconciler` | 786 | — |
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
@@ -207,7 +207,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1538 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1540 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -391,7 +391,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
@@ -444,7 +444,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
-| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pixel（非公開）` | 624 | Generate a Pixel Workspace character sheet from an approved base sheet. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 435 | SQLite message cache for Slack (offline search, unreplied detection). |
@@ -466,13 +467,13 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
-| `core.integrations.image.codex` | 327 | Codex CLI image generation client (image_gen tool via local codex). |
+| `core.integrations.image.codex` | 348 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
 | `core.integrations.image.diffusers_local` | 905 | Local Diffusers-backed image generation helpers. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext and Flux Pro text-to-image API clients. |
 | `core.integrations.image.meshy` | 311 | Meshy Image-to-3D, Rigging, and Animation API client. |
 | `core.integrations.image.novelai` | 193 | NovelAI V4.5 API client for anime full-body image generation. |
-| `core.integrations.image.prompts` | 197 | Prompt constants for bustup, chibi, and expression variants. |
+| `core.integrations.image.prompts` | 266 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
@@ -1108,7 +1109,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1456 | — |
+| `server.routes.assets` | 1472 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 7c67168b9256aef6f76f0ceb83b26c36e622fbc9a927fbfe24162105bda47c5d -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: cfc846a4b436eace357e6163396eb05d561204aedfb0558fd3653ba3d1f9a36a -->
 
 # 設定リファレンス
 
@@ -407,6 +407,8 @@
 | `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer strength (0.0-1.0) |
 | `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer information extraction (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | Enable 3D model generation (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | Base pixel sheet; None uses the bundled sample_01.png |
+| `image_gen.pixel_concurrency` | `int` | `4` | Parallel codex image_gen calls for pixel sheet rows |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | Override for realistic style |
