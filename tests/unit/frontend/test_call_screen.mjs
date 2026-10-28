@@ -147,7 +147,8 @@ const { CallScreen, formatElapsedTime } = await import(callModuleUrl);
 const renderUtilsSource = readFileSync(resolve(__dirname, "../../../server/static/shared/chat/render-utils.js"), "utf8")
   .replace(/^import \{ t \} from .*;$/m, 'const t = (key, params = {}) => key === "chat.call.record_duration" ? `Call ${params.time}` : key === "chat.call.open_transcript" ? "Open transcript" : key === "chat.call.you" ? "You" : key;')
   .replace(/^import \{ escapeAttr as _escapeAttr \} from .*;$/m, "const _escapeAttr = value => String(value);")
-  .replace(/^import \{ api \} from .*;$/m, "const api = async () => ({});");
+  .replace(/^import \{ api \} from .*;$/m, "const api = async () => ({});")
+  .replace(/^import \{ bustUrl, faceUrl \} from .*;$/m, "const bustUrl = () => \"\"; const faceUrl = () => \"\";");
 const renderUtilsUrl = "data:text/javascript;base64," + Buffer.from(renderUtilsSource, "utf8").toString("base64");
 const { renderHistoryMessage } = await import(renderUtilsUrl);
 
