@@ -338,6 +338,22 @@ class ConversationMixin:
                     }
                 )
 
+            elif e.type == "voice_call":
+                self._flush_tool_calls(messages, pending_tool_calls)
+                messages.append(
+                    {
+                        "ts": e.ts,
+                        "role": "assistant",
+                        "type": "voice_call",
+                        "content": e.summary or e.content,
+                        "started_at": e.meta.get("started_at", ""),
+                        "duration_seconds": e.meta.get("duration_seconds", 0),
+                        "transcript": e.meta.get("transcript", []),
+                        "source_key": "voice_call",
+                        "tool_calls": [],
+                    }
+                )
+
             elif e.type == "heartbeat_start":
                 self._flush_tool_calls(messages, pending_tool_calls)
                 messages.append(

@@ -8,9 +8,9 @@ import {
 import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
-import { openVoicePopup } from "./voice-popup.js";
+import { openCallScreen } from "./call-screen.js";
 
-const LONG_PRESS_MS = 500;
+const ANIMA_TAB_LONG_PRESS_MS = 500;
 
 export function createAnimaController(ctx) {
   const $ = ctx.$;
@@ -19,6 +19,84 @@ export function createAnimaController(ctx) {
   let _selectGen = 0;
   let _tooltipEl = null;
   let _tooltipHideTimer = null;
+  let _callButton = null;
+
+  function _ensureCallButton() {
+    const header = state.container?.querySelector(".chat-anima-tabs-header");
+    if (!header) return;
+
+    let slot = header.querySelector('[data-slot="head-tools"]');
+    if (!slot) {
+      const actions = header.querySelector(".chat-header-actions");
+      if (!actions) return;
+      slot = document.createElement("div");
+      slot.className = "chat-pane-head-tools";
+      slot.dataset.slot = "head-tools";
+      actions.appendChild(slot);
+    }
+    if (!_callButton || !_callButton.isConnected) {
+      _callButton = document.createElement("button");
+      _callButton.type = "button";
+      _callButton.className = "chat-call-btn";
+      _callButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>';
+      _callButton.addEventListener("click", () => {
+        const anima = state.selectedAnima;
+        if (!anima) return;
+        const page = state.container?.closest(".chat-page-layout") || state.rootContainer?.querySelector(".chat-page-layout");
+        openCallScreen(anima, {
+          container: page,
+          threadId: state.selectedThreadId || "default",
+          onClose: () => {
+            if (state.selectedAnima) ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
+          },
+          onRecord: (record) => {
+            if (state.selectedAnima === anima && (state.selectedThreadId || "default") === record.thread_id) {
+              ctx.controllers.renderer?.pollSelectedChat?.();
+            }
+          },
+        });
+      });
+      slot.appendChild(_callButton);
+    } else if (_callButton.parentElement !== slot) {
+      slot.appendChild(_callButton);
+    }
+
+    const name = state.selectedAnima || "";
+    _callButton.hidden = !name;
+    _callButton.title = t("chat.call.call_title", { name });
+    _callButton.setAttribute("aria-label", t("chat.call.call_title", { name }));
+  }
+
+  function _suppressLongPressClick(el) {
+    let timer = null;
+    let longPressFired = false;
+    const clearTimer = (reset = false) => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (reset) longPressFired = false;
+    };
+
+    el.addEventListener("pointerdown", (event) => {
+      if (event.button != null && event.button !== 0) return;
+      clearTimer(true);
+      timer = setTimeout(() => {
+        timer = null;
+        longPressFired = true;
+      }, ANIMA_TAB_LONG_PRESS_MS);
+    });
+    el.addEventListener("pointerup", () => clearTimer());
+    el.addEventListener("pointerleave", () => clearTimer());
+    el.addEventListener("pointercancel", () => clearTimer());
+    el.addEventListener("contextmenu", (event) => {
+      if (timer || longPressFired) event.preventDefault();
+    });
+    el.addEventListener("click", (event) => {
+      if (!longPressFired) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      longPressFired = false;
+    }, true);
+  }
 
   function _getTooltip() {
     if (_tooltipEl) return _tooltipEl;
@@ -138,6 +216,7 @@ export function createAnimaController(ctx) {
   }
 
   function renderAnimaTabs() {
+    _ensureCallButton();
     const container = $("chatAnimaTabs");
     if (!container) return;
     if (state.animaTabs.length === 0) { container.innerHTML = ""; return; }
@@ -158,12 +237,6 @@ export function createAnimaController(ctx) {
 
     container.querySelectorAll(".anima-tab").forEach(btn => {
       btn.addEventListener("click", e => {
-        if (btn._longPressFired) {
-          e.preventDefault();
-          e.stopPropagation();
-          btn._longPressFired = false;
-          return;
-        }
         const anima = e.currentTarget?.dataset?.anima;
         if (!anima) return;
         if (anima === state.selectedAnima) {
@@ -172,15 +245,7 @@ export function createAnimaController(ctx) {
         }
         openOrSelectAnima(anima);
       });
-      _bindAnimaLongPress(btn, (anima) => {
-        openVoicePopup(anima, {
-          onClose: () => {
-            if (state.selectedAnima) {
-              ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
-            }
-          },
-        });
-      });
+      _suppressLongPressClick(btn);
       btn.addEventListener("mouseenter", () => _showTabTooltip(btn));
       btn.addEventListener("mouseleave", () => _hideTabTooltip());
       btn.addEventListener("touchstart", () => {
@@ -444,62 +509,6 @@ export function createAnimaController(ctx) {
       }
     }
     for (const n of names) ensureAnimaTabAvatar(n);
-  }
-
-  /**
-   * Long-press (500ms) on anima tab opens the voice popup.
-   * Cancels on pointerup/leave/cancel/scroll. Suppresses click after fire.
-   * Blocks contextmenu only while the long-press timer is active.
-   */
-  function _bindAnimaLongPress(el, onLongPress) {
-    let timer = null;
-    let suppressContextMenu = false;
-
-    const clearTimer = () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      suppressContextMenu = false;
-      window.removeEventListener("scroll", onScroll, true);
-    };
-
-    const onScroll = () => clearTimer();
-
-    el.addEventListener("pointerdown", (e) => {
-      if (e.button != null && e.button !== 0) return;
-      el._longPressFired = false;
-      suppressContextMenu = true;
-      window.addEventListener("scroll", onScroll, true);
-      timer = setTimeout(() => {
-        timer = null;
-        suppressContextMenu = false;
-        window.removeEventListener("scroll", onScroll, true);
-        const anima = el.dataset?.anima;
-        if (!anima) return;
-        el._longPressFired = true;
-        try { el.releasePointerCapture?.(e.pointerId); } catch { /* ignore */ }
-        onLongPress(anima);
-      }, LONG_PRESS_MS);
-    });
-
-    el.addEventListener("pointerup", clearTimer);
-    el.addEventListener("pointerleave", clearTimer);
-    el.addEventListener("pointercancel", clearTimer);
-
-    el.addEventListener("contextmenu", (e) => {
-      if (suppressContextMenu || el._longPressFired) {
-        e.preventDefault();
-      }
-    });
-
-    // Swallow click that follows a fired long-press (capture, before select handlers).
-    el.addEventListener("click", (e) => {
-      if (!el._longPressFired) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      el._longPressFired = false;
-    }, true);
   }
 
   return {

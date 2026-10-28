@@ -6,6 +6,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -232,8 +235,106 @@ def create_sessions_router() -> APIRouter:
                 raise HTTPException(status_code=400, detail=f"Invalid thread_id: {thread_id}") from None
             file_view = _thread_file_conversation_view(anima_dir, safe_thread_id)
             if file_view and _count_view_messages(file_view) > _count_view_messages(view):
+                call_messages = [
+                    message
+                    for session in view.get("sessions", [])
+                    for message in session.get("messages", [])
+                    if message.get("type") == "voice_call"
+                ]
+                if call_messages:
+                    file_messages = [
+                        message
+                        for session in file_view.get("sessions", [])
+                        for message in session.get("messages", [])
+                    ]
+                    present_calls = {
+                        (message.get("ts", ""), message.get("type", ""))
+                        for message in file_messages
+                    }
+                    file_messages.extend(
+                        message
+                        for message in call_messages
+                        if (message.get("ts", ""), message.get("type", "")) not in present_calls
+                    )
+                    file_messages.sort(key=lambda message: message.get("ts", ""))
+                    file_view = {
+                        "sessions": ActivityLogger._group_into_sessions(file_messages, 10),
+                        "has_more": False,
+                        "next_before": None,
+                    }
                 return file_view
         return view
+
+    @router.post("/animas/{name}/conversation/calls")
+    async def record_voice_call(name: str, request: Request, payload: dict[str, Any]):
+        """Persist a completed voice call in the Anima's conversation history."""
+        if not name or name.startswith(".") or "/" in name or ".." in name:
+            raise HTTPException(status_code=400, detail="Invalid Anima name")
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        try:
+            thread_id = validate_thread_id(payload.get("thread_id", "default"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        duration = payload.get("duration_seconds", 0)
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            raise HTTPException(status_code=400, detail="duration_seconds must be a number")
+        try:
+            numeric_duration = float(duration)
+        except (OverflowError, ValueError):
+            raise HTTPException(status_code=400, detail="duration_seconds must be finite") from None
+        if not math.isfinite(numeric_duration):
+            raise HTTPException(status_code=400, detail="duration_seconds must be finite")
+        duration_seconds = max(0, min(int(numeric_duration), 86_400))
+
+        started_at = payload.get("started_at", "")
+        if not isinstance(started_at, str) or len(started_at) > 64:
+            raise HTTPException(status_code=400, detail="started_at must be an ISO timestamp")
+        try:
+            datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="started_at must be an ISO timestamp") from None
+
+        summary = payload.get("summary", "")
+        if not isinstance(summary, str):
+            raise HTTPException(status_code=400, detail="summary must be a string")
+        summary = summary[:60]
+
+        raw_transcript = payload.get("transcript", [])
+        if not isinstance(raw_transcript, list) or len(raw_transcript) > 500:
+            raise HTTPException(status_code=400, detail="transcript must contain at most 500 lines")
+        transcript: list[dict[str, str]] = []
+        total_transcript_chars = 0
+        for line in raw_transcript:
+            if not isinstance(line, dict) or line.get("speaker") not in {"user", "assistant"}:
+                raise HTTPException(status_code=400, detail="transcript lines need a valid speaker")
+            text = line.get("text", "")
+            if not isinstance(text, str):
+                raise HTTPException(status_code=400, detail="transcript line text must be a string")
+            total_transcript_chars += len(text)
+            if total_transcript_chars > 100_000:
+                raise HTTPException(status_code=400, detail="transcript is too long")
+            transcript.append({"speaker": line["speaker"], "text": text})
+
+        activity = ActivityLogger(anima_dir)
+        entry = await asyncio.to_thread(
+            activity.log,
+            "voice_call",
+            content=summary,
+            summary=summary,
+            channel="chat",
+            origin="human",
+            meta={
+                "thread_id": thread_id,
+                "started_at": started_at,
+                "duration_seconds": duration_seconds,
+                "transcript": transcript,
+            },
+        )
+        return {"ok": True, "ts": entry.ts}
 
     @router.get("/animas/{name}/sessions/{session_id}")
     async def get_session_detail(

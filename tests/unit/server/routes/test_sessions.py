@@ -71,6 +71,7 @@ class TestListSessions:
         assert data["episodes"] == []
         assert data["transcripts"] == []
 
+
     @patch("core.config.models.load_model_config")
     @patch("server.routes.sessions.ConversationMemory")
     @patch("server.routes.sessions.ShortTermMemory")
@@ -106,6 +107,66 @@ class TestListSessions:
         assert data["active_conversation"] is not None
         assert data["active_conversation"]["exists"] is True
         assert data["active_conversation"]["turn_count"] == 1
+
+
+class TestRecordVoiceCall:
+    async def test_call_record_is_saved_and_returned_in_conversation_history(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        (anima_dir / "activity_log").mkdir(parents=True)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        payload = {
+            "started_at": "2026-10-28T12:00:00+09:00",
+            "duration_seconds": 84,
+            "thread_id": "default",
+            "summary": "証明書の設定を確認しました。",
+            "transcript": [
+                {"speaker": "user", "text": "証明書の状態はどう？"},
+                {"speaker": "assistant", "text": "設定を確認しました。"},
+            ],
+        }
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            saved = await client.post("/api/animas/alice/conversation/calls", json=payload)
+            history = await client.get("/api/animas/alice/conversation/history")
+
+        assert saved.status_code == 200
+        assert saved.json()["ok"] is True
+        assert history.status_code == 200
+        messages = [message for session in history.json()["sessions"] for message in session["messages"]]
+        call = next(message for message in messages if message.get("type") == "voice_call")
+        assert call["content"] == payload["summary"]
+        assert call["started_at"] == payload["started_at"]
+        assert call["duration_seconds"] == 84
+        assert call["transcript"] == payload["transcript"]
+
+    async def test_call_record_survives_named_thread_file_fallback(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        thread_dir = anima_dir / "state" / "conversations"
+        thread_dir.mkdir(parents=True)
+        (anima_dir / "activity_log").mkdir()
+        (thread_dir / "research.json").write_text(json.dumps({
+            "turns": [
+                {"role": "human", "timestamp": "2026-10-28T10:00:00+09:00", "content": "最初の質問"},
+                {"role": "assistant", "timestamp": "2026-10-28T10:01:00+09:00", "content": "最初の回答"},
+            ],
+        }), encoding="utf-8")
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/animas/alice/conversation/calls", json={
+                "started_at": "2026-10-28T12:00:00+09:00",
+                "duration_seconds": 20,
+                "thread_id": "research",
+                "summary": "調査結果を伝えました。",
+                "transcript": [],
+            })
+            history = await client.get("/api/animas/alice/conversation/history?thread_id=research")
+
+        assert history.status_code == 200
+        messages = [message for session in history.json()["sessions"] for message in session["messages"]]
+        assert any(message.get("type") == "voice_call" for message in messages)
 
 
 # ── GET /animas/{name}/sessions/{session_id} ────────────

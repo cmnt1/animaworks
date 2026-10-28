@@ -81,6 +81,7 @@ EVENT_SETS: dict[str, frozenset[str]] = {
             "error",
             "human_notify",
             "human_reply",
+            "voice_call",
         }
     ),
     # Idle-compaction context set (session summary extraction).
