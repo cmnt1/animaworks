@@ -17,6 +17,7 @@ class ChatSession {
     this._streamingMsg = null;
     this._abortController = null;
     this._pendingQueue = [];
+    this._prefetchedHistory = null;
     /** Epoch ms when the current stream started; null when idle. */
     this._streamingSince = null;
   }
@@ -134,13 +135,14 @@ export class ChatSessionManager extends EventTarget {
     this.getSession(anima, thread).historyState = hs;
   }
 
-  async loadHistory(anima, thread = "default", limit = 50) {
+  async loadHistory(anima, thread = "default", limit = 50, fetchHistory = null) {
     const session = this.getSession(anima, thread);
+    session._prefetchedHistory = null;
     session.historyState = { ...createHistoryState(), loading: true };
     this.#dispatch("history-loading", { anima, thread });
 
     try {
-      const data = await this.#config.fetchHistory(anima, limit, null, thread);
+      const data = await (fetchHistory || this.#config.fetchHistory)(anima, limit, null, thread);
       session.historyState = createHistoryState();
       applyHistoryData(session.historyState, data);
     } catch {
@@ -153,7 +155,7 @@ export class ChatSessionManager extends EventTarget {
     return session.historyState;
   }
 
-  async loadMoreHistory(anima, thread = "default", limit = 50) {
+  async loadMoreHistory(anima, thread = "default", limit = 50, fetchHistory = null) {
     const session = this.getSession(anima, thread);
     const hs = session.historyState;
     if (!hs || !hs.hasMore || hs.loading) return;
@@ -162,13 +164,38 @@ export class ChatSessionManager extends EventTarget {
     this.#dispatch("history-loading", { anima, thread });
 
     try {
-      const data = await this.#config.fetchHistory(anima, limit, hs.nextBefore, thread);
+      const fetcher = fetchHistory || this.#config.fetchHistory;
+      const prefetched = session._prefetchedHistory;
+      const usePrefetched = prefetched?.before === hs.nextBefore && prefetched.fetchHistory === fetcher;
+      if (prefetched && !usePrefetched) session._prefetchedHistory = null;
+      const data = usePrefetched
+        ? await prefetched.promise
+        : await fetcher(anima, limit, hs.nextBefore, thread);
+      if (usePrefetched) session._prefetchedHistory = null;
       applyHistoryData(hs, data, { prepend: true });
     } catch {
+      session._prefetchedHistory = null;
       hs.hasMore = false;
     }
     hs.loading = false;
     this.#dispatch("history-loaded", { anima, thread });
+  }
+
+  prefetchMoreHistory(anima, thread = "default", limit = 50, fetchHistory = null) {
+    const session = this.getSession(anima, thread);
+    const hs = session.historyState;
+    if (!hs?.hasMore || hs.loading || !hs.nextBefore) return null;
+    const fetcher = fetchHistory || this.#config.fetchHistory;
+    if (session._prefetchedHistory?.before === hs.nextBefore
+        && session._prefetchedHistory.fetchHistory === fetcher) return session._prefetchedHistory.promise;
+
+    const before = hs.nextBefore;
+    const promise = fetcher(anima, limit, before, thread);
+    session._prefetchedHistory = { before, fetchHistory: fetcher, promise };
+    promise.catch(() => {
+      if (session._prefetchedHistory?.before === before) session._prefetchedHistory = null;
+    });
+    return promise;
   }
 
   mergePolledHistory(anima, thread, pollData) {

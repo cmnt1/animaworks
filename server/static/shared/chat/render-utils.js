@@ -1096,6 +1096,87 @@ export function renderCollapsibleActivityBundle(items, opts) {
   );
 }
 
+/** Render one lazy background group in the compact chat feed. */
+export function renderFeedBackgroundGroup(group, opts) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const kinds = group?.kinds || {};
+  const participants = [...new Set([opts.animaName, ...(group?.participants || [])].filter(Boolean))];
+  const priority = ["dm", "cron", "heartbeat", "task", "notice"];
+  const kind = priority.includes(group?.label_hint)
+    ? group.label_hint
+    : priority.find((name) => Number(kinds[name]) > 0) || "other";
+  const label = kind === "dm"
+    ? t("chat.feed.dm", {
+      people: participants.join(t("chat.feed.people_separator")) || t("chat.feed.kind.dm"),
+    })
+    : t(`chat.feed.kind.${kind}`);
+  const header = t("chat.feed.background_count", { label, count: group?.count || 0 });
+  const timeLabel = _timeRange(group?.from_ts, group?.to_ts, smartTimestamp);
+  const fromTs = _escapeAttr(group?.from_ts || "");
+  const toTs = _escapeAttr(group?.to_ts || "");
+  const anima = _escapeAttr(opts.animaName || "");
+  const thread = _escapeAttr(opts.threadId || "default");
+
+  return (
+    `<div class="chat-sysline bg-session-node bg-feed-group" data-bg-node data-bg-feed ` +
+      `data-from-ts="${fromTs}" data-to-ts="${toTs}" data-anima="${anima}" data-thread-id="${thread}">` +
+    `<button type="button" class="chat-sysline-toggle" data-bg-toggle aria-expanded="false">` +
+    `<span class="chat-sysline-gear" aria-hidden="true">⚙</span>` +
+    `<span class="chat-sysline-label">${escapeHtml(header)}</span>` +
+    `<span class="chat-sysline-time">${timeLabel ? `· ${escapeHtml(timeLabel)}` : ""} ▸</span>` +
+    `</button>` +
+    `<div class="chat-sysline-body bg-session-body bg-feed-body" hidden></div>` +
+    `</div>`
+  );
+}
+
+/** Build the lazy background request URL for one feed group. */
+export function feedBackgroundUrl(dataset) {
+  const animaName = dataset?.anima || "";
+  const threadId = dataset?.threadId || "default";
+  let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/bg` +
+    `?thread_id=${encodeURIComponent(threadId)}&from_ts=${encodeURIComponent(dataset?.fromTs || "")}` +
+    `&to_ts=${encodeURIComponent(dataset?.toTs || "")}`;
+  if (threadId !== "default") url += "&strict_thread=1";
+  return url;
+}
+
+/** Bind one-shot, lazy expansion for feed background groups. */
+export function bindLazyBackgroundGroups(container, options = {}) {
+  if (!container) return;
+  container.querySelectorAll("[data-bg-feed]").forEach((group) => {
+    if (group.dataset.feedBound === "1") return;
+    const toggle = group.querySelector("[data-bg-toggle]");
+    const body = group.querySelector(".bg-feed-body");
+    if (!toggle || !body) return;
+    group.dataset.feedBound = "1";
+    toggle.addEventListener("click", () => {
+      if (group.dataset.feedLoaded === "1" || group.dataset.feedLoading === "1") return;
+      group.dataset.feedLoading = "1";
+      body.textContent = options.loadingText || t("chat.feed.loading");
+      Promise.resolve()
+        .then(() => options.load?.(group.dataset))
+        .then((data) => {
+          body.innerHTML = options.render ? options.render(data, group.dataset) : "";
+          group.dataset.feedLoaded = "1";
+          delete group.dataset.feedLoading;
+          options.onRendered?.(body);
+        })
+        .catch(() => {
+          body.textContent = options.failedText || t("chat.feed.failed");
+          group.dataset.feedLoaded = "1";
+          delete group.dataset.feedLoading;
+        });
+    });
+  });
+}
+
+/** Render the count shown when background activity is hidden. */
+export function renderFeedHiddenCount(count) {
+  if (!(count > 0)) return "";
+  return `<div class="chat-bg-hidden-note">${t("chat.feed.hidden_count", { count })}</div>`;
+}
+
 /**
  * Bind expand/collapse and "show more" event handlers for tool calls.
  * This is the only DOM-dependent function in this module.

@@ -118,11 +118,11 @@ export function createThreadController(ctx) {
 
     const mgr = state.manager;
     const hs = mgr.getHistoryState(name, threadId);
-    const needLoad = !hs || hs.sessions.length === 0;
+    const needLoad = !hs || (hs.isFeed ? (hs.feedItems || []).length === 0 : hs.sessions.length === 0);
     ctx.controllers.renderer.renderChat();
 
     if (needLoad) {
-      await mgr.loadHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE);
+      await mgr.loadHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
     }
     ctx.controllers.renderer.renderChat();
     scheduleSaveChatUiState(ctx);

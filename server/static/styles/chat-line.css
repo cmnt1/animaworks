@@ -497,3 +497,16 @@ body[data-theme="dark"] {
 .chat-line-col { max-width: min(88%, 760px); }
 
 .chat-line-reply-chip.failed { border-left-color: #e5484d; color: #b4232a; }
+
+/* Expanded background activity: one flat list, newest last. */
+.bg-feed-body { box-sizing: border-box; min-width: 0; justify-self: stretch; }
+.bg-feed-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
+  max-height: 360px; overflow-y: auto; font-size: .75rem; color: var(--aw-line-ink-soft); }
+.bg-feed-row, .bg-feed-row details { min-width: 0; overflow: hidden; }
+.bg-feed-row summary { display: flex; gap: 6px; align-items: baseline; cursor: pointer; list-style: none; min-width: 0; }
+.bg-feed-row summary::-webkit-details-marker { display: none; }
+.bg-feed-time { font-variant-numeric: tabular-nums; flex: none; opacity: .75; }
+.bg-feed-row b { flex: none; color: var(--aw-line-ink); font-weight: 600; }
+.bg-feed-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bg-feed-full { margin: 4px 0 6px 40px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--aw-line-ink); }
+.bg-feed-empty, .bg-feed-truncated { font-size: .72rem; color: var(--aw-line-ink-soft); padding: 4px 8px; }

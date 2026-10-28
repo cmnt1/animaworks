@@ -259,6 +259,19 @@
   "chat.line.background_hidden": "裏の作業 {count}件を非表示中",
   "chat.line.background_people_separator": " と ",
   "chat.line.background_work": "裏の作業",
+  "chat.feed.background_count": "{label} {count}件",
+  "chat.feed.dm": "{people}とのやり取り",
+  "chat.feed.failed": "読み込めませんでした",
+  "chat.feed.hidden_count": "裏の作業 {count}件を非表示中",
+  "chat.feed.kind.cron": "定期作業",
+  "chat.feed.kind.dm": "Anima同士のやり取り",
+  "chat.feed.kind.heartbeat": "heartbeat",
+  "chat.feed.kind.notice": "お知らせ",
+  "chat.feed.kind.other": "裏の作業",
+  "chat.feed.kind.task": "タスク実行",
+  "chat.feed.loading": "読み込み中…",
+  "chat.feed.people_separator": " と ",
+  "chat.feed.truncated": "古い項目は省略しました",
   "chat.line.cancel_reply": "返信をやめる",
   "chat.line.copy": "コピー",
   "chat.line.download": "ダウンロード",
@@ -1160,5 +1173,6 @@
   "chat.presence.waiting_list_empty": "返事待ちのお知らせはありません",
   "chat.line.reply_to_name": "{name} への返信",
   "chat.line.reply_label": "返信",
-  "chat.line.reply_failed": "返信を送れませんでした。もう一度送るか、×を押して普通のメッセージとして送ってください。"
+  "chat.line.reply_failed": "返信を送れませんでした。もう一度送るか、×を押して普通のメッセージとして送ってください。",
+  "chat.feed.empty": "裏の作業はありませんでした"
 }

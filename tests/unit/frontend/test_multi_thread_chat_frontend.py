@@ -80,8 +80,8 @@ class TestChatJsThreadIdInSendChat:
         assert re.search(r"thread_id\s*:\s*thread", js)
 
     def test_fetch_conversation_history_includes_thread_id_param(self) -> None:
-        """Chat renderer includes thread_id parameter in URL."""
-        js = _read(CHAT_RENDERER_JS)
+        """Chat feed fetch includes thread_id parameter in URL."""
+        js = _read(CHAT_CTX_JS)
         assert "thread_id" in js
         assert "&thread_id=" in js
         assert "encodeURIComponent" in js and "threadId" in js

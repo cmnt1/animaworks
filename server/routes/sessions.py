@@ -10,7 +10,7 @@ import math
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from core.activity.conversation import _summarize_tool_call
@@ -324,6 +324,72 @@ def create_sessions_router() -> APIRouter:
                     }
                 return _summarize_view_tool_calls(file_view) if tool_detail == "summary" else file_view
         return view
+
+    @router.get("/animas/{name}/conversation/feed")
+    async def get_conversation_feed(
+        name: str,
+        thread_id: str = "default",
+        before: str | None = None,
+        min_user_items: int = Query(default=10, ge=1, le=50),
+        strict_thread: bool = False,
+        request: Request = None,
+    ):
+        """Get user-centered chat history with lazy background activity groups."""
+        if not name or name.startswith(".") or "/" in name:
+            raise HTTPException(status_code=400, detail="Invalid Anima name")
+        try:
+            safe_thread_id = validate_thread_id(thread_id)
+            if before is not None:
+                datetime.fromisoformat(before.replace("Z", "+00:00"))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        activity = ActivityLogger(anima_dir)
+        return await asyncio.to_thread(
+            activity.get_conversation_feed,
+            thread_id=safe_thread_id,
+            before=before,
+            min_user_items=min_user_items,
+            strict_thread=strict_thread,
+        )
+
+    @router.get("/animas/{name}/conversation/bg")
+    async def get_conversation_background(
+        name: str,
+        thread_id: str = "default",
+        from_ts: str = Query(...),
+        to_ts: str = Query(...),
+        strict_thread: bool = False,
+        request: Request = None,
+    ):
+        """Load background activity for one collapsed feed group."""
+        if not name or name.startswith(".") or "/" in name:
+            raise HTTPException(status_code=400, detail="Invalid Anima name")
+        try:
+            safe_thread_id = validate_thread_id(thread_id)
+            from_time = datetime.fromisoformat(from_ts.replace("Z", "+00:00"))
+            to_time = datetime.fromisoformat(to_ts.replace("Z", "+00:00"))
+            if from_time > to_time:
+                raise ValueError("from_ts must be before or equal to to_ts")
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        activity = ActivityLogger(anima_dir)
+        return await asyncio.to_thread(
+            activity.get_conversation_background,
+            thread_id=safe_thread_id,
+            from_ts=from_ts,
+            to_ts=to_ts,
+            strict_thread=strict_thread,
+        )
 
     @router.get("/animas/{name}/conversation/tool-calls")
     async def get_conversation_tool_calls(

@@ -325,7 +325,7 @@ export function createStreamingController(ctx) {
       }
       saveDraft(name, "", tid);
       state.imageInputManager?.clearImages();
-      await mgr.loadHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
+      await mgr.loadHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
       if (state.selectedAnima === name && state.selectedThreadId === tid) {
         ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached());
       }
