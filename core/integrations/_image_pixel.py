@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from core.integrations.image.codex import CodexImageClient
@@ -128,16 +129,16 @@ def _is_magenta(pixel: tuple[int, int, int]) -> bool:
 def extract_magenta_band(source: Image.Image) -> Image.Image:
     """Crop the contiguous band whose scan rows are mostly magenta."""
     image = source.convert("RGB")
-    width, height = image.size
-    pixels = image.load()
-    band_rows: list[int] = []
-    for y in range(height):
-        magenta_count = sum(_is_magenta(pixels[x, y]) for x in range(width))
-        if magenta_count >= width * 0.25:
-            band_rows.append(y)
-    if not band_rows:
+    width = image.width
+    # Same test as _is_magenta, vectorized: PIL's HSV hue 280-335 deg maps to
+    # 198-237 on its 0-255 scale; saturation/value >= 0.45 is >= 115.
+    hsv = np.asarray(image.convert("HSV")).astype(np.int16)
+    hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    magenta = (hue >= 198) & (hue <= 237) & (saturation >= 115) & (value >= 115)
+    band_rows = np.flatnonzero(magenta.sum(axis=1) >= width * 0.25)
+    if band_rows.size == 0:
         raise PixelSheetGenerationError("No magenta work area found in generated row")
-    return image.crop((0, min(band_rows), width, max(band_rows) + 1))
+    return image.crop((0, int(band_rows[0]), width, int(band_rows[-1]) + 1))
 
 
 def _border_key_color(image: Image.Image) -> tuple[int, int, int]:
@@ -283,44 +284,34 @@ def _occupied_bbox(image: Image.Image) -> tuple[int, int, int, int] | None:
 def _drop_line_artifacts(cell: Image.Image) -> Image.Image:
     """Clear detached thin vertical strokes (panel borders the model sometimes draws).
 
-    A component counts as an artifact when it is at most 1/16 of the cell wide
-    and spans at least 40% of its height; sparkles and sweat drops stay because
-    they are short.
+    A stroke is a run of occupied columns, separated from the rest by empty
+    columns, that is at most 1/16 of the cell wide and spans at least 40% of its
+    height; sparkles and sweat drops stay because they are short.
     """
     width, height = cell.size
-    alpha = cell.getchannel("A").load()
-    seen = bytearray(width * height)
+    alpha = np.asarray(cell.getchannel("A")) >= 128
+    occupied = alpha.any(axis=0)
     max_width = max(2, width // 16)
     min_height = height * 0.4
-    cleaned: Image.Image | None = None
-    for start_y in range(height):
-        for start_x in range(width):
-            index = start_y * width + start_x
-            if seen[index] or alpha[start_x, start_y] < 128:
-                continue
-            seen[index] = 1
-            stack = [(start_x, start_y)]
-            component: list[tuple[int, int]] = []
-            min_x = max_x = start_x
-            min_y = max_y = start_y
-            while stack:
-                x, y = stack.pop()
-                component.append((x, y))
-                min_x, max_x = min(min_x, x), max(max_x, x)
-                min_y, max_y = min(min_y, y), max(max_y, y)
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                    if 0 <= nx < width and 0 <= ny < height:
-                        neighbor = ny * width + nx
-                        if not seen[neighbor] and alpha[nx, ny] >= 128:
-                            seen[neighbor] = 1
-                            stack.append((nx, ny))
-            if max_x - min_x + 1 <= max_width and max_y - min_y + 1 >= min_height:
-                if cleaned is None:
-                    cleaned = cell.copy()
-                pixels = cleaned.load()
-                for x, y in component:
-                    pixels[x, y] = (0, 0, 0, 0)
-    return cleaned if cleaned is not None else cell
+    clear: list[tuple[int, int]] = []
+    x = 0
+    while x < width:
+        if not occupied[x]:
+            x += 1
+            continue
+        start = x
+        while x < width and occupied[x]:
+            x += 1
+        if x - start <= max_width:
+            rows = np.flatnonzero(alpha[:, start:x].any(axis=1))
+            if rows[-1] - rows[0] + 1 >= min_height:
+                clear.append((start, x))
+    if not clear:
+        return cell
+    pixels = np.array(cell.convert("RGBA"))
+    for start, stop in clear:
+        pixels[:, start:stop] = 0
+    return Image.fromarray(pixels, "RGBA")
 
 
 def _shift_frame_x(frame: Image.Image, offset: int) -> Image.Image:
