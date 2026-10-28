@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 086d73c7819be94fe301de27c12be79d6279c66b2c905b3f72e3a2df352a65b9 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 6d31d48925a1da870a7c36c765f0a159d2135c55020e19b9a249c5c7748dbce5 -->
 
 # モジュール一覧
 
@@ -445,7 +445,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
 | `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – orchestrates the full character asset generation. |
-| `core.integrations._image_pixel（非公開）` | 633 | Generate a Pixel Workspace character sheet from an approved base sheet. |
+| `core.integrations._image_pixel（非公開）` | 624 | Generate a Pixel Workspace character sheet from an approved base sheet. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 435 | SQLite message cache for Slack (offline search, unreplied detection). |
