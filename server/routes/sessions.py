@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -18,6 +18,7 @@ from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.memory.manager import MemoryManager
 from core.skills.activation import validate_thread_id
+from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.routes.sessions")
 
@@ -25,6 +26,28 @@ logger = logging.getLogger("animaworks.routes.sessions")
 class NotificationReplyRequest(BaseModel):
     notification_id: str = Field(min_length=1, max_length=300)
     text: str = Field(min_length=1, max_length=4000)
+
+
+def _settle_older_notifications(activity: ActivityLogger, view: dict, thread_id: str) -> None:
+    """Mark notifications on an older page as replied when the reply sits on a newer page."""
+    pending = [
+        message
+        for session in view.get("sessions", [])
+        for message in session.get("messages", [])
+        if message.get("type") == "human_notify" and not message.get("replied")
+    ]
+    if not pending:
+        return
+    latest = activity.get_conversation_view(limit=500, thread_id=thread_id)
+    replied_ts = {
+        str(message.get("ts") or "")
+        for session in latest.get("sessions", [])
+        for message in session.get("messages", [])
+        if message.get("type") == "human_notify" and message.get("replied")
+    }
+    for message in pending:
+        if str(message.get("ts") or "") in replied_ts:
+            message["replied"] = True
 
 
 def _thread_file_conversation_view(anima_dir, thread_id: str) -> dict | None:
@@ -229,6 +252,8 @@ def create_sessions_router() -> APIRouter:
             thread_id=thread_id,
             strict_thread=strict_thread,
         )
+        if before is not None:
+            await asyncio.to_thread(_settle_older_notifications, activity, view, thread_id)
 
         # Named threads: the activity log may miss turns (retention window,
         # pre-thread_id-tagging history, or a response whose activity entry
@@ -268,17 +293,21 @@ def create_sessions_router() -> APIRouter:
 
     @router.get("/notifications/awaiting")
     async def list_awaiting_notifications(request: Request):
-        """Count call_human notifications that still wait for a human reply, per Anima."""
+        """Count call_human notifications from the last 24 hours that still wait for a reply, per Anima."""
         animas_dir = request.app.state.animas_dir
         names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
 
+        since = (now_local() - timedelta(hours=24)).isoformat()
+
         def _count(anima_dir) -> int:
-            view = ActivityLogger(anima_dir).get_conversation_view(limit=120, thread_id="default")
+            view = ActivityLogger(anima_dir).get_conversation_view(limit=500, thread_id="default")
             return sum(
                 1
                 for session in view.get("sessions", [])
                 for message in session.get("messages", [])
-                if message.get("type") == "human_notify" and not message.get("replied")
+                if message.get("type") == "human_notify"
+                and not message.get("replied")
+                and str(message.get("ts") or "") >= since
             )
 
         counts: dict[str, int] = {}

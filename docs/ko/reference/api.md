@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=3f5cbfeb317ae53b72d9e7e99066951e28e8b672e7fd1836f408940cab0fa637 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=ed757b9858b9060c47afe2f5fe5555b5e0aab06238dcc8751ae437a19373ba24 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -216,11 +216,11 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 | POST | `/api/animas/{name}/conversation/calls` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 완료된 음성 통화를 Anima의 대화 기록에 저장합니다. | `server/routes/sessions.py:record_voice_call` |
 | GET | `/api/animas/{name}/conversation/history` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 활동 로그에서 대화 기록을 가져옵니다. | `server/routes/sessions.py:get_conversation_history` |
-| POST | `/api/animas/{name}/notifications/reply` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | human_notify 항목에 대한 답변을 해당 항목을 생성한 Anima로 전달합니다. | `server/routes/sessions.py:reply_to_notification` |
-| GET | `/api/animas/{name}/sessions` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 모든 세션을 나열합니다. 활성 대화, 보관된 세션, 에피소드가 포함됩니다. | `server/routes/sessions.py:list_sessions` |
-| GET | `/api/animas/{name}/sessions/{session_id}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 보관된 세션의 상세 정보를 가져옵니다. | `server/routes/sessions.py:get_session_detail` |
+| POST | `/api/animas/{name}/notifications/reply` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | human_notify 항목에 대한 답장을 원래 Anima로 전달합니다. | `server/routes/sessions.py:reply_to_notification` |
+| GET | `/api/animas/{name}/sessions` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 모든 세션을 나열합니다. 활성 대화, 보관 기록, 에피소드가 포함됩니다. | `server/routes/sessions.py:list_sessions` |
+| GET | `/api/animas/{name}/sessions/{session_id}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 보관된 세션의 세부 정보를 가져옵니다. | `server/routes/sessions.py:get_session_detail` |
 | GET | `/api/animas/{name}/transcripts/{date}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 날짜의 전체 대화 내용을 가져옵니다. | `server/routes/sessions.py:get_transcript` |
-| GET | `/api/notifications/awaiting` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima별로 사람의 답변을 기다리는 call_human 알림 수를 셉니다. | `server/routes/sessions.py:list_awaiting_notifications` |
+| GET | `/api/notifications/awaiting` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima별로 지난 24시간 동안 발생한 알림 중 아직 답장을 기다리는 call_human 알림의 수를 셉니다. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 

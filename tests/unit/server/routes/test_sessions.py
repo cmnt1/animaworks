@@ -318,6 +318,19 @@ class TestAwaitingNotifications:
         assert response.json() == {"animas": {"alice": 1}}
 
 
+class TestOlderPageNotifications:
+    def test_reply_on_newer_page_marks_older_notification(self, tmp_path):
+        from core.activity.logger import ActivityLogger
+        from server.routes.sessions import _settle_older_notifications
+
+        activity = ActivityLogger(tmp_path / "alice")
+        notify = activity.log("human_notify", content="Pick one", meta={"subject": "Q"}, ctx="chat")
+        activity.log("human_reply", content="A", from_person="taka", via="slack", ctx="chat")
+        older_page = {"sessions": [{"messages": [{"type": "human_notify", "ts": notify.ts, "replied": False}]}]}
+        _settle_older_notifications(activity, older_page, "default")
+        assert older_page["sessions"][0]["messages"][0]["replied"] is True
+
+
 # ── GET /animas/{name}/transcripts/{date} ───────────────
 
 
