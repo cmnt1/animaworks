@@ -249,14 +249,9 @@ def create_sessions_router() -> APIRouter:
                 ]
                 if call_messages:
                     file_messages = [
-                        message
-                        for session in file_view.get("sessions", [])
-                        for message in session.get("messages", [])
+                        message for session in file_view.get("sessions", []) for message in session.get("messages", [])
                     ]
-                    present_calls = {
-                        (message.get("ts", ""), message.get("type", ""))
-                        for message in file_messages
-                    }
+                    present_calls = {(message.get("ts", ""), message.get("type", "")) for message in file_messages}
                     file_messages.extend(
                         message
                         for message in call_messages
@@ -293,8 +288,7 @@ def create_sessions_router() -> APIRouter:
                 for session in view.get("sessions", [])
                 for message in session.get("messages", [])
                 if message.get("type") == "human_notify"
-                and body.notification_id
-                in {str(message.get("notification_id") or ""), str(message.get("ts") or "")}
+                and body.notification_id in {str(message.get("notification_id") or ""), str(message.get("ts") or "")}
             ),
             None,
         )

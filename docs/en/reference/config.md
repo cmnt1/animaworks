@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=07d8d27e3b6d2e9d317d098e9ef5f766d55d502b3319e3cd4d9e26e8afb4bcc6 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=956f1a283b830c7239931f546e57fdc6ed453e7ba9979b63422a7befe880fd35 generated=2026-10-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # Configuration Reference
 
@@ -813,22 +813,22 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default value | Description |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, security guards are checked at startup. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks the security guard at startup. |
 | `enclave.enabled` | `bool` | `false` | Start this runtime environment as an isolated enclave. |
-| `enclave.name` | `str` | `""` | Name returned by the enclave gateway. |
-| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket the gateway listens on. |
-| `enclave.socket_group` | `str` | `""` | OS group to set on the gateway socket. |
+| `enclave.name` | `str` | `""` | Identifier returned by the enclave gateway. |
+| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket on which the gateway listens. |
+| `enclave.socket_group` | `str` | `""` | OS group to assign to the gateway socket. |
 | `enclave.entry_anima` | `str` | `""` | Entry anima that handles questions inside the enclave. |
 | `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UID allowed to connect to the gateway. |
 | `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway handles concurrently. |
-| `enclave.request_timeout_s` | `int` | `0` | Timeout in seconds for question handling and gateway responses. |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of credentials available to the anima inside the enclave. |
+| `enclave.request_timeout_s` | `int` | `0` | Timeout in seconds for question processing and gateway responses. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of authentication credentials available to the anima inside the enclave. |
 | `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
 | `enclave.default_model_profile` | `str` | `""` | — |
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that the anima inside the enclave can access. |
-| `enclave.datasets.path` | `str` | `"—"` | Relative path to the JSONL file within the data directory. |
+| `enclave.datasets.path` | `str` | `"—"` | Relative path to a JSONL file within the data directory. |
 | `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve a record uniquely. |
-| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields that allow partial-match search. |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields for which partial-match search is allowed. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
 | `enclave.sql_sources.host` | `str` | `"—"` | Tunnel target (or direct) host |
@@ -854,6 +854,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
 | `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.session_variables` | `dict[str, str]` | `{}` | User variables set on every connection (``SET @name = 'value'``), e.g. for row-level views that filter on a session variable |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |

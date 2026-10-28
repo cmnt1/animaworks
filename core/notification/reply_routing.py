@@ -273,9 +273,7 @@ def _notification_context(target: str, notification_text: str) -> str:
     if not summary:
         return ""
     return (
-        "[Thread context — this is a reply to a call_human notification]\n"
-        f"  {target}: {summary}\n"
-        "[/Thread context]\n\n"
+        f"[Thread context — this is a reply to a call_human notification]\n  {target}: {summary}\n[/Thread context]\n\n"
     )
 
 
