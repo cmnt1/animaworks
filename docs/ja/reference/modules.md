@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6d31d48925a1da870a7c36c765f0a159d2135c55020e19b9a249c5c7748dbce5 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 1b475d7458f2925c779762ac5ccefc7279e273f8738d1b048a81adf7dfc0c734 -->
 
 # モジュール一覧
 
@@ -217,7 +217,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 183 | Configuration models for enclave mode. |
+| `core.enclave.config` | 202 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -460,7 +460,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.enclave_aws` | 866 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
-| `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
+| `core.integrations.enclave_sql` | 397 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
