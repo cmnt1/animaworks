@@ -392,6 +392,8 @@
   "chat.think.thinking": "考えています",
   "chat.think.writing": "返信を書いています",
   "chat.think.steps": "手順 {count}",
+  "chat.think.loading": "読み込み中…",
+  "chat.think.load_failed": "読み込めませんでした",
   "chat.think.stop": "止める",
   "chat.think.toggle_hint": "タップで手順を開閉",
   "chat.think.tool.read": "ファイルを読んでいます",

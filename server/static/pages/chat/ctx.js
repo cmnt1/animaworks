@@ -35,7 +35,7 @@ export function createChatContext() {
     streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress,
     getUser: () => document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "human",
     fetchHistory: async (animaName, limit, before, threadId) => {
-      let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
+      let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}&tool_detail=summary`;
       if (before) url += `&before=${encodeURIComponent(before)}`;
       url += `&thread_id=${encodeURIComponent(threadId)}`;
       if (threadId !== "default") url += `&strict_thread=1`;

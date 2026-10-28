@@ -359,7 +359,7 @@ export function emitThinkActivity({ anima, threadId, msg, emotion = null, force 
 
 // ── HTML ────────────────────────────────────────
 
-function _stepHtml(step, { withDetail = false } = {}) {
+function _stepHtml(step, { withDetail = false, lazy = false, toolUseId = "", toolIndex = 0 } = {}) {
   const label = escapeHtml(_stepLabel(step));
   if (step.kind === "say") {
     const text = step.text.length > SAY_MAX ? `${step.text.slice(0, SAY_MAX)}…` : step.text;
@@ -368,9 +368,13 @@ function _stepHtml(step, { withDetail = false } = {}) {
   const cls = [step.done ? "" : "now", step.error ? "err" : ""].filter(Boolean).join(" ");
   const clsAttr = cls ? ` class="${cls}"` : "";
   const target = step.target ? ` <code>${escapeHtml(step.target)}</code>` : "";
-  if (withDetail && step.result) {
-    return `<li${clsAttr}><details class="think-step-detail"><summary>${label}${target}</summary>` +
-      `<pre>${escapeHtml(step.result)}</pre></details></li>`;
+  if (withDetail && (step.result || lazy)) {
+    const resultHtml = lazy
+      ? `<pre data-tool-detail-content data-tool-use-id="${escapeHtml(toolUseId)}" data-tool-index="${toolIndex}">${escapeHtml(t("chat.think.loading"))}</pre>`
+      : `<pre>${escapeHtml(step.result)}</pre>`;
+    const lazyAttr = lazy ? ` data-lazy-tool-call="true"` : "";
+    return `<li${clsAttr}><details class="think-step-detail"${lazyAttr}><summary>${label}${target}</summary>` +
+      `${resultHtml}</details></li>`;
   }
   return `<li${clsAttr}>${label}${target}</li>`;
 }
@@ -398,8 +402,12 @@ export function renderThinkZone(msg) {
     `</div>`;
 }
 
-function _foldHtml(steps, count) {
-  return `<details class="think-fold"><summary>${escapeHtml(t("chat.think.steps", { count }))}</summary>` +
+function _foldHtml(steps, count, lazyDetails = null) {
+  const lazyAttrs = lazyDetails
+    ? ` data-lazy-tool-calls="true" data-message-ts="${escapeHtml(lazyDetails.messageTs)}"` +
+      ` data-anima="${escapeHtml(lazyDetails.animaName)}" data-thread-id="${escapeHtml(lazyDetails.threadId)}"`
+    : "";
+  return `<details class="think-fold"${lazyAttrs}><summary>${escapeHtml(t("chat.think.steps", { count }))}</summary>` +
     `<ul class="steps">${steps}</ul></details>`;
 }
 
@@ -411,21 +419,36 @@ export function renderStepsFold(msg) {
 }
 
 /** "Steps n ▸" for a history message, replacing the old Tool Calls group. */
-export function renderHistorySteps(toolCalls, { truncateLen = RESULT_MAX, interimTexts = [] } = {}) {
+export function renderHistorySteps(toolCalls, {
+  truncateLen = RESULT_MAX,
+  interimTexts = [],
+  lazy = false,
+  messageTs = "",
+  animaName = "",
+  threadId = "default",
+} = {}) {
   const calls = Array.isArray(toolCalls) ? toolCalls : [];
   const says = Array.isArray(interimTexts) ? interimTexts.filter(Boolean) : [];
   if (calls.length === 0 && says.length === 0) return "";
   const sayHtml = says.map(text => _stepHtml({ kind: "say", text: String(text) })).join("");
-  const html = sayHtml + calls.map(tc => {
+  const html = sayHtml + calls.map((tc, index) => {
     let result = tc.result ?? "";
     if (result && typeof result !== "string") result = JSON.stringify(result, null, 2);
     if (result.length > truncateLen) result = `${result.slice(0, truncateLen)}…`;
     return _stepHtml({
-      kind: "tool", tool: tc.tool_name || "", target: _targetFromInput(tc.input),
+      kind: "tool", tool: tc.tool_name || "", target: tc.target ?? _targetFromInput(tc.input),
       done: true, error: !!tc.is_error, result,
-    }, { withDetail: true });
+    }, {
+      withDetail: true,
+      lazy,
+      toolUseId: tc.tool_use_id || "",
+      toolIndex: index,
+    });
   }).join("");
-  return _foldHtml(html, calls.length + says.length);
+  const lazyDetails = lazy && calls.length > 0
+    ? { messageTs, animaName, threadId }
+    : null;
+  return _foldHtml(html, calls.length + says.length, lazyDetails);
 }
 
 /**

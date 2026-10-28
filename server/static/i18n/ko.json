@@ -350,6 +350,8 @@
   "chat.think.thinking": "생각하고 있어요",
   "chat.think.writing": "답장을 쓰고 있어요",
   "chat.think.steps": "단계 {count}",
+  "chat.think.loading": "불러오는 중…",
+  "chat.think.load_failed": "불러오지 못했어요",
   "chat.think.stop": "중지",
   "chat.think.toggle_hint": "탭하여 단계 열기/닫기",
   "chat.think.tool.read": "파일을 읽고 있어요",
