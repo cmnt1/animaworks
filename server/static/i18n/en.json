@@ -1155,5 +1155,7 @@
   "chat.presence.slash_threads": "Open the thread list",
   "chat.presence.slash_skill": "Use a skill",
   "chat.presence.slash_done_compact": "Started tidying up memory",
-  "chat.presence.slash_failed": "The command could not be run"
+  "chat.presence.slash_failed": "The command could not be run",
+  "chat.presence.waiting_list_title": "Waiting for your reply: {name}",
+  "chat.presence.waiting_list_empty": "Nothing is waiting for your reply"
 }

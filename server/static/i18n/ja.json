@@ -1155,5 +1155,7 @@
   "chat.presence.slash_threads": "スレッド一覧を開く",
   "chat.presence.slash_skill": "スキルを使う",
   "chat.presence.slash_done_compact": "記憶の整理を始めました",
-  "chat.presence.slash_failed": "コマンドを実行できませんでした"
+  "chat.presence.slash_failed": "コマンドを実行できませんでした",
+  "chat.presence.waiting_list_title": "{name} の返事待ち",
+  "chat.presence.waiting_list_empty": "返事待ちのお知らせはありません"
 }

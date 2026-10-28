@@ -654,6 +654,8 @@ export function createChatRenderer(ctx) {
     bindToolCallHandlers, initScrollTracking, scrollToBottom,
     showBootstrapComplete, clearBootstrapInterval: _clearBootstrapInterval,
     isUserDetached: () => _userDetached,
+    markUserDetached: () => { _userDetached = true; _updateScrollBtn(); },
+    loadOlderMessages,
     reattach: () => { _userDetached = false; _updateScrollBtn(); },
   };
 }

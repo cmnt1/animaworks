@@ -9,6 +9,14 @@
  *                lastEmotionAt, label }
  */
 
+/** Waiting call_human notifications per Anima, from GET /api/notifications/awaiting. */
+const _waitingItems = new Map();
+
+/** @returns {Array<{ts: string, subject: string, preview: string}>} */
+export function waitingItems(name) {
+  return _waitingItems.get(name) || [];
+}
+
 export const EMOTIONS = Object.freeze([
   "neutral", "smile", "laugh", "troubled", "surprised", "thinking", "embarrassed",
 ]);
@@ -301,6 +309,8 @@ export function initPresence({ api: apiFn, onEvent, doc = globalThis.document } 
     try {
       const data = await apiFn("/api/notifications/awaiting");
       const waiting = data?.animas || {};
+      _waitingItems.clear();
+      for (const [name, rows] of Object.entries(data?.items || {})) _waitingItems.set(name, rows);
       for (const name of new Set([...presence.names(), ...Object.keys(waiting)])) {
         presence.setAwaiting(name, Boolean(waiting[name]));
       }
