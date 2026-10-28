@@ -28,6 +28,28 @@ class NotificationReplyRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+def _settle_older_notifications(activity: ActivityLogger, view: dict, thread_id: str) -> None:
+    """Mark notifications on an older page as replied when the reply sits on a newer page."""
+    pending = [
+        message
+        for session in view.get("sessions", [])
+        for message in session.get("messages", [])
+        if message.get("type") == "human_notify" and not message.get("replied")
+    ]
+    if not pending:
+        return
+    latest = activity.get_conversation_view(limit=500, thread_id=thread_id)
+    replied_ts = {
+        str(message.get("ts") or "")
+        for session in latest.get("sessions", [])
+        for message in session.get("messages", [])
+        if message.get("type") == "human_notify" and message.get("replied")
+    }
+    for message in pending:
+        if str(message.get("ts") or "") in replied_ts:
+            message["replied"] = True
+
+
 def _thread_file_conversation_view(anima_dir, thread_id: str) -> dict | None:
     """Build a conversation view from the thread's conversation file.
 
@@ -230,6 +252,8 @@ def create_sessions_router() -> APIRouter:
             thread_id=thread_id,
             strict_thread=strict_thread,
         )
+        if before is not None:
+            await asyncio.to_thread(_settle_older_notifications, activity, view, thread_id)
 
         # Named threads: the activity log may miss turns (retention window,
         # pre-thread_id-tagging history, or a response whose activity entry
