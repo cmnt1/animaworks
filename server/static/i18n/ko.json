@@ -350,6 +350,8 @@
   "chat.think.thinking": "생각하고 있어요",
   "chat.think.writing": "답장을 쓰고 있어요",
   "chat.think.steps": "단계 {count}",
+  "chat.think.loading": "불러오는 중…",
+  "chat.think.load_failed": "불러오지 못했어요",
   "chat.think.stop": "중지",
   "chat.think.toggle_hint": "탭하여 단계 열기/닫기",
   "chat.think.tool.read": "파일을 읽고 있어요",
@@ -1099,5 +1101,7 @@
   "chat.presence.slash_threads": "스레드 목록 열기",
   "chat.presence.slash_skill": "스킬 사용",
   "chat.presence.slash_done_compact": "기억 정리를 시작했습니다",
-  "chat.presence.slash_failed": "명령을 실행할 수 없습니다"
+  "chat.presence.slash_failed": "명령을 실행할 수 없습니다",
+  "chat.presence.waiting_list_title": "{name} 답장 대기",
+  "chat.presence.waiting_list_empty": "답장을 기다리는 알림이 없습니다"
 }

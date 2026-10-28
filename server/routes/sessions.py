@@ -8,11 +8,12 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from core.activity.conversation import _summarize_tool_call
 from core.activity.logger import ActivityLogger
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.shortterm import ShortTermMemory
@@ -112,6 +113,17 @@ def _thread_file_conversation_view(anima_dir, thread_id: str) -> dict | None:
 
 def _count_view_messages(view: dict) -> int:
     return sum(len(s.get("messages", [])) for s in view.get("sessions", []))
+
+
+def _summarize_view_tool_calls(view: dict) -> dict:
+    """Strip tool payloads from a conversation-file fallback view."""
+    for session in view.get("sessions", []):
+        for message in session.get("messages", []):
+            calls = message.get("tool_calls")
+            if message.get("role") == "assistant" and calls:
+                message["tool_calls"] = [_summarize_tool_call(call) for call in calls]
+                message["tool_calls_detail"] = "lazy"
+    return view
 
 
 def create_sessions_router() -> APIRouter:
@@ -229,6 +241,7 @@ def create_sessions_router() -> APIRouter:
         before: str | None = None,
         thread_id: str = "default",
         strict_thread: bool = False,
+        tool_detail: Literal["full", "summary"] = "full",
         request: Request = None,
     ):
         """Get conversation history from activity log.
@@ -251,6 +264,7 @@ def create_sessions_router() -> APIRouter:
             limit=limit,
             thread_id=thread_id,
             strict_thread=strict_thread,
+            tool_detail=tool_detail,
         )
         if before is not None:
             await asyncio.to_thread(_settle_older_notifications, activity, view, thread_id)
@@ -288,38 +302,94 @@ def create_sessions_router() -> APIRouter:
                         "has_more": False,
                         "next_before": None,
                     }
-                return file_view
+                return _summarize_view_tool_calls(file_view) if tool_detail == "summary" else file_view
         return view
+
+    @router.get("/animas/{name}/conversation/tool-calls")
+    async def get_conversation_tool_calls(
+        name: str,
+        message_ts: str,
+        thread_id: str = "default",
+        request: Request = None,
+    ):
+        """Get the full, truncated tool-call details for one assistant message."""
+        if not name or name.startswith(".") or "/" in name:
+            raise HTTPException(status_code=400, detail="Invalid Anima name")
+        try:
+            safe_thread_id = validate_thread_id(thread_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        activity = ActivityLogger(anima_dir)
+        tool_calls = await asyncio.to_thread(
+            activity.get_conversation_tool_calls,
+            message_ts,
+            thread_id=safe_thread_id,
+            strict_thread=safe_thread_id != "default",
+        )
+        if not tool_calls and safe_thread_id not in ("default", "inbox"):
+            file_view = _thread_file_conversation_view(anima_dir, safe_thread_id)
+            file_message = next(
+                (
+                    message
+                    for session in (file_view or {}).get("sessions", [])
+                    for message in session.get("messages", [])
+                    if message.get("role") == "assistant" and message.get("ts") == message_ts
+                ),
+                None,
+            )
+            tool_calls = file_message.get("tool_calls") if file_message else None
+        if not tool_calls:
+            raise HTTPException(status_code=404, detail="Tool calls not found")
+        return {"tool_calls": tool_calls}
 
     @router.get("/notifications/awaiting")
     async def list_awaiting_notifications(request: Request):
-        """Count call_human notifications from the last 24 hours that still wait for a reply, per Anima."""
+        """List call_human notifications from the last 24 hours that still wait for a reply, per Anima.
+
+        Reads only notification, reply and incoming-message entries from the last two
+        days of each activity log, so it stays cheap enough to poll.
+        """
         animas_dir = request.app.state.animas_dir
         names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
-
         since = (now_local() - timedelta(hours=24)).isoformat()
 
-        def _count(anima_dir) -> int:
-            view = ActivityLogger(anima_dir).get_conversation_view(limit=500, thread_id="default")
-            return sum(
-                1
-                for session in view.get("sessions", [])
-                for message in session.get("messages", [])
+        def _waiting(anima_dir) -> list[dict[str, str]]:
+            activity = ActivityLogger(anima_dir)
+            entries = activity.recent(days=2, limit=5000, types=["human_notify", "human_reply", "message_received"])
+            # Only chat-channel messages appear in the chat view; inbox traffic is not an answer.
+            entries = [e for e in entries if e.type != "message_received" or e.channel == "chat"]
+            messages = activity._entries_to_messages(entries)
+            return [
+                {
+                    "ts": str(message.get("ts") or ""),
+                    "subject": str(message.get("subject") or "")[:80],
+                    "preview": " ".join(str(message.get("content") or "").split())[:80],
+                }
+                for message in messages
                 if message.get("type") == "human_notify"
                 and not message.get("replied")
                 and str(message.get("ts") or "") >= since
-            )
+            ]
 
-        counts: dict[str, int] = {}
-        for name in names:
-            try:
-                n = await asyncio.to_thread(_count, animas_dir / name)
-            except Exception:
-                logger.debug("Failed to count awaiting notifications for %s", name, exc_info=True)
-                continue
-            if n:
-                counts[name] = n
-        return {"animas": counts}
+        def _collect() -> dict[str, list[dict[str, str]]]:
+            found: dict[str, list[dict[str, str]]] = {}
+            for name in names:
+                try:
+                    items = _waiting(animas_dir / name)
+                except Exception:
+                    logger.debug("Failed to list awaiting notifications for %s", name, exc_info=True)
+                    continue
+                if items:
+                    found[name] = items
+            return found
+
+        items = await asyncio.to_thread(_collect)
+        return {"animas": {name: len(rows) for name, rows in items.items()}, "items": items}
 
     @router.post("/animas/{name}/notifications/reply")
     async def reply_to_notification(

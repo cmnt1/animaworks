@@ -392,6 +392,8 @@
   "chat.think.thinking": "Thinking",
   "chat.think.writing": "Writing a reply",
   "chat.think.steps": "Steps {count}",
+  "chat.think.loading": "Loading…",
+  "chat.think.load_failed": "Could not load",
   "chat.think.stop": "Stop",
   "chat.think.toggle_hint": "Tap to show or hide the steps",
   "chat.think.tool.read": "Reading a file",
@@ -1153,5 +1155,7 @@
   "chat.presence.slash_threads": "Open the thread list",
   "chat.presence.slash_skill": "Use a skill",
   "chat.presence.slash_done_compact": "Started tidying up memory",
-  "chat.presence.slash_failed": "The command could not be run"
+  "chat.presence.slash_failed": "The command could not be run",
+  "chat.presence.waiting_list_title": "Waiting for your reply: {name}",
+  "chat.presence.waiting_list_empty": "Nothing is waiting for your reply"
 }

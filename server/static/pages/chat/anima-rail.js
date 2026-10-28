@@ -3,6 +3,7 @@ import { presence, displayStatus } from "../../modules/anima-presence.js";
 import { faceUrl } from "../../shared/chat/emotion-face.js";
 import { attachFaceFallback } from "./pane-head.js";
 import { orderRailAnimas, railBadge } from "./rail-logic.js";
+import { openWaitingList } from "./waiting-list.js";
 
 export { orderRailAnimas, railBadge };
 
@@ -73,6 +74,12 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
     const focused = getFocused();
     if (!focused) return;
     const item = e.target.closest?.(".chat-rail-item");
+    const badge = e.target.closest?.(".chat-rail-badge.wait");
+    if (item && badge) {
+      e.preventDefault();
+      openWaitingList({ anchor: badge, anima: item.dataset.anima, getFocused, t, escapeHtml });
+      return;
+    }
     if (item) {
       if (item._longPressFired) { item._longPressFired = false; return; }
       const name = item.dataset.anima;

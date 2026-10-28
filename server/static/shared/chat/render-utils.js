@@ -9,6 +9,7 @@ import { bustUrl, faceUrl } from "./emotion-face.js";
 // ── Think-tag strip (frontend safety net) ─────────────
 const _THINK_CLOSE_RE = /<\/think>\s*/;
 const _THINK_CLOSE_GLOBAL_RE = /<\/think>\s*/g;
+const _lazyToolCallDetails = new Map();
 
 /**
  * Strip `<think>...</think>` block from text (mirrors backend strip_thinking_tags).
@@ -365,11 +366,22 @@ function _lineReplyParts(text) {
   return match ? { quote: match[1], text: match[2] } : { quote: "", text: String(text || "") };
 }
 
+const _LINE_ICONS = {
+  reply: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+};
+
+function _lineActionButton(action, extraClass = "") {
+  const label = _escapeAttr(t(`chat.line.${action}`));
+  return `<button type="button" class="chat-line-action${extraClass}" data-action="${action}" title="${label}" aria-label="${label}">${_LINE_ICONS[action]}</button>`;
+}
+
 function _lineActionsHtml({ reply = true } = {}) {
   return `<div class="chat-line-actions">`
-    + (reply ? `<button type="button" class="chat-line-action" data-action="reply" title="${_escapeAttr(t("chat.line.reply"))}">${t("chat.line.reply")}</button>` : "")
-    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="copy" title="${_escapeAttr(t("chat.line.copy"))}" aria-label="${_escapeAttr(t("chat.line.copy"))}">${t("chat.line.copy")}</button>`
-    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="download" title="${_escapeAttr(t("chat.line.download"))}" aria-label="${_escapeAttr(t("chat.line.download"))}">${t("chat.line.download")}</button>`
+    + (reply ? _lineActionButton("reply") : "")
+    + _lineActionButton("copy", " bubble-action-btn")
+    + _lineActionButton("download", " bubble-action-btn")
     + `</div>`;
 }
 
@@ -471,6 +483,10 @@ function _lineMessage(msg, opts, { live = false } = {}) {
     toolHtml = opts.think.historyFold(msg.tool_calls, {
       truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE,
       interimTexts: msg.interim_texts,
+      lazy: msg.tool_calls_detail === "lazy",
+      messageTs: msg.ts || msg.timestamp || "",
+      animaName: opts.animaName || "",
+      threadId: opts.threadId || "default",
     });
   } else {
     toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE });
@@ -681,7 +697,14 @@ export function renderHistoryMessage(msg, opts) {
     const rawText = _normalizeDisplayText(msg.content || "");
     const content = rawText ? renderMarkdown(rawText, opts.animaName) : "";
     const toolHtml = opts.think
-      ? opts.think.historyFold(msg.tool_calls, { truncateLen: truncLen, interimTexts: msg.interim_texts })
+      ? opts.think.historyFold(msg.tool_calls, {
+        truncateLen: truncLen,
+        interimTexts: msg.interim_texts,
+        lazy: msg.tool_calls_detail === "lazy",
+        messageTs: msg.ts || msg.timestamp || "",
+        animaName: opts.animaName || "",
+        threadId: opts.threadId || "default",
+      })
       : renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     let thinkingHtml = "";
@@ -1072,6 +1095,63 @@ export function renderCollapsibleActivityBundle(items, opts) {
  */
 export function bindToolCallHandlers(container) {
   if (!container) return;
+
+  const loadLazyDetails = (fold) => {
+    if (!fold) return;
+    const messageTs = fold.dataset.messageTs || "";
+    const animaName = fold.dataset.anima || "";
+    const threadId = fold.dataset.threadId || "default";
+    const contentEls = [...fold.querySelectorAll("[data-tool-detail-content]")];
+    if (contentEls.length === 0) return;
+
+    const cacheKey = JSON.stringify([animaName, threadId, messageTs]);
+    let detailPromise = _lazyToolCallDetails.get(cacheKey);
+    if (!detailPromise) {
+      const url = `/api/animas/${encodeURIComponent(animaName)}/conversation/tool-calls` +
+        `?message_ts=${encodeURIComponent(messageTs)}&thread_id=${encodeURIComponent(threadId)}`;
+      detailPromise = Promise.resolve()
+        .then(() => {
+          if (!animaName || !messageTs) throw new Error("Missing tool-call message context");
+          return api(url);
+        })
+        .then((data) => {
+          if (!Array.isArray(data?.tool_calls)) throw new Error("Tool-call response was invalid");
+          return { ok: true, toolCalls: data.tool_calls };
+        })
+        .catch(() => ({ ok: false, toolCalls: [] }));
+      _lazyToolCallDetails.set(cacheKey, detailPromise);
+    }
+
+    for (const contentEl of contentEls) contentEl.textContent = t("chat.think.loading");
+    void detailPromise.then(({ ok, toolCalls }) => {
+      const callsById = new Map(toolCalls.map((call) => [String(call.tool_use_id || ""), call]));
+      for (const contentEl of contentEls) {
+        if (!ok) {
+          contentEl.textContent = t("chat.think.load_failed");
+          continue;
+        }
+        const indexedCall = toolCalls[Number(contentEl.dataset.toolIndex)] || null;
+        const call = callsById.get(String(contentEl.dataset.toolUseId || "")) || indexedCall;
+        const result = call?.result;
+        contentEl.textContent = result == null
+          ? ""
+          : typeof result === "string" ? result : JSON.stringify(result, null, 2);
+      }
+    });
+  };
+
+  const bindLazyToggle = (details) => {
+    const fold = details.classList.contains("think-fold")
+      ? details
+      : details.closest(".think-fold[data-lazy-tool-calls]");
+    if (!fold) return;
+    details.addEventListener("toggle", () => {
+      if (details.open) loadLazyDetails(fold);
+    });
+  };
+
+  container.querySelectorAll(".think-fold[data-lazy-tool-calls]").forEach(bindLazyToggle);
+  container.querySelectorAll(".think-step-detail[data-lazy-tool-call]").forEach(bindLazyToggle);
 
   container.querySelectorAll(".tool-call-group-header").forEach(header => {
     header.addEventListener("click", () => {

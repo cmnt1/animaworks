@@ -40,8 +40,10 @@ export function createPresencePanel(ctx) {
   el.hidden = true;
   el.innerHTML = `
     <div class="chat-presence-say" aria-live="polite"></div>
-    <div class="chat-presence-frame"><div class="chat-presence-stage"></div></div>
-    <button type="button" class="chat-presence-x" aria-label="${deps.escapeHtml(t("chat.presence.hide"))}" title="${deps.escapeHtml(t("chat.presence.hide"))}">&times;</button>`;
+    <div class="chat-presence-figure">
+      <div class="chat-presence-frame"><div class="chat-presence-stage"></div></div>
+      <button type="button" class="chat-presence-x" aria-label="${deps.escapeHtml(t("chat.presence.hide"))}" title="${deps.escapeHtml(t("chat.presence.hide"))}">&times;</button>
+    </div>`;
   area.appendChild(el);
 
   const sayEl = el.querySelector(".chat-presence-say");

@@ -392,6 +392,8 @@
   "chat.think.thinking": "考えています",
   "chat.think.writing": "返信を書いています",
   "chat.think.steps": "手順 {count}",
+  "chat.think.loading": "読み込み中…",
+  "chat.think.load_failed": "読み込めませんでした",
   "chat.think.stop": "止める",
   "chat.think.toggle_hint": "タップで手順を開閉",
   "chat.think.tool.read": "ファイルを読んでいます",
@@ -1153,5 +1155,7 @@
   "chat.presence.slash_threads": "スレッド一覧を開く",
   "chat.presence.slash_skill": "スキルを使う",
   "chat.presence.slash_done_compact": "記憶の整理を始めました",
-  "chat.presence.slash_failed": "コマンドを実行できませんでした"
+  "chat.presence.slash_failed": "コマンドを実行できませんでした",
+  "chat.presence.waiting_list_title": "{name} の返事待ち",
+  "chat.presence.waiting_list_empty": "返事待ちのお知らせはありません"
 }

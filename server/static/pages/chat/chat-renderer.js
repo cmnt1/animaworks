@@ -70,6 +70,7 @@ export function createChatRenderer(ctx) {
   const _renderOpts = () => ({
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
+    threadId: state.selectedThreadId || "default",
     avatarMap: state.animaTabAvatarUrls || {},
     companyColors: Object.fromEntries(
       (state.animas || [])
@@ -565,7 +566,7 @@ export function createChatRenderer(ctx) {
   // ── Conversation History API ──
 
   async function fetchConversationHistory(animaName, limit = CONSTANTS.HISTORY_PAGE_SIZE, before = null, threadId = "default") {
-    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
+    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}&tool_detail=summary`;
     if (before) url += `&before=${encodeURIComponent(before)}`;
     url += `&thread_id=${encodeURIComponent(threadId)}`;
     if (threadId !== "default") url += `&strict_thread=1`;
@@ -653,6 +654,8 @@ export function createChatRenderer(ctx) {
     bindToolCallHandlers, initScrollTracking, scrollToBottom,
     showBootstrapComplete, clearBootstrapInterval: _clearBootstrapInterval,
     isUserDetached: () => _userDetached,
+    markUserDetached: () => { _userDetached = true; _updateScrollBtn(); },
+    loadOlderMessages,
     reattach: () => { _userDetached = false; _updateScrollBtn(); },
   };
 }

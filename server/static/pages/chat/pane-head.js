@@ -1,5 +1,6 @@
 // ── Pane header: face / name / status + thread tab labels ──
 import { presence, displayStatus } from "../../modules/anima-presence.js";
+import { openWaitingList } from "./waiting-list.js";
 import { faceUrl } from "../../shared/chat/emotion-face.js";
 
 const THREAD_LABEL_MAX = 20;
@@ -42,6 +43,19 @@ export function createPaneHead(ctx) {
 
   const root = ctx.state.container;
   attachFaceFallback(root, (name) => state.animaTabAvatarUrls?.[name] || "");
+
+  // "Waiting for reply" in the header opens the list of notifications to answer.
+  root?.addEventListener("click", (e) => {
+    const status = e.target.closest?.('[data-chat-id="chatPaneHeadStatus"].wait');
+    if (!status || !state.selectedAnima) return;
+    openWaitingList({
+      anchor: status,
+      anima: state.selectedAnima,
+      getFocused: () => ({ ctx }),
+      t,
+      escapeHtml: deps.escapeHtml,
+    });
+  });
 
   function refresh() {
     const name = state.selectedAnima;
