@@ -8,6 +8,7 @@ import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from core.activity.logger import ActivityLogger
 from core.memory.conversation.memory import ConversationMemory
@@ -16,6 +17,11 @@ from core.memory.manager import MemoryManager
 from core.skills.activation import validate_thread_id
 
 logger = logging.getLogger("animaworks.routes.sessions")
+
+
+class NotificationReplyRequest(BaseModel):
+    notification_id: str = Field(min_length=1, max_length=300)
+    text: str = Field(min_length=1, max_length=4000)
 
 
 def _thread_file_conversation_view(anima_dir, thread_id: str) -> dict | None:
@@ -234,6 +240,74 @@ def create_sessions_router() -> APIRouter:
             if file_view and _count_view_messages(file_view) > _count_view_messages(view):
                 return file_view
         return view
+
+    @router.post("/animas/{name}/notifications/reply")
+    async def reply_to_notification(
+        name: str,
+        body: NotificationReplyRequest,
+        request: Request,
+    ):
+        """Route a reply to a human_notify entry back to its originating Anima."""
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        activity = ActivityLogger(anima_dir)
+        view = await asyncio.to_thread(activity.get_conversation_view, limit=200, thread_id="default")
+        notification = next(
+            (
+                message
+                for session in view.get("sessions", [])
+                for message in session.get("messages", [])
+                if message.get("type") == "human_notify"
+                and body.notification_id
+                in {str(message.get("notification_id") or ""), str(message.get("ts") or "")}
+            ),
+            None,
+        )
+        if notification is None:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        if notification.get("replied"):
+            raise HTTPException(status_code=409, detail="Notification already has a reply")
+
+        text = body.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Reply text is required")
+        actor = getattr(getattr(request.state, "user", None), "username", "") or "human"
+        callback_id = str(notification.get("callback_id") or "")
+
+        from core.notification.reply_routing import (
+            _notification_context,
+            _resolve_callback_text_reply,
+            deliver_notification_reply,
+        )
+
+        if await _resolve_callback_text_reply(callback_id, text, actor):
+            return {"status": "resolved", "notification_id": body.notification_id, "replied": True}
+
+        notification_text = "\n".join(
+            part for part in (str(notification.get("subject") or ""), str(notification.get("content") or "")) if part
+        )
+        from core.paths import get_shared_dir
+
+        routed = await deliver_notification_reply(
+            name,
+            text,
+            get_shared_dir(),
+            actor=actor,
+            source="web",
+            source_message_id=body.notification_id,
+            external_user_id=actor,
+            external_channel_id="web",
+            external_thread_ts=body.notification_id,
+            thread_context=_notification_context(name, notification_text),
+            notification_id=body.notification_id,
+            callback_id=callback_id,
+        )
+        if not routed:
+            raise HTTPException(status_code=400, detail="Reply could not be delivered")
+        return {"status": "ok", "notification_id": body.notification_id, "replied": True}
 
     @router.get("/animas/{name}/sessions/{session_id}")
     async def get_session_detail(

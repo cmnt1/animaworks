@@ -4,6 +4,7 @@
 import { t } from "../i18n.js";
 import { escapeAttr as _escapeAttr } from "../html-utils.js";
 import { api } from "../../modules/api.js";
+import { bustUrl, faceUrl } from "./emotion-face.js";
 
 // ── Think-tag strip (frontend safety net) ─────────────
 const _THINK_CLOSE_RE = /<\/think>\s*/;
@@ -348,6 +349,142 @@ function _stripVoiceSuffix(text) {
   return text ? text.replace(_RE_VOICE_MODE_SUFFIX, "") : text;
 }
 
+function _normalizedName(name) {
+  return String(name || "").trim().toLocaleLowerCase();
+}
+
+function _isCurrentUser(name, opts) {
+  if (!name) return false;
+  const names = opts?.currentUserNames;
+  const values = names instanceof Set ? names : new Set(Array.isArray(names) ? names : []);
+  return values.has(name) || [...values].some((candidate) => _normalizedName(candidate) === _normalizedName(name));
+}
+
+function _lineReplyParts(text) {
+  const match = /^> ([^\n]*)\n\n([\s\S]*)$/.exec(String(text || ""));
+  return match ? { quote: match[1], text: match[2] } : { quote: "", text: String(text || "") };
+}
+
+function _lineActionsHtml({ reply = true } = {}) {
+  return `<div class="chat-line-actions">`
+    + (reply ? `<button type="button" class="chat-line-action" data-action="reply" title="${_escapeAttr(t("chat.line.reply"))}">${t("chat.line.reply")}</button>` : "")
+    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="copy" title="${_escapeAttr(t("chat.line.copy"))}" aria-label="${_escapeAttr(t("chat.line.copy"))}">${t("chat.line.copy")}</button>`
+    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="download" title="${_escapeAttr(t("chat.line.download"))}" aria-label="${_escapeAttr(t("chat.line.download"))}">${t("chat.line.download")}</button>`
+    + `</div>`;
+}
+
+function _humanNotifyActions(callbackId, escapeHtml) {
+  if (!callbackId) return "";
+  const cid = escapeHtml(callbackId);
+  return `<div class="chat-human-notify-actions" data-callback-id="${cid}">`
+    + `<button type="button" class="chat-human-notify-btn" data-decision="approve" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_approve"))}</button>`
+    + `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--reject" data-decision="reject" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_reject"))}</button>`
+    + `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--comment" data-decision="comment" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_comment"))}</button>`
+    + `</div>`;
+}
+
+function _lineMetaHtml(msg, opts, isMe) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const waiting = msg.type === "human_notify" && msg.replied === false;
+  const waitHtml = waiting
+    ? `<span class="chat-line-waiting">${escapeHtml(t("chat.line.waiting_reply"))}</span>`
+    : "";
+  const readHtml = isMe && msg.read
+    ? `<span>${escapeHtml(t("chat.line.read"))}</span>`
+    : "";
+  const time = msg.ts || msg.timestamp ? smartTimestamp(msg.ts || msg.timestamp) : "";
+  const timeHtml = time ? `<span>${escapeHtml(time)}</span>` : "";
+  if (!waitHtml && !readHtml && !timeHtml) return "";
+  return `<div class="chat-line-meta">${waitHtml}${readHtml}${timeHtml}</div>`;
+}
+
+function _lineMessage(msg, opts, { live = false } = {}) {
+  const { escapeHtml, renderMarkdown } = opts;
+  const renderImages = opts.renderChatImages || (() => "");
+  const nameFrom = msg.from_person || msg.speaker || opts.animaName || "";
+  const knownAnimas = _knownAnimaNames(opts);
+  const isOtherAnima = msg.role !== "assistant" && Boolean(nameFrom && knownAnimas.has(nameFrom) && nameFrom !== opts.animaName);
+  const isAnima = msg.type === "human_notify" || msg.role === "assistant" || isOtherAnima;
+  const isMe = !isAnima && (msg.role === "user" || _isCurrentUser(nameFrom, opts));
+  const rowKind = isAnima ? "anima" : isMe ? "me" : "person";
+  const speakerName = isAnima ? (msg.speaker || (msg.type === "human_notify" ? opts.animaName : nameFrom)) : nameFrom;
+  const emotion = msg.emotion || "neutral";
+  const rawText = live ? (msg._displayText || msg.text || "") : (msg.content || msg.text || "");
+  const replyParts = _lineReplyParts(rawText);
+  const contentText = _stripVoiceSuffix(replyParts.text);
+  const rawReplyText = msg.type === "human_notify"
+    ? [msg.subject, msg.content].filter(Boolean).join(" — ")
+    : contentText;
+  let contentHtml = "";
+  if (msg.type === "human_notify") {
+    const subjectHtml = msg.subject ? `<strong>${escapeHtml(msg.subject)}</strong>` : "";
+    const bodyHtml = _linkifyEscaped(escapeHtml, msg.content || "").replace(/\n/g, "<br>");
+    contentHtml = `${subjectHtml}${subjectHtml && bodyHtml ? "<br>" : ""}${bodyHtml}`;
+  } else if (isAnima) {
+    const normalized = _normalizeDisplayText(contentText);
+    contentHtml = normalized ? renderMarkdown(normalized, opts.animaName) : "";
+  } else {
+    contentHtml = contentText ? `<div class="chat-text">${_linkifyEscaped(escapeHtml, contentText).replace(/\n/g, "<br>")}</div>` : "";
+  }
+  const quote = replyParts.quote || msg.reply_quote || "";
+  const quoteHtml = quote ? `<div class="chat-line-quote">${escapeHtml(quote)}</div>` : "";
+  const imagesHtml = live
+    ? renderImages(msg.images, { animaName: opts.animaName })
+    : renderImages(msg.images, { animaName: opts.animaName });
+  let toolHtml = "";
+  if (live) {
+    const labels = opts.labels || {};
+    if (msg.toolHistory?.length) {
+      toolHtml = renderToolActivityTimeline(msg.toolHistory, msg.activeTool, { escapeHtml, labels });
+    } else if (msg.activeTool) {
+      const label = labels.toolRunning || ((tool) => t("chat.tool_running", { tool }));
+      toolHtml = `<div class="tool-indicator"><span class="tool-spinner"></span>${typeof label === "function" ? label(msg.activeTool) : label}</div>`;
+    }
+    if (msg.thinkingText) toolHtml += `<div class="thinking-inline-preview">${escapeHtml(msg.thinkingText)}</div>`;
+  } else {
+    toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE });
+  }
+  const callbackHtml = msg.type === "human_notify" ? _humanNotifyActions(msg.callback_id, escapeHtml) : "";
+  const streamingClass = live && msg.streaming ? " streaming" : "";
+  const streamId = live && msg.streaming && msg.streamId
+    ? ` data-stream-id="${escapeHtml(String(msg.streamId))}"`
+    : "";
+  const dataRawText = rawText ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
+  const notificationId = msg.type === "human_notify"
+    ? ` data-notification-id="${_escapeAttr(msg.notification_id || msg.ts || "")}"`
+    : "";
+  const messageTimestamp = msg.ts || msg.timestamp || "";
+  const timestampData = messageTimestamp ? ` data-message-ts="${_escapeAttr(messageTimestamp)}"` : "";
+  const replyData = rawReplyText
+    ? ` data-reply-text="${_escapeAttr(rawReplyText)}" data-reply-name="${_escapeAttr(speakerName || nameFrom || "")}"`
+    : "";
+  const bubbleRole = isMe ? "user" : "assistant";
+  const viaKey = `chat.via_${msg.via || ""}`;
+  const viaTranslation = msg.via ? t(viaKey) : "";
+  const viaLabel = viaTranslation && viaTranslation !== viaKey
+    ? viaTranslation.replace(/^via\s+/i, "")
+    : (msg.via || "");
+  const via = isMe && viaLabel && msg.via !== "web" && msg.via !== "chat"
+    ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
+    : "";
+  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}`;
+  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${live && msg.streaming ? '<span class="streaming-cursor">▌</span>' : ""}</div>`;
+  const face = isAnima
+    ? `<img class="chat-line-face" src="${_escapeAttr(faceUrl(speakerName, emotion))}" data-emotion="${_escapeAttr(emotion)}" data-anima="${_escapeAttr(speakerName)}" data-bust-url="${_escapeAttr(bustUrl(speakerName, emotion))}" alt="${_escapeAttr(speakerName)}" loading="lazy">`
+    : isMe
+      ? ""
+      : `<div class="chat-line-person-avatar" aria-hidden="true">${escapeHtml((nameFrom || "?").trim().charAt(0).toLocaleUpperCase() || "?")}</div>`;
+  const who = !isMe && (isAnima || nameFrom)
+    ? `<div class="chat-line-who">${escapeHtml(speakerName || nameFrom)}</div>`
+    : "";
+  const meta = _lineMetaHtml(msg, opts, isMe);
+  const actions = live && msg.streaming ? "" : _lineActionsHtml();
+  const rowClass = `chat-line chat-line--${rowKind}`;
+  return `<div class="${rowClass}" data-message-row${notificationId}${replyData}>`
+    + `${face}<div class="chat-line-col">${who}<div class="chat-line-content-row">${bubble}${meta}${actions}</div>${via}</div>`
+    + `</div>`;
+}
+
 const _USER_SVG = `<svg class="chat-msg-avatar-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>`;
 
 function _renderAvatar(name, avatarMap, companyColors) {
@@ -472,6 +609,10 @@ export function renderHistoryMessage(msg, opts) {
   const renderImages = opts.renderChatImages || (() => "");
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
   const avatarMap = opts.avatarMap || null;
+
+  if (opts.lineChat && (msg.type === "human_notify" || msg.type === "human_reply" || msg.role !== "system")) {
+    return _lineMessage(msg, opts);
+  }
 
   const ts = msg.ts ? smartTimestamp(msg.ts) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
@@ -817,10 +958,26 @@ export function renderCollapsibleActivityBundle(items, opts) {
   const normalized = (items || []).filter((item) => item?.type && _itemMessages(item).length > 0);
   if (normalized.length === 0) return "";
 
+  const allMessages = normalized.flatMap(_itemMessages);
+  const itemCount = allMessages.length;
   const startTs = normalized.map(_itemStart).filter(Boolean).sort()[0] || "";
   const endTs = normalized.map(_itemEnd).filter(Boolean).sort().slice(-1)[0] || "";
   const timeLabel = _timeRange(startTs, endTs, smartTimestamp);
-  const headerLabel = t("chat.activity_bundle_count", { count: normalized.length });
+  const types = new Set(normalized.map((item) => item.type));
+  let activityLabel;
+  if (types.has("dm")) {
+    const people = [...new Set(allMessages.flatMap((message) => [message.from_person, message.to_person]).filter(Boolean))];
+    if (opts.animaName && !people.includes(opts.animaName)) people.unshift(opts.animaName);
+    activityLabel = t("chat.line.background_direct", {
+      people: people.join(t("chat.line.background_people_separator")) || t("chat.dm_activity"),
+    });
+  } else if (types.has("cron") || types.has("heartbeat") || types.has("task")) {
+    const first = normalized.find((item) => item.type === "cron" || item.type === "heartbeat" || item.type === "task");
+    activityLabel = _activityEntryTitle(first, first?.type, opts) || t("chat.line.background_work");
+  } else {
+    activityLabel = t("chat.line.background_work");
+  }
+  const headerLabel = t("chat.line.background_count", { label: activityLabel, count: itemCount });
 
   const byType = new Map();
   for (const item of normalized) {
@@ -851,13 +1008,13 @@ export function renderCollapsibleActivityBundle(items, opts) {
   }).join("");
 
   return (
-    `<div class="bg-session-group bg-session-bundle bg-session-node" data-bg-node>` +
-    `<div class="bg-session-header bg-session-header--bundle" data-bg-toggle>` +
-    `<span class="bg-session-chevron">\u25B6</span>` +
-    `<span class="bg-session-label">${escapeHtml(headerLabel)}</span>` +
-    `<span class="bg-session-time">${escapeHtml(timeLabel)}</span>` +
-    `</div>` +
-    `<div class="bg-session-body bg-session-bundle-body" style="display:none;">${categoryHtml}</div>` +
+    `<div class="chat-sysline bg-session-node" data-bg-node>` +
+    `<button type="button" class="chat-sysline-toggle" data-bg-toggle aria-expanded="false">` +
+    `<span class="chat-sysline-gear" aria-hidden="true">⚙</span>` +
+    `<span class="chat-sysline-label">${escapeHtml(headerLabel)}</span>` +
+    `<span class="chat-sysline-time">${timeLabel ? `· ${escapeHtml(timeLabel)}` : ""} ▸</span>` +
+    `</button>` +
+    `<div class="chat-sysline-body bg-session-body bg-session-bundle-body" hidden>${categoryHtml}</div>` +
     `</div>`
   );
 }
@@ -971,7 +1128,7 @@ function renderCollapsibleSession(sessions, type, opts) {
  */
 export function bindCollapsibleSessionHandlers(container) {
   if (!container) return;
-  container.querySelectorAll(".bg-session-header[data-bg-toggle], .bg-session-header:not([data-bg-bound])").forEach((header) => {
+  container.querySelectorAll(".chat-sysline-toggle, .bg-session-header[data-bg-toggle], .bg-session-header:not([data-bg-bound])").forEach((header) => {
     if (header.dataset.bgBound === "1") return;
     header.dataset.bgBound = "1";
     header.addEventListener("click", () => {
@@ -981,7 +1138,9 @@ export function bindCollapsibleSessionHandlers(container) {
       if (!body) return;
       const isExpanded = group.classList.contains("expanded");
       group.classList.toggle("expanded", !isExpanded);
-      body.style.display = isExpanded ? "none" : "";
+      body.hidden = isExpanded;
+      if (!header.classList.contains("chat-sysline-toggle")) body.style.display = isExpanded ? "none" : "";
+      header.setAttribute("aria-expanded", String(!isExpanded));
     });
   });
 }
@@ -1002,6 +1161,10 @@ export function renderLiveBubble(msg, opts) {
   const renderImages = opts.renderChatImages || (() => "");
   const labels = opts.labels || {};
   const avatarMap = opts.avatarMap || null;
+
+  if (opts.lineChat && msg.role !== "thinking" && msg.role !== "system") {
+    return _lineMessage(msg, opts, { live: true });
+  }
 
   const ts = msg.timestamp ? smartTimestamp(msg.timestamp) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
@@ -1301,7 +1464,10 @@ export function bindBubbleActionHandlers(container) {
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".bubble-action-btn");
     if (btn) {
-      const bubble = btn.closest(".chat-bubble.assistant");
+      const line = btn.closest(".chat-line");
+      const bubble = btn.closest(".chat-line-bubble")
+        || line?.querySelector(".chat-line-bubble")
+        || btn.closest(".chat-bubble.assistant");
       if (!bubble) return;
       const rawText = bubble.dataset.rawText || bubble.textContent || "";
       const action = btn.dataset.action;
@@ -1321,6 +1487,37 @@ export function bindBubbleActionHandlers(container) {
         actions.classList.toggle("visible");
       }
     }
+  });
+}
+
+/** Bind reply and expression-face click handlers for LINE-style rows. */
+export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
+  if (!container || container.dataset.chatLineHandlersBound) return;
+  container.dataset.chatLineHandlersBound = "1";
+  container.addEventListener("click", (event) => {
+    const replyButton = event.target.closest('.chat-line-action[data-action="reply"]');
+    if (replyButton) {
+      event.preventDefault();
+      const row = replyButton.closest(".chat-line");
+      const bubble = row?.querySelector(".chat-line-bubble");
+      if (!row || !bubble) return;
+      onReply?.({
+        type: row.dataset.notificationId ? "notification" : "message",
+        notificationId: row.dataset.notificationId || "",
+        text: bubble.dataset.replyText || bubble.dataset.rawText || bubble.textContent || "",
+        name: bubble.dataset.replyName || "",
+      });
+      return;
+    }
+
+    const face = event.target.closest(".chat-line-face");
+    if (!face) return;
+    event.preventDefault();
+    onFaceClick?.({
+      name: face.dataset.anima || "",
+      emotion: face.dataset.emotion || "neutral",
+      url: face.dataset.bustUrl || "",
+    });
   });
 }
 
@@ -1346,7 +1543,8 @@ export function bindHumanNotifyHandlers(container, opts = {}) {
     if (!callbackId) return;
 
     if (decision === "comment") {
-      const input = document.getElementById("chatPageInput");
+      const input = container.closest(".chat-pane")?.querySelector('[data-chat-id="chatPageInput"]')
+        || document.getElementById("chatPageInput");
       if (input) {
         input.focus();
         input.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -1362,7 +1560,7 @@ export function bindHumanNotifyHandlers(container, opts = {}) {
     if (!animaName) return;
 
     const actions = btn.closest(".chat-human-notify-actions");
-    const card = btn.closest(".chat-human-notify");
+    const card = btn.closest(".chat-human-notify") || btn.closest(".chat-line-bubble");
     if (actions) {
       actions.querySelectorAll("button").forEach((b) => { b.disabled = true; });
     }
@@ -1439,6 +1637,11 @@ function _downloadAsText(text, bubble) {
 }
 
 function _extractBubbleTimestamp(bubble) {
+  const rawTimestamp = bubble.dataset.messageTs || "";
+  if (rawTimestamp) {
+    const parsed = new Date(rawTimestamp);
+    if (!isNaN(parsed.getTime())) return _formatTimestamp(parsed);
+  }
   const tsEl = bubble.querySelector(".chat-ts");
   if (tsEl) {
     const tsText = tsEl.textContent.trim();

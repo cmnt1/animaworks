@@ -202,6 +202,7 @@ export function createAnimaController(ctx) {
     const prevAnima = state.selectedAnima;
     const prevThread = state.selectedThreadId || "default";
     const currentInput = $("chatPageInput");
+    if (prevAnima && prevAnima !== name) ctx.controllers.events?.clearReplyTarget();
     if (prevAnima && currentInput) {
       saveDraft(prevAnima, currentInput.value || "", prevThread);
       state.activeThreadByAnima[prevAnima] = prevThread;

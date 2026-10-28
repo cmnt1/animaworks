@@ -5,6 +5,7 @@ import {
 } from "./ctx.js";
 import { TextAnimator, stripThinkTags } from "../../shared/chat/render-utils.js";
 import { streamMeetingChat } from "../../shared/chat-stream.js";
+import { clearReplyTarget, getReplyTarget, quoteReplyMessage } from "../../shared/chat/reply-target.js";
 
 const SEND_BTN_ICONS = {
   send: `<svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7" /></svg>`,
@@ -15,7 +16,7 @@ const SEND_BTN_ICONS = {
 export function createStreamingController(ctx) {
   const $ = ctx.$;
   const { state, deps } = ctx;
-  const { t, escapeHtml, logger, fetchActiveStream, fetchStreamProgress } = deps;
+  const { t, api, escapeHtml, logger, fetchActiveStream, fetchStreamProgress } = deps;
   const mgr = state.manager;
 
   mgr.addEventListener("stream-state-changed", () => {
@@ -196,7 +197,20 @@ export function createStreamingController(ctx) {
   function submitChat() {
     const input = $("chatPageInput");
     if (!input) return;
-    const msg = input.value.trim();
+    const replyTarget = getReplyTarget(state);
+    const targetIsCurrent = (!replyTarget?.animaName || replyTarget.animaName === state.selectedAnima)
+      && (!replyTarget?.threadId || replyTarget.threadId === state.selectedThreadId);
+    if (replyTarget && !targetIsCurrent) {
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+    }
+    const activeReplyTarget = targetIsCurrent ? replyTarget : null;
+    const rawMsg = input.value.trim();
+    if (activeReplyTarget?.type === "notification" && rawMsg) {
+      sendNotificationReply(rawMsg, activeReplyTarget);
+      return;
+    }
+    const msg = activeReplyTarget && rawMsg ? quoteReplyMessage(rawMsg, activeReplyTarget) : rawMsg;
     const hasImages = state.imageInputManager && state.imageInputManager.getImageCount() > 0;
     const meetingActive = ctx.controllers.meeting?.isActive?.();
     const name = state.selectedAnima;
@@ -204,6 +218,11 @@ export function createStreamingController(ctx) {
     const streamCtx = name ? mgr.getStreamingContext(name) : null;
     const isChatStreaming = streamCtx && streamCtx.thread === tid;
     const pendingQueue = name ? mgr.getPendingQueue(name, tid) : [];
+
+    if (activeReplyTarget && (msg || hasImages)) {
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+    }
 
     if (meetingActive && (msg || hasImages)) {
       sendMeetingChat(msg, {
@@ -253,6 +272,36 @@ export function createStreamingController(ctx) {
 
     if (pendingQueue.length > 0) { interruptAndSendPending(); return; }
     stopStreaming();
+  }
+
+  async function sendNotificationReply(text, target) {
+    const name = target.animaName || state.selectedAnima;
+    const notificationId = target.notificationId || "";
+    const tid = state.selectedThreadId;
+    if (!name || !notificationId) return;
+    const input = $("chatPageInput");
+    try {
+      await api(`/api/animas/${encodeURIComponent(name)}/notifications/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_id: notificationId, text }),
+      });
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+      if (input) {
+        input.value = "";
+        input.style.height = "auto";
+      }
+      saveDraft(name, "", tid);
+      state.imageInputManager?.clearImages();
+      await mgr.loadHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
+      if (state.selectedAnima === name && state.selectedThreadId === tid) {
+        ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached());
+      }
+      updateSendButton();
+    } catch (error) {
+      logger.warn("Notification reply failed", { anima: name, error: error?.message });
+    }
   }
 
   async function sendChat(message, overrideImages = null) {

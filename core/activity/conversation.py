@@ -226,6 +226,7 @@ class ConversationMixin:
     ) -> list[dict[str, Any]]:
         """Convert raw activity entries to conversation messages (pair + nest tools)."""
         from core.activity.format import pair_tool_events
+        from core.anima.emotion_tag import extract_emotion
 
         result_by_use_id: dict[int, ActivityEntry] = {
             id(ex.tool_use): ex.result for ex in pair_tool_events(entries) if ex.result is not None
@@ -264,10 +265,12 @@ class ConversationMixin:
                 )
 
             elif e.type == "response_sent":
+                clean_content, emotion = extract_emotion(e.content)
                 msg = {
                     "ts": e.ts,
                     "role": "assistant",
-                    "content": e.content,
+                    "content": clean_content,
+                    "emotion": emotion if clean_content != e.content else None,
                     "from_person": "",
                     "to_person": e.to_person,
                     "source_key": _source_key_for_entry(e),
@@ -317,6 +320,9 @@ class ConversationMixin:
                         "subject": e.meta.get("subject", ""),
                         "priority": e.meta.get("priority", "normal"),
                         "callback_id": e.meta.get("callback_id", ""),
+                        "notification_id": e.meta.get("notification_id") or e.ts,
+                        "replied": False,
+                        "emotion": None,
                         "from_person": "",
                         "source_key": "call_human",
                         "tool_calls": [],
@@ -333,6 +339,8 @@ class ConversationMixin:
                         "content": e.content,
                         "from_person": e.from_person,
                         "via": e.via,
+                        "notification_id": e.meta.get("notification_id", ""),
+                        "callback_id": e.meta.get("callback_id", ""),
                         "source_key": "call_human_reply",
                         "tool_calls": [],
                     }
@@ -424,6 +432,28 @@ class ConversationMixin:
                 )
 
         self._flush_tool_calls(messages, pending_tool_calls)
+
+        notifications = [msg for msg in messages if msg.get("type") == "human_notify"]
+        for reply in (msg for msg in messages if msg.get("type") == "human_reply"):
+            reply_ts = str(reply.get("ts") or "")
+            candidates = [notify for notify in notifications if str(notify.get("ts") or "") <= reply_ts]
+            if not candidates:
+                continue
+
+            notification_id = reply.get("notification_id")
+            callback_id = reply.get("callback_id")
+            matched = next(
+                (
+                    notify
+                    for notify in reversed(candidates)
+                    if (notification_id and notify.get("notification_id") == notification_id)
+                    or (callback_id and notify.get("callback_id") == callback_id)
+                ),
+                None,
+            )
+            if matched is None:
+                matched = next((notify for notify in reversed(candidates) if not notify["replied"]), candidates[-1])
+            matched["replied"] = True
 
         return messages
 

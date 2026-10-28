@@ -4,6 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
+import json
 import logging
 import re
 from pathlib import Path
@@ -147,6 +148,81 @@ def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
             exc,
         )
         return None
+
+
+_FACE_SIZES: dict[str, int] = {"S": 96, "M": 192}
+
+
+def _face_source(assets_dir: Path, emotion: str, style: str) -> Path | None:
+    suffix = "_realistic" if style == "realistic" else ""
+    stem = "avatar_bustup" if emotion == "neutral" else f"avatar_bustup_{emotion}"
+    source = assets_dir / f"{stem}{suffix}.png"
+    if source.is_file():
+        return source
+    fallback = assets_dir / f"icon{suffix}.png"
+    return fallback if fallback.is_file() else None
+
+
+def _face_crop_config(assets_dir: Path, style: str) -> tuple[float, float, float]:
+    """Load normalized face crop coordinates, using the checked mei default."""
+    default = (0.24, 0.0, 0.52)
+    path = assets_dir / "face_crop.json"
+    if not path.is_file():
+        return default
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        config = data.get(style, data) if isinstance(data, dict) else {}
+        if not isinstance(config, dict):
+            return default
+        x, y, width = (float(config.get(key, fallback)) for key, fallback in zip(("x", "y", "w"), default, strict=True))
+        if not all(0 <= value <= 1 for value in (x, y, width)) or width <= 0:
+            return default
+        return x, y, width
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        logger.warning("Invalid face crop configuration at %s", path)
+        return default
+
+
+def _resolve_face_thumbnail(
+    source: Path,
+    assets_dir: Path,
+    emotion: str,
+    style: str,
+    size_key: str,
+) -> Path:
+    """Generate or reuse a cropped WebP face thumbnail."""
+    target_px = _FACE_SIZES[size_key]
+    thumbs_dir = assets_dir / ".thumbs"
+    thumb_path = thumbs_dir / f"face_{emotion}_{style}.{size_key}.webp"
+    crop_path = assets_dir / "face_crop.json"
+    newest_source_mtime = source.stat().st_mtime_ns
+    if crop_path.is_file():
+        newest_source_mtime = max(newest_source_mtime, crop_path.stat().st_mtime_ns)
+    if thumb_path.is_file() and thumb_path.stat().st_mtime_ns >= newest_source_mtime:
+        return thumb_path
+
+    from PIL import Image
+
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    is_face = source.name.startswith("avatar_bustup")
+    with Image.open(source) as original:
+        image = original.convert("RGBA") if original.mode in ("P", "RGBA", "LA") else original.convert("RGB")
+        width, height = image.size
+        if is_face:
+            x, y, crop_width = _face_crop_config(assets_dir, style)
+            side = max(1, min(round(crop_width * width), width, height))
+            left = max(0, min(round(x * width), width - side))
+            top = max(0, min(round(y * height), height - side))
+        else:
+            side = min(width, height)
+            left = (width - side) // 2
+            top = (height - side) // 2
+        image = image.crop((left, top, left + side, top + side))
+        image = image.resize((target_px, target_px), Image.Resampling.LANCZOS)
+        temporary = thumb_path.with_suffix(".webp.tmp")
+        image.save(temporary, format="WEBP", quality=85)
+        temporary.replace(thumb_path)
+    return thumb_path
 
 
 class AssetGenerateRequest(BaseModel):
@@ -476,6 +552,50 @@ def create_assets_router() -> APIRouter:
             "previews": previews,
             "backup_id": backups[0] if backups else None,
         }
+
+    @router.get("/animas/{name}/assets/face/{emotion}")
+    async def get_face_asset(
+        name: str,
+        emotion: str,
+        request: Request,
+        size: str = "S",
+        style: str = "anime",
+    ):
+        """Serve a cached square crop of an Anima's bustup expression."""
+        from core.schemas import VALID_EMOTIONS
+
+        if emotion not in VALID_EMOTIONS:
+            raise HTTPException(status_code=400, detail="Invalid emotion")
+        if size not in _FACE_SIZES:
+            raise HTTPException(status_code=400, detail="Invalid size; expected S or M")
+        if style not in {"anime", "realistic"}:
+            raise HTTPException(status_code=400, detail="Invalid style; expected anime or realistic")
+        if not name or Path(name).name != name or name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Invalid anima name")
+
+        animas_dir = request.app.state.animas_dir
+        anima_dir = (animas_dir / name).resolve()
+        if not anima_dir.is_relative_to(animas_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid anima path")
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        assets_dir = anima_dir / "assets"
+        source = _face_source(assets_dir, emotion, style)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Face asset not found")
+        try:
+            face_path = _resolve_face_thumbnail(source, assets_dir, emotion, style, size)
+        except ImportError as exc:
+            raise HTTPException(status_code=500, detail="Image processing is unavailable") from exc
+        except OSError as exc:
+            logger.warning("Failed to create face image for %s/%s: %s", name, emotion, exc)
+            raise HTTPException(status_code=500, detail="Unable to create face image") from exc
+        return FileResponse(
+            face_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
 
     @router.api_route("/animas/{name}/assets/{filename}", methods=["GET", "HEAD"])
     async def get_asset(

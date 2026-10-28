@@ -8,6 +8,7 @@ import {
   renderSessionDivider as _sharedRenderSessionDivider,
   bindToolCallHandlers as _sharedBindToolCallHandlers,
   bindBubbleActionHandlers as _sharedBindBubbleActionHandlers,
+  bindChatLineHandlers as _sharedBindChatLineHandlers,
   bindHumanNotifyHandlers as _sharedBindHumanNotifyHandlers,
   renderLiveBubble,
   renderStreamingBubbleInner,
@@ -79,10 +80,16 @@ export function createChatRenderer(ctx) {
       "human",
       "user",
       "guest",
-      ...(state.users || []).map((u) => u?.username).filter(Boolean),
+      ...(state.users || []).flatMap((u) => [u?.username, u?.display_name]).filter(Boolean),
       document.getElementById("currentUserLabel")?.textContent || "",
       localStorage.getItem("animaworks_user") || "",
     ].filter(Boolean)),
+    currentUserNames: (() => {
+      const current = document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "";
+      const user = (state.users || []).find((item) => item?.username === current);
+      return new Set([current, user?.display_name, "human"].filter(Boolean));
+    })(),
+    lineChat: true,
     truncateLen: CONSTANTS.TOOL_RESULT_TRUNCATE,
     labels: {
       thinking: t("chat.thinking"),
@@ -381,10 +388,22 @@ export function createChatRenderer(ctx) {
     let hasRenderedTimelineItem = false;
     let hasRenderedConversation = false;
     let activityRun = [];
+    let hiddenActivityCount = 0;
+    const showBackgroundActivity = localStorage.getItem("aw-chat-show-bg") !== "false";
+
+    const countActivityItems = (items) => items.reduce((count, item) => {
+      if (Array.isArray(item?.session?.messages)) return count + item.session.messages.length;
+      if (Array.isArray(item?.messages)) return count + item.messages.length;
+      return count + (item?.message ? 1 : 0);
+    }, 0);
 
     const flushActivityRun = () => {
       if (activityRun.length === 0) return false;
-      sessionsHtml += _sharedRenderCollapsibleActivityBundle(activityRun, opts);
+      if (showBackgroundActivity) {
+        sessionsHtml += _sharedRenderCollapsibleActivityBundle(activityRun, opts);
+      } else {
+        hiddenActivityCount += countActivityItems(activityRun);
+      }
       activityRun = [];
       return true;
     };
@@ -454,10 +473,17 @@ export function createChatRenderer(ctx) {
       }
     }
 
-    messagesEl.innerHTML = topHtml + sessionsHtml + liveHtml;
+    const hiddenActivityHtml = !showBackgroundActivity && hiddenActivityCount
+      ? `<div class="chat-bg-hidden-note">${t("chat.line.background_hidden", { count: hiddenActivityCount })}</div>`
+      : "";
+    messagesEl.innerHTML = topHtml + sessionsHtml + liveHtml + hiddenActivityHtml;
     bindToolCallHandlers(messagesEl);
     _sharedBindCollapsibleSessionHandlers(messagesEl);
     _sharedBindBubbleActionHandlers(messagesEl);
+    _sharedBindChatLineHandlers(messagesEl, {
+      onReply: (target) => ctx.controllers.events?.showReplyTarget(target),
+      onFaceClick: ({ name, emotion, url }) => ctx.controllers.avatar?.showBustupOverlay(name, emotion, url),
+    });
     _sharedBindHumanNotifyHandlers(messagesEl, {
       getAnimaName: () => state.selectedAnima,
     });

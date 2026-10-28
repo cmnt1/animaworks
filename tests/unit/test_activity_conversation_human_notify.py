@@ -95,6 +95,46 @@ class TestEntriesToMessages:
         assert msg["source_key"] == "call_human_reply"
         assert msg["tool_calls"] == []
 
+    def test_response_emotion_is_extracted_and_tag_removed(self, activity_logger: ActivityLogger) -> None:
+        tagged = _make_entry(
+            "response_sent",
+            "2026-08-09T10:00:00+09:00",
+            content='こんにちは。 <!-- emotion: {"emotion": "smile"} -->',
+        )
+        plain = _make_entry("response_sent", "2026-08-09T10:01:00+09:00", content="普通の返答")
+
+        messages = activity_logger._entries_to_messages([tagged, plain])
+
+        assert messages[0]["content"] == "こんにちは。"
+        assert messages[0]["emotion"] == "smile"
+        assert messages[1]["content"] == "普通の返答"
+        assert messages[1]["emotion"] is None
+
+    def test_notification_id_and_replied_state(self, activity_logger: ActivityLogger) -> None:
+        notification_ts = "2026-08-09T10:00:00+09:00"
+        entries = [
+            _make_entry(
+                "human_notify",
+                notification_ts,
+                content="Please approve",
+                meta={"callback_id": "cb-1"},
+            ),
+            _make_entry(
+                "human_reply",
+                "2026-08-09T10:05:00+09:00",
+                content="approve",
+                from_person="alice",
+                via="web",
+                meta={"notification_id": notification_ts},
+            ),
+        ]
+
+        messages = activity_logger._entries_to_messages(entries)
+
+        notification = messages[0]
+        assert notification["notification_id"] == notification_ts
+        assert notification["replied"] is True
+
     def test_call_human_tool_use_skipped(self, activity_logger: ActivityLogger) -> None:
         """call_human tool_use is not nested; human_notify card is canonical."""
         entries = [

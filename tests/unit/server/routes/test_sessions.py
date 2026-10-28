@@ -14,6 +14,7 @@ from httpx import ASGITransport, AsyncClient
 
 def _make_test_app(animas_dir: Path | None = None, anima_names: list[str] | None = None):
     from fastapi import FastAPI
+
     from server.routes.sessions import create_sessions_router
 
     app = FastAPI()
@@ -185,6 +186,61 @@ class TestGetSessionDetail:
             resp = await client.get("/api/animas/alice/sessions/bad")
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Session data corrupted"
+
+
+class TestNotificationReply:
+    async def test_reply_routes_with_context_and_marks_notification_replied(self, tmp_path, monkeypatch):
+        from core.activity.logger import ActivityLogger
+
+        anima_dir = tmp_path / "alice"
+        activity = ActivityLogger(anima_dir)
+        notify = activity.log(
+            "human_notify",
+            content="Deploy after the certificate check.",
+            meta={"subject": "Deployment", "priority": "normal"},
+            ctx="chat",
+        )
+        monkeypatch.setattr("core.paths.get_shared_dir", lambda: tmp_path / "shared")
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: tmp_path)
+
+        messenger = MagicMock()
+        with patch("core.messaging.messenger.Messenger", return_value=messenger):
+            app = _make_test_app(animas_dir=tmp_path)
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/animas/alice/notifications/reply",
+                    json={"notification_id": notify.ts, "text": "Proceed with the certificate first."},
+                )
+
+        assert response.status_code == 200
+        assert response.json()["replied"] is True
+        delivery = messenger.receive_external.call_args.kwargs
+        assert delivery["source"] == "web"
+        assert "Deployment" in delivery["content"]
+        assert "Deploy after the certificate check." in delivery["content"]
+        assert "Proceed with the certificate first." in delivery["content"]
+        assert delivery["external_thread_ts"] == notify.ts
+
+        messages = [
+            message
+            for session in activity.get_conversation_view(limit=20)["sessions"]
+            for message in session["messages"]
+        ]
+        notify_message = next(message for message in messages if message.get("type") == "human_notify")
+        assert notify_message["replied"] is True
+        assert notify_message["notification_id"] == notify.ts
+
+    async def test_unknown_notification_returns_404(self, tmp_path):
+        (tmp_path / "alice").mkdir()
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/animas/alice/notifications/reply",
+                json={"notification_id": "missing", "text": "reply"},
+            )
+        assert response.status_code == 404
 
 
 # ── GET /animas/{name}/transcripts/{date} ───────────────

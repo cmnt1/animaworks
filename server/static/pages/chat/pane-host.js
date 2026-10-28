@@ -36,6 +36,12 @@ function paneHtml() {
             <button type="button" data-chat-id="chatAddConversationBtn" class="chat-add-conversation-btn">${t("chat.anima_select")}</button>
             <div data-chat-id="chatAddConversationMenu" class="chat-add-conversation-menu" role="listbox" aria-label="${t("chat.anima_select")}"></div>
           </div>
+          <div class="chat-pane-head-tools" data-slot="head-tools">
+            <label class="chat-bg-toggle" title="${t("chat.line.show_background")}">
+              <input type="checkbox" data-chat-id="chatShowBackground" aria-label="${t("chat.line.show_background")}">
+              <span>${t("chat.line.show_background")}</span>
+            </label>
+          </div>
         </div>
         <div class="chat-thread-dropdown" data-chat-id="chatThreadDropdown">
           <button type="button" class="chat-thread-dropdown-btn" data-chat-id="chatThreadDropdownBtn" aria-label="${t("pane.thread_label")}">
@@ -71,17 +77,21 @@ function paneHtml() {
       </div>
 
       <div class="chat-messages-area">
-        <div data-chat-id="chatPageMessages" class="chat-messages" style="flex:1; overflow-y:auto; padding:1rem;">
+        <div data-chat-id="chatPageMessages" class="chat-messages chat-line-talk" style="flex:1; overflow-y:auto; padding:1rem;">
           <div class="chat-empty">${t("chat.anima_select_first")}</div>
         </div>
-        <button type="button" data-chat-id="chatScrollToBottom" class="scroll-to-bottom-btn" aria-label="Scroll to bottom">
+      </div>
+
+      <form data-chat-id="chatPageForm" class="chat-input-form">
+        <button type="button" data-chat-id="chatScrollToBottom" class="scroll-to-bottom-btn" aria-label="${t("chat.line.scroll_bottom")}" title="${t("chat.line.scroll_bottom")}">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
-      </div>
-
-      <form data-chat-id="chatPageForm" class="chat-input-form">
+        <div class="chat-line-reply-chip" data-chat-id="chatReplyChip" hidden>
+          <span data-chat-id="chatReplyText"></span>
+          <button type="button" data-chat-id="chatReplyCancel" aria-label="${t("chat.line.cancel_reply")}">×</button>
+        </div>
         <div class="image-preview-bar" data-chat-id="chatPagePreviewBar" style="display:none"></div>
         <div class="chat-work-indicator" data-chat-id="chatWorkIndicator" hidden></div>
         <div class="pending-queue-bar" data-chat-id="chatPagePending" style="display:none">

@@ -236,6 +236,105 @@ def _age_days(iso_str: str, now: datetime) -> float:
         return float("inf")
 
 
+async def _resolve_callback_text_reply(
+    callback_id: str,
+    text: str,
+    actor: str,
+    *,
+    thread_ts: str = "",
+) -> bool:
+    """Resolve a numbered callback reply when it matches an approval option."""
+    if not callback_id or not text.isdigit():
+        return False
+    from core.notification.interactive import get_interaction_router
+
+    router = get_interaction_router()
+    request = await router.lookup(callback_id)
+    if request is None:
+        return False
+    idx = int(text) - 1
+    if not 0 <= idx < len(request.options):
+        return False
+    decision = request.options[idx]
+    result = await router.resolve(callback_id, decision=decision, actor=actor, source="text_reply")
+    if result is None:
+        return False
+    logger.info(
+        "Interactive text reply resolved: thread_ts=%s callback_id=%s decision=%s",
+        thread_ts,
+        callback_id,
+        decision,
+    )
+    return True
+
+
+def _notification_context(target: str, notification_text: str) -> str:
+    summary = notification_text.replace("\n", " ")[:_THREAD_CTX_SUMMARY_LIMIT]
+    if not summary:
+        return ""
+    return (
+        "[Thread context — this is a reply to a call_human notification]\n"
+        f"  {target}: {summary}\n"
+        "[/Thread context]\n\n"
+    )
+
+
+async def deliver_notification_reply(
+    target: str,
+    text: str,
+    shared_dir: Path,
+    *,
+    actor: str = "human",
+    source: str = "web",
+    source_message_id: str = "",
+    external_user_id: str = "",
+    external_channel_id: str = "",
+    external_thread_ts: str = "",
+    thread_context: str = "",
+    notification_id: str = "",
+    callback_id: str = "",
+) -> bool:
+    """Send a notification reply to the Anima and record it for chat history."""
+    reply = (text or "").strip()[:_MAX_REPLY_LENGTH]
+    if not target or not reply:
+        return False
+    from core.messaging.messenger import Messenger
+
+    Messenger(shared_dir, target).receive_external(
+        content=(thread_context or "") + reply,
+        source=source,
+        source_message_id=source_message_id,
+        external_user_id=external_user_id,
+        external_channel_id=external_channel_id,
+        external_thread_ts=external_thread_ts or notification_id,
+        intent="question",
+    )
+
+    try:
+        from core.activity.logger import ActivityLogger
+        from core.paths import get_animas_dir
+
+        meta: dict[str, str] = {}
+        if external_thread_ts:
+            meta["thread_ts"] = external_thread_ts
+        if notification_id:
+            meta["notification_id"] = notification_id
+        if callback_id:
+            meta["callback_id"] = callback_id
+        await ActivityLogger(get_animas_dir() / target).alog(
+            "human_reply",
+            content=reply,
+            from_person=actor or external_user_id or "human",
+            via=source,
+            ctx="chat",
+            meta=meta,
+            safe=True,
+        )
+    except Exception:
+        logger.warning("Failed to log notification reply for anima=%s", target, exc_info=True)
+    return True
+
+
 async def route_thread_reply(
     event: dict,
     shared_dir: Path,
@@ -273,40 +372,16 @@ async def route_thread_reply(
 
     callback_id = (mapping.get("callback_id") or "").strip()
     raw_reply = (event.get("text") or "").strip()
-    if callback_id and raw_reply.isdigit():
-        from core.notification.interactive import get_interaction_router
+    user_id = str(event.get("user") or "")
+    actor = user_id
+    try:
+        from core.notification.slack_names import get_cached_user_name
 
-        router = get_interaction_router()
-        req = await router.lookup(callback_id)
-        if req is not None:
-            idx = int(raw_reply) - 1
-            if 0 <= idx < len(req.options):
-                decision = req.options[idx]
-                user_id = str(event.get("user") or "")
-                actor = user_id
-                try:
-                    from core.notification.slack_names import get_cached_user_name
-
-                    actor = get_cached_user_name(user_id) or user_id
-                except Exception:
-                    logger.debug(
-                        "Failed to resolve Slack display name for text_reply actor",
-                        exc_info=True,
-                    )
-                result = await router.resolve(
-                    callback_id,
-                    decision=decision,
-                    actor=actor,
-                    source="text_reply",
-                )
-                if result is not None:
-                    logger.info(
-                        "Interactive text reply resolved: thread_ts=%s callback_id=%s decision=%s",
-                        thread_ts,
-                        callback_id,
-                        decision,
-                    )
-                    return True
+        actor = get_cached_user_name(user_id) or user_id
+    except Exception:
+        logger.debug("Failed to resolve Slack display name for text_reply actor", exc_info=True)
+    if await _resolve_callback_text_reply(callback_id, raw_reply, actor, thread_ts=thread_ts):
+        return True
 
     target = mapping["anima"]
     text = sanitize_slack_reply(event.get("text", ""))
@@ -327,62 +402,22 @@ async def route_thread_reply(
     if not thread_ctx:
         notification_text = mapping.get("notification_text", "")
         if notification_text:
-            summary = notification_text.replace("\n", " ")[:_THREAD_CTX_SUMMARY_LIMIT]
-            thread_ctx = (
-                f"[Thread context — this is a reply to a call_human notification]\n"
-                f"  {target}: {summary}\n"
-                f"[/Thread context]\n\n"
-            )
+            thread_ctx = _notification_context(target, notification_text)
             ctx_source = "stored"
 
-    content = thread_ctx + text if thread_ctx else text
-
-    from core.messaging.messenger import Messenger
-
-    messenger = Messenger(shared_dir, target)
-    messenger.receive_external(
-        content=content,
+    await deliver_notification_reply(
+        target,
+        text,
+        shared_dir,
+        actor=actor,
         source="slack",
-        source_message_id=event.get("ts", ""),
-        external_user_id=event.get("user", ""),
-        external_channel_id=event.get("channel", ""),
-        external_thread_ts=event.get("thread_ts", ""),
-        intent="question",
+        source_message_id=str(event.get("ts") or ""),
+        external_user_id=user_id,
+        external_channel_id=str(event.get("channel") or ""),
+        external_thread_ts=thread_ts,
+        thread_context=thread_ctx,
+        callback_id=callback_id,
     )
-
-    # Record raw reply on the main-thread conversation view (no thread_ctx).
-    # Interactive number replies are logged inside InteractionRouter.resolve.
-    try:
-        from core.activity.logger import ActivityLogger
-        from core.paths import get_animas_dir
-
-        user_id = str(event.get("user") or "")
-        from_person = user_id
-        try:
-            from core.notification.slack_names import get_cached_user_name
-
-            from_person = get_cached_user_name(user_id) or user_id
-        except Exception:
-            logger.debug(
-                "Failed to resolve Slack display name for human_reply log",
-                exc_info=True,
-            )
-        await ActivityLogger(get_animas_dir() / target).alog(
-            "human_reply",
-            content=text,
-            from_person=from_person,
-            via="slack",
-            ctx="chat",
-            meta={"thread_ts": thread_ts},
-            safe=True,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to log human_reply activity for thread_ts=%s anima=%s",
-            thread_ts,
-            target,
-            exc_info=True,
-        )
 
     logger.info(
         "Thread reply routed: thread_ts=%s -> anima=%s (ctx=%s)",

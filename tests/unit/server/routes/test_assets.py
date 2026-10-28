@@ -793,3 +793,109 @@ class TestListRemakePreviews:
         data = resp.json()
         assert data["previews"] == ["_preview_001_realistic.png", "_preview_002_realistic.png"]
         assert data["backup_id"] == "assets_backup_20260808_113051"
+
+
+class TestFaceAssets:
+    @staticmethod
+    def _write_region_png(path: Path, face_color: tuple[int, int, int]) -> Path:
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(image).rectangle((24, 0, 75, 51), fill=face_color)
+        image.save(path, format="PNG")
+        return path
+
+    async def test_face_crop_cache_and_size(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_smile.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+            second = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert first.status_code == 200
+        assert first.headers["content-type"].startswith("image/webp")
+        image = Image.open(BytesIO(first.content))
+        assert image.size == (96, 96)
+        assert image.getpixel((48, 48))[1] > 150  # the checked upper-center face crop
+        cache = assets_dir / ".thumbs" / "face_smile_anime.S.webp"
+        assert cache.is_file()
+        assert second.content == first.content
+        assert cache.stat().st_mtime_ns >= source.stat().st_mtime_ns
+
+    async def test_face_cache_rebuilds_when_source_changes(self, tmp_path):
+        import os
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_troubled.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/api/animas/alice/assets/face/troubled?size=M")
+            cache = assets_dir / ".thumbs" / "face_troubled_anime.M.webp"
+            old_mtime = cache.stat().st_mtime_ns
+            self._write_region_png(source, (20, 30, 210))
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, old_mtime + 1_000_000))
+            response = await client.get("/api/animas/alice/assets/face/troubled?size=M")
+
+        assert response.status_code == 200
+        assert cache.stat().st_mtime_ns > old_mtime
+
+    async def test_face_crop_uses_style_specific_configuration(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image, ImageDraw
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(source).rectangle((70, 50, 89, 69), fill=(15, 180, 40))
+        source.save(assets_dir / "avatar_bustup_smile.png", format="PNG")
+        (assets_dir / "face_crop.json").write_text(
+            '{"anime":{"x":0.7,"y":0.5,"w":0.2},"realistic":{"x":0.0,"y":0.0,"w":0.2}}',
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.getpixel((48, 48))[1] > 150
+
+    async def test_face_uses_style_icon_fallback_when_bustup_missing(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        _write_test_png(assets_dir / "icon_realistic.png", size=256)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/laugh?size=M&style=realistic")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.format == "WEBP"
+        assert image.size == (192, 192)
+        assert (assets_dir / ".thumbs" / "face_laugh_realistic.M.webp").is_file()
+
+    async def test_invalid_emotion_returns_400(self, tmp_path):
+        (tmp_path / "alice" / "assets").mkdir(parents=True)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/angry")
+        assert response.status_code == 400
