@@ -363,6 +363,45 @@ def test_query_uses_ssl_and_read_only_init_command(
     assert kwargs["password"] == "pw"
 
 
+def test_query_sets_configured_session_variables(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakePyMySQL()
+    _install_fake_pymysql(monkeypatch, fake)
+    secrets_dir = data_dir / "secretstore"
+    _write_secret(secrets_dir, "db-password", "pw")
+    source = _direct_source()
+    source["session_variables"] = {"accessible_team_ids": "__all__", "accessible_team_ids_json": '["__all__"]'}
+    _write_config(data_dir, sources={"main": source}, secrets_dir=str(secrets_dir))
+    fake.connection = _FakeConnection(_FakeCursor(columns=["a"], rows=[(1,)]))
+
+    enclave_sql.enclave_sql_query("main", "SELECT a FROM t")
+
+    init_command = fake.connection.connect_kwargs["init_command"]
+    assert init_command.startswith("SET SESSION transaction_read_only = 1")
+    assert "@accessible_team_ids = '__all__'" in init_command
+    assert """@accessible_team_ids_json = '["__all__"]'""" in init_command
+    assert ";" not in init_command
+
+
+@pytest.mark.parametrize(
+    "variables",
+    [
+        {"bad-name": "x"},
+        {"name": "x'; DROP TABLE t"},
+        {"name": "x\\"},
+    ],
+)
+def test_session_variables_reject_unsafe_values(variables: dict[str, str]) -> None:
+    from pydantic import ValidationError
+
+    from core.enclave.config import EnclaveSqlSourceConfig
+
+    with pytest.raises(ValidationError):
+        EnclaveSqlSourceConfig(**{**_direct_source(), "session_variables": variables})
+
+
 def test_query_disabled_enclave(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
