@@ -168,3 +168,20 @@ describe("chat reply targets", () => {
     assert.equal(getReplyTarget(state), null);
   });
 });
+
+describe("LINE-style voice call record", () => {
+  it("shows the call record with duration and summary in an Anima row", () => {
+    const html = renderHistoryMessage({
+      role: "assistant",
+      type: "voice_call",
+      content: "証明書は取得済みと伝えました",
+      duration_seconds: 84,
+      transcript: [{ speaker: "user", text: "取れた？" }, { speaker: "assistant", text: "取れています" }],
+    }, opts);
+    assert.match(html, /chat-line--anima/);
+    assert.match(html, /class="callrec"/);
+    assert.match(html, /chat.call.record_duration/);
+    assert.match(html, /証明書は取得済みと伝えました/);
+    assert.match(html, /chat-call-transcript/);
+  });
+});

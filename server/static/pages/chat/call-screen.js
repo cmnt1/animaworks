@@ -39,8 +39,20 @@ function _setSvgIcon(host, path) {
   host.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>`;
 }
 
+// Emoji are acting cues for the TTS voice; they are not part of what the Anima says.
+const _CAPTION_EMOJI_RE = /[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}]/gu;
+
+function _captionTail(value, max = 80) {
+  const text = String(value || "").trim();
+  return text.length > max ? `…${text.slice(-max)}` : text;
+}
+
 function _cleanResponseText(value) {
-  return String(value || "").replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim();
+  return String(value || "")
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(_CAPTION_EMOJI_RE, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /**
@@ -326,14 +338,14 @@ export class CallScreen {
       this.liveUserText = String(text);
       this._pushTranscript("user", this.liveUserText);
       this.els.captionUser.hidden = false;
-      this.els.captionUser.textContent = `${t("chat.call.you")}: ${this.liveUserText}`;
+      this.els.captionUser.textContent = `${t("chat.call.you")}: ${_captionTail(this.liveUserText)}`;
       this._showThinkingAfterDelay();
     });
     this._bind("transcriptPartial", ({ text } = {}) => {
       if (this.finished || !text) return;
       this.liveUserText = String(text);
       this.els.captionUser.hidden = false;
-      this.els.captionUser.textContent = `${t("chat.call.you")}: ${this.liveUserText}…`;
+      this.els.captionUser.textContent = `${t("chat.call.you")}: ${_captionTail(this.liveUserText)}…`;
     });
     this._bind("responseStart", () => {
       if (this.finished) return;

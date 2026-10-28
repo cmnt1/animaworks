@@ -101,8 +101,8 @@ body[data-theme="dark"] {
 @keyframes aw-call-dot { to { opacity: .25; transform: translateY(-3px); } }
 .aw-call-captions { position: relative; z-index: 2; align-self: end; display: grid; justify-items: center; gap: 7px; width: min(100%, 720px); margin: 0 auto; padding: 0 24px 12px; text-align: center; }
 .aw-call-caption { max-width: 100%; line-height: 1.55; text-shadow: 0 1px 6px rgba(0,0,0,.7); overflow-wrap: anywhere; }
-.aw-call-caption-user { font-size: 13px; opacity: .88; }
-.aw-call-caption-anima { font-size: 17px; }
+.aw-call-caption-user { font-size: 13px; opacity: .88; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.aw-call-caption-anima { font-size: 17px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
 .aw-call-screen.captions-hidden .aw-call-caption { display: none; }
 .aw-call-listen { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
 .aw-call-listen[hidden] { display: none; }
