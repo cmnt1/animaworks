@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af generated=2026-10-26 engine=local model=deepseek-v4.1-flash-1017 translator=2 -->
+<!-- i18n: source-sha256=11548fd04fb0fecd0a6c68b47e619ed8a9bdc10753006e68461a601bf80a09e4 generated=2026-10-28 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 모듈 목록
 
@@ -1128,15 +1128,15 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.memory_routes` | 450 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
-| `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
+| `server.routes.room` | 443 | SSE 스트리밍을 사용하는 회의실 API 라우트. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1173 | — |
+| `server.routes.system` | 1217 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정에 공통 헬퍼를 사용합니다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트; Anima별 status.json 설정은 공유 헬퍼를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 

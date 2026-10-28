@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 24620c08c781fad4d844f7cb794c80475cbba5111c5f6fd797e238ce5953234f -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 8682c89ef4e79923ef97bcf3ec3fb0dc2a6f35d203a67d013e9429e6146353dc -->
 
 # API リファレンス
 
@@ -237,7 +237,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 | GET | `/api/activity/group` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return one complete trigger-based activity group by stable ID. | `server/routes/system.py:get_activity_group` |
 | GET | `/api/activity/recent` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return recent activity events from unified ActivityLogger. | `server/routes/system.py:get_recent_activity` |
-| GET | `/api/activity/running-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return active background TaskExec workers grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
+| GET | `/api/activity/running-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return active TaskExec workers and other busy lanes grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
 | GET | `/api/settings/activity-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the current global activity level and schedule. | `server/routes/system.py:get_activity_level` |
 | PUT | `/api/settings/activity-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update global activity level and reschedule all heartbeats. | `server/routes/system.py:set_activity_level` |
 | PUT | `/api/settings/activity-schedule` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update the time-based activity schedule (night mode). | `server/routes/system.py:set_activity_schedule` |

@@ -200,7 +200,7 @@
     },
     "docs/en/README.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -222,7 +222,7 @@
     },
     "docs/en/architecture/anima-files.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -244,7 +244,7 @@
     },
     "docs/en/architecture/execution.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -268,7 +268,7 @@
     },
     "docs/en/architecture/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -288,7 +288,7 @@
     },
     "docs/en/architecture/lifecycle.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -312,7 +312,7 @@
     },
     "docs/en/architecture/messaging.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -334,7 +334,7 @@
     },
     "docs/en/architecture/process.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -356,7 +356,7 @@
     },
     "docs/en/architecture/prompt.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -380,7 +380,7 @@
     },
     "docs/en/architecture/tasks.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -400,7 +400,7 @@
     },
     "docs/en/brain-mapping.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -432,7 +432,7 @@
     },
     "docs/en/enclave.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "1a8f879b5ceaeff67146012c865af94acdeb30f75163475b45c7c78d9d3f0ec6",
@@ -472,7 +472,7 @@
     },
     "docs/en/integrations/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -488,7 +488,7 @@
     },
     "docs/en/integrations/slack.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -512,7 +512,7 @@
     },
     "docs/en/integrations/zoom.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -534,7 +534,7 @@
     },
     "docs/en/memory/activity-log.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -556,7 +556,7 @@
     },
     "docs/en/memory/consolidation.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -582,7 +582,7 @@
     },
     "docs/en/memory/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -604,7 +604,7 @@
     },
     "docs/en/memory/priming.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -628,7 +628,7 @@
     },
     "docs/en/memory/retrieval.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
@@ -654,7 +654,7 @@
     },
     "docs/en/operations/company.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -680,7 +680,7 @@
     },
     "docs/en/operations/configuration.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -704,7 +704,7 @@
     },
     "docs/en/operations/dev-team.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -726,7 +726,7 @@
     },
     "docs/en/operations/gpu.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -750,7 +750,7 @@
     },
     "docs/en/operations/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -766,7 +766,7 @@
     },
     "docs/en/operations/slim-runtime-migration.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
@@ -790,7 +790,7 @@
     },
     "docs/en/overview.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
@@ -836,13 +836,13 @@
     },
     "docs/en/reference/README.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "147084c754427bcf65de7af1f24ebb0730d86d31575da23e2d86ea302256777f",
+      "source_sha256": "aa8a9bb8a55d5659e579b68c3bc667fe3dfd0b0ce1580260842daf12d4018f34",
       "statuses": [
         "translated"
       ],
@@ -850,7 +850,7 @@
     },
     "docs/en/reference/api.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
@@ -873,7 +873,7 @@
         "609e6b90a2b113cc702785ec6e425aca2f3ccd637a60a45d5158d8e39cf47769",
         "2d9dcd248b8befdccfb09ae6129d93fbcca4fe4be58f11ab8dc713ef19fe5979",
         "e040484a57a8c4c75a96a0bb71a9f06c217f18b0586bb7026487d27b3c0093d3",
-        "89ed70b0dafe8fd3d3da38a4426198b4548e0bc65a928c11faab56ea422a7d51",
+        "918702318bd690854154dae1499aaf3bb62ed753fe24735fe5fcb567a35f2d87",
         "2f7124d7e1c4d8bfae91a2551d272d64e6dc2642649e04630b58faec60264cf5",
         "749afe13a7b4693795378988e11bb210fa4d1653434632a194d8ff8cda3ba89f",
         "1d9cc5204915c9fb9ef32ba9b695767775b7980da3c5bf801f09313a96c26ba9",
@@ -882,7 +882,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "39cb8f724e852776da2415738b60b21148a1e8e2c53f09456cd772c1cc2fb34d",
+      "source_sha256": "aa73c8f763c012dbdd5335f1b697780f7ce5d92ed4875b9ca56e804623405f3c",
       "statuses": [
         "translated",
         "translated",
@@ -916,7 +916,7 @@
     },
     "docs/en/reference/cli.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
@@ -1180,7 +1180,7 @@
     },
     "docs/en/reference/config.md": {
       "engine": "local",
-      "generated": "2026-10-26",
+      "generated": "2026-10-28",
       "model": "deepseek-v4-flash",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
@@ -1296,8 +1296,8 @@
     },
     "docs/en/reference/modules.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "634f8af831c4c84dc0818d00f302b452444ae5feac0e7795950d99440e29cc3a",
         "16b56fd974a57402d46ae77e151f8d77f21c93cf46d414a6a314d187804af716",
@@ -1365,12 +1365,12 @@
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
         "16f292df64c632eba0aff5b42790bc40b4d8190d146403d9bf7f5c368012e579",
         "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "23e9129f20adc15183d5f8e9a82974b7033b5f40db9ad04d48aae0113375f5ed",
+        "343722581848be6197194261f92b1a3c88f992a1352d7d3bdaae8fddc1a2bf76",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af",
+      "source_sha256": "11548fd04fb0fecd0a6c68b47e619ed8a9bdc10753006e68461a601bf80a09e4",
       "statuses": [
         "translated",
         "translated",
@@ -1446,8 +1446,8 @@
     },
     "docs/en/reference/tool-cli.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "65d9351f3b425f27f858e62bfb900ea492d25a7fe9cc14344a86c7410a1b6283",
         "be85d2e22790269d387c21d473f111c41b8921a1b66838584bb4a03cd47a55d8",
@@ -1484,8 +1484,8 @@
     },
     "docs/en/security.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "1344f3c3ba0a3b4312137fdf098ba23700145144645b1bf38f4e0f76ffaf70a0",
@@ -1526,8 +1526,8 @@
     },
     "docs/en/vision.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "6ed899d48ff5fa9edc20b265f42f2b6a9221f2569960cbc56f64dafa64fc9599",
@@ -1556,8 +1556,8 @@
     },
     "docs/ko/README.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "4e835ff9f020ad5de15b1f33ece7668c315eeeb36a33b0890a83fa5f40a3fb2a",
@@ -1578,8 +1578,8 @@
     },
     "docs/ko/architecture/anima-files.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "f2d1898ecf6c8e0bae12ed4767c43258ddfec5e18b940fbe4b756c038cb951f1",
@@ -1600,8 +1600,8 @@
     },
     "docs/ko/architecture/execution.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "d3386caca5ff388904e63f301471eac4cb6cd080727028cd45b1e8d3050e9d8d",
@@ -1624,8 +1624,8 @@
     },
     "docs/ko/architecture/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "d14d2e62a878ee5997fd0d4d344e2bf9193f9c467d857de8ef5acb33c7f46368",
@@ -1644,8 +1644,8 @@
     },
     "docs/ko/architecture/lifecycle.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "d4ae6d6250e1636f77592dde4f3db50fa2ed3bb411b9e83f738ef737d8b4faea",
@@ -1668,8 +1668,8 @@
     },
     "docs/ko/architecture/messaging.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "0abd14f158c0f0d0172faf2bae96d77ae84b82d0d3ef1ff27d0039e661500e1a",
@@ -1690,8 +1690,8 @@
     },
     "docs/ko/architecture/process.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "7ce433b440816dfb7a2e1e921381068e390c45956268fbd573a38b6082afbfe3",
@@ -1712,8 +1712,8 @@
     },
     "docs/ko/architecture/prompt.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "1e456f4204902e008fa29be65f27d313df100134854a8693374622cbf583ccec",
@@ -1736,8 +1736,8 @@
     },
     "docs/ko/architecture/tasks.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "c30d377841f1528212d7d637af7b2502ab0c81326437aa574932bad1df516f79",
@@ -1756,8 +1756,8 @@
     },
     "docs/ko/brain-mapping.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "23ee0217e46bbb81960ae48465ddf63648d85e08a5f6eea7210108b44d300860",
@@ -1788,8 +1788,8 @@
     },
     "docs/ko/enclave.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "1a8f879b5ceaeff67146012c865af94acdeb30f75163475b45c7c78d9d3f0ec6",
         "017c45a7dbaccd1615612062906243cebaf4215f048892affcbcf856b8119e5a",
@@ -1828,8 +1828,8 @@
     },
     "docs/ko/integrations/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "dad68ea19f64770dabcda2126652a7d800a640072b0935ac65c1324345aa51dc"
@@ -1844,8 +1844,8 @@
     },
     "docs/ko/integrations/slack.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "c9bb43cfb19e420140f93679cc19a4e53e889a4bae0430b4e90963def72ea194",
@@ -1868,8 +1868,8 @@
     },
     "docs/ko/integrations/zoom.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "6c6905f821e223f82c657eaf5dd05417137cc8a7f1675be06fbac8643494948f",
@@ -1890,8 +1890,8 @@
     },
     "docs/ko/memory/activity-log.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "0286ce65afdb902e0d2b1905dc6570be04a52034e59db78d1c6ce50200ad2a5e",
@@ -1912,8 +1912,8 @@
     },
     "docs/ko/memory/consolidation.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "af4cdd3bc56f16c315b9175cd22f4e7a8cd7f2de893964a7209268dd9e49f192",
@@ -1938,8 +1938,8 @@
     },
     "docs/ko/memory/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "2a3496e25ed326a87f684a3839073d685ddfe05b1fb3e07f0a083772344afa92",
@@ -1960,8 +1960,8 @@
     },
     "docs/ko/memory/priming.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "c2f234df977d853cf4c167895028891fe805aa0a32ad513dd44427b2fcefe199",
@@ -1984,8 +1984,8 @@
     },
     "docs/ko/memory/retrieval.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "74599b7fcd44f8a3eabcae1c4b8c7507f670b04b10246b9efb944dfa436c9e7e",
         "83f65390a0a6627c5cc1c655e843fd7a3ae460a27f5902547821b2510275d858",
@@ -2010,8 +2010,8 @@
     },
     "docs/ko/operations/company.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "f8cea417404b21d81e397419ef3ffd7fad8fa0e0f65be5e554b1d0aff6a32787",
@@ -2036,8 +2036,8 @@
     },
     "docs/ko/operations/configuration.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "ae6defa79dbc428dd56155d5589d1b7c6518b587a1335c9adb89d6430c0812ec",
@@ -2060,8 +2060,8 @@
     },
     "docs/ko/operations/dev-team.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "002a031fbe0e18fd1c6fb24dc42438816cd58bad0ae8e981bd5595944e85e59a",
@@ -2082,8 +2082,8 @@
     },
     "docs/ko/operations/gpu.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "4ce1f2bdbdd5163d189956ccf97db62c8e6ff7f6f4785bda1b77fa6c11e5e0ed",
@@ -2106,8 +2106,8 @@
     },
     "docs/ko/operations/index.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "75105cf77c64deba0713cd0d53f4e153d880f0693ed7a2bade65c0d8203ab234"
@@ -2122,8 +2122,8 @@
     },
     "docs/ko/operations/slim-runtime-migration.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "14095cc4fbf1442b190ca62cce80d58a16c55e5c281ad045192dedc1b7fc6d60",
@@ -2146,8 +2146,8 @@
     },
     "docs/ko/overview.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "af39d496455d385d4f867178d1ec40bf0b2829a66fe1010e45370ac4ec8438c7",
         "ad72db06f742932f0e99780732dcc9bab571e52e42f78711ce22f75a6a912a8f",
@@ -2192,13 +2192,13 @@
     },
     "docs/ko/reference/README.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "147084c754427bcf65de7af1f24ebb0730d86d31575da23e2d86ea302256777f",
+      "source_sha256": "aa8a9bb8a55d5659e579b68c3bc667fe3dfd0b0ce1580260842daf12d4018f34",
       "statuses": [
         "translated"
       ],
@@ -2206,8 +2206,8 @@
     },
     "docs/ko/reference/api.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
         "9d08124e81465e4e1711eb188abef96d8f84576b7a0f081be6312e8a71025d5a",
@@ -2229,7 +2229,7 @@
         "609e6b90a2b113cc702785ec6e425aca2f3ccd637a60a45d5158d8e39cf47769",
         "2d9dcd248b8befdccfb09ae6129d93fbcca4fe4be58f11ab8dc713ef19fe5979",
         "e040484a57a8c4c75a96a0bb71a9f06c217f18b0586bb7026487d27b3c0093d3",
-        "89ed70b0dafe8fd3d3da38a4426198b4548e0bc65a928c11faab56ea422a7d51",
+        "918702318bd690854154dae1499aaf3bb62ed753fe24735fe5fcb567a35f2d87",
         "2f7124d7e1c4d8bfae91a2551d272d64e6dc2642649e04630b58faec60264cf5",
         "749afe13a7b4693795378988e11bb210fa4d1653434632a194d8ff8cda3ba89f",
         "1d9cc5204915c9fb9ef32ba9b695767775b7980da3c5bf801f09313a96c26ba9",
@@ -2238,7 +2238,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "39cb8f724e852776da2415738b60b21148a1e8e2c53f09456cd772c1cc2fb34d",
+      "source_sha256": "aa73c8f763c012dbdd5335f1b697780f7ce5d92ed4875b9ca56e804623405f3c",
       "statuses": [
         "translated",
         "translated",
@@ -2272,8 +2272,8 @@
     },
     "docs/ko/reference/cli.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
         "06179867cd49ba3efaa84111116e02fc4f92f91c405ca82f1d86f85ec04e2217",
@@ -2536,8 +2536,8 @@
     },
     "docs/ko/reference/config.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
         "48e01c65e90a41b432e6067ce933a0e1dab40ed89bc0b7387e473ea5d38c4a61",
@@ -2652,8 +2652,8 @@
     },
     "docs/ko/reference/modules.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "634f8af831c4c84dc0818d00f302b452444ae5feac0e7795950d99440e29cc3a",
         "16b56fd974a57402d46ae77e151f8d77f21c93cf46d414a6a314d187804af716",
@@ -2721,12 +2721,12 @@
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
         "16f292df64c632eba0aff5b42790bc40b4d8190d146403d9bf7f5c368012e579",
         "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "23e9129f20adc15183d5f8e9a82974b7033b5f40db9ad04d48aae0113375f5ed",
+        "343722581848be6197194261f92b1a3c88f992a1352d7d3bdaae8fddc1a2bf76",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af",
+      "source_sha256": "11548fd04fb0fecd0a6c68b47e619ed8a9bdc10753006e68461a601bf80a09e4",
       "statuses": [
         "translated",
         "translated",
@@ -2802,8 +2802,8 @@
     },
     "docs/ko/reference/tool-cli.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "65d9351f3b425f27f858e62bfb900ea492d25a7fe9cc14344a86c7410a1b6283",
         "be85d2e22790269d387c21d473f111c41b8921a1b66838584bb4a03cd47a55d8",
@@ -2840,8 +2840,8 @@
     },
     "docs/ko/security.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "1344f3c3ba0a3b4312137fdf098ba23700145144645b1bf38f4e0f76ffaf70a0",
@@ -2882,8 +2882,8 @@
     },
     "docs/ko/vision.md": {
       "engine": "local",
-      "generated": "2026-10-26",
-      "model": "deepseek-v4.1-flash-1017",
+      "generated": "2026-10-28",
+      "model": "deepseek-v4-flash",
       "section_hashes": [
         "0c4148331d5c29ab9aeffff9b0007b45d3bc298b67317e65a4ed1ce72ef4fcb6",
         "6ed899d48ff5fa9edc20b265f42f2b6a9221f2569960cbc56f64dafa64fc9599",

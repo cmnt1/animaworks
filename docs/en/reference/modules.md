@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=595ddcba006cef59a6eb0364bb74df7903339c4f3a3c212523c726d26804a5af generated=2026-10-26 engine=local model=deepseek-v4.1-flash-1017 translator=2 -->
+<!-- i18n: source-sha256=11548fd04fb0fecd0a6c68b47e619ed8a9bdc10753006e68461a601bf80a09e4 generated=2026-10-28 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -1132,7 +1132,7 @@ Audio input/output and voice conversations.
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1173 | — |
+| `server.routes.system` | 1217 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
