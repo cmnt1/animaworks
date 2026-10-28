@@ -625,6 +625,28 @@ export function renderHistoryMessage(msg, opts) {
     return _renderHumanReplyBubble(msg, opts);
   }
 
+  if (msg.type === "voice_call") {
+    const seconds = Math.max(0, Math.floor(Number(msg.duration_seconds) || 0));
+    const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    const transcript = Array.isArray(msg.transcript) ? msg.transcript : [];
+    const transcriptHtml = transcript.length
+      ? `<ol>${transcript.map((line) => {
+        const speaker = line?.speaker === "assistant" ? (opts.animaName || "") : t("chat.call.you");
+        return `<li><strong>${escapeHtml(speaker)}:</strong> ${escapeHtml(line?.text || "")}</li>`;
+      }).join("")}</ol>`
+      : "";
+    const recordLabel = t("chat.call.record_duration", { time: duration });
+    const summary = msg.content ? `<small>${escapeHtml(msg.content)}</small>` : "";
+    const bubble =
+      `<div class="chat-bubble assistant chat-call-record">` +
+      `<div class="callrec"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg></span><div>${escapeHtml(recordLabel)}${summary}</div></div>` +
+      (transcript.length
+        ? `<details class="chat-call-transcript"><summary>${escapeHtml(t("chat.call.open_transcript"))}</summary>${transcriptHtml}</details>`
+        : "") +
+      `${tsHtml}</div>`;
+    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap, opts.companyColors));
+  }
+
   if (msg.role === "system") {
     return `<div class="chat-bubble assistant" style="opacity:0.7; font-style:italic;">${escapeHtml(msg.content || "")}${tsHtml}</div>`;
   }
