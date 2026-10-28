@@ -22,6 +22,14 @@ def _clear_asset_failure_records():
     _asset_failure_records.clear()
 
 
+@pytest.fixture(autouse=True)
+def _assume_pixel_generator_available(monkeypatch):
+    """Keep required-asset counts deterministic regardless of the host's codex install."""
+    from core.anima import asset_reconciler
+
+    monkeypatch.setattr(asset_reconciler, "_pixel_generation_available", lambda: True)
+
+
 # ── check_anima_assets ──────────────────────────────────────────
 
 

@@ -174,7 +174,7 @@ class ExpressionGenerateRequest(BaseModel):
 class AssetRegenerateRequest(BaseModel):
     """Regenerate a single pipeline asset step (admin UI)."""
 
-    step: Literal["fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"]
+    step: Literal["fullbody", "bustup", "icon", "chibi", "pixel", "3d", "rigging", "animations"]
     image_style: str | None = None
     prompt: str | None = None
     negative_prompt: str = ""
@@ -241,6 +241,16 @@ class RemakeConfirmRequest(BaseModel):
         if not re.match(r"^assets_backup_\d{8}_\d{6}$", v):
             raise ValueError(f"Invalid backup_id format: {v}. Expected: assets_backup_YYYYMMDD_HHMMSS")
         return v
+
+
+def _normalize_asset_steps(steps: list[str] | None) -> list[str] | None:
+    """Append the pixel sheet whenever a step updates its identity references."""
+    if steps is None:
+        return None
+    normalized = list(dict.fromkeys(steps))
+    if ("bustup" in normalized or "chibi" in normalized) and "pixel" not in normalized:
+        normalized.append("pixel")
+    return normalized
 
 
 def _next_preview_counter(assets_dir: Path, is_realistic: bool) -> int:
@@ -603,7 +613,7 @@ def create_assets_router() -> APIRouter:
                 prompt=body.prompt,
                 negative_prompt=body.negative_prompt,
                 skip_existing=body.skip_existing,
-                steps=body.steps,
+                steps=_normalize_asset_steps(body.steps),
             ),
         )
 
@@ -621,6 +631,8 @@ def create_assets_router() -> APIRouter:
             generated.append("avatar_chibi.glb")
         if result.rigged_model_path:
             generated.append("avatar_chibi_rigged.glb")
+        if result.pixel_sheet_path:
+            generated.append(result.pixel_sheet_path.name)
         for _, anim_path in result.animation_paths.items():
             generated.append(anim_path.name)
 
@@ -704,7 +716,7 @@ def create_assets_router() -> APIRouter:
         body: AssetRegenerateRequest,
         request: Request,
     ):
-        """Regenerate one pipeline step (fullbody, bustup, icon, chibi, 3d, rigging, animations)."""
+        """Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations)."""
         import asyncio
 
         animas_dir = request.app.state.animas_dir
@@ -740,7 +752,7 @@ def create_assets_router() -> APIRouter:
                 prompt=prompt,
                 negative_prompt=body.negative_prompt,
                 skip_existing=False,
-                steps=[body.step],
+                steps=_normalize_asset_steps([body.step]),
             ),
         )
 
@@ -757,6 +769,8 @@ def create_assets_router() -> APIRouter:
             generated.append(result.model_path.name)
         if result.rigged_model_path:
             generated.append(result.rigged_model_path.name)
+        if result.pixel_sheet_path:
+            generated.append(result.pixel_sheet_path.name)
         for _, anim_path in result.animation_paths.items():
             generated.append(anim_path.name)
 
@@ -1322,9 +1336,9 @@ def create_assets_router() -> APIRouter:
             )
 
         if is_realistic:
-            remaining_steps = ["bustup"]
+            remaining_steps = ["bustup", "pixel"]
         else:
-            remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
+            remaining_steps = ["bustup", "chibi", "pixel", "3d", "rigging", "animations"]
 
         from core.integrations.image_gen import ImageGenPipeline
 
@@ -1372,6 +1386,8 @@ def create_assets_router() -> APIRouter:
                     completed.append("3d")
                 if result.rigged_model_path:
                     completed.append("rigging")
+                if result.pixel_sheet_path:
+                    completed.append("pixel")
                 if result.animation_paths:
                     completed.append("animations")
 

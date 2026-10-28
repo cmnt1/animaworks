@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=11548fd04fb0fecd0a6c68b47e619ed8a9bdc10753006e68461a601bf80a09e4 generated=2026-10-28 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=eb920fba85ddcfbd0290709f6897792f267cf68bdc623d56dc1287eba7653663 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -24,7 +24,7 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 
 —
 
-| Module | Lines | First line of docstring |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
@@ -47,7 +47,7 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
-| `cli.commands.remake_cmd` | 272 | — |
+| `cli.commands.remake_cmd` | 279 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
@@ -142,12 +142,12 @@ LLM agent execution, conversation control, and engine integration.
 
 Digital Anima lifecycle and runtime objects.
 
-| Module | Lines | First docstring line |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
-| `core.anima.asset_reconciler` | 764 | — |
+| `core.anima.asset_reconciler` | 786 | — |
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
@@ -187,9 +187,9 @@ Shared send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Application configuration schemas, loading, validation, and migration.
+Schema, loading, validation, and migration for application configuration.
 
-| Module | Lines | First line of docstring |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.config` | 42 | — |
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
@@ -207,7 +207,7 @@ Application configuration schemas, loading, validation, and migration.
 | `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1538 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1540 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -368,9 +368,9 @@ Tool execution, command execution, and safety controls.
 
 ## `core.i18n`
 
-Translation catalogs and language selection.
+Translation catalog and language selection.
 
-| Module | Lines | First docstring line |
+| モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
@@ -391,7 +391,7 @@ Translation catalogs and language selection.
 | `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
@@ -421,7 +421,7 @@ Core infrastructure such as logging, databases, and caches.
 
 ## `core.integrations`
 
-Implementation of external service integrations and animaworks-tool.
+External service integrations and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -444,7 +444,8 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
-| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pixel（非公開）` | 633 | Generate a Pixel Workspace character sheet from an approved base sheet. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 435 | SQLite message cache for Slack (offline search, unreplied detection). |
@@ -466,13 +467,13 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
-| `core.integrations.image.codex` | 327 | Codex CLI image generation client (image_gen tool via local codex). |
+| `core.integrations.image.codex` | 348 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
 | `core.integrations.image.diffusers_local` | 905 | Local Diffusers-backed image generation helpers. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext and Flux Pro text-to-image API clients. |
 | `core.integrations.image.meshy` | 311 | Meshy Image-to-3D, Rigging, and Animation API client. |
 | `core.integrations.image.novelai` | 193 | NovelAI V4.5 API client for anime full-body image generation. |
-| `core.integrations.image.prompts` | 197 | Prompt constants for bustup, chibi, and expression variants. |
+| `core.integrations.image.prompts` | 266 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
@@ -1108,7 +1109,7 @@ Audio input/output and voice conversations.
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1456 | — |
+| `server.routes.assets` | 1472 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |

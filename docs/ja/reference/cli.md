@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 66a98b4d86dd57dce4a9ab5b47ab4283370aa53e5ba5eaed2afd51c20c0c0396 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: d869cafe398f90412f4789ee8a6ad4230673b9950281da50649a56b944e9221a -->
 
 # CLI リファレンス: `animaworks`
 
@@ -878,7 +878,7 @@ Regenerate character assets using Vibe Transfer to match the art style of a refe
 |---|---|---|---|---|
 | anima | positional | — | — | Name of the anima whose assets to remake |
 | --style-from | option | — | — | Anima name to use as style reference (their fullbody image) |
-| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, 3d, rigging, animations). Default: all steps |
+| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). Default: all steps |
 | --prompt | option | — | — | Override character prompt (default: read from prompt.txt) |
 | --vibe-strength | option | 0.6 | — | Vibe Transfer strength 0.0-1.0 (default: 0.6) |
 | --vibe-info-extracted | option | 0.8 | — | Vibe Transfer information extraction 0.0-1.0 (default: 0.8) |
