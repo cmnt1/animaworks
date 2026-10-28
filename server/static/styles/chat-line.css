@@ -385,3 +385,9 @@ body[data-theme="dark"] {
     transition: none;
   }
 }
+
+/* Components toggled with the hidden attribute must stay hidden even when a display rule applies. */
+.chat-page-main [hidden],
+.chat-line-reply-chip[hidden] {
+  display: none !important;
+}

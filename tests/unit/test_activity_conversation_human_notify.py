@@ -243,3 +243,19 @@ class TestConversationViewLoad:
         assert "Inbox-originated notify" in contents
         assert "got it" in contents
         assert "secret inbox only" not in contents
+
+
+class TestExternalUserAliases:
+    def test_slack_user_id_is_shown_as_configured_alias(
+        self, activity_logger: ActivityLogger, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import core.activity.conversation as conversation
+
+        monkeypatch.setattr(conversation, "_external_user_aliases", lambda: {"U06TEST": "taka"})
+        entries = [
+            _make_entry("human_reply", "2026-10-28T09:00:00+09:00", content="ok", from_person="U06TEST", via="slack"),
+            _make_entry("message_received", "2026-10-28T09:01:00+09:00", content="hi", from_person="someone"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        assert messages[0]["from_person"] == "taka"
+        assert messages[1]["from_person"] == "someone"

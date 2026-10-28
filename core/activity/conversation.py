@@ -61,6 +61,23 @@ def _is_inbox_raw_entry(raw: dict[str, Any]) -> bool:
     )
 
 
+def _external_user_aliases() -> dict[str, str]:
+    """Map external chat user IDs (Slack/Discord/Chatwork) to configured user aliases."""
+    try:
+        from core.config.io import load_config
+
+        aliases = load_config().external_messaging.user_aliases
+    except Exception:
+        logger.debug("Failed to load external user aliases", exc_info=True)
+        return {}
+    mapping: dict[str, str] = {}
+    for alias, cfg in aliases.items():
+        for ext_id in (cfg.slack_user_id, cfg.discord_user_id, cfg.chatwork_room_id):
+            if ext_id:
+                mapping[str(ext_id)] = alias
+    return mapping
+
+
 def _truncate_tool_field(value: Any, limit: int) -> Any:
     """Truncate tool input/result for the conversation view API."""
     if isinstance(value, str):
@@ -234,6 +251,7 @@ class ConversationMixin:
 
         messages: list[dict[str, Any]] = []
         pending_tool_calls: list[dict[str, Any]] = []
+        user_aliases = _external_user_aliases()
 
         for e in entries:
             if e.type == "message_received":
@@ -243,7 +261,7 @@ class ConversationMixin:
                         "ts": e.ts,
                         "role": "human",
                         "content": e.content,
-                        "from_person": e.from_person,
+                        "from_person": user_aliases.get(e.from_person, e.from_person),
                         "to_person": e.to_person,
                         "source_key": _source_key_for_entry(e),
                         "tool_calls": [],
@@ -337,7 +355,7 @@ class ConversationMixin:
                         "role": "human",
                         "type": "human_reply",
                         "content": e.content,
-                        "from_person": e.from_person,
+                        "from_person": user_aliases.get(e.from_person, e.from_person),
                         "via": e.via,
                         "notification_id": e.meta.get("notification_id", ""),
                         "callback_id": e.meta.get("callback_id", ""),
