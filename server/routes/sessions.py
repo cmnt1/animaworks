@@ -372,6 +372,7 @@ def create_sessions_router() -> APIRouter:
                 }
                 for message in messages
                 if message.get("type") == "human_notify"
+                and message.get("needs_reply", True)
                 and not message.get("replied")
                 and str(message.get("ts") or "") >= since
             ]

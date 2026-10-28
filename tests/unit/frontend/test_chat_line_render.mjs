@@ -185,3 +185,12 @@ describe("LINE-style voice call record", () => {
     assert.match(html, /chat-call-transcript/);
   });
 });
+
+describe("waiting mark", () => {
+  it("is shown only for notifications that need a reply", () => {
+    const ask = renderHistoryMessage({ type: "human_notify", role: "system", content: "決めて", replied: false, needs_reply: true }, opts);
+    const fyi = renderHistoryMessage({ type: "human_notify", role: "system", content: "記事5件", replied: false, needs_reply: false }, opts);
+    assert.match(ask, /chat-line-waiting/);
+    assert.doesNotMatch(fyi, /chat-line-waiting/);
+  });
+});
