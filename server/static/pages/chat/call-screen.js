@@ -224,6 +224,8 @@ export class CallScreen {
     const transcriptList = _append(transcriptCard, "ol", "aw-call-transcript-list");
     transcriptDialog.hidden = true;
 
+    // A bust-up zoom left open from the chat would sit on top of the call.
+    document.querySelectorAll?.("#chatBustupOverlay").forEach((el) => el.remove());
     this.container.appendChild(root);
     this.container.appendChild(pip);
     this.container.appendChild(transcriptDialog);
