@@ -26,9 +26,9 @@ const VALID_EXPRESSIONS = new Set([
 const FRAME_KEYS = ["neutral", "blink", "half", "open", "blinkhalf"];
 const KEY_SUFFIX = { neutral: "base", blink: "blink", half: "half", open: "open", blinkhalf: "blinkhalf" };
 
-// ---- timing / motion constants (docs_demo_reference.html と同一) ----
-const BLINK_MIN_MS = 2500;         // まばたき最小間隔
-const BLINK_RANGE_MS = 4000;       // まばたき間隔ランダム幅
+// ---- timing / motion constants ----
+const BLINK_MIN_MS = 2600;         // まばたき最小間隔
+const BLINK_RANGE_MS = 2600;       // まばたき間隔ランダム幅
 const BLINK_CLOSED_MS = 130;       // 一回目の閉眼時間
 const BLINK_CLOSED_MS2 = 110;      // 二連まばたきの二回目閉眼時間
 const DOUBLE_BLINK_GAP_MS = 140;   // 二連まばたき内のギャップ

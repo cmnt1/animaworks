@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=cb2d9043cdc0087f9d31ba6a6b068c38cc916e7d3a63c19f663cf342e6af8f6f generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=a8965debcd41a3f82a67150540ed279787d38821e9c3ec0e437622687f054e50 generated=2026-10-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # Module List
 
@@ -114,9 +114,9 @@ Activity log recording, playback, and timeline display.
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 492 | — |
+| `core.activity.conversation` | 583 | — |
 | `core.activity.event_export` | 33 | — |
-| `core.activity.format` | 567 | — |
+| `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
 | `core.activity.models` | 202 | — |
 | `core.activity.replay` | 537 | — |
@@ -142,7 +142,7 @@ LLM agent execution, conversation control, and engine integration.
 
 Digital Anima lifecycle and runtime objects.
 
-| モジュール | 行数 | docstring 1行目 |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
@@ -157,7 +157,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1384 | — |
+| `core.anima.messaging` | 1392 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -214,10 +214,10 @@ Schema, loading, validation, and migration for application configuration.
 
 Configuration models and startup security guards for isolated enclave mode.
 
-| モジュール | 行数 | docstring 1行目 |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 183 | Configuration models for enclave mode. |
+| `core.enclave.config` | 202 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -460,7 +460,7 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations.enclave_aws` | 866 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
-| `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
+| `core.integrations.enclave_sql` | 397 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
@@ -740,7 +740,7 @@ Notification generation and delivery.
 | `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
 | `core.notification.notifier` | 238 | — |
-| `core.notification.reply_routing` | 467 | — |
+| `core.notification.reply_routing` | 500 | — |
 | `core.notification.slack_names` | 67 | — |
 
 ## `core.notification.channels`
@@ -1109,7 +1109,7 @@ Audio input/output and voice conversations.
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1472 | — |
+| `server.routes.assets` | 1592 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1130,7 +1130,7 @@ Audio input/output and voice conversations.
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 297 | — |
+| `server.routes.sessions` | 468 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |

@@ -63,6 +63,7 @@ export function createChatContext() {
     animaLastAccess: {},
     imageInputManager: null,
     bustupUrl: null,
+    replyTarget: null,
     chatUiStateSaveTimer: null,
     animaTabAvatarUrls: {},
     animaTabAvatarLoading: {},

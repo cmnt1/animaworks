@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 81a934f0ac3f6d5f8bd18cbeb6412a2ce44b6d3cf3b5ae523d9d7de7249b5be6 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 80d7592f5b516346efaac0122ee55858184fa7d3c4402b8752480e4c8573150d -->
 
 # API リファレンス
 
@@ -66,6 +66,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 ## `server/routes/assets.py`
 
 | GET | `/api/animas/{name}/assets` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List available assets for an anima. | `server/routes/assets.py:list_assets` |
+| GET | `/api/animas/{name}/assets/face/{emotion}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Serve a cached square crop of an Anima's bustup expression. | `server/routes/assets.py:get_face_asset` |
 | POST | `/api/animas/{name}/assets/generate` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
 | POST | `/api/animas/{name}/assets/generate-expression` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
 | GET | `/api/animas/{name}/assets/metadata` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return structured metadata about a anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
@@ -213,7 +214,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 ## `server/routes/sessions.py`
 
+| POST | `/api/animas/{name}/conversation/calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
 | GET | `/api/animas/{name}/conversation/history` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
+| POST | `/api/animas/{name}/notifications/reply` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
 | GET | `/api/animas/{name}/sessions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
 | GET | `/api/animas/{name}/sessions/{session_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
 | GET | `/api/animas/{name}/transcripts/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |

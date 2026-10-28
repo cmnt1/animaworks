@@ -1016,6 +1016,8 @@ class MessagingMixin:
                 # Streaming journal: write-ahead log for crash recovery
                 journal = StreamingJournal(self.anima_dir, thread_id=thread_id)
                 partial_response = ""
+                text_segment = ""
+                interim_texts: list[str] = []
                 cycle_done = False
                 agent_session_acquired = False
                 self._active_chat_conversations[thread_id] = conv_memory
@@ -1046,9 +1048,13 @@ class MessagingMixin:
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")
                             partial_response += delta_text
+                            text_segment += delta_text
                             await asyncio.to_thread(journal.write_text, delta_text)
 
                         if chunk.get("type") == "tool_start":
+                            if text_segment.strip():
+                                interim_texts.append(text_segment.strip()[:2000])
+                            text_segment = ""
                             await asyncio.to_thread(
                                 journal.write_tool_start,
                                 tool=chunk.get("tool_name", ""),
@@ -1113,6 +1119,8 @@ class MessagingMixin:
                             cycle_result["images"] = response_artifacts
                             display_summary = summary
                             resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                            if interim_texts:
+                                resp_meta["interim_texts"] = interim_texts[:20]
                             for _field in ("session_type", "request_id", "tool_session_id"):
                                 _value = cycle_result.get(_field)
                                 if _value:

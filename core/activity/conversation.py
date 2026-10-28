@@ -61,6 +61,44 @@ def _is_inbox_raw_entry(raw: dict[str, Any]) -> bool:
     )
 
 
+def _external_user_aliases() -> dict[str, str]:
+    """Map external chat user IDs (Slack/Discord/Chatwork) to configured user aliases."""
+    try:
+        from core.config.io import load_config
+
+        aliases = load_config().external_messaging.user_aliases
+    except Exception:
+        logger.debug("Failed to load external user aliases", exc_info=True)
+        return {}
+    mapping: dict[str, str] = {}
+    for alias, cfg in aliases.items():
+        for ext_id in (cfg.slack_user_id, cfg.discord_user_id, cfg.chatwork_room_id):
+            if ext_id:
+                mapping[str(ext_id)] = alias
+    return mapping
+
+
+def _split_interim_texts(content: str, interim: list[Any]) -> tuple[str, list[str]]:
+    """Remove progress remarks spoken before tool calls from the start of a reply.
+
+    Returns the remaining reply body and the remarks that were actually found.
+    When nothing lines up, the content is returned unchanged.
+    """
+    rest = content.lstrip()
+    found: list[str] = []
+    for item in interim:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if not rest.startswith(text):
+            break
+        found.append(text)
+        rest = rest[len(text) :].lstrip()
+    if not found or not rest:
+        return content, []
+    return rest, found
+
+
 def _truncate_tool_field(value: Any, limit: int) -> Any:
     """Truncate tool input/result for the conversation view API."""
     if isinstance(value, str):
@@ -226,6 +264,7 @@ class ConversationMixin:
     ) -> list[dict[str, Any]]:
         """Convert raw activity entries to conversation messages (pair + nest tools)."""
         from core.activity.format import pair_tool_events
+        from core.anima.emotion_tag import extract_emotion
 
         result_by_use_id: dict[int, ActivityEntry] = {
             id(ex.tool_use): ex.result for ex in pair_tool_events(entries) if ex.result is not None
@@ -233,6 +272,7 @@ class ConversationMixin:
 
         messages: list[dict[str, Any]] = []
         pending_tool_calls: list[dict[str, Any]] = []
+        user_aliases = _external_user_aliases()
 
         for e in entries:
             if e.type == "message_received":
@@ -242,7 +282,7 @@ class ConversationMixin:
                         "ts": e.ts,
                         "role": "human",
                         "content": e.content,
-                        "from_person": e.from_person,
+                        "from_person": user_aliases.get(e.from_person, e.from_person),
                         "to_person": e.to_person,
                         "source_key": _source_key_for_entry(e),
                         "tool_calls": [],
@@ -264,15 +304,23 @@ class ConversationMixin:
                 )
 
             elif e.type == "response_sent":
+                clean_content, emotion = extract_emotion(e.content)
                 msg = {
                     "ts": e.ts,
                     "role": "assistant",
-                    "content": e.content,
+                    "content": clean_content,
+                    "emotion": emotion if clean_content != e.content else None,
                     "from_person": "",
                     "to_person": e.to_person,
                     "source_key": _source_key_for_entry(e),
                     "tool_calls": [],
                 }
+                interim = e.meta.get("interim_texts")
+                if isinstance(interim, list) and interim:
+                    body, found = _split_interim_texts(clean_content, interim)
+                    if found:
+                        msg["content"] = body
+                        msg["interim_texts"] = found
                 if e.meta.get("thinking_text"):
                     msg["thinking_text"] = e.meta["thinking_text"]
                 images = e.meta.get("images") or e.meta.get("artifacts") or []
@@ -317,6 +365,9 @@ class ConversationMixin:
                         "subject": e.meta.get("subject", ""),
                         "priority": e.meta.get("priority", "normal"),
                         "callback_id": e.meta.get("callback_id", ""),
+                        "notification_id": e.meta.get("notification_id") or e.ts,
+                        "replied": False,
+                        "emotion": None,
                         "from_person": "",
                         "source_key": "call_human",
                         "tool_calls": [],
@@ -331,9 +382,27 @@ class ConversationMixin:
                         "role": "human",
                         "type": "human_reply",
                         "content": e.content,
-                        "from_person": e.from_person,
+                        "from_person": user_aliases.get(e.from_person, e.from_person),
                         "via": e.via,
+                        "notification_id": e.meta.get("notification_id", ""),
+                        "callback_id": e.meta.get("callback_id", ""),
                         "source_key": "call_human_reply",
+                        "tool_calls": [],
+                    }
+                )
+
+            elif e.type == "voice_call":
+                self._flush_tool_calls(messages, pending_tool_calls)
+                messages.append(
+                    {
+                        "ts": e.ts,
+                        "role": "assistant",
+                        "type": "voice_call",
+                        "content": e.summary or e.content,
+                        "started_at": e.meta.get("started_at", ""),
+                        "duration_seconds": e.meta.get("duration_seconds", 0),
+                        "transcript": e.meta.get("transcript", []),
+                        "source_key": "voice_call",
                         "tool_calls": [],
                     }
                 )
@@ -424,6 +493,28 @@ class ConversationMixin:
                 )
 
         self._flush_tool_calls(messages, pending_tool_calls)
+
+        notifications = [msg for msg in messages if msg.get("type") == "human_notify"]
+        for reply in (msg for msg in messages if msg.get("type") == "human_reply"):
+            reply_ts = str(reply.get("ts") or "")
+            candidates = [notify for notify in notifications if str(notify.get("ts") or "") <= reply_ts]
+            if not candidates:
+                continue
+
+            notification_id = reply.get("notification_id")
+            callback_id = reply.get("callback_id")
+            matched = next(
+                (
+                    notify
+                    for notify in reversed(candidates)
+                    if (notification_id and notify.get("notification_id") == notification_id)
+                    or (callback_id and notify.get("callback_id") == callback_id)
+                ),
+                None,
+            )
+            if matched is None:
+                matched = next((notify for notify in reversed(candidates) if not notify["replied"]), candidates[-1])
+            matched["replied"] = True
 
         return messages
 

@@ -1,0 +1,180 @@
+:root {
+  --aw-line-call-bg: #dce9e1;
+  --aw-line-call-ink: #ffffff;
+  --aw-line-call-surface: rgba(20, 28, 38, .66);
+  --aw-line-call-hangup: #e74452;
+  --aw-line-call-green: #22a35a;
+  --aw-line-call-bar: #9be4b4;
+  --aw-line-call-white: #ffffff;
+  --aw-line-call-control-ink: #e8eef5;
+  --aw-line-call-dark-ink: #1b2430;
+  --aw-line-call-self-bg: #2b3542;
+  --aw-line-call-self-ink: #d6e0e9;
+  --aw-line-call-avatar-bg: #4a5a6d;
+  --aw-line-call-work-dot: #9cc3ff;
+  --aw-line-call-transcript-border: #d5dbe3;
+  --aw-line-call-transcript-meta: #627080;
+}
+
+body[data-theme="dark"] {
+  --aw-line-call-bg: #293a32;
+  --aw-line-call-ink: #f5f8fa;
+  --aw-line-call-surface: rgba(12, 18, 25, .78);
+  --aw-line-call-hangup: #f15b66;
+  --aw-line-call-green: #32b96c;
+  --aw-line-call-bar: #9be4b4;
+  --aw-line-call-white: #ffffff;
+  --aw-line-call-control-ink: #e8eef5;
+  --aw-line-call-dark-ink: #1b2430;
+  --aw-line-call-self-bg: #2b3542;
+  --aw-line-call-self-ink: #d6e0e9;
+  --aw-line-call-avatar-bg: #4a5a6d;
+  --aw-line-call-work-dot: #9cc3ff;
+  --aw-line-call-transcript-border: #394553;
+  --aw-line-call-transcript-meta: #aab6c3;
+}
+
+.chat-page-layout:has(> .aw-call-screen),
+.chat-page-layout:has(> .aw-call-pip) {
+  position: relative;
+  isolation: isolate;
+}
+
+.chat-call-btn {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--aw-line-call-green);
+  color: var(--aw-line-call-white);
+  cursor: pointer;
+  transition: filter .15s, transform .15s;
+}
+
+.chat-call-btn:hover,
+.chat-call-btn:active { filter: brightness(1.08); transform: scale(1.04); }
+.chat-call-btn[hidden] { display: none; }
+.chat-call-btn svg { width: 18px; height: 18px; }
+.chat-pane-head-tools { display: flex; align-items: center; gap: 8px; flex: none; }
+
+.aw-call-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  color: var(--aw-line-call-ink);
+  background: var(--aw-line-call-bg);
+  font-family: inherit;
+}
+
+.aw-call-screen[hidden], .aw-call-pip[hidden], .aw-call-transcript-dialog[hidden] { display: none !important; }
+.aw-call-feed { position: absolute; inset: 0; display: grid; place-items: end center; overflow: hidden; }
+.aw-call-main-rig { position: relative; width: min(100%, 1100px); height: 100%; overflow: hidden; }
+.aw-call-main-rig .bustup-animator-stage { border-radius: 0; }
+.aw-call-feed .bustup-animator-breather { transform-origin: 50% 100%; }
+.aw-call-screen.is-ringing .aw-call-feed { filter: blur(14px) brightness(.82); transform: scale(1.08); }
+.aw-call-shade { position: absolute; z-index: 1; left: 0; right: 0; pointer-events: none; }
+.aw-call-shade-top { top: 0; height: 140px; background: linear-gradient(rgba(10, 14, 20, .56), transparent); }
+.aw-call-shade-bottom { bottom: 0; height: min(42%, 300px); background: linear-gradient(transparent, rgba(10, 14, 20, .78)); }
+.aw-call-top { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+.aw-call-name { font-size: 18px; font-weight: 700; text-shadow: 0 1px 4px rgba(0, 0, 0, .45); }
+.aw-call-time { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; text-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.aw-call-return { margin-left: auto; padding: 6px 13px; border: 1px solid rgba(255, 255, 255, .38); border-radius: 999px; color: var(--aw-line-call-white); background: rgba(255, 255, 255, .2); font: inherit; font-size: 12px; cursor: pointer; backdrop-filter: blur(6px); }
+.aw-call-ring-center { position: absolute; z-index: 3; inset: 0; display: grid; place-content: center; justify-items: center; gap: 16px; text-align: center; }
+.aw-call-ring-center[hidden] { display: none; }
+.aw-call-ring-avatar { width: 120px; height: 120px; border: 3px solid var(--aw-line-call-white); border-radius: 50%; object-fit: cover; background: var(--aw-line-call-surface); animation: aw-call-pulse 1.4s ease-out infinite; }
+@keyframes aw-call-pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .6); } 100% { box-shadow: 0 0 0 26px rgba(255, 255, 255, 0); } }
+.aw-call-ring-center > div { font-size: 15px; text-shadow: 0 1px 5px rgba(0, 0, 0, .6); }
+.aw-call-self-tile { position: absolute; z-index: 2; top: 66px; right: 18px; width: 108px; height: 144px; display: grid; align-content: center; justify-items: center; gap: 7px; border: 2px solid rgba(255,255,255,.65); border-radius: 14px; color: var(--aw-line-call-self-ink); background: var(--aw-line-call-self-bg); font-size: 11px; }
+.aw-call-self-avatar { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: var(--aw-line-call-white); background: var(--aw-line-call-avatar-bg); font-weight: 700; }
+.aw-call-work-chip { position: absolute; z-index: 3; top: 66px; left: 18px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: var(--aw-line-call-white); background: var(--aw-line-call-surface); font-size: 12px; backdrop-filter: blur(6px); }
+.aw-call-work-chip[hidden] { display: none; }
+.aw-call-dots { display: inline-flex; gap: 3px; }
+.aw-call-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--aw-line-call-work-dot); animation: aw-call-dot .9s ease-in-out infinite alternate; }
+.aw-call-dots i:nth-child(2) { animation-delay: .14s; }
+.aw-call-dots i:nth-child(3) { animation-delay: .28s; }
+@keyframes aw-call-dot { to { opacity: .25; transform: translateY(-3px); } }
+.aw-call-captions { position: relative; z-index: 2; align-self: end; display: grid; justify-items: center; gap: 7px; width: min(100%, 720px); margin: 0 auto; padding: 0 24px 12px; text-align: center; }
+.aw-call-caption { max-width: 100%; line-height: 1.55; text-shadow: 0 1px 6px rgba(0,0,0,.7); overflow-wrap: anywhere; }
+.aw-call-caption-user { font-size: 13px; opacity: .88; }
+.aw-call-caption-anima { font-size: 17px; }
+.aw-call-screen.captions-hidden .aw-call-caption { display: none; }
+.aw-call-listen { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
+.aw-call-listen[hidden] { display: none; }
+.aw-call-listen-bars { display: inline-flex; align-items: end; gap: 3px; height: 16px; }
+.aw-call-listen-bars i { width: 3px; height: 5px; border-radius: 2px; background: var(--aw-line-call-bar); animation: aw-call-level .9s ease-in-out infinite; }
+.aw-call-listen-bars i:nth-child(2) { animation-delay: .1s; }
+.aw-call-listen-bars i:nth-child(3) { animation-delay: .25s; }
+.aw-call-listen-bars i:nth-child(4) { animation-delay: .4s; }
+@keyframes aw-call-level { 50% { height: 16px; } }
+.aw-call-transcript-open { padding: 4px 10px; border: 0; color: var(--aw-line-call-white); background: transparent; text-decoration: underline; text-underline-offset: 2px; font: inherit; font-size: 12px; cursor: pointer; text-shadow: 0 1px 4px rgba(0,0,0,.65); }
+.aw-call-error { position: absolute; z-index: 4; top: 112px; left: 50%; max-width: min(90%, 420px); transform: translateX(-50%); padding: 9px 14px; border-radius: 10px; color: var(--aw-line-call-white); background: rgba(153, 27, 27, .88); font-size: 13px; text-align: center; }
+.aw-call-error[hidden] { display: none; }
+.aw-call-controls { position: relative; z-index: 2; display: flex; justify-content: center; gap: 22px; flex-wrap: wrap; padding: 10px 0 22px; }
+.aw-call-control { display: grid; justify-items: center; gap: 6px; padding: 0; border: 0; color: var(--aw-line-call-control-ink); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+.aw-call-control-icon { width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.32); border-radius: 50%; color: var(--aw-line-call-white); background: rgba(255,255,255,.2); backdrop-filter: blur(6px); }
+.aw-call-control-icon svg { width: 24px; height: 24px; }
+.aw-call-control.is-active .aw-call-control-icon { color: var(--aw-line-call-dark-ink); background: var(--aw-line-call-white); }
+.aw-call-control-end .aw-call-control-icon, .aw-call-pip-end { border-color: var(--aw-line-call-hangup); background: var(--aw-line-call-hangup); }
+.aw-call-pip { position: absolute; z-index: 21; right: 18px; bottom: 84px; width: 150px; height: 200px; overflow: hidden; border: 2px solid var(--aw-line-call-white); border-radius: 16px; color: var(--aw-line-call-white); background: var(--aw-line-call-bg); box-shadow: 0 10px 30px rgba(0,0,0,.32); cursor: pointer; }
+.aw-call-pip-rig { position: absolute; inset: 0; }
+.aw-call-pip-rig .bustup-animator-stage { border-radius: 0; }
+.aw-call-pip-footer { position: absolute; inset: auto 0 0; display: flex; justify-content: space-between; gap: 6px; padding: 22px 8px 7px; color: var(--aw-line-call-white); background: linear-gradient(transparent, rgba(0,0,0,.68)); font-size: 11px; pointer-events: none; }
+.aw-call-pip-time { font-variant-numeric: tabular-nums; }
+.aw-call-pip-end { position: absolute; z-index: 2; top: 6px; right: 6px; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--aw-line-call-white); cursor: pointer; }
+.aw-call-pip-end svg { width: 15px; height: 15px; }
+.aw-call-transcript-dialog { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; padding: 18px; color: var(--aw-color-text-primary, var(--aw-line-call-dark-ink)); background: rgba(0,0,0,.58); }
+.aw-call-transcript-card { width: min(640px, 100%); max-height: min(80vh, 760px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--aw-color-border, var(--aw-line-call-transcript-border)); border-radius: 16px; background: var(--aw-color-bg-primary, var(--aw-line-call-white)); box-shadow: 0 20px 70px rgba(0,0,0,.32); }
+.aw-call-transcript-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--aw-color-border, var(--aw-line-call-transcript-border)); }
+.aw-call-transcript-close { width: 32px; height: 32px; border: 0; border-radius: 50%; color: inherit; background: transparent; font-size: 23px; cursor: pointer; }
+.aw-call-transcript-list { display: grid; gap: 12px; overflow-y: auto; margin: 0; padding: 18px 22px 20px 40px; }
+.aw-call-transcript-line { padding-left: 4px; line-height: 1.6; overflow-wrap: anywhere; }
+.aw-call-transcript-line strong { color: var(--aw-color-text-secondary, var(--aw-line-call-transcript-meta)); }
+
+.chat-call-record { display: inline-grid; gap: 8px; }
+.chat-call-record .callrec { display: inline-flex; align-items: center; gap: 8px; }
+.chat-call-record .callrec .ic { width: 28px; height: 28px; display: grid; place-items: center; flex: none; border-radius: 50%; color: var(--aw-line-call-white); background: var(--aw-line-call-green); }
+.chat-call-record .callrec .ic svg { width: 14px; height: 14px; }
+.chat-call-record .callrec small { display: block; color: var(--aw-color-text-secondary, var(--aw-line-call-transcript-meta)); font-size: 11px; }
+.chat-call-transcript { font-size: 12px; }
+.chat-call-transcript summary { color: var(--aw-color-text-secondary, var(--aw-line-call-transcript-meta)); cursor: pointer; }
+.chat-call-transcript ol { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; padding-left: 22px; }
+.chat-call-transcript li { overflow-wrap: anywhere; line-height: 1.5; }
+
+@media (max-width: 560px) {
+  .chat-call-btn { width: 36px; height: 36px; }
+  .aw-call-self-tile { top: 64px; right: 12px; width: 80px; height: 106px; }
+  .aw-call-self-avatar { width: 36px; height: 36px; }
+  .aw-call-controls { gap: 14px; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .aw-call-control-icon { width: 50px; height: 50px; }
+  .aw-call-top { padding: 12px; }
+  .aw-call-name { font-size: 16px; }
+  .aw-call-captions { padding-right: 14px; padding-left: 14px; }
+  .aw-call-caption-anima { font-size: 15px; }
+  .aw-call-pip { right: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-call-screen *, .aw-call-screen *::before, .aw-call-screen *::after,
+  .aw-call-pip *, .aw-call-pip *::before, .aw-call-pip *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Blurred copy of the Anima picture fills the area beside the portrait, like a video feed. */
+.aw-call-feed { overflow: hidden; }
+.aw-call-backdrop {
+  position: absolute;
+  inset: -60px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(42px) saturate(1.05) brightness(1.02);
+  opacity: .95;
+}
+.aw-call-main-rig { position: relative; z-index: 1; }

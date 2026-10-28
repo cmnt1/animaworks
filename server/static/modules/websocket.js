@@ -9,6 +9,7 @@ import { invalidateAvatarCache } from "./avatar-resolver.js";
 import { updateSystemStatus } from "./status.js";
 import { ChatSessionManager } from "../shared/chat/session-manager.js";
 import { createLogger } from "../shared/logger.js";
+import { notifyAnimaToast } from "./presence-ui.js";
 
 const logger = createLogger("websocket");
 
@@ -278,8 +279,14 @@ function handleWsMessage(raw) {
       const body = data.body || "";
       const priority = data.priority || "normal";
       if (animaName) {
-        // Show toast notification
-        showNotificationToast(animaName, subject, body, priority);
+        // Show toast notification (suppressed while that conversation is on screen)
+        notifyAnimaToast({
+          kind: "notification",
+          anima: animaName,
+          body: (subject || body).replace(/\s+/g, " ").slice(0, 120),
+          priority,
+          replyTo: data.id || data.message_id || null,
+        });
         // Add to activity log
         addActivity("notification", animaName, subject || body.slice(0, 100));
       }

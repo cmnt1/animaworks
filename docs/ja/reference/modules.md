@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 1b475d7458f2925c779762ac5ccefc7279e273f8738d1b048a81adf7dfc0c734 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 7d6b1ca90d5e1af900d2d85fafdc60d78ff2eba993484cc1982d185642357c30 -->
 
 # モジュール一覧
 
@@ -114,9 +114,9 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 492 | — |
+| `core.activity.conversation` | 583 | — |
 | `core.activity.event_export` | 33 | — |
-| `core.activity.format` | 567 | — |
+| `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
 | `core.activity.models` | 202 | — |
 | `core.activity.replay` | 537 | — |
@@ -157,7 +157,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1384 | — |
+| `core.anima.messaging` | 1392 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -740,7 +740,7 @@ anima 間および外部とのメッセージ配送。
 | `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
 | `core.notification.notifier` | 238 | — |
-| `core.notification.reply_routing` | 467 | — |
+| `core.notification.reply_routing` | 500 | — |
 | `core.notification.slack_names` | 67 | — |
 
 ## `core.notification.channels`
@@ -1109,7 +1109,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1472 | — |
+| `server.routes.assets` | 1592 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1130,7 +1130,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 297 | — |
+| `server.routes.sessions` | 468 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |
