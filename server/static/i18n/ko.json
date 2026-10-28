@@ -217,6 +217,19 @@
   "chat.line.background_hidden": "백그라운드 작업 {count}건 숨김",
   "chat.line.background_people_separator": "와 ",
   "chat.line.background_work": "백그라운드 작업",
+  "chat.feed.background_count": "{label} {count}건",
+  "chat.feed.dm": "{people} 간 대화",
+  "chat.feed.failed": "불러오지 못했습니다",
+  "chat.feed.hidden_count": "백그라운드 작업 {count}건 숨김",
+  "chat.feed.kind.cron": "예약 작업",
+  "chat.feed.kind.dm": "Anima 간 대화",
+  "chat.feed.kind.heartbeat": "하트비트",
+  "chat.feed.kind.notice": "알림",
+  "chat.feed.kind.other": "백그라운드 작업",
+  "chat.feed.kind.task": "작업 실행",
+  "chat.feed.loading": "불러오는 중…",
+  "chat.feed.people_separator": "와 ",
+  "chat.feed.truncated": "오래된 항목은 생략되었습니다",
   "chat.line.cancel_reply": "답장 취소",
   "chat.line.copy": "복사",
   "chat.line.download": "다운로드",
@@ -1106,5 +1119,6 @@
   "chat.presence.waiting_list_empty": "답장을 기다리는 알림이 없습니다",
   "chat.line.reply_to_name": "{name}에게 답장",
   "chat.line.reply_label": "답장",
-  "chat.line.reply_failed": "답장을 보내지 못했습니다. 다시 보내거나 ×를 눌러 일반 메시지로 보내세요."
+  "chat.line.reply_failed": "답장을 보내지 못했습니다. 다시 보내거나 ×를 눌러 일반 메시지로 보내세요.",
+  "chat.feed.empty": "백그라운드 작업이 없습니다"
 }

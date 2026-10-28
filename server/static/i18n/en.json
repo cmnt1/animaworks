@@ -259,6 +259,19 @@
   "chat.line.background_hidden": "{count} background items hidden",
   "chat.line.background_people_separator": " and ",
   "chat.line.background_work": "Background work",
+  "chat.feed.background_count": "{label} · {count} items",
+  "chat.feed.dm": "{people} exchange",
+  "chat.feed.failed": "Could not load",
+  "chat.feed.hidden_count": "{count} background items hidden",
+  "chat.feed.kind.cron": "Scheduled work",
+  "chat.feed.kind.dm": "Anima exchange",
+  "chat.feed.kind.heartbeat": "Heartbeat",
+  "chat.feed.kind.notice": "Notices",
+  "chat.feed.kind.other": "Background work",
+  "chat.feed.kind.task": "Task execution",
+  "chat.feed.loading": "Loading…",
+  "chat.feed.people_separator": " and ",
+  "chat.feed.truncated": "Older items were omitted",
   "chat.line.cancel_reply": "Cancel reply",
   "chat.line.copy": "Copy",
   "chat.line.download": "Download",
@@ -1160,5 +1173,6 @@
   "chat.presence.waiting_list_empty": "Nothing is waiting for your reply",
   "chat.line.reply_to_name": "Reply to {name}",
   "chat.line.reply_label": "Reply",
-  "chat.line.reply_failed": "The reply could not be sent. Send it again, or press × to send it as a normal message."
+  "chat.line.reply_failed": "The reply could not be sent. Send it again, or press × to send it as a normal message.",
+  "chat.feed.empty": "No background activity"
 }

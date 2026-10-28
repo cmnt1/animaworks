@@ -17,6 +17,10 @@ import {
   getSessionActivityType as _sharedGetSessionActivityType,
   getMessageActivityType as _sharedGetMessageActivityType,
   bindCollapsibleSessionHandlers as _sharedBindCollapsibleSessionHandlers,
+  renderFeedBackgroundGroup as _sharedRenderFeedBackgroundGroup,
+  feedBackgroundUrl as _sharedFeedBackgroundUrl,
+  bindLazyBackgroundGroups as _sharedBindLazyBackgroundGroups,
+  renderFeedHiddenCount as _sharedRenderFeedHiddenCount,
 } from "../../shared/chat/render-utils.js";
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
 import { thinkRenderHooks } from "../../shared/chat/thinking-bubble.js";
@@ -35,6 +39,8 @@ export function createChatRenderer(ctx) {
   // ── Smart Scroll (sticky-bottom with floating button) ──
   const NEAR_BOTTOM_PX = 80;
   let _userDetached = false;
+  const _backgroundFeedCache = new Map();
+  let _prefetchScheduledKey = "";
 
   function isNearBottom(el) {
     if (!el) return true;
@@ -268,6 +274,75 @@ export function createChatRenderer(ctx) {
     _sharedBindToolCallHandlers(container);
   }
 
+  function _loadFeedBackground(dataset) {
+    const animaName = dataset.anima || state.selectedAnima;
+    const threadId = dataset.threadId || "default";
+    const fromTs = dataset.fromTs || "";
+    const toTs = dataset.toTs || "";
+    const cacheKey = JSON.stringify([animaName, threadId, fromTs, toTs]);
+    if (_backgroundFeedCache.has(cacheKey)) return _backgroundFeedCache.get(cacheKey);
+
+    const url = _sharedFeedBackgroundUrl({
+      anima: animaName,
+      threadId,
+      fromTs,
+      toTs,
+    });
+    const request = api(url);
+    _backgroundFeedCache.set(cacheKey, request);
+    return request;
+  }
+
+  function _renderFeedBackground(data, dataset) {
+    const animaName = dataset.anima || state.selectedAnima;
+    const hm = (ts) => {
+      const d = new Date(ts);
+      return Number.isNaN(d.getTime()) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+    const rows = [];
+    for (const session of data?.sessions || []) {
+      const trigger = session.trigger || "";
+      for (const message of session.messages || []) {
+        const text = String(message.content || message.summary || "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const from = message.from_person || (message.role === "assistant" ? animaName : "");
+        const to = message.to_person || "";
+        const who = from && to && from !== to
+          ? `${from} → ${to}`
+          : (from || (trigger ? t(`chat.feed.kind.${trigger}`) : ""));
+        rows.push(
+          `<li class="bg-feed-row"><details><summary><span class="bg-feed-time">${escapeHtml(hm(message.ts))}</span>`
+          + `<b>${escapeHtml(who)}</b><span class="bg-feed-text">${escapeHtml(text.slice(0, 160))}</span></summary>`
+          + `<div class="bg-feed-full">${escapeHtml(text)}</div></details></li>`,
+        );
+      }
+    }
+    const truncated = data?.truncated
+      ? `<div class="bg-feed-truncated">${escapeHtml(t("chat.feed.truncated"))}</div>`
+      : "";
+    if (!rows.length) return `<div class="bg-feed-empty">${escapeHtml(t("chat.feed.empty"))}</div>`;
+    return `<ul class="bg-feed-list">${rows.join("")}</ul>${truncated}`;
+  }
+
+  function _scheduleOlderFeedPrefetch(name, threadId, historyState) {
+    if (!historyState?.isFeed || !historyState.hasMore || !historyState.nextBefore) return;
+    const key = JSON.stringify([name, threadId, historyState.nextBefore]);
+    if (_prefetchScheduledKey === key) return;
+    _prefetchScheduledKey = key;
+    const prefetch = () => {
+      if (state.selectedAnima !== name || state.selectedThreadId !== threadId) {
+        if (_prefetchScheduledKey === key) _prefetchScheduledKey = "";
+        return;
+      }
+      void state.manager.prefetchMoreHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(prefetch, { timeout: 1200 });
+    } else {
+      window.setTimeout(prefetch, 250);
+    }
+  }
+
   // ── Demo Suggested Prompt Cards ──
 
   function renderDemoSuggestedCards(animaName, { inline = false } = {}) {
@@ -307,7 +382,7 @@ export function createChatRenderer(ctx) {
       if (!response) throw new Error("First-meeting greeting returned an empty response");
 
       state.firstMeetingResponses.set(name, response);
-      await state.manager.loadHistory(name, "default", CONSTANTS.HISTORY_PAGE_SIZE);
+      await state.manager.loadHistory(name, "default", CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
       if (state.selectedAnima === name) renderChat();
     } catch (error) {
       logger.warn("First-meeting greeting failed", { anima: name, error: error?.message });
@@ -329,7 +404,7 @@ export function createChatRenderer(ctx) {
     const tid = isMeeting ? state.meetingRoom.room_id : state.selectedThreadId;
     const mgr = state.manager;
     const history = name ? mgr.getMessages(name, tid) : [];
-    const hs = name ? mgr.getHistoryState(name, tid) : { sessions: [], hasMore: false, nextBefore: null, loading: false };
+    const hs = name ? mgr.getHistoryState(name, tid) : { sessions: [], feedItems: [], isFeed: false, hasMore: false, nextBefore: null, loading: false };
 
     const currentAnima = isMeeting ? null : state.animas.find(a => a.name === name);
     const animaStatus = currentAnima?.status;
@@ -343,9 +418,16 @@ export function createChatRenderer(ctx) {
 
     _clearBootstrapInterval();
 
-    if (hs.sessions.length === 0 && history.length === 0) {
+    const hasTimelineHistory = hs.isFeed ? (hs.feedItems || []).length > 0 : hs.sessions.length > 0;
+    if (!hasTimelineHistory && history.length === 0) {
       if (hs.loading) {
         messagesEl.innerHTML = `<div class="chat-empty"><span class="tool-spinner"></span> ${t("common.loading")}</div>`;
+        return;
+      }
+      if (hs.isFeed && hs.hasMore) {
+        messagesEl.innerHTML = `<div class="chat-empty">${escapeHtml(t("chat.messages_empty"))}</div><div class="chat-load-sentinel"></div>`;
+        _scheduleOlderFeedPrefetch(name, tid, hs);
+        observeChatSentinel();
         return;
       }
       if (state.demoMode && state.selectedAnima) {
@@ -411,7 +493,23 @@ export function createChatRenderer(ctx) {
       return true;
     };
 
-    while (si < hs.sessions.length) {
+    if (hs.isFeed) {
+      for (const item of hs.feedItems || []) {
+        if (item?.kind === "bg_group") {
+          if (showBackgroundActivity) {
+            sessionsHtml += _sharedRenderFeedBackgroundGroup(item, opts);
+          } else {
+            hiddenActivityCount += Number(item.count) || 0;
+          }
+          hasRenderedTimelineItem = true;
+          continue;
+        }
+        if (item?.kind !== "message" || !item.message) continue;
+        sessionsHtml += renderHistoryMessage(item.message);
+        hasRenderedTimelineItem = true;
+        hasRenderedConversation = true;
+      }
+    } else while (si < hs.sessions.length) {
       const session = hs.sessions[si];
 
       const sessionActivityType = _sharedGetSessionActivityType(session, opts);
@@ -476,12 +574,22 @@ export function createChatRenderer(ctx) {
       }
     }
 
-    const hiddenActivityHtml = !showBackgroundActivity && hiddenActivityCount
-      ? `<div class="chat-bg-hidden-note">${t("chat.line.background_hidden", { count: hiddenActivityCount })}</div>`
+    const hiddenActivityHtml = !showBackgroundActivity
+      ? _sharedRenderFeedHiddenCount(hiddenActivityCount)
       : "";
     messagesEl.innerHTML = topHtml + sessionsHtml + liveHtml + hiddenActivityHtml;
     bindToolCallHandlers(messagesEl);
     _sharedBindCollapsibleSessionHandlers(messagesEl);
+    _sharedBindLazyBackgroundGroups(messagesEl, {
+      load: _loadFeedBackground,
+      render: _renderFeedBackground,
+      loadingText: t("chat.feed.loading"),
+      failedText: t("chat.feed.failed"),
+      onRendered: (body) => {
+        bindToolCallHandlers(body);
+        _sharedBindCollapsibleSessionHandlers(body);
+      },
+    });
     _sharedBindBubbleActionHandlers(messagesEl);
     _sharedBindChatLineHandlers(messagesEl, {
       onReply: (target) => ctx.controllers.events?.showReplyTarget(target),
@@ -492,6 +600,7 @@ export function createChatRenderer(ctx) {
     });
     if (window.lucide) lucide.createIcons({ nodes: [messagesEl] });
     initTextArtifactHandlers();
+    if (!isMeeting && name) _scheduleOlderFeedPrefetch(name, tid, hs);
 
     if (scrollToBottom) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -556,7 +665,7 @@ export function createChatRenderer(ctx) {
 
     _loadingOlder = true;
     try {
-      await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
+      await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
     } finally {
       _loadingOlder = false;
       renderChat(false, true);
@@ -566,11 +675,7 @@ export function createChatRenderer(ctx) {
   // ── Conversation History API ──
 
   async function fetchConversationHistory(animaName, limit = CONSTANTS.HISTORY_PAGE_SIZE, before = null, threadId = "default") {
-    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}&tool_detail=summary`;
-    if (before) url += `&before=${encodeURIComponent(before)}`;
-    url += `&thread_id=${encodeURIComponent(threadId)}`;
-    if (threadId !== "default") url += `&strict_thread=1`;
-    return await api(url);
+    return await state.fetchChatFeedHistory(animaName, limit, before, threadId);
   }
 
   // ── Polling ──
@@ -627,7 +732,7 @@ export function createChatRenderer(ctx) {
         ctx.controllers.thread.renderThreadTabs();
       }
 
-      if (!conv || !Array.isArray(conv.sessions)) return;
+      if (!conv || !Array.isArray(conv.items)) return;
 
       const { changed } = mgr.mergePolledHistory(name, tid, conv);
       if (!changed) return;
