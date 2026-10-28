@@ -31,6 +31,8 @@ export function createThreadController(ctx) {
       streamingThreadId: streamCtx?.thread || null,
     });
 
+    ctx.controllers.head?.decorateThreadTabs();
+
     container.querySelectorAll(".thread-tab").forEach(btn => {
       btn.addEventListener("click", e => {
         const tid = e.target.dataset.thread;

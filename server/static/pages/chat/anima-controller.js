@@ -9,6 +9,7 @@ import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
 import { openVoicePopup } from "./voice-popup.js";
+import { presence, displayStatus } from "../../modules/anima-presence.js";
 
 const LONG_PRESS_MS = 500;
 
@@ -98,6 +99,16 @@ export function createAnimaController(ctx) {
     return `<span class="add-conversation-avatar add-conversation-avatar-initial"${ring}>${initial}</span>`;
   }
 
+  /** Running animas are split into working / waiting for a reply / standby. */
+  function _menuStatusLabel(p) {
+    const raw = animaStatusLabel(p.status);
+    if (p.status !== "running" && p.status !== "idle") return raw;
+    const kind = displayStatus(presence.get(p.name));
+    if (kind === "waiting") return t("chat.presence.status_waiting");
+    if (kind === "working" || kind === "calling") return t("chat.presence.status_working");
+    return t("chat.presence.status_idle");
+  }
+
   function renderAddConversationMenu() {
     const menu = $("chatAddConversationMenu");
     if (!menu) return;
@@ -111,7 +122,7 @@ export function createAnimaController(ctx) {
 
     let html = "";
     for (const p of sorted) {
-      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(_menuStatusLabel(p))})` : "";
       const openLabel = isTabOpen(ctx, p.name) ? t("animas.tab_viewing") : "";
       const disabled = p.status === "bootstrapping" || p.bootstrapping;
       const sleepBadge = p.status === "not_found" || p.status === "stopped" ? "\uD83D\uDCA4 " : "";
@@ -140,7 +151,7 @@ export function createAnimaController(ctx) {
   function renderAnimaTabs() {
     const container = $("chatAnimaTabs");
     if (!container) return;
-    if (state.animaTabs.length === 0) { container.innerHTML = ""; return; }
+    if (state.animaTabs.length === 0) { container.innerHTML = ""; state.paneHost?.renderRail?.(); return; }
 
     const html = state.animaTabs.map(tab => {
       const activeClass = tab.name === state.selectedAnima ? " active" : "";
@@ -193,6 +204,20 @@ export function createAnimaController(ctx) {
         e.stopPropagation();
         const anima = e.currentTarget?.dataset?.anima;
         if (anima) closeAnimaTab(anima);
+      });
+    });
+    state.paneHost?.renderRail?.();
+  }
+
+  /** Long-press (voice popup) for left-rail items; same behaviour as the tabs. */
+  function bindLongPress(el) {
+    _bindAnimaLongPress(el, (anima) => {
+      openVoicePopup(anima, {
+        onClose: () => {
+          if (state.selectedAnima) {
+            ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
+          }
+        },
       });
     });
   }
@@ -425,6 +450,10 @@ export function createAnimaController(ctx) {
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }
+
+      // A toast "reply" asked for a conversation before this page existed.
+      const pending = presence.takePendingOpen();
+      if (pending && known.has(pending)) openOrSelectAnima(pending);
     } catch (err) {
       logger.error("Failed to load animas", err);
     }
@@ -505,6 +534,6 @@ export function createAnimaController(ctx) {
   return {
     loadAnimas, restoreChatUiState, selectAnima, openOrSelectAnima,
     closeAnimaTab, renderAnimaTabs, renderAddConversationMenu,
-    ensureAnimaTabAvatar, resolveHistoryAvatars,
+    ensureAnimaTabAvatar, resolveHistoryAvatars, bindLongPress,
   };
 }

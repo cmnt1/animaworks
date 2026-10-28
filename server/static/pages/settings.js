@@ -291,6 +291,11 @@ function _renderGeneral(container) {
         <input type="checkbox" id="enterToSendToggle" ${_isEnterToSend() ? "checked" : ""} />
         <span>${t("settings.input.enter_to_send")}</span>
       </label>
+      <label class="settings-checkbox-label">
+        <input type="checkbox" id="chatPresenceToggle" ${_isPresenceOn() ? "checked" : ""} />
+        <span>${t("chat.presence.setting_label")}</span>
+      </label>
+      <p class="settings-section-desc">${t("chat.presence.setting_hint")}</p>
     </section>
   `;
 
@@ -305,6 +310,11 @@ function _renderGeneral(container) {
 
   container.querySelector("#enterToSendToggle")?.addEventListener("change", (e) => {
     try { localStorage.setItem(_LS_ENTER_SEND, e.target.checked ? "true" : "false"); } catch { /* */ }
+  });
+
+  container.querySelector("#chatPresenceToggle")?.addEventListener("change", (e) => {
+    try { localStorage.setItem("aw-chat-presence", e.target.checked ? "on" : "off"); } catch { /* */ }
+    window.dispatchEvent(new CustomEvent("aw:presence-pref"));
   });
 
   // Font Size
@@ -600,6 +610,10 @@ async function _clearNightMode(container) {
 
 function _isEnterToSend() {
   try { return localStorage.getItem(_LS_ENTER_SEND) === "true"; } catch { return false; }
+}
+
+function _isPresenceOn() {
+  try { return localStorage.getItem("aw-chat-presence") !== "off"; } catch { return true; }
 }
 
 // ── localStorage Cache ─────────────────────
