@@ -85,7 +85,8 @@ const mockDocument = {
 
 function translate(key, params) {
   if (key === "activity.running_tasks") return `Running tasks (${params.count})`;
-  if (key === "activity.running_task_slot") return `Slot ${params.slot}`;
+  if (key === "activity.busy_chat") return "Chat";
+  if (key === "activity.busy_cron") return "Cron";
   return key;
 }
 
@@ -264,7 +265,7 @@ describe("parallel task lane grouping", () => {
 });
 
 describe("running task strip DOM generation", () => {
-  it("renders slot and title chips then hides cleanly for an empty payload", () => {
+  it("renders anima and title chips without slot labels then hides cleanly for an empty payload", () => {
     const container = new MockElement("div");
     const payload = {
       animas: [{
@@ -282,12 +283,35 @@ describe("running task strip DOM generation", () => {
     assert.equal(container.hidden, false);
     assert.equal(container.children[0].textContent, "Running tasks (2)");
     assert.equal(container.children[1].dataset.slotId, "0");
-    assert.equal(container.children[1].children[0].textContent, "Slot 0");
-    assert.equal(container.children[1].children[1].textContent, "alpha · Compile report");
+    assert.equal(container.children[1].children[0].className, "running-task-anima");
+    assert.equal(container.children[1].children[0].textContent, "alpha");
+    assert.equal(container.children[1].children[1].textContent, "Compile report");
     assert.equal(container.children[1].classList.contains("has-activity-context"), true);
 
     renderRunningTasksStrip(container, { animas: [], total: 0 }, translate, mockDocument);
     assert.equal(container.hidden, true);
     assert.equal(container.children.length, 0);
+  });
+
+  it("lists other busy lanes so every working Anima appears", () => {
+    const container = new MockElement("div");
+    const payload = {
+      animas: [
+        { name: "alpha", tasks: [{ slot_id: 0, task_id: "task-a", title: "Compile report" }], activities: [{ kind: "chat" }] },
+        { name: "beta", tasks: [], activities: [{ kind: "cron" }] },
+        { name: "gamma", tasks: [], activities: [] },
+      ],
+      total: 1,
+    };
+
+    renderRunningTasksStrip(container, payload, translate, mockDocument);
+    assert.equal(container.hidden, false);
+    assert.equal(container.children[0].textContent, "Running tasks (3)");
+    // Chips stay grouped by Anima: alpha's task and chat sit together.
+    assert.deepEqual(
+      container.children.slice(1).map((chip) => chip.children.map((child) => child.textContent).join(" ")),
+      ["alpha Compile report", "alpha Chat", "beta Cron"],
+    );
+    assert.equal(container.children[2].dataset.busyKind, "chat");
   });
 });

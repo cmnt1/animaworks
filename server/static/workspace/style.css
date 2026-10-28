@@ -516,6 +516,7 @@ html, body {
 
 .running-tasks-heading {
   flex-shrink: 0;
+  white-space: nowrap;
   color: #555;
   font-size: 0.72rem;
   font-weight: 700;
@@ -524,6 +525,7 @@ html, body {
 .running-task-chip {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   gap: 5px;
   flex: 0 0 auto;
   max-width: 240px;
@@ -534,9 +536,11 @@ html, body {
   font-size: 0.72rem;
 }
 
-.running-task-slot {
+.running-task-anima {
+  flex-shrink: 0;
   color: var(--activity-ctx-color);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .running-task-title {
