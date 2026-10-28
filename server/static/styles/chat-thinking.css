@@ -252,6 +252,10 @@ body[data-theme="dark"] {
   color: var(--aw-color-text-secondary, #5a6676);
 }
 
+/* A step with a result: keep the check mark and the label on one line; the result opens below. */
+.chat-bubble .think-fold .steps li:has(> .think-step-detail) { flex-wrap: nowrap; }
+.think-step-detail { flex: 1; min-width: 0; }
+
 .think-step-detail > summary {
   cursor: pointer;
   list-style: none;
