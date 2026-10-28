@@ -397,7 +397,7 @@ function _humanNotifyActions(callbackId, escapeHtml) {
 
 function _lineMetaHtml(msg, opts, isMe) {
   const { escapeHtml, smartTimestamp } = opts;
-  const waiting = msg.type === "human_notify" && msg.replied === false;
+  const waiting = msg.type === "human_notify" && msg.replied === false && msg.needs_reply !== false;
   const waitHtml = waiting
     ? `<span class="chat-line-waiting">${escapeHtml(t("chat.line.waiting_reply"))}</span>`
     : "";

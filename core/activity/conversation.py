@@ -450,6 +450,8 @@ class ConversationMixin:
                         "priority": e.meta.get("priority", "normal"),
                         "callback_id": e.meta.get("callback_id", ""),
                         "notification_id": e.meta.get("notification_id") or e.ts,
+                        # Low-priority notices (FYI, news digests) are for reading, not answering.
+                        "needs_reply": e.meta.get("priority", "normal") != "low" or bool(e.meta.get("callback_id")),
                         "replied": False,
                         "emotion": None,
                         "from_person": "",

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4f860a83e959932c843d56353bd681b84492786dc565bf83b024c8e444ce5714 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 08dc9d44193ead2ed12c954776df19f67b7f383dd33f07fd9c704a0132bc2a9e -->
 
 # モジュール一覧
 
@@ -114,7 +114,7 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 696 | — |
+| `core.activity.conversation` | 698 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -1130,7 +1130,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 593 | — |
+| `server.routes.sessions` | 594 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |

@@ -310,3 +310,14 @@ class TestNotifyAnsweredInChat:
         messages = activity_logger._entries_to_messages(entries)
         notify = next(m for m in messages if m.get("type") == "human_notify")
         assert notify["replied"] is False
+
+
+class TestNotifyNeedsReply:
+    def test_low_priority_notice_does_not_wait_for_reply(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry("human_notify", "2026-10-28T12:32:00+09:00", content="記事5件", meta={"priority": "low"}),
+            _make_entry("human_notify", "2026-10-28T12:40:00+09:00", content="決めて", meta={"priority": "high"}),
+        ]
+        low, high = [m for m in activity_logger._entries_to_messages(entries) if m.get("type") == "human_notify"]
+        assert low["needs_reply"] is False
+        assert high["needs_reply"] is True
