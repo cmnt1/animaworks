@@ -136,7 +136,8 @@ export function createPresenceStore({ now = () => Date.now() } = {}) {
       return _mutate(name, (e) => {
         e._src[source] = Boolean(on);
         if (on && label) e.label = label;
-        if (!on && !WORK_SOURCES.some((k) => e._src[k])) e.label = "";
+        // A finished chat stream must not leave its last step ("writing the reply…") behind.
+        if (!on && (source === "stream" || !WORK_SOURCES.some((k) => e._src[k]))) e.label = "";
       });
     },
 

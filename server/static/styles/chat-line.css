@@ -391,3 +391,17 @@ body[data-theme="dark"] {
 .chat-line-reply-chip[hidden] {
   display: none !important;
 }
+
+/* Face of an Anima that is working on a reply: thinking face with a pulsing ring. */
+.chat-line-face.thinking {
+  box-shadow: 0 0 0 2px var(--aw-line-talk-bg), 0 0 0 4px var(--aw-line-work);
+  animation: aw-line-face-ring 2s ease-in-out infinite;
+}
+@keyframes aw-line-face-ring {
+  0%, 100% { box-shadow: 0 0 0 2px var(--aw-line-talk-bg), 0 0 0 4px color-mix(in srgb, var(--aw-line-work) 35%, transparent); }
+  50% { box-shadow: 0 0 0 2px var(--aw-line-talk-bg), 0 0 0 4px var(--aw-line-work); }
+}
+.chat-line-bubble.think-host { min-width: 260px; }
+@media (prefers-reduced-motion: reduce) {
+  .chat-line-face.thinking { animation: none; }
+}

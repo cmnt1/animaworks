@@ -432,7 +432,12 @@ function _lineMessage(msg, opts, { live = false } = {}) {
     ? renderImages(msg.images, { animaName: opts.animaName })
     : renderImages(msg.images, { animaName: opts.animaName });
   let toolHtml = "";
-  if (live) {
+  const think = isAnima && opts.think && msg.think ? opts.think : null;
+  const thinkingNow = Boolean(live && think && msg.streaming && think.isThinking(msg));
+  if (thinkingNow) contentHtml = "";
+  if (live && think) {
+    toolHtml = msg.streaming ? think.zone(msg, opts) : think.fold(msg);
+  } else if (live) {
     const labels = opts.labels || {};
     if (msg.toolHistory?.length) {
       toolHtml = renderToolActivityTimeline(msg.toolHistory, msg.activeTool, { escapeHtml, labels });
@@ -441,6 +446,11 @@ function _lineMessage(msg, opts, { live = false } = {}) {
       toolHtml = `<div class="tool-indicator"><span class="tool-spinner"></span>${typeof label === "function" ? label(msg.activeTool) : label}</div>`;
     }
     if (msg.thinkingText) toolHtml += `<div class="thinking-inline-preview">${escapeHtml(msg.thinkingText)}</div>`;
+  } else if (opts.think) {
+    toolHtml = opts.think.historyFold(msg.tool_calls, {
+      truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE,
+      interimTexts: msg.interim_texts,
+    });
   } else {
     toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE });
   }
@@ -467,10 +477,17 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const via = isMe && viaLabel && msg.via !== "web" && msg.via !== "chat"
     ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
     : "";
-  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}`;
-  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${live && msg.streaming ? '<span class="streaming-cursor">▌</span>' : ""}</div>`;
+  const thinkClass = live && think && msg.streaming ? " think-host" : "";
+  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}${thinkClass}`;
+  const cursor = live && msg.streaming && !thinkingNow ? '<span class="streaming-cursor">▌</span>' : "";
+  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${cursor}</div>`;
+  const faceEmotion = live && think
+    ? (msg.streaming ? "thinking" : (msg.emotion || msg.think.emotion || "neutral"))
+    : emotion;
+  const faceClass = live && think && msg.streaming ? "chat-line-face thinking" : "chat-line-face";
+  const thinkIdAttr = live && think ? ` data-think-id="${_escapeAttr(msg.think.id)}"` : "";
   const face = isAnima
-    ? `<img class="chat-line-face" src="${_escapeAttr(faceUrl(speakerName, emotion))}" data-emotion="${_escapeAttr(emotion)}" data-anima="${_escapeAttr(speakerName)}" data-bust-url="${_escapeAttr(bustUrl(speakerName, emotion))}" alt="${_escapeAttr(speakerName)}" loading="lazy">`
+    ? `<img class="${faceClass}"${thinkIdAttr} src="${_escapeAttr(faceUrl(speakerName, faceEmotion))}" data-emotion="${_escapeAttr(faceEmotion)}" data-anima="${_escapeAttr(speakerName)}" data-bust-url="${_escapeAttr(bustUrl(speakerName, faceEmotion))}" alt="${_escapeAttr(speakerName)}" loading="lazy">`
     : isMe
       ? ""
       : `<div class="chat-line-person-avatar" aria-hidden="true">${escapeHtml((nameFrom || "?").trim().charAt(0).toLocaleUpperCase() || "?")}</div>`;
