@@ -12,7 +12,7 @@ import {
   decorateContextElement,
 } from "../../shared/activity-context.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
-import { renderSimpleMarkdown } from "./utils.js";
+import { renderSimpleMarkdown, timeStr } from "./utils.js";
 import { t } from "/shared/i18n.js";
 import { resolveEventPersons } from "./activity-normalize.js";
 
@@ -313,7 +313,7 @@ export function createEventElement(evt, opts) {
   // Time
   const timeEl = document.createElement("span");
   timeEl.className = "tl-event-time";
-  timeEl.textContent = formatTime(evt.ts);
+  timeEl.textContent = timeStr(evt.ts);
   timeEl.style.cssText = "flex-shrink:0; color:var(--aw-color-text-muted, #aaa); font-size:0.75rem; min-width:45px;";
 
   // Icon

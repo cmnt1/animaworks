@@ -111,8 +111,9 @@ class TestRunningActivityTasks:
                             "started_at": started_at,
                         },
                     ],
+                    "activities": [{"kind": "chat", "started_at": started_at}],
                 },
-                {"name": "bob", "tasks": []},
+                {"name": "bob", "tasks": [], "activities": []},
             ],
             "total": 2,
         }
@@ -133,9 +134,62 @@ class TestRunningActivityTasks:
 
         assert response.status_code == 200
         assert response.json() == {
-            "animas": [{"name": "alice", "tasks": []}],
+            "animas": [{"name": "alice", "tasks": [], "activities": []}],
             "total": 0,
         }
+
+    async def test_reports_non_task_lanes_for_busy_animas(self, tmp_path: Path) -> None:
+        app = _app(tmp_path, ["alice", "bob", "carol"])
+        for name in ("alice", "bob", "carol"):
+            (app.state.animas_dir / name).mkdir()
+        _write_sidecar(
+            tmp_path,
+            "alice",
+            {
+                "is_busy": True,
+                "busy_since": "2026-07-13T10:00:00+09:00",
+                "lanes": ["inbox", "background"],
+                "lane_started_at": {"inbox": "2026-07-13T09:59:00+09:00"},
+                "processes": [{"pid": 11, "kind": "inbox"}, {"pid": 12, "kind": "cron_command"}],
+            },
+        )
+        # A pool-size-1 TaskExec child runs on the plain background lane.
+        _add_task(app.state.animas_dir / "bob", "task-x", "Synthetic task")
+        _write_sidecar(
+            tmp_path,
+            "bob",
+            {
+                "is_busy": True,
+                "busy_since": "2026-07-13T10:05:00+09:00",
+                "lanes": ["background", "background-worker:0:task-x"],
+                "processes": [{"pid": 21, "kind": "task"}],
+            },
+        )
+        _write_sidecar(
+            tmp_path,
+            "carol",
+            {
+                "is_busy": True,
+                "busy_since": "2026-07-13T10:10:00+09:00",
+                "lanes": ["background"],
+                "processes": [{"pid": 31, "kind": "heartbeat"}],
+            },
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/api/activity/running-tasks")
+
+        animas = {item["name"]: item for item in response.json()["animas"]}
+        assert animas["alice"]["activities"] == [
+            {"kind": "inbox", "started_at": "2026-07-13T09:59:00+09:00"},
+            {"kind": "cron", "started_at": "2026-07-13T10:00:00+09:00"},
+        ]
+        assert [task["task_id"] for task in animas["bob"]["tasks"]] == ["task-x"]
+        assert animas["bob"]["activities"] == []
+        assert animas["carol"]["activities"] == [{"kind": "heartbeat", "started_at": "2026-07-13T10:10:00+09:00"}]
 
 
 class TestRecentActivityContextCompatibility:

@@ -158,6 +158,48 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
     return jobs
 
 
+_BUSY_PROCESS_KINDS = {"heartbeat": "heartbeat", "cron": "cron", "cron_command": "cron"}
+
+
+def _busy_activities(sidecar: dict[str, object]) -> list[dict[str, object]]:
+    """Summarize non-TaskExec lanes (chat, inbox, heartbeat, cron) of a busy sidecar.
+
+    The ``background`` lane covers both heartbeat and cron, so its kind comes
+    from the child process kinds; a bare ``background`` with no such process is
+    reported as-is.  ``background`` that only hosts a TaskExec worker is skipped
+    because the task itself is listed separately.
+    """
+    lanes = [lane for lane in sidecar.get("lanes", []) or [] if isinstance(lane, str)]
+    processes = sidecar.get("processes", []) or []
+    process_kinds = [str(p.get("kind") or "") for p in processes if isinstance(p, dict)]
+    lane_started_at = sidecar.get("lane_started_at") or {}
+    if not isinstance(lane_started_at, dict):
+        lane_started_at = {}
+    fallback_started = str(sidecar.get("busy_since") or "")
+
+    kinds: list[tuple[str, str]] = []
+    for lane in lanes:
+        if lane == "chat" or lane.startswith("conversation:"):
+            kinds.append(("chat", lane))
+        elif lane == "inbox":
+            kinds.append(("inbox", lane))
+        elif lane == "background":
+            mapped = [_BUSY_PROCESS_KINDS[k] for k in process_kinds if k in _BUSY_PROCESS_KINDS]
+            if mapped:
+                kinds.extend((kind, lane) for kind in mapped)
+            elif not any(item.startswith("background-worker:") for item in lanes) and "task" not in process_kinds:
+                kinds.append(("background", lane))
+
+    activities: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for kind, lane in kinds:
+        if kind in seen:
+            continue
+        seen.add(kind)
+        activities.append({"kind": kind, "started_at": str(lane_started_at.get(lane) or fallback_started)})
+    return activities
+
+
 def _collect_running_background_tasks(
     animas_dir: Path,
     shared_dir: Path,
@@ -166,7 +208,7 @@ def _collect_running_background_tasks(
     """Join background-worker busy lanes with task queue titles.
 
     Busy sidecars are the runtime source of truth for which worker slots are
-    active. The canonical task store supplies the human-readable task title. A
+    active and which other lanes (chat, inbox, heartbeat, cron) are working. The canonical task store supplies the human-readable task title. A
     malformed or concurrently replaced sidecar is treated as an empty state so
     the activity page remains available while workers update their marker.
     """
@@ -177,6 +219,7 @@ def _collect_running_background_tasks(
 
     for name in anima_names:
         tasks: list[dict[str, object]] = []
+        activities: list[dict[str, object]] = []
         sidecar_path = sidecar_dir / f"{name}.busy.json"
         try:
             sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -212,8 +255,9 @@ def _collect_running_background_tasks(
                         "started_at": started_at,
                     }
             tasks = [workers_by_slot[slot] for slot in sorted(workers_by_slot)]
+            activities = _busy_activities(sidecar)
 
-        result.append({"name": name, "tasks": tasks})
+        result.append({"name": name, "tasks": tasks, "activities": activities})
 
     return result
 
@@ -553,7 +597,7 @@ def create_system_router() -> APIRouter:
         request: Request,
         anima: str | None = None,
     ):
-        """Return active background TaskExec workers grouped by Anima."""
+        """Return active TaskExec workers and other busy lanes grouped by Anima."""
         animas_dir = request.app.state.animas_dir
         shared_dir = request.app.state.shared_dir
         anima_names = request.app.state.anima_names
