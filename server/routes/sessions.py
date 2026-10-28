@@ -266,6 +266,32 @@ def create_sessions_router() -> APIRouter:
                 return file_view
         return view
 
+    @router.get("/notifications/awaiting")
+    async def list_awaiting_notifications(request: Request):
+        """Count call_human notifications that still wait for a human reply, per Anima."""
+        animas_dir = request.app.state.animas_dir
+        names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+        def _count(anima_dir) -> int:
+            view = ActivityLogger(anima_dir).get_conversation_view(limit=120, thread_id="default")
+            return sum(
+                1
+                for session in view.get("sessions", [])
+                for message in session.get("messages", [])
+                if message.get("type") == "human_notify" and not message.get("replied")
+            )
+
+        counts: dict[str, int] = {}
+        for name in names:
+            try:
+                n = await asyncio.to_thread(_count, animas_dir / name)
+            except Exception:
+                logger.debug("Failed to count awaiting notifications for %s", name, exc_info=True)
+                continue
+            if n:
+                counts[name] = n
+        return {"animas": counts}
+
     @router.post("/animas/{name}/notifications/reply")
     async def reply_to_notification(
         name: str,
