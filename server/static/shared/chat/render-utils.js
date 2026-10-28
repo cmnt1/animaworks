@@ -459,8 +459,16 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   } else {
     contentHtml = contentText ? `<div class="chat-text">${_linkifyEscaped(escapeHtml, contentText).replace(/\n/g, "<br>")}</div>` : "";
   }
-  const quote = replyParts.quote || msg.reply_quote || "";
-  const quoteHtml = quote ? `<div class="chat-line-quote">${escapeHtml(quote)}</div>` : "";
+  let quote = replyParts.quote || msg.reply_quote || "";
+  let quoteName = msg.reply_quote ? (opts.animaName || "") : "";
+  const named = !msg.reply_quote && /^([^:\s][^:]{0,29}): (.+)$/.exec(quote);
+  if (named) { quoteName = named[1]; quote = named[2]; }
+  const quoteLabel = quoteName ? t("chat.line.reply_to_name", { name: quoteName }) : t("chat.line.reply_label");
+  const quoteHtml = quote
+    ? `<div class="chat-line-quote"><div class="chat-line-quote-head">`
+      + `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>`
+      + `${escapeHtml(quoteLabel)}</div><div class="chat-line-quote-text">${escapeHtml(quote)}</div></div>`
+    : "";
   const imagesHtml = live
     ? renderImages(msg.images, { animaName: opts.animaName })
     : renderImages(msg.images, { animaName: opts.animaName });

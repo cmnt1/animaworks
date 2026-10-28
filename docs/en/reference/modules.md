@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=cf5ff86b47b4b53d76eb8ffd6e7f62ac00f8a6297b0e888462b4e49272c75da0 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5194e4b2b314e9988ee2cd50ba693d0f9488713252e990a0bc70ff7ebc05e1f8 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -108,13 +108,13 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 
 ## `core.activity`
 
-Recording, playback, and timeline display of activity logs.
+Recording, playback, and timeline display for activity logs.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 698 | — |
+| `core.activity.conversation` | 701 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -1130,7 +1130,7 @@ Audio input/output and voice conversations.
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 594 | — |
+| `server.routes.sessions` | 602 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |

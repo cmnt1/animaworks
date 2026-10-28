@@ -1157,5 +1157,8 @@
   "chat.presence.slash_done_compact": "記憶の整理を始めました",
   "chat.presence.slash_failed": "コマンドを実行できませんでした",
   "chat.presence.waiting_list_title": "{name} の返事待ち",
-  "chat.presence.waiting_list_empty": "返事待ちのお知らせはありません"
+  "chat.presence.waiting_list_empty": "返事待ちのお知らせはありません",
+  "chat.line.reply_to_name": "{name} への返信",
+  "chat.line.reply_label": "返信",
+  "chat.line.reply_failed": "返信を送れませんでした。もう一度送るか、×を押して普通のメッセージとして送ってください。"
 }

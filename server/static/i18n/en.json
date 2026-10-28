@@ -1157,5 +1157,8 @@
   "chat.presence.slash_done_compact": "Started tidying up memory",
   "chat.presence.slash_failed": "The command could not be run",
   "chat.presence.waiting_list_title": "Waiting for your reply: {name}",
-  "chat.presence.waiting_list_empty": "Nothing is waiting for your reply"
+  "chat.presence.waiting_list_empty": "Nothing is waiting for your reply",
+  "chat.line.reply_to_name": "Reply to {name}",
+  "chat.line.reply_label": "Reply",
+  "chat.line.reply_failed": "The reply could not be sent. Send it again, or press × to send it as a normal message."
 }

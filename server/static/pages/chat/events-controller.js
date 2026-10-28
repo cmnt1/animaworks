@@ -79,6 +79,7 @@ export function createEventsController(ctx) {
       name: normalized?.name || state.selectedAnima || "",
       text: preview,
     });
+    chip.classList.remove("failed");
     chip.hidden = !normalized;
     $("chatPageInput")?.focus();
   }
@@ -86,7 +87,19 @@ export function createEventsController(ctx) {
   function clearChatReplyTarget() {
     clearReplyTarget(state);
     const chip = $("chatReplyChip");
-    if (chip) chip.hidden = true;
+    if (chip) {
+      chip.hidden = true;
+      chip.classList.remove("failed");
+    }
+  }
+
+  function showReplyError(message) {
+    const chip = $("chatReplyChip");
+    const label = $("chatReplyText");
+    if (!chip || !label) return;
+    chip.classList.add("failed");
+    label.textContent = message;
+    chip.hidden = false;
   }
 
   function bindPaneEvents() {
@@ -324,5 +337,5 @@ export function createEventsController(ctx) {
     chipsEl.style.display = "flex";
   }
 
-  return { bindPaneEvents, updateDemoChips, showReplyTarget, clearReplyTarget: clearChatReplyTarget };
+  return { bindPaneEvents, updateDemoChips, showReplyTarget, clearReplyTarget: clearChatReplyTarget, showReplyError };
 }

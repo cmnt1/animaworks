@@ -146,8 +146,16 @@ describe("LINE-style chat message rows", () => {
       from_person: "alice",
     }, opts);
 
-    assert.match(html, /class="chat-line-quote">We found the cause\.<\/div>/);
+    assert.match(html, /class="chat-line-quote-text">We found the cause\.<\/div>/);
     assert.match(html, /Please ship the fix\./);
+  });
+
+  it("names who is being replied to", () => {
+    const named = renderHistoryMessage({ role: "human", content: "> mei: We found the cause.\n\nShip it.", from_person: "alice" }, opts);
+    assert.match(named, /chat\.line\.reply_to_name|mei/);
+    assert.match(named, /class="chat-line-quote-text">We found the cause\.<\/div>/);
+    const notifyReply = renderHistoryMessage({ role: "human", type: "human_reply", content: "Aで", from_person: "alice", reply_quote: "決めてください" }, opts);
+    assert.match(notifyReply, /chat-line-quote-text">決めてください/);
   });
 });
 

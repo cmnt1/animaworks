@@ -29,6 +29,26 @@ class NotificationReplyRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+def _find_notification(activity: ActivityLogger, notification_id: str) -> dict | None:
+    """Find a call_human notification by id (its timestamp) in that day's activity log."""
+    try:
+        day = datetime.fromisoformat(str(notification_id).replace("Z", "+00:00")).date()
+    except ValueError:
+        day = None
+    days = [day] if day else []
+    for target_day in days or [None]:
+        entries = activity._load_conversation_entries(
+            before=None, limit=5000, thread_id="default", _specific_day=target_day
+        )
+        for message in activity._entries_to_messages(entries):
+            if message.get("type") == "human_notify" and notification_id in {
+                str(message.get("notification_id") or ""),
+                str(message.get("ts") or ""),
+            }:
+                return message
+    return None
+
+
 def _settle_older_notifications(activity: ActivityLogger, view: dict, thread_id: str) -> None:
     """Mark notifications on an older page as replied when the reply sits on a newer page."""
     pending = [
@@ -407,21 +427,9 @@ def create_sessions_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         activity = ActivityLogger(anima_dir)
-        view = await asyncio.to_thread(activity.get_conversation_view, limit=200, thread_id="default")
-        notification = next(
-            (
-                message
-                for session in view.get("sessions", [])
-                for message in session.get("messages", [])
-                if message.get("type") == "human_notify"
-                and body.notification_id in {str(message.get("notification_id") or ""), str(message.get("ts") or "")}
-            ),
-            None,
-        )
+        notification = await asyncio.to_thread(_find_notification, activity, body.notification_id)
         if notification is None:
             raise HTTPException(status_code=404, detail="Notification not found")
-        if notification.get("replied"):
-            raise HTTPException(status_code=409, detail="Notification already has a reply")
 
         text = body.text.strip()
         if not text:
