@@ -165,7 +165,8 @@ def _face_source(assets_dir: Path, emotion: str, style: str) -> Path | None:
 
 def _face_crop_config(assets_dir: Path, style: str) -> tuple[float, float, float]:
     """Load normalized face crop coordinates, using the checked mei default."""
-    default = (0.24, 0.0, 0.52)
+    # Head and shoulders fit inside the round icon for both anime and realistic bust-ups.
+    default = (0.15, 0.0, 0.70)
     path = assets_dir / "face_crop.json"
     if not path.is_file():
         return default
@@ -193,7 +194,7 @@ def _resolve_face_thumbnail(
     """Generate or reuse a cropped WebP face thumbnail."""
     target_px = _FACE_SIZES[size_key]
     thumbs_dir = assets_dir / ".thumbs"
-    thumb_path = thumbs_dir / f"face_{emotion}_{style}.{size_key}.webp"
+    thumb_path = thumbs_dir / f"face2_{emotion}_{style}.{size_key}.webp"
     crop_path = assets_dir / "face_crop.json"
     newest_source_mtime = source.stat().st_mtime_ns
     if crop_path.is_file():

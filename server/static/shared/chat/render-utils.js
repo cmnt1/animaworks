@@ -365,11 +365,22 @@ function _lineReplyParts(text) {
   return match ? { quote: match[1], text: match[2] } : { quote: "", text: String(text || "") };
 }
 
+const _LINE_ICONS = {
+  reply: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+};
+
+function _lineActionButton(action, extraClass = "") {
+  const label = _escapeAttr(t(`chat.line.${action}`));
+  return `<button type="button" class="chat-line-action${extraClass}" data-action="${action}" title="${label}" aria-label="${label}">${_LINE_ICONS[action]}</button>`;
+}
+
 function _lineActionsHtml({ reply = true } = {}) {
   return `<div class="chat-line-actions">`
-    + (reply ? `<button type="button" class="chat-line-action" data-action="reply" title="${_escapeAttr(t("chat.line.reply"))}">${t("chat.line.reply")}</button>` : "")
-    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="copy" title="${_escapeAttr(t("chat.line.copy"))}" aria-label="${_escapeAttr(t("chat.line.copy"))}">${t("chat.line.copy")}</button>`
-    + `<button type="button" class="chat-line-action bubble-action-btn" data-action="download" title="${_escapeAttr(t("chat.line.download"))}" aria-label="${_escapeAttr(t("chat.line.download"))}">${t("chat.line.download")}</button>`
+    + (reply ? _lineActionButton("reply") : "")
+    + _lineActionButton("copy", " bubble-action-btn")
+    + _lineActionButton("download", " bubble-action-btn")
     + `</div>`;
 }
 

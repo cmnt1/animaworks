@@ -293,33 +293,47 @@ def create_sessions_router() -> APIRouter:
 
     @router.get("/notifications/awaiting")
     async def list_awaiting_notifications(request: Request):
-        """Count call_human notifications from the last 24 hours that still wait for a reply, per Anima."""
+        """List call_human notifications from the last 24 hours that still wait for a reply, per Anima.
+
+        Reads only notification, reply and incoming-message entries from the last two
+        days of each activity log, so it stays cheap enough to poll.
+        """
         animas_dir = request.app.state.animas_dir
         names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
-
         since = (now_local() - timedelta(hours=24)).isoformat()
 
-        def _count(anima_dir) -> int:
-            view = ActivityLogger(anima_dir).get_conversation_view(limit=500, thread_id="default")
-            return sum(
-                1
-                for session in view.get("sessions", [])
-                for message in session.get("messages", [])
+        def _waiting(anima_dir) -> list[dict[str, str]]:
+            activity = ActivityLogger(anima_dir)
+            entries = activity.recent(days=2, limit=5000, types=["human_notify", "human_reply", "message_received"])
+            # Only chat-channel messages appear in the chat view; inbox traffic is not an answer.
+            entries = [e for e in entries if e.type != "message_received" or e.channel == "chat"]
+            messages = activity._entries_to_messages(entries)
+            return [
+                {
+                    "ts": str(message.get("ts") or ""),
+                    "subject": str(message.get("subject") or "")[:80],
+                    "preview": " ".join(str(message.get("content") or "").split())[:80],
+                }
+                for message in messages
                 if message.get("type") == "human_notify"
                 and not message.get("replied")
                 and str(message.get("ts") or "") >= since
-            )
+            ]
 
-        counts: dict[str, int] = {}
-        for name in names:
-            try:
-                n = await asyncio.to_thread(_count, animas_dir / name)
-            except Exception:
-                logger.debug("Failed to count awaiting notifications for %s", name, exc_info=True)
-                continue
-            if n:
-                counts[name] = n
-        return {"animas": counts}
+        def _collect() -> dict[str, list[dict[str, str]]]:
+            found: dict[str, list[dict[str, str]]] = {}
+            for name in names:
+                try:
+                    items = _waiting(animas_dir / name)
+                except Exception:
+                    logger.debug("Failed to list awaiting notifications for %s", name, exc_info=True)
+                    continue
+                if items:
+                    found[name] = items
+            return found
+
+        items = await asyncio.to_thread(_collect)
+        return {"animas": {name: len(rows) for name, rows in items.items()}, "items": items}
 
     @router.post("/animas/{name}/notifications/reply")
     async def reply_to_notification(

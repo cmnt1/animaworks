@@ -824,7 +824,7 @@ class TestFaceAssets:
         image = Image.open(BytesIO(first.content))
         assert image.size == (96, 96)
         assert image.getpixel((48, 48))[1] > 150  # the checked upper-center face crop
-        cache = assets_dir / ".thumbs" / "face_smile_anime.S.webp"
+        cache = assets_dir / ".thumbs" / "face2_smile_anime.S.webp"
         assert cache.is_file()
         assert second.content == first.content
         assert cache.stat().st_mtime_ns >= source.stat().st_mtime_ns
@@ -839,7 +839,7 @@ class TestFaceAssets:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             await client.get("/api/animas/alice/assets/face/troubled?size=M")
-            cache = assets_dir / ".thumbs" / "face_troubled_anime.M.webp"
+            cache = assets_dir / ".thumbs" / "face2_troubled_anime.M.webp"
             old_mtime = cache.stat().st_mtime_ns
             self._write_region_png(source, (20, 30, 210))
             source_stat = source.stat()
@@ -890,7 +890,7 @@ class TestFaceAssets:
         image = Image.open(BytesIO(response.content))
         assert image.format == "WEBP"
         assert image.size == (192, 192)
-        assert (assets_dir / ".thumbs" / "face_laugh_realistic.M.webp").is_file()
+        assert (assets_dir / ".thumbs" / "face2_laugh_realistic.M.webp").is_file()
 
     async def test_invalid_emotion_returns_400(self, tmp_path):
         (tmp_path / "alice" / "assets").mkdir(parents=True)

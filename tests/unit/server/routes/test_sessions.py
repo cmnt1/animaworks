@@ -315,7 +315,10 @@ class TestAwaitingNotifications:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/notifications/awaiting")
         assert response.status_code == 200
-        assert response.json() == {"animas": {"alice": 1}}
+        body = response.json()
+        assert body["animas"] == {"alice": 1}
+        assert body["items"]["alice"][0]["subject"] == "Q"
+        assert body["items"]["alice"][0]["preview"] == "Pick one"
 
 
 class TestOlderPageNotifications:

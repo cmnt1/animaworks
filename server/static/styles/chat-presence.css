@@ -24,7 +24,6 @@ body[data-theme="dark"] {
 .chat-rail {
   flex: none;
   width: 84px;
-  margin-right: -1rem; /* cancels .chat-page-layout gap */
   padding: 12px 0;
   background: var(--aw-rail-bg);
   display: flex;
@@ -329,9 +328,10 @@ body[data-theme="dark"] {
 }
 .chat-presence:not([hidden]) { display: grid; }
 
+.chat-presence-figure { position: relative; width: 160px; }
 .chat-presence-frame {
   width: 160px;
-  border-radius: 80px 80px 18px 18px;
+  border-radius: 22px;
   border: 3px solid var(--aw-color-bg-primary);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .14);
   overflow: hidden;
@@ -347,9 +347,11 @@ body[data-theme="dark"] {
 .chat-presence-static {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center top;
   display: block;
 }
+.chat-presence-stage img { max-width: 100%; }
 
 .chat-presence-say {
   position: relative;
@@ -381,9 +383,9 @@ body[data-theme="dark"] {
 .chat-presence-x {
   pointer-events: auto;
   position: absolute;
-  top: auto;
-  bottom: 120px;
-  right: 2px;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -618,3 +620,6 @@ body[data-theme="dark"] {
   }
   .chat-anima-tabs-header .chat-thread-dropdown-chevron { stroke: currentColor; }
 }
+
+/* Chat fills the area beside the menu: no shell padding, so the rail sits right next to the menu. */
+.main-content:has(.chat-page-layout) { padding: 0; }
