@@ -449,6 +449,8 @@ class ImageGenConfig(BaseModel):
     vibe_strength: float = 0.6  # Vibe Transfer strength (0.0-1.0)
     vibe_info_extracted: float = 0.8  # Vibe Transfer information extraction (0.0-1.0)
     enable_3d: bool = True  # Enable 3D model generation (Meshy API)
+    pixel_base_sheet: str | None = None  # Base pixel sheet; None uses the bundled sample_01.png
+    pixel_concurrency: int = 4  # Parallel codex image_gen calls for pixel sheet rows
     diffusers_text2img_model: str = "auto"
     diffusers_img2img_model: str = "auto"
     diffusers_text2img_model_realistic: str = ""  # Override for realistic style

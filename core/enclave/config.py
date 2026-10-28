@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -120,6 +121,13 @@ class EnclaveSqlSourceConfig(BaseModel):
     cell_max_chars: int = 2000
     app_key_secret: str | None = None
     decrypt_columns: list[str] = Field(default_factory=list)
+    session_variables: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "User variables set on every connection (``SET @name = 'value'``), e.g. for row-level "
+            "views that filter on a session variable"
+        ),
+    )
 
     @field_validator("host", "database", "user", "password_secret")
     @classmethod
@@ -135,6 +143,17 @@ class EnclaveSqlSourceConfig(BaseModel):
         if value < 1:
             raise ValueError("max_rows must be at least 1")
         return min(value, 1000)
+
+    @field_validator("session_variables")
+    @classmethod
+    def _require_safe_session_variables(cls, value: dict[str, str]) -> dict[str, str]:
+        # The values are inlined into init_command, so reject anything that could leave the quoted literal.
+        for name, variable_value in value.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                raise ValueError(f"invalid session variable name: {name!r}")
+            if any(character in variable_value for character in ("'", "\\", ";")):
+                raise ValueError(f"session variable {name!r} must not contain quotes, backslashes or semicolons")
+        return value
 
 
 class EnclaveConfig(BaseModel):

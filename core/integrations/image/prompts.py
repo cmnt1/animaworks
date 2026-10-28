@@ -195,3 +195,72 @@ _REALISTIC_EXPRESSION_GUIDANCE: dict[str, float] = {
 assert set(_REALISTIC_EXPRESSION_GUIDANCE.keys()) == _VALID_EXPRESSION_NAMES, (
     f"Realistic expression guidance mismatch: {set(_REALISTIC_EXPRESSION_GUIDANCE.keys())} != {_VALID_EXPRESSION_NAMES}"
 )
+
+# ── Pixel workspace row prompts ─────────────────────────────
+
+# One codex image_gen call produces one animation row.  The text is intentionally
+# English because it is a model prompt, not user-facing UI copy.
+PIXEL_ROW_STATES: tuple[str, ...] = (
+    "idle",
+    "working",
+    "thinking",
+    "talking",
+    "walk_down",
+    "walk_up",
+    "walk_side",
+    "sleeping",
+    "success",
+    "error",
+)
+
+PIXEL_ROW_STATE_INSTRUCTIONS: dict[str, str] = {
+    "idle": "preserve the four idle/blink expressions exactly",
+    "working": "preserve the four working poses and the visible upper-body crop exactly",
+    "thinking": "preserve the four thinking gestures and hand positions exactly",
+    "talking": "preserve the four talking mouth/gesture phases exactly",
+    "walk_down": "preserve the four front-facing walk phases exactly",
+    "walk_up": "preserve the four back-facing walk phases exactly",
+    "walk_side": "preserve the four side-facing walk phases exactly",
+    "sleeping": "preserve the four sleeping poses and closed-eye expressions exactly",
+    "success": "preserve the four success gesture phases exactly",
+    "error": "preserve the four worried/error expressions and sweat marks exactly",
+}
+
+PIXEL_ROW_PROMPT_TEMPLATE = """Use case: precise-object-edit
+Asset type: production pixel-art character animation strip
+Primary request: Edit Image 1. Replace only the character identity with the character described below from Images 2 and 3. Keep Image 1 as the exact layout, scale, silhouette, animation, and pixel-grid target.
+Input images: Image 1 is the edit target and approved base animation strip; Image 2 is the character chibi identity reference; Image 3 is the character bust-up identity and color reference.{anchor_clause}
+Subject: Use the character's exact hair shape, hair color, bangs, hair accessory, eye color, and clothing colors from the identity references. Identity: {identity}. The row state is {state}: {state_instructions}.
+Style/medium: crisp native pixel art, hard one-pixel edges, no antialiasing, same pixel density and outline weight as Image 1.
+Composition/framing: exactly four equal left-to-right animation frames. Preserve every frame's pose, gesture, direction, crop, body size, shoulder width, head-top height, exposed face size, face center, eye/nose/mouth positions, and spacing from Image 1. Do not enlarge the face or head.
+Scene/backdrop: perfectly flat solid #FF00FF chroma-key background only.
+Constraints: Change only character identity colors and identity details. Preserve the clean flat skin area of the face. Eyes, eyebrows, nose, mouth, and blush must remain small, separated, readable pixel clusters matching Image 1. No new dark marks, shadows, outlines, hair strands, or isolated pixels may overlap the eyes, nose, mouth, cheeks, or exposed face. Keep dark hair clearly separated from the face boundary. The background must be one uniform #FF00FF with no shadows, gradients, texture, floor, or lighting variation.
+Avoid: extra frames, merged frames, panels, borders, labels, text, speech bubbles, props, desk, chair, monitor, keyboard, cast shadow, reflection, watermark, smooth vector edges, painterly shading, facial moles, facial dirt, black blobs, stray dark pixels, and any dark patch crossing onto the face."""
+
+
+PIXEL_ROW_ANCHOR_CLAUSE = (
+    " Image {index} is the already finished idle row of this same character: match its hair color, hair length,"
+    " bangs, eye color, skin tone, and clothing colors exactly, overriding any other reading of Images 2 and 3."
+)
+
+
+def build_pixel_row_prompt(
+    *,
+    state: str,
+    state_instructions: str,
+    identity: str,
+    image_count: int = 3,
+    has_anchor: bool = False,
+) -> str:
+    """Return the row prompt with the state and identity description filled in.
+
+    *image_count* is the number of images before the optional anchor, which is
+    passed last.
+    """
+    anchor_clause = PIXEL_ROW_ANCHOR_CLAUSE.format(index=image_count + 1) if has_anchor else ""
+    return PIXEL_ROW_PROMPT_TEMPLATE.format(
+        identity=identity,
+        state=state,
+        state_instructions=state_instructions,
+        anchor_clause=anchor_clause,
+    )
