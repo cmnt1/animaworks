@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -18,6 +18,7 @@ from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.memory.manager import MemoryManager
 from core.skills.activation import validate_thread_id
+from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.routes.sessions")
 
@@ -268,17 +269,21 @@ def create_sessions_router() -> APIRouter:
 
     @router.get("/notifications/awaiting")
     async def list_awaiting_notifications(request: Request):
-        """Count call_human notifications that still wait for a human reply, per Anima."""
+        """Count call_human notifications from the last 24 hours that still wait for a reply, per Anima."""
         animas_dir = request.app.state.animas_dir
         names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
 
+        since = (now_local() - timedelta(hours=24)).isoformat()
+
         def _count(anima_dir) -> int:
-            view = ActivityLogger(anima_dir).get_conversation_view(limit=120, thread_id="default")
+            view = ActivityLogger(anima_dir).get_conversation_view(limit=500, thread_id="default")
             return sum(
                 1
                 for session in view.get("sessions", [])
                 for message in session.get("messages", [])
-                if message.get("type") == "human_notify" and not message.get("replied")
+                if message.get("type") == "human_notify"
+                and not message.get("replied")
+                and str(message.get("ts") or "") >= since
             )
 
         counts: dict[str, int] = {}
