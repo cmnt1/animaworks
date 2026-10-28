@@ -14,7 +14,8 @@ Internal module — import from :mod:`core.activity.logger` instead.
 
 import json
 import logging
-from datetime import timedelta
+import re
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from core.activity.format import EVENT_SETS
@@ -113,6 +114,44 @@ def _truncate_tool_field(value: Any, limit: int) -> Any:
     return value
 
 
+def _tool_target_from_input(value: Any) -> str:
+    """Extract a compact, user-facing target from a tool's input."""
+    obj = value
+    if isinstance(value, str):
+        try:
+            obj = json.loads(value)
+        except (TypeError, ValueError):
+            obj = value
+
+    target: Any = None
+    if isinstance(obj, dict):
+        for key in ("file_path", "path", "command", "query", "pattern", "url", "to", "name", "channel"):
+            candidate = obj.get(key)
+            if candidate:
+                target = candidate
+                break
+    elif obj is not None:
+        target = obj
+
+    if target is None:
+        return ""
+    if isinstance(target, (dict, list)):
+        target = json.dumps(target, ensure_ascii=False)
+    compact = re.sub(r"\s+", " ", str(target)).strip()
+    return compact[:80]
+
+
+def _summarize_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
+    """Return only the fields needed to list a tool call in chat history."""
+    return {
+        "tool_name": tool_call.get("tool_name", ""),
+        "tool_use_id": tool_call.get("tool_use_id", ""),
+        "is_error": bool(tool_call.get("is_error", False)),
+        "target": tool_call.get("target")
+        or _tool_target_from_input(tool_call.get("input", tool_call.get("input_summary", ""))),
+    }
+
+
 class ConversationMixin:
     """Mixin providing conversation view methods for ActivityLogger."""
 
@@ -126,6 +165,7 @@ class ConversationMixin:
         session_gap_minutes: int = 10,
         thread_id: str | None = None,
         strict_thread: bool = False,
+        tool_detail: str = "full",
     ) -> dict[str, Any]:
         """Build a conversation view from activity log entries.
 
@@ -138,7 +178,7 @@ class ConversationMixin:
             thread_id=thread_id,
             strict_thread=strict_thread,
         )
-        messages = self._entries_to_messages(entries)
+        messages = self._entries_to_messages(entries, tool_detail=tool_detail)
 
         if len(messages) <= limit and entries:
             entries = self._load_conversation_entries(
@@ -148,7 +188,7 @@ class ConversationMixin:
                 strict_thread=strict_thread,
                 _target_multiplier=15,
             )
-            messages = self._entries_to_messages(entries)
+            messages = self._entries_to_messages(entries, tool_detail=tool_detail)
 
         has_more = len(messages) > limit
         if has_more:
@@ -166,6 +206,38 @@ class ConversationMixin:
             "next_before": next_before,
         }
 
+    def get_conversation_tool_calls(
+        self,
+        message_ts: str,
+        *,
+        thread_id: str = "default",
+        strict_thread: bool = False,
+    ) -> list[dict[str, Any]] | None:
+        """Load full tool calls attached to a specific assistant message."""
+        try:
+            message_time = datetime.fromisoformat(message_ts.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+        entries = self._load_conversation_entries(
+            before=(message_time + timedelta(microseconds=1)).isoformat(),
+            limit=200,
+            thread_id=thread_id,
+            strict_thread=strict_thread,
+            _specific_day=message_time.date(),
+        )
+
+        message = next(
+            (
+                item
+                for item in self._entries_to_messages(entries)
+                if item.get("role") == "assistant" and item.get("ts") == message_ts
+            ),
+            None,
+        )
+        tool_calls = message.get("tool_calls") if message else None
+        return tool_calls if tool_calls else None
+
     def _load_conversation_entries(
         self,
         *,
@@ -174,6 +246,7 @@ class ConversationMixin:
         thread_id: str | None = None,
         strict_thread: bool = False,
         _target_multiplier: int = 3,
+        _specific_day: date | None = None,
     ) -> list[ActivityEntry]:
         """Load conversation-relevant entries, scanning enough days for *limit* messages."""
         target_raw = limit * _target_multiplier + 50
@@ -187,8 +260,13 @@ class ConversationMixin:
         max_files_scanned = 30
         files_scanned = 0
 
-        for day_offset in range(max_scan_days):
-            target = today - timedelta(days=day_offset)
+        target_days = (
+            [_specific_day]
+            if _specific_day is not None
+            else [today - timedelta(days=day_offset) for day_offset in range(max_scan_days)]
+        )
+        for target in target_days:
+            day_offset = (today - target).days
             path = self._log_dir / f"{target.isoformat()}.jsonl"  # type: ignore[attr-defined]
             if not path.exists():
                 if day_offset > 30 and not entries:
@@ -261,6 +339,8 @@ class ConversationMixin:
     def _entries_to_messages(
         self,
         entries: list[ActivityEntry],
+        *,
+        tool_detail: str = "full",
     ) -> list[dict[str, Any]]:
         """Convert raw activity entries to conversation messages (pair + nest tools)."""
         from core.activity.format import pair_tool_events
@@ -349,6 +429,8 @@ class ConversationMixin:
                 if e.meta.get("blocked"):
                     tc["is_error"] = True
                     tc["result"] = t("activity.blocked", reason=e.meta.get("reason", ""))
+                if tool_detail == "summary":
+                    tc = _summarize_tool_call({**tc, "input": raw_input})
                 pending_tool_calls.append(tc)
 
             elif e.type == "tool_result":
@@ -530,6 +612,13 @@ class ConversationMixin:
             for notify in notifications:
                 if not notify["replied"] and any(ts > str(notify.get("ts") or "") for ts in human_ts):
                     notify["replied"] = True
+
+        if tool_detail == "summary":
+            for message in messages:
+                calls = message.get("tool_calls")
+                if message.get("role") == "assistant" and calls:
+                    message["tool_calls"] = [_summarize_tool_call(call) for call in calls]
+                    message["tool_calls_detail"] = "lazy"
 
         return messages
 

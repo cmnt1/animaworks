@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,45 @@ def _make_test_app(animas_dir: Path | None = None, anima_names: list[str] | None
     router = create_sessions_router()
     app.include_router(router, prefix="/api")
     return app
+
+
+def _write_tool_call_history(anima_dir: Path, *, thread_id: str = "default") -> str:
+    log_dir = anima_dir / "activity_log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    start = datetime.now().astimezone().replace(microsecond=0)
+    tool_ts = start.isoformat()
+    result_ts = (start + timedelta(seconds=1)).isoformat()
+    message_ts = (start + timedelta(seconds=2)).isoformat()
+    events = [
+        {
+            "ts": tool_ts,
+            "type": "tool_use",
+            "tool": "Read",
+            "ctx": "chat",
+            "meta": {
+                "args": {"file_path": "/var/work/" + "nested/" * 20 + "report.md"},
+                "tool_use_id": "tool-1",
+                "thread_id": thread_id,
+            },
+        },
+        {
+            "ts": result_ts,
+            "type": "tool_result",
+            "content": "結果を確認しました。" * 1000,
+            "ctx": "chat",
+            "meta": {"tool_use_id": "tool-1", "thread_id": thread_id},
+        },
+        {
+            "ts": message_ts,
+            "type": "response_sent",
+            "content": "Finished",
+            "ctx": "chat",
+            "meta": {"thread_id": thread_id},
+        },
+    ]
+    path = log_dir / f"{start.date().isoformat()}.jsonl"
+    path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events), encoding="utf-8")
+    return message_ts
 
 
 # ── GET /animas/{name}/sessions ─────────────────────────
@@ -168,6 +208,135 @@ class TestRecordVoiceCall:
         assert history.status_code == 200
         messages = [message for session in history.json()["sessions"] for message in session["messages"]]
         assert any(message.get("type") == "voice_call" for message in messages)
+
+
+class TestLazyToolCallHistory:
+    async def test_summary_history_is_small_and_full_is_the_default(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        message_ts = _write_tool_call_history(anima_dir)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            full_response = await client.get("/api/animas/alice/conversation/history")
+            summary_response = await client.get(
+                "/api/animas/alice/conversation/history?tool_detail=summary"
+            )
+
+        assert full_response.status_code == 200
+        assert summary_response.status_code == 200
+        full = next(
+            message
+            for session in full_response.json()["sessions"]
+            for message in session["messages"]
+            if message.get("ts") == message_ts
+        )
+        summary = next(
+            message
+            for session in summary_response.json()["sessions"]
+            for message in session["messages"]
+            if message.get("ts") == message_ts
+        )
+        assert "input" in full["tool_calls"][0]
+        assert "result" in full["tool_calls"][0]
+        assert "tool_calls_detail" not in full
+        assert set(summary["tool_calls"][0]) == {"tool_name", "tool_use_id", "is_error", "target"}
+        assert "input" not in summary["tool_calls"][0]
+        assert "result" not in summary["tool_calls"][0]
+        assert summary["tool_calls"][0]["target"] == (
+            "/var/work/" + "nested/" * 20 + "report.md"
+        )[:80]
+        assert summary["tool_calls_detail"] == "lazy"
+        assert len(summary_response.content) < len(full_response.content) / 5
+
+    async def test_named_thread_fallback_tool_calls_can_be_loaded_lazily(self, tmp_path):
+        thread_dir = tmp_path / "alice" / "state" / "conversations"
+        thread_dir.mkdir(parents=True)
+        message_ts = "2026-10-28T10:01:00+09:00"
+        (thread_dir / "research.json").write_text(
+            json.dumps(
+                {
+                    "turns": [
+                        {"role": "human", "timestamp": "2026-10-28T10:00:00+09:00", "content": "Read this"},
+                        {
+                            "role": "assistant",
+                            "timestamp": message_ts,
+                            "content": "Done",
+                            "tool_records": [
+                                {
+                                    "tool_id": "file-tool-1",
+                                    "tool_name": "Read",
+                                    "input_summary": "/archive/notes.md",
+                                    "result_summary": "file content",
+                                    "is_error": False,
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            history = await client.get(
+                "/api/animas/alice/conversation/history?thread_id=research&tool_detail=summary"
+            )
+            details = await client.get(
+                "/api/animas/alice/conversation/tool-calls",
+                params={"message_ts": message_ts, "thread_id": "research"},
+            )
+
+        assistant = next(
+            message
+            for session in history.json()["sessions"]
+            for message in session["messages"]
+            if message.get("role") == "assistant"
+        )
+        assert history.status_code == 200
+        assert assistant["tool_calls_detail"] == "lazy"
+        assert assistant["tool_calls"][0]["target"] == "/archive/notes.md"
+        assert "input" not in assistant["tool_calls"][0]
+        assert details.status_code == 200
+        assert details.json()["tool_calls"][0]["result"] == "file content"
+
+    async def test_tool_call_details_return_for_message_and_404_when_missing(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        message_ts = _write_tool_call_history(anima_dir)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            full_history = await client.get("/api/animas/alice/conversation/history")
+            details = await client.get(
+                "/api/animas/alice/conversation/tool-calls",
+                params={"message_ts": message_ts, "thread_id": "default"},
+            )
+            missing = await client.get(
+                "/api/animas/alice/conversation/tool-calls",
+                params={"message_ts": "2020-01-01T00:00:00+00:00"},
+            )
+
+        full = next(
+            message
+            for session in full_history.json()["sessions"]
+            for message in session["messages"]
+            if message.get("ts") == message_ts
+        )
+        assert details.status_code == 200
+        assert details.json()["tool_calls"] == full["tool_calls"]
+        assert missing.status_code == 404
+
+    async def test_tool_call_details_reject_invalid_anima_name(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/animas/.private/conversation/tool-calls?message_ts=2026-10-28T00%3A00%3A00"
+            )
+        assert response.status_code == 400
 
 
 # ── GET /animas/{name}/sessions/{session_id} ────────────
