@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6ebc6c5d8ee4f24fc59a12079632fe9f96b0e6d04811175f636018508c4501ba -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: e13b3839a715625d2091f8247d3fdb73865df6c38c5a97f2b435f150674a9f80 -->
 
 # モジュール一覧
 
@@ -114,7 +114,7 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 605 | — |
+| `core.activity.conversation` | 694 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -1109,7 +1109,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1205 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1592 | — |
+| `server.routes.assets` | 1593 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1130,7 +1130,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 523 | — |
+| `server.routes.sessions` | 593 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: efacfa7a2742c168e9c7ca0072203283695e61afb76c3f8ea258f23f62305644 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: c14665a6c2f7d713a4f109222d34a9b637e279e7412a071177e6867a401b820c -->
 
 # API リファレンス
 
@@ -216,11 +216,12 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 | POST | `/api/animas/{name}/conversation/calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
 | GET | `/api/animas/{name}/conversation/history` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
+| GET | `/api/animas/{name}/conversation/tool-calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
 | POST | `/api/animas/{name}/notifications/reply` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
 | GET | `/api/animas/{name}/sessions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
 | GET | `/api/animas/{name}/sessions/{session_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
 | GET | `/api/animas/{name}/transcripts/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
-| GET | `/api/notifications/awaiting` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Count call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
+| GET | `/api/notifications/awaiting` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 
