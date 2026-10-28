@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 7c67168b9256aef6f76f0ceb83b26c36e622fbc9a927fbfe24162105bda47c5d -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 6a6c0733bde61b2fb470df31eccb9f5d92f735b4757f5ebddff6ed9f56311720 -->
 
 # 設定リファレンス
 
@@ -852,6 +852,7 @@
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
 | `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.session_variables` | `dict[str, str]` | `{}` | User variables set on every connection (``SET @name = 'value'``), e.g. for row-level views that filter on a session variable |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
