@@ -18,6 +18,7 @@ import {
   bindCollapsibleSessionHandlers as _sharedBindCollapsibleSessionHandlers,
 } from "../../shared/chat/render-utils.js";
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
+import { thinkRenderHooks } from "../../shared/chat/thinking-bubble.js";
 import { mergePolledHistory } from "../../shared/chat/history-loader.js";
 import { initTextArtifactHandlers } from "../../shared/text-artifact.js";
 import { companyColor } from "../../shared/avatar-utils.js";
@@ -84,6 +85,7 @@ export function createChatRenderer(ctx) {
       localStorage.getItem("animaworks_user") || "",
     ].filter(Boolean)),
     truncateLen: CONSTANTS.TOOL_RESULT_TRUNCATE,
+    think: thinkRenderHooks,
     labels: {
       thinking: t("chat.thinking"),
       toolRunning: (tool) => t("chat.tool_running", { tool }),
