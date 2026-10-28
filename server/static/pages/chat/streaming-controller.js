@@ -34,6 +34,11 @@ export function createStreamingController(ctx) {
   const RING_CIRCUMFERENCE = 97.4; // 2 * PI * 15.5
   const _contextStateByAnima = {};
 
+  function _setRingLabel(ring, pct) {
+    const label = ring.querySelector(".context-ring-label");
+    if (label) label.textContent = `${t("chat.presence.memory_label")} ${pct}%`;
+  }
+
   function _applyRing(ring, ratio, inputTokens, contextWindow) {
     const fg = ring.querySelector(".context-ring-fg");
     if (!fg) return;
@@ -48,8 +53,9 @@ export function createStreamingController(ctx) {
     const pct = Math.round(ratio * 100);
     const inK = inputTokens >= 1000 ? `${(inputTokens / 1000).toFixed(0)}k` : String(inputTokens);
     const winK = contextWindow >= 1000 ? `${(contextWindow / 1000).toFixed(0)}k` : String(contextWindow);
-    const usage = contextWindow ? `${pct}%  ${inK} / ${winK}` : `${pct}%`;
+    const usage = contextWindow ? `${pct}% (${inK} / ${winK})` : `${pct}%`;
     ring.title = `${t("chat.context_ring_title")}: ${usage}`;
+    _setRingLabel(ring, pct);
   }
 
   function updateContextRing(data, animaName) {
@@ -77,6 +83,7 @@ export function createStreamingController(ctx) {
       if (fg) fg.style.strokeDashoffset = RING_CIRCUMFERENCE;
       ring.className = "context-ring-wrap";
       ring.title = t("chat.context_ring_title");
+      _setRingLabel(ring, 0);
     }
   }
 

@@ -9,6 +9,7 @@ import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
 import { openCallScreen } from "./call-screen.js";
+import { presence, displayStatus } from "../../modules/anima-presence.js";
 
 const ANIMA_TAB_LONG_PRESS_MS = 500;
 
@@ -176,6 +177,16 @@ export function createAnimaController(ctx) {
     return `<span class="add-conversation-avatar add-conversation-avatar-initial"${ring}>${initial}</span>`;
   }
 
+  /** Running animas are split into working / waiting for a reply / standby. */
+  function _menuStatusLabel(p) {
+    const raw = animaStatusLabel(p.status);
+    if (p.status !== "running" && p.status !== "idle") return raw;
+    const kind = displayStatus(presence.get(p.name));
+    if (kind === "waiting") return t("chat.presence.status_waiting");
+    if (kind === "working" || kind === "calling") return t("chat.presence.status_working");
+    return t("chat.presence.status_idle");
+  }
+
   function renderAddConversationMenu() {
     const menu = $("chatAddConversationMenu");
     if (!menu) return;
@@ -189,7 +200,7 @@ export function createAnimaController(ctx) {
 
     let html = "";
     for (const p of sorted) {
-      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(_menuStatusLabel(p))})` : "";
       const openLabel = isTabOpen(ctx, p.name) ? t("animas.tab_viewing") : "";
       const disabled = p.status === "bootstrapping" || p.bootstrapping;
       const sleepBadge = p.status === "not_found" || p.status === "stopped" ? "\uD83D\uDCA4 " : "";
@@ -219,7 +230,7 @@ export function createAnimaController(ctx) {
     _ensureCallButton();
     const container = $("chatAnimaTabs");
     if (!container) return;
-    if (state.animaTabs.length === 0) { container.innerHTML = ""; return; }
+    if (state.animaTabs.length === 0) { container.innerHTML = ""; state.paneHost?.renderRail?.(); return; }
 
     const html = state.animaTabs.map(tab => {
       const activeClass = tab.name === state.selectedAnima ? " active" : "";
@@ -260,6 +271,7 @@ export function createAnimaController(ctx) {
         if (anima) closeAnimaTab(anima);
       });
     });
+    state.paneHost?.renderRail?.();
   }
 
   async function selectAnima(name) {
@@ -491,6 +503,10 @@ export function createAnimaController(ctx) {
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }
+
+      // A toast "reply" asked for a conversation before this page existed.
+      const pending = presence.takePendingOpen();
+      if (pending && known.has(pending)) openOrSelectAnima(pending);
     } catch (err) {
       logger.error("Failed to load animas", err);
     }
