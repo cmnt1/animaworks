@@ -68,8 +68,20 @@ export function createWorkIndicatorController(ctx) {
     return !!state.manager?.isStreamingForAnima?.(name);
   }
 
+  /**
+   * The thinking bubble in the visible thread already shows streaming tools
+   * and thinking, so the strip only covers streams in other threads.
+   */
+  function _bubbleShowsStream() {
+    const name = state.selectedAnima;
+    if (!name) return false;
+    const streamCtx = state.manager?.getStreamingContext?.(name);
+    return !!streamCtx && streamCtx.thread === state.selectedThreadId;
+  }
+
   function _hasActiveContent() {
-    return !!(_streamingTool || _thinking || _wsTool || _bgTasks.length > 0);
+    const streamChips = !_bubbleShowsStream() && (_streamingTool || _thinking);
+    return !!(streamChips || _wsTool || _bgTasks.length > 0);
   }
 
   function _toolLabel(toolName, detail) {
@@ -98,9 +110,10 @@ export function createWorkIndicatorController(ctx) {
 
     el.hidden = false;
     const parts = [];
+    const streamChips = !_bubbleShowsStream();
 
     // Priority 1: streaming tool
-    if (_streamingTool) {
+    if (streamChips && _streamingTool) {
       const label = _toolLabel(_streamingTool.name, _streamingTool.detail);
       if (_streamingTool.completed) {
         const mark = _streamingTool.isError ? "✗" : "✓";
@@ -122,7 +135,7 @@ export function createWorkIndicatorController(ctx) {
     }
 
     // Priority 2: thinking
-    if (_thinking) {
+    if (streamChips && _thinking) {
       parts.push(_chipHtml({
         iconHtml: getIcon("heartbeat_reflection"),
         text: t("chat.work_thinking"),

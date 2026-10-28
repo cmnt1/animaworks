@@ -658,7 +658,9 @@ export function renderHistoryMessage(msg, opts) {
       : "";
     const rawText = _normalizeDisplayText(msg.content || "");
     const content = rawText ? renderMarkdown(rawText, opts.animaName) : "";
-    const toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
+    const toolHtml = opts.think
+      ? opts.think.historyFold(msg.tool_calls, { truncateLen: truncLen })
+      : renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     let thinkingHtml = "";
     if (msg.thinking_text) {
@@ -1219,6 +1221,11 @@ export function renderLiveBubble(msg, opts) {
   const streamIdAttr = msg.streaming && msg.streamId
     ? ` data-stream-id="${escapeHtml(String(msg.streamId))}"`
     : "";
+  const think = opts.think && msg.think ? opts.think : null;
+  if (think && msg.streaming) {
+    const zoned = `<div class="chat-bubble assistant think-host${streamClass}"${streamIdAttr}>${renderStreamingBubbleInner(msg, opts)}</div>`;
+    return _wrapRow("assistant", zoned, think.avatar(_renderAvatar(speakerName, avatarMap, opts.companyColors), msg, speakerName));
+  }
   let thinkingHtml = "";
   if (msg.thinking && msg.thinkingText) {
     thinkingHtml = `<div class="thinking-inline-preview">${escapeHtml(msg.thinkingText)}</div>`;
@@ -1241,7 +1248,9 @@ export function renderLiveBubble(msg, opts) {
     : "";
   let toolHtml = "";
   const history = msg.toolHistory;
-  if (history && history.length > 0) {
+  if (think) {
+    toolHtml = think.fold(msg);
+  } else if (history && history.length > 0) {
     toolHtml = renderToolActivityTimeline(history, msg.activeTool, { escapeHtml, labels });
   } else if (msg.activeTool) {
     const toolLabel = labels.toolRunning || ((tool) => t("chat.tool_running", { tool }));
@@ -1254,7 +1263,8 @@ export function renderLiveBubble(msg, opts) {
   const actionsHtml = msg.streaming ? "" : _bubbleActionsHtml(rawText);
   const dataRawAttr = rawText && !msg.streaming ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
   const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}${dataRawAttr}>${actionsHtml}${speakerLabel}${metaHtml}${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
-  return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap, opts.companyColors));
+  const avatarHtml = _renderAvatar(speakerName, avatarMap, opts.companyColors);
+  return _wrapRow("assistant", bubble, think ? think.avatar(avatarHtml, msg, speakerName) : avatarHtml);
 }
 
 /**
@@ -1371,6 +1381,7 @@ function _renderTextZoneContent(msg, opts) {
     const doneLabel = labels.heartbeatRelayDone || t("chat.heartbeat_relay_done");
     return `<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>${doneLabel}</div>`;
   }
+  if (opts.think && msg.think && opts.think.isThinking(msg)) return "";
   const visibleText = _normalizeDisplayText(msg._displayText || msg.text);
   if (visibleText) {
     let html = renderMarkdown(visibleText, opts.animaName);
@@ -1396,6 +1407,7 @@ function _renderTextZoneContent(msg, opts) {
 }
 
 function _renderToolZoneContent(msg, opts) {
+  if (opts.think && msg.think) return opts.think.zone(msg, opts);
   const { escapeHtml } = opts;
   const labels = opts.labels || {};
   const history = msg.toolHistory;
