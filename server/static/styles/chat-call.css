@@ -54,7 +54,8 @@ body[data-theme="dark"] {
   transition: filter .15s, transform .15s;
 }
 
-.chat-call-btn:hover { filter: brightness(1.08); transform: scale(1.04); }
+.chat-call-btn:hover,
+.chat-call-btn:active { filter: brightness(1.08); transform: scale(1.04); }
 .chat-call-btn[hidden] { display: none; }
 .chat-call-btn svg { width: 18px; height: 18px; }
 .chat-pane-head-tools { display: flex; align-items: center; gap: 8px; flex: none; }
