@@ -438,3 +438,19 @@ body[data-theme="dark"] {
 @media (prefers-reduced-motion: reduce) {
   .chat-line-face.thinking { animation: none; }
 }
+
+/* Hover actions float over the row's top edge so they never take width from the bubble. */
+.chat-line-content-row { position: relative; }
+.chat-line-actions {
+  position: absolute;
+  z-index: 2;
+  top: -14px;
+  right: 0;
+  flex-direction: row;
+  pointer-events: none;
+}
+.chat-line--me .chat-line-actions { right: auto; left: 0; }
+.chat-line:hover .chat-line-actions,
+.chat-line:focus-within .chat-line-actions { pointer-events: auto; }
+.chat-line-bubble.chat-bubble { flex: 0 1 auto; min-width: 0; }
+.chat-line-col { max-width: min(88%, 760px); }
