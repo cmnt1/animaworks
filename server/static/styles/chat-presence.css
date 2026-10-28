@@ -600,3 +600,9 @@ body[data-theme="dark"] {
   min-width: 0;
 }
 .chat-slash-note { padding: 6px 10px; font-size: 13px; color: var(--aw-color-text-secondary); }
+
+/* Phones: give the text box the room; memory usage and model stay in the info panel. */
+@media (max-width: 480px) {
+  .chat-input-form .context-ring-wrap,
+  .chat-input-form .chat-model-select { display: none; }
+}
