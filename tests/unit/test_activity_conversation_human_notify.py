@@ -287,3 +287,26 @@ class TestInterimTexts:
         msg = activity_logger._entries_to_messages(entries)[0]
         assert msg["content"] == "nginx は直りました。"
         assert "interim_texts" not in msg
+
+
+class TestNotifyAnsweredInChat:
+    def test_later_human_chat_message_marks_notification_replied(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry("human_notify", "2026-10-28T10:00:00+09:00", content="決めてください", via="web"),
+            _make_entry("message_received", "2026-10-28T10:05:00+09:00", content="Aでお願い", from_person="taka"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        notify = next(m for m in messages if m.get("type") == "human_notify")
+        assert notify["replied"] is True
+
+    def test_message_from_another_anima_does_not_count_as_reply(
+        self, activity_logger: ActivityLogger, anima_dir: Path
+    ) -> None:
+        (anima_dir.parent / "rin").mkdir()
+        entries = [
+            _make_entry("human_notify", "2026-10-28T10:00:00+09:00", content="決めてください", via="web"),
+            _make_entry("message_received", "2026-10-28T10:05:00+09:00", content="FYI", from_person="rin"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        notify = next(m for m in messages if m.get("type") == "human_notify")
+        assert notify["replied"] is False

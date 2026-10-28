@@ -12,6 +12,8 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
 
   attachFaceFallback(el, (name) => getFocused()?.ctx.state.animaTabAvatarUrls?.[name] || "");
 
+  let _lastActive = null;
+
   function render() {
     const focused = getFocused();
     if (!focused) return;
@@ -56,11 +58,15 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
 
     const html = items + tools;
     if (html === _last) return;
+    const prevActive = _lastActive;
     _last = html;
+    _lastActive = active;
     el.innerHTML = html;
 
-    el.querySelectorAll(".chat-rail-item").forEach((btn) => {
-    });
+    // Keep the open Anima visible when the rail is longer than the screen.
+    if (active && active !== prevActive) {
+      el.querySelector(".chat-rail-item.active")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
   }
 
   el.addEventListener("click", (e) => {

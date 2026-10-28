@@ -304,6 +304,20 @@ class TestNotificationReply:
         assert response.status_code == 404
 
 
+class TestAwaitingNotifications:
+    async def test_counts_unreplied_notifications_per_anima(self, tmp_path):
+        from core.activity.logger import ActivityLogger
+
+        ActivityLogger(tmp_path / "alice").log("human_notify", content="Pick one", meta={"subject": "Q"}, ctx="chat")
+        (tmp_path / "bob").mkdir()
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/notifications/awaiting")
+        assert response.status_code == 200
+        assert response.json() == {"animas": {"alice": 1}}
+
+
 # ── GET /animas/{name}/transcripts/{date} ───────────────
 
 

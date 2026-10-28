@@ -293,8 +293,26 @@ export function initPresence({ api: apiFn, onEvent, doc = globalThis.document } 
       presence.applyBusySet(busy);
     } catch { /* transient; next tick retries */ }
   }
+
+  // Waiting call_human notifications survive reloads: ask the server who still waits for a reply.
+  let _awaitTick = 0;
+  async function pollAwaiting() {
+    if (!apiFn) return;
+    try {
+      const data = await apiFn("/api/notifications/awaiting");
+      const waiting = data?.animas || {};
+      for (const name of new Set([...presence.names(), ...Object.keys(waiting)])) {
+        presence.setAwaiting(name, Boolean(waiting[name]));
+      }
+    } catch { /* transient; next tick retries */ }
+  }
   poll();
-  _timer = setInterval(poll, POLL_MS);
+  pollAwaiting();
+  _timer = setInterval(() => {
+    poll();
+    _awaitTick += 1;
+    if (_awaitTick % 4 === 0) pollAwaiting();
+  }, POLL_MS);
   offs.push(() => { clearInterval(_timer); _timer = null; _inited = false; });
 
   return () => { for (const off of offs) off(); };

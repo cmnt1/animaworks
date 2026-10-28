@@ -516,7 +516,29 @@ class ConversationMixin:
                 matched = next((notify for notify in reversed(candidates) if not notify["replied"]), candidates[-1])
             matched["replied"] = True
 
+        # Answering in the normal chat (not via the reply button) also answers earlier notifications.
+        if notifications:
+            anima_names = self._sibling_anima_names()
+            human_ts = [
+                str(msg.get("ts") or "")
+                for msg in messages
+                if msg.get("role") == "human"
+                and msg.get("type") != "human_reply"
+                and msg.get("from_person")
+                and msg.get("from_person") not in anima_names
+            ]
+            for notify in notifications:
+                if not notify["replied"] and any(ts > str(notify.get("ts") or "") for ts in human_ts):
+                    notify["replied"] = True
+
         return messages
+
+    def _sibling_anima_names(self) -> set[str]:
+        anima_dir = getattr(self, "anima_dir", None)
+        try:
+            return {p.name for p in anima_dir.parent.iterdir() if p.is_dir()} if anima_dir else set()
+        except OSError:
+            return set()
 
     @staticmethod
     def _flush_tool_calls(
