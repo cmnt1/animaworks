@@ -19,5 +19,7 @@ export function clearReplyTarget(state) {
 export function quoteReplyMessage(text, target) {
   if (!target || target.type === "notification") return String(text || "");
   const quoted = String(target.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
-  return quoted ? `> ${quoted}\n\n${String(text || "")}` : String(text || "");
+  const name = String(target.name || "").replace(/[:\n]/g, " ").trim().slice(0, 30);
+  if (!quoted) return String(text || "");
+  return `> ${name ? `${name}: ` : ""}${quoted}\n\n${String(text || "")}`;
 }

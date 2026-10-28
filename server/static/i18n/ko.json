@@ -1103,5 +1103,8 @@
   "chat.presence.slash_done_compact": "기억 정리를 시작했습니다",
   "chat.presence.slash_failed": "명령을 실행할 수 없습니다",
   "chat.presence.waiting_list_title": "{name} 답장 대기",
-  "chat.presence.waiting_list_empty": "답장을 기다리는 알림이 없습니다"
+  "chat.presence.waiting_list_empty": "답장을 기다리는 알림이 없습니다",
+  "chat.line.reply_to_name": "{name}에게 답장",
+  "chat.line.reply_label": "답장",
+  "chat.line.reply_failed": "답장을 보내지 못했습니다. 다시 보내거나 ×를 눌러 일반 메시지로 보내세요."
 }

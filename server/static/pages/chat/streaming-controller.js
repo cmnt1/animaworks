@@ -332,6 +332,7 @@ export function createStreamingController(ctx) {
       updateSendButton();
     } catch (error) {
       logger.warn("Notification reply failed", { anima: name, error: error?.message });
+      ctx.controllers.events?.showReplyError?.(t("chat.line.reply_failed"));
     }
   }
 

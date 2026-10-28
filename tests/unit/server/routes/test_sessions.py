@@ -496,6 +496,37 @@ class TestNotificationReply:
         assert notify_message["replied"] is True
         assert notify_message["notification_id"] == notify.ts
 
+    async def test_reply_finds_notification_outside_the_latest_page(self, tmp_path, monkeypatch):
+        from core.activity.logger import ActivityLogger
+
+        anima_dir = tmp_path / "alice"
+        activity = ActivityLogger(anima_dir)
+        notify = activity.log("human_notify", content="Pick A or B", meta={"subject": "Choice"}, ctx="chat")
+        for i in range(260):
+            activity.log("response_sent", content=f"filler {i}", ctx="chat")
+        monkeypatch.setattr("core.paths.get_shared_dir", lambda: tmp_path / "shared")
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: tmp_path)
+        messenger = MagicMock()
+        with patch("core.messaging.messenger.Messenger", return_value=messenger):
+            app = _make_test_app(animas_dir=tmp_path)
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                first = await client.post(
+                    "/api/animas/alice/notifications/reply", json={"notification_id": notify.ts, "text": "A"}
+                )
+                again = await client.post(
+                    "/api/animas/alice/notifications/reply", json={"notification_id": notify.ts, "text": "B after all"}
+                )
+        assert first.status_code == 200
+        assert again.status_code == 200
+        replies = [
+            message
+            for session in activity.get_conversation_view(limit=20)["sessions"]
+            for message in session["messages"]
+            if message.get("type") == "human_reply"
+        ]
+        assert replies and replies[-1]["reply_quote"] == "Choice"
+
     async def test_unknown_notification_returns_404(self, tmp_path):
         (tmp_path / "alice").mkdir()
         app = _make_test_app(animas_dir=tmp_path)

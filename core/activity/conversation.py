@@ -601,6 +601,9 @@ class ConversationMixin:
             if matched is None:
                 matched = next((notify for notify in reversed(candidates) if not notify["replied"]), candidates[-1])
             matched["replied"] = True
+            if notification_id or callback_id:
+                quote = str(matched.get("subject") or "") or " ".join(str(matched.get("content") or "").split())
+                reply["reply_quote"] = quote[:80]
 
         # Answering in the normal chat (not via the reply button) also answers earlier notifications.
         if notifications:
