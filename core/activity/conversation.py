@@ -219,9 +219,11 @@ class ConversationMixin:
         except (AttributeError, TypeError, ValueError):
             return None
 
+        # Tool calls made after a message (until the next turn) are attached to it too,
+        # so read the whole day rather than stopping at the message itself.
         entries = self._load_conversation_entries(
-            before=(message_time + timedelta(microseconds=1)).isoformat(),
-            limit=200,
+            before=None,
+            limit=2000,
             thread_id=thread_id,
             strict_thread=strict_thread,
             _specific_day=message_time.date(),

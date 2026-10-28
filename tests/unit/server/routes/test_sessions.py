@@ -329,6 +329,41 @@ class TestLazyToolCallHistory:
         assert details.json()["tool_calls"] == full["tool_calls"]
         assert missing.status_code == 404
 
+    async def test_tool_calls_made_after_a_message_are_returned_with_it(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        log_dir = anima_dir / "activity_log"
+        log_dir.mkdir(parents=True)
+        start = datetime.now().astimezone().replace(microsecond=0)
+        message_ts = start.isoformat()
+        events = [
+            {"ts": message_ts, "type": "response_sent", "content": "Calling done", "ctx": "chat", "meta": {}},
+            {
+                "ts": (start + timedelta(seconds=1)).isoformat(),
+                "type": "tool_use",
+                "tool": "Bash",
+                "ctx": "chat",
+                "meta": {"args": {"command": "echo hi"}, "tool_use_id": "after-1"},
+            },
+            {
+                "ts": (start + timedelta(seconds=2)).isoformat(),
+                "type": "tool_result",
+                "content": "hi",
+                "ctx": "chat",
+                "meta": {"tool_use_id": "after-1"},
+            },
+        ]
+        (log_dir / f"{start.date().isoformat()}.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+        )
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            details = await client.get(
+                "/api/animas/alice/conversation/tool-calls", params={"message_ts": message_ts}
+            )
+        assert details.status_code == 200
+        assert [c["tool_use_id"] for c in details.json()["tool_calls"]] == ["after-1"]
+
     async def test_tool_call_details_reject_invalid_anima_name(self, tmp_path):
         app = _make_test_app(animas_dir=tmp_path)
         transport = ASGITransport(app=app)

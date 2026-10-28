@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: e13b3839a715625d2091f8247d3fdb73865df6c38c5a97f2b435f150674a9f80 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 4f860a83e959932c843d56353bd681b84492786dc565bf83b024c8e444ce5714 -->
 
 # モジュール一覧
 
@@ -114,7 +114,7 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 694 | — |
+| `core.activity.conversation` | 696 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
