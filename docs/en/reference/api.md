@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=b2a10b180f4e5b6b7598286d4e2d14a4ebdc82053af5a264bd71e71a2a276e1b generated=2026-10-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=99e4a3b017408ea8d452a8feae3f0767377a197ae098f9f8d12207f80268b683 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API Reference
 
@@ -214,14 +214,16 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/sessions.py`
 
-| POST | `/api/animas/{name}/conversation/calls` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
-| GET | `/api/animas/{name}/conversation/history` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
-| GET | `/api/animas/{name}/conversation/tool-calls` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
-| POST | `/api/animas/{name}/notifications/reply` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
-| GET | `/api/animas/{name}/sessions` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
-| GET | `/api/animas/{name}/sessions/{session_id}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
-| GET | `/api/animas/{name}/transcripts/{date}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
-| GET | `/api/notifications/awaiting` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | List call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
+| GET | `/api/animas/{name}/conversation/bg` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Load background activity for one collapsed feed group. | `server/routes/sessions.py:get_conversation_background` |
+| POST | `/api/animas/{name}/conversation/calls` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
+| GET | `/api/animas/{name}/conversation/feed` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Get user-centered chat history with lazy background activity groups. | `server/routes/sessions.py:get_conversation_feed` |
+| GET | `/api/animas/{name}/conversation/history` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
+| GET | `/api/animas/{name}/conversation/tool-calls` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
+| POST | `/api/animas/{name}/notifications/reply` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
+| GET | `/api/animas/{name}/sessions` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
+| GET | `/api/animas/{name}/sessions/{session_id}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
+| GET | `/api/animas/{name}/transcripts/{date}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
+| GET | `/api/notifications/awaiting` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | List call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 

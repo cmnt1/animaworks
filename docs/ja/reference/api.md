@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: c14665a6c2f7d713a4f109222d34a9b637e279e7412a071177e6867a401b820c -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: c7a7e2aece37354b8ba5817c6112503aafceee11791f40d14e7707bfa2aa5402 -->
 
 # API リファレンス
 
@@ -214,7 +214,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 ## `server/routes/sessions.py`
 
+| GET | `/api/animas/{name}/conversation/bg` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Load background activity for one collapsed feed group. | `server/routes/sessions.py:get_conversation_background` |
 | POST | `/api/animas/{name}/conversation/calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
+| GET | `/api/animas/{name}/conversation/feed` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get user-centered chat history with lazy background activity groups. | `server/routes/sessions.py:get_conversation_feed` |
 | GET | `/api/animas/{name}/conversation/history` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
 | GET | `/api/animas/{name}/conversation/tool-calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
 | POST | `/api/animas/{name}/notifications/reply` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |

@@ -842,7 +842,7 @@
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "160e4b75e00539924fcefa0d50b8585f6449b7ae76342f0ead75e1eb3c61b356",
+      "source_sha256": "a0a2ca5269c0d40cb7ee1450c53725f531cb370c8e1567a26885ea9c429a24de",
       "statuses": [
         "translated"
       ],
@@ -851,7 +851,7 @@
     "docs/en/reference/api.md": {
       "engine": "luna",
       "generated": "2026-10-28",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
         "9d08124e81465e4e1711eb188abef96d8f84576b7a0f081be6312e8a71025d5a",
@@ -870,7 +870,7 @@
         "52f5e0515e77142f81045439a40a2d934682e826da2f3467c781f37bacd0d057",
         "dd8bcdff4f36b3ebc5d66bacc697cb07a57bbb47bae17f04697e07a801e0043f",
         "83a030e6c852b6bcda08bf3a9d7e76a22d2d8a494049ab39a6e1be4dd2a4dac3",
-        "a471e0966effb1f191cde355b9101b60be555e42ed6fddc9a12d9a1f4099a494",
+        "d5d1b853b23212429eeeac8049db907923aa7b1b44501001d7168ebc484675a0",
         "2d9dcd248b8befdccfb09ae6129d93fbcca4fe4be58f11ab8dc713ef19fe5979",
         "e040484a57a8c4c75a96a0bb71a9f06c217f18b0586bb7026487d27b3c0093d3",
         "918702318bd690854154dae1499aaf3bb62ed753fe24735fe5fcb567a35f2d87",
@@ -882,7 +882,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "b2a10b180f4e5b6b7598286d4e2d14a4ebdc82053af5a264bd71e71a2a276e1b",
+      "source_sha256": "99e4a3b017408ea8d452a8feae3f0767377a197ae098f9f8d12207f80268b683",
       "statuses": [
         "translated",
         "translated",
@@ -917,7 +917,7 @@
     "docs/en/reference/cli.md": {
       "engine": "luna",
       "generated": "2026-10-28",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
         "06179867cd49ba3efaa84111116e02fc4f92f91c405ca82f1d86f85ec04e2217",
@@ -1181,7 +1181,7 @@
     "docs/en/reference/config.md": {
       "engine": "luna",
       "generated": "2026-10-28",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
         "48e01c65e90a41b432e6067ce933a0e1dab40ed89bc0b7387e473ea5d38c4a61",
@@ -1305,7 +1305,7 @@
         "9bc8f4e99054207316ec9d309c17b077d92f0f8f08b11af6bd1f39068da916e2",
         "18909cfc681b6aac93aac8e22b62ad839fad82ee7b4671b605e498bedb8faa89",
         "f4ec29e1e1335b9b82af4009503d3b7f143a4c1031354343c66561d67bb5c926",
-        "e8f9f2bc473acd160b46a5aeb9df1bdfe52394001c9fb4a4f82377a85cf78538",
+        "29b5ef7e4c660e62ceef4f4b1ac7f1876f5df60a0a009ab7b551ff2dc091cdee",
         "d6bf902d52b0e830084fb524b933869a796351a116f67697da88b86c0ac3e3eb",
         "33f97d3a36df5577055a951cd1d1873d99551771a08dd38aba2874c898ca4822",
         "09f7ffd3c403e8a5a8a4db0527e199a600b9134581a07ed2d5bd002c6336a564",
@@ -1363,14 +1363,14 @@
         "1094fa6e60553dbb4dcd4cea0c65ebfce40d0e26a666bd2d5eafe549c08d026f",
         "def37e21efc0a41b5f6d3413ec7542e985ea1e85a70d9117327e56f05e03df9a",
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
-        "16f292df64c632eba0aff5b42790bc40b4d8190d146403d9bf7f5c368012e579",
+        "62f2eb352157aa98abab441a21ac63d1fb1ab79e9b7f49097d70498a2ae51c0f",
         "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "e259ddfe34edad0d9fd18e4ade22093382376198c8169a9f6ea85b608834d221",
+        "7b73bc1a1662909c4f0cb415bb22d68fe4b12b1fe45a5a8b7f4ebf7c4887221d",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "5194e4b2b314e9988ee2cd50ba693d0f9488713252e990a0bc70ff7ebc05e1f8",
+      "source_sha256": "6803551d9aebb8c57e36d3e6f8d7b6f2fe17f4f7fae4b807148c2dc93e72179d",
       "statuses": [
         "translated",
         "translated",
@@ -2198,7 +2198,7 @@
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "160e4b75e00539924fcefa0d50b8585f6449b7ae76342f0ead75e1eb3c61b356",
+      "source_sha256": "a0a2ca5269c0d40cb7ee1450c53725f531cb370c8e1567a26885ea9c429a24de",
       "statuses": [
         "translated"
       ],
@@ -2226,7 +2226,7 @@
         "52f5e0515e77142f81045439a40a2d934682e826da2f3467c781f37bacd0d057",
         "dd8bcdff4f36b3ebc5d66bacc697cb07a57bbb47bae17f04697e07a801e0043f",
         "83a030e6c852b6bcda08bf3a9d7e76a22d2d8a494049ab39a6e1be4dd2a4dac3",
-        "a471e0966effb1f191cde355b9101b60be555e42ed6fddc9a12d9a1f4099a494",
+        "d5d1b853b23212429eeeac8049db907923aa7b1b44501001d7168ebc484675a0",
         "2d9dcd248b8befdccfb09ae6129d93fbcca4fe4be58f11ab8dc713ef19fe5979",
         "e040484a57a8c4c75a96a0bb71a9f06c217f18b0586bb7026487d27b3c0093d3",
         "918702318bd690854154dae1499aaf3bb62ed753fe24735fe5fcb567a35f2d87",
@@ -2238,7 +2238,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "b2a10b180f4e5b6b7598286d4e2d14a4ebdc82053af5a264bd71e71a2a276e1b",
+      "source_sha256": "99e4a3b017408ea8d452a8feae3f0767377a197ae098f9f8d12207f80268b683",
       "statuses": [
         "translated",
         "translated",
@@ -2661,7 +2661,7 @@
         "9bc8f4e99054207316ec9d309c17b077d92f0f8f08b11af6bd1f39068da916e2",
         "18909cfc681b6aac93aac8e22b62ad839fad82ee7b4671b605e498bedb8faa89",
         "f4ec29e1e1335b9b82af4009503d3b7f143a4c1031354343c66561d67bb5c926",
-        "e8f9f2bc473acd160b46a5aeb9df1bdfe52394001c9fb4a4f82377a85cf78538",
+        "29b5ef7e4c660e62ceef4f4b1ac7f1876f5df60a0a009ab7b551ff2dc091cdee",
         "d6bf902d52b0e830084fb524b933869a796351a116f67697da88b86c0ac3e3eb",
         "33f97d3a36df5577055a951cd1d1873d99551771a08dd38aba2874c898ca4822",
         "09f7ffd3c403e8a5a8a4db0527e199a600b9134581a07ed2d5bd002c6336a564",
@@ -2719,14 +2719,14 @@
         "1094fa6e60553dbb4dcd4cea0c65ebfce40d0e26a666bd2d5eafe549c08d026f",
         "def37e21efc0a41b5f6d3413ec7542e985ea1e85a70d9117327e56f05e03df9a",
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
-        "16f292df64c632eba0aff5b42790bc40b4d8190d146403d9bf7f5c368012e579",
+        "62f2eb352157aa98abab441a21ac63d1fb1ab79e9b7f49097d70498a2ae51c0f",
         "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "e259ddfe34edad0d9fd18e4ade22093382376198c8169a9f6ea85b608834d221",
+        "7b73bc1a1662909c4f0cb415bb22d68fe4b12b1fe45a5a8b7f4ebf7c4887221d",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "5194e4b2b314e9988ee2cd50ba693d0f9488713252e990a0bc70ff7ebc05e1f8",
+      "source_sha256": "6803551d9aebb8c57e36d3e6f8d7b6f2fe17f4f7fae4b807148c2dc93e72179d",
       "statuses": [
         "translated",
         "translated",

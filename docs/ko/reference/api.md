@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=b2a10b180f4e5b6b7598286d4e2d14a4ebdc82053af5a264bd71e71a2a276e1b generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=99e4a3b017408ea8d452a8feae3f0767377a197ae098f9f8d12207f80268b683 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -214,7 +214,9 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/sessions.py`
 
+| GET | `/api/animas/{name}/conversation/bg` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Load background activity for one collapsed feed group. | `server/routes/sessions.py:get_conversation_background` |
 | POST | `/api/animas/{name}/conversation/calls` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
+| GET | `/api/animas/{name}/conversation/feed` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get user-centered chat history with lazy background activity groups. | `server/routes/sessions.py:get_conversation_feed` |
 | GET | `/api/animas/{name}/conversation/history` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
 | GET | `/api/animas/{name}/conversation/tool-calls` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
 | POST | `/api/animas/{name}/notifications/reply` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
