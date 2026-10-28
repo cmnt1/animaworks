@@ -606,3 +606,15 @@ body[data-theme="dark"] {
   .chat-input-form .context-ring-wrap,
   .chat-input-form .chat-model-select { display: none; }
 }
+
+/* Narrow panes (split view): swap the thread tabs for the thread dropdown instead of squeezing them. */
+.chat-anima-tabs-header { container-type: inline-size; }
+@container (max-width: 560px) {
+  .chat-anima-tabs-header .thread-tabs { display: none; }
+  .chat-anima-tabs-header .chat-thread-dropdown { display: flex; position: relative; flex-shrink: 0; }
+  .chat-anima-tabs-header .chat-thread-dropdown-btn {
+    display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; border: 0; border-radius: 999px;
+    background: var(--aw-color-text-primary); color: var(--aw-color-bg-primary); font: inherit; font-size: 0.75rem; cursor: pointer;
+  }
+  .chat-anima-tabs-header .chat-thread-dropdown-chevron { stroke: currentColor; }
+}
