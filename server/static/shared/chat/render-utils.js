@@ -398,6 +398,25 @@ function _lineMetaHtml(msg, opts, isMe) {
   return `<div class="chat-line-meta">${waitHtml}${readHtml}${timeHtml}</div>`;
 }
 
+function _voiceCallInner(msg, opts) {
+  const { escapeHtml } = opts;
+  const seconds = Math.max(0, Math.floor(Number(msg.duration_seconds) || 0));
+  const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const transcript = Array.isArray(msg.transcript) ? msg.transcript : [];
+  const transcriptHtml = transcript.length
+    ? `<ol>${transcript.map((line) => {
+      const speaker = line?.speaker === "assistant" ? (opts.animaName || "") : t("chat.call.you");
+      return `<li><strong>${escapeHtml(speaker)}:</strong> ${escapeHtml(line?.text || "")}</li>`;
+    }).join("")}</ol>`
+    : "";
+  const recordLabel = t("chat.call.record_duration", { time: duration });
+  const summary = msg.content ? `<small>${escapeHtml(msg.content)}</small>` : "";
+  return `<div class="callrec"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg></span><div>${escapeHtml(recordLabel)}${summary}</div></div>` +
+    (transcript.length
+      ? `<details class="chat-call-transcript"><summary>${escapeHtml(t("chat.call.open_transcript"))}</summary>${transcriptHtml}</details>`
+      : "");
+}
+
 function _lineMessage(msg, opts, { live = false } = {}) {
   const { escapeHtml, renderMarkdown } = opts;
   const renderImages = opts.renderChatImages || (() => "");
@@ -416,7 +435,9 @@ function _lineMessage(msg, opts, { live = false } = {}) {
     ? [msg.subject, msg.content].filter(Boolean).join(" — ")
     : contentText;
   let contentHtml = "";
-  if (msg.type === "human_notify") {
+  if (msg.type === "voice_call") {
+    contentHtml = _voiceCallInner(msg, opts);
+  } else if (msg.type === "human_notify") {
     const subjectHtml = msg.subject ? `<strong>${escapeHtml(msg.subject)}</strong>` : "";
     const bodyHtml = _linkifyEscaped(escapeHtml, msg.content || "").replace(/\n/g, "<br>");
     contentHtml = `${subjectHtml}${subjectHtml && bodyHtml ? "<br>" : ""}${bodyHtml}`;
@@ -478,7 +499,8 @@ function _lineMessage(msg, opts, { live = false } = {}) {
     ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
     : "";
   const thinkClass = live && think && msg.streaming ? " think-host" : "";
-  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}${thinkClass}`;
+  const callClass = msg.type === "voice_call" ? " chat-call-record" : "";
+  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}${thinkClass}${callClass}`;
   const cursor = live && msg.streaming && !thinkingNow ? '<span class="streaming-cursor">▌</span>' : "";
   const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${cursor}</div>`;
   const faceEmotion = live && think
@@ -643,24 +665,7 @@ export function renderHistoryMessage(msg, opts) {
   }
 
   if (msg.type === "voice_call") {
-    const seconds = Math.max(0, Math.floor(Number(msg.duration_seconds) || 0));
-    const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    const transcript = Array.isArray(msg.transcript) ? msg.transcript : [];
-    const transcriptHtml = transcript.length
-      ? `<ol>${transcript.map((line) => {
-        const speaker = line?.speaker === "assistant" ? (opts.animaName || "") : t("chat.call.you");
-        return `<li><strong>${escapeHtml(speaker)}:</strong> ${escapeHtml(line?.text || "")}</li>`;
-      }).join("")}</ol>`
-      : "";
-    const recordLabel = t("chat.call.record_duration", { time: duration });
-    const summary = msg.content ? `<small>${escapeHtml(msg.content)}</small>` : "";
-    const bubble =
-      `<div class="chat-bubble assistant chat-call-record">` +
-      `<div class="callrec"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg></span><div>${escapeHtml(recordLabel)}${summary}</div></div>` +
-      (transcript.length
-        ? `<details class="chat-call-transcript"><summary>${escapeHtml(t("chat.call.open_transcript"))}</summary>${transcriptHtml}</details>`
-        : "") +
-      `${tsHtml}</div>`;
+    const bubble = `<div class="chat-bubble assistant chat-call-record">${_voiceCallInner(msg, opts)}${tsHtml}</div>`;
     return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap, opts.companyColors));
   }
 
