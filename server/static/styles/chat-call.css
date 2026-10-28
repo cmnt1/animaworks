@@ -165,3 +165,15 @@ body[data-theme="dark"] {
     transition: none !important;
   }
 }
+
+/* Blurred copy of the Anima picture fills the area beside the portrait, like a video feed. */
+.aw-call-feed { overflow: hidden; }
+.aw-call-backdrop {
+  position: absolute;
+  inset: -60px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(42px) saturate(1.05) brightness(1.02);
+  opacity: .95;
+}
+.aw-call-main-rig { position: relative; z-index: 1; }

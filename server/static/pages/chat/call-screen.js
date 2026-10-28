@@ -75,6 +75,14 @@ export function openCallScreen(animaName, opts = {}) {
   return call;
 }
 
+function _currentUserName() {
+  try {
+    return document.getElementById("currentUserLabel")?.textContent?.trim() || localStorage.getItem("animaworks_user") || "";
+  } catch {
+    return "";
+  }
+}
+
 export class CallScreen {
   constructor(animaName, container, opts = {}) {
     this.animaName = animaName;
@@ -126,6 +134,7 @@ export class CallScreen {
     root.setAttribute("aria-label", t("chat.call.screen_title", { name: this.animaName }));
 
     const feed = _append(root, "div", "aw-call-feed");
+    const backdrop = _append(feed, "div", "aw-call-backdrop");
     const mainRig = _append(feed, "div", "aw-call-main-rig");
     _append(root, "div", "aw-call-shade aw-call-shade-top");
     _append(root, "div", "aw-call-shade aw-call-shade-bottom");
@@ -142,7 +151,8 @@ export class CallScreen {
     const ringLabel = _append(ring, "div", "", t("chat.call.calling", { name: this.animaName }));
 
     const self = _append(root, "div", "aw-call-self-tile");
-    _append(self, "span", "aw-call-self-avatar", (t("chat.call.you").charAt(0) || "?").toUpperCase());
+    const selfName = _currentUserName() || t("chat.call.you");
+    _append(self, "span", "aw-call-self-avatar", (selfName.trim().charAt(0) || "?").toUpperCase());
     _append(self, "span", "", t("chat.call.camera_off"));
     self.hidden = true;
 
@@ -228,7 +238,7 @@ export class CallScreen {
     });
 
     return {
-      root, mainRig, name, time, ring, ringAvatar, ringLabel, self, work, workText,
+      root, backdrop, mainRig, name, time, ring, ringAvatar, ringLabel, self, work, workText,
       captions, captionUser, captionAnima, listen, error, mute: mute.button,
       captionsToggle: captionsToggle.button, pip, pipRig, pipTime, transcriptDialog, transcriptList,
     };
@@ -260,7 +270,10 @@ export class CallScreen {
   async _loadRingAvatar() {
     try {
       const url = await resolveCachedAvatar(this.animaName, bustupCandidates(), "S");
-      if (!this.finished && url) this.els.ringAvatar.src = url;
+      if (!this.finished && url) {
+        this.els.ringAvatar.src = url;
+        this.els.backdrop.style.backgroundImage = `url("${String(url).replace(/"/g, "%22")}")`;
+      }
     } catch {
       // The bustup animator still supplies the full call image when no face is available.
     }
@@ -351,6 +364,7 @@ export class CallScreen {
     this._bind("thinkingStatus", (thinking) => this.setThinking(Boolean(thinking)));
     this._bind("error", () => {
       if (this.finished) return;
+      this._stopClock();
       this.els.error.hidden = false;
       this.els.error.textContent = t("chat.call.connect_failed");
     });
@@ -363,6 +377,7 @@ export class CallScreen {
       this.voice.setMode(this.muted ? "ptt" : "vad");
     } catch {
       if (this.finished) return;
+      this._stopClock();
       this.els.error.hidden = false;
       this.els.error.textContent = t("chat.call.connect_failed");
     }
@@ -377,6 +392,13 @@ export class CallScreen {
     this.els.self.hidden = false;
     this._updateClock();
     this.clockTimer = this.setInterval(() => this._updateClock(), 1000);
+  }
+
+  _stopClock() {
+    if (this.clockTimer) {
+      this.clearInterval(this.clockTimer);
+      this.clockTimer = null;
+    }
   }
 
   _updateClock() {
