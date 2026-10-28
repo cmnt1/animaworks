@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=a8965debcd41a3f82a67150540ed279787d38821e9c3ec0e437622687f054e50 generated=2026-10-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=cbeb9e9c54f684fb91670ea3d8c00b7787a01fba6697fb843c220e08b7b0134b generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -108,13 +108,13 @@
 
 ## `core.activity`
 
-활동 로그 기록, 재생, 타임라인 표시.
+활동 로그의 기록, 재생, 타임라인 표시.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 583 | — |
+| `core.activity.conversation` | 605 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -1129,15 +1129,15 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.memory_routes` | 450 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
-| `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
-| `server.routes.sessions` | 468 | — |
+| `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 라우트. |
+| `server.routes.sessions` | 494 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공유 헬퍼를 사용합니다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트; Anima별 status.json 설정에는 공용 헬퍼를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
