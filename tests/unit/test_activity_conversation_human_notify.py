@@ -259,3 +259,31 @@ class TestExternalUserAliases:
         messages = activity_logger._entries_to_messages(entries)
         assert messages[0]["from_person"] == "taka"
         assert messages[1]["from_person"] == "someone"
+
+
+class TestInterimTexts:
+    def test_progress_remarks_move_out_of_reply_body(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry(
+                "response_sent",
+                "2026-10-28T10:00:00+09:00",
+                content="Cause confirmed.\nChecking sites.\n\nnginx は直りました。",
+                meta={"interim_texts": ["Cause confirmed.", "Checking sites."]},
+            )
+        ]
+        msg = activity_logger._entries_to_messages(entries)[0]
+        assert msg["content"] == "nginx は直りました。"
+        assert msg["interim_texts"] == ["Cause confirmed.", "Checking sites."]
+
+    def test_reply_unchanged_when_remarks_do_not_line_up(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry(
+                "response_sent",
+                "2026-10-28T10:00:00+09:00",
+                content="nginx は直りました。",
+                meta={"interim_texts": ["Cause confirmed."]},
+            )
+        ]
+        msg = activity_logger._entries_to_messages(entries)[0]
+        assert msg["content"] == "nginx は直りました。"
+        assert "interim_texts" not in msg

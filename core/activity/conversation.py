@@ -78,6 +78,27 @@ def _external_user_aliases() -> dict[str, str]:
     return mapping
 
 
+def _split_interim_texts(content: str, interim: list[Any]) -> tuple[str, list[str]]:
+    """Remove progress remarks spoken before tool calls from the start of a reply.
+
+    Returns the remaining reply body and the remarks that were actually found.
+    When nothing lines up, the content is returned unchanged.
+    """
+    rest = content.lstrip()
+    found: list[str] = []
+    for item in interim:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if not rest.startswith(text):
+            break
+        found.append(text)
+        rest = rest[len(text) :].lstrip()
+    if not found or not rest:
+        return content, []
+    return rest, found
+
+
 def _truncate_tool_field(value: Any, limit: int) -> Any:
     """Truncate tool input/result for the conversation view API."""
     if isinstance(value, str):
@@ -294,6 +315,12 @@ class ConversationMixin:
                     "source_key": _source_key_for_entry(e),
                     "tool_calls": [],
                 }
+                interim = e.meta.get("interim_texts")
+                if isinstance(interim, list) and interim:
+                    body, found = _split_interim_texts(clean_content, interim)
+                    if found:
+                        msg["content"] = body
+                        msg["interim_texts"] = found
                 if e.meta.get("thinking_text"):
                     msg["thinking_text"] = e.meta["thinking_text"]
                 images = e.meta.get("images") or e.meta.get("artifacts") or []

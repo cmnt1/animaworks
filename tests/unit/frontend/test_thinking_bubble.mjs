@@ -48,6 +48,7 @@ const ru = await load("shared/chat/render-utils.js", [
   [/^import\s+\{\s*escapeAttr\s+as\s+_escapeAttr\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
     "const _escapeAttr = (value) => String(value);"],
   [/^import\s+\{\s*api\s*\}\s+from\s+["'][^"']+["'];?\s*$/m, "const api = async () => ({});"],
+  [/^import\s+\{\s*bustUrl,\s*faceUrl\s*\}\s+from\s+["'][^"']+["'];?\s*$/m, "const bustUrl = () => \"\"; const faceUrl = () => \"\";"],
 ]);
 
 function streamingMsg(extra = {}) {
@@ -348,5 +349,13 @@ describe("render-utils integration", () => {
 
     const plain = ru.renderHistoryMessage(msg, { ...renderOpts, think: undefined });
     assert.match(plain, /Tool Calls \(2\)/, "callers without the hook keep the old group");
+  });
+});
+
+describe("history fold with progress remarks", () => {
+  it("lists remarks spoken before tools as faint steps", () => {
+    const html = tb.renderHistorySteps([], { interimTexts: ["Cause confirmed."] });
+    assert.match(html, /class="say"/);
+    assert.match(html, /Cause confirmed\./);
   });
 });

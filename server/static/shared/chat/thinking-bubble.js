@@ -411,9 +411,12 @@ export function renderStepsFold(msg) {
 }
 
 /** "Steps n ▸" for a history message, replacing the old Tool Calls group. */
-export function renderHistorySteps(toolCalls, { truncateLen = RESULT_MAX } = {}) {
-  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return "";
-  const html = toolCalls.map(tc => {
+export function renderHistorySteps(toolCalls, { truncateLen = RESULT_MAX, interimTexts = [] } = {}) {
+  const calls = Array.isArray(toolCalls) ? toolCalls : [];
+  const says = Array.isArray(interimTexts) ? interimTexts.filter(Boolean) : [];
+  if (calls.length === 0 && says.length === 0) return "";
+  const sayHtml = says.map(text => _stepHtml({ kind: "say", text: String(text) })).join("");
+  const html = sayHtml + calls.map(tc => {
     let result = tc.result ?? "";
     if (result && typeof result !== "string") result = JSON.stringify(result, null, 2);
     if (result.length > truncateLen) result = `${result.slice(0, truncateLen)}…`;
@@ -422,7 +425,7 @@ export function renderHistorySteps(toolCalls, { truncateLen = RESULT_MAX } = {})
       done: true, error: !!tc.is_error, result,
     }, { withDetail: true });
   }).join("");
-  return _foldHtml(html, toolCalls.length);
+  return _foldHtml(html, calls.length + says.length);
 }
 
 /**

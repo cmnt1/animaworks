@@ -659,7 +659,7 @@ export function renderHistoryMessage(msg, opts) {
     const rawText = _normalizeDisplayText(msg.content || "");
     const content = rawText ? renderMarkdown(rawText, opts.animaName) : "";
     const toolHtml = opts.think
-      ? opts.think.historyFold(msg.tool_calls, { truncateLen: truncLen })
+      ? opts.think.historyFold(msg.tool_calls, { truncateLen: truncLen, interimTexts: msg.interim_texts })
       : renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     let thinkingHtml = "";
