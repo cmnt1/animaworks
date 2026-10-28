@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 7f4dda1e91f1a54ed6f3c84419823469f44458c7494ea91f885f6e92bf20af59 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: f6a715822dd5209c0636745d5448d367f0cc579c6e9fd904a935b2731a177b01 -->
 
 # モジュール一覧
 
@@ -1130,7 +1130,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 494 | — |
+| `server.routes.sessions` | 499 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |

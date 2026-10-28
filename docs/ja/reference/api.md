@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 024189abd050359924520221c7c1f13d8c00d91ed2133096aaa11c25f66c3794 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: efacfa7a2742c168e9c7ca0072203283695e61afb76c3f8ea258f23f62305644 -->
 
 # API リファレンス
 
@@ -220,7 +220,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/sessions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
 | GET | `/api/animas/{name}/sessions/{session_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
 | GET | `/api/animas/{name}/transcripts/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
-| GET | `/api/notifications/awaiting` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Count call_human notifications that still wait for a human reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
+| GET | `/api/notifications/awaiting` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Count call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 
