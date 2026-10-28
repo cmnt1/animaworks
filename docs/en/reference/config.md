@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=07611040a4e544cbf7172ace0f96d907fe8cd197a2557cdd22300f89986c183b generated=2026-10-20 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=07d8d27e3b6d2e9d317d098e9ef5f766d55d502b3319e3cd4d9e26e8afb4bcc6 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Configuration Reference
 
@@ -394,12 +394,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `image_gen`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation provider and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
-| `image_gen.prefer_codex` | `bool` | `true` | Use codex CLI first for image generation if available |
+| `image_gen.prefer_codex` | `bool` | `true` | Prioritize codex CLI for image generation when available |
 | `image_gen.style_reference` | `str \| None` | `null` | Path to organization-wide style reference image |
 | `image_gen.style_prefix` | `str` | `""` | Common style tags prepended to character prompt |
 | `image_gen.style_suffix` | `str` | `""` | Common style tags appended to character prompt |
@@ -407,6 +407,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer strength (0.0-1.0) |
 | `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer information extraction (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | Enable 3D model generation (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | Base pixel sheet; None uses the bundled sample_01.png |
+| `image_gen.pixel_concurrency` | `int` | `4` | Parallel codex image_gen calls for pixel sheet rows |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | Override for realistic style |

@@ -221,6 +221,15 @@ class CodexImageClient:
         )
         return self._run(spec, [reference_image], target)
 
+    def generate_pixel_row(self, spec: str, reference_images: list[bytes]) -> bytes:
+        """Generate a pixel-art animation row and return the raw ``out.png`` bytes.
+
+        Unlike :meth:`_run`, this does not cover-crop or resize the model output:
+        the pixel-sheet post-processor extracts the magenta work area and scales
+        each cell against the base sheet's occupied bounding boxes.
+        """
+        return self._run_raw(spec, reference_images)
+
     def _run(
         self,
         spec: str,
@@ -228,6 +237,14 @@ class CodexImageClient:
         target_size: tuple[int, int],
     ) -> bytes:
         """Run codex in a temp dir, then cover-crop to *target_size*."""
+        return _cover_crop_resize(self._run_raw(spec, reference_images), target_size)
+
+    def _run_raw(
+        self,
+        spec: str,
+        reference_images: list[bytes],
+    ) -> bytes:
+        """Run codex in a temp dir and return the raw ``out.png`` bytes."""
         with tempfile.TemporaryDirectory(prefix="aw-codex-img-") as tmp:
             tmp_path = Path(tmp)
             cmd: list[str] = [
@@ -268,9 +285,13 @@ class CodexImageClient:
                 # leftover shell step fails afterwards; keep a decodable image.
                 if has_output:
                     try:
-                        return _cover_crop_resize(out_path.read_bytes(), target_size)
+                        raw = out_path.read_bytes()
+                        with Image.open(io.BytesIO(raw)) as generated:
+                            generated.verify()
                     except Exception:
                         logger.debug("codex out.png unusable after rc=%s", completed.returncode, exc_info=True)
+                    else:
+                        return raw
                 reason = _codex_stderr_reason(completed.stderr or b"")
                 raise RuntimeError(f"codex image generation failed (rc={completed.returncode}): {reason}")
 
@@ -278,7 +299,7 @@ class CodexImageClient:
                 reason = _codex_stderr_reason(completed.stderr or b"")
                 raise RuntimeError(f"codex did not produce out.png: {reason}")
 
-            return _cover_crop_resize(out_path.read_bytes(), target_size)
+            return out_path.read_bytes()
 
 
 class CodexFirstClient:

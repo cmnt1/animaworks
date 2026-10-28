@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 8682c89ef4e79923ef97bcf3ec3fb0dc2a6f35d203a67d013e9429e6146353dc -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 81a934f0ac3f6d5f8bd18cbeb6412a2ce44b6d3cf3b5ae523d9d7de7249b5be6 -->
 
 # API リファレンス
 
@@ -69,7 +69,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/animas/{name}/assets/generate` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
 | POST | `/api/animas/{name}/assets/generate-expression` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
 | GET | `/api/animas/{name}/assets/metadata` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return structured metadata about a anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
-| POST | `/api/animas/{name}/assets/regenerate-step` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Regenerate one pipeline step (fullbody, bustup, icon, chibi, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
+| POST | `/api/animas/{name}/assets/regenerate-step` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
 | POST | `/api/animas/{name}/assets/remake-confirm` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Accept the preview and cascade-rebuild all remaining assets. | `server/routes/assets.py:remake_confirm` |
 | DELETE | `/api/animas/{name}/assets/remake-preview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Cancel a remake preview by restoring from the most recent backup. | `server/routes/assets.py:cancel_remake_preview` |
 | GET | `/api/animas/{name}/assets/remake-preview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List generated preview files. | `server/routes/assets.py:list_remake_previews` |

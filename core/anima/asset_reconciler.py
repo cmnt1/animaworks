@@ -37,12 +37,16 @@ REQUIRED_ASSETS: dict[str, str] = {
     "avatar_chibi": "avatar_chibi.png",
     "model_chibi": "avatar_chibi.glb",
     "model_rigged": "avatar_chibi_rigged.glb",
+    "pixel_sheet": "pixel_sheet.png",
 }
 
 REALISTIC_REQUIRED_ASSETS: dict[str, str] = {
     "avatar_fullbody_realistic": "avatar_fullbody_realistic.png",
     "avatar_bustup_realistic": "avatar_bustup_realistic.png",
+    "pixel_sheet": "pixel_sheet.png",
 }
+
+_PIXEL_ASSET_KEY = "pixel_sheet"
 
 _3D_ASSET_KEYS = frozenset({"model_chibi", "model_rigged"})
 
@@ -151,17 +155,33 @@ def _get_lock(anima_name: str) -> asyncio.Lock:
 # ── Asset checking ────────────────────────────────────────────────
 
 
+def _pixel_generation_available() -> bool:
+    """Return whether the codex CLI needed for pixel sheet generation exists."""
+    try:
+        from core.integrations.image.codex import codex_available
+
+        return bool(codex_available())
+    except Exception:
+        logger.debug("codex availability check failed", exc_info=True)
+        return False
+
+
 def _required_assets_for_style(
     image_style: Literal["anime", "realistic"],
     enable_3d: bool = True,
 ) -> dict[str, str]:
     """Return the required assets map for the given style."""
     if image_style == "realistic":
-        return dict(REALISTIC_REQUIRED_ASSETS)
-    assets = dict(REQUIRED_ASSETS)
-    if not enable_3d:
-        for k in _3D_ASSET_KEYS:
-            assets.pop(k, None)
+        assets = dict(REALISTIC_REQUIRED_ASSETS)
+    else:
+        assets = dict(REQUIRED_ASSETS)
+        if not enable_3d:
+            for k in _3D_ASSET_KEYS:
+                assets.pop(k, None)
+    if not _pixel_generation_available():
+        # Without codex there is no way to produce a pixel sheet, so keep it out
+        # of the required set instead of reporting it missing on every scan.
+        assets.pop(_PIXEL_ASSET_KEY, None)
     return assets
 
 
@@ -383,7 +403,7 @@ async def reconcile_anima_assets(
 
         steps: list[str] | None = None
         if image_style == "anime" and not enable_3d:
-            steps = ["fullbody", "bustup", "chibi"]
+            steps = ["fullbody", "bustup", "chibi", "pixel"]
 
         try:
             from core.config.models import ImageGenConfig, load_config
@@ -757,6 +777,8 @@ def _summarise_result(result: Any) -> dict[str, list[str]]:
         generated.append("3d")
     if result.rigged_model_path and "rigging" not in skipped:
         generated.append("rigging")
+    if result.pixel_sheet_path and "pixel" not in skipped:
+        generated.append("pixel")
     for anim_name in result.animation_paths:
         if f"anim_{anim_name}" not in skipped:
             generated.append(f"anim_{anim_name}")
