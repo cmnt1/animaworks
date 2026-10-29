@@ -1,0 +1,139 @@
+/* ============================================
+   Chat on phones: one slim header, folded anima rail, LINE-sized text.
+   Loaded last so these overrides win over the older mobile rules.
+   ============================================ */
+
+/* The fold-out toggle only exists on phones. */
+.chat-rail-toggle { display: none; }
+.chat-pane-head-face { cursor: pointer; }
+
+/* Home-screen app: keep content clear of the status bar, notch and home indicator. */
+@media (display-mode: standalone) {
+  body {
+    background: var(--aw-color-bg-primary);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .chat-input-form { padding-bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 12px)) !important; }
+}
+
+@media (max-width: 768px) {
+  /* Memory opens from the anima's face, not from a separate button. */
+  .chat-unified-info-btn { display: none !important; }
+}
+
+@media (max-width: 560px) {
+  /* ── Header: ☰ · face · name ▾ … call · meeting · background · thread ── */
+  .chat-anima-tabs-header {
+    height: 52px;
+    padding: 0 6px 0 4px;
+    gap: 4px;
+  }
+  .chat-pane-head-id {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+  }
+  .chat-pane-head-face { width: 36px; height: 36px; }
+  .chat-pane-head-text {
+    display: block;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .chat-pane-head-name { font-size: 16px; max-width: none; }
+  .chat-anima-tabs-header .chat-pane-head-status {
+    display: block;
+    font-size: 11px;
+    max-width: none;
+  }
+  .chat-pane-head-status:empty { display: none; }
+
+  .chat-rail-toggle {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 24px;
+    height: 32px;
+    margin-left: -6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--aw-color-text-muted);
+    cursor: pointer;
+  }
+  .chat-rail-toggle svg { transition: transform .2s; }
+  .chat-page-layout.rail-open .chat-rail-toggle svg { transform: rotate(180deg); }
+  /* Someone else is waiting for a reply or has unread messages. */
+  .chat-rail.has-alert ~ .chat-pane-host .chat-rail-toggle::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 1px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e5484d;
+  }
+
+  /* Covered elsewhere on phones: the rail picks animas, the side menu has log out. */
+  .chat-anima-tabs-header .chat-add-conversation,
+  .chat-unified-user-btn { display: none !important; }
+
+  .chat-anima-tabs-header .chat-call-btn { width: 32px; height: 32px; }
+  .chat-anima-tabs-header .meeting-mode-toggle {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+  }
+  .chat-anima-tabs-header .chat-thread-dropdown-btn {
+    background: var(--aw-color-bg-hover);
+    color: var(--aw-color-text-primary);
+    padding: 4px 8px 4px 10px;
+  }
+
+  /* ── Rail: folded away; opens as a sheet under the header ── */
+  .chat-page-layout { position: relative; }
+  .chat-page-layout:not(.rail-open) > .chat-rail { display: none; }
+  .chat-page-layout.rail-open > .chat-rail {
+    position: absolute;
+    top: 52px;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+  }
+
+  /* ── Talk: LINE-sized text, room for the bubbles ── */
+  .chat-messages.chat-line-talk {
+    padding: 10px 10px 14px !important;
+    gap: 10px;
+  }
+  .chat-line { gap: 6px; }
+  .chat-line-face,
+  .chat-line-person-avatar {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+  .chat-line-col { max-width: calc(100% - 42px); }
+  .chat-line--me .chat-line-col { max-width: 88%; }
+  .chat-line-bubble.chat-bubble {
+    padding: 8px 12px;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .chat-line-who { font-size: 12px; }
+  .chat-line-meta,
+  .chat-line-via { font-size: 11px; }
+  .chat-line-quote { font-size: 13px; }
+  .chat-sysline-toggle,
+  .chat-sysline-time { font-size: 12px; }
+
+  /* ── Composer ── */
+  .chat-input-form { padding: 6px 8px; }
+  .chat-input-form .chat-input { font-size: 16px; }
+}

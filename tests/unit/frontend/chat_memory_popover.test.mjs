@@ -397,19 +397,13 @@ describe("memory popover behavior", () => {
     assert.equal(removedElements.some((selector) => chatPageSource.includes(selector)), false);
   });
 
-  it("keeps the mobile chat tab selected when no anima is active", () => {
+  it("stays closed when no anima is active", () => {
     const harness = makeContext(apiStub([]));
     harness.ctx.state.selectedAnima = null;
-    const chatTab = new FakeElement("button", harness.document);
-    const infoTab = new FakeElement("button", harness.document);
-    infoTab.classList.add("active");
-    harness.ctx.$root = (id) => id === "chatMobileTabChat" ? chatTab : id === "chatMobileTabInfo" ? infoTab : null;
     const popover = createMemoryPopover(harness.ctx);
 
     popover.open(harness.document.createElement("button"));
     assert.equal(popover.isOpen(), false);
-    assert.equal(chatTab.classList.contains("active"), true);
-    assert.equal(infoTab.classList.contains("active"), false);
     popover.destroy();
   });
 
@@ -492,27 +486,18 @@ describe("memory popover behavior", () => {
   it("closes from Escape and the backdrop", async () => {
     const calls = [];
     const harness = makeContext(apiStub(calls));
-    const chatTab = new FakeElement("button", harness.document);
-    const infoTab = new FakeElement("button", harness.document);
-    harness.ctx.$root = (id) => id === "chatMobileTabChat" ? chatTab : id === "chatMobileTabInfo" ? infoTab : null;
     const popover = createMemoryPopover(harness.ctx);
     const anchor = harness.document.createElement("button");
 
     popover.open(anchor);
     await settle();
-    infoTab.classList.add("active");
     harness.document.dispatchEvent({ type: "keydown", key: "Escape" });
     assert.equal(popover.isOpen(), false);
-    assert.equal(chatTab.classList.contains("active"), true);
-    assert.equal(infoTab.classList.contains("active"), false);
 
     popover.open(anchor);
     await settle();
-    infoTab.classList.add("active");
     harness.document.body.querySelector('[data-memory-action="scrim"]').click();
     assert.equal(popover.isOpen(), false);
-    assert.equal(chatTab.classList.contains("active"), true);
-    assert.equal(infoTab.classList.contains("active"), false);
     popover.destroy();
   });
 });

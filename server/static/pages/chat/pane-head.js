@@ -44,6 +44,12 @@ export function createPaneHead(ctx) {
   const root = ctx.state.container;
   attachFaceFallback(root, (name) => state.animaTabAvatarUrls?.[name] || "");
 
+  // The face in the header is the way into the anima's memory.
+  root?.addEventListener("click", (e) => {
+    const face = e.target.closest?.('[data-chat-id="chatPaneHeadFace"]');
+    if (face && state.selectedAnima) ctx.controllers.memoryPopover?.open(face);
+  });
+
   // "Waiting for reply" in the header opens the list of notifications to answer.
   root?.addEventListener("click", (e) => {
     const status = e.target.closest?.('[data-chat-id="chatPaneHeadStatus"].wait');

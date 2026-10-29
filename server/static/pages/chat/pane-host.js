@@ -27,6 +27,7 @@ import { createSlashPalette } from "./slash-palette.js";
 import { startSessionsRefreshFallback } from "./session-refresh.js";
 
 const LAYOUT_KEY = "aw-chat-pane-layout";
+const PHONE_QUERY = window.matchMedia("(max-width: 560px)");
 
 function paneHtml() {
   return `
@@ -40,6 +41,9 @@ function paneHtml() {
             <div class="chat-pane-head-name" data-chat-id="chatPaneHeadName"></div>
             <div class="chat-pane-head-status" data-chat-id="chatPaneHeadStatus"></div>
           </div>
+          <button type="button" class="chat-rail-toggle" data-chat-id="chatRailToggle" aria-expanded="false" aria-label="${t("chat.rail.toggle")}" title="${t("chat.rail.toggle")}">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
         </div>
         <div class="thread-tabs" data-chat-id="chatThreadTabs">
           <button class="thread-tab active" data-thread="default">${t("thread.default_label")}</button>
@@ -168,10 +172,18 @@ export function createPaneHost(rootContainer) {
   // ── Presence: shared store, left rail, header / panel refresh ──
   const _syncedStreaming = new Set();
   let _refreshQueued = false;
+  const layoutEl = hostEl.parentElement;
   const railEl = document.createElement("nav");
   railEl.className = "chat-rail";
   railEl.setAttribute("aria-label", t("chat.presence.rail_label"));
-  hostEl.parentElement.insertBefore(railEl, hostEl);
+  layoutEl.insertBefore(railEl, hostEl);
+
+  /** Phones keep the rail folded away until the header's name is tapped. */
+  function setRailOpen(open) {
+    layoutEl.classList.toggle("rail-open", open);
+    hostEl.querySelectorAll('[data-chat-id="chatRailToggle"]').forEach((btn) => btn.setAttribute("aria-expanded", String(open)));
+  }
+
   const rail = createAnimaRail({
     el: railEl,
     getPanes: () => panes,
@@ -179,6 +191,7 @@ export function createPaneHost(rootContainer) {
     t,
     escapeHtml,
     onToolsChanged: () => refreshPresence(),
+    onPick: () => setRailOpen(false),
   });
   const _presenceOffs = [];
 
@@ -513,27 +526,16 @@ export function createPaneHost(rootContainer) {
     document.addEventListener("keydown", bustupEscapeHandler);
     _sharedListeners.push({ el: document, event: "keydown", handler: bustupEscapeHandler });
 
-    const $r = (id) => rootContainer.querySelector(`[data-chat-id="${id}"]`);
-
-    function _addShared(id, event, handler) {
-      const el = $r(id);
-      if (!el) return;
-      el.addEventListener(event, handler);
-      _sharedListeners.push({ el, event, handler });
-    }
-
-    for (const tabId of ["chatMobileTabChat", "chatMobileTabInfo"]) {
-      _addShared(tabId, "click", (event) => {
-        const focused = getFocused();
-        if (!focused) return;
-        const selected = event.currentTarget.dataset.panel === "info";
-        rootContainer.querySelectorAll(".chat-mobile-tab").forEach((button) =>
-          button.classList.toggle("active", button === event.currentTarget),
-        );
-        if (selected) focused.ctx.controllers.memoryPopover.open(event.currentTarget);
-        else focused.ctx.controllers.memoryPopover.close();
-      });
-    }
+    // Phones: the anima's name in the header folds the rail out; any other tap folds it away.
+    const railToggleHandler = (e) => {
+      if (!PHONE_QUERY.matches) return;
+      const open = layoutEl.classList.contains("rail-open");
+      if (e.target.closest?.(".chat-pane-head-status.wait")) return;
+      if (e.target.closest?.('[data-chat-id="chatRailToggle"], .chat-pane-head-text')) setRailOpen(!open);
+      else if (open) setRailOpen(false);
+    };
+    hostEl.addEventListener("click", railToggleHandler);
+    _sharedListeners.push({ el: hostEl, event: "click", handler: railToggleHandler });
   }
 
   function _destroyPane(pane) {

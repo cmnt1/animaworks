@@ -1214,6 +1214,7 @@
   "chat.presence.status_working": "Working",
   "chat.presence.status_idle": "Standby",
   "chat.rail.hide": "Remove from list",
+  "chat.rail.toggle": "Show or hide the anima list",
   "chat.rail.add": "Add an Anima to the list",
   "chat.rail.add_empty": "Every Anima is already on the list",
   "chat.presence.rail_split": "Split",

@@ -1739,6 +1739,15 @@ export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
       return;
     }
 
+    // Touch screens have no hover: a tap on a bubble shows its actions, a tap elsewhere hides them.
+    const tappedRow = event.target.closest(".chat-line-bubble")
+      && !event.target.closest("a, button, summary, details, input, textarea, select, img")
+      ? event.target.closest(".chat-line") : null;
+    container.querySelectorAll(".chat-line.actions-open").forEach((row) => {
+      if (row !== tappedRow && !row.contains(event.target)) row.classList.remove("actions-open");
+    });
+    if (tappedRow) tappedRow.classList.toggle("actions-open");
+
     const face = event.target.closest(".chat-line-face");
     if (!face) return;
     event.preventDefault();
