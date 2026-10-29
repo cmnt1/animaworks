@@ -27,6 +27,12 @@ from core.activity.models import (
     ActivityEntry,
     time_diff,
 )
+from core.activity.slack_mirror import (
+    aliased_slack_users,
+    apply_slack_mirror,
+    is_slack_send_command,
+    is_user_addressed_slack_tool_use,
+)
 from core.i18n import t
 from core.time_utils import now_local
 
@@ -96,6 +102,28 @@ def _is_inbox_raw_entry(raw: dict[str, Any]) -> bool:
         or trigger == "inbox"
         or (isinstance(trigger, str) and trigger.startswith("inbox:"))
     )
+
+
+def _is_slack_mirror_raw_candidate(raw: dict[str, Any], aliases: dict[str, str]) -> bool:
+    """Return True for inbox rows needed to derive Slack mirror messages."""
+    if not aliases:
+        return False
+    meta = raw.get("meta", {})
+    if not isinstance(meta, dict):
+        return False
+    entry_type = raw.get("type", "")
+    if entry_type == "message_received":
+        trigger = str(meta.get("trigger", ""))
+        if meta.get("from_type") != "slack" or not trigger.startswith("inbox:slack:"):
+            return False
+        return trigger[len("inbox:slack:") :].split(",", 1)[0].strip() in aliases
+    if entry_type == "tool_use":
+        if raw.get("tool") != "Bash":
+            return False
+        args = meta.get("args")
+        command = args.get("command") if isinstance(args, dict) else ""
+        return isinstance(command, str) and is_slack_send_command(command)
+    return False
 
 
 def _external_user_aliases() -> dict[str, str]:
@@ -349,10 +377,15 @@ class ConversationMixin:
             has_more = False
 
         sibling_names = self._sibling_anima_names()
+        aliases = aliased_slack_users()
+        mirror_enabled = thread_id != "inbox"
         descending_entries: list[ActivityEntry] = []
+        context_entries: list[ActivityEntry] = []
         raw_count = 0
         user_count = 0
         target_response_ts = ""
+        pending_mirror_stop = False
+        mirror_lookahead = 0
         files_scanned = 0
         scan_dates = [first_day - timedelta(days=offset) for offset in range((first_day - last_day).days + 1)]
 
@@ -391,11 +424,17 @@ class ConversationMixin:
 
                 is_inbox_entry = _is_inbox_raw_entry(raw)
                 entry_type = raw.get("type", "")
-                if thread_id != "inbox" and is_inbox_entry and entry_type not in ("human_notify", "human_reply"):
-                    continue
-
                 raw_meta = raw.get("meta", {})
                 meta = raw_meta if isinstance(raw_meta, dict) else {}
+                mirror_candidate = mirror_enabled and _is_slack_mirror_raw_candidate(raw, aliases)
+                if (
+                    thread_id != "inbox"
+                    and is_inbox_entry
+                    and entry_type not in ("human_notify", "human_reply", "external_reply_sent")
+                    and not mirror_candidate
+                ):
+                    continue
+
                 if thread_id is not None:
                     has_thread_id = "thread_id" in meta
                     if strict_thread:
@@ -403,7 +442,10 @@ class ConversationMixin:
                             continue
                     else:
                         default_tid = "inbox" if is_inbox_entry and thread_id == "inbox" else "default"
-                        if meta.get("thread_id", default_tid) != thread_id:
+                        entry_tid = meta.get("thread_id", default_tid)
+                        if entry_tid != thread_id and not (
+                            thread_id == "default" and (mirror_candidate or entry_type == "external_reply_sent")
+                        ):
                             continue
 
                 if "from" in raw:
@@ -418,8 +460,18 @@ class ConversationMixin:
                 except (TypeError, ValueError, KeyError):
                     continue
                 descending_entries.append(entry)
+                context_entries.append(entry)
 
-                if min_user_items is None or not _is_user_item_entry(entry, sibling_names, self._anima_name):
+                if pending_mirror_stop:
+                    if entry.type == "inbox_processing_start":
+                        stop_scan = True
+                        break
+                    mirror_lookahead += 1
+                    if mirror_lookahead > 100:
+                        stop_scan = True
+                        break
+
+                if min_user_items is None or not _is_user_item_entry(entry, sibling_names, self._anima_name, aliases):
                     continue
                 user_count += 1
                 if user_count < min_user_items:
@@ -430,6 +482,11 @@ class ConversationMixin:
                 if target_response_ts and entry.type != "message_received":
                     continue
                 if target_response_ts and entry.ts >= target_response_ts:
+                    continue
+                if mirror_candidate:
+                    # Keep scanning until the inbox-processing-start row is
+                    # included, so historical trigger resolution can see it.
+                    pending_mirror_stop = True
                     continue
                 stop_scan = True
                 break
@@ -452,6 +509,14 @@ class ConversationMixin:
             has_more = _has_log_before_date(self._log_dir, last_day)
 
         descending_entries.reverse()
+        if mirror_enabled and descending_entries:
+            context_entries.reverse()
+            descending_entries = apply_slack_mirror(
+                descending_entries,
+                context_entries=context_entries,
+                anima_name=self._anima_name,
+                aliases=aliases,
+            )
         return descending_entries, has_more
 
     def get_conversation_tool_calls(
@@ -501,6 +566,9 @@ class ConversationMixin:
         """Load conversation-relevant entries, scanning enough days for *limit* messages."""
         target_raw = limit * _target_multiplier + 50
         entries: list[ActivityEntry] = []
+        context_entries: list[ActivityEntry] = []
+        aliases = aliased_slack_users()
+        mirror_enabled = thread_id != "inbox"
         today = now_local().date()
         max_scan_days = 365
         # Thread filters may match few entries and never reach target_raw;
@@ -539,19 +607,22 @@ class ConversationMixin:
                     if raw.get("type") not in self._CONVERSATION_TYPES:
                         continue
                     is_inbox_entry = _is_inbox_raw_entry(raw)
+                    raw_meta = raw.get("meta", {})
+                    meta = raw_meta if isinstance(raw_meta, dict) else {}
+                    mirror_candidate = mirror_enabled and _is_slack_mirror_raw_candidate(raw, aliases)
                     # call_human notify/reply stay on the default thread even when
                     # the activity row was written during inbox/heartbeat handling.
                     if (
                         thread_id != "inbox"
                         and is_inbox_entry
-                        and raw.get("type") not in ("human_notify", "human_reply")
+                        and raw.get("type") not in ("human_notify", "human_reply", "external_reply_sent")
+                        and not mirror_candidate
                     ):
                         continue
                     ts = raw.get("ts", "")
                     if before and ts >= before:
                         continue
                     if thread_id is not None:
-                        meta = raw.get("meta", {})
                         has_thread_id = isinstance(meta, dict) and "thread_id" in meta
                         if strict_thread:
                             if not has_thread_id:
@@ -561,12 +632,16 @@ class ConversationMixin:
                         else:
                             default_tid = "inbox" if is_inbox_entry and thread_id == "inbox" else "default"
                             entry_tid = meta.get("thread_id", default_tid) if isinstance(meta, dict) else default_tid
-                            if entry_tid != thread_id:
+                            if entry_tid != thread_id and not (
+                                thread_id == "default"
+                                and (mirror_candidate or raw.get("type") == "external_reply_sent")
+                            ):
                                 continue
                     if "from" in raw:
                         raw["from_person"] = raw.pop("from")
                     if "to" in raw:
                         raw["to_person"] = raw.pop("to")
+                    raw["meta"] = meta
                     try:
                         entry = ActivityEntry(
                             **{k: v for k, v in raw.items() if k in ActivityEntry.__dataclass_fields__}
@@ -580,10 +655,18 @@ class ConversationMixin:
                 logger.exception("Failed to read activity log %s", path)
 
             entries = day_entries + entries
+            context_entries = day_entries + context_entries
             files_scanned += 1
             if len(entries) >= target_raw or files_scanned >= max_files_scanned:
                 break
 
+        if mirror_enabled and entries:
+            entries = apply_slack_mirror(
+                entries,
+                context_entries=context_entries,
+                anima_name=self._anima_name,
+                aliases=aliases,
+            )
         return entries
 
     def _entries_to_messages(
@@ -713,22 +796,40 @@ class ConversationMixin:
                     }
                 )
 
+            elif e.type == "external_reply_sent":
+                self._flush_tool_calls(messages, pending_tool_calls)
+                msg = {
+                    "ts": e.ts,
+                    "role": "assistant",
+                    "type": "external_reply",
+                    "content": e.content,
+                    "via": e.via,
+                    "to_person": user_aliases.get(e.to_person, e.to_person),
+                    "from_person": "",
+                    "source_key": "external_reply",
+                    "tool_calls": [],
+                }
+                if e.meta.get("derived"):
+                    msg["derived"] = True
+                messages.append(msg)
+
             elif e.type == "human_reply":
                 self._flush_tool_calls(messages, pending_tool_calls)
-                messages.append(
-                    {
-                        "ts": e.ts,
-                        "role": "human",
-                        "type": "human_reply",
-                        "content": e.content,
-                        "from_person": user_aliases.get(e.from_person, e.from_person),
-                        "via": e.via,
-                        "notification_id": e.meta.get("notification_id", ""),
-                        "callback_id": e.meta.get("callback_id", ""),
-                        "source_key": "call_human_reply",
-                        "tool_calls": [],
-                    }
-                )
+                msg = {
+                    "ts": e.ts,
+                    "role": "human",
+                    "type": "human_reply",
+                    "content": e.content,
+                    "from_person": user_aliases.get(e.from_person, e.from_person),
+                    "via": e.via,
+                    "notification_id": e.meta.get("notification_id", ""),
+                    "callback_id": e.meta.get("callback_id", ""),
+                    "source_key": "call_human_reply",
+                    "tool_calls": [],
+                }
+                if e.meta.get("derived"):
+                    msg["derived"] = True
+                messages.append(msg)
 
             elif e.type == "voice_call":
                 self._flush_tool_calls(messages, pending_tool_calls)
@@ -997,8 +1098,28 @@ def _has_log_before_date(log_dir: Path, cutoff: date) -> bool:
     return any(path.stem < cutoff_name for path in log_dir.glob("*.jsonl"))
 
 
-def _is_user_item_entry(entry: ActivityEntry, anima_names: set[str], self_name: str) -> bool:
+def _is_user_item_entry(
+    entry: ActivityEntry,
+    anima_names: set[str],
+    self_name: str,
+    aliases: dict[str, str] | None = None,
+) -> bool:
     """Mirror the chat UI's user/background boundary using source events."""
+    if entry.type == "external_reply_sent":
+        return True
+    if entry.type == "tool_use" and is_user_addressed_slack_tool_use(
+        entry,
+        anima_name=self_name,
+        aliases=aliases,
+    ):
+        return True
+    if entry.type == "message_received" and aliases:
+        meta = entry.meta or {}
+        trigger = str(meta.get("trigger", ""))
+        if meta.get("from_type") == "slack" and trigger.startswith("inbox:slack:"):
+            uid = trigger[len("inbox:slack:") :].split(",", 1)[0].strip()
+            if uid in aliases:
+                return True
     if entry.type == "message_received":
         from_type = entry.meta.get("from_type", "")
         is_human_channel = entry.channel in {"chat", "inbox"} or entry.channel in _EXTERNAL_PLATFORM_SOURCES
@@ -1023,13 +1144,14 @@ def _entry_for_message(
     preferred_types = {
         "human_notify": ("human_notify",),
         "human_reply": ("human_reply",),
+        "external_reply": ("external_reply_sent",),
         "voice_call": ("voice_call",),
     }.get(str(message.get("type") or ""))
     if not preferred_types:
         if message.get("role") == "human":
             preferred_types = ("message_received", "human_reply")
         elif message.get("role") == "assistant":
-            preferred_types = ("response_sent", "message_sent", "voice_call")
+            preferred_types = ("response_sent", "message_sent", "external_reply_sent", "voice_call")
         elif message.get("_trigger"):
             preferred_types = ("heartbeat_start", "heartbeat_end", "cron_executed", "task_exec_start", "task_exec_end")
         else:
@@ -1052,6 +1174,7 @@ def _classify_feed_sessions(
     """Return message identity to (is_user_item, background kind, DM peer)."""
     anima_names = activity._sibling_anima_names()
     self_name = str(getattr(activity, "_anima_name", ""))
+    aliases = aliased_slack_users()
     entries_by_ts: dict[str, list[ActivityEntry]] = {}
     for entry in entries:
         entries_by_ts.setdefault(entry.ts, []).append(entry)
@@ -1071,7 +1194,7 @@ def _classify_feed_sessions(
                 classification[id(message)] = (False, trigger, "")
                 continue
 
-            is_user_item = bool(entry and _is_user_item_entry(entry, anima_names, self_name))
+            is_user_item = bool(entry and _is_user_item_entry(entry, anima_names, self_name, aliases))
             from_person = str((entry.from_person if entry else message.get("from_person")) or "")
             to_person = str((entry.to_person if entry else message.get("to_person")) or "")
             if is_user_item:
