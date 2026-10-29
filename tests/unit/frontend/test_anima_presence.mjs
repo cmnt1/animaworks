@@ -109,3 +109,12 @@ test("rail badge: awaiting wins over unread", () => {
   assert.deepEqual(railBadge({ awaitingHuman: false, unread: 120 }), { kind: "unread", text: "99+" });
   assert.equal(railBadge({ awaitingHuman: false, unread: 0 }), null);
 });
+
+test("rail leaves hidden animas out unless kept, and lists them for adding back", async () => {
+  const { hiddenRailAnimas } = await import("../../../server/static/pages/chat/rail-logic.js");
+  const animas = [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d", enabled: false }];
+  const hidden = new Set(["b", "c", "d"]);
+  assert.deepEqual(orderRailAnimas(animas, [], hidden).map((x) => x.name), ["a"]);
+  assert.deepEqual(orderRailAnimas(animas, [], hidden, new Set(["c"])).map((x) => x.name), ["a", "c"]);
+  assert.deepEqual(hiddenRailAnimas(animas, hidden).map((x) => x.name), ["b", "c"]);
+});
