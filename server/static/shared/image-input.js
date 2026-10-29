@@ -446,7 +446,7 @@ export function renderChatImages(images, options = {}) {
 }
 
 const PREVIEW_KINDS = new Set(["pdf", "markdown", "csv", "text", "xlsx", "docx", "pptx"]);
-const DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+export const CHAT_FILE_DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
   + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>';
 
@@ -482,7 +482,7 @@ export function renderChatFiles(files, options = {}) {
     const size = escapeHtml(formatChatFileSize(file.size));
     const downloadLabel = escapeHtml(t("chat.file_viewer.download"));
     const downloadLink = `<a class="chat-file-card-download" href="${safeHref}" download="${safeName}" `
-      + `title="${downloadLabel}" aria-label="${downloadLabel}">${DOWNLOAD_ICON}</a>`;
+      + `title="${downloadLabel}" aria-label="${downloadLabel}">${CHAT_FILE_DOWNLOAD_ICON}</a>`;
     const info = `<span class="chat-file-card-badge">${escapeHtml(chatFileBadge(file, kind))}</span>`
       + `<span class="chat-file-card-text"><span class="chat-file-card-name">${safeName}</span>`
       + `<span class="chat-file-card-size">${size}</span></span>`;

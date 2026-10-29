@@ -4281,3 +4281,20 @@ button.chat-file-card-open {
 .meeting-add-item:active {
   background: var(--aw-color-bg-hover);
 }
+
+.chat-file-viewer-title .chat-file-card-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  font-size: .55rem;
+}
+
+.chat-file-viewer-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+}

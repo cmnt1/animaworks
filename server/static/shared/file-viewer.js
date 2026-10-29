@@ -5,7 +5,7 @@ import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 import { escapeHtml } from "/shared/html-utils.js";
 import { renderSafeMarkdown } from "/modules/state.js";
-import { formatChatFileSize, getChatFileIcon } from "/shared/image-input.js";
+import { CHAT_FILE_DOWNLOAD_ICON, chatFileBadge, formatChatFileSize } from "/shared/image-input.js";
 
 const MAX_TEXT_CHARS = 2 * 1024 * 1024;
 const MAX_CSV_ROWS = 1000;
@@ -533,12 +533,15 @@ export function openFileViewer({ anima, storedName, name, size, kind } = {}) {
 
   overlay.innerHTML = `<div class="chat-file-viewer">`
     + `<div class="chat-file-viewer-header">`
-    + `<div class="chat-file-viewer-title">${getChatFileIcon({ name: safeName })} `
+    + `<div class="chat-file-viewer-title">`
+    + `<span class="chat-file-card-badge chat-file-kind-${escapeHtml(kind || "other")}">`
+    + `${escapeHtml(chatFileBadge({ name: safeName }, kind))}</span>`
     + `<span class="chat-file-viewer-filename">${escapeHtml(safeName)}</span>`
     + `<span class="chat-file-viewer-size">${escapeHtml(formatChatFileSize(size))}</span></div>`
     + `<div class="chat-file-viewer-actions">`
-    + `<a class="chat-file-viewer-download" href="${escapeHtml(url)}" download="${escapeHtml(safeName)}">`
-    + `${escapeHtml(t("chat.file_viewer.download"))}</a>`
+    + `<a class="chat-file-viewer-download" href="${escapeHtml(url)}" download="${escapeHtml(safeName)}" `
+    + `title="${escapeHtml(t("chat.file_viewer.download"))}" aria-label="${escapeHtml(t("chat.file_viewer.download"))}">`
+    + `${CHAT_FILE_DOWNLOAD_ICON}</a>`
     + `<button type="button" class="chat-file-viewer-close" `
     + `title="${escapeHtml(t("chat.file_viewer.close"))}" `
     + `aria-label="${escapeHtml(t("chat.file_viewer.close"))}">&times;</button></div></div>`
