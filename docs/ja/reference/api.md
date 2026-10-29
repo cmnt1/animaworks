@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: ff71634b03591fb7d8eab7865cb2fb437db71ac63520ad9ef600e234e52e03f0 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 26a640bc4c85cd429ee81762aaa7bf91d85ab384d1963048b09edfa3092437ef -->
 
 # API リファレンス
 
@@ -188,6 +188,8 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/episodes/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_episode` |
 | GET | `/api/animas/{name}/knowledge` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_knowledge` |
 | GET | `/api/animas/{name}/knowledge/{topic}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/connections` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return entity connections extracted from active facts. | `server/routes/memory_routes.py:memory_connections` |
+| GET | `/api/animas/{name}/memory/connections/entity` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return facts and related memory files for a single entity. | `server/routes/memory_routes.py:memory_connection_entity` |
 | GET | `/api/animas/{name}/memory/graph` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
 | GET | `/api/animas/{name}/memory/stats` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_procedures` |
