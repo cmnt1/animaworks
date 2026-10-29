@@ -53,6 +53,8 @@ export function createChatContext() {
     users: [],
     selectedAnima: null,
     animaDetail: null,
+    animaDetailLoadedFor: null,
+    animaSummary: null,
     animaTabs: [],
     activeRightTab: "state",
     activeMemoryTab: "episodes",

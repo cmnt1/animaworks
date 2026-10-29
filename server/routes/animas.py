@@ -189,6 +189,69 @@ def create_animas_router() -> APIRouter:
             "procedure_files": p_files,
         }
 
+    @router.get("/animas/{name}/summary")
+    async def get_anima_summary(name: str, request: Request):
+        """Return only the small set of Anima fields needed by chat selection."""
+        _validate_anima_name(name)
+        if not name or name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Invalid anima name")
+
+        animas_dir = request.app.state.animas_dir
+        anima_dir = (animas_dir / name).resolve()
+        if not anima_dir.is_relative_to(animas_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid anima path")
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        proc_status = request.app.state.supervisor.get_process_status(name)
+        status_data: dict[str, Any] = {}
+        status_path = anima_dir / "status.json"
+        try:
+            loaded = json.loads(status_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                status_data = loaded
+        except (OSError, json.JSONDecodeError):
+            logger.debug("Failed to read status.json for anima '%s'", name, exc_info=True)
+
+        busy = _read_busy_sidecar(name)
+        return {
+            "name": name,
+            "display_name": status_data.get("display_name") or name,
+            "status": {
+                "status": proc_status.get("status", "unknown"),
+                "bootstrapping": proc_status.get("bootstrapping", False),
+                "needs_bootstrap": proc_status.get("needs_bootstrap", False),
+                "needs_user_input": proc_status.get("needs_user_input", False),
+                "needs_repair": proc_status.get("needs_repair", False),
+                "needs_background_bootstrap": proc_status.get("needs_background_bootstrap", False),
+                "active_label": proc_status.get("active_label"),
+            },
+            "busy": busy,
+            "model": status_data.get("model"),
+            "role": status_data.get("role"),
+            "enabled": bool(status_data.get("enabled", True)),
+        }
+
+    @router.get("/animas/{name}/state")
+    async def get_anima_state(name: str, request: Request):
+        """Read only the current-state document for the chat information pane."""
+        _validate_anima_name(name)
+        if not name or name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Invalid anima name")
+
+        animas_dir = request.app.state.animas_dir
+        anima_dir = (animas_dir / name).resolve()
+        if not anima_dir.is_relative_to(animas_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid anima path")
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        from core.memory.manager import MemoryManager
+
+        memory = MemoryManager(anima_dir, read_only=True)
+        current_state = await asyncio.to_thread(memory.read_current_state)
+        return {"state": current_state}
+
     @router.post("/animas/{name}/trigger")
     async def trigger_heartbeat(name: str, request: Request):
         supervisor = request.app.state.supervisor

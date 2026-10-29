@@ -3,7 +3,7 @@ import {
   isTabOpen, refreshAnimaUnread,
   clearUnreadForActiveThread, loadDraft, saveDraft, chatInputMaxHeight,
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
-  syncModelSelect,
+  setThreadUnread, threadTimeValue, syncModelSelect,
 } from "./ctx.js";
 import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
@@ -21,6 +21,42 @@ export function createAnimaController(ctx) {
   let _tooltipEl = null;
   let _tooltipHideTimer = null;
   let _callButton = null;
+  const _sessionsInFlight = new Map();
+
+  function refreshSessions(name = state.selectedAnima) {
+    if (!name) return Promise.resolve(null);
+    if (_sessionsInFlight.has(name)) return _sessionsInFlight.get(name);
+
+    const promise = api(`/api/animas/${encodeURIComponent(name)}/sessions`)
+      .then((sessionsData) => {
+        const previousLastTs = new Map(
+          (state.threads[name] || []).map((thread) => [thread.id, threadTimeValue(thread.lastTs || "")]),
+        );
+        mergeThreadsFromSessions(ctx, name, sessionsData);
+        for (const thread of state.threads[name] || []) {
+          if (!thread?.id || thread.id === state.selectedThreadId && name === state.selectedAnima) continue;
+          const previous = previousLastTs.get(thread.id) || 0;
+          if (threadTimeValue(thread.lastTs || "") > previous) setThreadUnread(ctx, name, thread.id, true);
+        }
+        refreshAnimaUnread(ctx, name);
+
+        if (name === state.selectedAnima) {
+          if (!state.threads[name].some((thread) => thread.id === state.selectedThreadId)) {
+            state.selectedThreadId = "default";
+            state.activeThreadByAnima[name] = "default";
+          }
+          ctx.controllers.anima.renderAnimaTabs();
+          ctx.controllers.thread.renderThreadTabs();
+        }
+        return sessionsData;
+      })
+      .catch(() => null)
+      .finally(() => {
+        if (_sessionsInFlight.get(name) === promise) _sessionsInFlight.delete(name);
+      });
+    _sessionsInFlight.set(name, promise);
+    return promise;
+  }
 
   function _ensureCallButton() {
     const header = state.container?.querySelector(".chat-anima-tabs-header");
@@ -286,6 +322,10 @@ export function createAnimaController(ctx) {
     }
 
     state.selectedAnima = name;
+    state.animaSummary = null;
+    state.animaDetail = null;
+    state.animaDetailLoadedFor = null;
+    if (state.activeRightTab === "state") void ctx.controllers.activity.loadAnimaState();
     state.animaLastAccess[name] = Date.now();
     state.bustupUrl = null;
     state.selectedThreadId = state.activeThreadByAnima[name] || "default";
@@ -333,10 +373,10 @@ export function createAnimaController(ctx) {
     const convPromise = needConv
       ? ctx.controllers.renderer.fetchConversationHistory(name, 50, null, tid).catch(() => null)
       : Promise.resolve(null);
-    const detailPromise = api(`/api/animas/${encodeURIComponent(name)}`).catch(() => null);
-    const sessionsPromise = api(`/api/animas/${encodeURIComponent(name)}/sessions`).catch(() => null);
+    const summaryPromise = api(`/api/animas/${encodeURIComponent(name)}/summary`).catch(() => null);
+    void refreshSessions(name);
 
-    const [conv, detail, sessionsData] = await Promise.all([convPromise, detailPromise, sessionsPromise]);
+    const [conv, summary] = await Promise.all([convPromise, summaryPromise]);
 
     if (gen !== _selectGen) return;
 
@@ -356,7 +396,6 @@ export function createAnimaController(ctx) {
       mgr.setHistoryState(name, tid, hs);
     }
 
-    if (sessionsData) mergeThreadsFromSessions(ctx, name, sessionsData);
     if (!state.threads[name].some(th => th.id === state.selectedThreadId)) {
       state.selectedThreadId = "default";
       state.activeThreadByAnima[name] = "default";
@@ -365,18 +404,33 @@ export function createAnimaController(ctx) {
     ctx.controllers.thread.renderThreadTabs();
     ctx.controllers.renderer.renderChat();
 
-    if (detail) {
-      state.animaDetail = detail;
-      ctx.controllers.activity.renderAnimaState();
-    } else {
-      state.animaDetail = null;
-      const stateEl = $("chatAnimaState");
-      if (stateEl) stateEl.textContent = t("animas.detail_load_failed");
+    state.animaSummary = summary;
+    if (summary) {
+      const anima = state.animas.find((entry) => entry.name === name);
+      if (anima) {
+        anima.role = summary.role;
+        anima.model = summary.model;
+        anima.enabled = summary.enabled;
+        anima.busy = summary.busy;
+        anima.status = summary.status?.status || anima.status;
+        anima.bootstrapping = summary.status?.bootstrapping ?? anima.bootstrapping;
+        anima.needs_bootstrap = summary.status?.needs_bootstrap ?? anima.needs_bootstrap;
+        anima.needs_user_input = summary.status?.needs_user_input ?? anima.needs_user_input;
+        anima.needs_repair = summary.status?.needs_repair ?? anima.needs_repair;
+      }
+      const busy = Boolean(summary.busy?.is_busy)
+        || ["busy", "running_task"].includes(summary.status?.status);
+      presence.setWorking(name, busy, "status", summary.status?.active_label || "");
+      ctx.controllers.anima.renderAnimaTabs();
     }
-
-    const secondary = [ctx.controllers.memory.loadMemoryTab(), ctx.controllers.activity.loadActivity()];
-    if (state.activeRightTab === "history") secondary.push(ctx.controllers.history.loadSessionList());
-    await Promise.all(secondary);
+    if (state.activeRightTab === "activity") {
+      void ctx.controllers.activity.loadActivity();
+    } else if (state.activeRightTab === "history") {
+      void ctx.controllers.history.loadSessionList();
+    }
+    if (state.activeRightTab === "state") {
+      void ctx.controllers.memory.loadMemoryTab();
+    }
 
     ctx.controllers.streaming.resumeActiveStream(name);
     scheduleSaveChatUiState(ctx);
@@ -531,6 +585,6 @@ export function createAnimaController(ctx) {
   return {
     loadAnimas, restoreChatUiState, selectAnima, openOrSelectAnima,
     closeAnimaTab, renderAnimaTabs, renderAddConversationMenu,
-    ensureAnimaTabAvatar, resolveHistoryAvatars,
+    ensureAnimaTabAvatar, resolveHistoryAvatars, refreshSessions,
   };
 }

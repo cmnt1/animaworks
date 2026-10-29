@@ -555,6 +555,39 @@ class TestAwaitingNotifications:
         assert body["items"]["alice"][0]["subject"] == "Q"
         assert body["items"]["alice"][0]["preview"] == "Pick one"
 
+    async def test_cache_skips_unchanged_logs_and_refreshes_only_changed_anima(self, tmp_path, monkeypatch):
+        from core.activity.logger import ActivityLogger
+
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        bob_dir = animas_dir / "bob"
+        animas_dir.mkdir()
+        alice_dir.mkdir()
+        bob_dir.mkdir()
+        ActivityLogger(alice_dir).log("human_notify", content="First", ctx="chat")
+
+        calls = []
+        original_recent = ActivityLogger.recent
+
+        def recent_spy(self, *args, **kwargs):
+            calls.append(self.anima_dir.name)
+            return original_recent(self, *args, **kwargs)
+
+        monkeypatch.setattr(ActivityLogger, "recent", recent_spy)
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/notifications/awaiting")
+            second = await client.get("/api/notifications/awaiting")
+            ActivityLogger(alice_dir).log("human_notify", content="Second", ctx="chat")
+            third = await client.get("/api/notifications/awaiting")
+
+        assert first.status_code == second.status_code == third.status_code == 200
+        assert first.json()["animas"] == {"alice": 1}
+        assert second.json() == first.json()
+        assert third.json()["animas"] == {"alice": 2}
+        assert calls == ["alice", "bob", "alice"]
+
 
 class TestOlderPageNotifications:
     def test_reply_on_newer_page_marks_older_notification(self, tmp_path):

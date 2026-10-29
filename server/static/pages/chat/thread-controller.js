@@ -107,6 +107,7 @@ export function createThreadController(ctx) {
     syncModelSelect(ctx);
 
     if (!name) return;
+    void ctx.controllers.anima.refreshSessions(name);
 
     if (input) {
       input.value = loadDraft(name, threadId);
@@ -160,6 +161,7 @@ export function createThreadController(ctx) {
     renderThreadTabs();
     ctx.controllers.renderer.renderChat();
     scheduleSaveChatUiState(ctx);
+    void ctx.controllers.anima.refreshSessions(state.selectedAnima);
   }
 
   function restoreThread(threadId) {

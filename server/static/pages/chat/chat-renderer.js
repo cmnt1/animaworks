@@ -1,7 +1,6 @@
 // ── Chat Rendering / Infinite Scroll / Polling ──
 import {
-  setThreadUnread, refreshAnimaUnread, threadTimeValue,
-  mergeThreadsFromSessions, scheduleSaveChatUiState, CONSTANTS,
+  setThreadUnread, refreshAnimaUnread, scheduleSaveChatUiState, CONSTANTS,
 } from "./ctx.js";
 import {
   renderHistoryMessage as _sharedRenderHistoryMessage,
@@ -711,26 +710,7 @@ export function createChatRenderer(ctx) {
 
     state.chatPollingInFlight = true;
     try {
-      const [conv, sessionsData] = await Promise.all([
-        fetchConversationHistory(name, CONSTANTS.HISTORY_PAGE_SIZE, null, tid).catch(() => null),
-        api(`/api/animas/${encodeURIComponent(name)}/sessions`).catch(() => null),
-      ]);
-
-      if (sessionsData) {
-        const prevThreadLastTs = new Map(
-          (state.threads[name] || []).map(th => [th.id, threadTimeValue(th.lastTs || "")]),
-        );
-        mergeThreadsFromSessions(ctx, name, sessionsData);
-        for (const th of state.threads[name] || []) {
-          if (!th?.id || th.id === tid) continue;
-          const prev = prevThreadLastTs.get(th.id) || 0;
-          const curr = threadTimeValue(th.lastTs || "");
-          if (curr > prev) setThreadUnread(ctx, name, th.id, true);
-        }
-        refreshAnimaUnread(ctx, name);
-        ctx.controllers.anima.renderAnimaTabs();
-        ctx.controllers.thread.renderThreadTabs();
-      }
+      const conv = await fetchConversationHistory(name, CONSTANTS.HISTORY_PAGE_SIZE, null, tid).catch(() => null);
 
       if (!conv || !Array.isArray(conv.items)) return;
 

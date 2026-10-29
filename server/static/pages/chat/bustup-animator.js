@@ -98,8 +98,8 @@ function frameFileFor(expr, key) {
   return `avatar_bustup_${expr}_frame_${KEY_SUFFIX[key]}.png`;
 }
 
-function frameSetCacheKey(animaName, expr) {
-  return `${animaName}::${expr}`;
+function frameSetCacheKey(animaName, expr, size) {
+  return `${animaName}::${expr}::${size}`;
 }
 
 /**
@@ -107,15 +107,16 @@ function frameSetCacheKey(animaName, expr) {
  * (animaName, expr) 単位でキャッシュ。
  * @param {string} animaName
  * @param {string} expr
+ * @param {string} size
  * @returns {Promise<boolean>}
  */
-async function hasFrameSet(animaName, expr) {
+async function hasFrameSet(animaName, expr, size) {
   // フレームはアニメ調のみ。realistic表示モードでは静的bustupに任せる
   if (isRealisticMode()) return false;
-  const key = frameSetCacheKey(animaName, expr);
+  const key = frameSetCacheKey(animaName, expr, size);
   if (_frameSetCache.has(key)) return _frameSetCache.get(key);
 
-  const url = assetUrl(animaName, frameFileFor(expr, "neutral"));
+  const url = assetUrl(animaName, frameFileFor(expr, "neutral"), size);
   let exists = false;
   try {
     const resp = await api(url, {
@@ -160,10 +161,12 @@ export class BustupAnimator {
   /**
    * @param {HTMLElement} container アニメーションを注入するコンテナ要素
    * @param {string} animaName 対象anima名
+   * @param {"P"|"C"|"L"} [size="L"] 配信するWebP縮小サイズ
    */
-  constructor(container, animaName) {
+  constructor(container, animaName, size = "L") {
     this._container = container;
     this._animaName = animaName;
+    this._size = size;
     this._reduceMotion =
       typeof window !== "undefined" &&
       !!window.matchMedia &&
@@ -267,7 +270,7 @@ export class BustupAnimator {
 
     const gen = ++this._gen;
 
-    const hasFrames = await hasFrameSet(this._animaName, expr);
+    const hasFrames = await hasFrameSet(this._animaName, expr, this._size);
     if (this._destroyed || gen !== this._gen) return;
 
     const target = this._flipLayer;
@@ -301,7 +304,7 @@ export class BustupAnimator {
   async _preloadFrames(layer, expr) {
     const results = await Promise.all(
       FRAME_KEYS.map((key) =>
-        loadImage(layer.frames[key], assetUrl(this._animaName, frameFileFor(expr, key))),
+        loadImage(layer.frames[key], assetUrl(this._animaName, frameFileFor(expr, key), this._size)),
       ),
     );
     return results.every(Boolean);
@@ -314,7 +317,7 @@ export class BustupAnimator {
     const candidates = [...bustupExpressionCandidates(expr)];
     if (expr !== "neutral") candidates.push(...bustupExpressionCandidates("neutral"));
     for (const filename of candidates) {
-      const ok = await loadImage(img, assetUrl(this._animaName, filename));
+      const ok = await loadImage(img, assetUrl(this._animaName, filename, this._size));
       if (ok) return true;
     }
     img.removeAttribute("src");

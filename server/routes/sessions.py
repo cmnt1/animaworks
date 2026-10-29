@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import math
+import threading
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -22,6 +23,9 @@ from core.skills.activation import validate_thread_id
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.routes.sessions")
+
+_AWAITING_CACHE_LOCK = threading.RLock()
+_AWAITING_CACHE_BY_ROOT: dict[str, dict[str, Any]] = {}
 
 
 class NotificationReplyRequest(BaseModel):
@@ -442,7 +446,6 @@ def create_sessions_router() -> APIRouter:
         """
         animas_dir = request.app.state.animas_dir
         names = sorted(p.name for p in animas_dir.iterdir() if p.is_dir() and not p.name.startswith("."))
-        since = (now_local() - timedelta(hours=24)).isoformat()
 
         def _waiting(anima_dir) -> list[dict[str, str]]:
             activity = ActivityLogger(anima_dir)
@@ -460,23 +463,86 @@ def create_sessions_router() -> APIRouter:
                 if message.get("type") == "human_notify"
                 and message.get("needs_reply", True)
                 and not message.get("replied")
-                and str(message.get("ts") or "") >= since
             ]
 
         def _collect() -> dict[str, list[dict[str, str]]]:
-            found: dict[str, list[dict[str, str]]] = {}
-            for name in names:
-                try:
-                    items = _waiting(animas_dir / name)
-                except Exception:
-                    logger.debug("Failed to list awaiting notifications for %s", name, exc_info=True)
-                    continue
-                if items:
-                    found[name] = items
-            return found
+            now = now_local()
+            since = (now - timedelta(hours=24)).isoformat()
 
-        items = await asyncio.to_thread(_collect)
-        return {"animas": {name: len(rows) for name, rows in items.items()}, "items": items}
+            def _latest_log_signature(anima_dir) -> tuple[str, int, int] | None:
+                log_dir = anima_dir / "activity_log"
+                for day_offset in range(2):
+                    day = now.date() - timedelta(days=day_offset)
+                    latest = log_dir / f"{day.isoformat()}.jsonl"
+                    try:
+                        stat = latest.stat()
+                    except OSError:
+                        continue
+                    if latest.is_file():
+                        return latest.name, stat.st_size, stat.st_mtime_ns
+                return None
+
+            def _is_expired_cache(cache: dict[str, Any]) -> bool:
+                expiry = cache.get("expires_at")
+                return expiry is not None and now >= expiry
+
+            def _next_expiry(found: dict[str, list[dict[str, str]]]) -> datetime | None:
+                expiries: list[datetime] = []
+                for rows in found.values():
+                    for row in rows:
+                        try:
+                            timestamp = datetime.fromisoformat(row["ts"].replace("Z", "+00:00"))
+                            if timestamp.tzinfo is None:
+                                timestamp = timestamp.astimezone()
+                            expiries.append(timestamp + timedelta(hours=24))
+                        except (KeyError, ValueError):
+                            continue
+                return min(expiries) if expiries else None
+
+            root_key = str(animas_dir.resolve())
+            signatures = {name: _latest_log_signature(animas_dir / name) for name in names}
+            with _AWAITING_CACHE_LOCK:
+                cache = _AWAITING_CACHE_BY_ROOT.setdefault(
+                    root_key,
+                    {"names": (), "per_anima": {}, "response": None, "expires_at": None},
+                )
+                per_anima: dict[str, Any] = cache["per_anima"]
+                for removed_name in set(per_anima) - set(names):
+                    per_anima.pop(removed_name, None)
+
+                unchanged = cache["names"] == tuple(names) and all(
+                    name in per_anima and per_anima[name]["signature"] == signature
+                    for name, signature in signatures.items()
+                )
+                if unchanged and cache["response"] is not None and not _is_expired_cache(cache):
+                    return cache["response"]
+
+                for name, signature in signatures.items():
+                    cached = per_anima.get(name)
+                    if cached and cached["signature"] == signature:
+                        continue
+                    try:
+                        per_anima[name] = {"signature": signature, "items": _waiting(animas_dir / name)}
+                    except Exception:
+                        logger.debug("Failed to list awaiting notifications for %s", name, exc_info=True)
+
+                found: dict[str, list[dict[str, str]]] = {}
+                for name in names:
+                    cached = per_anima.get(name)
+                    if not cached:
+                        continue
+                    rows = [row for row in cached["items"] if row["ts"] >= since]
+                    if rows:
+                        found[name] = rows
+
+                response = {"animas": {name: len(rows) for name, rows in found.items()}, "items": found}
+                cache["names"] = tuple(names)
+                cache["response"] = response
+                cache["expires_at"] = _next_expiry(found)
+                return response
+
+        result = await asyncio.to_thread(_collect)
+        return result
 
     @router.post("/animas/{name}/notifications/reply")
     async def reply_to_notification(
