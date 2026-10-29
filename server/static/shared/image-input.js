@@ -445,6 +445,19 @@ export function renderChatImages(images, options = {}) {
   return count > 0 ? html : "";
 }
 
+const PREVIEW_KINDS = new Set(["pdf", "markdown", "csv", "text", "xlsx", "docx", "pptx"]);
+const DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>';
+
+/** Short type label for the coloured tile on a file card (extension, at most 4 letters). */
+export function chatFileBadge(file = {}, kind = getChatFileKind(file)) {
+  const name = String(file.name || "");
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toUpperCase() : "";
+  if (ext && ext.length <= 4 && /^[A-Z0-9]+$/.test(ext)) return ext;
+  return { markdown: "MD", text: "TXT", audio: "AUDIO", video: "VIDEO" }[kind] || "FILE";
+}
+
 /** Build file cards, media players, or legacy chips for a chat bubble. */
 export function renderChatFiles(files, options = {}) {
   if (!files || files.length === 0) return "";
@@ -469,7 +482,10 @@ export function renderChatFiles(files, options = {}) {
     const size = escapeHtml(formatChatFileSize(file.size));
     const downloadLabel = escapeHtml(t("chat.file_viewer.download"));
     const downloadLink = `<a class="chat-file-card-download" href="${safeHref}" download="${safeName}" `
-      + `title="${downloadLabel}" aria-label="${downloadLabel}">${downloadLabel}</a>`;
+      + `title="${downloadLabel}" aria-label="${downloadLabel}">${DOWNLOAD_ICON}</a>`;
+    const info = `<span class="chat-file-card-badge">${escapeHtml(chatFileBadge(file, kind))}</span>`
+      + `<span class="chat-file-card-text"><span class="chat-file-card-name">${safeName}</span>`
+      + `<span class="chat-file-card-size">${size}</span></span>`;
 
     if (kind === "image") {
       return `<div class="chat-file-image"><img class="chat-attached-image" src="${inlineSrc}" `
@@ -480,24 +496,21 @@ export function renderChatFiles(files, options = {}) {
       const media = kind === "audio"
         ? `<audio controls preload="metadata" src="${inlineSrc}"></audio>`
         : `<video controls playsinline preload="metadata" src="${inlineSrc}"></video>`;
-      return `<div class="chat-file-media">`
-        + `<div class="chat-file-card chat-file-card--media">${getChatFileIcon(file)} `
-        + `<span class="chat-file-card-name">${safeName}</span>`
-        + `<span class="chat-file-card-size">${size}</span>${downloadLink}</div>`
+      return `<div class="chat-file-media chat-file-kind-${kind}">`
+        + `<div class="chat-file-card chat-file-card--media"><span class="chat-file-card-open">${info}</span>${downloadLink}</div>`
         + `${media}</div>`;
     }
 
-    if (["pdf", "markdown", "csv", "text", "xlsx", "docx", "pptx"].includes(kind)) {
+    if (PREVIEW_KINDS.has(kind)) {
       const previewLabel = escapeHtml(t("chat.file_viewer.preview"));
       const attrs = `data-chat-file-preview data-anima="${escapeHtml(animaName)}"`
         + ` data-stored-name="${escapeHtml(storedName)}" data-name="${safeName}"`
         + ` data-size="${escapeHtml(String(Number(file.size) || 0))}" data-kind="${escapeHtml(kind)}"`;
       // The download link sits beside the open button: interactive content inside a <button>
       // is invalid HTML and Firefox never delivers its clicks.
-      return `<div class="chat-file-card">`
+      return `<div class="chat-file-card chat-file-kind-${kind}">`
         + `<button type="button" class="chat-file-card-open" ${attrs} aria-label="${previewLabel} ${safeName}">`
-        + `${getChatFileIcon(file)} <span class="chat-file-card-name">${safeName}</span>`
-        + `<span class="chat-file-card-size">${size}</span></button>${downloadLink}</div>`;
+        + `${info}</button>${downloadLink}</div>`;
     }
 
     return `<a class="chat-file-chip" href="${safeHref}" download="${safeName}" title="${safeName}">${label}</a>`;

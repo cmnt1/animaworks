@@ -33,7 +33,7 @@ const imageInputStubs = `
   const translations = ${JSON.stringify(translations)};
 `;
 const imageInputUrl = "data:text/javascript;base64," + Buffer.from(imageInputStubs + imageInputSource).toString("base64");
-const { formatChatFileSize, getChatFileIcon, getChatFileKind, renderChatFiles, validateChatFileBatch } = await import(imageInputUrl);
+const { chatFileBadge, formatChatFileSize, getChatFileIcon, getChatFileKind, renderChatFiles, validateChatFileBatch } = await import(imageInputUrl);
 
 const renderUtilsSource = readFileSync(renderUtilsPath, "utf8").replace(/^import .*;\r?\n/gm, "");
 const renderUtilsStubs = `
@@ -130,7 +130,7 @@ describe("chat file attachments", () => {
     assert.match(videoHtml, /<video controls playsinline preload="metadata" src="\/app\/api\/animas\/mei\/attachments\/example\?inline=1"><\/video>/);
 
     const pdfHtml = renderChatFiles([{ ...base, name: "report.pdf", media_type: "application/pdf" }], { animaName: "mei" });
-    assert.match(pdfHtml, /<div class="chat-file-card"><button type="button" class="chat-file-card-open" data-chat-file-preview/);
+    assert.match(pdfHtml, /<div class="chat-file-card chat-file-kind-pdf"><button type="button" class="chat-file-card-open" data-chat-file-preview/);
     assert.match(pdfHtml, /data-kind="pdf"/);
     assert.match(pdfHtml, /data-anima="mei"/);
     assert.match(pdfHtml, /data-stored-name="example"/);
@@ -181,5 +181,12 @@ describe("chat file attachments", () => {
     assert.match(escaped, /&lt;script&gt;\.txt/);
     assert.match(escaped, /data-name="&lt;script&gt;\.txt"/);
     assert.doesNotMatch(escaped, /<script>/);
+  });
+  it("labels file cards with a short type badge", () => {
+    assert.equal(chatFileBadge({ name: "見積書.pdf" }), "PDF");
+    assert.equal(chatFileBadge({ name: "売上.xlsx" }), "XLSX");
+    assert.equal(chatFileBadge({ name: "notes" , media_type: "text/markdown" }), "MD");
+    assert.equal(chatFileBadge({ name: "archive.backup" }), "FILE");
+    assert.equal(chatFileBadge({ name: "<x>.<b>" }), "FILE");
   });
 });

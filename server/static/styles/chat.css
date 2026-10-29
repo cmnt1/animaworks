@@ -2530,33 +2530,32 @@ a.chat-file-chip:active {
 /* ── Chat File Cards, Media Players, and Viewer ─────── */
 
 .chat-file-card {
+  --chat-file-tone: #64748b;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   max-width: min(100%, 360px);
-  padding: 7px 10px;
-  border: 1px solid var(--aw-line-line, rgba(27, 36, 48, .14));
-  border-radius: 10px;
-  background: rgba(0, 0, 0, .06);
+  padding: 6px 6px 6px 8px;
+  border: 1px solid var(--aw-line-line, rgba(27, 36, 48, .12));
+  border-radius: 12px;
+  background: var(--aw-color-bg-primary, #fff);
   color: inherit;
   font: inherit;
-  font-size: .78rem;
   line-height: 1.3;
   text-align: left;
-  cursor: pointer;
 }
 
-.chat-file-card:hover,
-.chat-file-card:active {
-  background: rgba(0, 0, 0, .11);
+.chat-file-card:has(.chat-file-card-open:hover),
+.chat-file-card:has(.chat-file-card-open:active) {
+  border-color: var(--chat-file-tone);
 }
 
 .chat-file-card-open {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -2564,52 +2563,78 @@ a.chat-file-chip:active {
   color: inherit;
   font: inherit;
   text-align: left;
+}
+
+button.chat-file-card-open {
   cursor: pointer;
 }
 
-.chat-file-card-name {
+.chat-file-card-badge {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--chat-file-tone);
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.chat-file-card-text {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
+}
+
+.chat-file-card-name {
   overflow: hidden;
+  font-size: .82rem;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .chat-file-card-size {
-  flex: 0 0 auto;
   color: var(--aw-line-ink-soft, #607080);
-  font-size: .68rem;
+  font-size: .7rem;
 }
 
 .chat-file-card-download {
+  display: flex;
   flex: 0 0 auto;
-  margin-left: 4px;
-  padding: 2px 7px;
-  border: 1px solid var(--aw-line-line, rgba(27, 36, 48, .18));
-  border-radius: 6px;
-  color: inherit;
-  font-size: .68rem;
-  line-height: 1.35;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--aw-line-ink-soft, #607080);
   text-decoration: none;
-  white-space: nowrap;
 }
 
 .chat-file-card-download:hover,
 .chat-file-card-download:active {
-  background: rgba(0, 0, 0, .11);
-  text-decoration: none;
+  background: rgba(0, 0, 0, .07);
+  color: inherit;
 }
 
-.chat-line--me .chat-file-card,
-.chat-line--me .chat-file-card--media {
-  background: rgba(255, 255, 255, .38);
-}
+.chat-file-kind-pdf { --chat-file-tone: #dc2626; }
+.chat-file-kind-xlsx,
+.chat-file-kind-csv { --chat-file-tone: #16a34a; }
+.chat-file-kind-docx { --chat-file-tone: #2563eb; }
+.chat-file-kind-pptx { --chat-file-tone: #ea580c; }
+.chat-file-kind-markdown,
+.chat-file-kind-text { --chat-file-tone: #475569; }
+.chat-file-kind-audio { --chat-file-tone: #9333ea; }
+.chat-file-kind-video { --chat-file-tone: #0f172a; }
 
-.chat-line--me .chat-file-card:hover,
-.chat-line--me .chat-file-card:active,
-.chat-line--me .chat-file-card-download:hover,
-.chat-line--me .chat-file-card-download:active {
-  background: rgba(255, 255, 255, .55);
+.chat-line--me .chat-file-card {
+  background: rgba(255, 255, 255, .7);
 }
 
 .chat-file-card--media {
@@ -2823,6 +2848,20 @@ a.chat-file-chip:active {
 
 .chat-file-viewer-md pre {
   overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .05);
+}
+
+.chat-file-viewer-md :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .06);
+}
+
+.chat-file-viewer-md ul,
+.chat-file-viewer-md ol {
+  padding-left: 1.4em;
 }
 
 .chat-file-viewer-md table {

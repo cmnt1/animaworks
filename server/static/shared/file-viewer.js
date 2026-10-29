@@ -86,16 +86,19 @@ export function rowsToTableHtml(rows) {
     return '<table class="chat-file-viewer-table"></table>';
   }
   const cell = (value) => escapeHtml(value == null ? "" : String(value));
-  const head = rows[0].map((value) => `<th>${cell(value)}</th>`).join("");
+  // Rows can be ragged (trailing cells are trimmed); pad so every row has the same grid.
+  const width = Math.max(...rows.map((row) => (Array.isArray(row) ? row.length : 0)));
+  const pad = (row) => Array.from({ length: width }, (_, i) => (Array.isArray(row) ? row[i] : ""));
+  const head = pad(rows[0]).map((value) => `<th>${cell(value)}</th>`).join("");
   const body = rows.slice(1)
-    .map((row) => `<tr>${row.map((value) => `<td>${cell(value)}</td>`).join("")}</tr>`)
+    .map((row) => `<tr>${pad(row).map((value) => `<td>${cell(value)}</td>`).join("")}</tr>`)
     .join("");
   return `<table class="chat-file-viewer-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function _runsHtml(runs = []) {
   return (Array.isArray(runs) ? runs : []).map((run) => {
-    let html = escapeHtml(run?.text ?? "");
+    let html = escapeHtml(run?.text ?? "").replace(/\n/g, "<br>");
     if (run?.underline) html = `<u>${html}</u>`;
     if (run?.italic) html = `<em>${html}</em>`;
     if (run?.bold) html = `<strong>${html}</strong>`;
@@ -279,11 +282,45 @@ function _setLinks(container) {
   });
 }
 
+let _fileMarked = null;
+
+/**
+ * Render a Markdown file with raw HTML shown as text.
+ * renderSafeMarkdown escapes before parsing, which double-escapes code blocks, so
+ * a private marked instance escapes only the HTML tokens instead.
+ */
+export function renderFileMarkdown(text) {
+  const md = globalThis.marked;
+  if (!md?.Marked) return renderSafeMarkdown(text);
+  if (!_fileMarked) {
+    _fileMarked = new md.Marked({ gfm: true });
+    _fileMarked.use({
+      renderer: {
+        html(token) {
+          return escapeHtml(typeof token === "string" ? token : token?.text ?? "");
+        },
+      },
+    });
+  }
+  return _fileMarked.parse(String(text ?? ""));
+}
+
+/** Drop link and image targets that are not plain web URLs. */
+function _sanitizeUrls(container) {
+  container.querySelectorAll("a[href]").forEach((anchor) => {
+    if (!/^(https?:|mailto:|#)/i.test(anchor.getAttribute("href") || "")) anchor.removeAttribute("href");
+  });
+  container.querySelectorAll("img").forEach((img) => {
+    if (!/^https?:/i.test(img.getAttribute("src") || "")) img.remove();
+  });
+}
+
 async function _renderMarkdown(body, url) {
   const raw = await _fetchText(`${url}?inline=1`);
   const limited = truncateViewerText(raw);
-  body.innerHTML = `<div class="chat-file-viewer-md">${renderSafeMarkdown(limited.text)}</div>`
+  body.innerHTML = `<div class="chat-file-viewer-md">${renderFileMarkdown(limited.text)}</div>`
     + (limited.truncated ? _truncatedNote() : "");
+  _sanitizeUrls(body);
   _setLinks(body);
 }
 
