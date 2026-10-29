@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=2c4fd72d87b76ad5b0382b6bad9da69fd148500087dd18a1a900f1e1216975b9 generated=2026-10-29 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=bd0a14e31345d4f51bb84160a1ec1ee5bebc42cd82f2e4018fd535165680ea5b generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API Reference
 
@@ -67,22 +67,23 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/assets.py`
 
-| GET | `/api/animas/{name}/assets` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | List available assets for an anima. | `server/routes/assets.py:list_assets` |
-| GET | `/api/animas/{name}/assets/face/{emotion}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Serve a cached square crop of an Anima's bustup expression. | `server/routes/assets.py:get_face_asset` |
-| POST | `/api/animas/{name}/assets/generate` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
-| POST | `/api/animas/{name}/assets/generate-expression` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
-| GET | `/api/animas/{name}/assets/metadata` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Return structured metadata about a anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
-| POST | `/api/animas/{name}/assets/regenerate-step` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
-| POST | `/api/animas/{name}/assets/remake-confirm` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Accept the preview and cascade-rebuild all remaining assets. | `server/routes/assets.py:remake_confirm` |
-| DELETE | `/api/animas/{name}/assets/remake-preview` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Cancel a remake preview by restoring from the most recent backup. | `server/routes/assets.py:cancel_remake_preview` |
-| GET | `/api/animas/{name}/assets/remake-preview` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | List generated preview files. | `server/routes/assets.py:list_remake_previews` |
-| POST | `/api/animas/{name}/assets/remake-preview` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Generate a fullbody preview, optionally using Vibe Transfer. | `server/routes/assets.py:remake_preview` |
-| POST | `/api/animas/{name}/assets/upload-fullbody` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Upload a PNG/JPEG to overwrite the anima's full-body reference image. | `server/routes/assets.py:upload_fullbody_asset` |
-| GET | `/api/animas/{name}/assets/{filename}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
-| HEAD | `/api/animas/{name}/assets/{filename}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
-| GET | `/api/animas/{name}/attachments/{filename}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
-| HEAD | `/api/animas/{name}/attachments/{filename}` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
-| GET | `/api/media/proxy` | Session required (can be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/assets.py:media_proxy` |
+| GET | `/api/animas/{name}/assets` | Session required (optional in local_trust mode or when localhost trust is enabled) | List available assets for an anima. | `server/routes/assets.py:list_assets` |
+| GET | `/api/animas/{name}/assets/face/{emotion}` | Session required (optional in local_trust mode or when localhost trust is enabled) | Serve a cached square crop of an Anima's bustup expression. | `server/routes/assets.py:get_face_asset` |
+| POST | `/api/animas/{name}/assets/generate` | Session required (optional in local_trust mode or when localhost trust is enabled) | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
+| POST | `/api/animas/{name}/assets/generate-expression` | Session required (optional in local_trust mode or when localhost trust is enabled) | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
+| GET | `/api/animas/{name}/assets/metadata` | Session required (optional in local_trust mode or when localhost trust is enabled) | Return structured metadata about an anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
+| POST | `/api/animas/{name}/assets/regenerate-step` | Session required (optional in local_trust mode or when localhost trust is enabled) | Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
+| POST | `/api/animas/{name}/assets/remake-confirm` | Session required (optional in local_trust mode or when localhost trust is enabled) | Accept the preview and cascade-rebuild all remaining assets. | `server/routes/assets.py:remake_confirm` |
+| DELETE | `/api/animas/{name}/assets/remake-preview` | Session required (optional in local_trust mode or when localhost trust is enabled) | Cancel a remake preview by restoring from the most recent backup. | `server/routes/assets.py:cancel_remake_preview` |
+| GET | `/api/animas/{name}/assets/remake-preview` | Session required (optional in local_trust mode or when localhost trust is enabled) | List generated preview files. | `server/routes/assets.py:list_remake_previews` |
+| POST | `/api/animas/{name}/assets/remake-preview` | Session required (optional in local_trust mode or when localhost trust is enabled) | Generate a fullbody preview, optionally using Vibe Transfer. | `server/routes/assets.py:remake_preview` |
+| POST | `/api/animas/{name}/assets/upload-fullbody` | Session required (optional in local_trust mode or when localhost trust is enabled) | Upload a PNG/JPEG to overwrite the anima's full-body reference image. | `server/routes/assets.py:upload_fullbody_asset` |
+| GET | `/api/animas/{name}/assets/{filename}` | Session required (optional in local_trust mode or when localhost trust is enabled) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
+| HEAD | `/api/animas/{name}/assets/{filename}` | Session required (optional in local_trust mode or when localhost trust is enabled) | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
+| GET | `/api/animas/{name}/attachments/{filename}` | Session required (optional in local_trust mode or when localhost trust is enabled) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
+| HEAD | `/api/animas/{name}/attachments/{filename}` | Session required (optional in local_trust mode or when localhost trust is enabled) | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
+| GET | `/api/animas/{name}/attachments/{filename}/preview` | Session required (optional in local_trust mode or when localhost trust is enabled) | Return a structure-only JSON preview of a chat attachment. | `server/routes/assets.py:get_attachment_preview` |
+| GET | `/api/media/proxy` | Session required (optional in local_trust mode or when localhost trust is enabled) | — | `server/routes/assets.py:media_proxy` |
 
 ## `server/routes/auth.py`
 

@@ -57,3 +57,4 @@ class ChatResponse(BaseModel):
     response: str
     anima: str
     images: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []

@@ -127,4 +127,44 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Host built-in tools: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
         "ko": "호스트 내장 도구: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
     },
+    "tooling.attach_file.path_required": {
+        "ja": "path を指定してください",
+        "en": "path is required",
+        "ko": "path를 지정하세요",
+    },
+    "tooling.attach_file.not_found": {
+        "ja": "ファイルが見つかりません: {path}",
+        "en": "File not found: {path}",
+        "ko": "파일을 찾을 수 없습니다: {path}",
+    },
+    "tooling.attach_file.not_found_suggestion": {
+        "ja": "list_directory で正しいパスを確認してください",
+        "en": "Use list_directory to find the correct path",
+        "ko": "list_directory로 올바른 경로를 확인하세요",
+    },
+    "tooling.attach_file.chat_only": {
+        "ja": "attach_file は Web チャットの返信でのみ使用できます",
+        "en": "attach_file is only available while replying in a web chat",
+        "ko": "attach_file은 웹 채팅 답장에서만 사용할 수 있습니다",
+    },
+    "tooling.attach_file.chat_only_suggestion": {
+        "ja": "Web チャットの返信時に使用してください",
+        "en": "Use it while replying in a web chat",
+        "ko": "웹 채팅 답장 시 사용하세요",
+    },
+    "tooling.attach_file.invalid_name": {
+        "ja": "name は文字列で指定してください",
+        "en": "name must be a string",
+        "ko": "name은 문자열로 지정하세요",
+    },
+    "tooling.attach_file.stage_failed": {
+        "ja": "ファイルの添付に失敗しました: {error}",
+        "en": "Failed to attach the file: {error}",
+        "ko": "파일 첨부에 실패했습니다: {error}",
+    },
+    "tooling.attach_file.attached": {
+        "ja": "{name} を返信に添付しました",
+        "en": "Attached {name} to the reply",
+        "ko": "{name}을(를) 답장에 첨부했습니다",
+    },
 }

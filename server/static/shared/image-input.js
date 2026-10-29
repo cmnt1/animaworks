@@ -18,6 +18,59 @@ function escapeHtml(value) {
   })[ch]);
 }
 
+const CHAT_FILE_EXTENSION_KINDS = {
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image",
+  mp3: "audio", wav: "audio", m4a: "audio", aac: "audio", ogg: "audio", opus: "audio", flac: "audio",
+  mp4: "video", mov: "video", webm: "video", mkv: "video", avi: "video",
+  pdf: "pdf",
+  md: "markdown", markdown: "markdown",
+  csv: "csv",
+  txt: "text", log: "text", json: "text", yaml: "text", yml: "text", toml: "text",
+  ini: "text", py: "text", js: "text", ts: "text", sh: "text", sql: "text", xml: "text",
+  xlsx: "xlsx", xlsm: "xlsx",
+  docx: "docx",
+  pptx: "pptx",
+};
+
+const CHAT_FILE_MIME_KINDS = {
+  "application/pdf": "pdf",
+  "text/markdown": "markdown",
+  "text/x-markdown": "markdown",
+  "text/csv": "csv",
+  "application/csv": "csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-excel.sheet.macroenabled.12": "xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/json": "text",
+  "application/xml": "text",
+  "application/yaml": "text",
+};
+
+/**
+ * Classify a chat attachment for rendering and preview.
+ * The media type wins when it identifies a known kind; otherwise the extension is used.
+ * SVG and HTML stay "other" so they are never opened as images or text.
+ */
+export function getChatFileKind(file = {}) {
+  const name = String(file.name || "").toLowerCase();
+  const mediaType = String(file.media_type || file.type || "").toLowerCase().split(";")[0].trim();
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+
+  if (mediaType && mediaType !== "application/octet-stream") {
+    if (mediaType === "image/svg+xml" || mediaType === "text/html" || mediaType === "application/xhtml+xml") {
+      return "other";
+    }
+    if (mediaType.startsWith("audio/")) return "audio";
+    if (mediaType.startsWith("video/")) return "video";
+    if (mediaType.startsWith("image/")) return "image";
+    if (CHAT_FILE_MIME_KINDS[mediaType]) return CHAT_FILE_MIME_KINDS[mediaType];
+    if (mediaType.startsWith("text/")) return "text";
+  }
+
+  return CHAT_FILE_EXTENSION_KINDS[ext] || "other";
+}
+
 export function getChatFileIcon(file = {}) {
   const name = String(file.name || "").toLowerCase();
   const type = String(file.media_type || file.type || "").toLowerCase();
@@ -392,7 +445,20 @@ export function renderChatImages(images, options = {}) {
   return count > 0 ? html : "";
 }
 
-/** Build file attachment chips for a chat bubble or its optimistic local copy. */
+const PREVIEW_KINDS = new Set(["pdf", "markdown", "csv", "text", "xlsx", "docx", "pptx"]);
+export const CHAT_FILE_DOWNLOAD_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>';
+
+/** Short type label for the coloured tile on a file card (extension, at most 4 letters). */
+export function chatFileBadge(file = {}, kind = getChatFileKind(file)) {
+  const name = String(file.name || "");
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toUpperCase() : "";
+  if (ext && ext.length <= 4 && /^[A-Z0-9]+$/.test(ext)) return ext;
+  return { markdown: "MD", text: "TXT", audio: "AUDIO", video: "VIDEO" }[kind] || "FILE";
+}
+
+/** Build file cards, media players, or legacy chips for a chat bubble. */
 export function renderChatFiles(files, options = {}) {
   if (!files || files.length === 0) return "";
   const animaName = options.animaName || "";
@@ -405,9 +471,49 @@ export function renderChatFiles(files, options = {}) {
       : "";
     const label = `${getChatFileIcon(file)} <span class="chat-file-chip-name">${escapeHtml(name)}</span>`
       + `<span class="chat-file-chip-size">${escapeHtml(formatChatFileSize(file.size))}</span>`;
-    return href
-      ? `<a class="chat-file-chip" href="${href}" download="${escapeHtml(name)}" title="${escapeHtml(name)}">${label}</a>`
-      : `<div class="chat-file-chip" title="${escapeHtml(name)}">${label}</div>`;
+
+    // Optimistic bubbles have no path yet; keep the compact local chip.
+    if (!href) return `<div class="chat-file-chip" title="${escapeHtml(name)}">${label}</div>`;
+
+    const kind = getChatFileKind(file);
+    const safeHref = escapeHtml(href);
+    const inlineSrc = escapeHtml(`${href}?inline=1`);
+    const safeName = escapeHtml(name);
+    const size = escapeHtml(formatChatFileSize(file.size));
+    const downloadLabel = escapeHtml(t("chat.file_viewer.download"));
+    const downloadLink = `<a class="chat-file-card-download" href="${safeHref}" download="${safeName}" `
+      + `title="${downloadLabel}" aria-label="${downloadLabel}">${CHAT_FILE_DOWNLOAD_ICON}</a>`;
+    const info = `<span class="chat-file-card-badge">${escapeHtml(chatFileBadge(file, kind))}</span>`
+      + `<span class="chat-file-card-text"><span class="chat-file-card-name">${safeName}</span>`
+      + `<span class="chat-file-card-size">${size}</span></span>`;
+
+    if (kind === "image") {
+      return `<div class="chat-file-image"><img class="chat-attached-image" src="${inlineSrc}" `
+        + `loading="lazy" alt="${safeName}"></div>`;
+    }
+
+    if (kind === "audio" || kind === "video") {
+      const media = kind === "audio"
+        ? `<audio controls preload="metadata" src="${inlineSrc}"></audio>`
+        : `<video controls playsinline preload="metadata" src="${inlineSrc}"></video>`;
+      return `<div class="chat-file-media chat-file-kind-${kind}">`
+        + `<div class="chat-file-card chat-file-card--media"><span class="chat-file-card-open">${info}</span>${downloadLink}</div>`
+        + `${media}</div>`;
+    }
+
+    if (PREVIEW_KINDS.has(kind)) {
+      const previewLabel = escapeHtml(t("chat.file_viewer.preview"));
+      const attrs = `data-chat-file-preview data-anima="${escapeHtml(animaName)}"`
+        + ` data-stored-name="${escapeHtml(storedName)}" data-name="${safeName}"`
+        + ` data-size="${escapeHtml(String(Number(file.size) || 0))}" data-kind="${escapeHtml(kind)}"`;
+      // The download link sits beside the open button: interactive content inside a <button>
+      // is invalid HTML and Firefox never delivers its clicks.
+      return `<div class="chat-file-card chat-file-kind-${kind}">`
+        + `<button type="button" class="chat-file-card-open" ${attrs} aria-label="${previewLabel} ${safeName}">`
+        + `${info}</button>${downloadLink}</div>`;
+    }
+
+    return `<a class="chat-file-chip" href="${safeHref}" download="${safeName}" title="${safeName}">${label}</a>`;
   }).join("");
   return `<div class="chat-files">${items}</div>`;
 }

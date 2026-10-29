@@ -169,6 +169,7 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     "list_tasks": "trusted",
     "post_channel": "trusted",
     "send_message": "trusted",
+    "attach_file": "trusted",
     "create_anima": "trusted",
     "disable_subordinate": "trusted",
     "enable_subordinate": "trusted",

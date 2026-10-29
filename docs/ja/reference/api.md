@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 26a640bc4c85cd429ee81762aaa7bf91d85ab384d1963048b09edfa3092437ef -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: a12fe2b105f9e90e2eb7d2c98520407770fb7e6d0c770e83aea4e13fe994a7ca -->
 
 # API リファレンス
 
@@ -82,6 +82,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | HEAD | `/api/animas/{name}/assets/{filename}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Serve a static asset file from a anima's assets directory. | `server/routes/assets.py:get_asset` |
 | GET | `/api/animas/{name}/attachments/{filename}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
 | HEAD | `/api/animas/{name}/attachments/{filename}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Serve a user-uploaded attachment from a anima's attachments directory. | `server/routes/assets.py:get_attachment` |
+| GET | `/api/animas/{name}/attachments/{filename}/preview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return a structure-only JSON preview of a chat attachment. | `server/routes/assets.py:get_attachment_preview` |
 | GET | `/api/media/proxy` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/assets.py:media_proxy` |
 
 ## `server/routes/auth.py`

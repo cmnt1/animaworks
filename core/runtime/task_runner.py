@@ -357,6 +357,7 @@ async def execute_chat_contract(
             "response": cycle_result.get("summary", "") if cycle_result else result,
             "cycle_result": cycle_result,
             "images": cycle_result.get("images") or [],
+            "files": cycle_result.get("files") or [],
             "replied_to": [],
             "notifications": anima.drain_notifications(),
         }

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=378264b7cdbe4549785c2bfe6ee153547432a4de1e16acd1cdfeb5281ede2ee2 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=9a370327f9fc836ee244064c6831f4e65cee3d7b00ddf1de264d6b17dde0d4dc generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -104,24 +104,25 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 | `core.paths` | 218 | Centralized path resolution for AnimaWorks. |
 | `core.schemas` | 242 | — |
 | `core.time_utils` | 103 | — |
-| `core.trust` | 433 | — |
+| `core.trust` | 434 | — |
 
 ## `core.activity`
 
-Activity log recording, playback, and timeline display.
+Recording and playback of activity logs, and timeline display.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 1288 | — |
+| `core.activity.conversation` | 1414 | — |
 | `core.activity.event_export` | 33 | — |
-| `core.activity.format` | 568 | — |
-| `core.activity.logger` | 583 | — |
+| `core.activity.format` | 571 | — |
+| `core.activity.logger` | 584 | — |
 | `core.activity.models` | 202 | — |
 | `core.activity.replay` | 537 | — |
 | `core.activity.rotation` | 187 | — |
 | `core.activity.runtime_context` | 30 | — |
+| `core.activity.slack_mirror` | 601 | — |
 | `core.activity.timeline` | 348 | — |
 
 ## `core.agent`
@@ -149,6 +150,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 786 | — |
 | `core.anima.bootstrap_state` | 591 | — |
+| `core.anima.chat_attachments` | 253 | — |
 | `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
@@ -157,7 +159,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1415 | — |
+| `core.anima.messaging` | 1426 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -388,11 +390,11 @@ Translation catalog and language selection.
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 301 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 341 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
-| `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
+| `core.i18n.strings.tooling` | 170 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling_schema` | 540 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
@@ -421,7 +423,7 @@ Core infrastructure such as logging, databases, and caches.
 
 ## `core.integrations`
 
-Implementation of external service integrations and animaworks-tool.
+External service integrations and implementation of animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -478,7 +480,7 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
 | `core.integrations.notion` | 862 | Notion integration for AnimaWorks. |
-| `core.integrations.slack` | 262 | Slack integration for AnimaWorks. |
+| `core.integrations.slack` | 340 | Slack integration for AnimaWorks. |
 | `core.integrations.transcribe` | 429 | AnimaWorks transcribe tool -- Whisper speech-to-text with LLM refinement. |
 | `core.integrations.web_search` | 408 | Web Search tool for AnimaWorks. |
 | `core.integrations.x_search` | 348 | X (Twitter) Search tool for AnimaWorks. |
@@ -529,7 +531,7 @@ Model Context Protocol servers and clients.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 714 | — |
+| `core.mcp.server` | 736 | — |
 
 ## `core.memory`
 
@@ -841,7 +843,7 @@ Anima main runtime components, interprocess communication, and task execution.
 | `core.runtime.scheduler_manager` | 1058 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 449 | Streaming IPC message handler. |
-| `core.runtime.task_runner` | 1055 | Disposable task runner entry point. |
+| `core.runtime.task_runner` | 1056 | Disposable task runner entry point. |
 | `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
@@ -968,16 +970,17 @@ Text token estimation and truncation to fit within budget.
 
 ## `core.tooling`
 
-Tool schemas, permissions, and execution infrastructure.
+Tool schemas, permission, and execution infrastructure.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
-| `core.tooling._handler_protocols（非公開）` | 225 | Structural host protocols for the compositional mixins. |
+| `core.tooling._handler_protocols（非公開）` | 233 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
-| `core.tooling.handler` | 907 | — |
+| `core.tooling.handler` | 911 | — |
 | `core.tooling.handler_base` | 335 | — |
+| `core.tooling.handler_chat_files` | 87 | — |
 | `core.tooling.handler_comms` | 1027 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
@@ -996,8 +999,9 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.policy.command_policy` | 496 | — |
 | `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
-| `core.tooling.policy.schemas.builder` | 77 | — |
+| `core.tooling.policy.schemas.builder` | 79 | — |
 | `core.tooling.policy.schemas.channel` | 118 | — |
+| `core.tooling.policy.schemas.chat_files` | 42 | — |
 | `core.tooling.policy.schemas.converters` | 27 | — |
 | `core.tooling.policy.schemas.loader` | 101 | — |
 | `core.tooling.policy.schemas.memory` | 228 | — |
@@ -1008,7 +1012,7 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.policy.schemas.task` | 204 | — |
 | `core.tooling.policy.schemas.workspace` | 46 | — |
 | `core.tooling.policy.submit_tasks` | 91 | — |
-| `core.tooling.policy.surface` | 247 | — |
+| `core.tooling.policy.surface` | 259 | — |
 | `core.tooling.policy.tool_content` | 42 | — |
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
@@ -1029,7 +1033,7 @@ Tool schemas, permissions, and execution infrastructure.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
-| `core.tooling.policy.schemas` | 70 | Canonical tool schema definitions and format converters. |
+| `core.tooling.policy.schemas` | 73 | Canonical tool schema definitions and format converters. |
 
 ## `core.usage`
 
@@ -1098,7 +1102,7 @@ Audio input/output and voice conversations.
 | `server.gateways.github_gateway` | 534 | — |
 | `server.gateways.slack_channel_sync` | 505 | — |
 | `server.gateways.slack_interactive` | 239 | — |
-| `server.gateways.slack_socket` | 1081 | — |
+| `server.gateways.slack_socket` | 1145 | — |
 | `server.gateways.zoom_gateway` | 700 | — |
 
 ## `server.routes`
@@ -1110,15 +1114,16 @@ Audio input/output and voice conversations.
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1624 | — |
+| `server.routes.assets` | 1737 | — |
+| `server.routes.attachment_preview` | 741 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
-| `server.routes.chat` | 456 | — |
+| `server.routes.chat` | 459 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
-| `server.routes.chat_files` | 116 | — |
+| `server.routes.chat_files` | 99 | — |
 | `server.routes.chat_images` | 80 | — |
-| `server.routes.chat_models` | 59 | — |
+| `server.routes.chat_models` | 60 | — |
 | `server.routes.chat_producer` | 346 | — |
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |

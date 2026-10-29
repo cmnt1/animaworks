@@ -57,6 +57,7 @@ EVENT_SETS: dict[str, frozenset[str]] = {
             "heartbeat_end",
             "heartbeat_reflection",
             "response_sent",
+            "external_reply_sent",
             "cron_executed",
             "tool_use",
             "message_sent",
@@ -71,6 +72,7 @@ EVENT_SETS: dict[str, frozenset[str]] = {
             "message_received",
             "message_sent",
             "response_sent",
+            "external_reply_sent",
             "tool_use",
             "tool_result",
             "heartbeat_start",
@@ -119,7 +121,7 @@ def entry_role(entry: ActivityEntry, self_name: str = "") -> str | None:
     """Conversation role of *entry* (user/assistant/system/tool), or ``None``."""
     etype = entry.type
 
-    if etype in ("response_sent", "message_sent", "dm_sent"):
+    if etype in ("response_sent", "message_sent", "external_reply_sent", "dm_sent"):
         return EntryRole.ASSISTANT
     if etype in ("message_received", "dm_received"):
         if entry.meta.get("from_type") == "anima":
@@ -293,6 +295,7 @@ class PrimingMixin:
             "message_received": "MSG<",
             "message_sent": "MSG>",
             "response_sent": "RESP>",
+            "external_reply_sent": "RESP>",
             "channel_read": "CH.R",
             "channel_post": "CH.W",
             "dm_received": "MSG<",

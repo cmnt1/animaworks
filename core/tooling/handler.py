@@ -17,6 +17,7 @@ The class is composed from responsibility-specific Mixins:
   - OrgToolsMixin     (handler_org.py)
   - SkillsToolsMixin  (handler_skills.py)
   - FileToolsMixin    (handler_files.py)
+  - ChatFilesToolsMixin (handler_chat_files.py)
   - ExecutionToolsMixin (handler_exec.py)
   - PermissionsMixin  (handler_perms.py)
 """
@@ -52,6 +53,7 @@ from core.tooling.handler_base import (  # noqa: F401
 )
 
 # ── Import Mixins ──
+from core.tooling.handler_chat_files import ChatFilesToolsMixin
 from core.tooling.handler_comms import CommsToolsMixin
 from core.tooling.handler_exec import ExecutionToolsMixin
 from core.tooling.handler_files import FileToolsMixin
@@ -89,6 +91,7 @@ class ToolHandler(
     SkillsToolsMixin,
     WorkspaceToolsMixin,
     FileToolsMixin,
+    ChatFilesToolsMixin,
     ExecutionToolsMixin,
     PermissionsMixin,
 ):
@@ -226,6 +229,7 @@ class ToolHandler(
             "read_channel": self._handle_read_channel,
             "manage_channel": self._handle_manage_channel,
             "read_dm_history": self._handle_read_dm_history,
+            "attach_file": self._handle_attach_file,
             "read_file": self._handle_read_file,
             "write_file": self._handle_write_file,
             "edit_file": self._handle_edit_file,

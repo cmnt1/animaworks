@@ -8,7 +8,7 @@ import pytest
 # explicit background task-authoring, and memory consolidation).
 TRIGGER_CASES = (
     ("chat", "scoped", "interactive"),
-    ("message:user", "scoped", "interactive"),
+    ("message:user", "message", "interactive"),
     ("inbox:alice", "scoped", "normal"),
     ("heartbeat", "heartbeat", "heartbeat"),
     ("cron:daily", "scoped", "normal"),
@@ -127,6 +127,8 @@ def _expected_mcp(
         names = set(MCP_FULL_WITH_SUBMIT)
     else:
         names = set(MCP_SCOPED)
+        if kind == "message":
+            names.add("attach_file")
         if kind == "background":
             names.add("submit_tasks")
     if has_subordinates and kind != "consolidation":
@@ -143,6 +145,7 @@ def _expected_builder(
     *,
     has_subordinates: bool,
     include_notification_tools: bool,
+    trigger: str = "",
 ) -> frozenset[str]:
     if kind == "consolidation":
         names = set(BUILDER_CONSOLIDATION)
@@ -153,6 +156,8 @@ def _expected_builder(
         names = set(_BUILDER_BASE)
         if kind == "interactive":
             names.add("trust_skill")
+        if trigger.strip().startswith("message:"):
+            names.add("attach_file")
         if kind == "background":
             names.add("submit_tasks")
     if include_notification_tools:
@@ -243,6 +248,7 @@ def test_resolver_and_builder_tool_surface_table(
                 builder_kind,
                 has_subordinates=has_subordinates,
                 include_notification_tools=include_notification_tools,
+                trigger=trigger,
             )
             actual = frozenset(
                 tool["name"]
@@ -260,6 +266,30 @@ def test_resolver_and_builder_tool_surface_table(
                     include_notification_tools,
                 )
                 assert actual == expected, (trigger, mode, has_subordinates, include_notification_tools)
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    ("", "chat", "heartbeat", "inbox:alice", "cron:daily", "task:task-42", "consolidation:daily"),
+)
+def test_attach_file_is_hidden_outside_message_replies(trigger: str) -> None:
+    from core.tooling.policy.schemas import build_unified_tool_list
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+
+    context = ToolSurfaceContext()
+    assert "attach_file" not in resolve_tool_surface(context, trigger, "S")
+    assert "attach_file" not in resolve_tool_surface(context, trigger, "A")
+    assert "attach_file" not in {tool["name"] for tool in build_unified_tool_list(trigger=trigger)}
+
+
+def test_attach_file_is_visible_for_message_replies() -> None:
+    from core.tooling.policy.schemas import build_unified_tool_list
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+
+    context = ToolSurfaceContext()
+    assert "attach_file" in resolve_tool_surface(context, "message:user", "S")
+    assert "attach_file" in resolve_tool_surface(context, "message:user", "A")
+    assert "attach_file" in {tool["name"] for tool in build_unified_tool_list(trigger="message:user")}
 
 
 def test_consolidation_disagreement_is_resolved_by_the_stricter_surface() -> None:

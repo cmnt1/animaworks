@@ -1106,6 +1106,70 @@ class TestProcessMessageStreamConversationSave:
             # save() called twice: pre-save + cycle_done save
             assert MockConv.return_value.save.call_count == 2
 
+    async def test_stream_done_collects_attached_files(self, data_dir, make_anima):
+        """Files staged for the cycle request are included in cycle_done and cleared."""
+        from core.anima.chat_attachments import collect_outbound_files, stage_outbound_file
+
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        source = anima_dir / "workspace" / "summary.md"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("# summary\n", encoding="utf-8")
+        stage_outbound_file(
+            anima_dir,
+            source,
+            display_name="summary.md",
+            request_id="req-stream-1",
+            thread_id="default",
+        )
+
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+        ):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.compress_if_needed = AsyncMock()
+            MockConv.return_value.finalize_session = AsyncMock(return_value=False)
+            MockConv.return_value.build_chat_prompt.return_value = "prompt"
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.anima.digital_anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            _wire_session_type(dp)
+            dp._schedule_live_fact_extraction = MagicMock()
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": trigger,
+                        "session_type": "chat",
+                        "summary": "Full response",
+                        "request_id": "req-stream-1",
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+
+            chunks = []
+            async for chunk in dp.process_message_stream("Hi", from_person="human"):
+                chunks.append(chunk)
+
+            done = next(chunk for chunk in chunks if chunk.get("type") == "cycle_done")
+            assert done["cycle_result"]["files"] == [
+                {
+                    "name": "summary.md",
+                    "path": done["cycle_result"]["files"][0]["path"],
+                    "size": source.stat().st_size,
+                    "media_type": "text/markdown",
+                }
+            ]
+            assert collect_outbound_files(anima_dir, "req-stream-1") == []
+
     async def test_stream_routes_external_user_reply_to_slack_dm_without_text_delta(
         self,
         data_dir,

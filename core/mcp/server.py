@@ -138,6 +138,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         PROCEDURE_TOOLS,
         _background_task_tools,
         _channel_tools,
+        _chat_file_tools,
         _check_permissions_tools,
         _create_skill_schemas,
         _curator_skill_schemas,
@@ -152,6 +153,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     all_schemas: list[dict[str, Any]] = [
         *MEMORY_TOOLS,
         *_channel_tools(),
+        *_chat_file_tools(),
         *WORKSPACE_TOOLS,
         *_task_tools(),
         *_notification_tools(),
@@ -181,6 +183,11 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
             "S",
         )
     )
+    # attach_file is trigger-scoped to chat replies, so the heartbeat profile
+    # above never contains it. Keep the schema/exposed entry available here and
+    # let the runtime trigger resolver decide whether list_tools() shows it.
+    if "attach_file" in MCP_TOOL_NAMES:
+        exposed.add("attach_file")
     configured = get_env("ANIMAWORKS_MCP_TOOLS")
     if configured is not None:
         requested = {name.strip() for name in configured.split(",") if name.strip()}
@@ -545,6 +552,21 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
                         "message": (
                             "Tool 'submit_tasks' is only available in explicit background task-authoring sessions"
                         ),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
+
+    if name == "attach_file" and name in _EXPOSED_NAMES and name not in visible_names:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "error",
+                        "error_type": "ToolBlocked",
+                        "message": "Tool 'attach_file' is only available while replying to a message in a web chat",
                     },
                     ensure_ascii=False,
                 ),

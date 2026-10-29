@@ -10,6 +10,40 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "schema.attach_file.desc": {
+        "ja": (
+            "Webチャットで人間に返信するときに、手元のファイルを返信へ添付する。"
+            "テキスト・Markdown・音声・動画・PDF・Excel・Word・PowerPoint・画像などに対応。"
+            "ファイルの中身を本文に長々と貼る代わりに使う。1回で1ファイル、複数なら複数回呼ぶ。"
+            "添付は返信の送信時にまとめて表示され、相手が画面で開ける。"
+            "パスはAnimaの作業ディレクトリからの相対パスまたは絶対パスで指定する。"
+        ),
+        "en": (
+            "Attach a local file to the reply when responding to a human in a web chat. "
+            "Supports text, Markdown, audio, video, PDF, Excel, Word, PowerPoint, images, and more. "
+            "Use this instead of pasting a long file body into the message. "
+            "Attach one file per call; call it again for multiple files. "
+            "Attachments appear together when the reply is sent, and the recipient can open them on screen. "
+            "Use a path relative to the Anima working directory or an absolute path."
+        ),
+        "ko": (
+            "웹 채팅에서 사람에게 답장할 때 로컬 파일을 답장에 첨부합니다. "
+            "텍스트, Markdown, 오디오, 동영상, PDF, Excel, Word, PowerPoint, 이미지 등에 대응합니다. "
+            "파일 내용을 본문에 길게 붙여넣는 대신 사용하세요. 한 번에 파일 하나를 첨부하고, 여러 개면 여러 번 호출합니다. "
+            "첨부 파일은 답장 전송 시 함께 표시되며 상대방이 화면에서 열 수 있습니다. "
+            "경로는 Anima 작업 디렉터리 기준 상대 경로 또는 절대 경로로 지정합니다."
+        ),
+    },
+    "schema.attach_file.path": {
+        "ja": "添付するファイルのパス（Animaの作業ディレクトリからの相対パスまたは絶対パス）",
+        "en": "Path to the file to attach (relative to the Anima working directory or absolute)",
+        "ko": "첨부할 파일 경로(Anima 작업 디렉터리 기준 상대 경로 또는 절대 경로)",
+    },
+    "schema.attach_file.name": {
+        "ja": "表示名（省略時は元のファイル名）",
+        "en": "Display name (defaults to the source filename)",
+        "ko": "표시 이름(생략 시 원본 파일명)",
+    },
     "schema.audit_subordinate.desc": {
         "ja": (
             "配下のAnimaの行動を監査する。ActivityLogから「何を考えて何をやったか」を抽出し、統計サマリーまたは日報形式で返す。\nname省略で全配下を一括監査。name指定で特定の配下（孫含む）を監査。\nmode='summary'で統計、mode='report'で時系列の日報形式。"

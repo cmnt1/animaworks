@@ -13,6 +13,7 @@ from typing import Any
 
 from core.tooling.policy.schemas.admin import CC_TOOLS
 from core.tooling.policy.schemas.channel import _channel_tools
+from core.tooling.policy.schemas.chat_files import _chat_file_tools
 from core.tooling.policy.schemas.memory import KNOWLEDGE_TOOLS, MEMORY_TOOLS, PROCEDURE_TOOLS
 from core.tooling.policy.schemas.notification import _notification_tools
 from core.tooling.policy.schemas.session_todo import _session_todo_tools
@@ -64,6 +65,7 @@ def build_unified_tool_list(
         *KNOWLEDGE_TOOLS,
         *WORKSPACE_TOOLS,
         *_channel_tools(),
+        *_chat_file_tools(),
         *_notification_tools(),
         *_supervisor_tools(),
         *_submit_tasks_tools(),

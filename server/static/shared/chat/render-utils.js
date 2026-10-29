@@ -522,8 +522,11 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const viaLabel = viaTranslation && viaTranslation !== viaKey
     ? viaTranslation.replace(/^via\s+/i, "")
     : (msg.via || "");
-  const via = isMe && viaLabel && msg.via !== "web" && msg.via !== "chat"
-    ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
+  // Messages exchanged on an external app (Slack etc.): "from Slack" on the user's side,
+  // "replied on Slack" on the anima's.
+  const viaKeyForSide = isMe ? "chat.line.from_external" : "chat.line.sent_external";
+  const via = viaLabel && msg.via !== "web" && msg.via !== "chat"
+    ? `<div class="chat-line-via">${escapeHtml(t(viaKeyForSide, { via: viaLabel }))}</div>`
     : "";
   const thinkClass = live && think && msg.streaming ? " think-host" : "";
   const callClass = msg.type === "voice_call" ? " chat-call-record" : "";
@@ -1741,7 +1744,7 @@ export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
 
     // Touch screens have no hover: a tap on a bubble shows its actions, a tap elsewhere hides them.
     const tappedRow = event.target.closest(".chat-line-bubble")
-      && !event.target.closest("a, button, summary, details, input, textarea, select, img")
+      && !event.target.closest("a, button, summary, details, input, textarea, select, img, audio, video, .chat-file-card, .chat-files")
       ? event.target.closest(".chat-line") : null;
     container.querySelectorAll(".chat-line.actions-open").forEach((row) => {
       if (row !== tappedRow && !row.contains(event.target)) row.classList.remove("actions-open");

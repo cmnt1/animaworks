@@ -3,7 +3,7 @@
 export function createImageVoiceController(ctx) {
   const $ = ctx.$;
   const { state, deps } = ctx;
-  const { createImageInput, initLightbox, initVoiceUI, updateVoiceUIAnima } = deps;
+  const { createImageInput, initLightbox, initFileViewer, initVoiceUI, updateVoiceUIAnima } = deps;
 
   function buildVoiceChatCallbacks(animaName) {
     const mgr = state.manager;
@@ -57,6 +57,7 @@ export function createImageVoiceController(ctx) {
       onImagesChanged: () => ctx.controllers.streaming?.updateSendButton(),
     });
     initLightbox();
+    initFileViewer();
 
     const chatInputFormEl = $("chatPageForm") || document.querySelector(".chat-input-form");
     if (chatInputFormEl && state.selectedAnima) {

@@ -138,7 +138,7 @@ def _project_event(event: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]
             line_type="delegation" if is_delegation else _line_type("message", event, actor, target),
         )
 
-    if event_type == "response_sent":
+    if event_type in ("response_sent", "external_reply_sent"):
         return _emit(
             event,
             ctx,

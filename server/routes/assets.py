@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import hashlib
 import json
 import logging
@@ -15,8 +16,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.i18n import t
 from core.platform.tasks import spawn
 from server.events import emit
+from server.routes.attachment_preview import AttachmentPreviewError, preview_attachment
 from server.routes.media_proxy import proxy_external_image
 
 logger = logging.getLogger("animaworks.routes.assets")
@@ -90,8 +93,80 @@ _ATTACHMENT_CONTENT_TYPES = {
     ".html": "text/html",
     ".htm": "text/html",
     ".pdf": "application/pdf",
-    ".csv": "text/csv",
+    ".csv": "text/csv; charset=utf-8",
+    # Audio
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".flac": "audio/flac",
+    # Video
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    # Plain-text family — deliberately never text/html or text/markdown so
+    # browsers do not interpret the content.
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/plain; charset=utf-8",
+    ".markdown": "text/plain; charset=utf-8",
+    ".log": "text/plain; charset=utf-8",
+    ".json": "text/plain; charset=utf-8",
+    ".yaml": "text/plain; charset=utf-8",
+    ".yml": "text/plain; charset=utf-8",
+    ".toml": "text/plain; charset=utf-8",
+    ".ini": "text/plain; charset=utf-8",
+    ".py": "text/plain; charset=utf-8",
+    ".js": "text/plain; charset=utf-8",
+    ".ts": "text/plain; charset=utf-8",
+    ".sh": "text/plain; charset=utf-8",
+    ".sql": "text/plain; charset=utf-8",
+    ".xml": "text/plain; charset=utf-8",
+    # Office (preview API only; always served as attachment)
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+_ATTACHMENT_IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
+_ATTACHMENT_TEXT_SUFFIXES = frozenset(
+    {
+        ".txt",
+        ".md",
+        ".markdown",
+        ".log",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".py",
+        ".js",
+        ".ts",
+        ".sh",
+        ".sql",
+        ".xml",
+    }
+)
+_ATTACHMENT_AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".aac", ".wav", ".ogg", ".oga", ".opus", ".flac"})
+_ATTACHMENT_VIDEO_SUFFIXES = frozenset({".mp4", ".m4v", ".mov", ".webm"})
+_ATTACHMENT_INLINE_SUFFIXES = frozenset(
+    {
+        *_ATTACHMENT_IMAGE_SUFFIXES,
+        *_ATTACHMENT_AUDIO_SUFFIXES,
+        *_ATTACHMENT_VIDEO_SUFFIXES,
+        *_ATTACHMENT_TEXT_SUFFIXES,
+        ".pdf",
+        ".csv",
+    }
+)
+_ATTACHMENT_INLINE_CSP = (
+    "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
+)
 
 # Server-side avatar thumbnail sizes (matches client image-cache.js)
 # S/M/L are square crops; P/C preserve the original aspect ratio and constrain
@@ -400,6 +475,30 @@ def _effective_image_config(
         return ImageGenConfig(**kwargs)
 
 
+def _resolve_attachment_path(animas_dir: Path, name: str, filename: str) -> Path:
+    """Resolve an attachment filename the same way for delivery and preview."""
+    anima_dir = animas_dir / name
+    if not anima_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+    safe_name = Path(filename).name
+    if safe_name != filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = anima_dir / "attachments" / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        tmp_path = animas_dir.parent / "tmp" / "attachments" / safe_name
+        if tmp_path.exists() and tmp_path.is_file():
+            file_path = tmp_path
+        else:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+    return file_path
+
+
+def _inline_requested(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def create_assets_router() -> APIRouter:
     router = APIRouter()
 
@@ -695,32 +794,35 @@ def create_assets_router() -> APIRouter:
         )
 
     @router.api_route("/animas/{name}/attachments/{filename}", methods=["GET", "HEAD"])
-    async def get_attachment(name: str, filename: str, request: Request):
-        """Serve a user-uploaded attachment from a anima's attachments directory."""
+    async def get_attachment(
+        name: str,
+        filename: str,
+        request: Request,
+        inline: str | None = None,
+    ):
+        """Serve a user-uploaded attachment from a anima's attachments directory.
+
+        ``?inline=1`` switches safe content types (images, audio, video, PDF,
+        plain text, CSV) to an inline disposition so the chat viewer can render
+        them.  HTML/SVG/Office/unknown files always stay attachments.
+        """
         animas_dir = request.app.state.animas_dir
-        anima_dir = animas_dir / name
-        if not anima_dir.exists():
-            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
-
-        safe_name = Path(filename).name
-        if safe_name != filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
-            raise HTTPException(status_code=400, detail="Invalid filename")
-
-        file_path = anima_dir / "attachments" / safe_name
-        if not file_path.exists() or not file_path.is_file():
-            tmp_path = animas_dir.parent / "tmp" / "attachments" / safe_name
-            if tmp_path.exists() and tmp_path.is_file():
-                file_path = tmp_path
-            else:
-                raise HTTPException(status_code=404, detail="Attachment not found")
+        file_path = _resolve_attachment_path(animas_dir, name, filename)
 
         suffix = file_path.suffix.lower()
         content_type = _ATTACHMENT_CONTENT_TYPES.get(suffix, "application/octet-stream")
+        inline_response = _inline_requested(inline) and suffix in _ATTACHMENT_INLINE_SUFFIXES
         headers = {
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         }
-        if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        if inline_response:
+            headers["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(file_path.name, safe='')}"
+            # Chrome's built-in PDF viewer can fail under a CSP sandbox, so the
+            # PDF case deliberately omits the CSP header.
+            if suffix != ".pdf":
+                headers["Content-Security-Policy"] = _ATTACHMENT_INLINE_CSP
+        elif suffix not in _ATTACHMENT_IMAGE_SUFFIXES:
             headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(file_path.name, safe='')}"
 
         return FileResponse(
@@ -728,6 +830,17 @@ def create_assets_router() -> APIRouter:
             media_type=content_type,
             headers=headers,
         )
+
+    @router.get("/animas/{name}/attachments/{filename}/preview")
+    async def get_attachment_preview(name: str, filename: str, request: Request):
+        """Return a structure-only JSON preview of a chat attachment."""
+        animas_dir = request.app.state.animas_dir
+        file_path = _resolve_attachment_path(animas_dir, name, filename)
+        try:
+            preview = await asyncio.to_thread(preview_attachment, file_path)
+        except AttachmentPreviewError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=t(exc.message_key)) from exc
+        return JSONResponse(preview, headers={"Cache-Control": "no-store"})
 
     @router.get("/media/proxy")
     async def media_proxy(url: str, request: Request):

@@ -18,6 +18,8 @@ const translations = {
   "chat.line.reply_label": "Reply to",
   "chat.line.from_external": "From {via}",
   "chat.line.read": "Read",
+  "chat.file_viewer.preview": "Preview",
+  "chat.file_viewer.download": "Download",
 };
 
 const imageInputSource = readFileSync(imageInputPath, "utf8").replace(/^import .*;\r?\n/gm, "");
@@ -31,7 +33,7 @@ const imageInputStubs = `
   const translations = ${JSON.stringify(translations)};
 `;
 const imageInputUrl = "data:text/javascript;base64," + Buffer.from(imageInputStubs + imageInputSource).toString("base64");
-const { formatChatFileSize, getChatFileIcon, renderChatFiles, validateChatFileBatch } = await import(imageInputUrl);
+const { chatFileBadge, formatChatFileSize, getChatFileIcon, getChatFileKind, renderChatFiles, validateChatFileBatch } = await import(imageInputUrl);
 
 const renderUtilsSource = readFileSync(renderUtilsPath, "utf8").replace(/^import .*;\r?\n/gm, "");
 const renderUtilsStubs = `
@@ -94,7 +96,56 @@ describe("chat file attachments", () => {
     );
   });
 
-  it("renders file chips with safe download links in both user and Anima bubbles", () => {
+  it("classifies files from MIME type first, then extension", () => {
+    assert.equal(getChatFileKind({ name: "photo.bin", media_type: "image/png" }), "image");
+    assert.equal(getChatFileKind({ name: "clip.mp4" }), "video");
+    assert.equal(getChatFileKind({ name: "voice.mp3", media_type: "application/octet-stream" }), "audio");
+    assert.equal(getChatFileKind({ name: "report.pdf" }), "pdf");
+    assert.equal(getChatFileKind({ name: "README.md" }), "markdown");
+    assert.equal(getChatFileKind({ name: "data.csv" }), "csv");
+    assert.equal(getChatFileKind({ name: "notes.txt" }), "text");
+    assert.equal(getChatFileKind({ name: "script.py", media_type: "text/x-python" }), "text");
+    assert.equal(getChatFileKind({ name: "book.xlsx" }), "xlsx");
+    assert.equal(getChatFileKind({ name: "letter.docx" }), "docx");
+    assert.equal(getChatFileKind({ name: "deck.pptx" }), "pptx");
+    assert.equal(getChatFileKind({ name: "vector.svg" }), "other");
+    assert.equal(getChatFileKind({ name: "vector.svg", media_type: "image/svg+xml" }), "other");
+    assert.equal(getChatFileKind({ name: "page.html", media_type: "text/html" }), "other");
+    assert.equal(getChatFileKind({ name: "archive.zip" }), "other");
+    assert.equal(getChatFileKind({ name: "plain.md", media_type: "text/plain" }), "text");
+  });
+
+  it("renders media, preview cards, and legacy chips by file kind", () => {
+    const base = { path: "attachments/example", size: 1536 };
+    const imageHtml = renderChatFiles([{ ...base, name: "photo.png", media_type: "image/png" }], { animaName: "mei" });
+    assert.match(imageHtml, /class="chat-attached-image"/);
+    assert.match(imageHtml, /src="\/app\/api\/animas\/mei\/attachments\/example\?inline=1"/);
+    assert.match(imageHtml, /loading="lazy"/);
+
+    const audioHtml = renderChatFiles([{ ...base, name: "voice.mp3", media_type: "audio/mpeg" }], { animaName: "mei" });
+    assert.match(audioHtml, /<audio controls preload="metadata" src="\/app\/api\/animas\/mei\/attachments\/example\?inline=1"><\/audio>/);
+    assert.match(audioHtml, /class="chat-file-card-download"/);
+
+    const videoHtml = renderChatFiles([{ ...base, name: "clip.mp4" }], { animaName: "mei" });
+    assert.match(videoHtml, /<video controls playsinline preload="metadata" src="\/app\/api\/animas\/mei\/attachments\/example\?inline=1"><\/video>/);
+
+    const pdfHtml = renderChatFiles([{ ...base, name: "report.pdf", media_type: "application/pdf" }], { animaName: "mei" });
+    assert.match(pdfHtml, /<div class="chat-file-card chat-file-kind-pdf"><button type="button" class="chat-file-card-open" data-chat-file-preview/);
+    assert.match(pdfHtml, /data-kind="pdf"/);
+    assert.match(pdfHtml, /data-anima="mei"/);
+    assert.match(pdfHtml, /data-stored-name="example"/);
+    assert.match(pdfHtml, /href="\/app\/api\/animas\/mei\/attachments\/example" download="report\.pdf"/);
+
+    const zipHtml = renderChatFiles([{ ...base, name: "archive.zip" }], { animaName: "mei" });
+    assert.match(zipHtml, /class="chat-file-chip" href="\/app\/api\/animas\/mei\/attachments\/example"/);
+    assert.doesNotMatch(zipHtml, /data-chat-file-preview/);
+
+    const localHtml = renderChatFiles([{ name: "local.pdf", size: 10 }], { animaName: "mei" });
+    assert.match(localHtml, /class="chat-file-chip"/);
+    assert.doesNotMatch(localHtml, /data-chat-file-preview/);
+  });
+
+  it("renders preview cards with safe download links in both user and Anima bubbles", () => {
     const file = {
       name: "見積書.pdf",
       media_type: "application/pdf",
@@ -118,7 +169,8 @@ describe("chat file attachments", () => {
     assert.match(userHtml, /class="chat-line chat-line--me"/);
     assert.match(animaHtml, /class="chat-line chat-line--anima"/);
     for (const html of [userHtml, animaHtml]) {
-      assert.match(html, /class="chat-file-chip" href="\/app\/api\/animas\/mei\/attachments\//);
+      assert.match(html, /class="chat-file-card-open" data-chat-file-preview/);
+      assert.match(html, /href="\/app\/api\/animas\/mei\/attachments\//);
       assert.match(html, /download="見積書\.pdf"/);
       assert.match(html, /1\.2 MB/);
     }
@@ -127,6 +179,14 @@ describe("chat file attachments", () => {
 
     const escaped = renderChatFiles([{ name: "<script>.txt", size: 1, path: "attachments/x.txt" }], { animaName: "mei" });
     assert.match(escaped, /&lt;script&gt;\.txt/);
+    assert.match(escaped, /data-name="&lt;script&gt;\.txt"/);
     assert.doesNotMatch(escaped, /<script>/);
+  });
+  it("labels file cards with a short type badge", () => {
+    assert.equal(chatFileBadge({ name: "見積書.pdf" }), "PDF");
+    assert.equal(chatFileBadge({ name: "売上.xlsx" }), "XLSX");
+    assert.equal(chatFileBadge({ name: "notes" , media_type: "text/markdown" }), "MD");
+    assert.equal(chatFileBadge({ name: "archive.backup" }), "FILE");
+    assert.equal(chatFileBadge({ name: "<x>.<b>" }), "FILE");
   });
 });

@@ -182,6 +182,46 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "The combined files are too large (max {size_mb} MB)",
         "ko": "첨부 파일 총 용량이 너무 큽니다 (최대 {size_mb}MB)",
     },
+    "chat.attach.outbound_missing_request_id": {
+        "ja": "返信のリクエストIDがないため添付できません",
+        "en": "Cannot attach the file because the reply request id is missing",
+        "ko": "답장 요청 ID가 없어 파일을 첨부할 수 없습니다",
+    },
+    "chat.attach.outbound_not_file": {
+        "ja": "ファイルが見つかりません: {path}",
+        "en": "File not found: {path}",
+        "ko": "파일을 찾을 수 없습니다: {path}",
+    },
+    "chat.attach.outbound_empty_file": {
+        "ja": "空のファイル「{name}」は添付できません",
+        "en": "The empty file “{name}” cannot be attached",
+        "ko": "빈 파일 “{name}”은 첨부할 수 없습니다",
+    },
+    "chat.attach.outbound_file_too_large": {
+        "ja": "ファイル「{name}」が大きすぎます（上限{size_mb}MB）",
+        "en": "File “{name}” is too large (max {size_mb} MB)",
+        "ko": "파일 “{name}”이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.outbound_too_many_files": {
+        "ja": "1回の返信に添付できるファイルは{count}個までです",
+        "en": "A reply can include up to {count} attached files",
+        "ko": "답장 하나에 최대 {count}개의 파일을 첨부할 수 있습니다",
+    },
+    "chat.attach.preview_unsupported": {
+        "ja": "このファイル形式はプレビューできません",
+        "en": "This file type cannot be previewed",
+        "ko": "이 파일 형식은 미리 볼 수 없습니다",
+    },
+    "chat.attach.preview_too_large": {
+        "ja": "ファイルが大きすぎるためプレビューできません（上限50MB）",
+        "en": "The file is too large to preview (max 50 MB)",
+        "ko": "파일이 너무 커서 미리 볼 수 없습니다 (최대 50MB)",
+    },
+    "chat.attach.preview_unreadable": {
+        "ja": "ファイルを読み取れないか、内容が破損しています",
+        "en": "The file could not be read or is corrupted",
+        "ko": "파일을 읽을 수 없거나 내용이 손상되었습니다",
+    },
     "chat.attach.prompt_header": {
         "ja": "[添付ファイル]",
         "en": "[Attached files]",

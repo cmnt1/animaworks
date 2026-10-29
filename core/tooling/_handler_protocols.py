@@ -37,6 +37,14 @@ class _CommsToolsHost(Protocol):
     session_id: Any
 
 
+class _ChatFilesHost(Protocol):
+    """Structural host members used by ChatFilesToolsMixin."""
+
+    _anima_dir: Any
+    _check_file_permission: Any
+    _runtime_session_context: Any
+
+
 class _CreateAnimaHost(Protocol):
     """Structural host members used by CreateAnimaMixin."""
 

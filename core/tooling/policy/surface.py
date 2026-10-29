@@ -26,6 +26,7 @@ MCP_TOOL_NAMES: tuple[str, ...] = (
     "report_knowledge_outcome",
     "send_message",
     "post_channel",
+    "attach_file",
     "call_human",
     "delegate_task",
     "submit_tasks",
@@ -107,6 +108,7 @@ _BUILDER_TOOL_NAMES: tuple[str, ...] = (
     "report_knowledge_outcome",
     "grant_workspace_access",
     "post_channel",
+    "attach_file",
     "call_human",
     "ping_subordinate",
     "delegate_task",
@@ -184,6 +186,11 @@ def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
     return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
 
 
+def chat_attachments_enabled_for_trigger(trigger: str | None) -> bool:
+    """Return whether the run is a reply to a human in a web chat."""
+    return (trigger or "").strip().startswith("message:")
+
+
 def resolve_tool_surface(ctx: ToolSurfaceContext, trigger: str, mode: str) -> list[str]:
     """Return the ordered visible tool names for an execution mode.
 
@@ -207,6 +214,8 @@ def resolve_tool_surface(ctx: ToolSurfaceContext, trigger: str, mode: str) -> li
             names.difference_update(SKILL_MANAGEMENT_TOOL_NAMES)
         if not (ctx.force_submit_tasks or submit_tasks_enabled_for_trigger(normalized_trigger)):
             names.discard("submit_tasks")
+        if not chat_attachments_enabled_for_trigger(normalized_trigger):
+            names.discard("attach_file")
         if is_consolidation:
             names.difference_update(CONSOLIDATION_BLOCKED_TOOL_NAMES)
         return [name for name in MCP_TOOL_NAMES if name in names]
@@ -225,6 +234,8 @@ def resolve_tool_surface(ctx: ToolSurfaceContext, trigger: str, mode: str) -> li
             names.difference_update(SKILL_MANAGEMENT_TOOL_NAMES)
         if not submit_tasks_enabled_for_trigger(normalized_trigger):
             names.discard("submit_tasks")
+        if not chat_attachments_enabled_for_trigger(normalized_trigger):
+            names.discard("attach_file")
         if is_consolidation:
             names.difference_update(CONSOLIDATION_BLOCKED_TOOL_NAMES)
         if ctx.compact:
@@ -240,6 +251,7 @@ __all__ = [
     "MCP_TOOL_NAMES",
     "SKILL_MANAGEMENT_TOOL_NAMES",
     "ToolSurfaceContext",
+    "chat_attachments_enabled_for_trigger",
     "is_consolidation_trigger",
     "is_full_tool_trigger",
     "resolve_tool_surface",
