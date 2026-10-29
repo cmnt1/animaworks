@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=d12494b507da9562e78794553245181249cc4952a2be450bcdff145ab22e2a7d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=15a2f170164574318072c71abbdb9caf4fd68dd7b3dae611a9c337f5a7db0572 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -425,63 +425,63 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.integrations` | 79 | 핵심 연동 도구 검색 및 레지스트리. |
+| `core.integrations` | 79 | 핵심 통합 도구 탐색 및 레지스트리. |
 | `core.integrations._anima_icon_url（非公開）` | 322 | Anima 아이콘 URL 확인 — 대시보드, 아웃바운드, Slack, 알림, 도구 등. |
-| `core.integrations._async_compat（非公開）` | 41 | 동기식 HTTP 클라이언트를 사용하는 도구를 위한 비동기 호환성 헬퍼. |
+| `core.integrations._async_compat（非公開）` | 41 | 동기식 HTTP 클라이언트를 사용하는 도구를 위한 비동기 호환 헬퍼. |
 | `core.integrations._base（非公開）` | 200 | — |
 | `core.integrations._cache（非公開）` | 172 | 통신 도구용 공유 SQLite 메시지 캐시 기본 클래스. |
-| `core.integrations._chatwork_cache（非公開）` | 324 | Chatwork 오프라인 검색 및 미응답 탐지를 위한 SQLite 메시지 캐시. |
+| `core.integrations._chatwork_cache（非公開）` | 324 | Chatwork 오프라인 검색 및 미응답 감지를 위한 SQLite 메시지 캐시. |
 | `core.integrations._chatwork_client（非公開）` | 235 | Chatwork v2 API용 HTTP 클라이언트. |
-| `core.integrations._chatwork_cli（非公開）` | 633 | Chatwork 도구의 독립형 CLI 진입점. |
-| `core.integrations._chatwork_identity（非公開）` | 76 | Chatwork 신원 및 위임 확인. |
+| `core.integrations._chatwork_cli（非公開）` | 633 | Chatwork 도구용 독립형 CLI 진입점. |
+| `core.integrations._chatwork_identity（非公開）` | 76 | Chatwork ID 및 위임 확인. |
 | `core.integrations._chatwork_markdown（非公開）` | 162 | Markdown을 Chatwork 형식으로 변환하는 유틸리티. |
 | `core.integrations._comm_cli（非公開）` | 64 | — |
 | `core.integrations._discord_cache（非公開）` | 293 | Discord용 SQLite 메시지 캐시(오프라인 검색, 동기화 상태). |
-| `core.integrations._discord_client（非公開）` | 47 | 이전 버전과 호환되는 Discord 클라이언트 가져오기 경로. |
-| `core.integrations._discord_cli（非公開）` | 297 | Discord 도구의 독립형 CLI 진입점. |
+| `core.integrations._discord_client（非公開）` | 47 | 하위 호환성을 위한 Discord 클라이언트 가져오기 경로. |
+| `core.integrations._discord_cli（非公開）` | 297 | Discord 도구용 독립형 CLI 진입점. |
 | `core.integrations._discord_markdown（非公開）` | 138 | Discord 마크업 헬퍼: 일반 텍스트 정리 및 길이 제한. |
-| `core.integrations._google_auth（非公開）` | 175 | Google 연동을 위한 공유 OAuth2 자격 증명 처리. |
+| `core.integrations._google_auth（非公開）` | 175 | Google 통합용 공유 OAuth2 자격 증명 처리. |
 | `core.integrations._image_clients（非公開）` | 93 | image/3D 생성을 위한 API 클라이언트 및 공유 상수. |
 | `core.integrations._image_cli（非公開）` | 371 | ``animaworks-tool image_gen``용 CLI 진입점. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX 에셋 변환, 최적화 및 압축. |
-| `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – 전체 캐릭터 에셋 생성을 조율합니다. |
+| `core.integrations._image_pipeline（非公開）` | 939 | ImageGenPipeline – 전체 캐릭터 에셋 생성을 조율합니다. |
 | `core.integrations._image_pixel（非公開）` | 624 | 승인된 기본 시트에서 Pixel Workspace 캐릭터 시트를 생성합니다. |
 | `core.integrations._image_schemas（非公開）` | 42 | 이미지 생성을 위한 도구 스키마 및 CLI 가이드. |
-| `core.integrations._retry（非公開）` | 170 | AnimaWorks 도구를 위한 공유 retry/backoff 유틸리티. |
-| `core.integrations._slack_cache（非公開）` | 435 | Slack용 SQLite 메시지 캐시(오프라인 검색, 미응답 탐지). |
-| `core.integrations._slack_client（非公開）` | 308 | 요청 속도 제한 재시도 및 페이지네이션을 지원하는 Slack Web API 클라이언트. |
-| `core.integrations._slack_cli（非公開）` | 308 | Slack 도구의 독립형 CLI 진입점. |
+| `core.integrations._retry（非公開）` | 170 | AnimaWorks 도구용 공유 retry/backoff 유틸리티. |
+| `core.integrations._slack_cache（非公開）` | 435 | Slack용 SQLite 메시지 캐시(오프라인 검색, 미응답 감지). |
+| `core.integrations._slack_client（非公開）` | 308 | 속도 제한 재시도 및 페이지네이션을 지원하는 Slack Web API 클라이언트. |
+| `core.integrations._slack_cli（非公開）` | 308 | Slack 도구용 독립형 CLI 진입점. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack Markdown 변환 및 서식 지정 유틸리티. |
-| `core.integrations.aws_collector` | 408 | AnimaWorks AWS 수집 도구 — ECS 상태, CloudWatch 로그 및 메트릭. |
+| `core.integrations.aws_collector` | 408 | AnimaWorks AWS 수집기 도구 — ECS 상태, CloudWatch 로그 및 지표. |
 | `core.integrations.call_human` | 113 | — |
-| `core.integrations.chatwork` | 281 | AnimaWorks용 Chatwork 연동. |
-| `core.integrations.discord` | 284 | AnimaWorks용 Discord 연동. |
-| `core.integrations.enclave` | 554 | 엔클레이브 ask 작업을 제출하고 관리하는 호스트 측 도구. |
-| `core.integrations.enclave_aws` | 866 | 엔클레이브 런타임용 읽기 전용 AWS 데이터 도구. |
-| `core.integrations.enclave_progress` | 111 | anima가 엔클레이브 ask 작업에 중간 진행 상황을 기록하는 도구. |
-| `core.integrations.enclave_records` | 222 | 엔클레이브 런타임 내부에서 설정된 JSONL 데이터 세트를 읽습니다. |
-| `core.integrations.enclave_sql` | 397 | 엔클레이브 런타임용 읽기 전용 MySQL 쿼리 도구. |
+| `core.integrations.chatwork` | 281 | AnimaWorks용 Chatwork 통합. |
+| `core.integrations.discord` | 284 | AnimaWorks용 Discord 통합. |
+| `core.integrations.enclave` | 554 | enclave ask 작업을 제출하고 관리하기 위한 호스트 측 도구. |
+| `core.integrations.enclave_aws` | 866 | enclave 런타임용 읽기 전용 AWS 데이터 도구. |
+| `core.integrations.enclave_progress` | 111 | anima가 enclave ask 작업에 중간 진행 상황을 기록하는 도구. |
+| `core.integrations.enclave_records` | 222 | enclave 런타임 내부에서 구성된 JSONL 데이터세트를 읽습니다. |
+| `core.integrations.enclave_sql` | 397 | enclave 런타임용 읽기 전용 MySQL 쿼리 도구. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub 도구 — gh CLI 래퍼. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail 도구 -- Gmail API 직접 액세스. |
 | `core.integrations.google_calendar` | 615 | — |
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks 도구 -- Google Tasks API 액세스. |
-| `core.integrations.image.atlascloud` | 156 | 캐릭터 이미지 및 참조 이미지 편집을 위한 선택적 Atlas Cloud 백엔드. |
-| `core.integrations.image.codex` | 348 | Codex CLI 이미지 생성 클라이언트(로컬 codex를 통한 image_gen 도구). |
+| `core.integrations.image.atlascloud` | 156 | 캐릭터 이미지 및 참조 이미지 편집을 위한 선택형 Atlas Cloud 백엔드. |
+| `core.integrations.image.codex` | 370 | Codex CLI 이미지 생성 클라이언트(로컬 codex를 통한 image_gen 도구). |
 | `core.integrations.image.constants` | 57 | image/3D 생성을 위한 URL 상수, 타임아웃 및 실행 프로필. |
-| `core.integrations.image.diffusers_local` | 905 | 로컬 Diffusers 기반 이미지 생성 헬퍼. |
+| `core.integrations.image.diffusers_local` | 905 | Diffusers 기반 로컬 이미지 생성 헬퍼. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext 및 Flux Pro 텍스트-이미지 API 클라이언트. |
 | `core.integrations.image.meshy` | 311 | Meshy 이미지-3D 변환, 리깅 및 애니메이션 API 클라이언트. |
 | `core.integrations.image.novelai` | 193 | 애니메이션 전신 이미지 생성을 위한 NovelAI V4.5 API 클라이언트. |
-| `core.integrations.image.prompts` | 266 | 상반신, 치비 및 표정 변형을 위한 프롬프트 상수. |
-| `core.integrations.image.utils` | 135 | image/3D 생성 클라이언트용 공유 유틸리티. |
+| `core.integrations.image.prompts` | 279 | 상반신, 치비 및 표정 변형을 위한 프롬프트 상수. |
+| `core.integrations.image.utils` | 169 | image/3D 생성 클라이언트용 공유 유틸리티. |
 | `core.integrations.image_gen` | 425 | AnimaWorks용 캐릭터 이미지 및 3D 모델 생성 도구. |
 | `core.integrations.local_llm` | 552 | AnimaWorks 로컬 LLM 도구 -- Ollama API 클라이언트. |
-| `core.integrations.notion` | 862 | AnimaWorks용 Notion 연동. |
-| `core.integrations.slack` | 262 | AnimaWorks용 Slack 연동. |
-| `core.integrations.transcribe` | 429 | AnimaWorks 음성 텍스트 변환 도구 -- LLM 후처리를 지원하는 Whisper 음성-텍스트 변환. |
+| `core.integrations.notion` | 862 | AnimaWorks용 Notion 통합. |
+| `core.integrations.slack` | 262 | AnimaWorks용 Slack 통합. |
+| `core.integrations.transcribe` | 429 | AnimaWorks 음성 전사 도구 -- LLM 보정을 지원하는 Whisper 음성-텍스트 변환. |
 | `core.integrations.web_search` | 408 | AnimaWorks용 웹 검색 도구. |
-| `core.integrations.x_search` | 348 | AnimaWorks용 X (Twitter) 검색 도구. |
+| `core.integrations.x_search` | 348 | AnimaWorks용 X(Twitter) 검색 도구. |
 
 ## `core.integrations.image`
 
