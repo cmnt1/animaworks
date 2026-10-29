@@ -21,7 +21,7 @@ function saveHidden(hidden) {
 }
 
 
-export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToolsChanged }) {
+export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToolsChanged, onPick }) {
   let _last = "";
 
   attachFaceFallback(el, (name) => getFocused()?.ctx.state.animaTabAvatarUrls?.[name] || "");
@@ -44,6 +44,8 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
     const others = new Set(
       panes.filter((p) => p !== focused).map((p) => p.ctx.state.selectedAnima).filter(Boolean),
     );
+    // Folded rail on phones: the header shows a dot when another anima needs attention.
+    el.classList.toggle("has-alert", list.some((a) => a.name !== active && railBadge(presence.get(a.name))));
 
     const items = list.map((a) => {
       const name = a.name;
@@ -142,6 +144,7 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
       closeAddMenu();
       _last = "";
       getFocused()?.ctx.controllers.anima.openOrSelectAnima(pick.dataset.show);
+      onPick?.();
       render();
     });
     document.addEventListener("pointerdown", onOutside, true);
@@ -176,6 +179,7 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
       const anima = focused.ctx.controllers.anima;
       if (name === focused.ctx.state.selectedAnima) focused.ctx.controllers.memoryPopover.open(item);
       else anima.openOrSelectAnima(name);
+      onPick?.();
       return;
     }
     const tool = e.target.closest?.(".chat-rail-tool");

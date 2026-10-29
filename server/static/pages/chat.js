@@ -6,12 +6,6 @@ let _host = null;
 
 export function render(container) {
   container.innerHTML = `
-    <!-- Mobile Tab Bar -->
-    <nav class="chat-mobile-tabs" data-chat-id="chatMobileTabs">
-      <button class="chat-mobile-tab active" data-panel="chat" data-chat-id="chatMobileTabChat">${t("nav.chat")}</button>
-      <button class="chat-mobile-tab" data-panel="info" data-chat-id="chatMobileTabInfo">${t("chat.memory.open")}</button>
-    </nav>
-
     <div class="chat-page-layout" data-chat-id="chatPageLayout">
       <div class="chat-pane-host" data-chat-id="chatPaneHost"></div>
     </div>

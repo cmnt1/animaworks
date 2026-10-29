@@ -1042,11 +1042,7 @@ export function createMemoryPopover(ctx) {
 
   function openPopover(anchorEl) {
     const name = state.selectedAnima;
-    if (!name) {
-      ctx.$root?.("chatMobileTabChat")?.classList.add("active");
-      ctx.$root?.("chatMobileTabInfo")?.classList.remove("active");
-      return;
-    }
+    if (!name) return;
     for (const instance of INSTANCES) {
       if (instance !== controls && instance.isOpen()) instance.close();
     }
@@ -1091,8 +1087,6 @@ export function createMemoryPopover(ctx) {
     if (!open) return;
     open = false;
     stopActivityRefresh();
-    ctx.$root?.("chatMobileTabChat")?.classList.add("active");
-    ctx.$root?.("chatMobileTabInfo")?.classList.remove("active");
     if (simulation) {
       simulation.stop();
       simulation = null;

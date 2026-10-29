@@ -269,6 +269,7 @@ body[data-theme="dark"] {
 .chat-line-sysline,
 .chat-sysline {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: 5px;
   align-self: center;
@@ -445,12 +446,6 @@ body[data-theme="dark"] {
   }
 }
 
-@media (hover: none) {
-  .chat-line-actions {
-    opacity: 1;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .chat-line-actions,
   .scroll-to-bottom-btn {
@@ -510,3 +505,12 @@ body[data-theme="dark"] {
 .bg-feed-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bg-feed-full { margin: 4px 0 6px 40px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--aw-line-ink); }
 .bg-feed-empty, .bg-feed-truncated { font-size: .72rem; color: var(--aw-line-ink-soft); padding: 4px 8px; }
+
+/* Touch screens have no hover: a tapped bubble shows its actions (see bindChatLineHandlers). */
+@media (hover: none) {
+  .chat-line .chat-line-actions,
+  .chat-line:hover .chat-line-actions,
+  .chat-line:active .chat-line-actions,
+  .chat-line:focus-within .chat-line-actions { opacity: 0; pointer-events: none; }
+  .chat-line.actions-open .chat-line-actions { opacity: 1; pointer-events: auto; }
+}

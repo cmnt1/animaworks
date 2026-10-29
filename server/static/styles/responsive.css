@@ -887,39 +887,9 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 }
 
-/* Mobile memory shortcut: hidden on desktop */
-.chat-mobile-tabs {
-  display: none;
-}
-
 /* ── Chat Page Mobile (< 768px) ──────────── */
 
 @media (max-width: 768px) {
-  .chat-mobile-tabs {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 44px;
-    padding: 4px 10px;
-    border-bottom: 1px solid var(--aw-color-border-light);
-    background: var(--aw-color-bg-primary);
-  }
-
-  .chat-mobile-tab {
-    min-height: 36px;
-    padding: 4px 12px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--aw-color-text-muted);
-    cursor: pointer;
-  }
-
-  .chat-mobile-tab.active {
-    background: var(--aw-color-bg-hover);
-    color: var(--aw-color-text-primary);
-  }
-
   .chat-add-conversation-menu {
     right: 0;
     left: auto;
@@ -928,7 +898,7 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 
   .chat-page-layout {
-    height: calc(100% - 44px);
+    height: 100%;
     gap: 0;
     position: relative;
     min-height: 0;
