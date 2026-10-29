@@ -43,6 +43,9 @@ _CHANNEL_REF_RE = re.compile(r"<#([A-Z0-9]+)\|([^>]+)>")
 _CHANNEL_BARE_RE = re.compile(r"<#([A-Z0-9]+)>")
 _LINK_RE = re.compile(r"<(https?://[^|>]+)\|([^>]+)>")
 _BARE_URL_RE = re.compile(r"<(https?://[^>]+)>")
+# Slack mrkdwn: *bold* and ~strike~ (single markers). "* item" bullets and **bold** are left alone.
+_SLACK_BOLD_RE = re.compile(r"(?<![*\w])\*(?![\s*])([^*\n]+?)(?<!\s)\*(?![*\w])")
+_SLACK_STRIKE_RE = re.compile(r"(?<![~\w])~(?![\s~])([^~\n]+?)(?<!\s)~(?![~\w])")
 _SHELL_STOP_TOKENS = frozenset({"&&", "||", ";", "|", "&", ">", ">>", "<"})
 _THREAD_OPTIONS = frozenset({"--thread", "--thread-ts", "-t"})
 _DERIVED_DUPLICATE_WINDOW_SEC = 600
@@ -160,6 +163,8 @@ def _display_text(text: str, aliases: dict[str, str], names: dict[str, str] | No
     value = _CHANNEL_BARE_RE.sub(lambda m: f"#{m.group(1)}", value)
     value = _LINK_RE.sub(lambda m: f"[{m.group(2)}]({m.group(1)})", value)
     value = _BARE_URL_RE.sub(lambda m: m.group(1), value)
+    value = _SLACK_BOLD_RE.sub(r"**\1**", value)
+    value = _SLACK_STRIKE_RE.sub(r"~~\1~~", value)
     value = value.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     return value.strip()
 

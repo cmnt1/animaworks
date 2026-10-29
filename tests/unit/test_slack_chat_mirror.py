@@ -145,6 +145,13 @@ def test_display_text_for_slack(alias_config: AnimaWorksConfig) -> None:
     )
 
 
+def test_display_text_converts_slack_emphasis_to_markdown(alias_config: AnimaWorksConfig) -> None:
+    text = "*患者情報*：目録に書かない\n* 箇条書き\n**すでに太字** と ~取り消し~ と _斜体_ と 2*3*4"
+    assert display_text_for_slack(text) == (
+        "**患者情報**：目録に書かない\n* 箇条書き\n**すでに太字** と ~~取り消し~~ と _斜体_ と 2*3*4"
+    )
+
+
 def test_strip_thread_context_supports_slack_and_discord() -> None:
     slack = "[Thread context — this message is a reply in a Slack thread]\n  @Bob: parent\n[/Thread context]\n\nhello"
     discord = "[Thread context — Discord reply]\n  parent\n[/Thread context]\n\nhello"
