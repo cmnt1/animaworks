@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=d12494b507da9562e78794553245181249cc4952a2be450bcdff145ab22e2a7d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=9cafa7c9b037f5a36198d9f5e1c81d9c53ea33082f5b7bc46bd2ee37c91bcf71 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -108,13 +108,13 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 
 ## `core.activity`
 
-Recording, playback, and timeline display of activity logs.
+Activity log recording, playback, and timeline display.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 1286 | — |
+| `core.activity.conversation` | 1288 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -157,7 +157,7 @@ Digital Anima lifecycle and runtime objects.
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1392 | — |
+| `core.anima.messaging` | 1415 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -368,9 +368,9 @@ Tool execution, command execution, and safety controls.
 
 ## `core.i18n`
 
-Translation catalog and language selection.
+Translation catalogs and language selection.
 
-| モジュール | 行数 | docstring 1行目 |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
@@ -388,7 +388,7 @@ Translation catalog and language selection.
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 301 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
@@ -823,9 +823,9 @@ System prompt and context construction.
 
 ## `core.runtime`
 
-Anima main runtime components, inter-process communication, and task execution.
+Anima main runtime components, interprocess communication, and task execution.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
 | `core.runtime.cron_diagnostics` | 85 | Registration-time diagnostics for cron schedules that waste LLM runs. |
@@ -840,8 +840,8 @@ Anima main runtime components, inter-process communication, and task execution.
 | `core.runtime.schedule_parser` | 484 | — |
 | `core.runtime.scheduler_manager` | 1058 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
-| `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
-| `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
+| `core.runtime.streaming_handler` | 449 | Streaming IPC message handler. |
+| `core.runtime.task_runner` | 1055 | Disposable task runner entry point. |
 | `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
@@ -1110,15 +1110,16 @@ Audio input/output and voice conversations.
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1607 | — |
+| `server.routes.assets` | 1624 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
-| `server.routes.chat` | 419 | — |
+| `server.routes.chat` | 456 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
+| `server.routes.chat_files` | 116 | — |
 | `server.routes.chat_images` | 80 | — |
-| `server.routes.chat_models` | 50 | — |
-| `server.routes.chat_producer` | 335 | — |
+| `server.routes.chat_models` | 59 | — |
+| `server.routes.chat_producer` | 346 | — |
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |

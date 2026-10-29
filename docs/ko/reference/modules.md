@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=d12494b507da9562e78794553245181249cc4952a2be450bcdff145ab22e2a7d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=9cafa7c9b037f5a36198d9f5e1c81d9c53ea33082f5b7bc46bd2ee37c91bcf71 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -110,11 +110,11 @@
 
 활동 로그 기록, 재생, 타임라인 표시.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 1286 | — |
+| `core.activity.conversation` | 1288 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -140,24 +140,24 @@ LLM 에이전트 실행, 대화 제어 및 엔진 연동.
 
 ## `core.anima`
 
-디지털 Anima의 생명 주기와 런타임 객체.
+디지털 Anima의 라이프사이클과 런타임 객체.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima._mixin_protocols（非公開）` | 130 | 구성형 믹스인을 위한 구조적 호스트 프로토콜. |
+| `core.anima._mixin_protocols（非公開）` | 130 | 조합형 믹스인을 위한 구조적 호스트 프로토콜. |
 | `core.anima.admin` | 170 | — |
 | `core.anima.asset_reconciler` | 786 | — |
 | `core.anima.bootstrap_state` | 591 | — |
 | `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | LLM 응답에서 감정 태그를 추출하는 공통 기능. |
-| `core.anima.factory` | 842 | Anima 생성 팩터리: 템플릿, 빈 상태 또는 MD 파일에서 새로운 디지털 Anima를 생성합니다. |
+| `core.anima.factory` | 842 | Anima 생성 팩토리: 템플릿, 빈 상태 또는 MD 파일에서 새 디지털 Anima를 생성합니다. |
 | `core.anima.heartbeat` | 1022 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1392 | — |
+| `core.anima.messaging` | 1415 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -368,32 +368,32 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.i18n`
 
-번역 카탈로그 및 언어 선택.
+번역 카탈로그와 언어 선택.
 
 | 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원. |
-| `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열. |
+| `core.i18n` | 135 | 런타임 문자열을 위한 경량 국제화 지원. |
+| `core.i18n.strings.communication` | 46 | 도메인별 국제화 문자열. |
 | `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화 문자열. |
-| `core.i18n.strings.config` | 836 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.config` | 836 | 도메인별 국제화 문자열. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.handler` | 416 | 도메인별 i18n 문자열(핸들러 파트 1). |
-| `core.i18n.strings.handler_ext` | 393 | 도메인별 i18n 문자열(핸들러 파트 2). |
-| `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.execution` | 205 | 도메인별 국제화 문자열. |
+| `core.i18n.strings.handler` | 416 | 도메인별 국제화 문자열(핸들러 1부). |
+| `core.i18n.strings.handler_ext` | 393 | 도메인별 국제화 문자열(핸들러 2부). |
+| `core.i18n.strings.lifecycle` | 104 | 도메인별 국제화 문자열. |
+| `core.i18n.strings.memory` | 418 | 도메인별 국제화 문자열. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 527 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 라우트 모듈). |
+| `core.i18n.strings.misc` | 527 | 도메인별 국제화 문자열. |
+| `core.i18n.strings.misc_routes` | 21 | 도메인별 국제화 문자열(레거시 경로 모듈). |
 | `core.i18n.strings.models` | 70 | 모델 검사를 위한 현지화된 CLI 메시지. |
 | `core.i18n.strings.phone` | 127 | — |
-| `core.i18n.strings.room_manager` | 29 | 회의실 관리자를 위한 i18n 문자열. |
-| `core.i18n.strings.server` | 251 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.supervisor` | 140 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.room_manager` | 29 | 회의실 관리자를 위한 국제화 문자열. |
+| `core.i18n.strings.server` | 301 | 도메인별 국제화 문자열. |
+| `core.i18n.strings.supervisor` | 140 | 도메인별 국제화 문자열. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 130 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능). |
-| `core.i18n.strings.tooling_schema` | 506 | 도메인별 i18n 문자열(schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 i18n 문자열(schema.* 파트 2). |
+| `core.i18n.strings.tooling` | 130 | 도메인별 국제화 문자열(도구 프롬프트 및 도구 기능). |
+| `core.i18n.strings.tooling_schema` | 506 | 도메인별 국제화 문자열(schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 국제화 문자열(schema.* 2부). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -823,27 +823,27 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 
 ## `core.runtime`
 
-Anima 메인의 런타임 컴포넌트, 프로세스 간 통신, 작업 실행.
+Anima 메인의 런타임 구성 요소, 프로세스 간 통신, 작업 실행.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
-| `core.runtime.cron_diagnostics` | 85 | Registration-time diagnostics for cron schedules that waste LLM runs. |
-| `core.runtime.cron_followup` | 169 | Shared command-cron follow-up policy for legacy and isolated runners. |
-| `core.runtime.event_bus` | 88 | In-process event buffer for events emitted by an Anima main runner. |
-| `core.runtime.inbox_rate_limiter` | 371 | Event-driven inbox wakeups and deferred trigger management. |
-| `core.runtime.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
-| `core.runtime.ipc_v2` | 414 | Persistent duplex IPC v2 used between an Anima main and task runners. |
-| `core.runtime.memory_service` | 774 | Anima-main-owned vector memory service. |
-| `core.runtime.process_role` | 25 | Process role metadata shared by AnimaWorks process entry points. |
-| `core.runtime.runner` | 1409 | Child process entry point for Anima subprocess. |
+| `core.runtime` | 1 | 개별 Anima 프로세스가 소유하는 런타임 구성 요소. |
+| `core.runtime.cron_diagnostics` | 85 | LLM 실행을 낭비하는 크론 일정을 등록 시 진단합니다. |
+| `core.runtime.cron_followup` | 169 | 레거시 및 격리된 실행기에서 공유하는 명령 크론 후속 처리 정책. |
+| `core.runtime.event_bus` | 88 | Anima 메인 실행기가 발생시킨 이벤트를 위한 프로세스 내 이벤트 버퍼. |
+| `core.runtime.inbox_rate_limiter` | 371 | 이벤트 기반 받은 편지함 깨우기 및 지연 트리거 관리. |
+| `core.runtime.ipc` | 508 | 플랫폼별 전송 방식을 통해 JSON Lines를 사용하는 IPC 통신 계층. |
+| `core.runtime.ipc_v2` | 414 | Anima 메인과 작업 실행기 간에 사용되는 영속 양방향 IPC v2. |
+| `core.runtime.memory_service` | 774 | Anima 메인이 소유하는 벡터 메모리 서비스. |
+| `core.runtime.process_role` | 25 | AnimaWorks 프로세스 진입점에서 공유하는 프로세스 역할 메타데이터. |
+| `core.runtime.runner` | 1409 | Anima 하위 프로세스의 자식 프로세스 진입점. |
 | `core.runtime.schedule_parser` | 484 | — |
-| `core.runtime.scheduler_manager` | 1058 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.scheduler_manager` | 1058 | 하트비트 및 크론 작업을 위한 APScheduler 관리. |
 | `core.runtime.state_writer` | 27 | — |
-| `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
-| `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
-| `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
+| `core.runtime.streaming_handler` | 449 | 스트리밍 IPC 메시지 핸들러. |
+| `core.runtime.task_runner` | 1055 | 일회용 작업 실행기 진입점. |
+| `core.runtime.task_runner_supervisor` | 1446 | 일회용 작업 실행기 프로세스를 위한 Anima 메인 측 라이프사이클 관리자. |
+| `core.runtime.transport` | 240 | IPC server/client 통신을 위한 전송 도우미. |
 
 ## `core.skills`
 
@@ -1105,20 +1105,21 @@ LLM 사용량 및 비용 기록·집계.
 
 —
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1607 | — |
+| `server.routes.assets` | 1624 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
-| `server.routes.chat` | 419 | — |
+| `server.routes.chat` | 456 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
+| `server.routes.chat_files` | 116 | — |
 | `server.routes.chat_images` | 80 | — |
-| `server.routes.chat_models` | 50 | — |
-| `server.routes.chat_producer` | 335 | — |
+| `server.routes.chat_models` | 59 | — |
+| `server.routes.chat_producer` | 346 | — |
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
@@ -1138,7 +1139,7 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공통 헬퍼를 사용한다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트; Anima별 status.json 설정은 공통 도우미를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
