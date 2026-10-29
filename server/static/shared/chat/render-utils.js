@@ -507,6 +507,7 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const dataRawText = rawText ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
   const notificationId = msg.type === "human_notify"
     ? ` data-notification-id="${_escapeAttr(msg.notification_id || msg.ts || "")}"`
+      + (msg.callback_id ? ` data-callback-id="${_escapeAttr(msg.callback_id)}"` : "")
     : "";
   const messageTimestamp = msg.ts || msg.timestamp || "";
   const timestampData = messageTimestamp ? ` data-message-ts="${_escapeAttr(messageTimestamp)}"` : "";
@@ -1729,6 +1730,7 @@ export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
       onReply?.({
         type: row.dataset.notificationId ? "notification" : "message",
         notificationId: row.dataset.notificationId || "",
+        callbackId: row.dataset.callbackId || "",
         text: bubble.dataset.replyText || bubble.dataset.rawText || bubble.textContent || "",
         name: bubble.dataset.replyName || "",
       });

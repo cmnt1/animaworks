@@ -162,9 +162,11 @@ describe("LINE-style chat message rows", () => {
 describe("chat reply targets", () => {
   it("quotes the first 80 characters for ordinary replies and leaves notification replies plain", () => {
     const ordinary = { type: "message", text: "  A reply target with\nseveral spaces.  " };
-    const notification = { type: "notification", text: "Please confirm" };
+    const notification = { type: "notification", text: "Please confirm", callbackId: "cb-1" };
+    const plainNotice = { type: "notification", text: "Please confirm", name: "aoi" };
     assert.equal(quoteReplyMessage("Ship it", ordinary), "> A reply target with several spaces.\n\nShip it");
     assert.equal(quoteReplyMessage("1", notification), "1");
+    assert.equal(quoteReplyMessage("done", plainNotice), "> aoi: Please confirm\n\ndone");
     assert.equal(quoteReplyMessage("reply", { type: "message", text: "x".repeat(100) }), `> ${"x".repeat(80)}\n\nreply`);
   });
 
