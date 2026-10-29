@@ -16,8 +16,13 @@ export function clearReplyTarget(state) {
   return target;
 }
 
+/** Approval-style notifications (with a callback) are answered through the notification API. */
+export function needsNotificationApi(target) {
+  return target?.type === "notification" && Boolean(target.callbackId);
+}
+
 export function quoteReplyMessage(text, target) {
-  if (!target || target.type === "notification") return String(text || "");
+  if (!target || needsNotificationApi(target)) return String(text || "");
   const quoted = String(target.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
   const name = String(target.name || "").replace(/[:\n]/g, " ").trim().slice(0, 30);
   if (!quoted) return String(text || "");
