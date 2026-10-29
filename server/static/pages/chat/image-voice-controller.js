@@ -53,6 +53,8 @@ export function createImageVoiceController(ctx) {
       container: chatMain,
       inputArea: chatInput,
       previewContainer: previewEl,
+      allowFiles: true,
+      onImagesChanged: () => ctx.controllers.streaming?.updateSendButton(),
     });
     initLightbox();
 

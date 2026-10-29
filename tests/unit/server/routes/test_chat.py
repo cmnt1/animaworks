@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import base64
 from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 
@@ -140,6 +142,114 @@ class TestChat:
         data = resp.json()
         assert len(data["images"]) == 1
         assert data["images"][0]["path"] == "assets/a.png"
+
+    async def test_chat_file_upload_passes_saved_paths_and_prompt_list_to_ipc(self):
+        saved_files = [
+            {
+                "name": "estimate.pdf",
+                "path": "attachments/20261029_101500_0_estimate.pdf",
+                "size": 3,
+                "media_type": "application/pdf",
+            }
+        ]
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(return_value={"response": "ok", "replied_to": []})
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        with patch("server.routes.chat.save_files", return_value=saved_files):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/animas/alice/chat",
+                    json={
+                        "message": "Please review",
+                        "files": [
+                            {
+                                "name": "estimate.pdf",
+                                "media_type": "application/pdf",
+                                "data": base64.b64encode(b"PDF").decode("ascii"),
+                            }
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 200
+        params = supervisor.send_request.await_args.kwargs["params"]
+        assert params["display_message"] == "Please review"
+        assert params["files"] == saved_files
+        assert params["attachment_paths"] == [saved_files[0]["path"]]
+        assert "[添付ファイル]" in params["message"] or "[Attached files]" in params["message"]
+        assert saved_files[0]["path"] in params["message"]
+
+    async def test_file_validation_uses_error_object_for_400_and_413(self, monkeypatch):
+        alice = _make_mock_anima("alice")
+        app = _make_test_app({"alice": alice})
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            malformed = await client.post(
+                "/api/animas/alice/chat",
+                json={"message": "Hi", "files": [{"name": "bad.bin", "media_type": "", "data": "%%%"}]},
+            )
+            monkeypatch.setattr("server.routes.chat_files.MAX_CHAT_FILE_SIZE", 2)
+            oversized = await client.post(
+                "/api/animas/alice/chat",
+                json={"message": "Hi", "files": [{"name": "large.bin", "media_type": "", "data": "YWJj"}]},
+            )
+
+        assert malformed.status_code == 400
+        assert "error" in malformed.json()
+        assert oversized.status_code == 413
+        assert "error" in oversized.json()
+
+    async def test_stream_file_upload_passes_files_and_emits_paths_for_local_bubble(self):
+        from core.runtime.ipc import IPCResponse
+
+        saved_files = [
+            {
+                "name": "estimate.pdf",
+                "path": "attachments/20261029_101500_0_estimate.pdf",
+                "size": 3,
+                "media_type": "application/pdf",
+            }
+        ]
+        captured = {}
+        supervisor = MagicMock()
+        supervisor.processes = {"alice"}
+
+        async def send_request_stream(*, anima_name, method, params, timeout):
+            captured.update(params)
+            yield IPCResponse(
+                id="test",
+                stream=True,
+                done=True,
+                result={"response": "ok", "replied_to": [], "cycle_result": {"summary": "ok"}},
+            )
+
+        supervisor.send_request_stream = send_request_stream
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        with patch("server.routes.chat.save_files", return_value=saved_files):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/animas/alice/chat/stream",
+                    json={
+                        "message": "Please review",
+                        "files": [
+                            {
+                                "name": "estimate.pdf",
+                                "media_type": "application/pdf",
+                                "data": base64.b64encode(b"PDF").decode("ascii"),
+                            }
+                        ],
+                    },
+                )
+
+        assert resp.status_code == 200
+        assert captured["display_message"] == "Please review"
+        assert captured["files"] == saved_files
+        assert captured["attachment_paths"] == [saved_files[0]["path"]]
+        assert saved_files[0]["path"] in captured["message"]
+        assert '"files":' in resp.text
+        assert saved_files[0]["path"] in resp.text
 
     async def test_chat_with_from_anima(self):
         alice = _make_mock_anima("alice")

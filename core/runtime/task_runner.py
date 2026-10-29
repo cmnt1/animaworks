@@ -332,6 +332,11 @@ async def execute_chat_contract(
                     return response.result or {"response": "", "replied_to": []}
             return {"response": "", "replied_to": []}
 
+        attachment_kwargs: dict[str, Any] = {}
+        if payload.get("display_message") is not None:
+            attachment_kwargs["display_message"] = payload["display_message"]
+        if payload.get("files"):
+            attachment_kwargs["files"] = payload["files"]
         result = await anima.process_message(
             str(payload.get("message") or ""),
             from_person=str(payload.get("from_person") or "human"),
@@ -345,6 +350,7 @@ async def execute_chat_contract(
             meeting_room_id=str(payload.get("meeting_room_id") or ""),
             meeting_participants=payload.get("meeting_participants") or None,
             model=payload.get("model") or None,
+            **attachment_kwargs,
         )
         cycle_result = result if isinstance(result, dict) else {}
         return {
