@@ -101,7 +101,7 @@ export class CallScreen {
     this.container = container;
     this.threadId = opts.threadId || "default";
     this.voice = opts.voice || voiceManager;
-    this.animatorFactory = opts.animatorFactory || ((host, name) => new BustupAnimator(host, name));
+    this.animatorFactory = opts.animatorFactory || ((host, name, size) => new BustupAnimator(host, name, size));
     this.postCall = opts.postCall || ((name, record) => api(
       `/api/animas/${encodeURIComponent(name)}/conversation/calls`,
       {
@@ -270,8 +270,8 @@ export class CallScreen {
 
   start() {
     this.removeVoiceUI();
-    this.mainAnimator = this.animatorFactory(this.els.mainRig, this.animaName);
-    this.pipAnimator = this.animatorFactory(this.els.pipRig, this.animaName);
+    this.mainAnimator = this.animatorFactory(this.els.mainRig, this.animaName, "C");
+    this.pipAnimator = this.animatorFactory(this.els.pipRig, this.animaName, "C");
     this.animators = [this.mainAnimator, this.pipAnimator];
     this.setExpression("neutral");
     this._bindVoiceEvents();
@@ -283,7 +283,7 @@ export class CallScreen {
 
   async _loadRingAvatar() {
     try {
-      const url = await resolveCachedAvatar(this.animaName, bustupCandidates(), "S");
+      const url = await resolveCachedAvatar(this.animaName, bustupCandidates(), "C");
       if (!this.finished && url) {
         this.els.ringAvatar.src = url;
         this.els.backdrop.style.backgroundImage = `url("${String(url).replace(/"/g, "%22")}")`;

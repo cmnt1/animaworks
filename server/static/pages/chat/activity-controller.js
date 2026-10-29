@@ -4,6 +4,7 @@ export function createActivityController(ctx) {
   const $root = ctx.$root;
   const { state, deps } = ctx;
   const { api, t, escapeHtml, timeStr, getIcon, getDisplaySummary } = deps;
+  const _animaStateLoads = new Map();
 
   function addLocalActivity(type, animaName, summary) {
     const feed = $root("chatActivityFeed");
@@ -72,6 +73,39 @@ export function createActivityController(ctx) {
     }
   }
 
+  function loadAnimaState() {
+    const name = state.selectedAnima;
+    const el = $root("chatAnimaState");
+    if (!name) {
+      state.animaDetail = null;
+      state.animaDetailLoadedFor = null;
+      if (el) el.textContent = t("chat.anima_select_first");
+      return Promise.resolve(null);
+    }
+    if (state.animaDetailLoadedFor === name && state.animaDetail?.state !== undefined) {
+      renderAnimaState();
+      return Promise.resolve(state.animaDetail);
+    }
+    if (_animaStateLoads.has(name)) return _animaStateLoads.get(name);
+
+    if (el) el.textContent = t("common.loading");
+    const request = api(`/api/animas/${encodeURIComponent(name)}/state`)
+      .then((detail) => {
+        if (state.selectedAnima !== name) return detail;
+        state.animaDetail = detail;
+        state.animaDetailLoadedFor = name;
+        renderAnimaState();
+        return detail;
+      })
+      .catch(() => {
+        if (state.selectedAnima === name && el) el.textContent = t("animas.detail_load_failed");
+        return null;
+      })
+      .finally(() => _animaStateLoads.delete(name));
+    _animaStateLoads.set(name, request);
+    return request;
+  }
+
   async function loadHeartbeatConfig() {
     const el = $root("chatHeartbeatContent");
     if (!el) return;
@@ -114,5 +148,5 @@ export function createActivityController(ctx) {
     }
   }
 
-  return { addLocalActivity, loadActivity, renderAnimaState, loadHeartbeatConfig, loadCronConfig };
+  return { addLocalActivity, loadActivity, renderAnimaState, loadAnimaState, loadHeartbeatConfig, loadCronConfig };
 }

@@ -78,7 +78,7 @@ export function createPresencePanel(ctx) {
     img.className = "chat-presence-static";
     img.alt = name;
     img.draggable = false;
-    img.src = bustUrl(name, emotion, "L");
+    img.src = bustUrl(name, emotion, "P");
     stage.appendChild(img);
   }
 
@@ -92,7 +92,7 @@ export function createPresencePanel(ctx) {
     if (!animator || animatorFor !== name) {
       _stopAnimator();
       stage.innerHTML = "";
-      animator = new BustupAnimator(stage, name);
+      animator = new BustupAnimator(stage, name, "P");
       animatorFor = name;
       currentEmotion = null;
     }

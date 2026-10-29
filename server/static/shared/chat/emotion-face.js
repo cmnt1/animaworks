@@ -22,7 +22,7 @@ export function faceUrl(animaName, emotion, size = "S") {
 }
 
 /** Return the emotion-matched bustup URL used by the enlarged face overlay. */
-export function bustUrl(animaName, emotion, size = "L") {
+export function bustUrl(animaName, emotion, size = "C") {
   const filename = bustupExpressionCandidates(_emotionValue(emotion))[0];
   return `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}?size=${size}`;
 }

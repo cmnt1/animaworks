@@ -176,7 +176,9 @@ function makeOptions(overrides = {}) {
   const voice = new MockVoiceManager();
   const container = new FakeElement("main");
   const animatorCalls = [];
-  const animatorFactory = () => {
+  const animatorArgs = [];
+  const animatorFactory = (...args) => {
+    animatorArgs.push(args);
     const animator = {
       expressions: [],
       setExpression(expression) { this.expressions.push(expression); },
@@ -192,7 +194,7 @@ function makeOptions(overrides = {}) {
     CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
   });
   return {
-    doc, body, dispatched, container, voice, animatorCalls, posted,
+    doc, body, dispatched, container, voice, animatorCalls, animatorArgs, posted,
     opts: {
       container,
       voice,
@@ -222,6 +224,7 @@ describe("call screen", () => {
     const setup = makeOptions();
     const screen = new CallScreen("mei", setup.container, setup.opts);
     screen.start();
+    assert.deepEqual(setup.animatorArgs.map((args) => args[2]), ["C", "C"]);
     await Promise.resolve();
 
     assert.equal(screen.els.root.classList.contains("is-ringing"), true);
@@ -309,10 +312,11 @@ describe("call screen", () => {
 
   it("uses the existing animator's static bustup when frame files are absent", async () => {
     const sourcePath = resolve(__dirname, "../../../server/static/pages/chat/bustup-animator.js");
+    globalThis.__avatarHeadUrls = [];
     const animatorSource = readFileSync(sourcePath, "utf8")
-      .replace(/^import \{ api \} from .*;$/m, "const api = async () => ({ ok: false });")
+      .replace(/^import \{ api \} from .*;$/m, "const api = async (url) => { globalThis.__avatarHeadUrls.push(url); return { ok: false }; };")
       .replace(/^import\s*\{[^}]*\}\s*from\s*"\.\.\/\.\.\/modules\/avatar-resolver\.js";?\s*$/m,
-        'const assetUrl = (name, file) => `/assets/${name}/${file}`; const bustupExpressionCandidates = (expr) => [expr === "neutral" ? "avatar_bustup.png" : `avatar_bustup_${expr}.png`]; const isRealisticMode = () => false;');
+        'const assetUrl = (name, file, size) => `/assets/${name}/${file}?size=${size}`; const bustupExpressionCandidates = (expr) => [expr === "neutral" ? "avatar_bustup.png" : `avatar_bustup_${expr}.png`]; const isRealisticMode = () => false;');
     const animatorUrl = "data:text/javascript;base64," + Buffer.from(animatorSource, "utf8").toString("base64");
     const { BustupAnimator } = await import(animatorUrl);
 
@@ -332,12 +336,14 @@ describe("call screen", () => {
     globalThis.requestAnimationFrame = () => 1;
     globalThis.cancelAnimationFrame = () => {};
     const container = new FakeElement("div");
-    const animator = new BustupAnimator(container, "mei");
+    const animator = new BustupAnimator(container, "mei", "C");
     await animator.setExpression("neutral");
 
     assert.equal(animator._mode, "static");
-    assert.equal(animator._currentLayer.fallback.src, "/assets/mei/avatar_bustup.png");
+    assert.equal(animator._currentLayer.fallback.src, "/assets/mei/avatar_bustup.png?size=C");
+    assert.deepEqual(globalThis.__avatarHeadUrls, ["/assets/mei/avatar_bustup_neutral_frame_base.png?size=C"]);
     animator.destroy();
+    delete globalThis.__avatarHeadUrls;
     globalThis.document = oldDocument;
     globalThis.window = oldWindow;
     globalThis.requestAnimationFrame = oldRaf;

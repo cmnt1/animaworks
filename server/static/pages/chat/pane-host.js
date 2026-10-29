@@ -26,6 +26,7 @@ import { createPaneHead } from "./pane-head.js";
 import { createAnimaRail } from "./anima-rail.js";
 import { createPresencePanel } from "./presence-panel.js";
 import { createSlashPalette } from "./slash-palette.js";
+import { startSessionsRefreshFallback } from "./session-refresh.js";
 
 const LAYOUT_KEY = "aw-chat-pane-layout";
 
@@ -329,6 +330,27 @@ export function createPaneHost(rootContainer) {
     );
     pane.intervals.push(chatInterval);
 
+    pane.intervals.push(startSessionsRefreshFallback(
+      () => ctx.controllers.anima.refreshSessions(),
+    ));
+
+    let sessionsWsTimer = null;
+    const scheduleSessionsRefresh = (data = {}, eventType = "") => {
+      if (eventType === "anima.status" && ["busy", "running_task", "bootstrapping"].includes(data.status)) return;
+      const selected = ctx.state.selectedAnima;
+      const related = [data.name, data.anima, data.from_person, data.to_person];
+      if (!selected || !related.includes(selected)) return;
+      clearTimeout(sessionsWsTimer);
+      sessionsWsTimer = setTimeout(() => {
+        sessionsWsTimer = null;
+        void ctx.controllers.anima.refreshSessions(selected);
+      }, 250);
+    };
+    for (const eventType of ["anima.status", "anima.heartbeat", "anima.interaction", "anima.proactive_message", "chat.response"]) {
+      pane.intervals.push(onEvent(eventType, (data) => scheduleSessionsRefresh(data, eventType)));
+    }
+    pane.intervals.push(() => clearTimeout(sessionsWsTimer));
+
     const unsubBootstrap = onEvent("anima.bootstrap", (data) => {
       const { name, status: bsStatus } = data;
       const anima = ctx.state.animas.find(a => a.name === name);
@@ -489,7 +511,9 @@ export function createPaneHost(rootContainer) {
     const ctx = getFocused()?.ctx;
     if (!ctx) return;
     _focusedActivityInterval = setInterval(
-      () => ctx.controllers.activity.loadActivity(),
+      () => {
+        if (ctx.state.activeRightTab === "activity") ctx.controllers.activity.loadActivity();
+      },
       30000,
     );
   }
@@ -504,9 +528,11 @@ export function createPaneHost(rootContainer) {
   function _syncSidebar() {
     const ctx = getFocused()?.ctx;
     if (!ctx) return;
-    ctx.controllers.activity.renderAnimaState();
-    ctx.controllers.activity.loadActivity();
-    ctx.controllers.memory.loadMemoryTab();
+    if (ctx.state.activeRightTab === "state") {
+      ctx.controllers.activity.loadAnimaState();
+      ctx.controllers.memory.loadMemoryTab();
+    }
+    if (ctx.state.activeRightTab === "activity") ctx.controllers.activity.loadActivity();
     if (ctx.state.activeRightTab === "history" && ctx.state.selectedAnima) {
       ctx.controllers.history.loadSessionList();
     }

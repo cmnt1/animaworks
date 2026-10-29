@@ -83,14 +83,16 @@ _ASSET_CONTENT_TYPES = {
 }
 
 # Server-side avatar thumbnail sizes (matches client image-cache.js)
-_THUMB_SIZES: dict[str, int] = {"S": 96, "M": 192, "L": 400}
+# S/M/L are square crops; P/C preserve the original aspect ratio and constrain
+# only their named edge for the chat presence panel and call screen.
+_THUMB_SIZES: dict[str, int] = {"S": 96, "M": 192, "L": 400, "P": 360, "C": 1100}
 _THUMB_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
     """Return a WebP thumbnail path for *file_path*, or None to serve original.
 
-    Cache layout: ``<assets>/.thumbs/{filename}.{S|M|L}.webp``
+    Cache layout: ``<assets>/.thumbs/{filename}.{S|M|L|P|C}.webp``
     Regenerates when the source mtime is newer than the cache.
     On any failure (invalid size, missing Pillow, corrupt image) returns None
     so the caller falls back to the original file without raising.
@@ -133,12 +135,24 @@ def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
             else:
                 img = img.convert("RGB")
             w, h = img.size
-            side = min(w, h)
-            left = (w - side) // 2
-            top = (h - side) // 2
-            img = img.crop((left, top, left + side, top + side))
-            img = img.resize((target_px, target_px), Image.Resampling.LANCZOS)
-            img.save(thumb_path, format="WEBP", quality=85)
+            if key in {"P", "C"}:
+                if key == "P" and w > target_px:
+                    new_size = (target_px, max(1, round(h * target_px / w)))
+                elif key == "C" and h > target_px:
+                    new_size = (max(1, round(w * target_px / h)), target_px)
+                else:
+                    new_size = (w, h)
+                if new_size != img.size:
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                quality = 82
+            else:
+                side = min(w, h)
+                left = (w - side) // 2
+                top = (h - side) // 2
+                img = img.crop((left, top, left + side, top + side))
+                img = img.resize((target_px, target_px), Image.Resampling.LANCZOS)
+                quality = 85
+            img.save(thumb_path, format="WEBP", quality=quality)
         logger.debug("Generated thumbnail %s size=%s", thumb_path.name, key)
         return thumb_path
     except Exception as exc:

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: c7a7e2aece37354b8ba5817c6112503aafceee11791f40d14e7707bfa2aa5402 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: ff71634b03591fb7d8eab7865cb2fb437db71ac63520ad9ef600e234e52e03f0 -->
 
 # API リファレンス
 
@@ -54,7 +54,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/animas/{name}/restart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
 | PUT | `/api/animas/{name}/role` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
 | POST | `/api/animas/{name}/start` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
+| GET | `/api/animas/{name}/state` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read only the current-state document for the chat information pane. | `server/routes/animas.py:get_anima_state` |
 | POST | `/api/animas/{name}/stop` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
+| GET | `/api/animas/{name}/summary` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return only the small set of Anima fields needed by chat selection. | `server/routes/animas.py:get_anima_summary` |
 | POST | `/api/animas/{name}/trigger` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:trigger_heartbeat` |
 | GET | `/api/org/chart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the organisation chart as a tree-structured JSON. | `server/routes/animas.py:get_org_chart` |
 

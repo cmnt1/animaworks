@@ -219,6 +219,64 @@ def _write_test_png(path: Path, size: int = 256) -> Path:
 class TestAssetThumbnail:
     """Server-side ?size=S|M|L WebP thumbnail generation."""
 
+    async def test_portrait_sizes_preserve_aspect_ratio_and_use_requested_edge(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        Image.new("RGBA", (1000, 1500), color=(200, 100, 50, 128)).save(assets_dir / "bustup.png")
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            panel = await client.get("/api/animas/alice/assets/bustup.png?size=P")
+            call = await client.get("/api/animas/alice/assets/bustup.png?size=C")
+
+        assert panel.status_code == call.status_code == 200
+        panel_image = Image.open(BytesIO(panel.content))
+        call_image = Image.open(BytesIO(call.content))
+        assert panel_image.format == call_image.format == "WEBP"
+        assert panel_image.size == (360, 540)
+        assert call_image.size == (733, 1100)
+        assert panel_image.mode == call_image.mode == "RGBA"
+        assert (assets_dir / ".thumbs" / "bustup.png.P.webp").is_file()
+        assert (assets_dir / ".thumbs" / "bustup.png.C.webp").is_file()
+
+    async def test_portrait_sizes_regenerate_after_source_update(self, tmp_path):
+        import os
+        import time
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = assets_dir / "bustup.png"
+        Image.new("RGB", (1000, 1500), color=(200, 100, 50)).save(source)
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+            caches = {key: assets_dir / ".thumbs" / f"bustup.png.{key}.webp" for key in ("P", "C")}
+            mtimes = {key: cache.stat().st_mtime_ns for key, cache in caches.items()}
+
+            time.sleep(0.02)
+            Image.new("RGB", (1100, 1600), color=(80, 120, 200)).save(source)
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, max(mtimes.values()) + 1_000_000))
+
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+
+        assert all(caches[key].stat().st_mtime_ns > mtimes[key] for key in caches)
+
     async def test_size_s_returns_96px_webp(self, tmp_path):
         animas_dir = tmp_path / "animas"
         assets_dir = animas_dir / "alice" / "assets"

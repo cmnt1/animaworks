@@ -22,7 +22,7 @@ export function createAvatarController(ctx) {
     overlay.id = "chatBustupOverlay";
     const image = document.createElement("img");
     image.className = "bustup-overlay-img";
-    image.src = requestedUrl || bustUrl(animaName, emotion, "L");
+    image.src = requestedUrl || bustUrl(animaName, emotion, "C");
     image.alt = `${animaName} (${emotion || "neutral"})`;
     image.addEventListener("error", () => {
       if (image.dataset.fellBack) {
@@ -30,7 +30,7 @@ export function createAvatarController(ctx) {
         return;
       }
       image.dataset.fellBack = "1";
-      image.src = bustUrl(animaName, "neutral", "L");
+      image.src = bustUrl(animaName, "neutral", "C");
     }, { once: false });
     overlay.appendChild(image);
     overlay.addEventListener("click", dismissBustupOverlay);

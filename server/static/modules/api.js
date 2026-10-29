@@ -4,6 +4,7 @@ import { createLogger } from "../shared/logger.js";
 import { basePath } from "../shared/base-path.js";
 
 const logger = createLogger("api");
+const _inflightRequests = new Map();
 
 function _prefixed(path) {
   if (basePath && path.startsWith(`${basePath}/`)) return path;
@@ -17,7 +18,43 @@ function _prefixed(path) {
  * Use `rawResponse` for binary or HEAD requests. `throwOnHttpError: false` and
  * `acceptedStatuses` are available when the caller needs to inspect statuses.
  */
-export async function api(path, opts = {}) {
+function _inflightKey(path, opts) {
+  const method = String(opts.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return null;
+  if (method === "GET" && opts.rawResponse) return null;
+  if (opts.signal) return null;
+
+  const url = _prefixed(path);
+  const headers = [...new Headers(opts.headers || {}).entries()].sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify([
+    method,
+    url,
+    opts.cache || "no-store",
+    headers,
+    Boolean(opts.rawResponse),
+    Boolean(opts.redirectOnUnauthorized ?? true),
+    Boolean(opts.logErrors ?? true),
+    Boolean(opts.throwOnHttpError ?? true),
+    [...(opts.acceptedStatuses || [])].sort(),
+  ]);
+}
+
+export function api(path, opts = {}) {
+  const key = _inflightKey(path, opts);
+  if (key && _inflightRequests.has(key)) return _inflightRequests.get(key);
+
+  const request = _sendRequest(path, opts);
+  if (key) {
+    _inflightRequests.set(key, request);
+    request.then(
+      () => { if (_inflightRequests.get(key) === request) _inflightRequests.delete(key); },
+      () => { if (_inflightRequests.get(key) === request) _inflightRequests.delete(key); },
+    );
+  }
+  return request;
+}
+
+async function _sendRequest(path, opts = {}) {
   const {
     redirectOnUnauthorized = true,
     logErrors = true,

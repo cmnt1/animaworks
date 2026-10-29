@@ -85,6 +85,10 @@ export function createSidebarController(ctx) {
       if (list) list.style.display = "";
       ctx.controllers.history.loadSessionList();
     }
+    if (tab === "state") {
+      ctx.controllers.activity.loadAnimaState();
+      ctx.controllers.memory.loadMemoryTab();
+    }
     if (tab === "activity") ctx.controllers.activity.loadActivity();
     if (tab === "heartbeat") ctx.controllers.activity.loadHeartbeatConfig();
     if (tab === "cron") ctx.controllers.activity.loadCronConfig();

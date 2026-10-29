@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=6803551d9aebb8c57e36d3e6f8d7b6f2fe17f4f7fae4b807148c2dc93e72179d generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5761d07431069f46aa5490493956d3d88e50153c064660ff07f7257b8e69409d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -1107,9 +1107,9 @@ Audio input/output and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server.routes` | 63 | — |
-| `server.routes.animas` | 1205 | — |
+| `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1593 | — |
+| `server.routes.assets` | 1607 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1130,7 +1130,7 @@ Audio input/output and voice conversations.
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 668 | — |
+| `server.routes.sessions` | 734 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |
