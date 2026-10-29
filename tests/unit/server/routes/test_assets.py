@@ -984,3 +984,91 @@ class TestFaceAssets:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/animas/alice/assets/face/angry")
         assert response.status_code == 400
+
+
+class TestAttachmentInlineDelivery:
+    async def test_inline_allowed_and_attachment_forced_types(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        filenames = ("report.pdf", "track.mp3", "clip.mp4", "notes.txt", "readme.md", "data.csv", "feed.xml")
+        forced = ("page.html", "vector.svg", "doc.docx", "mystery.bin")
+        for filename in (*filenames, *forced):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            responses = {
+                filename: await client.get(f"/api/animas/alice/attachments/{filename}?inline=1")
+                for filename in (*filenames, *forced)
+            }
+
+        for filename in filenames:
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("inline; filename*=UTF-8''"), filename
+        for filename in forced:
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("attachment; filename*=UTF-8''"), filename
+
+        assert responses["readme.md"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["notes.txt"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["feed.xml"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["data.csv"].headers["content-type"] == "text/csv; charset=utf-8"
+        assert responses["page.html"].headers["content-type"] == "text/html; charset=utf-8"
+        for filename in filenames:
+            assert responses[filename].headers["x-content-type-options"] == "nosniff"
+            assert responses[filename].headers["cache-control"] == "no-store"
+
+    async def test_inline_csp_except_pdf(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        for filename in ("report.pdf", "notes.txt", "track.mp3"):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            pdf = await client.get("/api/animas/alice/attachments/report.pdf?inline=1")
+            text = await client.get("/api/animas/alice/attachments/notes.txt?inline=1")
+            audio = await client.get("/api/animas/alice/attachments/track.mp3?inline=1")
+
+        assert "content-security-policy" not in pdf.headers
+        csp = text.headers["content-security-policy"]
+        assert "sandbox" in csp
+        assert "default-src 'none'" in csp
+        assert "sandbox" in audio.headers["content-security-policy"]
+
+    async def test_range_request_returns_206(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        (attachment_dir / "notes.txt").write_bytes(b"0123456789")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/animas/alice/attachments/notes.txt",
+                headers={"Range": "bytes=0-1"},
+            )
+
+        assert response.status_code == 206
+        assert response.headers["content-range"] == "bytes 0-1/10"
+        assert response.headers["accept-ranges"] == "bytes"
+        assert response.content == b"01"
+
+    async def test_image_without_inline_keeps_existing_behaviour(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        (attachment_dir / "preview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/attachments/preview.png")
+
+        assert response.status_code == 200
+        assert "content-disposition" not in response.headers
