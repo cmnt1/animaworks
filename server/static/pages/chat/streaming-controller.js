@@ -5,7 +5,7 @@ import {
 } from "./ctx.js";
 import { TextAnimator, stripThinkTags } from "../../shared/chat/render-utils.js";
 import { streamMeetingChat } from "../../shared/chat-stream.js";
-import { clearReplyTarget, getReplyTarget, quoteReplyMessage } from "../../shared/chat/reply-target.js";
+import { clearReplyTarget, getReplyTarget, needsNotificationApi, quoteReplyMessage } from "../../shared/chat/reply-target.js";
 import {
   ensureThink, restoreThink, thinkOnText, thinkToolStart, thinkToolDetail, thinkToolEnd,
   thinkDone, thinkError, thinkStop, emitThinkActivity, syncThinkAvatar, bindThinkingHandlers,
@@ -237,7 +237,8 @@ export function createStreamingController(ctx) {
     }
     const activeReplyTarget = targetIsCurrent ? replyTarget : null;
     const rawMsg = input.value.trim();
-    if (activeReplyTarget?.type === "notification" && rawMsg) {
+    // Ordinary notifications are answered in the chat itself, so the Anima replies in the conversation.
+    if (needsNotificationApi(activeReplyTarget) && rawMsg) {
       sendNotificationReply(rawMsg, activeReplyTarget);
       return;
     }
