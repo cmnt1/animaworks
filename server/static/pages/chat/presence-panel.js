@@ -83,7 +83,7 @@ export function createPresencePanel(ctx) {
   }
 
   function _paint(name, emotion) {
-    if (paused || reduceMotion) {
+    if (reduceMotion) {
       _stopAnimator();
       _renderStatic(name, emotion);
       currentEmotion = emotion;
@@ -100,6 +100,9 @@ export function createPresencePanel(ctx) {
       currentEmotion = emotion;
       animator.setExpression(emotion);
     }
+    // While reading older messages the picture stays as it is; only blinking stops.
+    if (paused) animator.pause?.();
+    else animator.resume?.();
   }
 
   function refresh() {
@@ -130,7 +133,11 @@ export function createPresencePanel(ctx) {
     const far = messages.scrollHeight - messages.scrollTop - messages.clientHeight > SCROLL_PAUSE_PX;
     if (far === paused) return;
     paused = far;
-    currentEmotion = null;
+    if (animator) {
+      if (paused) animator.pause?.();
+      else animator.resume?.();
+      return;
+    }
     refresh();
   }
 

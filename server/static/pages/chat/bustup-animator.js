@@ -354,7 +354,7 @@ export class BustupAnimator {
 
   // ---- まばたき ----
   _scheduleBlink() {
-    if (this._destroyed) return;
+    if (this._destroyed || this._paused) return;
     clearTimeout(this._blinkTimer);
     this._blinkTimer = setTimeout(
       () => this._doBlink(),
@@ -403,7 +403,7 @@ export class BustupAnimator {
   }
 
   _loop() {
-    if (this._destroyed) return;
+    if (this._destroyed || this._paused) return;
     // 口パク: RMS を読み closed/half/open を判定
     if (this._lipsyncOn && this._getRMS) {
       const prev = this._state;
@@ -418,6 +418,26 @@ export class BustupAnimator {
         `rotateY(${this._cx * ROTATE_Y}deg) rotateX(${-this._cy * ROTATE_X}deg) ` +
         `translate(${this._cx * TRANS_X}px, ${this._cy * TRANS_Y}px)`;
     }
+    this._raf = requestAnimationFrame(this._loop);
+  }
+
+  // ---- 一時停止（画面はそのまま、瞬き・視線追従だけ止める） ----
+  pause() {
+    if (this._destroyed || this._paused) return;
+    this._paused = true;
+    clearTimeout(this._blinkTimer);
+    if (this._blinking) {
+      this._blinking = false;
+      this._render();
+    }
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = null;
+  }
+
+  resume() {
+    if (this._destroyed || !this._paused) return;
+    this._paused = false;
+    this._scheduleBlink();
     this._raf = requestAnimationFrame(this._loop);
   }
 
