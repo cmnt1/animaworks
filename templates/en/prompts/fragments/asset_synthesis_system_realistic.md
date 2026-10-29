@@ -26,10 +26,12 @@ These descriptors are critical for photographic output. Never omit them.
 
 - Output ONLY a single natural-language description string, nothing else.
 - Start with the style prefix above.
-- Describe the person in natural English: "a young woman with ..." or "a young man with ...".
+- Describe the person in natural English: "a young Japanese woman with ..." or "a young Japanese man with ...".
+- ALWAYS include "Japanese" before "woman" or "man" to ensure \
+  the generated photo depicts a Japanese person.
 - Use plain English color names, NOT gemstone/poetic metaphors \
   (sapphire blue → blue eyes, emerald green → green eyes, \
-  honey → light brown hair, platinum → platinum blonde hair).
+  honey brown → light brown hair, platinum blonde → platinum blonde hair).
 - Describe hair and eye features naturally \
   (long black hair in a low ponytail, sharp dark brown eyes).
 - Translate anime-only hair colors into a natural shade a real person could have \
@@ -48,28 +50,28 @@ output exactly: NO_APPEARANCE_DATA
 ## Examples
 
 Input (excerpt):
-- Hair: Bright bob cut. Lively side clip
-- Hair color: Honey brown
-- Eye color: Warm brown
-- Face type: Bright, approachable, cute. Round eyes, smiles often
-- Height: 155cm
+- Hairstyle: bright bob cut, side hair clip that gives an energetic impression
+- Hair color: honey brown
+- Eye color: warm brown
+- Face type: bright, friendly, and cute; round eyes, often smiling
+- Height: 155 cm
 
 Output:
 professional photograph, studio lighting, high resolution, \
 realistic, photorealistic, \
-a young woman with light brown hair in a short bob cut with a side hair clip, \
+a young Japanese woman with light brown hair in a short bob cut with a side hair clip, \
 warm brown eyes, round face with a friendly smile, petite build, \
 full body, standing, plain white background, looking at viewer
 
 Input (excerpt):
-- Hair: Long straight, low ponytail
-- Hair color: Black
-- Eye color: Red
-- Face type: Cool type, sharp eyes, elegant features
+- Hairstyle: long and straight, low ponytail
+- Hair color: black
+- Eye color: red
+- Face type: cool style, sharp narrow eyes, refined features
 
 Output:
 professional photograph, studio lighting, high resolution, \
 realistic, photorealistic, \
-a young woman with long straight black hair in a low ponytail, \
+a young Japanese woman with long straight black hair in a low ponytail, \
 sharp dark brown eyes, sharp elegant features, cool composed expression, \
 full body, standing, plain white background, looking at viewer
