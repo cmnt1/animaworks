@@ -49,10 +49,12 @@ export function bustupExpressionCandidates(expression) {
 }
 
 /**
- * Build the asset URL for a given anima name and filename.
+ * Build the asset URL for a given anima name and filename. Optional server
+ * thumbnail sizes keep full-body bustups within their display bounds.
  */
-export function assetUrl(animaName, filename) {
-  return `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+export function assetUrl(animaName, filename, size = "") {
+  const url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+  return size ? `${url}?size=${encodeURIComponent(size)}` : url;
 }
 
 /**
@@ -95,7 +97,7 @@ async function resolveAvatar(animaName, candidates) {
  * Server generates WebP thumbs at S=96 / M=192 / L=400 via ?size=.
  * @param {string} animaName
  * @param {string[]} candidates
- * @param {"S"|"M"|"L"} size
+ * @param {"S"|"M"|"L"|"P"|"C"} size
  * @returns {Promise<string|null>}
  */
 export async function resolveCachedAvatar(animaName, candidates, size = "S") {

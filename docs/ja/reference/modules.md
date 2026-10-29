@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 20ce1f7150337ffdf58a7b7128494765413151247ebd131542fe438b0837ff87 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: d93a406a7e26ce31152e2a00554dacbe32010426f00b2f0204b64bcf04e13103 -->
 
 # モジュール一覧
 
@@ -47,7 +47,7 @@
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
-| `cli.commands.remake_cmd` | 272 | — |
+| `cli.commands.remake_cmd` | 279 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 868 | — |
 | `cli.commands.skills` | 211 | — |
@@ -114,9 +114,9 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 492 | — |
+| `core.activity.conversation` | 1286 | — |
 | `core.activity.event_export` | 33 | — |
-| `core.activity.format` | 567 | — |
+| `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
 | `core.activity.models` | 202 | — |
 | `core.activity.replay` | 537 | — |
@@ -147,9 +147,9 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 130 | Structural host protocols for the compositional mixins. |
 | `core.anima.admin` | 170 | — |
-| `core.anima.asset_reconciler` | 764 | — |
+| `core.anima.asset_reconciler` | 786 | — |
 | `core.anima.bootstrap_state` | 591 | — |
-| `core.anima.digital_anima` | 694 | — |
+| `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 842 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1022 | — |
@@ -157,7 +157,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1384 | — |
+| `core.anima.messaging` | 1392 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -207,7 +207,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1538 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1540 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -217,7 +217,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.enclave` | 54 | Enclave mode: an isolated runtime instance that bind to a dedicated socket. |
-| `core.enclave.config` | 183 | Configuration models for enclave mode. |
+| `core.enclave.config` | 202 | Configuration models for enclave mode. |
 | `core.enclave.egress.audit` | 62 | Audit logging for the egress pipeline. |
 | `core.enclave.egress.config` | 113 | Configuration model for the egress pipeline. |
 | `core.enclave.egress.fs` | 38 | Small filesystem helpers enforcing enclave file/directory permissions. |
@@ -378,7 +378,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 400 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 418 | Domain-specific i18n strings. |
@@ -391,7 +391,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 125 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 506 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
@@ -444,7 +444,8 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
-| `core.integrations._image_pipeline（非公開）` | 814 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pixel（非公開）` | 624 | Generate a Pixel Workspace character sheet from an approved base sheet. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 435 | SQLite message cache for Slack (offline search, unreplied detection). |
@@ -459,20 +460,20 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.enclave_aws` | 866 | Read-only AWS data tools for the enclave runtime. |
 | `core.integrations.enclave_progress` | 111 | Tool for an anima to write interim progress onto an enclave ask job. |
 | `core.integrations.enclave_records` | 222 | Read configured JSONL datasets from inside an enclave runtime. |
-| `core.integrations.enclave_sql` | 396 | Read-only MySQL query tools for the enclave runtime. |
+| `core.integrations.enclave_sql` | 397 | Read-only MySQL query tools for the enclave runtime. |
 | `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
 | `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
 | `core.integrations.google_calendar` | 615 | — |
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
-| `core.integrations.image.codex` | 327 | Codex CLI image generation client (image_gen tool via local codex). |
+| `core.integrations.image.codex` | 348 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
 | `core.integrations.image.diffusers_local` | 905 | Local Diffusers-backed image generation helpers. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext and Flux Pro text-to-image API clients. |
 | `core.integrations.image.meshy` | 311 | Meshy Image-to-3D, Rigging, and Animation API client. |
 | `core.integrations.image.novelai` | 193 | NovelAI V4.5 API client for anime full-body image generation. |
-| `core.integrations.image.prompts` | 197 | Prompt constants for bustup, chibi, and expression variants. |
+| `core.integrations.image.prompts` | 266 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
@@ -549,6 +550,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
+| `core.memory.facts.connections` | 544 | — |
 | `core.memory.facts.entity_index` | 452 | — |
 | `core.memory.facts.extraction` | 529 | — |
 | `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
@@ -707,6 +709,7 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging.messenger` | 1082 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
+| `core.messaging.recipient_status` | 79 | — |
 | `core.messaging.reply_grants` | 253 | — |
 | `core.messaging.sender` | 32 | — |
 
@@ -738,7 +741,7 @@ anima 間および外部とのメッセージ配送。
 | `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 612 | — |
 | `core.notification.notifier` | 238 | — |
-| `core.notification.reply_routing` | 467 | — |
+| `core.notification.reply_routing` | 500 | — |
 | `core.notification.slack_names` | 67 | — |
 
 ## `core.notification.channels`
@@ -839,7 +842,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.runtime.state_writer` | 27 | — |
 | `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
 | `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
-| `core.runtime.task_runner_supervisor` | 1445 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
@@ -970,12 +973,12 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
-| `core.tooling._handler_protocols（非公開）` | 224 | Structural host protocols for the compositional mixins. |
+| `core.tooling._handler_protocols（非公開）` | 225 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 907 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 996 | — |
+| `core.tooling.handler_comms` | 1027 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
 | `core.tooling.handler_delegation` | 310 | — |
 | `core.tooling.handler_exec` | 374 | — |
@@ -1073,7 +1076,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1483 | — |
+| `server.app` | 1517 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
@@ -1105,9 +1108,9 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server.routes` | 63 | — |
-| `server.routes.animas` | 1205 | — |
+| `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1456 | — |
+| `server.routes.assets` | 1607 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1124,14 +1127,14 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
-| `server.routes.memory_routes` | 450 | — |
+| `server.routes.memory_routes` | 531 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 297 | — |
+| `server.routes.sessions` | 734 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1173 | — |
+| `server.routes.system` | 1217 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |

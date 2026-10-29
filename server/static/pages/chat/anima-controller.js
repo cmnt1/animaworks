@@ -3,14 +3,15 @@ import {
   isTabOpen, refreshAnimaUnread,
   clearUnreadForActiveThread, loadDraft, saveDraft, chatInputMaxHeight,
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
-  syncModelSelect,
+  setThreadUnread, threadTimeValue, syncModelSelect,
 } from "./ctx.js";
 import { animaStatusLabel } from "../../shared/anima-status.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
-import { openVoicePopup } from "./voice-popup.js";
+import { openCallScreen } from "./call-screen.js";
+import { presence, displayStatus } from "../../modules/anima-presence.js";
 
-const LONG_PRESS_MS = 500;
+const ANIMA_TAB_LONG_PRESS_MS = 500;
 
 export function createAnimaController(ctx) {
   const $ = ctx.$;
@@ -19,6 +20,120 @@ export function createAnimaController(ctx) {
   let _selectGen = 0;
   let _tooltipEl = null;
   let _tooltipHideTimer = null;
+  let _callButton = null;
+  const _sessionsInFlight = new Map();
+
+  function refreshSessions(name = state.selectedAnima) {
+    if (!name) return Promise.resolve(null);
+    if (_sessionsInFlight.has(name)) return _sessionsInFlight.get(name);
+
+    const promise = api(`/api/animas/${encodeURIComponent(name)}/sessions`)
+      .then((sessionsData) => {
+        const previousLastTs = new Map(
+          (state.threads[name] || []).map((thread) => [thread.id, threadTimeValue(thread.lastTs || "")]),
+        );
+        mergeThreadsFromSessions(ctx, name, sessionsData);
+        for (const thread of state.threads[name] || []) {
+          if (!thread?.id || thread.id === state.selectedThreadId && name === state.selectedAnima) continue;
+          const previous = previousLastTs.get(thread.id) || 0;
+          if (threadTimeValue(thread.lastTs || "") > previous) setThreadUnread(ctx, name, thread.id, true);
+        }
+        refreshAnimaUnread(ctx, name);
+
+        if (name === state.selectedAnima) {
+          if (!state.threads[name].some((thread) => thread.id === state.selectedThreadId)) {
+            state.selectedThreadId = "default";
+            state.activeThreadByAnima[name] = "default";
+          }
+          ctx.controllers.anima.renderAnimaTabs();
+          ctx.controllers.thread.renderThreadTabs();
+        }
+        return sessionsData;
+      })
+      .catch(() => null)
+      .finally(() => {
+        if (_sessionsInFlight.get(name) === promise) _sessionsInFlight.delete(name);
+      });
+    _sessionsInFlight.set(name, promise);
+    return promise;
+  }
+
+  function _ensureCallButton() {
+    const header = state.container?.querySelector(".chat-anima-tabs-header");
+    if (!header) return;
+
+    let slot = header.querySelector('[data-slot="head-tools"]');
+    if (!slot) {
+      const actions = header.querySelector(".chat-header-actions");
+      if (!actions) return;
+      slot = document.createElement("div");
+      slot.className = "chat-pane-head-tools";
+      slot.dataset.slot = "head-tools";
+      actions.appendChild(slot);
+    }
+    if (!_callButton || !_callButton.isConnected) {
+      _callButton = document.createElement("button");
+      _callButton.type = "button";
+      _callButton.className = "chat-call-btn";
+      _callButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>';
+      _callButton.addEventListener("click", () => {
+        const anima = state.selectedAnima;
+        if (!anima) return;
+        const page = state.container?.closest(".chat-page-layout") || state.rootContainer?.querySelector(".chat-page-layout");
+        openCallScreen(anima, {
+          container: page,
+          threadId: state.selectedThreadId || "default",
+          onClose: () => {
+            if (state.selectedAnima) ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
+          },
+          onRecord: (record) => {
+            if (state.selectedAnima === anima && (state.selectedThreadId || "default") === record.thread_id) {
+              ctx.controllers.renderer?.pollSelectedChat?.();
+            }
+          },
+        });
+      });
+      slot.appendChild(_callButton);
+    } else if (_callButton.parentElement !== slot) {
+      slot.appendChild(_callButton);
+    }
+
+    const name = state.selectedAnima || "";
+    _callButton.hidden = !name;
+    _callButton.title = t("chat.call.call_title", { name });
+    _callButton.setAttribute("aria-label", t("chat.call.call_title", { name }));
+  }
+
+  function _suppressLongPressClick(el) {
+    let timer = null;
+    let longPressFired = false;
+    const clearTimer = (reset = false) => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (reset) longPressFired = false;
+    };
+
+    el.addEventListener("pointerdown", (event) => {
+      if (event.button != null && event.button !== 0) return;
+      clearTimer(true);
+      timer = setTimeout(() => {
+        timer = null;
+        longPressFired = true;
+      }, ANIMA_TAB_LONG_PRESS_MS);
+    });
+    el.addEventListener("pointerup", () => clearTimer());
+    el.addEventListener("pointerleave", () => clearTimer());
+    el.addEventListener("pointercancel", () => clearTimer());
+    el.addEventListener("contextmenu", (event) => {
+      if (timer || longPressFired) event.preventDefault();
+    });
+    el.addEventListener("click", (event) => {
+      if (!longPressFired) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      longPressFired = false;
+    }, true);
+  }
 
   function _getTooltip() {
     if (_tooltipEl) return _tooltipEl;
@@ -98,6 +213,16 @@ export function createAnimaController(ctx) {
     return `<span class="add-conversation-avatar add-conversation-avatar-initial"${ring}>${initial}</span>`;
   }
 
+  /** Running animas are split into working / waiting for a reply / standby. */
+  function _menuStatusLabel(p) {
+    const raw = animaStatusLabel(p.status);
+    if (p.status !== "running" && p.status !== "idle") return raw;
+    const kind = displayStatus(presence.get(p.name));
+    if (kind === "waiting") return t("chat.presence.status_waiting");
+    if (kind === "working" || kind === "calling") return t("chat.presence.status_working");
+    return t("chat.presence.status_idle");
+  }
+
   function renderAddConversationMenu() {
     const menu = $("chatAddConversationMenu");
     if (!menu) return;
@@ -111,7 +236,7 @@ export function createAnimaController(ctx) {
 
     let html = "";
     for (const p of sorted) {
-      const statusLabel = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
+      const statusLabel = p.status ? ` (${escapeHtml(_menuStatusLabel(p))})` : "";
       const openLabel = isTabOpen(ctx, p.name) ? t("animas.tab_viewing") : "";
       const disabled = p.status === "bootstrapping" || p.bootstrapping;
       const sleepBadge = p.status === "not_found" || p.status === "stopped" ? "\uD83D\uDCA4 " : "";
@@ -138,9 +263,10 @@ export function createAnimaController(ctx) {
   }
 
   function renderAnimaTabs() {
+    _ensureCallButton();
     const container = $("chatAnimaTabs");
     if (!container) return;
-    if (state.animaTabs.length === 0) { container.innerHTML = ""; return; }
+    if (state.animaTabs.length === 0) { container.innerHTML = ""; state.paneHost?.renderRail?.(); return; }
 
     const html = state.animaTabs.map(tab => {
       const activeClass = tab.name === state.selectedAnima ? " active" : "";
@@ -158,29 +284,15 @@ export function createAnimaController(ctx) {
 
     container.querySelectorAll(".anima-tab").forEach(btn => {
       btn.addEventListener("click", e => {
-        if (btn._longPressFired) {
-          e.preventDefault();
-          e.stopPropagation();
-          btn._longPressFired = false;
-          return;
-        }
         const anima = e.currentTarget?.dataset?.anima;
         if (!anima) return;
         if (anima === state.selectedAnima) {
-          ctx.controllers.avatar.showBustupOverlay();
+          ctx.controllers.memoryPopover.open(e.currentTarget);
           return;
         }
         openOrSelectAnima(anima);
       });
-      _bindAnimaLongPress(btn, (anima) => {
-        openVoicePopup(anima, {
-          onClose: () => {
-            if (state.selectedAnima) {
-              ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
-            }
-          },
-        });
-      });
+      _suppressLongPressClick(btn);
       btn.addEventListener("mouseenter", () => _showTabTooltip(btn));
       btn.addEventListener("mouseleave", () => _hideTabTooltip());
       btn.addEventListener("touchstart", () => {
@@ -195,6 +307,7 @@ export function createAnimaController(ctx) {
         if (anima) closeAnimaTab(anima);
       });
     });
+    state.paneHost?.renderRail?.();
   }
 
   async function selectAnima(name) {
@@ -202,12 +315,16 @@ export function createAnimaController(ctx) {
     const prevAnima = state.selectedAnima;
     const prevThread = state.selectedThreadId || "default";
     const currentInput = $("chatPageInput");
+    if (prevAnima && prevAnima !== name) ctx.controllers.events?.clearReplyTarget();
     if (prevAnima && currentInput) {
       saveDraft(prevAnima, currentInput.value || "", prevThread);
       state.activeThreadByAnima[prevAnima] = prevThread;
     }
 
     state.selectedAnima = name;
+    state.animaSummary = null;
+    state.animaDetail = null;
+    state.animaDetailLoadedFor = null;
     state.animaLastAccess[name] = Date.now();
     state.bustupUrl = null;
     state.selectedThreadId = state.activeThreadByAnima[name] || "default";
@@ -255,10 +372,10 @@ export function createAnimaController(ctx) {
     const convPromise = needConv
       ? ctx.controllers.renderer.fetchConversationHistory(name, 50, null, tid).catch(() => null)
       : Promise.resolve(null);
-    const detailPromise = api(`/api/animas/${encodeURIComponent(name)}`).catch(() => null);
-    const sessionsPromise = api(`/api/animas/${encodeURIComponent(name)}/sessions`).catch(() => null);
+    const summaryPromise = api(`/api/animas/${encodeURIComponent(name)}/summary`).catch(() => null);
+    void refreshSessions(name);
 
-    const [conv, detail, sessionsData] = await Promise.all([convPromise, detailPromise, sessionsPromise]);
+    const [conv, summary] = await Promise.all([convPromise, summaryPromise]);
 
     if (gen !== _selectGen) return;
 
@@ -278,7 +395,6 @@ export function createAnimaController(ctx) {
       mgr.setHistoryState(name, tid, hs);
     }
 
-    if (sessionsData) mergeThreadsFromSessions(ctx, name, sessionsData);
     if (!state.threads[name].some(th => th.id === state.selectedThreadId)) {
       state.selectedThreadId = "default";
       state.activeThreadByAnima[name] = "default";
@@ -287,19 +403,25 @@ export function createAnimaController(ctx) {
     ctx.controllers.thread.renderThreadTabs();
     ctx.controllers.renderer.renderChat();
 
-    if (detail) {
-      state.animaDetail = detail;
-      ctx.controllers.activity.renderAnimaState();
-    } else {
-      state.animaDetail = null;
-      const stateEl = $("chatAnimaState");
-      if (stateEl) stateEl.textContent = t("animas.detail_load_failed");
+    state.animaSummary = summary;
+    if (summary) {
+      const anima = state.animas.find((entry) => entry.name === name);
+      if (anima) {
+        anima.role = summary.role;
+        anima.model = summary.model;
+        anima.enabled = summary.enabled;
+        anima.busy = summary.busy;
+        anima.status = summary.status?.status || anima.status;
+        anima.bootstrapping = summary.status?.bootstrapping ?? anima.bootstrapping;
+        anima.needs_bootstrap = summary.status?.needs_bootstrap ?? anima.needs_bootstrap;
+        anima.needs_user_input = summary.status?.needs_user_input ?? anima.needs_user_input;
+        anima.needs_repair = summary.status?.needs_repair ?? anima.needs_repair;
+      }
+      const busy = Boolean(summary.busy?.is_busy)
+        || ["busy", "running_task"].includes(summary.status?.status);
+      presence.setWorking(name, busy, "status", summary.status?.active_label || "");
+      ctx.controllers.anima.renderAnimaTabs();
     }
-
-    const secondary = [ctx.controllers.memory.loadMemoryTab(), ctx.controllers.activity.loadActivity()];
-    if (state.activeRightTab === "history") secondary.push(ctx.controllers.history.loadSessionList());
-    await Promise.all(secondary);
-
     ctx.controllers.streaming.resumeActiveStream(name);
     scheduleSaveChatUiState(ctx);
     state.paneHost?.savePaneStates?.();
@@ -425,6 +547,10 @@ export function createAnimaController(ctx) {
       } else if (state.selectedAnima) {
         selectAnima(state.selectedAnima);
       }
+
+      // A toast "reply" asked for a conversation before this page existed.
+      const pending = presence.takePendingOpen();
+      if (pending && known.has(pending)) openOrSelectAnima(pending);
     } catch (err) {
       logger.error("Failed to load animas", err);
     }
@@ -446,65 +572,9 @@ export function createAnimaController(ctx) {
     for (const n of names) ensureAnimaTabAvatar(n);
   }
 
-  /**
-   * Long-press (500ms) on anima tab opens the voice popup.
-   * Cancels on pointerup/leave/cancel/scroll. Suppresses click after fire.
-   * Blocks contextmenu only while the long-press timer is active.
-   */
-  function _bindAnimaLongPress(el, onLongPress) {
-    let timer = null;
-    let suppressContextMenu = false;
-
-    const clearTimer = () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      suppressContextMenu = false;
-      window.removeEventListener("scroll", onScroll, true);
-    };
-
-    const onScroll = () => clearTimer();
-
-    el.addEventListener("pointerdown", (e) => {
-      if (e.button != null && e.button !== 0) return;
-      el._longPressFired = false;
-      suppressContextMenu = true;
-      window.addEventListener("scroll", onScroll, true);
-      timer = setTimeout(() => {
-        timer = null;
-        suppressContextMenu = false;
-        window.removeEventListener("scroll", onScroll, true);
-        const anima = el.dataset?.anima;
-        if (!anima) return;
-        el._longPressFired = true;
-        try { el.releasePointerCapture?.(e.pointerId); } catch { /* ignore */ }
-        onLongPress(anima);
-      }, LONG_PRESS_MS);
-    });
-
-    el.addEventListener("pointerup", clearTimer);
-    el.addEventListener("pointerleave", clearTimer);
-    el.addEventListener("pointercancel", clearTimer);
-
-    el.addEventListener("contextmenu", (e) => {
-      if (suppressContextMenu || el._longPressFired) {
-        e.preventDefault();
-      }
-    });
-
-    // Swallow click that follows a fired long-press (capture, before select handlers).
-    el.addEventListener("click", (e) => {
-      if (!el._longPressFired) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      el._longPressFired = false;
-    }, true);
-  }
-
   return {
     loadAnimas, restoreChatUiState, selectAnima, openOrSelectAnima,
     closeAnimaTab, renderAnimaTabs, renderAddConversationMenu,
-    ensureAnimaTabAvatar, resolveHistoryAvatars,
+    ensureAnimaTabAvatar, resolveHistoryAvatars, refreshSessions,
   };
 }

@@ -3,8 +3,8 @@
    ============================================ */
 
 .sidebar-nav {
-  width: 220px;
-  min-width: 220px;
+  width: 184px;
+  min-width: 184px;
   background: var(--aw-color-sidebar-bg);
   color: var(--aw-color-sidebar-text);
   display: flex;

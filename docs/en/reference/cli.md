@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=97d3d44c53d0776c162aec2ac2cac8f977b24f84060ae84f6d62370cbc66635b generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=589ed7c1db084499255a8ebbb890d65b4cfa2e5d8732afde7945519e3168d719 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -878,7 +878,7 @@ Regenerate character assets using Vibe Transfer to match the art style of a refe
 |---|---|---|---|---|
 | anima | positional | — | — | Name of the anima whose assets to remake |
 | --style-from | option | — | — | Anima name to use as style reference (their fullbody image) |
-| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, 3d, rigging, animations). Default: all steps |
+| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). Default: all steps |
 | --prompt | option | — | — | Override character prompt (default: read from prompt.txt) |
 | --vibe-strength | option | 0.6 | — | Vibe Transfer strength 0.0-1.0 (default: 0.6) |
 | --vibe-info-extracted | option | 0.8 | — | Vibe Transfer information extraction 0.0-1.0 (default: 0.8) |

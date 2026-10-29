@@ -32,6 +32,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{step}: Image generation requires logging in to Codex (ChatGPT) or configuring an image-generation API key.",
         "ko": "{step}: 이미지를 생성하려면 Codex(ChatGPT)에 로그인하거나 이미지 생성 API 키를 설정해야 합니다.",
     },
+    "image_generation.pixel_failed": {
+        "ja": "{step}: Pixel Workspace のシート生成に失敗しました（{error}）。",
+        "en": "{step}: Failed to generate the Pixel Workspace sheet ({error}).",
+        "ko": "{step}: Pixel Workspace 시트 생성에 실패했습니다({error}).",
+    },
     "tooling.task_update_failed": {
         "ja": "エラー: タスクの更新に失敗しました: {error}",
         "en": "Error: failed to update task: {error}",

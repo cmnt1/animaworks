@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=97d3d44c53d0776c162aec2ac2cac8f977b24f84060ae84f6d62370cbc66635b generated=2026-10-19 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=589ed7c1db084499255a8ebbb890d65b4cfa2e5d8732afde7945519e3168d719 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -863,7 +863,7 @@ anima용 stdio MCP 서버 실행
 
 ## `remake-assets`
 
-참조 anima의 아트 스타일에 맞게 Vibe Transfer를 사용하여 캐릭터 에셋 재생성. 선택적 단계 실행 및 자동 백업 지원.
+Regenerate character assets using Vibe Transfer to match the art style of a reference anima. Supports selective step execution and automatic backup.
 
 `usage: animaworks remake-assets [-h] --style-from STYLE_FROM [--steps STEPS]
                                 [--prompt PROMPT]
@@ -876,16 +876,16 @@ anima용 stdio MCP 서버 실행
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | 에셋을 재생성할 anima의 이름 |
-| --style-from | 옵션 | — | — | 스타일 참조로 사용할 anima 이름 (해당 전신 이미지) |
-| --steps | 옵션 | — | — | 실행할 단계의 쉼표 구분 목록 (선택지: fullbody, bustup, icon, chibi, 3d, rigging, animations). 기본값: 모든 단계 |
-| --prompt | 옵션 | — | — | 캐릭터 프롬프트 재정의 (기본값: prompt.txt에서 읽기) |
-| --vibe-strength | 옵션 | 0.6 | — | Vibe Transfer 강도 0.0-1.0 (기본값: 0.6) |
-| --vibe-info-extracted | 옵션 | 0.8 | — | Vibe Transfer 정보 추출 0.0-1.0 (기본값: 0.8) |
-| --seed | 옵션 | — | — | 재현을 위한 시드 (전신 생성 전용) |
-| --image-style | 옵션 | — | anime, realistic | 이미지 스타일 (기본값: config.json image_gen.image_style에서) |
-| --no-backup | 플래그 | false | — | 기존 에셋의 자동 백업 건너뛰기 |
-| --dry-run | 플래그 | false | — | API 호출 없이 수행될 작업만 표시 |
+| anima | positional | — | — | Name of the anima whose assets to remake |
+| --style-from | option | — | — | Anima name to use as style reference (their fullbody image) |
+| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). Default: all steps |
+| --prompt | option | — | — | Override character prompt (default: read from prompt.txt) |
+| --vibe-strength | option | 0.6 | — | Vibe Transfer strength 0.0-1.0 (default: 0.6) |
+| --vibe-info-extracted | option | 0.8 | — | Vibe Transfer information extraction 0.0-1.0 (default: 0.8) |
+| --seed | option | — | — | Seed for reproducibility (fullbody generation only) |
+| --image-style | option | — | anime, realistic | Image style (default: from config.json image_gen.image_style) |
+| --no-backup | flag | false | — | Skip automatic backup of existing assets |
+| --dry-run | flag | false | — | Show what would be done without making API calls |
 
 ## `repair-rag`
 

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 24620c08c781fad4d844f7cb794c80475cbba5111c5f6fd797e238ce5953234f -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 26a640bc4c85cd429ee81762aaa7bf91d85ab384d1963048b09edfa3092437ef -->
 
 # API リファレンス
 
@@ -54,7 +54,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/animas/{name}/restart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
 | PUT | `/api/animas/{name}/role` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
 | POST | `/api/animas/{name}/start` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
+| GET | `/api/animas/{name}/state` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read only the current-state document for the chat information pane. | `server/routes/animas.py:get_anima_state` |
 | POST | `/api/animas/{name}/stop` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
+| GET | `/api/animas/{name}/summary` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return only the small set of Anima fields needed by chat selection. | `server/routes/animas.py:get_anima_summary` |
 | POST | `/api/animas/{name}/trigger` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:trigger_heartbeat` |
 | GET | `/api/org/chart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the organisation chart as a tree-structured JSON. | `server/routes/animas.py:get_org_chart` |
 
@@ -66,10 +68,11 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 ## `server/routes/assets.py`
 
 | GET | `/api/animas/{name}/assets` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List available assets for an anima. | `server/routes/assets.py:list_assets` |
+| GET | `/api/animas/{name}/assets/face/{emotion}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Serve a cached square crop of an Anima's bustup expression. | `server/routes/assets.py:get_face_asset` |
 | POST | `/api/animas/{name}/assets/generate` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Trigger character asset generation pipeline. | `server/routes/assets.py:generate_assets` |
 | POST | `/api/animas/{name}/assets/generate-expression` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Generate a specific bustup expression variant on demand. | `server/routes/assets.py:generate_expression_on_demand` |
 | GET | `/api/animas/{name}/assets/metadata` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return structured metadata about a anima's available assets. | `server/routes/assets.py:get_asset_metadata` |
-| POST | `/api/animas/{name}/assets/regenerate-step` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Regenerate one pipeline step (fullbody, bustup, icon, chibi, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
+| POST | `/api/animas/{name}/assets/regenerate-step` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
 | POST | `/api/animas/{name}/assets/remake-confirm` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Accept the preview and cascade-rebuild all remaining assets. | `server/routes/assets.py:remake_confirm` |
 | DELETE | `/api/animas/{name}/assets/remake-preview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Cancel a remake preview by restoring from the most recent backup. | `server/routes/assets.py:cancel_remake_preview` |
 | GET | `/api/animas/{name}/assets/remake-preview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List generated preview files. | `server/routes/assets.py:list_remake_previews` |
@@ -185,6 +188,8 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/episodes/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_episode` |
 | GET | `/api/animas/{name}/knowledge` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_knowledge` |
 | GET | `/api/animas/{name}/knowledge/{topic}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/connections` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return entity connections extracted from active facts. | `server/routes/memory_routes.py:memory_connections` |
+| GET | `/api/animas/{name}/memory/connections/entity` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return facts and related memory files for a single entity. | `server/routes/memory_routes.py:memory_connection_entity` |
 | GET | `/api/animas/{name}/memory/graph` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
 | GET | `/api/animas/{name}/memory/stats` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_procedures` |
@@ -213,10 +218,16 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 ## `server/routes/sessions.py`
 
+| GET | `/api/animas/{name}/conversation/bg` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Load background activity for one collapsed feed group. | `server/routes/sessions.py:get_conversation_background` |
+| POST | `/api/animas/{name}/conversation/calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
+| GET | `/api/animas/{name}/conversation/feed` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get user-centered chat history with lazy background activity groups. | `server/routes/sessions.py:get_conversation_feed` |
 | GET | `/api/animas/{name}/conversation/history` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
+| GET | `/api/animas/{name}/conversation/tool-calls` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
+| POST | `/api/animas/{name}/notifications/reply` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
 | GET | `/api/animas/{name}/sessions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
 | GET | `/api/animas/{name}/sessions/{session_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
 | GET | `/api/animas/{name}/transcripts/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
+| GET | `/api/notifications/awaiting` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 
@@ -237,7 +248,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 | GET | `/api/activity/group` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return one complete trigger-based activity group by stable ID. | `server/routes/system.py:get_activity_group` |
 | GET | `/api/activity/recent` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return recent activity events from unified ActivityLogger. | `server/routes/system.py:get_recent_activity` |
-| GET | `/api/activity/running-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return active background TaskExec workers grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
+| GET | `/api/activity/running-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return active TaskExec workers and other busy lanes grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
 | GET | `/api/settings/activity-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the current global activity level and schedule. | `server/routes/system.py:get_activity_level` |
 | PUT | `/api/settings/activity-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update global activity level and reschedule all heartbeats. | `server/routes/system.py:set_activity_level` |
 | PUT | `/api/settings/activity-schedule` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update the time-based activity schedule (night mode). | `server/routes/system.py:set_activity_schedule` |

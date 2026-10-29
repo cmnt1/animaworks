@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=39cb8f724e852776da2415738b60b21148a1e8e2c53f09456cd772c1cc2fb34d generated=2026-10-16 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=2c4fd72d87b76ad5b0382b6bad9da69fd148500087dd18a1a900f1e1216975b9 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API 참조
 
@@ -27,36 +27,38 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/animas.py`
 
-| GET | `/api/animas` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 애니마 목록을 가져옵니다. | `server/routes/animas.py:list_animas` |
-| POST | `/api/animas/reload-all` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 실행 중인 모든 애니마의 ModelConfig를 핫 리로드합니다. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마를 완전히 중지하고 삭제합니다(프로세스 및 파일). | `server/routes/animas.py:delete_anima` |
-| GET | `/api/animas/{name}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/animas.py:get_anima_detail` |
-| GET | `/api/animas/{name}/aliases` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 애니마의 별칭을 반환합니다. | `server/routes/animas.py:get_anima_aliases` |
-| PUT | `/api/animas/{name}/aliases` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 애니마의 별칭을 업데이트합니다. | `server/routes/animas.py:update_anima_aliases` |
-| PUT | `/api/animas/{name}/background-model` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | root 소유 status.json의 heartbeat/cron 모델 설정을 업데이트합니다. | `server/routes/animas.py:update_anima_background_model` |
-| GET | `/api/animas/{name}/background-tasks` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 백그라운드 작업 목록을 표시합니다(상태 디렉터리에서 읽음). | `server/routes/animas.py:list_background_tasks` |
-| GET | `/api/animas/{name}/background-tasks/{task_id}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | ID로 특정 백그라운드 작업을 가져옵니다. | `server/routes/animas.py:get_background_task` |
-| POST | `/api/animas/{name}/bootstrap/repair` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 첫 실행 설정이 needs_repair 상태에서 중단된 Anima를 복구합니다. | `server/routes/animas.py:repair_anima_bootstrap` |
-| GET | `/api/animas/{name}/config` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 확인된 모델 구성을 반환합니다. | `server/routes/animas.py:get_anima_config` |
-| GET | `/api/animas/{name}/cron` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 원본 cron.md 콘텐츠를 반환합니다. | `server/routes/animas.py:get_anima_cron` |
-| POST | `/api/animas/{name}/disable` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima를 비활성화합니다(status.json을 enabled: false로 설정하고 프로세스를 중지). | `server/routes/animas.py:disable_anima` |
-| POST | `/api/animas/{name}/enable` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima를 활성화합니다(status.json을 enabled: true로 설정). | `server/routes/animas.py:enable_anima` |
-| GET | `/api/animas/{name}/heartbeat` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 원본 heartbeat.md 콘텐츠를 반환합니다. | `server/routes/animas.py:get_anima_heartbeat` |
-| PUT | `/api/animas/{name}/identity` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 identity.md 콘텐츠를 업데이트합니다. | `server/routes/animas.py:update_anima_identity` |
-| PUT | `/api/animas/{name}/injection` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 injection.md 콘텐츠를 업데이트합니다. | `server/routes/animas.py:update_anima_injection` |
-| POST | `/api/animas/{name}/interactions/{callback_id}/resolve` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 기본 채팅 UI에서 대화형 call_human 요청을 처리합니다. | `server/routes/animas.py:resolve_interaction` |
-| POST | `/api/animas/{name}/interrupt` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 프로세스를 중지하지 않고 현재 LLM 세션을 중단합니다. | `server/routes/animas.py:interrupt_anima` |
-| PUT | `/api/animas/{name}/model` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 status.json에서 모델 설정을 업데이트합니다. | `server/routes/animas.py:update_anima_model` |
-| GET | `/api/animas/{name}/permissions` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 permissions.json를 반환합니다. | `server/routes/animas.py:get_anima_permissions` |
-| PUT | `/api/animas/{name}/permissions` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 permissions.json를 업데이트합니다. | `server/routes/animas.py:update_anima_permissions` |
-| POST | `/api/animas/{name}/reload` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 프로세스를 재시작하지 않고 status.json에서 ModelConfig를 핫 리로드합니다. | `server/routes/animas.py:reload_anima_config` |
-| POST | `/api/animas/{name}/rename` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | CLI가 소유 설정을 직접 옮기지 않도록 root에서 Anima의 이름을 변경합니다. | `server/routes/animas.py:rename_anima` |
-| POST | `/api/animas/{name}/restart` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 애니마 프로세스를 다시 시작합니다. | `server/routes/animas.py:restart_anima` |
-| PUT | `/api/animas/{name}/role` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | root writer를 통해 역할 설정과 역할 권한 템플릿을 업데이트합니다. | `server/routes/animas.py:update_anima_role` |
-| POST | `/api/animas/{name}/start` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 중지된 애니마 프로세스를 시작합니다. | `server/routes/animas.py:start_anima` |
-| POST | `/api/animas/{name}/stop` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | 특정 애니마 프로세스를 중지합니다. | `server/routes/animas.py:stop_anima` |
-| POST | `/api/animas/{name}/trigger` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:trigger_heartbeat` |
-| GET | `/api/org/chart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | 트리 구조의 JSON으로 조직도를 반환합니다. | `server/routes/animas.py:get_org_chart` |
+| GET | `/api/animas` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 Anima 목록을 가져옵니다. | `server/routes/animas.py:list_animas` |
+| POST | `/api/animas/reload-all` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 실행 중인 모든 Anima의 ModelConfig를 핫 리로드합니다. | `server/routes/animas.py:reload_all_anima_configs` |
+| DELETE | `/api/animas/{name}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima를 완전히 중지하고 삭제합니다(프로세스 + 파일). | `server/routes/animas.py:delete_anima` |
+| GET | `/api/animas/{name}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/animas.py:get_anima_detail` |
+| GET | `/api/animas/{name}/aliases` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 Anima의 별칭을 반환합니다. | `server/routes/animas.py:get_anima_aliases` |
+| PUT | `/api/animas/{name}/aliases` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 Anima의 별칭을 업데이트합니다. | `server/routes/animas.py:update_anima_aliases` |
+| PUT | `/api/animas/{name}/background-model` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | root 소유 status.json의 heartbeat/cron 모델 설정을 업데이트합니다. | `server/routes/animas.py:update_anima_background_model` |
+| GET | `/api/animas/{name}/background-tasks` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 백그라운드 작업 목록을 가져옵니다(상태 디렉터리에서 읽음). | `server/routes/animas.py:list_background_tasks` |
+| GET | `/api/animas/{name}/background-tasks/{task_id}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | ID로 특정 백그라운드 작업을 가져옵니다. | `server/routes/animas.py:get_background_task` |
+| POST | `/api/animas/{name}/bootstrap/repair` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 첫 실행 설정이 needs_repair 상태에서 중단된 Anima를 복구합니다. | `server/routes/animas.py:repair_anima_bootstrap` |
+| GET | `/api/animas/{name}/config` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 확인된 모델 구성을 반환합니다. | `server/routes/animas.py:get_anima_config` |
+| GET | `/api/animas/{name}/cron` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 원시 cron.md 콘텐츠를 반환합니다. | `server/routes/animas.py:get_anima_cron` |
+| POST | `/api/animas/{name}/disable` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima를 비활성화합니다(status.json을 enabled: false로 설정하고 프로세스를 중지). | `server/routes/animas.py:disable_anima` |
+| POST | `/api/animas/{name}/enable` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima를 활성화합니다(status.json을 enabled: true로 설정). | `server/routes/animas.py:enable_anima` |
+| GET | `/api/animas/{name}/heartbeat` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 원시 heartbeat.md 콘텐츠를 반환합니다. | `server/routes/animas.py:get_anima_heartbeat` |
+| PUT | `/api/animas/{name}/identity` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 identity.md 콘텐츠를 업데이트합니다. | `server/routes/animas.py:update_anima_identity` |
+| PUT | `/api/animas/{name}/injection` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 injection.md 콘텐츠를 업데이트합니다. | `server/routes/animas.py:update_anima_injection` |
+| POST | `/api/animas/{name}/interactions/{callback_id}/resolve` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 메인 채팅 UI의 대화형 call_human 요청을 처리합니다. | `server/routes/animas.py:resolve_interaction` |
+| POST | `/api/animas/{name}/interrupt` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 프로세스를 중지하지 않고 현재 LLM 세션을 중단합니다. | `server/routes/animas.py:interrupt_anima` |
+| PUT | `/api/animas/{name}/model` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 status.json에서 모델 설정을 업데이트합니다. | `server/routes/animas.py:update_anima_model` |
+| GET | `/api/animas/{name}/permissions` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 permissions.json을 반환합니다. | `server/routes/animas.py:get_anima_permissions` |
+| PUT | `/api/animas/{name}/permissions` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 permissions.json을 업데이트합니다. | `server/routes/animas.py:update_anima_permissions` |
+| POST | `/api/animas/{name}/reload` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 프로세스를 재시작하지 않고 status.json에서 ModelConfig를 핫 리로드합니다. | `server/routes/animas.py:reload_anima_config` |
+| POST | `/api/animas/{name}/rename` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | CLI가 소유 설정을 직접 옮기는 일이 없도록 root에서 Anima의 이름을 변경합니다. | `server/routes/animas.py:rename_anima` |
+| POST | `/api/animas/{name}/restart` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 Anima 프로세스를 다시 시작합니다. | `server/routes/animas.py:restart_anima` |
+| PUT | `/api/animas/{name}/role` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | root writer를 통해 역할 설정과 역할 권한 템플릿을 업데이트합니다. | `server/routes/animas.py:update_anima_role` |
+| POST | `/api/animas/{name}/start` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 중지된 Anima 프로세스를 시작합니다. | `server/routes/animas.py:start_anima` |
+| GET | `/api/animas/{name}/state` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 채팅 정보 창에 필요한 현재 상태 문서만 읽습니다. | `server/routes/animas.py:get_anima_state` |
+| POST | `/api/animas/{name}/stop` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 Anima 프로세스를 중지합니다. | `server/routes/animas.py:stop_anima` |
+| GET | `/api/animas/{name}/summary` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 채팅 선택에 필요한 Anima 필드만 반환합니다. | `server/routes/animas.py:get_anima_summary` |
+| POST | `/api/animas/{name}/trigger` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/animas.py:trigger_heartbeat` |
+| GET | `/api/org/chart` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 조직도를 트리 구조의 JSON으로 반환합니다. | `server/routes/animas.py:get_org_chart` |
 
 ## `server/routes/approve.py`
 
@@ -65,21 +67,22 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/assets.py`
 
-| GET | `/api/animas/{name}/assets` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 사용 가능한 에셋 목록을 표시합니다. | `server/routes/assets.py:list_assets` |
-| POST | `/api/animas/{name}/assets/generate` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 캐릭터 에셋 생성 파이프라인을 실행합니다. | `server/routes/assets.py:generate_assets` |
-| POST | `/api/animas/{name}/assets/generate-expression` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 버스트업 표정 변형을 요청 시 생성합니다. | `server/routes/assets.py:generate_expression_on_demand` |
-| GET | `/api/animas/{name}/assets/metadata` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 사용 가능한 에셋에 대한 구조화된 메타데이터를 반환합니다. | `server/routes/assets.py:get_asset_metadata` |
-| POST | `/api/animas/{name}/assets/regenerate-step` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 파이프라인의 한 단계를 재생성합니다 (전신, 버스트업, 아이콘, 치비, 3D, 리깅, 애니메이션). | `server/routes/assets.py:regenerate_asset_step` |
-| POST | `/api/animas/{name}/assets/remake-confirm` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 미리보기를 수락하고 나머지 모든 에셋을 연쇄적으로 재구축합니다. | `server/routes/assets.py:remake_confirm` |
-| DELETE | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 가장 최근 백업에서 복원하여 리메이크 미리보기를 취소합니다. | `server/routes/assets.py:cancel_remake_preview` |
-| GET | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 생성된 미리보기 파일 목록을 표시합니다. | `server/routes/assets.py:list_remake_previews` |
-| POST | `/api/animas/{name}/assets/remake-preview` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전신 미리보기를 생성합니다. 선택적으로 Vibe Transfer를 사용할 수 있습니다. | `server/routes/assets.py:remake_preview` |
-| POST | `/api/animas/{name}/assets/upload-fullbody` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | PNG/JPEG를 업로드하여 애니마의 전신 참조 이미지를 덮어씁니다. | `server/routes/assets.py:upload_fullbody_asset` |
-| GET | `/api/animas/{name}/assets/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 에셋 디렉토리에서 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
-| HEAD | `/api/animas/{name}/assets/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 에셋 디렉토리에서 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
-| GET | `/api/animas/{name}/attachments/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 첨부 파일 디렉토리에서 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
-| HEAD | `/api/animas/{name}/attachments/{filename}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 첨부 파일 디렉토리에서 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
-| GET | `/api/media/proxy` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/assets.py:media_proxy` |
+| GET | `/api/animas/{name}/assets` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 사용 가능한 에셋 목록을 가져옵니다. | `server/routes/assets.py:list_assets` |
+| GET | `/api/animas/{name}/assets/face/{emotion}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 상반신 표정 이미지를 캐시된 정사각형 크롭으로 제공합니다. | `server/routes/assets.py:get_face_asset` |
+| POST | `/api/animas/{name}/assets/generate` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 캐릭터 에셋 생성 파이프라인을 실행합니다. | `server/routes/assets.py:generate_assets` |
+| POST | `/api/animas/{name}/assets/generate-expression` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 상반신 표정 변형을 요청에 따라 생성합니다. | `server/routes/assets.py:generate_expression_on_demand` |
+| GET | `/api/animas/{name}/assets/metadata` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima가 사용할 수 있는 에셋에 대한 구조화된 메타데이터를 반환합니다. | `server/routes/assets.py:get_asset_metadata` |
+| POST | `/api/animas/{name}/assets/regenerate-step` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 파이프라인의 한 단계를 다시 생성합니다(fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). | `server/routes/assets.py:regenerate_asset_step` |
+| POST | `/api/animas/{name}/assets/remake-confirm` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 미리보기를 승인하고 나머지 모든 에셋을 순차적으로 다시 생성합니다. | `server/routes/assets.py:remake_confirm` |
+| DELETE | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 가장 최근 백업에서 복원하여 리메이크 미리보기를 취소합니다. | `server/routes/assets.py:cancel_remake_preview` |
+| GET | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 생성된 미리보기 파일 목록을 가져옵니다. | `server/routes/assets.py:list_remake_previews` |
+| POST | `/api/animas/{name}/assets/remake-preview` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Vibe Transfer를 선택적으로 사용하여 전신 미리보기를 생성합니다. | `server/routes/assets.py:remake_preview` |
+| POST | `/api/animas/{name}/assets/upload-fullbody` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | PNG/JPEG를 업로드하여 Anima의 전신 참조 이미지를 덮어씁니다. | `server/routes/assets.py:upload_fullbody_asset` |
+| GET | `/api/animas/{name}/assets/{filename}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 에셋 디렉터리에 있는 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
+| HEAD | `/api/animas/{name}/assets/{filename}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 에셋 디렉터리에 있는 정적 에셋 파일을 제공합니다. | `server/routes/assets.py:get_asset` |
+| GET | `/api/animas/{name}/attachments/{filename}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 첨부 파일 디렉터리에 있는 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
+| HEAD | `/api/animas/{name}/attachments/{filename}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Anima의 첨부 파일 디렉터리에 있는 사용자가 업로드한 첨부 파일을 제공합니다. | `server/routes/assets.py:get_attachment` |
+| GET | `/api/media/proxy` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/assets.py:media_proxy` |
 
 ## `server/routes/auth.py`
 
@@ -177,18 +180,20 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/memory_routes.py`
 
-| DELETE | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Clear conversation history for a fresh start. | `server/routes/memory_routes.py:clear_conversation` |
-| GET | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | View current conversation state. | `server/routes/memory_routes.py:get_conversation` |
-| POST | `/api/animas/{name}/conversation/compress` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Manually trigger conversation compression. | `server/routes/memory_routes.py:compress_conversation` |
-| GET | `/api/animas/{name}/episodes` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_episodes` |
-| GET | `/api/animas/{name}/episodes/calendar` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return lightweight episode availability for every day in a month. | `server/routes/memory_routes.py:episode_calendar` |
-| GET | `/api/animas/{name}/episodes/{date}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_episode` |
-| GET | `/api/animas/{name}/knowledge` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_knowledge` |
-| GET | `/api/animas/{name}/knowledge/{topic}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_knowledge` |
-| GET | `/api/animas/{name}/memory/graph` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
-| GET | `/api/animas/{name}/memory/stats` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
-| GET | `/api/animas/{name}/procedures` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_procedures` |
-| GET | `/api/animas/{name}/procedures/{proc}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_procedure` |
+| DELETE | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 새로 시작할 수 있도록 대화 기록을 지웁니다. | `server/routes/memory_routes.py:clear_conversation` |
+| GET | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 대화 상태를 확인합니다. | `server/routes/memory_routes.py:get_conversation` |
+| POST | `/api/animas/{name}/conversation/compress` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 대화 압축을 수동으로 실행합니다. | `server/routes/memory_routes.py:compress_conversation` |
+| GET | `/api/animas/{name}/episodes` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_episodes` |
+| GET | `/api/animas/{name}/episodes/calendar` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 한 달의 각 날짜에 대한 에피소드 존재 여부를 간략히 반환합니다. | `server/routes/memory_routes.py:episode_calendar` |
+| GET | `/api/animas/{name}/episodes/{date}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_episode` |
+| GET | `/api/animas/{name}/knowledge` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_knowledge` |
+| GET | `/api/animas/{name}/knowledge/{topic}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/connections` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 활성 팩트에서 추출한 엔터티 연결을 반환합니다. | `server/routes/memory_routes.py:memory_connections` |
+| GET | `/api/animas/{name}/memory/connections/entity` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | 단일 엔터티의 팩트와 관련 메모리 파일을 반환합니다. | `server/routes/memory_routes.py:memory_connection_entity` |
+| GET | `/api/animas/{name}/memory/graph` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | UI 표시용 명시적 링크 메모리 그래프를 반환합니다. | `server/routes/memory_routes.py:memory_graph` |
+| GET | `/api/animas/{name}/memory/stats` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | anima의 메모리 저장소 통계를 반환합니다. | `server/routes/memory_routes.py:memory_stats` |
+| GET | `/api/animas/{name}/procedures` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_procedures` |
+| GET | `/api/animas/{name}/procedures/{proc}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_procedure` |
 
 ## `server/routes/phone.py`
 
@@ -213,10 +218,16 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/sessions.py`
 
-| GET | `/api/animas/{name}/conversation/history` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 활동 로그에서 대화 기록을 가져옵니다. | `server/routes/sessions.py:get_conversation_history` |
-| GET | `/api/animas/{name}/sessions` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 모든 세션을 나열합니다: 활성 대화, 아카이브, 에피소드. | `server/routes/sessions.py:list_sessions` |
-| GET | `/api/animas/{name}/sessions/{session_id}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 아카이브된 세션 세부 정보를 가져옵니다. | `server/routes/sessions.py:get_session_detail` |
-| GET | `/api/animas/{name}/transcripts/{date}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 특정 날짜의 전체 대화 기록을 가져옵니다. | `server/routes/sessions.py:get_transcript` |
+| GET | `/api/animas/{name}/conversation/bg` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Load background activity for one collapsed feed group. | `server/routes/sessions.py:get_conversation_background` |
+| POST | `/api/animas/{name}/conversation/calls` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Persist a completed voice call in the Anima's conversation history. | `server/routes/sessions.py:record_voice_call` |
+| GET | `/api/animas/{name}/conversation/feed` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get user-centered chat history with lazy background activity groups. | `server/routes/sessions.py:get_conversation_feed` |
+| GET | `/api/animas/{name}/conversation/history` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get conversation history from activity log. | `server/routes/sessions.py:get_conversation_history` |
+| GET | `/api/animas/{name}/conversation/tool-calls` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get the full, truncated tool-call details for one assistant message. | `server/routes/sessions.py:get_conversation_tool_calls` |
+| POST | `/api/animas/{name}/notifications/reply` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Route a reply to a human_notify entry back to its originating Anima. | `server/routes/sessions.py:reply_to_notification` |
+| GET | `/api/animas/{name}/sessions` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | List all available sessions: active conversation, archives, episodes. | `server/routes/sessions.py:list_sessions` |
+| GET | `/api/animas/{name}/sessions/{session_id}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get archived session detail. | `server/routes/sessions.py:get_session_detail` |
+| GET | `/api/animas/{name}/transcripts/{date}` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | Get full conversation transcript for a specific date. | `server/routes/sessions.py:get_transcript` |
+| GET | `/api/notifications/awaiting` | 세션 필수(local_trust 모드이거나 localhost 신뢰가 활성화된 경우 생략 가능) | List call_human notifications from the last 24 hours that still wait for a reply, per Anima. | `server/routes/sessions.py:list_awaiting_notifications` |
 
 ## `server/routes/setup.py`
 
@@ -235,27 +246,27 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/system.py`
 
-| GET | `/api/activity/group` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 안정적인 ID로 하나의 완전한 트리거 기반 활동 그룹을 반환합니다. | `server/routes/system.py:get_activity_group` |
-| GET | `/api/activity/recent` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 통합 ActivityLogger의 최근 활동 이벤트를 반환합니다. | `server/routes/system.py:get_recent_activity` |
-| GET | `/api/activity/running-tasks` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima별로 그룹화된 활성 백그라운드 TaskExec 워커를 반환합니다. | `server/routes/system.py:get_running_activity_tasks` |
-| GET | `/api/settings/activity-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 전역 활동 수준과 일정을 반환합니다. | `server/routes/system.py:get_activity_level` |
-| PUT | `/api/settings/activity-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전역 활동 수준을 업데이트하고 모든 하트비트를 재예약합니다. | `server/routes/system.py:set_activity_level` |
-| PUT | `/api/settings/activity-schedule` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 시간 기반 활동 일정(야간 모드)을 업데이트합니다. | `server/routes/system.py:set_activity_schedule` |
-| POST | `/api/settings/display-mode` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 표시 모드를 업데이트하고 config.image_gen.image_style을 동기화합니다. | `server/routes/system.py:set_display_mode` |
-| GET | `/api/shared/users` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | shared/users/.에서 등록된 사용자 이름 목록을 반환합니다. | `server/routes/system.py:list_shared_users` |
-| GET | `/api/system/connections` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | WebSocket 및 프로세스 연결 정보를 반환합니다. | `server/routes/system.py:system_connections` |
-| GET | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 선택적 필터를 사용하여 JSONL 파일에서 프론트엔드 로그를 읽습니다. | `server/routes/system.py:view_frontend_logs` |
-| POST | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 프론트엔드 로그 항목 배치를 수신하고 일별 JSONL에 기록합니다. | `server/routes/system.py:receive_frontend_logs` |
-| GET | `/api/system/health` | 불필요 (제외 목록) | 간단한 상태 확인 엔드포인트. | `server/routes/system.py:health_check` |
-| POST | `/api/system/hot-reload/credentials` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 자격 증명 및 종속 연결을 핫 리로드합니다. | `server/routes/system.py:hot_reload_credentials` |
-| POST | `/api/system/hot-reload/slack` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Slack Socket Mode 연결만 핫 리로드합니다. | `server/routes/system.py:hot_reload_slack` |
-| GET | `/api/system/log-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 루트 로그 수준을 반환합니다. | `server/routes/system.py:get_log_level` |
-| POST | `/api/system/log-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 런타임에 로그 수준을 변경합니다 (재시작 불필요). | `server/routes/system.py:set_log_level` |
-| POST | `/api/system/reload` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전체 동기화: 새 animas 추가, 기존 항목 새로고침, 삭제된 항목 제거. | `server/routes/system.py:reload_animas` |
-| POST | `/api/system/rewrite-runtime-refs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_runtime_refs` |
-| GET | `/api/system/scheduler` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 스케줄러 상태 및 작업 정보를 반환합니다. | `server/routes/system.py:system_scheduler` |
-| GET | `/api/system/status` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/system.py:system_status` |
-| GET | `/api/system/token-budget` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 각 Anima의 이번 달 토큰 예산 상태를 반환합니다. | `server/routes/system.py:get_token_budget` |
+| GET | `/api/activity/group` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 안정적인 ID로 완전한 트리거 기반 활동 그룹 하나를 반환합니다. | `server/routes/system.py:get_activity_group` |
+| GET | `/api/activity/recent` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 통합 ActivityLogger에서 최근 활동 이벤트를 반환합니다. | `server/routes/system.py:get_recent_activity` |
+| GET | `/api/activity/running-tasks` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima별로 그룹화된 활성 TaskExec 워커와 기타 사용 중인 레인을 반환합니다. | `server/routes/system.py:get_running_activity_tasks` |
+| GET | `/api/settings/activity-level` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 전역 활동 수준과 일정을 반환합니다. | `server/routes/system.py:get_activity_level` |
+| PUT | `/api/settings/activity-level` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전역 활동 수준을 업데이트하고 모든 하트비트를 다시 예약합니다. | `server/routes/system.py:set_activity_level` |
+| PUT | `/api/settings/activity-schedule` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 시간 기반 활동 일정(야간 모드)을 업데이트합니다. | `server/routes/system.py:set_activity_schedule` |
+| POST | `/api/settings/display-mode` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 표시 모드를 업데이트하고 config.image_gen.image_style을 동기화합니다. | `server/routes/system.py:set_display_mode` |
+| GET | `/api/shared/users` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | shared/users/.에서 등록된 사용자 이름을 나열합니다. | `server/routes/system.py:list_shared_users` |
+| GET | `/api/system/connections` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | WebSocket 및 프로세스 연결 정보를 반환합니다. | `server/routes/system.py:system_connections` |
+| GET | `/api/system/frontend-logs` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 선택적 필터를 사용하여 JSONL 파일에서 프런트엔드 로그를 읽습니다. | `server/routes/system.py:view_frontend_logs` |
+| POST | `/api/system/frontend-logs` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 프런트엔드 로그 항목 배치를 받아 일별 JSONL에 기록합니다. | `server/routes/system.py:receive_frontend_logs` |
+| GET | `/api/system/health` | 불필요(제외 목록) | 간단한 상태 확인 엔드포인트입니다. | `server/routes/system.py:health_check` |
+| POST | `/api/system/hot-reload/credentials` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 자격 증명과 종속 연결을 핫 리로드합니다. | `server/routes/system.py:hot_reload_credentials` |
+| POST | `/api/system/hot-reload/slack` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Slack Socket Mode 연결만 핫 리로드합니다. | `server/routes/system.py:hot_reload_slack` |
+| GET | `/api/system/log-level` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 루트 로그 수준을 반환합니다. | `server/routes/system.py:get_log_level` |
+| POST | `/api/system/log-level` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 런타임에 로그 수준을 변경합니다(재시작 필요 없음). | `server/routes/system.py:set_log_level` |
+| POST | `/api/system/reload` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전체 동기화: 새 Anima를 추가하고, 기존 Anima를 새로 고치고, 삭제된 Anima를 제거합니다. | `server/routes/system.py:reload_animas` |
+| POST | `/api/system/rewrite-runtime-refs` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_runtime_refs` |
+| GET | `/api/system/scheduler` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 스케줄러 상태와 작업 정보를 반환합니다. | `server/routes/system.py:system_scheduler` |
+| GET | `/api/system/status` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/system.py:system_status` |
+| GET | `/api/system/token-budget` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 각 Anima의 현재 월 토큰 예산 상태를 반환합니다. | `server/routes/system.py:get_token_budget` |
 
 ## `server/routes/taskboard.py`
 

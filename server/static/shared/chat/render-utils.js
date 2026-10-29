@@ -4,10 +4,12 @@
 import { t } from "../i18n.js";
 import { escapeAttr as _escapeAttr } from "../html-utils.js";
 import { api } from "../../modules/api.js";
+import { bustUrl, faceUrl } from "./emotion-face.js";
 
 // ── Think-tag strip (frontend safety net) ─────────────
 const _THINK_CLOSE_RE = /<\/think>\s*/;
 const _THINK_CLOSE_GLOBAL_RE = /<\/think>\s*/g;
+const _lazyToolCallDetails = new Map();
 
 /**
  * Strip `<think>...</think>` block from text (mirrors backend strip_thinking_tags).
@@ -348,6 +350,205 @@ function _stripVoiceSuffix(text) {
   return text ? text.replace(_RE_VOICE_MODE_SUFFIX, "") : text;
 }
 
+function _normalizedName(name) {
+  return String(name || "").trim().toLocaleLowerCase();
+}
+
+function _isCurrentUser(name, opts) {
+  if (!name) return false;
+  const names = opts?.currentUserNames;
+  const values = names instanceof Set ? names : new Set(Array.isArray(names) ? names : []);
+  return values.has(name) || [...values].some((candidate) => _normalizedName(candidate) === _normalizedName(name));
+}
+
+function _lineReplyParts(text) {
+  const match = /^> ([^\n]*)\n\n([\s\S]*)$/.exec(String(text || ""));
+  return match ? { quote: match[1], text: match[2] } : { quote: "", text: String(text || "") };
+}
+
+const _LINE_ICONS = {
+  reply: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+};
+
+function _lineActionButton(action, extraClass = "") {
+  const label = _escapeAttr(t(`chat.line.${action}`));
+  return `<button type="button" class="chat-line-action${extraClass}" data-action="${action}" title="${label}" aria-label="${label}">${_LINE_ICONS[action]}</button>`;
+}
+
+function _lineActionsHtml({ reply = true } = {}) {
+  return `<div class="chat-line-actions">`
+    + (reply ? _lineActionButton("reply") : "")
+    + _lineActionButton("copy", " bubble-action-btn")
+    + _lineActionButton("download", " bubble-action-btn")
+    + `</div>`;
+}
+
+function _humanNotifyActions(callbackId, escapeHtml) {
+  if (!callbackId) return "";
+  const cid = escapeHtml(callbackId);
+  return `<div class="chat-human-notify-actions" data-callback-id="${cid}">`
+    + `<button type="button" class="chat-human-notify-btn" data-decision="approve" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_approve"))}</button>`
+    + `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--reject" data-decision="reject" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_reject"))}</button>`
+    + `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--comment" data-decision="comment" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_comment"))}</button>`
+    + `</div>`;
+}
+
+function _lineMetaHtml(msg, opts, isMe) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const waiting = msg.type === "human_notify" && msg.replied === false && msg.needs_reply !== false;
+  const waitHtml = waiting
+    ? `<span class="chat-line-waiting">${escapeHtml(t("chat.line.waiting_reply"))}</span>`
+    : "";
+  const readHtml = isMe && msg.read
+    ? `<span>${escapeHtml(t("chat.line.read"))}</span>`
+    : "";
+  const time = msg.ts || msg.timestamp ? smartTimestamp(msg.ts || msg.timestamp) : "";
+  const timeHtml = time ? `<span>${escapeHtml(time)}</span>` : "";
+  if (!waitHtml && !readHtml && !timeHtml) return "";
+  return `<div class="chat-line-meta">${waitHtml}${readHtml}${timeHtml}</div>`;
+}
+
+function _voiceCallInner(msg, opts) {
+  const { escapeHtml } = opts;
+  const seconds = Math.max(0, Math.floor(Number(msg.duration_seconds) || 0));
+  const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const transcript = Array.isArray(msg.transcript) ? msg.transcript : [];
+  const transcriptHtml = transcript.length
+    ? `<ol>${transcript.map((line) => {
+      const speaker = line?.speaker === "assistant" ? (opts.animaName || "") : t("chat.call.you");
+      return `<li><strong>${escapeHtml(speaker)}:</strong> ${escapeHtml(line?.text || "")}</li>`;
+    }).join("")}</ol>`
+    : "";
+  const recordLabel = t("chat.call.record_duration", { time: duration });
+  const summary = msg.content ? `<small>${escapeHtml(msg.content)}</small>` : "";
+  return `<div class="callrec"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg></span><div>${escapeHtml(recordLabel)}${summary}</div></div>` +
+    (transcript.length
+      ? `<details class="chat-call-transcript"><summary>${escapeHtml(t("chat.call.open_transcript"))}</summary>${transcriptHtml}</details>`
+      : "");
+}
+
+function _lineMessage(msg, opts, { live = false } = {}) {
+  const { escapeHtml, renderMarkdown } = opts;
+  const renderImages = opts.renderChatImages || (() => "");
+  const nameFrom = msg.from_person || msg.speaker || opts.animaName || "";
+  const knownAnimas = _knownAnimaNames(opts);
+  const isOtherAnima = msg.role !== "assistant" && Boolean(nameFrom && knownAnimas.has(nameFrom) && nameFrom !== opts.animaName);
+  const isAnima = msg.type === "human_notify" || msg.role === "assistant" || isOtherAnima;
+  const isMe = !isAnima && (msg.role === "user" || _isCurrentUser(nameFrom, opts));
+  const rowKind = isAnima ? "anima" : isMe ? "me" : "person";
+  const speakerName = isAnima ? (msg.speaker || (msg.type === "human_notify" ? opts.animaName : nameFrom)) : nameFrom;
+  const emotion = msg.emotion || "neutral";
+  const rawText = live ? (msg._displayText || msg.text || "") : (msg.content || msg.text || "");
+  const replyParts = _lineReplyParts(rawText);
+  const contentText = _stripVoiceSuffix(replyParts.text);
+  const rawReplyText = msg.type === "human_notify"
+    ? [msg.subject, msg.content].filter(Boolean).join(" — ")
+    : contentText;
+  let contentHtml = "";
+  if (msg.type === "voice_call") {
+    contentHtml = _voiceCallInner(msg, opts);
+  } else if (msg.type === "human_notify") {
+    const subjectHtml = msg.subject ? `<strong>${escapeHtml(msg.subject)}</strong>` : "";
+    const bodyHtml = _linkifyEscaped(escapeHtml, msg.content || "").replace(/\n/g, "<br>");
+    contentHtml = `${subjectHtml}${subjectHtml && bodyHtml ? "<br>" : ""}${bodyHtml}`;
+  } else if (isAnima) {
+    const normalized = _normalizeDisplayText(contentText);
+    contentHtml = normalized ? renderMarkdown(normalized, opts.animaName) : "";
+  } else {
+    contentHtml = contentText ? `<div class="chat-text">${_linkifyEscaped(escapeHtml, contentText).replace(/\n/g, "<br>")}</div>` : "";
+  }
+  let quote = replyParts.quote || msg.reply_quote || "";
+  let quoteName = msg.reply_quote ? (opts.animaName || "") : "";
+  const named = !msg.reply_quote && /^([^:\s][^:]{0,29}): (.+)$/.exec(quote);
+  if (named) { quoteName = named[1]; quote = named[2]; }
+  const quoteLabel = quoteName ? t("chat.line.reply_to_name", { name: quoteName }) : t("chat.line.reply_label");
+  const quoteHtml = quote
+    ? `<div class="chat-line-quote"><div class="chat-line-quote-head">`
+      + `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>`
+      + `${escapeHtml(quoteLabel)}</div><div class="chat-line-quote-text">${escapeHtml(quote)}</div></div>`
+    : "";
+  const imagesHtml = live
+    ? renderImages(msg.images, { animaName: opts.animaName })
+    : renderImages(msg.images, { animaName: opts.animaName });
+  let toolHtml = "";
+  const think = isAnima && opts.think && msg.think ? opts.think : null;
+  const thinkingNow = Boolean(live && think && msg.streaming && think.isThinking(msg));
+  if (thinkingNow) contentHtml = "";
+  if (live && think) {
+    toolHtml = msg.streaming ? think.zone(msg, opts) : think.fold(msg);
+  } else if (live) {
+    const labels = opts.labels || {};
+    if (msg.toolHistory?.length) {
+      toolHtml = renderToolActivityTimeline(msg.toolHistory, msg.activeTool, { escapeHtml, labels });
+    } else if (msg.activeTool) {
+      const label = labels.toolRunning || ((tool) => t("chat.tool_running", { tool }));
+      toolHtml = `<div class="tool-indicator"><span class="tool-spinner"></span>${typeof label === "function" ? label(msg.activeTool) : label}</div>`;
+    }
+    if (msg.thinkingText) toolHtml += `<div class="thinking-inline-preview">${escapeHtml(msg.thinkingText)}</div>`;
+  } else if (opts.think) {
+    toolHtml = opts.think.historyFold(msg.tool_calls, {
+      truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE,
+      interimTexts: msg.interim_texts,
+      lazy: msg.tool_calls_detail === "lazy",
+      messageTs: msg.ts || msg.timestamp || "",
+      animaName: opts.animaName || "",
+      threadId: opts.threadId || "default",
+    });
+  } else {
+    toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE });
+  }
+  const callbackHtml = msg.type === "human_notify" ? _humanNotifyActions(msg.callback_id, escapeHtml) : "";
+  const streamingClass = live && msg.streaming ? " streaming" : "";
+  const streamId = live && msg.streaming && msg.streamId
+    ? ` data-stream-id="${escapeHtml(String(msg.streamId))}"`
+    : "";
+  const dataRawText = rawText ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
+  const notificationId = msg.type === "human_notify"
+    ? ` data-notification-id="${_escapeAttr(msg.notification_id || msg.ts || "")}"`
+      + (msg.callback_id ? ` data-callback-id="${_escapeAttr(msg.callback_id)}"` : "")
+    : "";
+  const messageTimestamp = msg.ts || msg.timestamp || "";
+  const timestampData = messageTimestamp ? ` data-message-ts="${_escapeAttr(messageTimestamp)}"` : "";
+  const replyData = rawReplyText
+    ? ` data-reply-text="${_escapeAttr(rawReplyText)}" data-reply-name="${_escapeAttr(speakerName || nameFrom || "")}"`
+    : "";
+  const bubbleRole = isMe ? "user" : "assistant";
+  const viaKey = `chat.via_${msg.via || ""}`;
+  const viaTranslation = msg.via ? t(viaKey) : "";
+  const viaLabel = viaTranslation && viaTranslation !== viaKey
+    ? viaTranslation.replace(/^via\s+/i, "")
+    : (msg.via || "");
+  const via = isMe && viaLabel && msg.via !== "web" && msg.via !== "chat"
+    ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
+    : "";
+  const thinkClass = live && think && msg.streaming ? " think-host" : "";
+  const callClass = msg.type === "voice_call" ? " chat-call-record" : "";
+  const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}${thinkClass}${callClass}`;
+  const cursor = live && msg.streaming && !thinkingNow ? '<span class="streaming-cursor">▌</span>' : "";
+  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${cursor}</div>`;
+  const faceEmotion = live && think
+    ? (msg.streaming ? "thinking" : (msg.emotion || msg.think.emotion || "neutral"))
+    : emotion;
+  const faceClass = live && think && msg.streaming ? "chat-line-face thinking" : "chat-line-face";
+  const thinkIdAttr = live && think ? ` data-think-id="${_escapeAttr(msg.think.id)}"` : "";
+  const face = isAnima
+    ? `<img class="${faceClass}"${thinkIdAttr} src="${_escapeAttr(faceUrl(speakerName, faceEmotion))}" data-emotion="${_escapeAttr(faceEmotion)}" data-anima="${_escapeAttr(speakerName)}" data-bust-url="${_escapeAttr(bustUrl(speakerName, faceEmotion))}" alt="${_escapeAttr(speakerName)}" loading="lazy">`
+    : isMe
+      ? ""
+      : `<div class="chat-line-person-avatar" aria-hidden="true">${escapeHtml((nameFrom || "?").trim().charAt(0).toLocaleUpperCase() || "?")}</div>`;
+  const who = !isMe && (isAnima || nameFrom)
+    ? `<div class="chat-line-who">${escapeHtml(speakerName || nameFrom)}</div>`
+    : "";
+  const meta = _lineMetaHtml(msg, opts, isMe);
+  const actions = live && msg.streaming ? "" : _lineActionsHtml();
+  const rowClass = `chat-line chat-line--${rowKind}`;
+  return `<div class="${rowClass}" data-message-row${notificationId}${replyData}>`
+    + `${face}<div class="chat-line-col">${who}<div class="chat-line-content-row">${bubble}${meta}${actions}</div>${via}</div>`
+    + `</div>`;
+}
+
 const _USER_SVG = `<svg class="chat-msg-avatar-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>`;
 
 function _renderAvatar(name, avatarMap, companyColors) {
@@ -473,6 +674,10 @@ export function renderHistoryMessage(msg, opts) {
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
   const avatarMap = opts.avatarMap || null;
 
+  if (opts.lineChat && (msg.type === "human_notify" || msg.type === "human_reply" || msg.role !== "system")) {
+    return _lineMessage(msg, opts);
+  }
+
   const ts = msg.ts ? smartTimestamp(msg.ts) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
 
@@ -482,6 +687,11 @@ export function renderHistoryMessage(msg, opts) {
 
   if (msg.type === "human_reply") {
     return _renderHumanReplyBubble(msg, opts);
+  }
+
+  if (msg.type === "voice_call") {
+    const bubble = `<div class="chat-bubble assistant chat-call-record">${_voiceCallInner(msg, opts)}${tsHtml}</div>`;
+    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap, opts.companyColors));
   }
 
   if (msg.role === "system") {
@@ -495,7 +705,16 @@ export function renderHistoryMessage(msg, opts) {
       : "";
     const rawText = _normalizeDisplayText(msg.content || "");
     const content = rawText ? renderMarkdown(rawText, opts.animaName) : "";
-    const toolHtml = renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
+    const toolHtml = opts.think
+      ? opts.think.historyFold(msg.tool_calls, {
+        truncateLen: truncLen,
+        interimTexts: msg.interim_texts,
+        lazy: msg.tool_calls_detail === "lazy",
+        messageTs: msg.ts || msg.timestamp || "",
+        animaName: opts.animaName || "",
+        threadId: opts.threadId || "default",
+      })
+      : renderToolCalls(msg.tool_calls, { escapeHtml, truncateLen: truncLen });
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     let thinkingHtml = "";
     if (msg.thinking_text) {
@@ -817,10 +1036,26 @@ export function renderCollapsibleActivityBundle(items, opts) {
   const normalized = (items || []).filter((item) => item?.type && _itemMessages(item).length > 0);
   if (normalized.length === 0) return "";
 
+  const allMessages = normalized.flatMap(_itemMessages);
+  const itemCount = allMessages.length;
   const startTs = normalized.map(_itemStart).filter(Boolean).sort()[0] || "";
   const endTs = normalized.map(_itemEnd).filter(Boolean).sort().slice(-1)[0] || "";
   const timeLabel = _timeRange(startTs, endTs, smartTimestamp);
-  const headerLabel = t("chat.activity_bundle_count", { count: normalized.length });
+  const types = new Set(normalized.map((item) => item.type));
+  let activityLabel;
+  if (types.has("dm")) {
+    const people = [...new Set(allMessages.flatMap((message) => [message.from_person, message.to_person]).filter(Boolean))];
+    if (opts.animaName && !people.includes(opts.animaName)) people.unshift(opts.animaName);
+    activityLabel = t("chat.line.background_direct", {
+      people: people.join(t("chat.line.background_people_separator")) || t("chat.dm_activity"),
+    });
+  } else if (types.has("cron") || types.has("heartbeat") || types.has("task")) {
+    const first = normalized.find((item) => item.type === "cron" || item.type === "heartbeat" || item.type === "task");
+    activityLabel = _activityEntryTitle(first, first?.type, opts) || t("chat.line.background_work");
+  } else {
+    activityLabel = t("chat.line.background_work");
+  }
+  const headerLabel = t("chat.line.background_count", { label: activityLabel, count: itemCount });
 
   const byType = new Map();
   for (const item of normalized) {
@@ -851,15 +1086,96 @@ export function renderCollapsibleActivityBundle(items, opts) {
   }).join("");
 
   return (
-    `<div class="bg-session-group bg-session-bundle bg-session-node" data-bg-node>` +
-    `<div class="bg-session-header bg-session-header--bundle" data-bg-toggle>` +
-    `<span class="bg-session-chevron">\u25B6</span>` +
-    `<span class="bg-session-label">${escapeHtml(headerLabel)}</span>` +
-    `<span class="bg-session-time">${escapeHtml(timeLabel)}</span>` +
-    `</div>` +
-    `<div class="bg-session-body bg-session-bundle-body" style="display:none;">${categoryHtml}</div>` +
+    `<div class="chat-sysline bg-session-node" data-bg-node>` +
+    `<button type="button" class="chat-sysline-toggle" data-bg-toggle aria-expanded="false">` +
+    `<span class="chat-sysline-gear" aria-hidden="true">⚙</span>` +
+    `<span class="chat-sysline-label">${escapeHtml(headerLabel)}</span>` +
+    `<span class="chat-sysline-time">${timeLabel ? `· ${escapeHtml(timeLabel)}` : ""} ▸</span>` +
+    `</button>` +
+    `<div class="chat-sysline-body bg-session-body bg-session-bundle-body" hidden>${categoryHtml}</div>` +
     `</div>`
   );
+}
+
+/** Render one lazy background group in the compact chat feed. */
+export function renderFeedBackgroundGroup(group, opts) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const kinds = group?.kinds || {};
+  const participants = [...new Set([opts.animaName, ...(group?.participants || [])].filter(Boolean))];
+  const priority = ["dm", "cron", "heartbeat", "task", "notice"];
+  const kind = priority.includes(group?.label_hint)
+    ? group.label_hint
+    : priority.find((name) => Number(kinds[name]) > 0) || "other";
+  const label = kind === "dm"
+    ? t("chat.feed.dm", {
+      people: participants.join(t("chat.feed.people_separator")) || t("chat.feed.kind.dm"),
+    })
+    : t(`chat.feed.kind.${kind}`);
+  const header = t("chat.feed.background_count", { label, count: group?.count || 0 });
+  const timeLabel = _timeRange(group?.from_ts, group?.to_ts, smartTimestamp);
+  const fromTs = _escapeAttr(group?.from_ts || "");
+  const toTs = _escapeAttr(group?.to_ts || "");
+  const anima = _escapeAttr(opts.animaName || "");
+  const thread = _escapeAttr(opts.threadId || "default");
+
+  return (
+    `<div class="chat-sysline bg-session-node bg-feed-group" data-bg-node data-bg-feed ` +
+      `data-from-ts="${fromTs}" data-to-ts="${toTs}" data-anima="${anima}" data-thread-id="${thread}">` +
+    `<button type="button" class="chat-sysline-toggle" data-bg-toggle aria-expanded="false">` +
+    `<span class="chat-sysline-gear" aria-hidden="true">⚙</span>` +
+    `<span class="chat-sysline-label">${escapeHtml(header)}</span>` +
+    `<span class="chat-sysline-time">${timeLabel ? `· ${escapeHtml(timeLabel)}` : ""} ▸</span>` +
+    `</button>` +
+    `<div class="chat-sysline-body bg-session-body bg-feed-body" hidden></div>` +
+    `</div>`
+  );
+}
+
+/** Build the lazy background request URL for one feed group. */
+export function feedBackgroundUrl(dataset) {
+  const animaName = dataset?.anima || "";
+  const threadId = dataset?.threadId || "default";
+  let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/bg` +
+    `?thread_id=${encodeURIComponent(threadId)}&from_ts=${encodeURIComponent(dataset?.fromTs || "")}` +
+    `&to_ts=${encodeURIComponent(dataset?.toTs || "")}`;
+  if (threadId !== "default") url += "&strict_thread=1";
+  return url;
+}
+
+/** Bind one-shot, lazy expansion for feed background groups. */
+export function bindLazyBackgroundGroups(container, options = {}) {
+  if (!container) return;
+  container.querySelectorAll("[data-bg-feed]").forEach((group) => {
+    if (group.dataset.feedBound === "1") return;
+    const toggle = group.querySelector("[data-bg-toggle]");
+    const body = group.querySelector(".bg-feed-body");
+    if (!toggle || !body) return;
+    group.dataset.feedBound = "1";
+    toggle.addEventListener("click", () => {
+      if (group.dataset.feedLoaded === "1" || group.dataset.feedLoading === "1") return;
+      group.dataset.feedLoading = "1";
+      body.textContent = options.loadingText || t("chat.feed.loading");
+      Promise.resolve()
+        .then(() => options.load?.(group.dataset))
+        .then((data) => {
+          body.innerHTML = options.render ? options.render(data, group.dataset) : "";
+          group.dataset.feedLoaded = "1";
+          delete group.dataset.feedLoading;
+          options.onRendered?.(body);
+        })
+        .catch(() => {
+          body.textContent = options.failedText || t("chat.feed.failed");
+          group.dataset.feedLoaded = "1";
+          delete group.dataset.feedLoading;
+        });
+    });
+  });
+}
+
+/** Render the count shown when background activity is hidden. */
+export function renderFeedHiddenCount(count) {
+  if (!(count > 0)) return "";
+  return `<div class="chat-bg-hidden-note">${t("chat.feed.hidden_count", { count })}</div>`;
 }
 
 /**
@@ -869,6 +1185,63 @@ export function renderCollapsibleActivityBundle(items, opts) {
  */
 export function bindToolCallHandlers(container) {
   if (!container) return;
+
+  const loadLazyDetails = (fold) => {
+    if (!fold) return;
+    const messageTs = fold.dataset.messageTs || "";
+    const animaName = fold.dataset.anima || "";
+    const threadId = fold.dataset.threadId || "default";
+    const contentEls = [...fold.querySelectorAll("[data-tool-detail-content]")];
+    if (contentEls.length === 0) return;
+
+    const cacheKey = JSON.stringify([animaName, threadId, messageTs]);
+    let detailPromise = _lazyToolCallDetails.get(cacheKey);
+    if (!detailPromise) {
+      const url = `/api/animas/${encodeURIComponent(animaName)}/conversation/tool-calls` +
+        `?message_ts=${encodeURIComponent(messageTs)}&thread_id=${encodeURIComponent(threadId)}`;
+      detailPromise = Promise.resolve()
+        .then(() => {
+          if (!animaName || !messageTs) throw new Error("Missing tool-call message context");
+          return api(url);
+        })
+        .then((data) => {
+          if (!Array.isArray(data?.tool_calls)) throw new Error("Tool-call response was invalid");
+          return { ok: true, toolCalls: data.tool_calls };
+        })
+        .catch(() => ({ ok: false, toolCalls: [] }));
+      _lazyToolCallDetails.set(cacheKey, detailPromise);
+    }
+
+    for (const contentEl of contentEls) contentEl.textContent = t("chat.think.loading");
+    void detailPromise.then(({ ok, toolCalls }) => {
+      const callsById = new Map(toolCalls.map((call) => [String(call.tool_use_id || ""), call]));
+      for (const contentEl of contentEls) {
+        if (!ok) {
+          contentEl.textContent = t("chat.think.load_failed");
+          continue;
+        }
+        const indexedCall = toolCalls[Number(contentEl.dataset.toolIndex)] || null;
+        const call = callsById.get(String(contentEl.dataset.toolUseId || "")) || indexedCall;
+        const result = call?.result;
+        contentEl.textContent = result == null
+          ? ""
+          : typeof result === "string" ? result : JSON.stringify(result, null, 2);
+      }
+    });
+  };
+
+  const bindLazyToggle = (details) => {
+    const fold = details.classList.contains("think-fold")
+      ? details
+      : details.closest(".think-fold[data-lazy-tool-calls]");
+    if (!fold) return;
+    details.addEventListener("toggle", () => {
+      if (details.open) loadLazyDetails(fold);
+    });
+  };
+
+  container.querySelectorAll(".think-fold[data-lazy-tool-calls]").forEach(bindLazyToggle);
+  container.querySelectorAll(".think-step-detail[data-lazy-tool-call]").forEach(bindLazyToggle);
 
   container.querySelectorAll(".tool-call-group-header").forEach(header => {
     header.addEventListener("click", () => {
@@ -971,7 +1344,7 @@ function renderCollapsibleSession(sessions, type, opts) {
  */
 export function bindCollapsibleSessionHandlers(container) {
   if (!container) return;
-  container.querySelectorAll(".bg-session-header[data-bg-toggle], .bg-session-header:not([data-bg-bound])").forEach((header) => {
+  container.querySelectorAll(".chat-sysline-toggle, .bg-session-header[data-bg-toggle], .bg-session-header:not([data-bg-bound])").forEach((header) => {
     if (header.dataset.bgBound === "1") return;
     header.dataset.bgBound = "1";
     header.addEventListener("click", () => {
@@ -981,7 +1354,9 @@ export function bindCollapsibleSessionHandlers(container) {
       if (!body) return;
       const isExpanded = group.classList.contains("expanded");
       group.classList.toggle("expanded", !isExpanded);
-      body.style.display = isExpanded ? "none" : "";
+      body.hidden = isExpanded;
+      if (!header.classList.contains("chat-sysline-toggle")) body.style.display = isExpanded ? "none" : "";
+      header.setAttribute("aria-expanded", String(!isExpanded));
     });
   });
 }
@@ -1002,6 +1377,10 @@ export function renderLiveBubble(msg, opts) {
   const renderImages = opts.renderChatImages || (() => "");
   const labels = opts.labels || {};
   const avatarMap = opts.avatarMap || null;
+
+  if (opts.lineChat && msg.role !== "thinking" && msg.role !== "system") {
+    return _lineMessage(msg, opts, { live: true });
+  }
 
   const ts = msg.timestamp ? smartTimestamp(msg.timestamp) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
@@ -1034,6 +1413,11 @@ export function renderLiveBubble(msg, opts) {
   const streamIdAttr = msg.streaming && msg.streamId
     ? ` data-stream-id="${escapeHtml(String(msg.streamId))}"`
     : "";
+  const think = opts.think && msg.think ? opts.think : null;
+  if (think && msg.streaming) {
+    const zoned = `<div class="chat-bubble assistant think-host${streamClass}"${streamIdAttr}>${renderStreamingBubbleInner(msg, opts)}</div>`;
+    return _wrapRow("assistant", zoned, think.avatar(_renderAvatar(speakerName, avatarMap, opts.companyColors), msg, speakerName));
+  }
   let thinkingHtml = "";
   if (msg.thinking && msg.thinkingText) {
     thinkingHtml = `<div class="thinking-inline-preview">${escapeHtml(msg.thinkingText)}</div>`;
@@ -1056,7 +1440,9 @@ export function renderLiveBubble(msg, opts) {
     : "";
   let toolHtml = "";
   const history = msg.toolHistory;
-  if (history && history.length > 0) {
+  if (think) {
+    toolHtml = think.fold(msg);
+  } else if (history && history.length > 0) {
     toolHtml = renderToolActivityTimeline(history, msg.activeTool, { escapeHtml, labels });
   } else if (msg.activeTool) {
     const toolLabel = labels.toolRunning || ((tool) => t("chat.tool_running", { tool }));
@@ -1069,7 +1455,8 @@ export function renderLiveBubble(msg, opts) {
   const actionsHtml = msg.streaming ? "" : _bubbleActionsHtml(rawText);
   const dataRawAttr = rawText && !msg.streaming ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
   const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}${dataRawAttr}>${actionsHtml}${speakerLabel}${metaHtml}${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
-  return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap, opts.companyColors));
+  const avatarHtml = _renderAvatar(speakerName, avatarMap, opts.companyColors);
+  return _wrapRow("assistant", bubble, think ? think.avatar(avatarHtml, msg, speakerName) : avatarHtml);
 }
 
 /**
@@ -1186,6 +1573,7 @@ function _renderTextZoneContent(msg, opts) {
     const doneLabel = labels.heartbeatRelayDone || t("chat.heartbeat_relay_done");
     return `<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>${doneLabel}</div>`;
   }
+  if (opts.think && msg.think && opts.think.isThinking(msg)) return "";
   const visibleText = _normalizeDisplayText(msg._displayText || msg.text);
   if (visibleText) {
     let html = renderMarkdown(visibleText, opts.animaName);
@@ -1211,6 +1599,7 @@ function _renderTextZoneContent(msg, opts) {
 }
 
 function _renderToolZoneContent(msg, opts) {
+  if (opts.think && msg.think) return opts.think.zone(msg, opts);
   const { escapeHtml } = opts;
   const labels = opts.labels || {};
   const history = msg.toolHistory;
@@ -1301,7 +1690,10 @@ export function bindBubbleActionHandlers(container) {
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".bubble-action-btn");
     if (btn) {
-      const bubble = btn.closest(".chat-bubble.assistant");
+      const line = btn.closest(".chat-line");
+      const bubble = btn.closest(".chat-line-bubble")
+        || line?.querySelector(".chat-line-bubble")
+        || btn.closest(".chat-bubble.assistant");
       if (!bubble) return;
       const rawText = bubble.dataset.rawText || bubble.textContent || "";
       const action = btn.dataset.action;
@@ -1321,6 +1713,38 @@ export function bindBubbleActionHandlers(container) {
         actions.classList.toggle("visible");
       }
     }
+  });
+}
+
+/** Bind reply and expression-face click handlers for LINE-style rows. */
+export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
+  if (!container || container.dataset.chatLineHandlersBound) return;
+  container.dataset.chatLineHandlersBound = "1";
+  container.addEventListener("click", (event) => {
+    const replyButton = event.target.closest('.chat-line-action[data-action="reply"]');
+    if (replyButton) {
+      event.preventDefault();
+      const row = replyButton.closest(".chat-line");
+      const bubble = row?.querySelector(".chat-line-bubble");
+      if (!row || !bubble) return;
+      onReply?.({
+        type: row.dataset.notificationId ? "notification" : "message",
+        notificationId: row.dataset.notificationId || "",
+        callbackId: row.dataset.callbackId || "",
+        text: bubble.dataset.replyText || bubble.dataset.rawText || bubble.textContent || "",
+        name: bubble.dataset.replyName || "",
+      });
+      return;
+    }
+
+    const face = event.target.closest(".chat-line-face");
+    if (!face) return;
+    event.preventDefault();
+    onFaceClick?.({
+      name: face.dataset.anima || "",
+      emotion: face.dataset.emotion || "neutral",
+      url: face.dataset.bustUrl || "",
+    });
   });
 }
 
@@ -1346,7 +1770,8 @@ export function bindHumanNotifyHandlers(container, opts = {}) {
     if (!callbackId) return;
 
     if (decision === "comment") {
-      const input = document.getElementById("chatPageInput");
+      const input = container.closest(".chat-pane")?.querySelector('[data-chat-id="chatPageInput"]')
+        || document.getElementById("chatPageInput");
       if (input) {
         input.focus();
         input.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -1362,7 +1787,7 @@ export function bindHumanNotifyHandlers(container, opts = {}) {
     if (!animaName) return;
 
     const actions = btn.closest(".chat-human-notify-actions");
-    const card = btn.closest(".chat-human-notify");
+    const card = btn.closest(".chat-human-notify") || btn.closest(".chat-line-bubble");
     if (actions) {
       actions.querySelectorAll("button").forEach((b) => { b.disabled = true; });
     }
@@ -1439,6 +1864,11 @@ function _downloadAsText(text, bubble) {
 }
 
 function _extractBubbleTimestamp(bubble) {
+  const rawTimestamp = bubble.dataset.messageTs || "";
+  if (rawTimestamp) {
+    const parsed = new Date(rawTimestamp);
+    if (!isNaN(parsed.getTime())) return _formatTimestamp(parsed);
+  }
   const tsEl = bubble.querySelector(".chat-ts");
   if (tsEl) {
     const tsText = tsEl.textContent.trim();

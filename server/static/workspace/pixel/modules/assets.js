@@ -199,6 +199,19 @@ export class AssetStore {
     }));
   }
 
+  async reloadRuntimeCharacter(name) {
+    if (!name) return null;
+    const id = String(name).trim().toLowerCase();
+    const encoded = encodeURIComponent(String(name));
+    const url = `${resolveBasePath()}/api/animas/${encoded}/assets/pixel_sheet.png?fresh=${Date.now()}`;
+    const image = await loadImage(url);
+    if (image?.naturalWidth === 256 && image.naturalHeight === 640) {
+      this.runtimeCharacters.set(id, image);
+      return image;
+    }
+    return this.runtimeCharacters.get(id) || null;
+  }
+
   async loadDeclaredImages() {
     const entries = [];
     const visit = (node, prefix = "") => {
