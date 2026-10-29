@@ -522,8 +522,11 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const viaLabel = viaTranslation && viaTranslation !== viaKey
     ? viaTranslation.replace(/^via\s+/i, "")
     : (msg.via || "");
-  const via = isMe && viaLabel && msg.via !== "web" && msg.via !== "chat"
-    ? `<div class="chat-line-via">${escapeHtml(t("chat.line.from_external", { via: viaLabel }))}</div>`
+  // Messages exchanged on an external app (Slack etc.): "from Slack" on the user's side,
+  // "replied on Slack" on the anima's.
+  const viaKeyForSide = isMe ? "chat.line.from_external" : "chat.line.sent_external";
+  const via = viaLabel && msg.via !== "web" && msg.via !== "chat"
+    ? `<div class="chat-line-via">${escapeHtml(t(viaKeyForSide, { via: viaLabel }))}</div>`
     : "";
   const thinkClass = live && think && msg.streaming ? " think-host" : "";
   const callClass = msg.type === "voice_call" ? " chat-call-record" : "";

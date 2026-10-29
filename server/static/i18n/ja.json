@@ -276,6 +276,7 @@
   "chat.line.copy": "コピー",
   "chat.line.download": "ダウンロード",
   "chat.line.from_external": "{via}から",
+  "chat.line.sent_external": "{via}で返信",
   "chat.line.read": "既読",
   "chat.line.reply": "返信",
   "chat.line.replying_to": "{name} に返信: {text}",

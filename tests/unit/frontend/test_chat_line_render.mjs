@@ -13,6 +13,7 @@ const translations = {
   "chat.line.download": "ダウンロード",
   "chat.line.waiting_reply": "返事待ち",
   "chat.line.from_external": "{via}から",
+  "chat.line.sent_external": "{via}で返信",
   "chat.line.read": "既読",
   "chat.human_notify_approve": "承認",
   "chat.human_notify_reject": "却下",
@@ -104,6 +105,19 @@ describe("LINE-style chat message rows", () => {
     assert.match(html, /class="chat-line chat-line--me"/);
     assert.doesNotMatch(html, /chat-line-face|chat-line-person-avatar/);
     assert.match(html, /Slackから/);
+  });
+
+  it("labels an anima reply that was sent on Slack", () => {
+    const html = renderHistoryMessage({
+      role: "assistant",
+      type: "external_reply",
+      content: "確認しました",
+      via: "slack",
+      ts: "2026-10-28T09:06:00+09:00",
+    }, opts);
+
+    assert.doesNotMatch(html, /chat-line--me/);
+    assert.match(html, /Slackで返信/);
   });
 
   it("shows an unmatched human on the left with an initial and name", () => {

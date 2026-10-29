@@ -276,6 +276,7 @@
   "chat.line.copy": "Copy",
   "chat.line.download": "Download",
   "chat.line.from_external": "From {via}",
+  "chat.line.sent_external": "Replied on {via}",
   "chat.line.read": "Read",
   "chat.line.reply": "Reply",
   "chat.line.replying_to": "Reply to {name}: {text}",
