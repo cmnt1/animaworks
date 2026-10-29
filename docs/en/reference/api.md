@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=99e4a3b017408ea8d452a8feae3f0767377a197ae098f9f8d12207f80268b683 generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=af0a2010596c2291fd571e3efb21259113921b12a92f83f0d9a473d005c018d5 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API Reference
 
@@ -27,36 +27,38 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/animas.py`
 
-| GET | `/api/animas` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get a list of available animas. | `server/routes/animas.py:list_animas` |
-| POST | `/api/animas/reload-all` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Hot-reload ModelConfig for all running animas. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Stop and delete an anima entirely (process + files). | `server/routes/animas.py:delete_anima` |
-| GET | `/api/animas/{name}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/animas.py:get_anima_detail` |
-| GET | `/api/animas/{name}/aliases` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
-| PUT | `/api/animas/{name}/aliases` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |
-| PUT | `/api/animas/{name}/background-model` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
-| GET | `/api/animas/{name}/background-tasks` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
-| GET | `/api/animas/{name}/background-tasks/{task_id}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
-| POST | `/api/animas/{name}/bootstrap/repair` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Recover an Anima whose first-run setup stopped in needs_repair. | `server/routes/animas.py:repair_anima_bootstrap` |
-| GET | `/api/animas/{name}/config` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
-| GET | `/api/animas/{name}/cron` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the raw cron.md content for an anima. | `server/routes/animas.py:get_anima_cron` |
-| POST | `/api/animas/{name}/disable` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Disable an Anima (set status.json to enabled: false and stop process). | `server/routes/animas.py:disable_anima` |
-| POST | `/api/animas/{name}/enable` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Enable an Anima (set status.json to enabled: true). | `server/routes/animas.py:enable_anima` |
-| GET | `/api/animas/{name}/heartbeat` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the raw heartbeat.md content for an anima. | `server/routes/animas.py:get_anima_heartbeat` |
-| PUT | `/api/animas/{name}/identity` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update the identity.md content for an anima. | `server/routes/animas.py:update_anima_identity` |
-| PUT | `/api/animas/{name}/injection` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update the injection.md content for an anima. | `server/routes/animas.py:update_anima_injection` |
-| POST | `/api/animas/{name}/interactions/{callback_id}/resolve` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Resolve an interactive call_human request from the main chat UI. | `server/routes/animas.py:resolve_interaction` |
-| POST | `/api/animas/{name}/interrupt` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Interrupt the current LLM session without stopping the process. | `server/routes/animas.py:interrupt_anima` |
-| PUT | `/api/animas/{name}/model` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update the model setting in status.json for an anima. | `server/routes/animas.py:update_anima_model` |
-| GET | `/api/animas/{name}/permissions` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return permissions.json for an anima. | `server/routes/animas.py:get_anima_permissions` |
-| PUT | `/api/animas/{name}/permissions` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update permissions.json for an anima. | `server/routes/animas.py:update_anima_permissions` |
-| POST | `/api/animas/{name}/reload` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Hot-reload ModelConfig from status.json without process restart. | `server/routes/animas.py:reload_anima_config` |
-| POST | `/api/animas/{name}/rename` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Rename an Anima on root so the CLI never moves owned settings itself. | `server/routes/animas.py:rename_anima` |
-| POST | `/api/animas/{name}/restart` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
-| PUT | `/api/animas/{name}/role` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
-| POST | `/api/animas/{name}/start` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
-| POST | `/api/animas/{name}/stop` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
-| POST | `/api/animas/{name}/trigger` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/animas.py:trigger_heartbeat` |
-| GET | `/api/org/chart` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the organisation chart as a tree-structured JSON. | `server/routes/animas.py:get_org_chart` |
+| GET | `/api/animas` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Get a list of available anima. | `server/routes/animas.py:list_animas` |
+| POST | `/api/animas/reload-all` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Hot-reload ModelConfig for all running animas. | `server/routes/animas.py:reload_all_anima_configs` |
+| DELETE | `/api/animas/{name}` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Stop and delete an anima entirely (process + files). | `server/routes/animas.py:delete_anima` |
+| GET | `/api/animas/{name}` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | — | `server/routes/animas.py:get_anima_detail` |
+| GET | `/api/animas/{name}/aliases` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
+| PUT | `/api/animas/{name}/aliases` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |
+| PUT | `/api/animas/{name}/background-model` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
+| GET | `/api/animas/{name}/background-tasks` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
+| GET | `/api/animas/{name}/background-tasks/{task_id}` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
+| POST | `/api/animas/{name}/bootstrap/repair` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Recover an Anima whose first-run setup stopped in needs_repair. | `server/routes/animas.py:repair_anima_bootstrap` |
+| GET | `/api/animas/{name}/config` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
+| GET | `/api/animas/{name}/cron` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return the raw cron.md content for an anima. | `server/routes/animas.py:get_anima_cron` |
+| POST | `/api/animas/{name}/disable` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Disable an Anima (set status.json to enabled: false and stop process). | `server/routes/animas.py:disable_anima` |
+| POST | `/api/animas/{name}/enable` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Enable an Anima (set status.json to enabled: true). | `server/routes/animas.py:enable_anima` |
+| GET | `/api/animas/{name}/heartbeat` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return the raw heartbeat.md content for an anima. | `server/routes/animas.py:get_anima_heartbeat` |
+| PUT | `/api/animas/{name}/identity` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update the identity.md content for an anima. | `server/routes/animas.py:update_anima_identity` |
+| PUT | `/api/animas/{name}/injection` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update the injection.md content for an anima. | `server/routes/animas.py:update_anima_injection` |
+| POST | `/api/animas/{name}/interactions/{callback_id}/resolve` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Resolve an interactive call_human request from the main chat UI. | `server/routes/animas.py:resolve_interaction` |
+| POST | `/api/animas/{name}/interrupt` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Interrupt the current LLM session without stopping the process. | `server/routes/animas.py:interrupt_anima` |
+| PUT | `/api/animas/{name}/model` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update the model setting in status.json for an anima. | `server/routes/animas.py:update_anima_model` |
+| GET | `/api/animas/{name}/permissions` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return permissions.json for an anima. | `server/routes/animas.py:get_anima_permissions` |
+| PUT | `/api/animas/{name}/permissions` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update permissions.json for an anima. | `server/routes/animas.py:update_anima_permissions` |
+| POST | `/api/animas/{name}/reload` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Hot-reload ModelConfig from status.json without process restart. | `server/routes/animas.py:reload_anima_config` |
+| POST | `/api/animas/{name}/rename` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Rename an Anima on root so the CLI never moves owned settings itself. | `server/routes/animas.py:rename_anima` |
+| POST | `/api/animas/{name}/restart` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
+| PUT | `/api/animas/{name}/role` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
+| POST | `/api/animas/{name}/start` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
+| GET | `/api/animas/{name}/state` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Read only the current-state document for the chat information pane. | `server/routes/animas.py:get_anima_state` |
+| POST | `/api/animas/{name}/stop` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
+| GET | `/api/animas/{name}/summary` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return only the small set of Anima fields needed by chat selection. | `server/routes/animas.py:get_anima_summary` |
+| POST | `/api/animas/{name}/trigger` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | — | `server/routes/animas.py:trigger_heartbeat` |
+| GET | `/api/org/chart` | Session required (may be omitted in local_trust mode or when localhost trust is enabled) | Return the organisation chart as a tree-structured JSON. | `server/routes/animas.py:get_org_chart` |
 
 ## `server/routes/approve.py`
 

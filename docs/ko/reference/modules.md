@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=6803551d9aebb8c57e36d3e6f8d7b6f2fe17f4f7fae4b807148c2dc93e72179d generated=2026-10-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5761d07431069f46aa5490493956d3d88e50153c064660ff07f7257b8e69409d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -1104,12 +1104,12 @@ LLM 사용량 및 비용 기록·집계.
 
 —
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server.routes` | 63 | — |
-| `server.routes.animas` | 1205 | — |
+| `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1593 | — |
+| `server.routes.assets` | 1607 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
 | `server.routes.chat` | 419 | — |
@@ -1129,15 +1129,15 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.memory_routes` | 450 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
-| `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
-| `server.routes.sessions` | 668 | — |
+| `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
+| `server.routes.sessions` | 734 | — |
 | `server.routes.setup` | 603 | — |
 | `server.routes.skills` | 132 | — |
 | `server.routes.system` | 1217 | — |
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | Voice chat WebSocket endpoint; per-Anima status.json settings use shared helpers. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정에 공용 헬퍼를 사용합니다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
