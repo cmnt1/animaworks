@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=d12494b507da9562e78794553245181249cc4952a2be450bcdff145ab22e2a7d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=15a2f170164574318072c71abbdb9caf4fd68dd7b3dae611a9c337f5a7db0572 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -421,7 +421,7 @@ Core infrastructure such as logging, databases, and caches.
 
 ## `core.integrations`
 
-External service integrations and implementation of animaworks-tool.
+Implementation of external service integrations and animaworks-tool.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -444,7 +444,7 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
-| `core.integrations._image_pipeline（非公開）` | 861 | ImageGenPipeline – orchestrates the full character asset generation. |
+| `core.integrations._image_pipeline（非公開）` | 939 | ImageGenPipeline – orchestrates the full character asset generation. |
 | `core.integrations._image_pixel（非公開）` | 624 | Generate a Pixel Workspace character sheet from an approved base sheet. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
@@ -467,14 +467,14 @@ External service integrations and implementation of animaworks-tool.
 | `core.integrations.google_sheets` | 470 | — |
 | `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
-| `core.integrations.image.codex` | 348 | Codex CLI image generation client (image_gen tool via local codex). |
+| `core.integrations.image.codex` | 370 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
 | `core.integrations.image.diffusers_local` | 905 | Local Diffusers-backed image generation helpers. |
 | `core.integrations.image.fal` | 243 | Fal.ai Flux Kontext and Flux Pro text-to-image API clients. |
 | `core.integrations.image.meshy` | 311 | Meshy Image-to-3D, Rigging, and Animation API client. |
 | `core.integrations.image.novelai` | 193 | NovelAI V4.5 API client for anime full-body image generation. |
-| `core.integrations.image.prompts` | 266 | Prompt constants for bustup, chibi, and expression variants. |
-| `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
+| `core.integrations.image.prompts` | 279 | Prompt constants for bustup, chibi, and expression variants. |
+| `core.integrations.image.utils` | 169 | Shared utilities for image/3D generation clients. |
 | `core.integrations.image_gen` | 425 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
 | `core.integrations.notion` | 862 | Notion integration for AnimaWorks. |
