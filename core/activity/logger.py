@@ -148,6 +148,7 @@ class ActivityLogger(
                 "inbox_processing_end",
                 "message_sent",
                 "response_sent",
+                "external_reply_sent",
                 "channel_post",
                 "human_notify",
                 "human_reply",

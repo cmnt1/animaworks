@@ -16,6 +16,7 @@ Provides:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -139,18 +140,88 @@ def get_tool_schemas() -> list[dict]:
 
 # ── Dispatch ───────────────────────────────────────────────
 
+logger = logging.getLogger("animaworks.integrations.slack")
+
+
+def _record_external_reply(
+    args: dict[str, Any],
+    *,
+    body: str,
+    channel: str,
+    thread_ts: str | None,
+    response: Any,
+    recipient_channel: str | None = None,
+) -> None:
+    """Record a user-addressed Slack post for the chat mirror (best effort)."""
+    anima_dir = args.get("anima_dir")
+    if not anima_dir:
+        return
+    try:
+        from core.activity.logger import ActivityLogger
+        from core.activity.slack_mirror import display_text_for_slack, slack_reply_recipient
+        from core.execution.session.session_context import RuntimeSessionContext
+
+        context = RuntimeSessionContext.from_env()
+        trigger = context.trigger if context is not None else ""
+        from core.notification.reply_routing import lookup_notification_mapping
+        from core.notification.slack_names import user_name_snapshot
+
+        anima_name = Path(str(anima_dir)).name
+        mapping = lookup_notification_mapping(str(thread_ts)) if thread_ts else None
+        recipient = slack_reply_recipient(
+            text=body,
+            channel=recipient_channel or channel,
+            thread_ts=str(thread_ts or ""),
+            trigger=trigger,
+            anima_name=anima_name,
+            notification_thread_owner=str(mapping.get("anima") or "") if mapping else None,
+        )
+        if recipient is None:
+            return
+        response_ts = ""
+        response_channel = ""
+        if isinstance(response, dict):
+            response_ts = str(response.get("ts", "") or "")
+            response_channel = str(response.get("channel", "") or "")
+        ActivityLogger(Path(str(anima_dir))).log(
+            "external_reply_sent",
+            content=display_text_for_slack(body, user_name_snapshot()),
+            to_person=recipient,
+            channel="slack",
+            via="slack",
+            ctx="chat",
+            meta={
+                "thread_id": "default",
+                "external_channel_id": response_channel or channel,
+                "external_thread_ts": str(thread_ts or ""),
+                "external_ts": response_ts,
+            },
+            safe=True,
+        )
+    except Exception:
+        logger.warning("Failed to record Slack external reply", exc_info=True)
+
 
 def _dispatch_slack_send(args: dict[str, Any]) -> Any:
     client = SlackClient(token=_resolve_slack_token(args))
     channel_id = client.resolve_channel(args["channel"])
     username, icon_url = _resolve_slack_identity(args)
-    return client.post_message(
+    response = client.post_message(
         channel_id,
         md_to_slack_mrkdwn(args["message"]),
         thread_ts=args.get("thread_ts"),
         username=username,
         icon_url=icon_url,
     )
+    _record_external_reply(
+        args,
+        body=args["message"],
+        channel=channel_id,
+        thread_ts=args.get("thread_ts"),
+        response=response,
+        recipient_channel=str(args.get("channel") or ""),
+    )
+    return response
 
 
 def _dispatch_slack_messages(args: dict[str, Any]) -> Any:
@@ -229,6 +300,13 @@ def _dispatch_slack_channel_post(args: dict[str, Any]) -> Any:
         thread_ts=args.get("thread_ts"),
         username=username,
         icon_url=icon_url,
+    )
+    _record_external_reply(
+        args,
+        body=args["text"],
+        channel=args["channel_id"],
+        thread_ts=args.get("thread_ts"),
+        response=response,
     )
     timestamp = response.get("ts", "") if response is not None else ""
     return {"status": "ok", "channel": args["channel_id"], "ts": timestamp}
