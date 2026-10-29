@@ -842,7 +842,7 @@
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "dd84e1046a490020747a0ff8556204c868bf57a2da3705803de2683d8bb284d9",
+      "source_sha256": "09aa1cca2e8ae78fa4dd39baf96fdd698e4f8102027c4296f25188112f23be1a",
       "statuses": [
         "translated"
       ],
@@ -851,13 +851,13 @@
     "docs/en/reference/api.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
         "9d08124e81465e4e1711eb188abef96d8f84576b7a0f081be6312e8a71025d5a",
         "da83cdaefc48ce646e8da22bf5eaa206d14505ddbf8d08b0b16bd1ed91bf905f",
         "61690ce46787994f03bd204a01500eb8f5a1b3a47239df5f4cdbb61fb4bf01ca",
-        "a0cb345c7ed515f8e35371503eb32884346fd451743e6dbfd8f16f48d9c903b2",
+        "34794e83588d7d975f2e4a0a93aa41bc6913c48dbf28995bf4f24d8b13e3fa56",
         "62a0fae733f5d98d83362469fa6bc3e708d084a1685dfa7630e502c96472ba8c",
         "a45f3171ec33a672d6e69db4a12f7bc7393a974e8fa53d38f18ffff9e053d0bf",
         "933f62b792b9c1fb93cb70fd8d0e5d12d246fd0b807506e4ad422c8a09d6bef9",
@@ -882,7 +882,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "2c4fd72d87b76ad5b0382b6bad9da69fd148500087dd18a1a900f1e1216975b9",
+      "source_sha256": "bd0a14e31345d4f51bb84160a1ec1ee5bebc42cd82f2e4018fd535165680ea5b",
       "statuses": [
         "translated",
         "translated",
@@ -917,7 +917,7 @@
     "docs/en/reference/cli.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
         "06179867cd49ba3efaa84111116e02fc4f92f91c405ca82f1d86f85ec04e2217",
@@ -1181,7 +1181,7 @@
     "docs/en/reference/config.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
         "48e01c65e90a41b432e6067ce933a0e1dab40ed89bc0b7387e473ea5d38c4a61",
@@ -1304,10 +1304,10 @@
         "a9f929a36ab725ce9320bcd163fd49116760f11aa83f42c7f3c1c06c1b3ed29b",
         "9bc8f4e99054207316ec9d309c17b077d92f0f8f08b11af6bd1f39068da916e2",
         "18909cfc681b6aac93aac8e22b62ad839fad82ee7b4671b605e498bedb8faa89",
-        "f4ec29e1e1335b9b82af4009503d3b7f143a4c1031354343c66561d67bb5c926",
-        "62c88e9ea82919af7178bd884a58eba8246868f59738bb41ce11603eec5ae528",
+        "fb117c8ad8367adf8993f4dedde962843e0846ec24dc0b813aa4a19046c8eff0",
+        "c67940e6cb06dd267c8ef258bf5bf4862e138f7722537ae935a51f9d2de7f197",
         "d6bf902d52b0e830084fb524b933869a796351a116f67697da88b86c0ac3e3eb",
-        "b31147a85a31bf8ac94116ace07e15d00ea0c51edb5b896210369c919a9e39ae",
+        "f88ef0d2a8a29128c35dc2abc3ef2e092c075f68dbdb2b54cb17ba0db04771e9",
         "09f7ffd3c403e8a5a8a4db0527e199a600b9134581a07ed2d5bd002c6336a564",
         "810bafb84ae797e5cb2eecd2b73e7739ac144a116de206945dc099d88594da1b",
         "d2d2c43ce8937d028aaf4b4bca45aac48d5f450eb4cb860a6ab62c7a5c0d1c49",
@@ -1323,15 +1323,15 @@
         "447c4826f680c855349edbb477d3302db7bc114fc4d66d889b963ff31dce2098",
         "7f5392aea8c93316e5d5e9f75dd512f6ee2c137ba860e644c3f7fab9ec81bfdd",
         "4500ef4e6b6cab710de7f8f0c488851a96aa90081638c8839819cba895d144a1",
-        "420c980461630ae43387358d657bd7928dddef0b5a3e74601c31009de88cfb0f",
+        "c4ceecdfd37d191d05598c26a1d03cd3d8d4fc5880b859fc12f2fd1a4032eae9",
         "3e886f5dad4fd80355dc9f01c039dde83c0f8b99a90b88e6009ab31f3d00ac5c",
         "bc7162b9245c52587f6e0f678115a634577ea5b9fcb5896ad3018b69b95da462",
-        "9a2669fde129759ce68c51a18e8c7616259f10f0117a65fa19960db65258d4b5",
+        "6595d9c1e669ab4b8a84db74b9598558de0a0f880803842ffa11d3ee2c312c16",
         "291b5524f7f28aff94167cdc4c077d5649ed529f1558bcc868204ed1d07d2291",
         "36405749eca4c7549a20affcb16ee9d6565d1bf57db7f4919f70f4790dd5521c",
         "0ed63f0496b6f2bcbbaf14486b21c49c8ec318b963910275a23eba385fb1f339",
         "1f62a5cf44fc1a2ebfdec75317352f64b83bc5b9a1f04f5260ca7c7929d8abbb",
-        "03a76ab5efb0d3378385dbf8ea917d02633c3fd48a981946ae87b4373072251e",
+        "50c6d3951939331b2eb34f039c4facb2fe7523fc37987bcd270dcf856dd5e7e4",
         "7258c370c75214776813c60dfbc7d8457c0f605c32df943e5a6615ccc11e4dac",
         "c9657669b40deb7705aa33a032a3d91638b44174edc8249cfd10250248abeb8c",
         "da733e8060b668f36d0de296db62a77b8ababed37e9b89f658006bf9a0571793",
@@ -1349,7 +1349,7 @@
         "ff4286a9fd7955bbe0e3a7bb332baf63c837a30a3885ee12b9481b9293c39b89",
         "c50095a4ac2f156e28c2b3d05473dd29d29e0c22fa2b91770d992c0ea164f920",
         "9a60b06e2965056eb5a43239d62b87cebac05ca9d18594f3a3421655910cc182",
-        "6179314f59913e05a1e649d927bd15d5f3913244a6d0ff505e1fc420b46cadd7",
+        "c7d99e3baa6f6398200de0c7ca3521da7c3aebb4938c53cbf81e2c595fd1d6a0",
         "d2702591130e95f2bf57569c94e73b86db37715f95f56e3093dde533f4c9e5fc",
         "be41131dbd224012ea02f3af189695d451284f08c307f8271f7dbf34e90e5243",
         "92077023d4d5ec9888ad2e8ade8ee90686ed349baeed7db13adfe3a4b47d7168",
@@ -1358,19 +1358,19 @@
         "8d8e7b7e6a4e8682f5e3b16031146f93b146ea59ba8488a5cec0b0bfee25ac5a",
         "0145570f12b08dfd049022afd510d4d3dda0ce072e041f47c548b6674901c44b",
         "22643f9aea2b88ff6d47a312dfdc402d7523c815b12bea494ecc40b49c42d0ae",
-        "87714d4e8f464acd094f6ee096522fffbf67c30092f172575a3483722da0ee8b",
+        "b720cb6666dab509333e3a89a674143c1c1d3a238f39e88e8d7be182e89d5045",
         "520f44139b43df05c7d2bf7df0465ea32cbc2a052cbd7858e46e41bd295b2d11",
-        "1094fa6e60553dbb4dcd4cea0c65ebfce40d0e26a666bd2d5eafe549c08d026f",
+        "4f6523217b12b27df9e9acc5aaa9fe847f07a6d0f8f63847287f72b4820d0608",
         "def37e21efc0a41b5f6d3413ec7542e985ea1e85a70d9117327e56f05e03df9a",
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
         "62f2eb352157aa98abab441a21ac63d1fb1ab79e9b7f49097d70498a2ae51c0f",
-        "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "9c82ecd75ccc81f4eb59d9841f8417be72166b4a71d0cdb6e91fff51a631ed5d",
+        "6282560f6b28cf2eefbc9a92437ee98970b07a7dc13ac0f58e521e1300d28f38",
+        "38fb90a54ab877a05a559cb26757764b08ef8c999a1134a6e928b183924586c2",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "378264b7cdbe4549785c2bfe6ee153547432a4de1e16acd1cdfeb5281ede2ee2",
+      "source_sha256": "9a370327f9fc836ee244064c6831f4e65cee3d7b00ddf1de264d6b17dde0d4dc",
       "statuses": [
         "translated",
         "translated",
@@ -2198,7 +2198,7 @@
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
       ],
       "source": "docs/ja/reference/README.md",
-      "source_sha256": "dd84e1046a490020747a0ff8556204c868bf57a2da3705803de2683d8bb284d9",
+      "source_sha256": "09aa1cca2e8ae78fa4dd39baf96fdd698e4f8102027c4296f25188112f23be1a",
       "statuses": [
         "translated"
       ],
@@ -2213,7 +2213,7 @@
         "9d08124e81465e4e1711eb188abef96d8f84576b7a0f081be6312e8a71025d5a",
         "da83cdaefc48ce646e8da22bf5eaa206d14505ddbf8d08b0b16bd1ed91bf905f",
         "61690ce46787994f03bd204a01500eb8f5a1b3a47239df5f4cdbb61fb4bf01ca",
-        "a0cb345c7ed515f8e35371503eb32884346fd451743e6dbfd8f16f48d9c903b2",
+        "34794e83588d7d975f2e4a0a93aa41bc6913c48dbf28995bf4f24d8b13e3fa56",
         "62a0fae733f5d98d83362469fa6bc3e708d084a1685dfa7630e502c96472ba8c",
         "a45f3171ec33a672d6e69db4a12f7bc7393a974e8fa53d38f18ffff9e053d0bf",
         "933f62b792b9c1fb93cb70fd8d0e5d12d246fd0b807506e4ad422c8a09d6bef9",
@@ -2238,7 +2238,7 @@
         "feaa16a661d0c291622ddb8ff28a7d114e918463e63bec767a09ac096f3a43db"
       ],
       "source": "docs/ja/reference/api.md",
-      "source_sha256": "2c4fd72d87b76ad5b0382b6bad9da69fd148500087dd18a1a900f1e1216975b9",
+      "source_sha256": "bd0a14e31345d4f51bb84160a1ec1ee5bebc42cd82f2e4018fd535165680ea5b",
       "statuses": [
         "translated",
         "translated",
@@ -2660,10 +2660,10 @@
         "a9f929a36ab725ce9320bcd163fd49116760f11aa83f42c7f3c1c06c1b3ed29b",
         "9bc8f4e99054207316ec9d309c17b077d92f0f8f08b11af6bd1f39068da916e2",
         "18909cfc681b6aac93aac8e22b62ad839fad82ee7b4671b605e498bedb8faa89",
-        "f4ec29e1e1335b9b82af4009503d3b7f143a4c1031354343c66561d67bb5c926",
-        "62c88e9ea82919af7178bd884a58eba8246868f59738bb41ce11603eec5ae528",
+        "fb117c8ad8367adf8993f4dedde962843e0846ec24dc0b813aa4a19046c8eff0",
+        "c67940e6cb06dd267c8ef258bf5bf4862e138f7722537ae935a51f9d2de7f197",
         "d6bf902d52b0e830084fb524b933869a796351a116f67697da88b86c0ac3e3eb",
-        "b31147a85a31bf8ac94116ace07e15d00ea0c51edb5b896210369c919a9e39ae",
+        "f88ef0d2a8a29128c35dc2abc3ef2e092c075f68dbdb2b54cb17ba0db04771e9",
         "09f7ffd3c403e8a5a8a4db0527e199a600b9134581a07ed2d5bd002c6336a564",
         "810bafb84ae797e5cb2eecd2b73e7739ac144a116de206945dc099d88594da1b",
         "d2d2c43ce8937d028aaf4b4bca45aac48d5f450eb4cb860a6ab62c7a5c0d1c49",
@@ -2679,15 +2679,15 @@
         "447c4826f680c855349edbb477d3302db7bc114fc4d66d889b963ff31dce2098",
         "7f5392aea8c93316e5d5e9f75dd512f6ee2c137ba860e644c3f7fab9ec81bfdd",
         "4500ef4e6b6cab710de7f8f0c488851a96aa90081638c8839819cba895d144a1",
-        "420c980461630ae43387358d657bd7928dddef0b5a3e74601c31009de88cfb0f",
+        "c4ceecdfd37d191d05598c26a1d03cd3d8d4fc5880b859fc12f2fd1a4032eae9",
         "3e886f5dad4fd80355dc9f01c039dde83c0f8b99a90b88e6009ab31f3d00ac5c",
         "bc7162b9245c52587f6e0f678115a634577ea5b9fcb5896ad3018b69b95da462",
-        "9a2669fde129759ce68c51a18e8c7616259f10f0117a65fa19960db65258d4b5",
+        "6595d9c1e669ab4b8a84db74b9598558de0a0f880803842ffa11d3ee2c312c16",
         "291b5524f7f28aff94167cdc4c077d5649ed529f1558bcc868204ed1d07d2291",
         "36405749eca4c7549a20affcb16ee9d6565d1bf57db7f4919f70f4790dd5521c",
         "0ed63f0496b6f2bcbbaf14486b21c49c8ec318b963910275a23eba385fb1f339",
         "1f62a5cf44fc1a2ebfdec75317352f64b83bc5b9a1f04f5260ca7c7929d8abbb",
-        "03a76ab5efb0d3378385dbf8ea917d02633c3fd48a981946ae87b4373072251e",
+        "50c6d3951939331b2eb34f039c4facb2fe7523fc37987bcd270dcf856dd5e7e4",
         "7258c370c75214776813c60dfbc7d8457c0f605c32df943e5a6615ccc11e4dac",
         "c9657669b40deb7705aa33a032a3d91638b44174edc8249cfd10250248abeb8c",
         "da733e8060b668f36d0de296db62a77b8ababed37e9b89f658006bf9a0571793",
@@ -2705,7 +2705,7 @@
         "ff4286a9fd7955bbe0e3a7bb332baf63c837a30a3885ee12b9481b9293c39b89",
         "c50095a4ac2f156e28c2b3d05473dd29d29e0c22fa2b91770d992c0ea164f920",
         "9a60b06e2965056eb5a43239d62b87cebac05ca9d18594f3a3421655910cc182",
-        "6179314f59913e05a1e649d927bd15d5f3913244a6d0ff505e1fc420b46cadd7",
+        "c7d99e3baa6f6398200de0c7ca3521da7c3aebb4938c53cbf81e2c595fd1d6a0",
         "d2702591130e95f2bf57569c94e73b86db37715f95f56e3093dde533f4c9e5fc",
         "be41131dbd224012ea02f3af189695d451284f08c307f8271f7dbf34e90e5243",
         "92077023d4d5ec9888ad2e8ade8ee90686ed349baeed7db13adfe3a4b47d7168",
@@ -2714,19 +2714,19 @@
         "8d8e7b7e6a4e8682f5e3b16031146f93b146ea59ba8488a5cec0b0bfee25ac5a",
         "0145570f12b08dfd049022afd510d4d3dda0ce072e041f47c548b6674901c44b",
         "22643f9aea2b88ff6d47a312dfdc402d7523c815b12bea494ecc40b49c42d0ae",
-        "87714d4e8f464acd094f6ee096522fffbf67c30092f172575a3483722da0ee8b",
+        "b720cb6666dab509333e3a89a674143c1c1d3a238f39e88e8d7be182e89d5045",
         "520f44139b43df05c7d2bf7df0465ea32cbc2a052cbd7858e46e41bd295b2d11",
-        "1094fa6e60553dbb4dcd4cea0c65ebfce40d0e26a666bd2d5eafe549c08d026f",
+        "4f6523217b12b27df9e9acc5aaa9fe847f07a6d0f8f63847287f72b4820d0608",
         "def37e21efc0a41b5f6d3413ec7542e985ea1e85a70d9117327e56f05e03df9a",
         "683783fb7db4f5e42309bd1d815c86827ced49484e20ae9fa3ba0b1489340726",
         "62f2eb352157aa98abab441a21ac63d1fb1ab79e9b7f49097d70498a2ae51c0f",
-        "9db7b8909877803dab4c424d24ef686a250d17b7b035788576fffe41f046781b",
-        "9c82ecd75ccc81f4eb59d9841f8417be72166b4a71d0cdb6e91fff51a631ed5d",
+        "6282560f6b28cf2eefbc9a92437ee98970b07a7dc13ac0f58e521e1300d28f38",
+        "38fb90a54ab877a05a559cb26757764b08ef8c999a1134a6e928b183924586c2",
         "37068781c363ef65bd9e2c66bcd951a9b6996a0624028972e1e7c4069d8b8e40",
         "147f68072c8fc759e0f8d483e901626abd90949bfb6b2267444d820b2083f195"
       ],
       "source": "docs/ja/reference/modules.md",
-      "source_sha256": "378264b7cdbe4549785c2bfe6ee153547432a4de1e16acd1cdfeb5281ede2ee2",
+      "source_sha256": "9a370327f9fc836ee244064c6831f4e65cee3d7b00ddf1de264d6b17dde0d4dc",
       "statuses": [
         "translated",
         "translated",
@@ -5609,7 +5609,7 @@
     "templates/en/prompts/fragments/asset_synthesis_system_realistic.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "24de20e99aa3757914b007d5c062fe93a224cf7d19f9b3fda24d5d53816074a3",
         "8ad4720d0cf21bf88e14394a5cdc24eda2bb52cc1c749b1b3c676a61866e497d",
@@ -5633,7 +5633,7 @@
     "templates/en/prompts/fragments/bg_task_notification.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "cfab51387be888f9defc11349a01b6433f0a6c22f20ba4ef83b3d1321301ebcf"
       ],
@@ -5647,7 +5647,7 @@
     "templates/en/prompts/fragments/command_output.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "0e80734aeaad26398137a564c2064785c71605f58e699b44715da0752a6e1d14"
       ],
@@ -5661,7 +5661,7 @@
     "templates/en/prompts/fragments/cron_rejected_notice.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "dcecc5f9427a15ddacc9bc13560291821f67f31e24350e0a525d98d78a793eae"
       ],
@@ -5675,7 +5675,7 @@
     "templates/en/prompts/fragments/curator_report_review.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "99de6bdb7869058741450ce3506563ef9c995796e3a039090feff9d7bd16f18f"
       ],
@@ -5689,7 +5689,7 @@
     "templates/en/prompts/fragments/recent_reflections.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "74e9b268547dead87af66544972dcc2920a571d866f4a02f8d4fe9cd0f47d057"
       ],
@@ -5703,7 +5703,7 @@
     "templates/en/prompts/fragments/recovery_note_header.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "6e103e47428984a2f2338c8a017a913e26ff03181db6e6968b1e0547df1194a4"
       ],
@@ -5717,7 +5717,7 @@
     "templates/en/prompts/fragments/stale_task_scoreboard.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "1fe4b7bb3fe1063699bc80e093fe4e8bb08d5c1ae19bb1586514f23e4bee6eb2"
       ],
@@ -5731,7 +5731,7 @@
     "templates/en/prompts/greet.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "11ae565e7c56f51896af4d72e123533aabaa82b1f366573fc7114da540343216",
         "8c89fa84bae301d68181b1a1c3c7486001e9efa01d85fa4ca2691c7771aefc47",
@@ -5749,7 +5749,7 @@
     "templates/en/prompts/heartbeat.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "bade63d638ac1f2bfad32b7994129fdb36d7999a15ba5d1eb9b9b5dfad83b921",
         "137f6bd6187771cf1a6ea959c27fa47efca72a2296a847a7ba39390297817ff4"
@@ -5765,7 +5765,7 @@
     "templates/en/prompts/heartbeat_default_checklist.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "8babeff5cf5888a54e3f76fb4dd558dc3cbf2db516926ee2764aa6ffb459c2ca"
       ],
@@ -5779,7 +5779,7 @@
     "templates/en/prompts/heartbeat_history.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "58c45a9cfd8c5f49c120cc4acf8a14be21ca3ea0a24ce08f2df39d551b21959a"
       ],
@@ -5793,7 +5793,7 @@
     "templates/en/prompts/heartbeat_subordinate_check.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "b76e870c122bcea9d719170eaf1ae87a7bf7b2f9de8f0160700299186c4efdce"
       ],
@@ -5807,7 +5807,7 @@
     "templates/en/prompts/inbox_message.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "7f31286cc7bb5e7e8eabd5d1d675e4456370b4c2cc8a4a26e7c939e9ca1ac64a"
       ],
@@ -5821,7 +5821,7 @@
     "templates/en/prompts/memory/background_review.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "663ec3cf493ebcdcbcca9f21cdc26f9b62c6a2a4c5702c7f1647b00db56849dd"
       ],
@@ -5835,7 +5835,7 @@
     "templates/en/prompts/memory/consolidation_instruction.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "66b9ecc89f70027c32bc8cdf535b9337255f1b3a4ee1795a881307cea60cb491",
         "1323dd469e0c5e922a1aaf5ad2f91165e6995f04508ecda7fab260b0d4692e8a"
@@ -5851,7 +5851,7 @@
     "templates/en/prompts/memory/conversation_compression.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "2904267d354f082a7f8ff864a0f771d56b3aa72c8e0515cb3b6609bf7dd50ca1"
       ],
@@ -5865,7 +5865,7 @@
     "templates/en/prompts/memory/episode_extraction.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "d9caff71e54c2df730040465112d984df256d7f846e43a9edffdc8abe778dcba",
         "ca9ffde58648b7485b9532ff0249d6e60d5958296c04175c667e4184de214d63",
@@ -5889,7 +5889,7 @@
     "templates/en/prompts/memory/knowledge_revision.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "92b2421736c704c0ac65734cda6ff87db0bd27d671d01e38205e0f7486268b19"
       ],
@@ -5903,7 +5903,7 @@
     "templates/en/prompts/memory/procedure_from_resolved.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "397a239aa73a59ac8f46b47c6d9e99453ac3e2e01b912ad57eb06886344f4f2a",
         "535af12b38ecb72dd0932ae42751ee108769a10bfd22cf9539a209bd5b5b29b1"
@@ -5919,7 +5919,7 @@
     "templates/en/prompts/memory/procedure_revision.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "9fdf286736218a89090e4d44ba1ee0530181f941cee628abe99ccfcc758a6efc"
       ],
@@ -5933,7 +5933,7 @@
     "templates/en/prompts/memory/session_summary.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "01786dbb21afd0ac6650bbb8ae32d832c2054f998c4f05f956b1c4cf2888f6c5",
         "3424712d3f4bdb61e6fb5533ca0d82b969432c682f82db3c00cc8e4cd839eff5",
@@ -5957,7 +5957,7 @@
     "templates/en/prompts/memory/weekly_consolidation_instruction.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "f35e6d15b425a4241b2e043a9e05525c26f4a49226c682651ad318e25f0f4a01",
         "854bbfa5bd9b2d1ab7f2d7a3872e5288235d950e2a6fc99e79bc63d102fbb9a6",
@@ -5977,7 +5977,7 @@
     "templates/en/prompts/memory/weekly_pattern.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "9c25f7471bde07d694b48dfe721da12594125bc8c40b6e70810c53f2dae86d68"
       ],
@@ -5991,7 +5991,7 @@
     "templates/en/prompts/memory_guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "7e136837df4566f35b8da4dd7c59208d315ef8e5a93fb829e206e3e274950443"
       ],
@@ -6005,7 +6005,7 @@
     "templates/en/prompts/messaging.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "c1680829d42146fc12528d8e31320ce536294f6ecdf9ad5a3c3a268a3250a2c6"
       ],
@@ -6019,7 +6019,7 @@
     "templates/en/prompts/messaging_s.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "f8a4b4b7c5357c365262418081d2cdfe032ef3fa3d544ddd27a673e034a92e64"
       ],
@@ -6033,7 +6033,7 @@
     "templates/en/prompts/org_context.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "623c658d26b151cc526acedb99bb80e7eaa15822913fbce4a53e126554d2ef6d"
       ],
@@ -6047,7 +6047,7 @@
     "templates/en/prompts/task_complete_notify.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "bd72e2e1b7e64b2e022b0777d59e9046b87016f08cc969935b8121bc52239c5a",
         "7cd4db55d850024251fe6c566ba36f6065a9c1258492292ce95054c60ad8772a"
@@ -6063,7 +6063,7 @@
     "templates/en/prompts/task_exec.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "fa008f4d6d97487bbcba9c22649a97d32cf53335ae7c666b1ab14547010497a3",
         "c55138c503d84abb6edbbdda7f5085deb2517948ab16393b7846756f8069b8aa",
@@ -6093,7 +6093,7 @@
     "templates/en/prompts/tool_descriptions/Bash.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "f5c28849bf0ec9e494cd20693a30b8cc84cb09c5649d4b9f8aebc085a39b8397"
       ],
@@ -6107,7 +6107,7 @@
     "templates/en/prompts/tool_descriptions/Edit.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "0c8816598abfddd4f71d8a6ef45eb40d1f11c66101eb03d8a61dc5d013902208"
       ],
@@ -6121,7 +6121,7 @@
     "templates/en/prompts/tool_descriptions/Glob.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "69a6272da8568e07ec0c987cf83309c3f7e7c986c15660865f6b3dfb313663fb"
       ],
@@ -6135,7 +6135,7 @@
     "templates/en/prompts/tool_descriptions/Grep.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "699767731468973247d6300fefab9d5172ee4a036c6238885b18a49f19f3c57b"
       ],
@@ -6149,7 +6149,7 @@
     "templates/en/prompts/tool_descriptions/Read.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "11a907bc1d08335bfdef44f50ac5b4e3cb04f3dd4266be8d01593cc72718d835"
       ],
@@ -6163,7 +6163,7 @@
     "templates/en/prompts/tool_descriptions/WebFetch.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "1e047d84b0f3dacf5f00bac09e48ec7378df41fdb033b2267d7c17c8251966fe"
       ],
@@ -6177,7 +6177,7 @@
     "templates/en/prompts/tool_descriptions/WebSearch.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "50b6a88dd6ec21b62e2733193d640eb1ad27211cdee565af753b7d06fc604ebb"
       ],
@@ -6191,7 +6191,7 @@
     "templates/en/prompts/tool_descriptions/Write.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "d2b4f3ba0b93d265f2ee669a706ed9742f3b800dff46e6e43be7540b733d3aa7"
       ],
@@ -6205,7 +6205,7 @@
     "templates/en/prompts/tool_descriptions/archive_memory_file.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "616e830feb11defefe322cafdb8c9a41e43811ea5cc49f7d4abe8b318a82b1d0"
       ],
@@ -6219,7 +6219,7 @@
     "templates/en/prompts/tool_descriptions/backlog_task.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "077e9ba6ddd6bcff8a2738830e87570d6ce5924bb061a329efb6c28345891a5c"
       ],
@@ -6233,7 +6233,7 @@
     "templates/en/prompts/tool_descriptions/call_human.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "a70109e9830652ed63f70c46086c0b95d356dd04b07126b7555b0d9205a2649a"
       ],
@@ -6247,7 +6247,7 @@
     "templates/en/prompts/tool_descriptions/create_anima.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "d4c2f42629b525551786d809a41d01321e42b628dc808efa1f06494112bb04fe"
       ],
@@ -6261,7 +6261,7 @@
     "templates/en/prompts/tool_descriptions/delegate_task.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "dd7aff078665094012c460beb092dd1248666f0d2322ec4a4a15d7d0f75c6980"
       ],
@@ -6275,7 +6275,7 @@
     "templates/en/prompts/tool_descriptions/list_tasks.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "aeade2a171786ed2e3004832438503670c8010830b9963b00f0ad6fc2d132d49"
       ],
@@ -6289,7 +6289,7 @@
     "templates/en/prompts/tool_descriptions/post_channel.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "a24996035947482c17b3f80ced90d1e626c290b1efdc50325668764d42724ed1"
       ],
@@ -6303,7 +6303,7 @@
     "templates/en/prompts/tool_descriptions/read_channel.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "3c911799cdbfd4b76f170c62cca25c74981284e0dca79eb06caeb567cc150c35"
       ],
@@ -6317,7 +6317,7 @@
     "templates/en/prompts/tool_descriptions/read_dm_history.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "3b7a18ca0ddb1f72105dc991832ef43cb7a38750f63e4444fb71a7d4f463c245"
       ],
@@ -6331,7 +6331,7 @@
     "templates/en/prompts/tool_descriptions/read_memory_file.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "96b6538f89b4c2762f5dda3b3ef80f941f70448df499aae259d12a7b1c01142a"
       ],
@@ -6345,7 +6345,7 @@
     "templates/en/prompts/tool_descriptions/report_knowledge_outcome.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "8fe4957e78d5ff99551871a03a87a571a935fc4923f684c91810e893f3837dbe"
       ],
@@ -6359,7 +6359,7 @@
     "templates/en/prompts/tool_descriptions/report_procedure_outcome.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "76975e2e8f4475a429368cf9f6b804a9edcbe68b8c238f3e1144fba5f781d9e2"
       ],
@@ -6373,7 +6373,7 @@
     "templates/en/prompts/tool_descriptions/search_memory.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "0bb25a673720c6977f7fc08cc45a608a04a978d7b0191be493b1c4bd7188b672"
       ],
@@ -6387,7 +6387,7 @@
     "templates/en/prompts/tool_descriptions/send_message.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "cdd0249e1ebebd4bcf36175ccaa59fe4518b6f48c236c2452a400dde7a9a20d3"
       ],
@@ -6401,7 +6401,7 @@
     "templates/en/prompts/tool_descriptions/submit_tasks.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "279513115a88fb85751b2f47755024f3b0b17ed5f12dfb71d8021ec903caef49"
       ],
@@ -6415,7 +6415,7 @@
     "templates/en/prompts/tool_descriptions/update_task.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "30aa1fb9659e6a9be70d7ee4f793c1c808ac50ed7bfbc4b5c5132ff05f0ecf0c"
       ],
@@ -6429,7 +6429,7 @@
     "templates/en/prompts/tool_descriptions/write_memory_file.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "2a7b8a1c46ea5687eac69c2694cb67147a8504fd41451b4e675dac0c2c256566"
       ],
@@ -6443,7 +6443,7 @@
     "templates/en/prompts/tool_guides/non_s.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "4e50732d10d43c4b99c0f416b426d36eb43aaaf5a54872b98cb185d40dfb5435"
       ],
@@ -6457,7 +6457,7 @@
     "templates/en/prompts/tool_guides/s_builtin.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "f8c548e5933897f2c98df5e94b25d1b181838282d0ff498659d94c5f587d2c50"
       ],
@@ -6471,7 +6471,7 @@
     "templates/en/prompts/tool_guides/s_mcp.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "0f8252127aec44e8d48a2c211d1227db6871d19a0c6094e5de3b34ec0dd48583"
       ],
@@ -6485,7 +6485,7 @@
     "templates/en/prompts/unread_messages.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "928ad4ae387dd0479b4708dd21c15b4afdf2fb1019ba982460feb1c12ec1f50a"
       ],
@@ -6499,7 +6499,7 @@
     "templates/en/reference/00_index.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "912fdf7928cf7a10404559a5cda9fdb438792a70da26ff891984ba632a4903db",
         "533e7894eb4fd4cafcabf5ae07afcb9a056daa0ddd5fe02951ac6a2d885a377b",
@@ -6531,7 +6531,7 @@
     "templates/en/reference/anatomy/anima-anatomy.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "e3976d99acb09a6f4bb78ec2b2f8014690ff2d9bba1e16dfba67dd31ee5d96b4",
         "e194c8f3a05d2e8c934a94d454da7e5ca505312a0244aa7c8d02a887224cb7b8",
@@ -6601,7 +6601,7 @@
     "templates/en/reference/anatomy/environment-layout.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "cb3f464da571414448a988167e06c82cbf897fcc344754654c6881e97fe54d9b",
         "62d5f90fe90558aaad74223d8e47edbdce45326da85fc11afb5629fae6c81a49"
@@ -6617,7 +6617,7 @@
     "templates/en/reference/anatomy/memory-system.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "54f9cf92cd11f949d626a9aac4b01877dc15bbfd59ee036a5f365fe57146c7c8",
         "c1ab0a26d16005467e90115878d7aeded03cc8c1f925c8c05dc5117d80cefb10",
@@ -6667,7 +6667,7 @@
     "templates/en/reference/anatomy/priming-channels.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "cd0f5d1a24cf7f46b3bf33a08a5ac2c4ec10f96e747e206ccd84614ce29a172a",
         "c88b68218c805e232615f9e7eb5df0e180067a01bb56da0d4b8796e288006bd0",
@@ -6703,7 +6703,7 @@
     "templates/en/reference/anatomy/working-memory.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "7ee59bd4d1436c38916eba0600aaeee4fdee891fe41ab30c620e502b62686d98",
         "f6b35a39147bf20a1984cea457b65eb1b68c57c678e4c3fc05e6c447f76f0166",
@@ -6741,7 +6741,7 @@
     "templates/en/reference/communication/instruction-patterns.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "d437b72fc372c868da6d8a1dcaa864c26b83abfb070ad8eb336851590d547742",
         "14d32085a18ae39331c1e6ae4843b4942ab45d9eeffb4c24be844ba597884be3",
@@ -6801,7 +6801,7 @@
     "templates/en/reference/communication/messaging-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "43cf6b80e16e3fa860f2642bdb5911e1ae32424a487cc726714db897f1644a56",
         "7394c0e324fd617c38b43bd86c168ab83d95e8f80446ca40dd3b53a77e49f746",
@@ -6909,7 +6909,7 @@
     "templates/en/reference/communication/reporting-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "bc04b7544a941fcbef2d83a77fd3412b6af4c755d70ec836db9ccbed10fcffed",
         "3faeded411a5b263beb026646a8c83e859612f14dd76f0ca8db7062ec63658ed",
@@ -6973,7 +6973,7 @@
     "templates/en/reference/communication/slack-bot-token-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "2a85cf354ecffb87f55b05373d5460beab11e8ac7418c43741ad3e9441e2f67d",
         "6a626dc9f4fb388981878d3df3670b5932e50418e9c035e1ad85deda2317d8bd",
@@ -7009,7 +7009,7 @@
     "templates/en/reference/internals/common-knowledge-access-paths.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "4824e9a0adea4ab8529a7945e27a43f9a1121fbcf3bbe0d2f0fe8df28842fab8",
         "319575b907bb0331d857fab1a57affdf0b81e31c0a7de986c671fae873c798e7",
@@ -7051,7 +7051,7 @@
     "templates/en/reference/operations/browser-automation-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "de4a06beea65268dc287c918df4e2ff7eb18313e35d3e9786fa96977b584dbbd",
         "a69b99d8a8fa0a9347da0dda4bf560813d7e28c6762bce1a5cdddb40213fa775",
@@ -7077,7 +7077,7 @@
     "templates/en/reference/operations/heartbeat-cron-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "f5a4639d817cc88c767c97af1b7c8ebb6676faffa23f8f06b74f79e1b87ad543",
         "54795a358f15f9e2f4daeefd69e604be437e1503bf2f282c87b6b4eec56b9f3f",
@@ -7185,7 +7185,7 @@
     "templates/en/reference/operations/memory-writing-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "53a55818ff65197b30c6a3896b8a2b076d7b9d7f54a63e273e9568a876896f9b",
         "d5468e8b3ed82329ea030e546d8babf647ffdeebfd0a8b5f3377f88d9d1851c9",
@@ -7203,7 +7203,7 @@
     "templates/en/reference/operations/mode-s-auth-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "d0d150b744c609dd43371a99cf07a0112f354d0d5e1812ef27ef60ff2bf6e58a",
         "4deac7a5f67e938b87086828cf8f8f775ad9b162a3555a8280f9567095ea34cd",
@@ -7237,7 +7237,7 @@
     "templates/en/reference/operations/model-guide.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "609a00d1ad5a810263bed892fbd7e85d542c28aabb3f5a49ff41ab7f3009c8ae",
         "da680dddb23219165e3c04f4f7126064155df27053c34410c8108ab32ee06b23",
@@ -7343,7 +7343,7 @@
     "templates/en/reference/operations/project-setup.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "8360bb8dbd2cd323bc0f7594ffd91eb618ddf98e3356399377b75ef3d7aec0d8",
         "f00a5831614a155f38a1d1f68ef10e587d4019915d1e43b059c5281be3f5779c",
@@ -7425,7 +7425,7 @@
     "templates/en/reference/operations/task-management.md": {
       "engine": "luna",
       "generated": "2026-10-29",
-      "model": "gpt-6-luna-2026-09-22",
+      "model": "gpt-6-luna",
       "section_hashes": [
         "47caeab848057bddbafc5da7aff44aa4edecba7940bf59c25c6e716effcdd4a9",
         "1c191510714a7634cad0102abfaef50de3aea3401e1c2d312d55b7b47abb4cf7",
@@ -7459,14 +7459,14 @@
         "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
         "d89e3451539ce1d1245967db35b11a37652d79b10195e309fc4bc1ecd57bb0c4",
         "2f9ff2e0ca9d640ed303d6400f7023344367da390b79852a366e8e2a6bc86c40",
-        "e2a6c102f64d8530989156148b6d8b14080fec7030e62c0566362786050cd513",
+        "9fd31764c5ed8c825de99ec505c463e9ca716c6f0c1d60e10584d2903301d8c2",
         "58516b0198d247e51490a646c79dd426442a39be2754a025be33ec5065b36d22",
         "221233ee041a70f76b1f4286b6566eabdf913d92329fefef87c93dc1d053e90f",
         "1017f8c7ce06758adae50f9fb4a5dc0283b0c1fd00a81ad3666599b1a603df20",
         "2a152e44d1f911cdfc73b37c02c74edb897079134cad03371d3995ee00a60ecd",
         "43567ce80e95c99e4992fb53439c9f1187b772c9f5ec38e2ecf6991cc880ae30",
         "32d656f1bb62c7677673dba88b50361b5e2c47259b13b235c441d1adb712c323",
-        "b7a3edaedda2a9c70907f434e00ef3a4c244c314343e80b52f8eed9d96bc26e5",
+        "a9b4b45f17e493871c19a1694c2e97847f90cc3d49b38e0ae572ffb89c696e52",
         "a044898abee625f86fc63b6e683a14d9e96bb5b50f16df5d664d5133263166e8",
         "1f3e726887445c8e0e59f0696677cda28ad4530a966f31d167e20558f4e14ccb",
         "6cb0216b1ff4958cd5a8398c99cdd40789e04fc186a833d4d32698952ac3e5f7",
@@ -7477,7 +7477,7 @@
         "784d3dbeab0d0a474872709066f8f5cf81a95e785af7b23d22532949069eabc6"
       ],
       "source": "templates/ja/reference/operations/tool-usage-overview.md",
-      "source_sha256": "10e8877e1c1284f11df93a284e639150f4ce51c258a342f66a55e76626dabf19",
+      "source_sha256": "6d216fee31359dc8119464f027d05d9810cef07e3f0dfe400237b0562b30a896",
       "statuses": [
         "translated",
         "translated",
@@ -13153,14 +13153,14 @@
         "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
         "d89e3451539ce1d1245967db35b11a37652d79b10195e309fc4bc1ecd57bb0c4",
         "2f9ff2e0ca9d640ed303d6400f7023344367da390b79852a366e8e2a6bc86c40",
-        "e2a6c102f64d8530989156148b6d8b14080fec7030e62c0566362786050cd513",
+        "9fd31764c5ed8c825de99ec505c463e9ca716c6f0c1d60e10584d2903301d8c2",
         "58516b0198d247e51490a646c79dd426442a39be2754a025be33ec5065b36d22",
         "221233ee041a70f76b1f4286b6566eabdf913d92329fefef87c93dc1d053e90f",
         "1017f8c7ce06758adae50f9fb4a5dc0283b0c1fd00a81ad3666599b1a603df20",
         "2a152e44d1f911cdfc73b37c02c74edb897079134cad03371d3995ee00a60ecd",
         "43567ce80e95c99e4992fb53439c9f1187b772c9f5ec38e2ecf6991cc880ae30",
         "32d656f1bb62c7677673dba88b50361b5e2c47259b13b235c441d1adb712c323",
-        "b7a3edaedda2a9c70907f434e00ef3a4c244c314343e80b52f8eed9d96bc26e5",
+        "a9b4b45f17e493871c19a1694c2e97847f90cc3d49b38e0ae572ffb89c696e52",
         "a044898abee625f86fc63b6e683a14d9e96bb5b50f16df5d664d5133263166e8",
         "1f3e726887445c8e0e59f0696677cda28ad4530a966f31d167e20558f4e14ccb",
         "6cb0216b1ff4958cd5a8398c99cdd40789e04fc186a833d4d32698952ac3e5f7",
@@ -13171,7 +13171,7 @@
         "784d3dbeab0d0a474872709066f8f5cf81a95e785af7b23d22532949069eabc6"
       ],
       "source": "templates/ja/reference/operations/tool-usage-overview.md",
-      "source_sha256": "10e8877e1c1284f11df93a284e639150f4ce51c258a342f66a55e76626dabf19",
+      "source_sha256": "6d216fee31359dc8119464f027d05d9810cef07e3f0dfe400237b0562b30a896",
       "statuses": [
         "translated",
         "translated",

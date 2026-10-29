@@ -22,18 +22,18 @@ The tools are structured in three layers:
 
 ### AnimaWorks tools exposed via MCP (Mode S / C / D / G / X)
 
-The overall permission list `MCP_TOOL_NAMES` is defined in `core/tooling/surface.py`. `resolve_tool_surface(ctx, trigger, mode)` returns the final list based on triggers and roles, and the MCP server exposes those schemas.
+The overall allowlist `MCP_TOOL_NAMES` is defined in `core/tooling/surface.py`. `resolve_tool_surface(ctx, trigger, mode)` returns the final list based on the trigger and role, and the MCP server exposes its schema.
 
 - **Memory**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
-- **Message**: `send_message`, `post_channel`, `attach_file`
-- **Notification**: `call_human`
-- **Task**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
+- **Messages**: `send_message`, `post_channel`, `attach_file`
+- **Notifications**: `call_human`
+- **Tasks**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
 - **Workspace**: `grant_workspace_access`
 - **Skill creation**: `create_skill`
 - **Skill management**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **Hiring**: `create_anima`
 
-When `mcp.trigger_scoped_tools` is enabled, skill management tools (such as `promote_procedure_to_skill` and lifecycle management) are only shown during heartbeat and consolidation, and `create_skill` is not subject to this restriction. `call_human` is shown when notification channels are configured, `delegate_task` is shown only when there are direct subordinates, and `create_anima` can be used when the `newstaff` skill is present. To align with the stricter side of Mode A, `grant_workspace_access` is not shown during consolidation.
+When `mcp.trigger_scoped_tools` is enabled, skill-management tools (such as `promote_procedure_to_skill` and lifecycle management) are shown only during heartbeat or consolidation; `create_skill` is not subject to this restriction. `call_human` is shown when notification channels are configured, `delegate_task` only when there are direct subordinates, and `create_anima` is available when the `newstaff` skill is present. To align with the stricter side of Mode A, `grant_workspace_access` is not shown during consolidation.
 
 ### Examples Not Included in the Mode A Tool List
 
@@ -104,12 +104,12 @@ The following is a summary of tools processed directly by `ToolHandler` (some ar
 
 | Tool | Description |
 |--------|------|
-| **send_message** | Sends a DM to another Anima or human alias. `intent` is **only `report` / `question`** (`delegation` is deprecated; use `delegate_task` for delegation). There are limits on the number of people and messages per run |
-| **post_channel** | Posts to a shared Board. Parameter names are **`channel`**, **`text`** |
-| **attach_file** | Attaches a file to a web-chat reply. `path` is required; `name` sets the display name. Available only for `message:*` triggers |
-| **read_channel** | Reads the Board |
-| **read_dm_history** | References DM history |
-| **manage_channel** | Channel creation, member management, etc. |
+| **send_message** | DM another Anima or a human alias. `intent` is for **`report` / `question` only** (`delegation` is deprecated; delegate via `delegate_task`). Limits apply to the number of people and messages per run |
+| **post_channel** | Post to the shared Board. Parameter names are **`channel`**, **`text`** |
+| **attach_file** | Attach a file to a Web chat reply. `path` is required; a display name can be specified with `name`. Available only for the `message:*` trigger |
+| **read_channel** | Read a Board |
+| **read_dm_history** | View DM history |
+| **manage_channel** | Create channels, manage members, etc. |
 
 ### Tasks
 

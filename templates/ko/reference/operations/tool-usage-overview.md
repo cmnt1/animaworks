@@ -20,9 +20,9 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 | **MCP 이용 모드 (S / C / D / G / X)** | 엔진 내장 도구에 더해, MCP를 통해 AnimaWorks 도구를 이용합니다. `MCP_TOOL_NAMES`의 허가 목록과 `resolve_tool_surface`에 의한 트리거·역할 판정은 `core/tooling/surface.py`에 집약되어 있습니다. |
 | **Mode A (LiteLLM. 구 B도 동일한 surface)** | `build_unified_tool_list`(`core/tooling/schemas/builder.py`)은 `resolve_tool_surface`가 선택한 스키마를 구성합니다. `call_human`은 알림 설정 시, `delegate_task` / `ping_subordinate`은 부하가 있는 경우에 포함되며, `submit_tasks`는 `background` / `submit_tasks` / `heartbeat` 트리거로 이용할 수 있습니다. 스킬 관리 도구는 heartbeat / consolidation으로 한정됩니다. `consolidation:*`에서는 통신·위임·작업 투입·작업 공간 권한 부여 도구가 숨겨집니다. |
 
-### MCP (Mode S / C / D / G / X)로 공개되는 AnimaWorks 도구
+### MCP(Mode S / C / D / G / X)로 공개되는 AnimaWorks 도구
 
-전체 허가 목록 `MCP_TOOL_NAMES`은 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 그 스키마를 공개합니다.
+전체 허용 목록 `MCP_TOOL_NAMES`은 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 해당 스키마를 공개합니다.
 
 - **기억**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
 - **메시지**: `send_message`, `post_channel`, `attach_file`
@@ -33,7 +33,7 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 - **스킬 관리**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **고용**: `create_anima`
 
-`mcp.trigger_scoped_tools`가 유효한 경우, 스킬 관리 계열 도구(`promote_procedure_to_skill`나 라이프사이클 관리 등)는 heartbeat·consolidation 때만 표시되며, `create_skill`는 이 제한의 대상이 아닙니다. `call_human`은 알림 채널 설정 시, `delegate_task`은 직속 부하가 있을 때만 표시되며, `create_anima`는 `newstaff` 스킬을 가진 경우에 이용할 수 있습니다. Mode A와 더 엄격한 쪽을 맞추기 위해, `grant_workspace_access`는 consolidation 중에 표시되지 않습니다.
+`mcp.trigger_scoped_tools`이 활성화된 경우, 스킬 관리 도구(`promote_procedure_to_skill` 및 라이프사이클 관리 등)는 하트비트·통합 시에만 표시되며, `create_skill`은 이 제한의 대상이 아닙니다. `call_human`은 알림 채널이 설정된 경우, `delegate_task`는 직속 부하가 있는 경우에만 표시되며, `create_anima`은 `newstaff` 스킬이 있으면 사용할 수 있습니다. Mode A와 더 엄격한 쪽에 맞추기 위해 `grant_workspace_access`은 통합 중에 표시되지 않습니다.
 
 ### Mode A의 도구 목록에 포함되지 않는 예
 
@@ -104,12 +104,12 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 
 | 도구 | 설명 |
 |--------|------|
-| **send_message** | 다른 Anima 또는 인간 별칭으로 DM. `intent`은 **`report` / `question`만**(`delegation`은 비권장·위임은 `delegate_task`). 1런당 인원·횟수 제한 있음 |
-| **post_channel** | 공유 Board에 게시. 파라미터 이름은 **`channel`**, **`text`** |
-| **attach_file** | 웹 채팅 답장에 파일을 첨부. `path`는 필수이며 `name`으로 표시 이름을 지정할 수 있습니다. `message:*` 트리거에서만 사용할 수 있습니다 |
-| **read_channel** | Board 읽기 |
-| **read_dm_history** | DM 이력 참조 |
-| **manage_channel** | 채널 생성·멤버 관리 등 |
+| **send_message** | 다른 Anima 또는 사람 별칭으로 DM을 보냅니다. `intent`은 **`report` / `question`만**(`delegation`은 더 이상 사용하지 않으며, 위임에는 `delegate_task`를 사용). 1회 실행당 인원수 및 횟수 제한이 있습니다 |
+| **post_channel** | 공유 Board에 게시합니다. 매개변수 이름은 **`channel`**, **`text`**입니다 |
+| **attach_file** | 웹 채팅 답장에 파일을 첨부합니다. `path`은 필수이며, `name`으로 표시 이름을 지정할 수 있습니다. `message:*` 트리거에서만 사용할 수 있습니다 |
+| **read_channel** | Board를 읽습니다 |
+| **read_dm_history** | DM 기록을 참조합니다 |
+| **manage_channel** | 채널 생성 및 멤버 관리 등을 수행합니다 |
 
 ### 작업
 
