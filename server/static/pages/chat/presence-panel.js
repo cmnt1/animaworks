@@ -48,6 +48,10 @@ export function createPresencePanel(ctx) {
 
   const sayEl = el.querySelector(".chat-presence-say");
   const stage = el.querySelector(".chat-presence-stage");
+  stage.setAttribute("role", "button");
+  stage.setAttribute("tabindex", "0");
+  stage.setAttribute("aria-label", t("chat.presence.open"));
+  stage.title = t("chat.presence.open");
 
   let animator = null;
   let animatorFor = null;
@@ -105,6 +109,18 @@ export function createPresencePanel(ctx) {
     else animator.resume?.();
   }
 
+  function _openPortrait() {
+    const name = state.selectedAnima;
+    if (!name) return;
+    ctx.controllers.avatar?.showBustupOverlay(name, presence.emotionFor(name, PANEL_EMOTION_TTL_MS));
+  }
+
+  function _onStageKeydown(event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    _openPortrait();
+  }
+
   function refresh() {
     if (destroyed) return;
     clearTimeout(timer);
@@ -142,6 +158,8 @@ export function createPresencePanel(ctx) {
   }
 
   el.querySelector(".chat-presence-x").addEventListener("click", () => setPresenceEnabled(false));
+  stage.addEventListener("click", _openPortrait);
+  stage.addEventListener("keydown", _onStageKeydown);
   messages.addEventListener("scroll", _onScroll, { passive: true });
   window.addEventListener("resize", refresh);
   window.addEventListener("aw:presence-pref", refresh);
@@ -151,6 +169,8 @@ export function createPresencePanel(ctx) {
     clearTimeout(timer);
     _stopAnimator();
     messages.removeEventListener("scroll", _onScroll);
+    stage.removeEventListener("click", _openPortrait);
+    stage.removeEventListener("keydown", _onStageKeydown);
     window.removeEventListener("resize", refresh);
     window.removeEventListener("aw:presence-pref", refresh);
     el.remove();

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=af0a2010596c2291fd571e3efb21259113921b12a92f83f0d9a473d005c018d5 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=2c4fd72d87b76ad5b0382b6bad9da69fd148500087dd18a1a900f1e1216975b9 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # API Reference
 
@@ -188,6 +188,8 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | GET | `/api/animas/{name}/episodes/{date}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_episode` |
 | GET | `/api/animas/{name}/knowledge` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_knowledge` |
 | GET | `/api/animas/{name}/knowledge/{topic}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/connections` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return entity connections extracted from active facts. | `server/routes/memory_routes.py:memory_connections` |
+| GET | `/api/animas/{name}/memory/connections/entity` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return facts and related memory files for a single entity. | `server/routes/memory_routes.py:memory_connection_entity` |
 | GET | `/api/animas/{name}/memory/graph` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
 | GET | `/api/animas/{name}/memory/stats` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_procedures` |

@@ -271,7 +271,7 @@ export function createEventsController(ctx) {
       if (mainLogout) mainLogout.click();
     });
 
-    addListener("chatUnifiedInfoBtn", "click", () => ctx.controllers.sidebar.toggleRightPane());
+    addListener("chatUnifiedInfoBtn", "click", (event) => ctx.controllers.memoryPopover.open(event.currentTarget));
 
     _populateUnifiedUser();
 

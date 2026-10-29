@@ -56,8 +56,6 @@ export function createChatContext() {
     animaDetailLoadedFor: null,
     animaSummary: null,
     animaTabs: [],
-    activeRightTab: "state",
-    activeMemoryTab: "episodes",
     intervals: [],
     boundListeners: [],
     chatObserver: null,
@@ -75,7 +73,6 @@ export function createChatContext() {
     firstMeetingRequested: new Set(),
     firstMeetingResponses: new Map(),
     firstMeetingFailed: new Set(),
-    rightPaneVisible: true,
     paneIdx: 0,
     modelByThread: {},
     /** @type {ChatSessionManager} */

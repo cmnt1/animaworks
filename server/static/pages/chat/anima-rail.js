@@ -85,7 +85,7 @@ export function createAnimaRail({ el, getPanes, getFocused, t, escapeHtml, onToo
       const name = item.dataset.anima;
       if (!name) return;
       const anima = focused.ctx.controllers.anima;
-      if (name === focused.ctx.state.selectedAnima) focused.ctx.controllers.avatar.showBustupOverlay();
+      if (name === focused.ctx.state.selectedAnima) focused.ctx.controllers.memoryPopover.open(item);
       else anima.openOrSelectAnima(name);
       return;
     }

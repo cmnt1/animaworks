@@ -592,7 +592,6 @@ export function createChatRenderer(ctx) {
     _sharedBindBubbleActionHandlers(messagesEl);
     _sharedBindChatLineHandlers(messagesEl, {
       onReply: (target) => ctx.controllers.events?.showReplyTarget(target),
-      onFaceClick: ({ name, emotion, url }) => ctx.controllers.avatar?.showBustupOverlay(name, emotion, url),
     });
     _sharedBindHumanNotifyHandlers(messagesEl, {
       getAnimaName: () => state.selectedAnima,

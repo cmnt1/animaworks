@@ -9,10 +9,8 @@ import { createThreadController } from "./thread-controller.js";
 import { createChatRenderer } from "./chat-renderer.js";
 import { createAvatarController } from "./avatar-controller.js";
 import { createActivityController } from "./activity-controller.js";
+import { createMemoryPopover } from "./memory-popover.js";
 import { createStreamingController } from "./streaming-controller.js";
-import { createHistoryController } from "./history-controller.js";
-import { createMemoryController } from "./memory-controller.js";
-import { createSidebarController } from "./sidebar-controller.js";
 import { createEventsController } from "./events-controller.js";
 import { createImageVoiceController } from "./image-voice-controller.js";
 import { createMeetingController } from "./meeting-controller.js";
@@ -76,8 +74,8 @@ function paneHtml() {
         <button class="chat-close-pane-btn" data-chat-id="chatClosePaneBtn" aria-label="${t("pane.close")}" title="${t("pane.close")}" style="display:none">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
-        <button class="chat-unified-info-btn" data-chat-id="chatUnifiedInfoBtn" aria-label="${t("pane.info_panel")}" title="${t("pane.info_panel")}">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <button class="chat-unified-info-btn" data-chat-id="chatUnifiedInfoBtn" aria-label="${t("chat.memory.open")}" title="${t("chat.memory.open")}">
+          <span aria-hidden="true">◎</span><span>${t("chat.memory.open")}</span>
         </button>
         <button class="chat-unified-user-btn" data-chat-id="chatUnifiedUserBtn" aria-label="${t("pane.user")}">
           <span class="chat-unified-user-initial" data-chat-id="chatUnifiedUserInitial">?</span>
@@ -282,10 +280,8 @@ export function createPaneHost(rootContainer) {
     ctx.controllers.renderer = createChatRenderer(ctx);
     ctx.controllers.avatar = createAvatarController(ctx);
     ctx.controllers.activity = createActivityController(ctx);
+    ctx.controllers.memoryPopover = createMemoryPopover(ctx);
     ctx.controllers.streaming = createStreamingController(ctx);
-    ctx.controllers.history = createHistoryController(ctx);
-    ctx.controllers.memory = createMemoryController(ctx);
-    ctx.controllers.sidebar = createSidebarController(ctx);
     ctx.controllers.events = createEventsController(ctx);
     ctx.controllers.imageVoice = createImageVoiceController(ctx);
     ctx.controllers.meeting = createMeetingController(ctx);
@@ -302,7 +298,6 @@ export function createPaneHost(rootContainer) {
 
     _initModelSelect(ctx, paneEl);
 
-    ctx.controllers.sidebar.initRightPaneVisibility();
     ctx.controllers.events.bindPaneEvents();
     ctx.controllers.meeting.init();
     ctx.controllers.anima.loadAnimas();
@@ -421,10 +416,7 @@ export function createPaneHost(rootContainer) {
       }
     }, 30000));
 
-    if (panes.length === 1) {
-      focusedIdx = 0;
-      _startFocusedIntervals();
-    }
+    if (panes.length === 1) focusedIdx = 0;
 
     _saveLayout();
     _updatePaneControls();
@@ -482,7 +474,6 @@ export function createPaneHost(rootContainer) {
 
     if (focusedIdx >= panes.length) focusedIdx = panes.length - 1;
     _applyFocusVisual();
-    _syncSidebar();
     _saveLayout();
     _updatePaneControls();
   }
@@ -491,50 +482,14 @@ export function createPaneHost(rootContainer) {
     const newIdx = panes.findIndex(p => p.id === id);
     if (newIdx < 0 || newIdx === focusedIdx) return;
 
-    _clearFocusedIntervals();
     focusedIdx = newIdx;
     _applyFocusVisual();
-    _syncSidebar();
-    _startFocusedIntervals();
     _syncVoiceToFocused();
   }
 
   function _applyFocusVisual() {
     for (let i = 0; i < panes.length; i++) {
       panes[i].el.classList.toggle("focused", i === focusedIdx);
-    }
-  }
-
-  let _focusedActivityInterval = null;
-
-  function _startFocusedIntervals() {
-    const ctx = getFocused()?.ctx;
-    if (!ctx) return;
-    _focusedActivityInterval = setInterval(
-      () => {
-        if (ctx.state.activeRightTab === "activity") ctx.controllers.activity.loadActivity();
-      },
-      30000,
-    );
-  }
-
-  function _clearFocusedIntervals() {
-    if (_focusedActivityInterval) {
-      clearInterval(_focusedActivityInterval);
-      _focusedActivityInterval = null;
-    }
-  }
-
-  function _syncSidebar() {
-    const ctx = getFocused()?.ctx;
-    if (!ctx) return;
-    if (ctx.state.activeRightTab === "state") {
-      ctx.controllers.activity.loadAnimaState();
-      ctx.controllers.memory.loadMemoryTab();
-    }
-    if (ctx.state.activeRightTab === "activity") ctx.controllers.activity.loadActivity();
-    if (ctx.state.activeRightTab === "history" && ctx.state.selectedAnima) {
-      ctx.controllers.history.loadSessionList();
     }
   }
 
@@ -568,56 +523,17 @@ export function createPaneHost(rootContainer) {
     }
 
     for (const tabId of ["chatMobileTabChat", "chatMobileTabInfo"]) {
-      _addShared(tabId, "click", e => {
-        getFocused()?.ctx.controllers.sidebar.switchMobileTab(e.target.dataset.panel);
-      });
-    }
-
-    for (const tabId of ["chatTabState", "chatTabActivity", "chatTabHistory", "chatTabHeartbeat", "chatTabCron"]) {
-      _addShared(tabId, "click", e => {
-        getFocused()?.ctx.controllers.sidebar.switchRightTab(e.target.dataset.tab);
-      });
-    }
-
-    _addShared("chatRightPaneToggleBtn", "click", () => {
-      getFocused()?.ctx.controllers.sidebar.toggleRightPane();
-    });
-
-    rootContainer.querySelectorAll(".memory-tab").forEach(btn => {
-      const handler = () => {
-        const ctx = getFocused()?.ctx;
-        if (!ctx) return;
-        ctx.state.activeMemoryTab = btn.dataset.tab;
-        rootContainer.querySelectorAll(".memory-tab").forEach(b =>
-          b.classList.toggle("active", b.dataset.tab === ctx.state.activeMemoryTab),
+      _addShared(tabId, "click", (event) => {
+        const focused = getFocused();
+        if (!focused) return;
+        const selected = event.currentTarget.dataset.panel === "info";
+        rootContainer.querySelectorAll(".chat-mobile-tab").forEach((button) =>
+          button.classList.toggle("active", button === event.currentTarget),
         );
-        const contentArea = ctx.$root("chatMemoryContentArea");
-        const fileList = ctx.$root("chatMemoryFileList");
-        if (contentArea) contentArea.style.display = "none";
-        if (fileList) fileList.style.display = "";
-        ctx.controllers.memory.loadMemoryTab();
-      };
-      btn.addEventListener("click", handler);
-      _sharedListeners.push({ el: btn, event: "click", handler });
-    });
-
-    _addShared("chatMemoryBackBtn", "click", () => {
-      const ctx = getFocused()?.ctx;
-      if (!ctx) return;
-      const ca = ctx.$root("chatMemoryContentArea");
-      const fl = ctx.$root("chatMemoryFileList");
-      if (ca) ca.style.display = "none";
-      if (fl) fl.style.display = "";
-    });
-
-    _addShared("chatHistoryBackBtn", "click", () => {
-      const ctx = getFocused()?.ctx;
-      if (!ctx) return;
-      const detail = ctx.$root("chatHistoryDetail");
-      const list = ctx.$root("chatHistorySessionList");
-      if (detail) detail.style.display = "none";
-      if (list) list.style.display = "";
-    });
+        if (selected) focused.ctx.controllers.memoryPopover.open(event.currentTarget);
+        else focused.ctx.controllers.memoryPopover.close();
+      });
+    }
   }
 
   function _destroyPane(pane) {
@@ -628,6 +544,7 @@ export function createPaneHost(rootContainer) {
     }
     pane.intervals = [];
     ctx.controllers.renderer.clearBootstrapInterval();
+    ctx.controllers.memoryPopover?.destroy();
     ctx.controllers.workIndicator?.destroy();
     ctx.controllers.presencePanel?.destroy();
     ctx.controllers.slash?.destroy();
@@ -653,7 +570,6 @@ export function createPaneHost(rootContainer) {
   }
 
   function destroy() {
-    _clearFocusedIntervals();
     for (const { el, event, handler } of _sharedListeners) {
       el.removeEventListener(event, handler);
     }

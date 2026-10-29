@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=5761d07431069f46aa5490493956d3d88e50153c064660ff07f7257b8e69409d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d12494b507da9562e78794553245181249cc4952a2be450bcdff145ab22e2a7d generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -533,33 +533,34 @@ Model Context Protocol 서버와 클라이언트.
 
 ## `core.memory`
 
-대화 및 에피소드 기억의 저장, 검색, 정리.
+대화·에피소드 기억의 저장, 검색, 정리.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.memory` | 20 | — |
-| `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
+| `core.memory._llm_parse（非公開）` | 185 | 기억 파이프라인에서 사용하는 LLM 출력 파싱 공통 헬퍼. |
 | `core.memory.config_reader` | 31 | — |
-| `core.memory.conversation.compression` | 322 | Compression logic for conversation memory. |
-| `core.memory.conversation.finalize` | 493 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 349 | Conversation memory (대화 기억 / 작업 메모리) management. |
-| `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
-| `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
-| `core.memory.conversation.shortterm` | 313 | Short-term memory (단기 기억) management. |
-| `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
+| `core.memory.conversation.compression` | 322 | 대화 기억 압축 로직. |
+| `core.memory.conversation.finalize` | 493 | 대화 기억의 세션 종료 처리. |
+| `core.memory.conversation.memory` | 349 | 대화 기억(대화 기억 / 작업 기억) 관리. |
+| `core.memory.conversation.models` | 149 | 대화 기억을 위한 데이터 클래스와 상수. |
+| `core.memory.conversation.prompt` | 270 | 대화 기억을 위한 프롬프트 작성 함수. |
+| `core.memory.conversation.shortterm` | 313 | 단기 기억 관리. |
+| `core.memory.conversation.state_update` | 49 | 대화 기억의 세션 종료를 위한 상태 업데이트 함수. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
+| `core.memory.facts.connections` | 544 | — |
 | `core.memory.facts.entity_index` | 452 | — |
 | `core.memory.facts.extraction` | 529 | — |
-| `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
+| `core.memory.facts.extractor` | 431 | LLM 기반 엔터티 및 사실 추출 파이프라인. |
 | `core.memory.facts.invalidation` | 515 | — |
 | `core.memory.facts.invalidation_llm` | 154 | — |
 | `core.memory.facts.live` | 578 | — |
 | `core.memory.facts.observability` | 41 | — |
-| `core.memory.facts.ontology` | 247 | Pydantic models for entity / fact extraction results. |
-| `core.memory.facts.prompts.en` | 133 | English prompts for entity / fact extraction. |
-| `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
+| `core.memory.facts.ontology` | 247 | 엔터티 / 사실 추출 결과를 위한 Pydantic 모델. |
+| `core.memory.facts.prompts.en` | 133 | 엔터티 / 사실 추출을 위한 영어 프롬프트. |
+| `core.memory.facts.prompts.ja` | 135 | 엔터티 / 사실 추출을 위한 일본어 프롬프트. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
 | `core.memory.io` | 59 | — |
@@ -590,7 +591,7 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.priming.policy` | 25 | — |
 | `core.memory.priming.result` | 76 | — |
 | `core.memory.priming.utils` | 284 | — |
-| `core.memory.rag.cli_access` | 232 | CLI access to phase3 vector stores through the active owner or server. |
+| `core.memory.rag.cli_access` | 232 | 활성 소유자 또는 서버를 통해 phase3 벡터 저장소에 접근하는 CLI. |
 | `core.memory.rag.contextual_header` | 163 | — |
 | `core.memory.rag.direct_access` | 24 | — |
 | `core.memory.rag.embedding` | 393 | — |
@@ -598,13 +599,13 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.rag.episode_time` | 46 | — |
 | `core.memory.rag.exclusion` | 38 | — |
 | `core.memory.rag.facts_chunker` | 100 | — |
-| `core.memory.rag.index_signature` | 27 | Compatibility diagnostics for an existing embedding index signature. |
+| `core.memory.rag.index_signature` | 27 | 기존 임베딩 인덱스 서명에 대한 호환성 진단. |
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
-| `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
+| `core.memory.rag.owner_lock` | 84 | Anima의 네이티브 벡터 데이터베이스를 위한 독점 소유권 잠금. |
 | `core.memory.rag.repair.detect` | 743 | — |
 | `core.memory.rag.repair.rebuild` | 401 | — |
-| `core.memory.rag.repair.state` | 191 | Persistent repair-state helpers for RAG auto-repair. |
+| `core.memory.rag.repair.state` | 191 | RAG 자동 복구를 위한 영구 복구 상태 헬퍼. |
 | `core.memory.rag.repair.types` | 27 | — |
 | `core.memory.rag.retriever` | 809 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
@@ -612,7 +613,7 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.rag.sqlite_health` | 359 | — |
 | `core.memory.rag.store` | 783 | — |
 | `core.memory.rag.vector_client` | 497 | — |
-| `core.memory.rag.vector_ops` | 88 | Conversion between vector API requests and the MemoryService wire format. |
+| `core.memory.rag.vector_ops` | 88 | 벡터 API 요청과 MemoryService 와이어 형식 간 변환. |
 | `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |
@@ -628,7 +629,7 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.retrieval.types` | 38 | — |
 | `core.memory.retrieval.unified_search` | 722 | — |
 | `core.memory.skill_metadata` | 49 | — |
-| `core.memory.state_lock` | 96 | Process-safe locking for ``state/current_state.md`` updates. |
+| `core.memory.state_lock` | 96 | ``state/current_state.md`` 업데이트를 위한 프로세스 안전 잠금. |
 
 ## `core.memory.conversation`
 
@@ -1104,7 +1105,7 @@ LLM 사용량 및 비용 기록·집계.
 
 —
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1268 | — |
@@ -1126,7 +1127,7 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
-| `server.routes.memory_routes` | 450 | — |
+| `server.routes.memory_routes` | 531 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | SSE 스트리밍을 지원하는 회의실 API 경로. |
@@ -1137,7 +1138,7 @@ LLM 사용량 및 비용 기록·집계.
 | `server.routes.taskboard` | 237 | — |
 | `server.routes.usage_routes` | 844 | — |
 | `server.routes.users` | 280 | — |
-| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정에 공용 헬퍼를 사용합니다. |
+| `server.routes.voice` | 223 | 음성 채팅 WebSocket 엔드포인트. Anima별 status.json 설정은 공통 헬퍼를 사용한다. |
 | `server.routes.webhooks` | 503 | — |
 | `server.routes.websocket_route` | 46 | — |
 
