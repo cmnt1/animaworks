@@ -61,7 +61,6 @@ TTSは外部サービスとして別途起動が必要:
     "stt_language": null,
     "stt_refine_enabled": false,
     "default_tts_provider": "voicevox",
-    "audio_format": "wav",
     "voicevox": { "base_url": "http://localhost:50021" },
     "elevenlabs": { "api_key_env": "ELEVENLABS_API_KEY", "model_id": "eleven_flash_v2_5" },
     "style_bert_vits2": { "base_url": "http://localhost:5000" }
@@ -77,7 +76,6 @@ TTSは外部サービスとして別途起動が必要:
 | `stt_language` | `null` | 言語コード（`ja`, `en`等）。`null` で自動検出 |
 | `stt_refine_enabled` | `false` | STT結果のLLM後処理（有効化でレイテンシ1-3秒追加） |
 | `default_tts_provider` | `voicevox` | デフォルトTTSプロバイダ: `voicevox` / `style_bert_vits2` / `elevenlabs` |
-| `audio_format` | `wav` | TTS出力音声形式 |
 
 ### Per-Anima音声設定（status.json の `voice` セクション）
 

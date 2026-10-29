@@ -13,8 +13,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

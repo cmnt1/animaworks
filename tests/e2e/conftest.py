@@ -14,10 +14,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from core.agent import AgentCore
-from core.anima import DigitalAnima
+from core.agent.agent_core import AgentCore
+from core.anima.digital_anima import DigitalAnima
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 class _DeterministicEmbeddingModel:
@@ -112,10 +112,24 @@ class _DeterministicReranker:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_runtime_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep E2E tests that bypass ``data_dir`` away from the host runtime."""
+    from core.config import invalidate_cache
+    from core.paths import _prompt_cache
+
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "_e2e_runtime"))
+    invalidate_cache()
+    _prompt_cache.clear()
+    yield
+    invalidate_cache()
+    _prompt_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
     """Point the process-wide LLM rate guard at a per-test temp file."""
     from core.config.schemas import LlmRateGuardConfig
-    from core.execution import rate_guard
+    from core.llm.guard import rate_guard
 
     rate_guard._shared_guard = rate_guard.LlmRateGuard(
         config=LlmRateGuardConfig(),
@@ -130,7 +144,7 @@ def _deterministic_embedding_model(monkeypatch: pytest.MonkeyPatch):
     """Prevent E2E tests from reaching external embedding model hosts."""
 
     model = _DeterministicEmbeddingModel()
-    monkeypatch.setattr("core.memory.rag.singleton.get_embedding_model", lambda model_name=None: model)
+    monkeypatch.setattr("core.memory.rag.embedding.get_embedding_model", lambda model_name=None: model)
 
 
 @pytest.fixture(autouse=True)
@@ -140,7 +154,7 @@ def _deterministic_reranker(monkeypatch: pytest.MonkeyPatch):
     reranker = _DeterministicReranker()
     monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda model_name=None: reranker)
     monkeypatch.setattr("core.memory.retrieval.pipeline.get_reranker", lambda model_name=None: reranker)
-    monkeypatch.setattr("core.memory.graph.reranker.get_reranker", lambda model_name=None: reranker)
+    monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda model_name=None: reranker)
 
 
 @pytest.fixture

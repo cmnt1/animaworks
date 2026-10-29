@@ -1,169 +1,169 @@
-# Use Case: Infrastructure & Service Monitoring
+# Use case: Infrastructure and service monitoring
 
-This use case automates 24/7 monitoring of servers, web services, cloud resources, and more—covering anomaly detection, alerting, and initial incident response.
-
----
-
-## Problems This Solves
-
-- Delayed awareness of server outages
-- No coverage for incidents during nights and holidays
-- Overlooking SSL certificate expiration
-- Missing disk space and resource exhaustion until it’s critical
-- Too many alerts from monitoring tools, causing important ones to be missed
+This use case involves monitoring servers, web services, and cloud resources around the clock, and automating anomaly detection, alerting, and initial response.
 
 ---
 
-## Pattern 1: Web Service Health Checks
+## Problems this can solve
 
-### What It Does
-Periodically checks whether web services respond correctly and sends alerts when anomalies are detected.
+- Noticing server downtime too late
+- Unable to handle incidents during nights and holidays
+- Overlooking SSL certificate expirations
+- Not noticing disk space or resource exhaustion
+- Missing important alerts because monitoring tools generate too many
 
-### How It Works
-1. Access target URLs at regular intervals (e.g., every 5–30 minutes)
-2. Verify HTTP response codes and response times
+---
+
+## Pattern 1: Web service availability monitoring
+
+### What to do
+Periodically check whether a web service responds normally, and issue alerts when anomalies are detected.
+
+### How it works
+1. Access the target URL at regular intervals (e.g., every 5 to 30 minutes)
+2. Check the HTTP response code and response time
 3. When an anomaly is detected:
-   - First occurrence: Re-check (may be a transient error)
-   - Second consecutive failure: Notify humans
-   - When recovery is detected: Send a recovery notification
-4. Record response time trends and detect degradation
+   - First time: Re-check (possible temporary error)
+   - Two consecutive times: Notify a human
+   - When recovery is detected, send a recovery notification
+4. Record response time trends and detect degradation patterns
 
-### Example Scenarios
-- Production website returns 503 → Immediate notification to the admin’s phone
-- API response time triples → Performance degradation warning
-- Post-maintenance recovery check → Automatically confirm and report that the service is back to normal
+### Example uses
+- Production website returns 503 → Immediately notify the administrator's smartphone
+- API response becomes 3 times slower than usual → Performance degradation warning
+- Post-maintenance recovery check → Automatically confirm and report normal operation
 
-### What You Need to Get Started
-- List of URLs to monitor
-- Alert destinations (chat, email, etc.)
-- Thresholds (e.g., response time above which to treat as delayed)
+### What you need to get started
+- List of target URLs to monitor
+- Alert notification destinations (chat, email, etc.)
+- Criteria for judgment (e.g., how many seconds counts as slow)
 
 ---
 
-## Pattern 2: Server Resource Monitoring
+## Pattern 2: Server resource monitoring
 
-### What It Does
-Monitors server resources such as CPU, memory, disk space, and process status.
+### What to do
+Monitor server resources such as CPU, memory, disk space, and process status.
 
-### How It Works
-1. Periodically fetch server state (via SSH or API)
+### How it works
+1. Periodically retrieve server status (via SSH or API)
 2. Compare each metric against thresholds:
    - Disk usage > 80% → Warning
    - Disk usage > 95% → Urgent notification
-   - Sudden spike in memory usage → Possible memory leak
+   - Rapid memory usage increase → Possible memory leak
    - Sustained high CPU load → Check for runaway processes
-3. On anomaly: Send alert plus recommended actions
+3. If an anomaly is found, send an alert along with recommended actions
 
-### Example Scenarios
-- Disk space down to 5% → Suggest candidates for old log deletion
-- A process stuck at 100% CPU → Report process name and start time
-- Memory usage increasing day by day → Warn about possible leak
+### Example uses
+- Disk space down to 5% remaining → Suggest old logs to delete
+- A specific process stuck at 100% CPU → Report the process name and startup time
+- Memory usage increasing day by day → Warn about a possible leak
 
-### Example Automated Actions
-- Log rotation (compress and delete old log files)
-- Identify and report runaway processes (auto-kill only after human approval)
-- Clean up temporary files
-
----
-
-## Pattern 3: SSL/TLS Certificate Expiration Monitoring
-
-### What It Does
-Periodically checks SSL certificate validity and prompts renewal before expiration.
-
-### How It Works
-1. Check certificate expiration for target domains once daily
-2. Adjust alert level by days remaining:
-   - 30 days left → Informational (recommend preparing for renewal)
-   - 14 days left → Warning (renew soon)
-   - 7 days left → Urgent (immediate action required)
-3. Send reminders with renewal procedure details
-
-### Example Scenarios
-- Manage certificate expiration for multiple domains in one place
-- Verify that automatic renewal (e.g., Let’s Encrypt) is working correctly
-- Confirm that renewed certificates are applied correctly
+### Examples of automated responses
+- Log rotation (compression and deletion of old log files)
+- Identifying and reporting runaway processes (automatic kill only after human approval)
+- Cleaning up temporary files
 
 ---
 
-## Pattern 4: Cloud Service Monitoring
+## Pattern 3: SSL/TLS certificate expiration monitoring
 
-### What It Does
-Monitors the status and cost of cloud resources (containers, databases, storage, etc.).
+### What to do
+Periodically check SSL certificate expiration dates and prompt renewal before they expire.
 
-### How It Works
-1. Periodically fetch resource state via cloud APIs
-2. Monitor:
-   - Service health (normal/abnormal)
-   - Error log occurrence
-   - Cost trends (budget overrun detection)
-3. Notify when anomalies or budget overruns are detected
+### How it works
+1. Check the certificate expiration date for target domains once a day
+2. Adjust the alert level based on days remaining:
+   - 30 days remaining → Informational notification (renewal preparation recommended)
+   - 14 days remaining → Warning notification (renew promptly)
+   - 7 days remaining → Urgent notification (immediate action required)
+3. Send a reminder with the renewal procedure
 
-### Example Scenarios
-- Container service task count drops → Possible service outage
-- Database connections near limit → Suggest scaling up
-- Monthly cloud cost exceeds 80% of budget → Cost warning
-
----
-
-## Pattern 5: Log Analysis and Anomaly Detection
-
-### What It Does
-Periodically analyzes application logs to detect error patterns and abnormal trends.
-
-### How It Works
-1. Fetch logs for the specified period
-2. Count error and warning occurrences
-3. Compare with baseline to detect anomalies:
-   - Error rate 3× normal → Investigation alert
-   - New error type appears → Possible new failure
-   - Errors concentrated on a specific endpoint → Possible failure in that feature
-4. Report analysis results as a summary
-
-### Example Scenarios
-- “0 errors in the last 30 minutes, all normal” → Routine report
-- “3 new error patterns detected” → Report with details
-- “Error rate for a specific API spiking” → Start root cause investigation
+### Example uses
+- Manage certificate expiration dates for multiple domains in one place
+- Verify that automatic renewal (e.g., Let's Encrypt) is working correctly
+- Validate that the renewed certificate is properly applied
 
 ---
 
-## Pattern 6: Integrated Dashboard-Style Operation
+## Pattern 4: Cloud service monitoring
 
-### What It Does
-Aggregates multiple monitoring results and generates periodic summary reports.
+### What to do
+Monitor the status and cost of cloud resources (containers, databases, storage, etc.).
 
-### How It Works
-1. Collect reports from each monitoring role
-2. Summarize overall status at a glance
-3. Report to humans on a schedule (e.g., every morning at 9)
+### How it works
+1. Periodically retrieve resource status using cloud APIs
+2. Monitor the following:
+   - Service operational status (normal/abnormal)
+   - Occurrence of error logs
+   - Cost trends (detect budget overruns)
+3. Send notifications when anomalies or budget overruns are detected
 
-### Sample Report
+### Example uses
+- Container service task count decreases → Possible service failure
+- Database connection count near the limit → Suggest scaling up
+- Monthly cloud costs exceed 80% of budget → Cost warning
+
+---
+
+## Pattern 5: Log analysis and anomaly detection
+
+### What to do
+Periodically analyze application logs to detect error patterns and abnormal trends.
+
+### How it works
+1. Retrieve logs for a specified period
+2. Count the number of errors and warnings
+3. Compare against normal levels to determine anomalies:
+   - Error rate 3 times higher than usual → Investigation alert
+   - A new type of error appears → Possible new incident
+   - Errors concentrated on a specific endpoint → Failure in that feature
+4. Report the analysis results as a summary
+
+### Example uses
+- "0 errors in the past 30 minutes, normal" → Routine report
+- "Detected 3 new error patterns" → Report with details
+- "Error rate for a specific API is surging" → Begin root cause investigation
+
+---
+
+## Pattern 6: Integrated dashboard-style operation
+
+### What to do
+Consolidate multiple monitoring results and generate periodic summary reports.
+
+### How it works
+1. Aggregate reports from each monitoring role
+2. Compile the overall status into a summary that can be understood at a glance
+3. Report to a human on a regular schedule (e.g., every morning at 9:00)
+
+### Report example
 ```
-== Today's Infrastructure Status ==
-[OK] Web services: Responding normally (avg 120ms)
-[OK] Server resources: CPU 15%, Memory 45%, Disk 62%
-[CAUTION] SSL certificate: example.com expires in 20 days
-[OK] Cloud services: All tasks running
-[OK] Error logs: 0 errors in the last 24 hours
+== 本日のインフラ状況 ==
+[正常] Webサービス: 応答正常（平均120ms）
+[正常] サーバーリソース: CPU 15%, メモリ 45%, ディスク 62%
+[注意] SSL証明書: example.com の期限まで残り20日
+[正常] クラウドサービス: 全タスク稼働中
+[正常] エラーログ: 過去24時間のエラー 0件
 ```
 
 ---
 
-## Configuration Tips
+## Configuration tips
 
-### Minimal Setup (1 Anima)
-- One Anima handles all monitoring in rotation
-- Rotation interval around 30 minutes
-- Sufficient for small environments (1–2 servers)
+### Minimal configuration (1 Anima)
+- One Anima patrols and monitors all items
+- Patrol interval of about 30 minutes
+- Sufficient for small environments (1 to 2 servers)
 
-### Recommended Setup (3–4 Anima)
-- **Monitoring coordinator**: Overall status, anomaly judgment, escalation
-- **Server monitoring**: OS, processes, resource monitoring
-- **Network/SSL monitoring**: SSL certificates, DNS, connectivity
-- **Cloud monitoring**: Cloud-specific monitoring
+### Recommended configuration (3 to 4 Anima)
+- **Monitoring coordinator**: Overall status awareness, anomaly judgment, escalation
+- **Server monitoring**: OS, process, and resource monitoring
+- **Network/SSL monitoring**: SSL certificates, DNS, and connectivity monitoring
+- **Cloud monitoring**: Cloud service-specific monitoring
 
-### Reducing False Positives
-- Don’t alert on a single anomaly (confirm with two consecutive failures)
-- Set thresholds based on baseline values from your actual environment
+### Tips for reducing false alarms
+- Don't alert immediately on a single anomaly (confirm twice in a row)
+- Set thresholds based on normal values in the actual environment
 - Have the coordinator independently verify reports from monitoring Anima
-- Accumulate false-positive patterns as knowledge to improve judgment accuracy
+- Accumulate false-alarm patterns as knowledge to improve judgment accuracy

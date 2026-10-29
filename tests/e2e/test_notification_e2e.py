@@ -6,6 +6,7 @@
 Tests the full flow: config → notifier creation → tool handler → notification dispatch.
 Uses mock HTTP to verify actual channel formatting without making real API calls.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,13 +22,21 @@ from core.config.models import (
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
 
-
 # ── Fixtures ──────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
 
 
 @pytest.fixture
 def notification_config() -> HumanNotificationConfig:
     return HumanNotificationConfig(
+        web_ui=False,  # these tests count external channels only
         enabled=True,
         channels=[
             NotificationChannelConfig(
@@ -68,7 +77,10 @@ class TestNotificationE2EFlow:
         assert notifier.channel_count == 1
 
     def test_config_to_handler_to_notify(
-        self, notification_config, anima_dir, memory,
+        self,
+        notification_config,
+        anima_dir,
+        memory,
     ):
         """Full flow: config → notifier → handler → notify_human tool call."""
         notifier = HumanNotifier.from_config(notification_config)
@@ -88,11 +100,14 @@ class TestNotificationE2EFlow:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_cls.return_value = mock_client
 
-            result = handler.handle("call_human", {
-                "subject": "E2E Test Alert",
-                "body": "This is a full end-to-end test",
-                "priority": "high",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "E2E Test Alert",
+                    "body": "This is a full end-to-end test",
+                    "priority": "high",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -109,6 +124,7 @@ class TestNotificationE2EFlow:
         monkeypatch.setenv("CHATWORK_API_TOKEN", "cw-test-token")
 
         config = HumanNotificationConfig(
+            web_ui=False,  # these tests count external channels only
             enabled=True,
             channels=[
                 NotificationChannelConfig(
@@ -145,10 +161,12 @@ class TestNotificationE2EFlow:
         mock_response.raise_for_status = MagicMock()
 
         # Patch all three channel HTTP clients
-        with patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls, \
-             patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls, \
-             patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls:
-
+        with (
+            patch("core.notification.channels.slack.httpx.AsyncClient") as slack_cls,
+            patch("core.notification.channels.ntfy.httpx.AsyncClient") as ntfy_cls,
+            patch("core.notification.channels.chatwork.httpx.AsyncClient") as cw_cls,
+            patch("core.phone.urgent.request_phone_alert", return_value="phone: calling") as phone_alert,
+        ):
             for cls in (slack_cls, ntfy_cls, cw_cls):
                 mock_client = AsyncMock()
                 mock_client.post.return_value = mock_response
@@ -156,19 +174,26 @@ class TestNotificationE2EFlow:
                 mock_client.__aexit__ = AsyncMock(return_value=False)
                 cls.return_value = mock_client
 
-            result = handler.handle("call_human", {
-                "subject": "Multi-channel Test",
-                "body": "Sent to all channels",
-                "priority": "urgent",
-            })
+            result = handler.handle(
+                "call_human",
+                {
+                    "subject": "Multi-channel Test",
+                    "body": "Sent to all channels",
+                    "priority": "urgent",
+                },
+            )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
-        assert len(parsed["results"]) == 3
+        # Urgent priority also places a phone alert alongside the three channels.
+        assert len(parsed["results"]) == 4
+        assert "phone: calling" in parsed["results"]
+        phone_alert.assert_called_once()
 
     def test_disabled_channels_skipped(self, anima_dir, memory):
         """Disabled channels in config are not included in the notifier."""
         config = HumanNotificationConfig(
+            web_ui=False,  # these tests count external channels only
             enabled=True,
             channels=[
                 NotificationChannelConfig(
@@ -209,6 +234,7 @@ class TestNotificationPromptIntegration:
         )
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
@@ -240,6 +266,7 @@ class TestNotificationPromptIntegration:
         )
 
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
@@ -257,6 +284,7 @@ class TestNotificationPromptIntegration:
 
         # human_notification disabled (default)
         from core.config import invalidate_cache
+
         invalidate_cache()
 
         from core.memory import MemoryManager
@@ -272,7 +300,7 @@ class TestNotificationToolSchema:
     """Test that notify_human tool schema is properly defined."""
 
     def test_notify_human_in_notification_tools(self):
-        from core.tooling.schemas import _notification_tools
+        from core.tooling.policy.schemas import _notification_tools
 
         notification_tools = _notification_tools()
         assert len(notification_tools) == 1
@@ -284,16 +312,16 @@ class TestNotificationToolSchema:
         assert "subject" in schema["parameters"]["required"]
         assert "body" in schema["parameters"]["required"]
 
-    def test_build_tool_list_includes_notification(self):
-        from core.tooling.schemas import build_tool_list
+    def test_build_unified_tool_list_includes_notification(self):
+        from core.tooling.policy.schemas import build_unified_tool_list
 
-        tools = build_tool_list(include_notification_tools=True)
+        tools = build_unified_tool_list(include_notification_tools=True)
         names = [t["name"] for t in tools]
         assert "call_human" in names
 
-    def test_build_tool_list_excludes_notification_by_default(self):
-        from core.tooling.schemas import build_tool_list
+    def test_build_unified_tool_list_excludes_notification_by_default(self):
+        from core.tooling.policy.schemas import build_unified_tool_list
 
-        tools = build_tool_list()
+        tools = build_unified_tool_list()
         names = [t["name"] for t in tools]
         assert "call_human" not in names

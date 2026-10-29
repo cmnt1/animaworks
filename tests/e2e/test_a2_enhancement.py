@@ -49,7 +49,6 @@ def model_config() -> ModelConfig:
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -66,7 +65,7 @@ def memory(anima_dir: Path) -> MagicMock:
 
 @pytest.fixture
 def executor(model_config, anima_dir, memory):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
     from core.tooling.handler import ToolHandler
 
     th = ToolHandler(

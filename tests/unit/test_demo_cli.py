@@ -65,7 +65,7 @@ def test_claude_code_login_init(
 
     # Model override applied (engineer -> sonnet main, general -> haiku)
     kai_status = json.loads((data_dir / "animas" / "kai" / "status.json").read_text(encoding="utf-8"))
-    assert kai_status["model"] == "claude-sonnet-4-6"
+    assert kai_status["model"] == "claude-sonnet-5-5"
     nova_status = json.loads((data_dir / "animas" / "nova" / "status.json").read_text(encoding="utf-8"))
     assert nova_status["model"] == "claude-haiku-4-5-20251001"
 

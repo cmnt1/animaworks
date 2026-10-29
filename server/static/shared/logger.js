@@ -54,15 +54,14 @@ async function _flush() {
   _flushing = true;
   const entries = _buffer.splice(0);
   try {
-    const res = await fetch(SERVER_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const { api } = await import("../modules/api.js");
+    await api("/api/system/frontend-logs", {
+      method: "POST",
+      logErrors: false,
+      redirectOnUnauthorized: false,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(entries),
     });
-    if (!res.ok) {
-      console.debug(`[logger] flush failed: HTTP ${res.status}`);
-      _restoreBuffer(entries);
-    }
   } catch (err) {
     console.debug(`[logger] flush error: ${err.message}`);
     _restoreBuffer(entries);

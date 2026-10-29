@@ -7,7 +7,6 @@ from __future__ import annotations
 """SQLite health checks for per-anima ChromaDB stores."""
 
 import logging
-import os
 import sqlite3
 import time
 from collections.abc import Callable
@@ -314,52 +313,6 @@ def check_anima_vectordb_health(
             source=source,
         )
     return result
-
-
-def check_anima_vectordb_health_via_worker_or_direct(
-    anima_name: str,
-    *,
-    timeout_seconds: float = DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS,
-    source: str = "quick_check",
-    record_repair: bool = True,
-) -> SQLiteHealthResult:
-    """Run quick_check through the vector worker when one is configured."""
-    vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
-    if vector_url:
-        try:
-            import httpx
-
-            with httpx.Client(base_url=vector_url.rstrip("/"), timeout=timeout_seconds + 2.0) as client:
-                resp = client.post(
-                    "/quick-check",
-                    json={
-                        "anima_name": anima_name,
-                        "timeout_seconds": timeout_seconds,
-                        "source": source,
-                        "record_repair": record_repair,
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            return SQLiteHealthResult(
-                db_path=Path(str(data.get("db_path") or "")),
-                ok=bool(data.get("ok")),
-                status=str(data.get("status") or "unknown"),
-                details=tuple(str(item) for item in (data.get("details") or [])),
-                error=str(data["error"]) if data.get("error") is not None else None,
-            )
-        except Exception:
-            logger.warning(
-                "Vector worker quick_check failed for anima=%s; falling back to direct SQLite check",
-                anima_name,
-                exc_info=True,
-            )
-    return check_anima_vectordb_health(
-        anima_name,
-        timeout_seconds=timeout_seconds,
-        source=source,
-        record_repair=record_repair,
-    )
 
 
 def _run_quick_check(db_path: Path, timeout_seconds: float) -> tuple[str, ...]:

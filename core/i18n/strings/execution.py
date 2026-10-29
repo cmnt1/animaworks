@@ -15,14 +15,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Execution stopped because required instructions, permissions, and task context cannot fit safely ({estimated} estimated tokens / {limit} limit). Shorten the input or configure a model with a larger context window.",
         "ko": "필수 지시, 권한, 태스크 맥락을 보존하면 입력 한도를 초과하여 실행을 중지했습니다(추정 {estimated} / 한도 {limit} 토큰). 입력을 줄이거나 컨텍스트가 더 큰 모델을 설정하세요.",
     },
-    "agent.omitted_rest": {
-        "ja": ("\n\n（以降省略）"),
-        "en": ("\n\n(omitted)"),
-    },
-    "agent.priming_tier_light_header": {
-        "ja": ("## あなたが思い出していること\n\n### {sender_name} について\n\n"),
-        "en": ("## What you recall\n\n### About {sender_name}\n\n"),
-    },
     "agent.recent_dialogue_consider": {
         "ja": "進行中のタスクや指示がある場合、この内容を考慮してください。",
         "en": "Consider this content if there are ongoing tasks or instructions.",
@@ -39,9 +31,67 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ストリームが{retry_count}回切断されました。最大リトライ回数に達しました。",
         "en": "Stream disconnected {retry_count} time(s). Max retries reached.",
     },
-    "assisted.tool_exec_error": {
-        "ja": "ツール実行エラー: {error}",
-        "en": "Tool execution error: {error}",
+    "task.compaction_summary_instructions": {
+        "ja": (
+            "次の見出しで要約してください。\n"
+            "## タスクの目的と完了条件\n"
+            "## 完了した手順（結果・根拠となるID/コミット/URL/数値を正確に）\n"
+            "## 進行中の手順と次にやること\n"
+            "## 判明した事実・制約・失敗した試行とその理由\n"
+            "## 読んだファイル\n"
+            "## 変更したファイル\n"
+            "## 未解決の疑問\n"
+            "固有名詞・ID・パス・コマンドは省略せず原文のまま残してください。"
+        ),
+        "en": (
+            "Summarize using these headings:\n"
+            "## Task purpose and completion criteria\n"
+            "## Completed steps (preserve results and exact evidence IDs/commits/URLs/numbers)\n"
+            "## In-progress steps and next actions\n"
+            "## Discovered facts, constraints, and failed attempts with reasons\n"
+            "## Files read\n"
+            "## Files changed\n"
+            "## Unresolved questions\n"
+            "Do not omit or alter proper nouns, IDs, paths, or commands; preserve them verbatim."
+        ),
+        "ko": (
+            "다음 제목으로 요약하세요:\n"
+            "## 작업 목적 및 완료 조건\n"
+            "## 완료한 단계(결과와 근거 ID/커밋/URL/수치를 정확히 보존)\n"
+            "## 진행 중인 단계와 다음 작업\n"
+            "## 확인된 사실, 제약, 실패한 시도와 그 이유\n"
+            "## 읽은 파일\n"
+            "## 변경한 파일\n"
+            "## 해결되지 않은 질문\n"
+            "고유명사, ID, 경로, 명령은 생략하거나 바꾸지 말고 원문 그대로 보존하세요."
+        ),
+    },
+    "task.compacted_activity_summary": {
+        "ja": "タスク実行中の文脈を圧縮しました",
+        "en": "Compacted task execution context",
+        "ko": "작업 실행 문맥을 압축했습니다",
+    },
+    "task.compacted_after_activity_summary": {
+        "ja": "文脈圧縮後に同一タスクセッションを再開しました",
+        "en": "Resumed the same task session after context compaction",
+        "ko": "문맥 압축 후 동일한 작업 세션을 재개했습니다",
+    },
+    "task.compaction_continue_prompt": {
+        "ja": (
+            "文脈を圧縮しました。以下が元のタスク指示です。圧縮前の続きから作業を再開し、"
+            "完了済みの手順は繰り返さないでください。\n\n"
+            "## 元のタスク指示\n{original_prompt}"
+        ),
+        "en": (
+            "The context has been compacted. The original task instructions are below. Resume from where "
+            "you left off before compaction, and do not repeat steps that are already complete.\n\n"
+            "## Original task instructions\n{original_prompt}"
+        ),
+        "ko": (
+            "문맥을 압축했습니다. 아래는 원래 작업 지시입니다. 압축 전 진행하던 지점부터 다시 시작하고, "
+            "이미 완료한 단계는 반복하지 마세요.\n\n"
+            "## 원래 작업 지시\n{original_prompt}"
+        ),
     },
     "litellm_context.compact_system": {
         "ja": "以下のAIアシスタントと人間の作業会話を簡潔に要約してください。主要な発見、決定事項、ツール結果、未完了の項目をすべて保持してください。要約のみを出力してください。",
@@ -58,14 +108,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "cursor_agent.not_authenticated": {
         "ja": "cursor-agentが未認証です。`agent login` を実行してCursorアカウントにログインしてください。",
         "en": "cursor-agent is not authenticated. Run `agent login` to sign in to your Cursor account.",
-    },
-    "cursor_agent.session_resume_failed": {
-        "ja": "cursor-agentセッションの復元に失敗しました（chatId={chat_id}）。新規セッションで再試行します。",
-        "en": "Failed to resume cursor-agent session (chatId={chat_id}). Retrying with a fresh session.",
-    },
-    "cursor_agent.session_rotated": {
-        "ja": "cursor-agentセッションをローテーションしました（ターン{turn_count}）。新規セッションを開始します。",
-        "en": "Rotated cursor-agent session (turn {turn_count}). Starting fresh session.",
     },
     "cursor_agent.timeout": {
         "ja": "[cursor-agent タイムアウト: {timeout}秒以内に完了しませんでした]",
@@ -159,15 +201,5 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "実行方式 {mode}（{model}）を利用できません。利用可能な fallback_models を設定してください。",
         "en": "Execution mode {mode} ({model}) is unavailable. Configure an available fallback_models route.",
         "ko": "실행 모드 {mode} ({model})를 사용할 수 없습니다. 사용 가능한 fallback_models 경로를 설정하세요.",
-    },
-    "executor.codex_unavailable_no_openai_cred": {
-        "ja": (
-            "Codex SDK が利用できず、フォールバック先 openai/* の認証情報も無いため実行不能。"
-            "openai-codex パッケージの復元が必要"
-        ),
-        "en": (
-            "Codex SDK is unavailable and no credentials for the openai/* fallback; cannot execute. "
-            "Restore the openai-codex package."
-        ),
     },
 }

@@ -1,3 +1,5 @@
+import { api } from "../../../modules/api.js";
+
 function resolveBasePath() {
   const configured = document.querySelector('meta[name="aw-base-path"]')?.content || "";
   if (configured && !configured.includes("__AW_BASE__")) return configured.replace(/\/$/, "");
@@ -24,6 +26,7 @@ export class LiveClient {
     this.basePath = resolveBasePath();
     this.onConnection = callbacks.onConnection || (() => {});
     this.onUnavailable = callbacks.onUnavailable || (() => {});
+    this.onAssetsUpdated = callbacks.onAssetsUpdated || (() => {});
     this.socket = null;
     this.reconnectTimer = null;
     this.busyPollTimer = null;
@@ -35,11 +38,9 @@ export class LiveClient {
 
   async fetchInitial() {
     try {
-      const response = await fetch(`${this.basePath}/api/animas`, {
+      const data = await api("/api/animas", {
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) return [];
-      const data = await response.json();
       return Array.isArray(data) ? data : data.animas || [];
     } catch {
       return [];
@@ -54,6 +55,7 @@ export class LiveClient {
     const poll = async () => {
       if (this.stopped) return;
       const animas = await this.fetchInitial();
+      if (this.stopped) return;
       for (const anima of animas) {
         const busy = anima?.busy;
         if (!busy?.is_busy || !anima.name || this.actors.isHuman(anima.name)) continue;
@@ -121,7 +123,7 @@ export class LiveClient {
   }
 
   markUnavailable() {
-    if (this.everConnected || this.unavailableTimer) return;
+    if (this.stopped || this.everConnected || this.unavailableTimer) return;
     this.unavailableTimer = setTimeout(() => {
       this.unavailableTimer = null;
       if (!this.everConnected) this.onUnavailable();
@@ -153,6 +155,10 @@ export class LiveClient {
   }
 
   handleEvent(type, data) {
+    if (type === "anima.assets_updated") {
+      this.onAssetsUpdated(data);
+      return;
+    }
     if (type === "anima.status") {
       this.actors.setState(data.name, data.status);
       return;

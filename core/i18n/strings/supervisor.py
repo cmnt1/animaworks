@@ -35,6 +35,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク実行開始: {title}",
         "en": "Task execution started: {title}",
     },
+    "pending_executor.completion_notify_skipped": {
+        "ja": "報告済みのため完了通知を省略: {title}",
+        "en": "Completion notice skipped because the result was already reported: {title}",
+        "ko": "이미 결과를 보고해 완료 알림 생략: {title}",
+    },
     "pending_executor.model_override": {
         "ja": "タスクのモデル上書き: {requested} で実行（解決: {resolved}）",
         "en": "Task model override: running with {requested} (resolved: {resolved})",
@@ -53,9 +58,80 @@ STRINGS: dict[str, dict[str, str]] = {
             "[작업 실패 알림]\n작업 ID: {task_id}\n작업: {title}\n오류: {error}\n실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
         ),
     },
+    "pending_executor.task_undeclared_notify": {
+        "ja": (
+            "[タスク未完了通知]\nタスクID: {task_id}\nタスク: {title}\n"
+            "実行は正常に終わりましたが、完了（done）・取り消し（cancelled）・待ち（pending）の宣言がありませんでした。"
+            "実行済みの操作・成果を確認し、継続、条件待ち、取り消しを判断してください。元の入力は保存されています。"
+        ),
+        "en": (
+            "[Task Not Closed]\nTask ID: {task_id}\nTask: {title}\n"
+            "The run ended normally without declaring done, cancelled, or pending. "
+            "Check existing effects and artifacts, then decide whether to resume, wait for a condition, or cancel. Original input is retained."
+        ),
+        "ko": (
+            "[작업 미완료 알림]\n작업 ID: {task_id}\n작업: {title}\n"
+            "실행은 정상 종료되었지만 완료(done)·취소(cancelled)·대기(pending) 선언이 없었습니다. "
+            "실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
+        ),
+    },
+    "task_wait.label": {
+        "ja": "待ち: {target}",
+        "en": "Waiting: {target}",
+        "ko": "대기: {target}",
+    },
+    "task_wait.target_task": {
+        "ja": "タスク {ref} の完了",
+        "en": "task {ref} to finish",
+        "ko": "태스크 {ref} 완료",
+    },
+    "task_wait.target_time": {
+        "ja": "{until} まで",
+        "en": "until {until}",
+        "ko": "{until}까지",
+    },
+    "task_wait.target_message": {
+        "ja": "{ref} からの返事",
+        "en": "a reply from {ref}",
+        "ko": "{ref}의 회신",
+    },
+    "task_wait.target_external": {
+        "ja": "{ref}",
+        "en": "{ref}",
+        "ko": "{ref}",
+    },
+    "task_wait.resumed": {
+        "ja": "待っていた{target}が満たされたので再開",
+        "en": "Resumed because {target} was satisfied",
+        "ko": "기다리던 {target}이(가) 충족되어 재개",
+    },
+    "pending_executor.task_wait_satisfied_notify": {
+        "ja": (
+            "[待ち解除通知]\nタスクID: {task_id}\nタスク: {title}\n"
+            "待っていた条件が満たされました。保存済みの入力を確認して、タスクを再開してください。"
+        ),
+        "en": (
+            "[Wait Satisfied]\nTask ID: {task_id}\nTask: {title}\n"
+            "The condition you were waiting for has been satisfied. Review the saved input and resume the task."
+        ),
+        "ko": (
+            "[대기 해제 알림]\n작업 ID: {task_id}\n작업: {title}\n"
+            "기다리던 조건이 충족되었습니다. 저장된 입력을 확인하고 작업을 재개하세요."
+        ),
+    },
     "pending_executor.workspace_not_specified": {
         "ja": "(指定なし)",
         "en": "(not specified)",
+    },
+    "pending_executor.submitted_line": {
+        "ja": "提出: {time}（経過 {elapsed}）",
+        "en": "Submitted: {time} (elapsed {elapsed})",
+        "ko": "제출: {time} (경과 {elapsed})",
+    },
+    "pending_executor.elapsed": {
+        "ja": "{hours}時間{minutes}分",
+        "en": "{hours}h {minutes}m",
+        "ko": "{hours}시간 {minutes}분",
     },
     "supervisor.zombie_reaped": {
         "ja": "zombie reaper: {count}個の子プロセスを回収しました",

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 class TestSchedulerManagerSetup:
@@ -115,7 +115,7 @@ Do something
 
         mgr.setup()
         initial_jobs = mgr.scheduler.get_jobs()
-        # heartbeat + system jobs (activity_schedule, cron_health)
+        # heartbeat + system jobs (activity_schedule, background review drain)
         assert any("heartbeat" in j.id for j in initial_jobs)
 
         # Now add cron config for reload
@@ -135,7 +135,7 @@ New task description
     @pytest.mark.asyncio
     async def test_get_status_includes_scheduler_info(self, tmp_path):
         """AnimaRunner.get_status should include scheduler_running and scheduler_jobs."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)
@@ -173,7 +173,7 @@ New task description
 
         result = await runner._handle_get_status({})
         assert result["scheduler_running"] is True
-        # heartbeat + system jobs (activity_schedule, cron_health)
+        # heartbeat + system jobs (activity_schedule, background review drain)
         assert result["scheduler_jobs"] >= 1
 
         runner._scheduler_mgr.shutdown()

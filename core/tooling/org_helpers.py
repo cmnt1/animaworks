@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _OrgHelpersHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -60,7 +64,7 @@ class OrgHelpersMixin:
     _anima_dir: Path
     _anima_name: str
 
-    def _check_subordinate(self, target_name: str) -> str | None:
+    def _check_subordinate(self: _OrgHelpersHost, target_name: str) -> str | None:
         """Verify that *target_name* is a direct subordinate of this anima."""
         from core.config.models import load_config
 
@@ -83,7 +87,9 @@ class OrgHelpersMixin:
                 t("handler.anima_not_found", target_name=target_name),
             )
 
-        if target_cfg.supervisor != self._anima_name:
+        from core.org.hierarchy import is_direct_subordinate
+
+        if not is_direct_subordinate(config.animas, self._anima_name, target_name):
             return _error_result(
                 "PermissionDenied",
                 t("handler.not_direct_subordinate", target_name=target_name),
@@ -92,32 +98,25 @@ class OrgHelpersMixin:
 
         return None
 
-    def _get_all_descendants(self, root_name: str | None = None) -> list[str]:
+    def _get_all_descendants(self: _OrgHelpersHost, root_name: str | None = None) -> list[str]:
         """Get all descendant Anima names recursively via supervisor chain."""
         from core.config.models import load_config
+        from core.org.hierarchy import descendants_of
 
         config = load_config()
         root = root_name or self._anima_name
-        descendants: list[str] = []
-        visited: set[str] = {root}
-        queue = [name for name, cfg in config.animas.items() if cfg.supervisor == root]
-        while queue:
-            current = queue.pop(0)
-            if current in visited:
-                continue
-            visited.add(current)
-            descendants.append(current)
-            queue.extend(name for name, cfg in config.animas.items() if cfg.supervisor == current)
-        return descendants
+        descendants = descendants_of(config.animas, root)
+        return [name for name in config.animas if name in descendants]
 
-    def _get_direct_subordinates(self) -> list[str]:
+    def _get_direct_subordinates(self: _OrgHelpersHost) -> list[str]:
         """Return names of direct subordinates (supervisor == self)."""
         from core.config.models import load_config
+        from core.org.hierarchy import is_direct_subordinate
 
         config = load_config()
-        return [name for name, cfg in config.animas.items() if cfg.supervisor == self._anima_name]
+        return [name for name in config.animas if is_direct_subordinate(config.animas, self._anima_name, name)]
 
-    def _check_descendant(self, target_name: str) -> str | None:
+    def _check_descendant(self: _OrgHelpersHost, target_name: str) -> str | None:
         """Verify that target_name is a descendant (any depth) of this anima."""
         target_name = resolve_anima_name(target_name)
         if target_name == self._anima_name:
@@ -136,7 +135,7 @@ class OrgHelpersMixin:
     @staticmethod
     def _read_recent_activity(anima_dir: Path, *, limit: int = 1) -> list:
         """Read recent activity entries from another anima's directory."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         al = ActivityLogger(anima_dir)
         return al.recent(days=1, limit=limit)
@@ -148,7 +147,7 @@ class OrgHelpersMixin:
             return None
         from datetime import time as _time
 
-        from core.memory.activity import now_local
+        from core.activity.logger import now_local
 
         now = now_local()
         try:

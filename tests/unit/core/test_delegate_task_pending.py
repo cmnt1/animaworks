@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -260,7 +260,7 @@ class TestPendingExecutorCancelledCheck:
         task_path = tmp_path / "task.json"
         task_path.write_text(json.dumps(task_desc), encoding="utf-8")
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor.__new__(PendingTaskExecutor)
         executor._anima = MagicMock()

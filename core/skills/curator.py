@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.skills.models import (
     SkillCuratorEvent,
     SkillCuratorEventType,
@@ -218,7 +219,6 @@ class SkillCurator:
         self.skills_dir = anima_dir / "skills"
         self.common_skills_dir = common_skills_dir
         self.state_path = anima_dir / "state" / CURATOR_STATE_FILE
-        self.proposal_dir = anima_dir / "state" / "skill_curator" / "proposals"
 
     def replay_state(self) -> CuratorReplay:
         replay = CuratorReplay()
@@ -327,15 +327,6 @@ class SkillCurator:
     def restore_skill(self, skill_name: str, *, reason: str, actor: str = "curator") -> SkillCuratorEvent:
         return self.change_state(skill_name, SkillLifecycleState.active, reason=reason, actor=actor)
 
-    def block_skill(self, skill_name: str, *, reason: str, actor: str = "curator") -> SkillCuratorEvent:
-        return self.change_state(skill_name, SkillLifecycleState.blocked, reason=reason, actor=actor)
-
-    def unblock_skill(self, skill_name: str, *, reason: str, actor: str = "curator") -> SkillCuratorEvent:
-        return self.restore_skill(skill_name, reason=reason, actor=actor)
-
-    def delete_skill(self, skill_name: str, *, reason: str, actor: str = "curator") -> SkillCuratorEvent:
-        return self.change_state(skill_name, SkillLifecycleState.deleted, reason=reason, actor=actor)
-
     def suggest_lifecycle_transitions(
         self,
         skills: list[SkillMetadata],
@@ -351,6 +342,15 @@ class SkillCurator:
         for meta in skills:
             if meta.is_procedure or is_unloadable_lifecycle_state(meta.lifecycle_state):
                 continue
+            if meta.pinned or meta.protected:
+                logger.info("Automatic skill curation skipped protected skill name=%s path=%s", meta.name, meta.path)
+                continue
+            if meta.path is not None:
+                from core.skills.ledger import automatic_skill_edit_allowed
+
+                if not automatic_skill_edit_allowed(meta.path):
+                    logger.info("Automatic skill curation skipped human-authored skill name=%s", meta.name)
+                    continue
             stats = stats_by_name.get(
                 usage_ref_from_path(
                     meta.path,
@@ -380,8 +380,6 @@ class SkillCurator:
                 suggestions.append(
                     LifecycleSuggestion(meta.name, SkillLifecycleState.review, "patch_count_consolidation", patch_count)
                 )
-                continue
-            if meta.pinned or meta.protected:
                 continue
             last_used = _parse_time(stats.last_used_at if stats else None) or meta.last_used_at
             if is_probation and last_used is None:
@@ -431,39 +429,6 @@ class SkillCurator:
                 if signals and score >= min_score:
                     candidates.append(DuplicateCandidate(left.name, right.name, score, signals))
         return sorted(candidates, key=lambda c: c.score, reverse=True)
-
-    def propose_merge(
-        self,
-        skill_name: str,
-        related_skill: str,
-        *,
-        actor: str = "curator",
-        reason: str = "duplicate_candidate",
-    ) -> Path:
-        self.proposal_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{_safe_stamp()}_{_safe_name(skill_name)}__{_safe_name(related_skill)}.md"
-        proposal_path = self.proposal_dir / filename
-        body = (
-            f"# Skill Merge Proposal: {skill_name} -> {related_skill}\n\n"
-            f"- source_skill: {skill_name}\n"
-            f"- target_skill: {related_skill}\n"
-            f"- reason: {reason}\n"
-            f"- generated_at: {now_iso()}\n\n"
-            "This is a proposal only. Do not overwrite SKILL.md without human approval.\n"
-        )
-        proposal_path.write_text(body, encoding="utf-8")
-        self.append_event(
-            SkillCuratorEvent(
-                ts=now_iso(),
-                event_type=SkillCuratorEventType.merge_proposed,
-                skill_name=skill_name,
-                related_skill=related_skill,
-                proposal_path=str(proposal_path.relative_to(self.anima_dir)),
-                reason=reason,
-                actor=actor,
-            )
-        )
-        return proposal_path
 
     def generate_report(self, skills: list[SkillMetadata]) -> dict[str, Any]:
         replay = self.replay_state()
@@ -532,14 +497,14 @@ class SkillCurator:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
             for key in (f"skills/{skill_name}/SKILL.md", f"skills/quarantine/{skill_name}/SKILL.md"):
                 data.pop(key, None)
-            meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_json(meta_path, data, indent=2, ensure_ascii=False, trailing_newline=False)
         except Exception:
             logger.debug("Failed to invalidate skill index metadata for %s", skill_name, exc_info=True)
 
     def _purge_personal_skill_vectors(self, skill_name: str) -> None:
         """Best-effort deletion of already indexed personal skill chunks."""
         try:
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = get_vector_store(self.anima_dir.name)
             if vector_store is None:
@@ -588,12 +553,3 @@ def _jaccard(left: set[str], right: set[str]) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / len(left | right)
-
-
-def _safe_stamp() -> str:
-    return now_iso().replace(":", "").replace("+", "_").replace("-", "").replace(".", "")
-
-
-def _safe_name(value: str) -> str:
-    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "-", value).strip("-._")
-    return safe or "skill"

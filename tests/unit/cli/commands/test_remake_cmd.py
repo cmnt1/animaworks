@@ -12,7 +12,6 @@ import pytest
 
 from cli.commands.remake_cmd import _run, register
 
-
 # ── register() ─────────────────────────────────────────────
 
 
@@ -26,9 +25,14 @@ class TestRegister:
         register(subparsers)
 
         # Parsing 'remake-assets' with required args should succeed
-        args = parser.parse_args([
-            "remake-assets", "rin", "--style-from", "miku",
-        ])
+        args = parser.parse_args(
+            [
+                "remake-assets",
+                "rin",
+                "--style-from",
+                "miku",
+            ]
+        )
         assert args.command == "remake-assets"
         assert args.anima == "rin"
         assert args.style_from == "miku"
@@ -151,7 +155,9 @@ class TestValidateSteps:
         (style_assets / "avatar_fullbody.png").write_bytes(b"PNG_FAKE")
 
         args = _make_namespace(
-            anima="rin", style_from="miku", steps="fullbody,bogus_step",
+            anima="rin",
+            style_from="miku",
+            steps="fullbody,bogus_step",
         )
         _run(args)
 
@@ -173,7 +179,12 @@ class TestValidateVibeStrength:
         ],
     )
     def test_validate_vibe_strength_range(
-        self, data_dir, make_anima, capsys, strength, info,
+        self,
+        data_dir,
+        make_anima,
+        capsys,
+        strength,
+        info,
     ):
         """Error when vibe-strength or vibe-info-extracted is out of range."""
         target_dir = make_anima("rin")
@@ -270,17 +281,14 @@ class TestBackup:
         mock_pipeline_cls = MagicMock(return_value=mock_pipeline)
         args = _make_namespace(anima="rin", style_from="miku")
 
-        with patch("core.tools.image_gen.ImageGenPipeline", mock_pipeline_cls):
+        with patch("core.integrations.image_gen.ImageGenPipeline", mock_pipeline_cls):
             _run(args)
 
         captured = capsys.readouterr()
         assert "Backup created" in captured.out
 
         # Verify a backup directory was created
-        backup_dirs = [
-            d for d in target_dir.iterdir()
-            if d.is_dir() and d.name.startswith("assets_backup_")
-        ]
+        backup_dirs = [d for d in target_dir.iterdir() if d.is_dir() and d.name.startswith("assets_backup_")]
         assert len(backup_dirs) == 1
 
         # Original file is preserved in backup
@@ -316,14 +324,11 @@ class TestBackup:
         mock_pipeline_cls = MagicMock(return_value=mock_pipeline)
         args = _make_namespace(anima="rin", style_from="miku", no_backup=True)
 
-        with patch("core.tools.image_gen.ImageGenPipeline", mock_pipeline_cls):
+        with patch("core.integrations.image_gen.ImageGenPipeline", mock_pipeline_cls):
             _run(args)
 
         # No backup directory should have been created
-        backup_dirs = [
-            d for d in target_dir.iterdir()
-            if d.is_dir() and d.name.startswith("assets_backup_")
-        ]
+        backup_dirs = [d for d in target_dir.iterdir() if d.is_dir() and d.name.startswith("assets_backup_")]
         assert len(backup_dirs) == 0
 
 
@@ -354,6 +359,7 @@ class TestPipelineInvocation:
         mock_result.model_path = None
         mock_result.rigged_model_path = None
         mock_result.animation_paths = {}
+        mock_result.pixel_sheet_path = None
         mock_result.skipped = []
         mock_result.errors = []
         mock_pipeline.generate_all.return_value = mock_result
@@ -369,7 +375,7 @@ class TestPipelineInvocation:
             steps="fullbody,bustup",
         )
 
-        with patch("core.tools.image_gen.ImageGenPipeline", mock_pipeline_cls):
+        with patch("core.integrations.image_gen.ImageGenPipeline", mock_pipeline_cls):
             _run(args)
 
         # Pipeline was instantiated with the target anima directory
@@ -383,7 +389,7 @@ class TestPipelineInvocation:
 
         assert call_kwargs["prompt"] == "1girl, silver hair, red eyes"
         assert call_kwargs["skip_existing"] is False
-        assert call_kwargs["steps"] == ["fullbody", "bustup"]
+        assert call_kwargs["steps"] == ["fullbody", "bustup", "pixel"]
         assert call_kwargs["vibe_image"] == b"PNG_VIBE_IMAGE"
         assert call_kwargs["vibe_strength"] == 0.7
         assert call_kwargs["vibe_info_extracted"] == 0.9

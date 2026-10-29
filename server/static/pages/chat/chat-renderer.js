@@ -1,13 +1,13 @@
 // ── Chat Rendering / Infinite Scroll / Polling ──
 import {
-  setThreadUnread, refreshAnimaUnread, threadTimeValue,
-  mergeThreadsFromSessions, scheduleSaveChatUiState, CONSTANTS,
+  setThreadUnread, refreshAnimaUnread, scheduleSaveChatUiState, CONSTANTS,
 } from "./ctx.js";
 import {
   renderHistoryMessage as _sharedRenderHistoryMessage,
   renderSessionDivider as _sharedRenderSessionDivider,
   bindToolCallHandlers as _sharedBindToolCallHandlers,
   bindBubbleActionHandlers as _sharedBindBubbleActionHandlers,
+  bindChatLineHandlers as _sharedBindChatLineHandlers,
   bindHumanNotifyHandlers as _sharedBindHumanNotifyHandlers,
   renderLiveBubble,
   renderStreamingBubbleInner,
@@ -16,8 +16,13 @@ import {
   getSessionActivityType as _sharedGetSessionActivityType,
   getMessageActivityType as _sharedGetMessageActivityType,
   bindCollapsibleSessionHandlers as _sharedBindCollapsibleSessionHandlers,
+  renderFeedBackgroundGroup as _sharedRenderFeedBackgroundGroup,
+  feedBackgroundUrl as _sharedFeedBackgroundUrl,
+  bindLazyBackgroundGroups as _sharedBindLazyBackgroundGroups,
+  renderFeedHiddenCount as _sharedRenderFeedHiddenCount,
 } from "../../shared/chat/render-utils.js";
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
+import { thinkRenderHooks } from "../../shared/chat/thinking-bubble.js";
 import { mergePolledHistory } from "../../shared/chat/history-loader.js";
 import { initTextArtifactHandlers } from "../../shared/text-artifact.js";
 import { companyColor } from "../../shared/avatar-utils.js";
@@ -33,6 +38,8 @@ export function createChatRenderer(ctx) {
   // ── Smart Scroll (sticky-bottom with floating button) ──
   const NEAR_BOTTOM_PX = 80;
   let _userDetached = false;
+  const _backgroundFeedCache = new Map();
+  let _prefetchScheduledKey = "";
 
   function isNearBottom(el) {
     if (!el) return true;
@@ -68,6 +75,7 @@ export function createChatRenderer(ctx) {
   const _renderOpts = () => ({
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
+    threadId: state.selectedThreadId || "default",
     avatarMap: state.animaTabAvatarUrls || {},
     companyColors: Object.fromEntries(
       (state.animas || [])
@@ -79,11 +87,18 @@ export function createChatRenderer(ctx) {
       "human",
       "user",
       "guest",
-      ...(state.users || []).map((u) => u?.username).filter(Boolean),
+      ...(state.users || []).flatMap((u) => [u?.username, u?.display_name]).filter(Boolean),
       document.getElementById("currentUserLabel")?.textContent || "",
       localStorage.getItem("animaworks_user") || "",
     ].filter(Boolean)),
+    currentUserNames: (() => {
+      const current = document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "";
+      const user = (state.users || []).find((item) => item?.username === current);
+      return new Set([current, user?.display_name, "human"].filter(Boolean));
+    })(),
+    lineChat: true,
     truncateLen: CONSTANTS.TOOL_RESULT_TRUNCATE,
+    think: thinkRenderHooks,
     labels: {
       thinking: t("chat.thinking"),
       toolRunning: (tool) => t("chat.tool_running", { tool }),
@@ -113,6 +128,40 @@ export function createChatRenderer(ctx) {
     }
   }
 
+  async function repairBootstrap(container, anima, action) {
+    const buttons = container.querySelectorAll("[data-bootstrap-repair]");
+    const errorEl = container.querySelector(".bootstrap-repair-error");
+    buttons.forEach((b) => { b.disabled = true; });
+    if (errorEl) errorEl.hidden = true;
+    try {
+      const result = await api(`/api/animas/${encodeURIComponent(anima.name)}/bootstrap/repair`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      anima.needs_repair = false;
+      anima._bootstrapFailed = null;
+      anima.bootstrap_state = result?.bootstrap_state || null;
+      if (action === "complete") {
+        // The server already broadcast anima.bootstrap=completed (possibly
+        // before this response); the restarted process reports idle.
+        anima.status = "idle";
+        anima.bootstrapping = false;
+      } else {
+        anima.status = "bootstrapping";
+        anima.bootstrapping = true;
+        anima._bootstrapStartedAt = Date.now();
+      }
+      renderChat();
+    } catch (error) {
+      buttons.forEach((b) => { b.disabled = false; });
+      if (errorEl) {
+        errorEl.textContent = error?.message || t("chat.bootstrap_repair_failed");
+        errorEl.hidden = false;
+      }
+    }
+  }
+
   function renderBootstrapProgress(container, anima) {
     const status = anima?.status;
 
@@ -121,7 +170,16 @@ export function createChatRenderer(ctx) {
         <div class="bootstrap-progress bootstrap-progress--error">
           <div class="bootstrap-progress-avatar">${_avatarHtml(anima)}</div>
           <div class="bootstrap-progress-step">${t("chat.bootstrap_needs_repair")}</div>
+          <p class="bootstrap-repair-hint">${t("chat.bootstrap_repair_hint")}</p>
+          <div class="bootstrap-repair-actions">
+            <button type="button" class="btn-primary" data-bootstrap-repair="complete">${t("chat.bootstrap_repair_complete")}</button>
+            <button type="button" class="btn-secondary" data-bootstrap-repair="retry">${t("chat.bootstrap_repair_retry")}</button>
+          </div>
+          <div class="bootstrap-repair-error" hidden></div>
         </div>`;
+      container.querySelectorAll("[data-bootstrap-repair]").forEach((btn) => {
+        btn.addEventListener("click", () => repairBootstrap(container, anima, btn.dataset.bootstrapRepair));
+      });
       _clearBootstrapInterval();
       return;
     }
@@ -215,9 +273,78 @@ export function createChatRenderer(ctx) {
     _sharedBindToolCallHandlers(container);
   }
 
+  function _loadFeedBackground(dataset) {
+    const animaName = dataset.anima || state.selectedAnima;
+    const threadId = dataset.threadId || "default";
+    const fromTs = dataset.fromTs || "";
+    const toTs = dataset.toTs || "";
+    const cacheKey = JSON.stringify([animaName, threadId, fromTs, toTs]);
+    if (_backgroundFeedCache.has(cacheKey)) return _backgroundFeedCache.get(cacheKey);
+
+    const url = _sharedFeedBackgroundUrl({
+      anima: animaName,
+      threadId,
+      fromTs,
+      toTs,
+    });
+    const request = api(url);
+    _backgroundFeedCache.set(cacheKey, request);
+    return request;
+  }
+
+  function _renderFeedBackground(data, dataset) {
+    const animaName = dataset.anima || state.selectedAnima;
+    const hm = (ts) => {
+      const d = new Date(ts);
+      return Number.isNaN(d.getTime()) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+    const rows = [];
+    for (const session of data?.sessions || []) {
+      const trigger = session.trigger || "";
+      for (const message of session.messages || []) {
+        const text = String(message.content || message.summary || "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const from = message.from_person || (message.role === "assistant" ? animaName : "");
+        const to = message.to_person || "";
+        const who = from && to && from !== to
+          ? `${from} → ${to}`
+          : (from || (trigger ? t(`chat.feed.kind.${trigger}`) : ""));
+        rows.push(
+          `<li class="bg-feed-row"><details><summary><span class="bg-feed-time">${escapeHtml(hm(message.ts))}</span>`
+          + `<b>${escapeHtml(who)}</b><span class="bg-feed-text">${escapeHtml(text.slice(0, 160))}</span></summary>`
+          + `<div class="bg-feed-full">${escapeHtml(text)}</div></details></li>`,
+        );
+      }
+    }
+    const truncated = data?.truncated
+      ? `<div class="bg-feed-truncated">${escapeHtml(t("chat.feed.truncated"))}</div>`
+      : "";
+    if (!rows.length) return `<div class="bg-feed-empty">${escapeHtml(t("chat.feed.empty"))}</div>`;
+    return `<ul class="bg-feed-list">${rows.join("")}</ul>${truncated}`;
+  }
+
+  function _scheduleOlderFeedPrefetch(name, threadId, historyState) {
+    if (!historyState?.isFeed || !historyState.hasMore || !historyState.nextBefore) return;
+    const key = JSON.stringify([name, threadId, historyState.nextBefore]);
+    if (_prefetchScheduledKey === key) return;
+    _prefetchScheduledKey = key;
+    const prefetch = () => {
+      if (state.selectedAnima !== name || state.selectedThreadId !== threadId) {
+        if (_prefetchScheduledKey === key) _prefetchScheduledKey = "";
+        return;
+      }
+      void state.manager.prefetchMoreHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(prefetch, { timeout: 1200 });
+    } else {
+      window.setTimeout(prefetch, 250);
+    }
+  }
+
   // ── Demo Suggested Prompt Cards ──
 
-  function renderDemoSuggestedCards(animaName) {
+  function renderDemoSuggestedCards(animaName, { inline = false } = {}) {
     const name = animaName.toLowerCase();
     const prompts = [];
     for (let i = 1; i <= 4; i++) {
@@ -232,7 +359,7 @@ export function createChatRenderer(ctx) {
     ).join("");
 
     return `
-      <div class="demo-suggest-container">
+      <div class="demo-suggest-container${inline ? " demo-suggest-container--inline" : ""}">
         <div class="demo-suggest-header">
           <h3>${t("demo.suggest_card_title")}</h3>
           <p>${t("demo.suggest_card_subtitle")}</p>
@@ -242,6 +369,26 @@ export function createChatRenderer(ctx) {
   }
 
   // ── Main Chat Rendering ──
+
+  async function requestFirstMeeting(name) {
+    try {
+      const result = await api(`/api/animas/${encodeURIComponent(name)}/greet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "first_meeting" }),
+      });
+      const response = typeof result?.response === "string" ? result.response.trim() : "";
+      if (!response) throw new Error("First-meeting greeting returned an empty response");
+
+      state.firstMeetingResponses.set(name, response);
+      await state.manager.loadHistory(name, "default", CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
+      if (state.selectedAnima === name) renderChat();
+    } catch (error) {
+      logger.warn("First-meeting greeting failed", { anima: name, error: error?.message });
+      state.firstMeetingFailed.add(name);
+      if (state.selectedAnima === name) renderChat();
+    }
+  }
 
   // compensatePrepend: keep viewport stable when older messages are prepended
   // (infinite scroll). For all other non-sticky renders, leave scrollTop alone —
@@ -256,7 +403,7 @@ export function createChatRenderer(ctx) {
     const tid = isMeeting ? state.meetingRoom.room_id : state.selectedThreadId;
     const mgr = state.manager;
     const history = name ? mgr.getMessages(name, tid) : [];
-    const hs = name ? mgr.getHistoryState(name, tid) : { sessions: [], hasMore: false, nextBefore: null, loading: false };
+    const hs = name ? mgr.getHistoryState(name, tid) : { sessions: [], feedItems: [], isFeed: false, hasMore: false, nextBefore: null, loading: false };
 
     const currentAnima = isMeeting ? null : state.animas.find(a => a.name === name);
     const animaStatus = currentAnima?.status;
@@ -270,18 +417,43 @@ export function createChatRenderer(ctx) {
 
     _clearBootstrapInterval();
 
-    if (hs.sessions.length === 0 && history.length === 0) {
+    const hasTimelineHistory = hs.isFeed ? (hs.feedItems || []).length > 0 : hs.sessions.length > 0;
+    if (!hasTimelineHistory && history.length === 0) {
       if (hs.loading) {
         messagesEl.innerHTML = `<div class="chat-empty"><span class="tool-spinner"></span> ${t("common.loading")}</div>`;
+        return;
+      }
+      if (hs.isFeed && hs.hasMore) {
+        messagesEl.innerHTML = `<div class="chat-empty">${escapeHtml(t("chat.messages_empty"))}</div><div class="chat-load-sentinel"></div>`;
+        _scheduleOlderFeedPrefetch(name, tid, hs);
+        observeChatSentinel();
         return;
       }
       if (state.demoMode && state.selectedAnima) {
         messagesEl.innerHTML = renderDemoSuggestedCards(state.selectedAnima);
         return;
       }
-      const emptyMessage = currentAnima?.needs_user_input
-        ? t("chat.bootstrap_welcome", { name: currentAnima.name })
-        : t("chat.messages_empty");
+      if (currentAnima?.needs_user_input && !state.demoMode && !isMeeting) {
+        const animaName = currentAnima.name;
+        const response = state.firstMeetingResponses.get(animaName);
+        if (response) {
+          messagesEl.innerHTML = renderHistoryMessage({ role: "assistant", content: response });
+          return;
+        }
+        if (state.firstMeetingFailed.has(animaName)) {
+          messagesEl.innerHTML = `<div class="chat-empty">${escapeHtml(t("chat.bootstrap_welcome", { name: animaName }))}</div>`;
+          return;
+        }
+        messagesEl.innerHTML = `<div class="chat-empty"><span class="tool-spinner"></span> ${escapeHtml(t("chat.first_meeting_waiting", { name: animaName }))}</div>`;
+        // Only ask for the greeting once the history fetch has actually
+        // finished empty; a render before the fetch must not trigger it.
+        if (hs.loaded && !state.firstMeetingRequested.has(animaName)) {
+          state.firstMeetingRequested.add(animaName);
+          void requestFirstMeeting(animaName);
+        }
+        return;
+      }
+      const emptyMessage = t("chat.messages_empty");
       messagesEl.innerHTML = `<div class="chat-empty">${escapeHtml(emptyMessage)}</div>`;
       return;
     }
@@ -298,16 +470,45 @@ export function createChatRenderer(ctx) {
     let sessionsHtml = "";
     let si = 0;
     let hasRenderedTimelineItem = false;
+    let hasRenderedConversation = false;
     let activityRun = [];
+    let hiddenActivityCount = 0;
+    const showBackgroundActivity = localStorage.getItem("aw-chat-show-bg") !== "false";
+
+    const countActivityItems = (items) => items.reduce((count, item) => {
+      if (Array.isArray(item?.session?.messages)) return count + item.session.messages.length;
+      if (Array.isArray(item?.messages)) return count + item.messages.length;
+      return count + (item?.message ? 1 : 0);
+    }, 0);
 
     const flushActivityRun = () => {
       if (activityRun.length === 0) return false;
-      sessionsHtml += _sharedRenderCollapsibleActivityBundle(activityRun, opts);
+      if (showBackgroundActivity) {
+        sessionsHtml += _sharedRenderCollapsibleActivityBundle(activityRun, opts);
+      } else {
+        hiddenActivityCount += countActivityItems(activityRun);
+      }
       activityRun = [];
       return true;
     };
 
-    while (si < hs.sessions.length) {
+    if (hs.isFeed) {
+      for (const item of hs.feedItems || []) {
+        if (item?.kind === "bg_group") {
+          if (showBackgroundActivity) {
+            sessionsHtml += _sharedRenderFeedBackgroundGroup(item, opts);
+          } else {
+            hiddenActivityCount += Number(item.count) || 0;
+          }
+          hasRenderedTimelineItem = true;
+          continue;
+        }
+        if (item?.kind !== "message" || !item.message) continue;
+        sessionsHtml += renderHistoryMessage(item.message);
+        hasRenderedTimelineItem = true;
+        hasRenderedConversation = true;
+      }
+    } else while (si < hs.sessions.length) {
       const session = hs.sessions[si];
 
       const sessionActivityType = _sharedGetSessionActivityType(session, opts);
@@ -331,12 +532,19 @@ export function createChatRenderer(ctx) {
             }
             sessionsHtml += renderHistoryMessage(msg);
             hasRenderedTimelineItem = true;
+            hasRenderedConversation = true;
           }
         }
         si++;
       }
     }
     flushActivityRun();
+
+    // Demo data ships only background activity; without a conversation the
+    // visitor has no hint what to ask, so offer the suggestion cards below it.
+    if (state.demoMode && !isMeeting && state.selectedAnima && !hasRenderedConversation && history.length === 0) {
+      sessionsHtml += renderDemoSuggestedCards(state.selectedAnima, { inline: true });
+    }
 
     let liveHtml = "";
     if (history.length > 0) {
@@ -347,22 +555,50 @@ export function createChatRenderer(ctx) {
       const liveIsNewer = hasStreaming || !lastSessionLastTs
         || new Date(lastLiveTs).getTime() > new Date(lastSessionLastTs).getTime();
       if (liveIsNewer) {
-        if (hs.sessions.length > 0) {
+        // While a reply streams, the server has usually persisted the user's
+        // message already; skip live bubbles the recent history already shows.
+        const recentKeys = new Set();
+        for (const session of hs.sessions.slice(-2)) {
+          for (const m of session.messages || []) {
+            const role = m.role === "human" ? "user" : m.role;
+            recentKeys.add(`${role}\u0000${String(m.content ?? "").trim()}`);
+          }
+        }
+        const liveToRender = history.filter(m => m.streaming || m.role === "thinking"
+          || !recentKeys.has(`${m.role}\u0000${String(m.text ?? "").trim()}`));
+        if (liveToRender.length > 0 && hs.sessions.length > 0) {
           liveHtml += `<div class="session-divider"><span class="session-divider-label">${t("chat.current_session")}</span></div>`;
         }
-        liveHtml += history.map(m => renderLiveBubble(m, opts)).join("");
+        liveHtml += liveToRender.map(m => renderLiveBubble(m, opts)).join("");
       }
     }
 
-    messagesEl.innerHTML = topHtml + sessionsHtml + liveHtml;
+    const hiddenActivityHtml = !showBackgroundActivity
+      ? _sharedRenderFeedHiddenCount(hiddenActivityCount)
+      : "";
+    messagesEl.innerHTML = topHtml + sessionsHtml + liveHtml + hiddenActivityHtml;
     bindToolCallHandlers(messagesEl);
     _sharedBindCollapsibleSessionHandlers(messagesEl);
+    _sharedBindLazyBackgroundGroups(messagesEl, {
+      load: _loadFeedBackground,
+      render: _renderFeedBackground,
+      loadingText: t("chat.feed.loading"),
+      failedText: t("chat.feed.failed"),
+      onRendered: (body) => {
+        bindToolCallHandlers(body);
+        _sharedBindCollapsibleSessionHandlers(body);
+      },
+    });
     _sharedBindBubbleActionHandlers(messagesEl);
+    _sharedBindChatLineHandlers(messagesEl, {
+      onReply: (target) => ctx.controllers.events?.showReplyTarget(target),
+    });
     _sharedBindHumanNotifyHandlers(messagesEl, {
       getAnimaName: () => state.selectedAnima,
     });
     if (window.lucide) lucide.createIcons({ nodes: [messagesEl] });
     initTextArtifactHandlers();
+    if (!isMeeting && name) _scheduleOlderFeedPrefetch(name, tid, hs);
 
     if (scrollToBottom) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -427,7 +663,7 @@ export function createChatRenderer(ctx) {
 
     _loadingOlder = true;
     try {
-      await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
+      await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
     } finally {
       _loadingOlder = false;
       renderChat(false, true);
@@ -437,11 +673,7 @@ export function createChatRenderer(ctx) {
   // ── Conversation History API ──
 
   async function fetchConversationHistory(animaName, limit = CONSTANTS.HISTORY_PAGE_SIZE, before = null, threadId = "default") {
-    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
-    if (before) url += `&before=${encodeURIComponent(before)}`;
-    url += `&thread_id=${encodeURIComponent(threadId)}`;
-    if (threadId !== "default") url += `&strict_thread=1`;
-    return await api(url);
+    return await state.fetchChatFeedHistory(animaName, limit, before, threadId);
   }
 
   // ── Polling ──
@@ -477,28 +709,9 @@ export function createChatRenderer(ctx) {
 
     state.chatPollingInFlight = true;
     try {
-      const [conv, sessionsData] = await Promise.all([
-        fetchConversationHistory(name, CONSTANTS.HISTORY_PAGE_SIZE, null, tid).catch(() => null),
-        api(`/api/animas/${encodeURIComponent(name)}/sessions`).catch(() => null),
-      ]);
+      const conv = await fetchConversationHistory(name, CONSTANTS.HISTORY_PAGE_SIZE, null, tid).catch(() => null);
 
-      if (sessionsData) {
-        const prevThreadLastTs = new Map(
-          (state.threads[name] || []).map(th => [th.id, threadTimeValue(th.lastTs || "")]),
-        );
-        mergeThreadsFromSessions(ctx, name, sessionsData);
-        for (const th of state.threads[name] || []) {
-          if (!th?.id || th.id === tid) continue;
-          const prev = prevThreadLastTs.get(th.id) || 0;
-          const curr = threadTimeValue(th.lastTs || "");
-          if (curr > prev) setThreadUnread(ctx, name, th.id, true);
-        }
-        refreshAnimaUnread(ctx, name);
-        ctx.controllers.anima.renderAnimaTabs();
-        ctx.controllers.thread.renderThreadTabs();
-      }
-
-      if (!conv || !Array.isArray(conv.sessions)) return;
+      if (!conv || !Array.isArray(conv.items)) return;
 
       const { changed } = mgr.mergePolledHistory(name, tid, conv);
       if (!changed) return;
@@ -525,6 +738,8 @@ export function createChatRenderer(ctx) {
     bindToolCallHandlers, initScrollTracking, scrollToBottom,
     showBootstrapComplete, clearBootstrapInterval: _clearBootstrapInterval,
     isUserDetached: () => _userDetached,
+    markUserDetached: () => { _userDetached = true; _updateScrollBtn(); },
+    loadOlderMessages,
     reattach: () => { _userDetached = false; _updateScrollBtn(); },
   };
 }

@@ -4,17 +4,15 @@ import asyncio
 import json
 import shutil
 import threading
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.memory.rag.ipc_store import IpcVectorStore
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
-from core.supervisor.ipc_v2 import IPCV2Connection, IPCV2ConnectionState, IPCV2Identity, ipc_v2_error
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
-from core.supervisor.task_runner import _MemoryRpcClient
+from core.memory.rag.vector_client import VectorClient, VectorStoreRetryableError
+from core.memory.rag.vector_ops import bridge_transport
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 
 
 def _store() -> MagicMock:
@@ -52,7 +50,7 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
         "memory.query",
         {"collection": "sakura_knowledge", "embedding": [0.1, 0.2], "top_k": 3},
     )
-    listed = await service.handle("memory.list_collections_checked", {})
+    listed = await service.handle("memory.list_collections", {})
     metadata = await service.handle(
         "memory.get_by_metadata",
         {"collection": "sakura_knowledge", "where": {"kind": "knowledge"}, "limit": 2},
@@ -70,10 +68,65 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_vector_client_get_all_and_count_use_bridge_transport(tmp_path: Path) -> None:
+    store = _store()
+    documents = [
+        SearchResult(Document("doc-1", "one", metadata={"kind": "knowledge"}), 1.0),
+        SearchResult(Document("doc-2", "two", metadata={"kind": "knowledge"}), 1.0),
+    ]
+    store._get_all_once.return_value = documents
+    store._count_once.return_value = len(documents)
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+    vector_client = VectorClient("sakura", transport=bridge_transport(service.handle, asyncio.get_running_loop()))
+
+    results = await asyncio.to_thread(vector_client.get_all, "sakura_knowledge", 100_000)
+    count = await asyncio.to_thread(vector_client.count, "sakura_knowledge")
+
+    assert [result.document.id for result in results] == ["doc-1", "doc-2"]
+    assert count == 2
+    store._get_all_once.assert_called_once_with("sakura_knowledge", 100_000)
+    store._count_once.assert_called_once_with("sakura_knowledge")
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_reads_missing_collection_as_empty(tmp_path: Path) -> None:
+    """A collection that was never created reads as empty instead of failing (no retry, no ERROR)."""
+    store = _store()
+    missing = RuntimeError("Collection [sakura_entities] does not exist")
+    store._query_once.side_effect = missing
+    store._get_by_metadata_once.side_effect = missing
+    store._get_by_ids_once.side_effect = missing
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+
+    query = await service.handle("memory.query", {"collection": "sakura_entities", "embedding": [0.1], "top_k": 3})
+    metadata = await service.handle(
+        "memory.get_by_metadata", {"collection": "sakura_entities", "where": {"kind": "x"}, "limit": 2}
+    )
+    documents = await service.handle("memory.get_by_ids", {"collection": "sakura_entities", "ids": ["a"]})
+
+    assert query == {"results": []}
+    assert metadata == {"results": []}
+    assert documents == {"documents": []}
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_other_read_errors_still_raise(tmp_path: Path) -> None:
+    store = _store()
+    store._query_once.side_effect = RuntimeError("database disk image is malformed")
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+
+    with pytest.raises(RuntimeError, match="malformed"):
+        await service.handle("memory.query", {"collection": "sakura_knowledge", "embedding": [0.1], "top_k": 3})
+    await service.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_service_logs_queue_and_execution_times(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
 
-    with caplog.at_level("INFO", logger="core.supervisor.memory_service"):
+    with caplog.at_level("INFO", logger="core.runtime.memory_service"):
         await service.handle(
             "memory.query",
             {"collection": "sakura_knowledge", "embedding": [0.1], "top_k": 1},
@@ -236,13 +289,13 @@ async def test_memory_service_unavailable_is_not_an_empty_success(tmp_path: Path
     )
 
     with pytest.raises(MemoryServiceUnavailable):
-        await service.handle("memory.list_collections_checked", {})
+        await service.handle("memory.list_collections", {})
     await service.close()
 
 
 @pytest.mark.asyncio
 async def test_phase3_memory_does_not_use_cross_process_repair_fence(tmp_path: Path) -> None:
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
@@ -256,7 +309,7 @@ async def test_phase3_memory_does_not_use_cross_process_repair_fence(tmp_path: P
     )
     service = MemoryService("sakura", anima_dir, opener=_store)
 
-    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
+    assert await service.handle("memory.list_collections", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 
 
@@ -323,7 +376,7 @@ async def test_memory_service_serializes_parallel_writes(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> None:
+async def test_bridge_transport_round_trip_and_unavailable(tmp_path: Path) -> None:
     native = _store()
     written: dict[str, Document] = {}
 
@@ -337,44 +390,12 @@ async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> 
     native._upsert_once.side_effect = upsert
     native._query_once.side_effect = query
     service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: native)
-    identity = IPCV2Identity(
-        job_id="job-memory",
-        root_epoch=str(uuid.uuid4()),
-        attempt=1,
-        lane="cron",
-        display_lane="background",
-    )
-    server_state = IPCV2ConnectionState(identity)
+    loop = asyncio.get_running_loop()
 
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        connection = IPCV2Connection(reader, writer, server_state)
-        try:
-            for _ in range(3):
-                request = await connection.receive()
-                try:
-                    result = await service.handle(request.body["method"], request.body["params"])
-                except MemoryServiceUnavailable as exc:
-                    await connection.send_response(
-                        request.body["request_id"],
-                        error=ipc_v2_error("UNAVAILABLE", str(exc), retryable=True),
-                    )
-                else:
-                    await connection.send_response(request.body["request_id"], result=result)
-        finally:
-            await connection.close()
+    async def handle(method: str, params: dict) -> dict:
+        return await service.handle(method, params)
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    connection = IPCV2Connection(reader, writer, IPCV2ConnectionState(identity))
-    rpc = _MemoryRpcClient(connection)
-    store = IpcVectorStore("http://vector.invalid", "sakura", rpc.request)
-
-    async def receive_responses() -> None:
-        for _ in range(3):
-            assert rpc.accept_response(await connection.receive())
-
-    receiver = asyncio.create_task(receive_responses())
+    store = VectorClient("sakura", transport=bridge_transport(handle, loop))
     assert await asyncio.to_thread(
         store.upsert,
         "sakura_knowledge",
@@ -384,52 +405,40 @@ async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> 
     assert results[0].document.id == "written"
 
     service._repair_fenced = lambda: True
-    assert await asyncio.to_thread(store.list_collections_checked) is None
-    await receiver
+    assert await asyncio.to_thread(store.list_collections) is None
 
-    rpc.close()
-    await connection.close()
-    server.close()
-    await server.wait_closed()
     await service.close()
 
 
-def test_ipc_vector_store_routes_writes_to_root() -> None:
-    requester = MagicMock(return_value={"ok": True})
-    store = IpcVectorStore("http://vector.invalid", "sakura", requester)
+def test_owner_store_routes_writes_to_root() -> None:
+    transport = MagicMock(return_value={"ok": True})
+    store = VectorClient("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is True
-    requester.assert_called_once_with("memory.create_collection", {"collection": "sakura_knowledge"})
+    call_path, call_payload = transport.call_args.args
+    assert call_path == "/create-collection"
+    assert call_payload["collection"] == "sakura_knowledge"
     assert store._client is None
 
 
-def test_ipc_vector_store_marks_unavailable_write_as_transient() -> None:
-    responses = iter([RuntimeError("root busy"), {"ok": True}])
+def test_owner_store_marks_unavailable_write_as_transient() -> None:
+    def transport(_path: str, _payload: dict) -> dict:
+        raise VectorStoreRetryableError("owner unavailable", retry_after_ms=100)
 
-    def requester(_method: str, _params: dict) -> dict:
-        response = next(responses)
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-    store = IpcVectorStore("http://vector.invalid", "sakura", requester)
+    store = VectorClient("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is False
     assert store.is_transient_write_failure("sakura_knowledge") is True
-    assert store.create_collection("sakura_knowledge") is True
-    assert store.is_transient_write_failure("sakura_knowledge") is False
 
 
-def test_ipc_vector_store_collection_existence_is_three_state() -> None:
-    available = IpcVectorStore(
-        "http://vector.invalid",
+def test_owner_store_collection_existence_is_three_state() -> None:
+    available = VectorClient(
         "sakura",
-        lambda _method, _params: {"collections": ["sakura_knowledge"]},
+        transport=lambda _path, _payload: {"collections": ["sakura_knowledge"]},
     )
-    unavailable = IpcVectorStore(
-        "http://vector.invalid",
+    unavailable = VectorClient(
         "sakura",
-        MagicMock(side_effect=RuntimeError("root down")),
+        transport=lambda _path, _payload: (_ for _ in ()).throw(RuntimeError("root down")),
     )
 
     assert available.collection_exists("sakura_knowledge") is CollectionExistence.EXISTS
@@ -459,19 +468,28 @@ async def test_root_repair_builds_staging_in_subprocess(tmp_path: Path, monkeypa
         return FakeProc()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess)
+    from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
+
+    endpoints = RagEndpoints.for_server(18500)
+    configure_endpoints(endpoints)
     service = MemoryService("sakura", anima_dir, opener=_store)
 
     staging, chunks, hashes = await service._build_staging_subprocess(True)
 
     cmd = captured["cmd"]
     assert isinstance(cmd, tuple)
-    assert cmd[1:3] == ("-m", "core.memory.rag.repair_rebuild")
+    assert cmd[1:3] == ("-m", "core.memory.rag.repair.rebuild")
     assert "--shared" in cmd
+    child_env = captured["kwargs"]["env"]
+    assert child_env["ANIMAWORKS_EMBED_URL"] == endpoints.embed_url
+    assert child_env["ANIMAWORKS_VECTOR_URL"] == endpoints.vector_url
+    assert child_env["ANIMAWORKS_RERANK_URL"] == endpoints.rerank_url
     assert staging.name.startswith("vectordb.staging-root-")
     assert chunks == 2
     assert hashes == {}
     shutil.rmtree(staging)
     await service.close()
+    configure_endpoints(None)
 
 
 @pytest.mark.asyncio
@@ -505,7 +523,7 @@ async def test_root_repair_swaps_reopens_and_queries(tmp_path: Path, monkeypatch
 
 @pytest.mark.asyncio
 async def test_root_repair_verification_failure_rolls_back_vector_and_bm25(tmp_path: Path, monkeypatch) -> None:
-    from core.memory.bm25 import longterm_bm25_index_path
+    from core.memory.retrieval.bm25 import longterm_bm25_index_path
 
     anima_dir = tmp_path / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)
@@ -568,7 +586,7 @@ async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, 
     assert (live / "old.bin").read_text(encoding="utf-8") == "old"
     original.close.assert_called_once()
     assert service._store is reopened
-    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
+    assert await service.handle("memory.list_collections", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 
 
@@ -588,7 +606,7 @@ async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Pat
     await entered.wait()
 
     with pytest.raises(MemoryServiceUnavailable, match="repair in progress"):
-        await service.handle("memory.list_collections_checked", {})
+        await service.handle("memory.list_collections", {})
 
     release.set()
     with pytest.raises(RuntimeError, match="stop test repair"):
@@ -598,7 +616,7 @@ async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Pat
 
 @pytest.mark.asyncio
 async def test_root_open_failure_marks_background_repair_without_failing_startup(tmp_path: Path) -> None:
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
@@ -652,6 +670,70 @@ async def test_repeated_collection_initialization_is_idempotent_through_root(tmp
         await service.close()
 
 
+async def test_memory_service_owner_busy_does_not_request_startup_repair(tmp_path: Path, monkeypatch) -> None:
+    from core.memory.rag.owner_lock import VectorOwnerLock
+
+    anima_dir = tmp_path / "sakura"
+    other_owner = VectorOwnerLock(anima_dir, "cli:index")
+    other_owner.acquire()
+    opener = MagicMock(return_value=_store())
+    service = MemoryService("sakura", anima_dir, opener=opener)
+    service._request_startup_repair = MagicMock()  # type: ignore[method-assign]
+    try:
+        await service.start()
+        assert service._store is None
+        assert not service._started
+        opener.assert_not_called()
+        service._request_startup_repair.assert_not_called()
+        with pytest.raises(MemoryServiceUnavailable, match="sakura"):
+            await service.handle("memory.list_collections", {})
+    finally:
+        other_owner.release()
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_retries_owner_after_backoff(tmp_path: Path, monkeypatch) -> None:
+    import core.runtime.memory_service as memory_service_module
+    from core.memory.rag.owner_lock import VectorOwnerLock
+
+    anima_dir = tmp_path / "sakura"
+    other_owner = VectorOwnerLock(anima_dir, "cli:index")
+    other_owner.acquire()
+    store = _store()
+    service = MemoryService("sakura", anima_dir, opener=lambda: store)
+    try:
+        await service.start()
+        retry_at = service._owner_retry_at
+        other_owner.release()
+        monkeypatch.setattr(memory_service_module, "monotonic", lambda: retry_at + 0.1)
+
+        result = await service.handle("memory.list_collections", {})
+
+        assert result == {"collections": ["sakura_knowledge"]}
+        assert service._owner_lock.held
+    finally:
+        other_owner.release()
+        await service.close()
+    from core.memory.rag.owner_lock import is_owner_lock_held
+
+    assert not is_owner_lock_held(anima_dir)
+
+
+@pytest.mark.asyncio
+async def test_memory_service_close_releases_owner_lock(tmp_path: Path) -> None:
+    from core.memory.rag.owner_lock import is_owner_lock_held
+
+    anima_dir = tmp_path / "sakura"
+    service = MemoryService("sakura", anima_dir, opener=_store)
+    await service.start()
+
+    assert is_owner_lock_held(anima_dir)
+    await service.close()
+    assert not is_owner_lock_held(anima_dir)
+
+
+@pytest.mark.asyncio
 async def test_metadata_recall_before_initial_indexing_is_empty_through_root(tmp_path: Path) -> None:
     from core.memory.rag.store import ChromaVectorStore
 

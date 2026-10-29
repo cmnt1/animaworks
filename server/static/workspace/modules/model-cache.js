@@ -2,6 +2,8 @@
 // IndexedDB-based persistent cache for GLB model files.
 // Survives browser restarts, unlike HTTP cache which can be evicted.
 
+import { api } from "../../modules/api.js";
+
 const DB_NAME = "animaworks-model-cache";
 const DB_VERSION = 1;
 const STORE_NAME = "models";
@@ -11,7 +13,7 @@ const STORE_NAME = "models";
  * Provides persistent storage that survives browser restart and is not
  * subject to HTTP cache eviction under storage pressure.
  */
-export class ModelCache {
+class ModelCache {
   constructor() {
     /** @type {IDBDatabase | null} */
     this._db = null;
@@ -167,7 +169,13 @@ export class ModelCache {
     }
 
     // Fetch from network
-    const response = await fetch(url);
+    const response = await api(url, {
+      cache: "default",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     if (!response.ok) {
       throw new Error(`model-cache: fetch failed for ${url}: ${response.status}`);
     }

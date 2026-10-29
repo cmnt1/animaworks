@@ -11,11 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from core.config.models import ImageGenConfig
-from core.tools.image_gen import PipelineResult
+from core.integrations.image_gen import PipelineResult
 
 
 def _make_test_app(animas_dir: Path | None = None):
     from fastapi import FastAPI
+
     from server.routes.assets import create_assets_router
 
     app = FastAPI()
@@ -97,9 +98,7 @@ class TestGetAssetMetadata:
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text(
-            "# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8"
-        )
+        (anima_dir / "identity.md").write_text("# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8")
         (anima_dir / "assets").mkdir()
 
         app = _make_test_app(animas_dir=animas_dir)
@@ -219,6 +218,64 @@ def _write_test_png(path: Path, size: int = 256) -> Path:
 
 class TestAssetThumbnail:
     """Server-side ?size=S|M|L WebP thumbnail generation."""
+
+    async def test_portrait_sizes_preserve_aspect_ratio_and_use_requested_edge(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        Image.new("RGBA", (1000, 1500), color=(200, 100, 50, 128)).save(assets_dir / "bustup.png")
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            panel = await client.get("/api/animas/alice/assets/bustup.png?size=P")
+            call = await client.get("/api/animas/alice/assets/bustup.png?size=C")
+
+        assert panel.status_code == call.status_code == 200
+        panel_image = Image.open(BytesIO(panel.content))
+        call_image = Image.open(BytesIO(call.content))
+        assert panel_image.format == call_image.format == "WEBP"
+        assert panel_image.size == (360, 540)
+        assert call_image.size == (733, 1100)
+        assert panel_image.mode == call_image.mode == "RGBA"
+        assert (assets_dir / ".thumbs" / "bustup.png.P.webp").is_file()
+        assert (assets_dir / ".thumbs" / "bustup.png.C.webp").is_file()
+
+    async def test_portrait_sizes_regenerate_after_source_update(self, tmp_path):
+        import os
+        import time
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = assets_dir / "bustup.png"
+        Image.new("RGB", (1000, 1500), color=(200, 100, 50)).save(source)
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+            caches = {key: assets_dir / ".thumbs" / f"bustup.png.{key}.webp" for key in ("P", "C")}
+            mtimes = {key: cache.stat().st_mtime_ns for key, cache in caches.items()}
+
+            time.sleep(0.02)
+            Image.new("RGB", (1100, 1600), color=(80, 120, 200)).save(source)
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, max(mtimes.values()) + 1_000_000))
+
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+
+        assert all(caches[key].stat().st_mtime_ns > mtimes[key] for key in caches)
 
     async def test_size_s_returns_96px_webp(self, tmp_path):
         animas_dir = tmp_path / "animas"
@@ -435,7 +492,7 @@ class TestGenerateAssets:
         assert resp.status_code == 400
         assert "prompt is required" in resp.json()["detail"]
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_generate_success(self, mock_pipeline_cls, tmp_path):
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
@@ -465,7 +522,7 @@ class TestGenerateAssets:
         assert resp.status_code == 200
         assert resp.json()["status"] == "done"
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     @patch("core.config.models.load_config")
     async def test_generate_uses_global_image_backend(self, mock_load_config, mock_pipeline_cls, tmp_path):
         anima_dir = tmp_path / "alice"
@@ -498,6 +555,7 @@ class TestGenerateAssets:
         config = mock_pipeline_cls.call_args.kwargs["config"]
         assert config.backend == "diffusers"
         assert config.image_style == "realistic"
+
 
 # ── GET /animas/{name}/assets/metadata (icon cross-mode fallback) ──
 
@@ -567,7 +625,7 @@ class TestRegenerateAssetStep:
 
         app = _make_test_app(animas_dir=tmp_path)
         transport = ASGITransport(app=app)
-        with patch("core.asset_reconciler._resolve_prompt", return_value=""):
+        with patch("core.anima.asset_reconciler._resolve_prompt", return_value=""):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/animas/alice/assets/regenerate-step",
@@ -577,7 +635,7 @@ class TestRegenerateAssetStep:
         assert "prompt is required" in resp.json()["detail"]
 
     @patch("server.routes.assets.emit", new_callable=AsyncMock)
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_icon_step_ok_and_emits(self, mock_pipeline_cls, mock_emit, tmp_path):
         anima_dir = tmp_path / "alice"
         (anima_dir / "assets").mkdir(parents=True)
@@ -616,7 +674,7 @@ class TestRegenerateAssetStep:
 
 
 class TestRemakePreview:
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     @patch("core.config.models.load_config")
     async def test_without_style_from_ignores_global_style_reference(
         self,
@@ -793,3 +851,109 @@ class TestListRemakePreviews:
         data = resp.json()
         assert data["previews"] == ["_preview_001_realistic.png", "_preview_002_realistic.png"]
         assert data["backup_id"] == "assets_backup_20260808_113051"
+
+
+class TestFaceAssets:
+    @staticmethod
+    def _write_region_png(path: Path, face_color: tuple[int, int, int]) -> Path:
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(image).rectangle((24, 0, 75, 51), fill=face_color)
+        image.save(path, format="PNG")
+        return path
+
+    async def test_face_crop_cache_and_size(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_smile.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+            second = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert first.status_code == 200
+        assert first.headers["content-type"].startswith("image/webp")
+        image = Image.open(BytesIO(first.content))
+        assert image.size == (96, 96)
+        assert image.getpixel((48, 48))[1] > 150  # the checked upper-center face crop
+        cache = assets_dir / ".thumbs" / "face2_smile_anime.S.webp"
+        assert cache.is_file()
+        assert second.content == first.content
+        assert cache.stat().st_mtime_ns >= source.stat().st_mtime_ns
+
+    async def test_face_cache_rebuilds_when_source_changes(self, tmp_path):
+        import os
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_troubled.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/api/animas/alice/assets/face/troubled?size=M")
+            cache = assets_dir / ".thumbs" / "face2_troubled_anime.M.webp"
+            old_mtime = cache.stat().st_mtime_ns
+            self._write_region_png(source, (20, 30, 210))
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, old_mtime + 1_000_000))
+            response = await client.get("/api/animas/alice/assets/face/troubled?size=M")
+
+        assert response.status_code == 200
+        assert cache.stat().st_mtime_ns > old_mtime
+
+    async def test_face_crop_uses_style_specific_configuration(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image, ImageDraw
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(source).rectangle((70, 50, 89, 69), fill=(15, 180, 40))
+        source.save(assets_dir / "avatar_bustup_smile.png", format="PNG")
+        (assets_dir / "face_crop.json").write_text(
+            '{"anime":{"x":0.7,"y":0.5,"w":0.2},"realistic":{"x":0.0,"y":0.0,"w":0.2}}',
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.getpixel((48, 48))[1] > 150
+
+    async def test_face_uses_style_icon_fallback_when_bustup_missing(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        _write_test_png(assets_dir / "icon_realistic.png", size=256)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/laugh?size=M&style=realistic")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.format == "WEBP"
+        assert image.size == (192, 192)
+        assert (assets_dir / ".thumbs" / "face2_laugh_realistic.M.webp").is_file()
+
+    async def test_invalid_emotion_returns_400(self, tmp_path):
+        (tmp_path / "alice" / "assets").mkdir(parents=True)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/angry")
+        assert response.status_code == 400

@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
 import re
@@ -12,9 +13,10 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.enclave.ops import check_gateway_health, count_today_egress_audits
+from core.runtime.cron_diagnostics import diagnose_cron_task
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
-from server.routes.taskboard import summarize_task_board
 
 logger = logging.getLogger("animaworks.routes.system")
 
@@ -61,7 +63,7 @@ def _get_frontend_logger() -> logging.Logger:
     # the standard redaction (and cycle) filters here explicitly. Honour the
     # config redaction switch, failing open to on (symmetric with the other
     # setup paths).
-    from core.logging_config import attach_standard_log_filters
+    from core.infra.logging_config import attach_standard_log_filters
 
     try:
         from core.config import load_config
@@ -134,6 +136,7 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
             trigger = parse_schedule(task.schedule, warn=False)
             next_run_dt = trigger.get_next_fire_time(None, now) if trigger is not None else None
             next_run = next_run_dt.isoformat() if next_run_dt else None
+            diagnostics = diagnose_cron_task(task, trigger, base_time=now) if trigger is not None else []
             schedule = task.schedule.strip() if task.schedule else ""
             if not schedule:
                 m = re.search(r"[（(](.+?)[）)]", task.name)
@@ -149,9 +152,52 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
                     "schedule": schedule,
                     "last_run": last_runs.get(task.name),
                     "next_run": next_run,
+                    "diagnostics": diagnostics,
                 }
             )
     return jobs
+
+
+_BUSY_PROCESS_KINDS = {"heartbeat": "heartbeat", "cron": "cron", "cron_command": "cron"}
+
+
+def _busy_activities(sidecar: dict[str, object]) -> list[dict[str, object]]:
+    """Summarize non-TaskExec lanes (chat, inbox, heartbeat, cron) of a busy sidecar.
+
+    The ``background`` lane covers both heartbeat and cron, so its kind comes
+    from the child process kinds; a bare ``background`` with no such process is
+    reported as-is.  ``background`` that only hosts a TaskExec worker is skipped
+    because the task itself is listed separately.
+    """
+    lanes = [lane for lane in sidecar.get("lanes", []) or [] if isinstance(lane, str)]
+    processes = sidecar.get("processes", []) or []
+    process_kinds = [str(p.get("kind") or "") for p in processes if isinstance(p, dict)]
+    lane_started_at = sidecar.get("lane_started_at") or {}
+    if not isinstance(lane_started_at, dict):
+        lane_started_at = {}
+    fallback_started = str(sidecar.get("busy_since") or "")
+
+    kinds: list[tuple[str, str]] = []
+    for lane in lanes:
+        if lane == "chat" or lane.startswith("conversation:"):
+            kinds.append(("chat", lane))
+        elif lane == "inbox":
+            kinds.append(("inbox", lane))
+        elif lane == "background":
+            mapped = [_BUSY_PROCESS_KINDS[k] for k in process_kinds if k in _BUSY_PROCESS_KINDS]
+            if mapped:
+                kinds.extend((kind, lane) for kind in mapped)
+            elif not any(item.startswith("background-worker:") for item in lanes) and "task" not in process_kinds:
+                kinds.append(("background", lane))
+
+    activities: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for kind, lane in kinds:
+        if kind in seen:
+            continue
+        seen.add(kind)
+        activities.append({"kind": kind, "started_at": str(lane_started_at.get(lane) or fallback_started)})
+    return activities
 
 
 def _collect_running_background_tasks(
@@ -162,17 +208,18 @@ def _collect_running_background_tasks(
     """Join background-worker busy lanes with task queue titles.
 
     Busy sidecars are the runtime source of truth for which worker slots are
-    active. The canonical task store supplies the human-readable task title. A
+    active and which other lanes (chat, inbox, heartbeat, cron) are working. The canonical task store supplies the human-readable task title. A
     malformed or concurrently replaced sidecar is treated as an empty state so
     the activity page remains available while workers update their marker.
     """
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sidecar_dir = shared_dir.parent / "run" / "animas"
     result: list[dict[str, object]] = []
 
     for name in anima_names:
         tasks: list[dict[str, object]] = []
+        activities: list[dict[str, object]] = []
         sidecar_path = sidecar_dir / f"{name}.busy.json"
         try:
             sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -180,7 +227,7 @@ def _collect_running_background_tasks(
             sidecar = {}
 
         if isinstance(sidecar, dict) and sidecar.get("is_busy") is not False:
-            task_queue = TaskQueueManager(animas_dir / name)
+            task_queue = TaskQueueManager(animas_dir / name, read_only=True)
             started_at = str(sidecar.get("busy_since") or "")
             lanes = sidecar.get("lanes", [])
             workers_by_slot: dict[int, dict[str, object]] = {}
@@ -208,30 +255,11 @@ def _collect_running_background_tasks(
                         "started_at": started_at,
                     }
             tasks = [workers_by_slot[slot] for slot in sorted(workers_by_slot)]
+            activities = _busy_activities(sidecar)
 
-        result.append({"name": name, "tasks": tasks})
+        result.append({"name": name, "tasks": tasks, "activities": activities})
 
     return result
-
-
-async def _vector_worker_status(request: Request) -> dict:
-    manager = getattr(request.app.state, "vector_worker", None)
-    if manager is None:
-        return {"enabled": False, "status": "missing", "write_circuit_breakers": []}
-    if not getattr(manager, "enabled", False):
-        return {"enabled": False, "status": "disabled", "write_circuit_breakers": []}
-    try:
-        status_method = getattr(manager, "status", None)
-        if status_method is None:
-            return {"enabled": True, "status": "unknown", "write_circuit_breakers": []}
-        data = await status_method()
-        if isinstance(data, dict):
-            data.setdefault("enabled", True)
-            data.setdefault("write_circuit_breakers", [])
-            return data
-    except Exception:
-        logger.warning("Failed to fetch vector worker status", exc_info=True)
-    return {"enabled": True, "status": "unavailable", "write_circuit_breakers": []}
 
 
 async def _zoom_gateway_status(request: Request) -> dict:
@@ -247,7 +275,7 @@ async def _zoom_gateway_status(request: Request) -> dict:
 
 def _gpu_status() -> dict[str, object]:
     try:
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
 
         return get_gpu_status()
     except Exception:
@@ -260,6 +288,49 @@ def _gpu_status() -> dict[str, object]:
         }
 
 
+async def _collect_enclave_status() -> tuple[dict[str, object], dict[str, dict[str, bool]]]:
+    """Return enclave health and today's aggregate audit counts, without bodies."""
+    from core.config import load_config
+    from core.paths import get_data_dir
+
+    data_dir = get_data_dir()
+    today = await asyncio.to_thread(count_today_egress_audits, data_dir)
+    try:
+        config = load_config()
+    except Exception:
+        logger.warning("Failed to load enclave config for system status", exc_info=True)
+        return (
+            {"enabled": False, "name": "", "socket_ok": False, "today": today},
+            {},
+        )
+
+    enabled = config.enclave.enabled is True
+    socket_ok = False
+    if enabled and config.enclave.socket_path:
+        socket_ok = await asyncio.to_thread(check_gateway_health, config.enclave.socket_path)
+
+    client_items = sorted(config.enclaves.items())
+    if client_items:
+        reachable_values = await asyncio.gather(
+            *(asyncio.to_thread(check_gateway_health, client.socket_path) for _, client in client_items)
+        )
+        enclaves = {
+            name: {"reachable": reachable} for (name, _), reachable in zip(client_items, reachable_values, strict=True)
+        }
+    else:
+        enclaves = {}
+
+    return (
+        {
+            "enabled": enabled,
+            "name": config.enclave.name,
+            "socket_ok": socket_ok,
+            "today": today,
+        },
+        enclaves,
+    )
+
+
 async def _reschedule_all_heartbeats(supervisor) -> None:
     """Tell all running Anima processes to reschedule their heartbeats.
 
@@ -269,9 +340,9 @@ async def _reschedule_all_heartbeats(supervisor) -> None:
         return
     for name in list(supervisor.processes.keys()):
         try:
-            await supervisor.send_request(name, "reschedule_heartbeat", {})
+            await supervisor.send_request(name, "reschedule_heartbeat", {}, timeout=10.0)
         except Exception:
-            logger.debug("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
+            logger.warning("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
 
 
 async def _reload_activity_schedules(supervisor) -> None:
@@ -312,14 +383,16 @@ def create_system_router() -> APIRouter:
         except Exception:
             slack_enabled = False
 
+        enclave_status, enclaves_status = await _collect_enclave_status()
         return {
             "animas": len(anima_names),
             "processes": process_statuses,
             "scheduler_running": supervisor.is_scheduler_running(),
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
             "zoom_gateway": await _zoom_gateway_status(request),
-            "vector_worker": await _vector_worker_status(request),
             "gpu": _gpu_status(),
+            "enclave": enclave_status,
+            "enclaves": enclaves_status,
         }
 
     @router.post("/system/reload")
@@ -343,6 +416,16 @@ def create_system_router() -> APIRouter:
                 "active_label": "",
                 "reasons": [],
             }
+
+            # A background bootstrap does not always report a busy status;
+            # restarting mid-setup throws its work away and burns a retry.
+            try:
+                if supervisor.is_bootstrapping(anima_name) is True:
+                    cast_reasons = result["reasons"]
+                    if isinstance(cast_reasons, list):
+                        cast_reasons.append("bootstrapping")
+            except Exception:
+                logger.debug("Failed to read bootstrap state for %s", anima_name, exc_info=True)
 
             try:
                 active_stream = stream_registry.get_active(anima_name)
@@ -388,7 +471,7 @@ def create_system_router() -> APIRouter:
             busy_snapshot[name] = await _busy_state(name)
 
         # Discover current animas on disk
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor import ProcessSupervisor
 
         on_disk: set[str] = set()
         if animas_dir.exists():
@@ -407,9 +490,13 @@ def create_system_router() -> APIRouter:
                 on_disk.add(name)
 
                 if name not in current_names:
-                    # New anima - start process
+                    # New anima - start process. Reconciliation may have added it
+                    # while the busy probes above were awaiting; check the live list.
+                    if name in request.app.state.anima_names:
+                        continue
                     await supervisor.start_anima(name)
-                    request.app.state.anima_names.append(name)
+                    if name not in request.app.state.anima_names:
+                        request.app.state.anima_names.append(name)
                     added.append(name)
                     logger.info("Hot-loaded anima: %s", name)
                 else:
@@ -503,22 +590,6 @@ def create_system_router() -> APIRouter:
             "anima_jobs": jobs,
         }
 
-    # ── Tasks ───────────────────────────────────────────
-
-    @router.get("/tasks/summary")
-    async def get_tasks_summary(request: Request):
-        """Aggregate active task counts across all animas from TaskBoard projection."""
-        import asyncio
-
-        animas_dir = request.app.state.animas_dir
-        shared_dir = request.app.state.shared_dir
-        anima_names = request.app.state.anima_names
-
-        summary = await asyncio.to_thread(summarize_task_board, animas_dir, shared_dir, anima_names)
-        pending = summary["pending"] + summary["delegated"]
-        in_progress = summary["in_progress"]
-        return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
-
     # ── Activity ───────────────────────────────────────────
 
     @router.get("/activity/running-tasks")
@@ -526,7 +597,7 @@ def create_system_router() -> APIRouter:
         request: Request,
         anima: str | None = None,
     ):
-        """Return active background TaskExec workers grouped by Anima."""
+        """Return active TaskExec workers and other busy lanes grouped by Anima."""
         animas_dir = request.app.state.animas_dir
         shared_dir = request.app.state.shared_dir
         anima_names = request.app.state.anima_names
@@ -547,7 +618,7 @@ def create_system_router() -> APIRouter:
         id: str,
     ):
         """Return one complete trigger-based activity group by stable ID."""
-        from core.memory.activity import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         anima_names = request.app.state.anima_names
         if anima not in anima_names:
@@ -592,7 +663,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity import ActivityLogger, build_semantic_replay_events
+        from core.activity.logger import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names
@@ -887,11 +958,9 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import load_config, save_config
+        from core.config.models import update_config
 
-        config = load_config()
-        config.image_gen.image_style = mode
-        save_config(config)
+        update_config(lambda config: setattr(config.image_gen, "image_style", mode))
         logger.info("Display mode changed to %s (image_style synced)", mode)
         return {"ok": True, "mode": mode}
 
@@ -923,26 +992,13 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import load_config, save_config
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
-        config = load_config()
-        config.activity_level = level
+        update = await asyncio.to_thread(apply_activity_schedule, activity_level=level)
 
-        # When night mode is active, also update the matching schedule entry
-        if config.activity_schedule:
-            from core.supervisor.scheduler_manager import _time_in_range
-
-            now_hhmm = now_local().strftime("%H:%M")
-            for entry in config.activity_schedule:
-                if _time_in_range(entry.start, entry.end, now_hhmm):
-                    entry.level = level
-                    break
-
-        save_config(config)
-
-        # Notify supervisor to reschedule all heartbeats
+        # Notify running Animas only when the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
-        if supervisor is not None:
+        if supervisor is not None and update.activity_level_changed:
             try:
                 await _reschedule_all_heartbeats(supervisor)
             except Exception:
@@ -978,7 +1034,8 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import ActivityScheduleEntry, load_config, save_config
+        from core.config.models import ActivityScheduleEntry
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
         entries: list[ActivityScheduleEntry] = []
         for i, item in enumerate(raw_schedule):
@@ -995,26 +1052,18 @@ def create_system_router() -> APIRouter:
                     status_code=400,
                 )
 
-        config = load_config()
-        config.activity_schedule = entries
+        # Apply the current slot on root before notifying the workers.
+        update = await asyncio.to_thread(apply_activity_schedule, activity_schedule=entries)
+        config = update.config
 
-        # Apply the level for the current time immediately
-        if entries:
-            from core.supervisor.scheduler_manager import SchedulerManager
-
-            now_hhmm = now_local().strftime("%H:%M")
-            target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
-            if target is not None:
-                config.activity_level = target
-
-        save_config(config)
-
-        # Reschedule heartbeats and activity schedule jobs
+        # Heartbeat jobs only need rescheduling if the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
         if supervisor is not None:
             try:
-                await _reschedule_all_heartbeats(supervisor)
-                await _reload_activity_schedules(supervisor)
+                if update.activity_level_changed:
+                    await _reschedule_all_heartbeats(supervisor)
+                if update.activity_schedule_changed:
+                    await _reload_activity_schedules(supervisor)
             except Exception:
                 logger.warning(
                     "Failed to reload schedules after activity_schedule change",
@@ -1032,44 +1081,14 @@ def create_system_router() -> APIRouter:
             "activity_schedule": [e.model_dump() for e in entries],
         }
 
-    # ── Token Usage / Cost ────────────────────────────────────
-
-    @router.get("/system/cost")
-    async def get_token_cost(
-        request: Request,
-        anima: str | None = None,
-        days: int = 30,
-    ):
-        """Return token usage summary and estimated cost."""
-        from core.memory.token_usage import TokenUsageLogger
-        from core.paths import get_data_dir
-
-        animas_dir = get_data_dir() / "animas"
-        if anima:
-            anima_dir = animas_dir / anima
-            if not anima_dir.is_dir():
-                return {"error": f"Anima '{anima}' not found"}
-            tul = TokenUsageLogger(anima_dir)
-            return {anima: tul.summarize(days)}
-
-        result: dict = {}
-        if animas_dir.is_dir():
-            for ad in sorted(animas_dir.iterdir()):
-                if ad.is_dir() and (ad / "token_usage").is_dir():
-                    tul = TokenUsageLogger(ad)
-                    s = tul.summarize(days)
-                    if s["total_sessions"] > 0:
-                        result[ad.name] = s
-        return result
-
     @router.get("/system/token-budget")
     async def get_token_budget(
         request: Request,
         anima: str | None = None,
     ):
         """Return current-month token budget status for each Anima."""
-        from core.memory.token_budget import read_token_budget_status
         from core.paths import get_data_dir
+        from core.usage.token_budget import read_token_budget_status
 
         current = now_local()
         animas_dir = get_data_dir() / "animas"
@@ -1100,17 +1119,6 @@ def create_system_router() -> APIRouter:
 
     # ── Hot Reload ─────────────────────────────────────────
 
-    @router.post("/system/hot-reload")
-    async def hot_reload_all(request: Request):
-        """Hot-reload all configuration and connections."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_all()
-
     @router.post("/system/hot-reload/slack")
     async def hot_reload_slack(request: Request):
         """Hot-reload Slack Socket Mode connections only."""
@@ -1133,19 +1141,8 @@ def create_system_router() -> APIRouter:
             )
         return await manager.reload_credentials()
 
-    @router.post("/system/hot-reload/animas")
-    async def hot_reload_animas(request: Request):
-        """Sync Anima processes with disk state."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_animas()
-
-    @router.post("/system/anima-merge/rewrite-runtime-refs")
-    async def rewrite_anima_merge_runtime_refs(request: Request):
+    @router.post("/system/rewrite-runtime-refs")
+    async def rewrite_runtime_refs(request: Request):
         """Synchronize live caches after REWRITE_REFS updates disk state."""
         try:
             payload = await request.json()
@@ -1156,27 +1153,14 @@ def create_system_router() -> APIRouter:
         if not isinstance(source, str) or not isinstance(target, str) or source == target:
             return JSONResponse({"error": "Invalid source/target"}, status_code=400)
 
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
 
         if validate_anima_name(source) or validate_anima_name(target):
             return JSONResponse({"error": "Invalid source/target"}, status_code=400)
 
-        from core.discord_webhooks import get_webhook_manager
+        from core.messaging.discord_webhooks import get_webhook_manager
 
         discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
-
-        governor_updated = False
-        governor = getattr(request.app.state, "usage_governor", None)
-        if governor is not None:
-            suspended: list[str] = []
-            for name in governor.state.suspended_animas:
-                mapped = target if name == source else name
-                if mapped not in suspended:
-                    suspended.append(mapped)
-            governor_updated = suspended != governor.state.suspended_animas
-            if governor_updated:
-                governor.state.suspended_animas = suspended
-                governor.state.save()
 
         bootstrap_retry_removed = False
         supervisor = getattr(request.app.state, "supervisor", None)
@@ -1213,7 +1197,6 @@ def create_system_router() -> APIRouter:
 
         result = {
             "discord_mappings_updated": discord_updated,
-            "usage_state_updated": governor_updated,
             "bootstrap_retry_removed": bootstrap_retry_removed,
             "rooms_reloaded": rooms_reloaded,
             "discord_gateway_reloaded": discord_gateway_reloaded,

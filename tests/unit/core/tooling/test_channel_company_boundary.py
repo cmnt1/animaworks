@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     is_channel_member,
@@ -55,10 +55,7 @@ def _make_channel(data_dir: Path, channel: str, members: list[str]) -> Path:
     channels_dir.mkdir(parents=True, exist_ok=True)
     channel_file = channels_dir / f"{channel}.jsonl"
     channel_file.write_text(
-        json.dumps(
-            {"ts": "2026-07-20T00:00:00+09:00", "from": members[-1], "text": "secret"}
-        )
-        + "\n",
+        json.dumps({"ts": "2026-07-20T00:00:00+09:00", "from": members[-1], "text": "secret"}) + "\n",
         encoding="utf-8",
     )
     save_channel_meta(data_dir / "shared", channel, ChannelMeta(members=members))
@@ -82,10 +79,7 @@ def test_post_rejects_mixed_company_channel_then_observes_status_change(tmp_path
         json.dumps({"enabled": True, "company": "alpha"}),
         encoding="utf-8",
     )
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
-        allowed = handler._handle_post_channel({"channel": "team", "text": "hello"})
+    allowed = handler._handle_post_channel({"channel": "team", "text": "hello"})
 
     assert allowed == "Posted to #team"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 2
@@ -133,10 +127,7 @@ def test_company_scoped_open_channel_same_company_allows_post(tmp_path: Path) ->
     save_channel_meta(tmp_path / "shared", "general", ChannelMeta(members=[], company="alpha"))
     handler = _make_handler(tmp_path)
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "general", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1
@@ -168,10 +159,7 @@ def test_company_scoped_open_channel_unassigned_legacy_allows(tmp_path: Path) ->
     save_channel_meta(tmp_path / "shared", "ops", ChannelMeta(members=[], company="alpha"))
     handler = _make_handler(tmp_path, "legacy")
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "ops", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "ops", "text": "hello"})
 
     assert result == "Posted to #ops"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1
@@ -185,10 +173,7 @@ def test_unassigned_open_channel_allows_unassigned_anima(tmp_path: Path) -> None
     channel_file.write_text("", encoding="utf-8")
     handler = _make_handler(tmp_path, "legacy")
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "general", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1
@@ -256,9 +241,7 @@ def test_unassigned_anima_can_read_scoped_and_unattributed_open_channels(
     handler = _make_handler(tmp_path, "legacy")
 
     assert "scoped-content" in handler._handle_read_channel({"channel": "scoped"})
-    assert "unattributed-content" in handler._handle_read_channel(
-        {"channel": "unattributed"}
-    )
+    assert "unattributed-content" in handler._handle_read_channel({"channel": "unattributed"})
 
 
 def test_restricted_channel_members_take_precedence_over_company(tmp_path: Path) -> None:
@@ -288,14 +271,61 @@ def test_restricted_channel_members_take_precedence_over_company(tmp_path: Path)
     assert "member-content" in result
 
 
+def test_archive_channel_through_handler_moves_history_and_writes_closed_tombstone(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    channel_file = _make_channel(tmp_path, "team", ["alice"])
+    handler = _make_handler(tmp_path)
+
+    result = json.loads(handler.handle("manage_channel", {"action": "archive", "channel": "team"}))
+
+    archived_file = tmp_path / "shared" / "channels" / "archive" / "team.jsonl"
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert result["archived"] is True
+    assert result["closed"] is True
+    assert result["to"] == "channels/archive/team.jsonl"
+    assert not channel_file.exists()
+    assert archived_file.read_text(encoding="utf-8").find("secret") >= 0
+    assert meta is not None
+    assert meta.closed is True
+    assert meta.members == ["alice"]
+    assert not is_channel_member(tmp_path / "shared", "team", "alice")
+
+
+def test_archive_channel_rejects_non_member_without_mutation(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    _make_anima(tmp_path, "bob", "alpha")
+    channel_file = _make_channel(tmp_path, "team", ["bob"])
+    handler = _make_handler(tmp_path)
+
+    result = handler.handle("manage_channel", {"action": "archive", "channel": "team"})
+
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert "not a member" in result.lower() or "メンバーではない" in result
+    assert channel_file.exists()
+    assert meta is not None and not meta.closed
+
+
+def test_archive_channel_rejects_cross_company_members_without_mutation(tmp_path: Path) -> None:
+    _make_anima(tmp_path, "alice", "alpha")
+    _make_anima(tmp_path, "bob", "beta")
+    _write_company(tmp_path, "beta", "Beta Corporation")
+    channel_file = _make_channel(tmp_path, "team", ["alice", "bob"])
+    handler = _make_handler(tmp_path)
+
+    result = handler.handle("manage_channel", {"action": "archive", "channel": "team"})
+
+    meta = load_channel_meta(tmp_path / "shared", "team")
+    assert "Beta Corporation" in result
+    assert channel_file.exists()
+    assert meta is not None and not meta.closed
+
+
 def test_create_channel_auto_assigns_creator_company(tmp_path: Path) -> None:
     _make_anima(tmp_path, "alice", "alpha")
     _make_anima(tmp_path, "same", "alpha")
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "alpha-room", "members": ["same"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "alpha-room", "members": ["same"]})
 
     assert "alpha-room" in result
     meta = load_channel_meta(tmp_path / "shared", "alpha-room")
@@ -339,9 +369,7 @@ def test_create_channel_rejects_cross_company_member(tmp_path: Path) -> None:
     _write_company(tmp_path, "beta", "Beta Corporation")
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "mixed", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "mixed", "members": ["bob"]})
 
     assert "Beta Corporation" in result
     assert not (tmp_path / "shared" / "channels" / "mixed.jsonl").exists()
@@ -355,9 +383,7 @@ def test_add_member_rejects_cross_company_member_without_mutation(tmp_path: Path
     _make_channel(tmp_path, "team", ["alice"])
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "add_member", "channel": "team", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "add_member", "channel": "team", "members": ["bob"]})
 
     assert "Beta Corporation" in result
     meta = load_channel_meta(tmp_path / "shared", "team")
@@ -370,9 +396,7 @@ def test_unassigned_anima_keeps_legacy_cross_company_access(tmp_path: Path) -> N
     _make_anima(tmp_path, "bob", "beta")
     handler = _make_handler(tmp_path, "legacy")
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "legacy-team", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "legacy-team", "members": ["bob"]})
 
     assert "legacy-team" in result
     meta = load_channel_meta(tmp_path / "shared", "legacy-team")

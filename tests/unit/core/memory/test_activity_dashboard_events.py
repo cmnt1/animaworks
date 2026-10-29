@@ -13,15 +13,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.activity.logger import ActivityLogger
 
 
 @pytest.fixture()
-def activity_logger(tmp_path: Path) -> ActivityLogger:
+def activity_logger(tmp_path: Path, data_dir_at_tmp_path: Path) -> ActivityLogger:
     ActivityLogger._live_rate_limiter.reset()
     anima_dir = tmp_path / "animas" / "testanima"
     anima_dir.mkdir(parents=True)
@@ -40,58 +39,52 @@ class TestNewLiveEventTypes:
     """New event types added to _LIVE_EVENT_TYPES should emit event files."""
 
     def test_message_sent_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "message_sent",
-                content="Hello from testanima",
-                to_person="other",
-                summary="→ other: Hello from testanima",
-            )
+        activity_logger.log(
+            "message_sent",
+            content="Hello from testanima",
+            to_person="other",
+            summary="→ other: Hello from testanima",
+        )
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         assert events[0]["data"]["type"] == "message_sent"
 
     def test_response_sent_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "response_sent",
-                content="Here is my response",
-                to_person="human",
-                summary="Here is my response",
-            )
+        activity_logger.log(
+            "response_sent",
+            content="Here is my response",
+            to_person="human",
+            summary="Here is my response",
+        )
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         assert events[0]["data"]["type"] == "response_sent"
 
     def test_channel_post_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "channel_post",
-                channel="general",
-                content="Board post content",
-                summary="Board post",
-            )
+        activity_logger.log(
+            "channel_post",
+            channel="general",
+            content="Board post content",
+            summary="Board post",
+        )
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         assert events[0]["data"]["type"] == "channel_post"
 
     def test_task_created_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log("task_created", summary="New task created")
+        activity_logger.log("task_created", summary="New task created")
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         assert events[0]["data"]["type"] == "task_created"
 
     def test_task_updated_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log("task_updated", summary="Task done")
+        activity_logger.log("task_updated", summary="Task done")
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         assert events[0]["data"]["type"] == "task_updated"
 
     def test_message_received_still_does_not_emit(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log("message_received", content="hi")
+        activity_logger.log("message_received", content="hi")
         events = _read_event_files(tmp_path)
         assert len(events) == 0
 
@@ -100,14 +93,13 @@ class TestEnhancedLiveEventPayload:
     """_emit_live_event payload should include content, from_person, to_person, channel."""
 
     def test_message_sent_payload_has_extended_fields(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "message_sent",
-                content="Full message content here",
-                to_person="alice",
-                summary="→ alice: Full message content",
-                meta={"intent": "report"},
-            )
+        activity_logger.log(
+            "message_sent",
+            content="Full message content here",
+            to_person="alice",
+            summary="→ alice: Full message content",
+            meta={"intent": "report"},
+        )
         events = _read_event_files(tmp_path)
         assert len(events) == 1
         data = events[0]["data"]
@@ -116,14 +108,13 @@ class TestEnhancedLiveEventPayload:
         assert data["summary"] == "→ alice: Full message content"
 
     def test_response_sent_payload_has_content(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "response_sent",
-                content="Detailed response text",
-                to_person="user",
-                channel="chat",
-                summary="Detailed response text",
-            )
+        activity_logger.log(
+            "response_sent",
+            content="Detailed response text",
+            to_person="user",
+            channel="chat",
+            summary="Detailed response text",
+        )
         events = _read_event_files(tmp_path)
         data = events[0]["data"]
         assert data["to_person"] == "user"
@@ -131,26 +122,24 @@ class TestEnhancedLiveEventPayload:
         assert "Detailed response" in data["content"]
 
     def test_channel_post_payload_has_channel(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "channel_post",
-                channel="dev",
-                content="Important update",
-                summary="Update",
-            )
+        activity_logger.log(
+            "channel_post",
+            channel="dev",
+            content="Important update",
+            summary="Update",
+        )
         events = _read_event_files(tmp_path)
         data = events[0]["data"]
         assert data["channel"] == "dev"
 
     def test_content_truncated_to_200(self, activity_logger: ActivityLogger, tmp_path: Path):
         long_content = "x" * 500
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "message_sent",
-                content=long_content,
-                to_person="bob",
-                summary="→ bob: " + long_content[:80],
-            )
+        activity_logger.log(
+            "message_sent",
+            content=long_content,
+            to_person="bob",
+            summary="→ bob: " + long_content[:80],
+        )
         events = _read_event_files(tmp_path)
         data = events[0]["data"]
         assert len(data["content"]) <= 200

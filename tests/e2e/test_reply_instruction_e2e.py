@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,8 +15,7 @@ the old [platform=... channel=... ts=...] format.
 import json
 from pathlib import Path
 
-
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 def _create_external_inbox_message(
@@ -54,7 +54,7 @@ class TestReplyInstructionInInboxFormatting:
     """Verify [reply_instruction] appears in formatted inbox output."""
 
     def test_slack_message_has_reply_instruction(self, tmp_path: Path) -> None:
-        """Slack inbox message gets tool-based [reply_instruction: ...]."""
+        """Slack inbox message gets CLI-based [reply_instruction: ...]."""
         shared = tmp_path / "shared"
         _create_external_inbox_message(shared, "alice", source="slack")
 
@@ -63,15 +63,13 @@ class TestReplyInstructionInInboxFormatting:
         assert len(items) == 1
 
         msg = items[0].msg
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
 
         assert "reply_instruction" in result
-        assert "use tool slack_channel_post" in result
-        assert 'channel_id="C67890"' in result
-        assert 'text="<@U12345> {返信内容}"' in result
-        assert 'thread_ts="1709123456.789012"' in result
+        assert "animaworks-tool slack send C67890 '<@U12345> {返信内容}'" in result
+        assert "--thread 1709123456.789012" in result
         assert "platform=" not in result
 
     def test_chatwork_message_has_reply_instruction(self, tmp_path: Path) -> None:
@@ -91,7 +89,7 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
 
@@ -113,11 +111,11 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
-        assert "thread_ts=" not in result
-        assert "slack_channel_post" in result
+        assert "--thread" not in result
+        assert "animaworks-tool slack send" in result
 
     def test_slack_no_mention_when_user_id_missing(self, tmp_path: Path) -> None:
         """Slack message without external_user_id omits @mention."""
@@ -133,11 +131,11 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
         assert "<@" not in result
-        assert "slack_channel_post" in result
+        assert "animaworks-tool slack send" in result
 
     def test_no_reply_instruction_without_channel_id(self, tmp_path: Path) -> None:
         """Message without external_channel_id gets no reply instruction (caller guard)."""

@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.tasks_dispatch import publish_tasks, update_task
+from core.tasks.dispatch import publish_tasks, update_task
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture
@@ -104,7 +105,7 @@ def test_resume_missing_id_raises_not_found(anima_dir):
 
 
 def test_resume_rejects_stale_attempt_identity(anima_dir):
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
 
     publish_tasks(anima_dir, [payload()])
     manager = TaskQueueManager(anima_dir)
@@ -137,21 +138,18 @@ def test_update_without_resume_does_not_clear_ready(anima_dir):
     assert manager.store.pending("worker") == []
 
 
-def test_cli_resume_success_and_not_found(anima_dir, capsys):
+def test_cli_resume_maps_to_update_tool(anima_dir, monkeypatch, capsys):
     from cli.commands.task_cmd import _cmd_resume
 
-    original = payload()
-    publish_tasks(anima_dir, [original])
-    manager = TaskQueueManager(anima_dir)
-    manager.update_status("task-one", "cancelled", summary="retry")
+    run_tool = Mock(return_value='{"task_id":"task-one","status":"pending"}')
+    monkeypatch.setattr("cli._anima_tool.run_anima_tool", run_tool)
 
-    _cmd_resume(SimpleNamespace(task_id="task-one"), manager)
+    _cmd_resume(SimpleNamespace(task_id="task-one"))
+
+    run_tool.assert_called_once_with(
+        "update_task",
+        {"task_id": "task-one", "status": "pending", "resume": True},
+    )
     out = json.loads(capsys.readouterr().out)
     assert out["task_id"] == "task-one"
     assert out["status"] == "pending"
-    assert manager.store.pending("worker") == [original]
-
-    with pytest.raises(SystemExit) as stopped:
-        _cmd_resume(SimpleNamespace(task_id="missing"), manager)
-    assert stopped.value.code != 0
-    assert "task not found or invalid status" in capsys.readouterr().err

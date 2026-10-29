@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
+from core.trust import ORIGIN_HUMAN, ORIGIN_SYSTEM
 from core.skills.models import SkillUsageEventType
 from core.skills.usage import SkillUsageTracker
 from core.tooling.handler import ToolHandler
@@ -321,8 +321,6 @@ class TestIndexUsageMerge:
         tracker.record("my-test-skill", SkillUsageEventType.view)
         tracker.record("my-test-skill", SkillUsageEventType.success)
         tracker.record("my-test-skill", SkillUsageEventType.success)
-        tracker.reset_session_views()
-        tracker.record("my-test-skill", SkillUsageEventType.view)
 
         skills_dir = anima_dir / "skills"
         index = SkillIndex(
@@ -334,7 +332,7 @@ class TestIndexUsageMerge:
 
         assert len(results) >= 1
         skill_meta = next(m for m in results if m.name == "my-test-skill")
-        # usage_count = view_count + use_count (2 views, 0 uses)
-        assert skill_meta.usage_count == 2
+        # usage_count = view_count + use_count (1 view, 0 uses)
+        assert skill_meta.usage_count == 1
         assert skill_meta.success_count == 2
         assert skill_meta.last_used_at is not None

@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/shortterm.py — ShortTermMemory."""
+"""Unit tests for core/memory/conversation/shortterm.py — ShortTermMemory."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.shortterm import (
+from core.memory.conversation.shortterm import (
     _MAX_RESPONSE_CHARS,
     SessionState,
     ShortTermMemory,
@@ -71,9 +71,7 @@ class TestHasPending:
         assert stm.has_pending() is False
 
     def test_has_pending(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text(
-            "{}", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text("{}", encoding="utf-8")
         assert stm.has_pending() is True
 
 
@@ -115,9 +113,7 @@ class TestSave:
         archive_files = list((anima_dir / "shortterm" / "chat" / "archive").glob("*.json"))
         assert len(archive_files) >= 1
         # Current should be "second"
-        data = json.loads(
-            (anima_dir / "shortterm" / "chat" / "session_state.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((anima_dir / "shortterm" / "chat" / "session_state.json").read_text(encoding="utf-8"))
         assert data["session_id"] == "second"
 
     def test_creates_dirs(self, tmp_path):
@@ -137,9 +133,7 @@ class TestSaveIfNotExists:
         assert result.exists()
 
     def test_skips_when_md_exists(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.md").write_text(
-            "Agent wrote this", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.md").write_text("Agent wrote this", encoding="utf-8")
         result = stm.save_if_not_exists(SessionState(session_id="fallback"))
         assert result is None
 
@@ -149,11 +143,13 @@ class TestSaveIfNotExists:
 
 class TestLoad:
     def test_load_existing(self, stm, anima_dir):
-        stm.save(SessionState(
-            session_id="sess-1",
-            trigger="test",
-            turn_count=5,
-        ))
+        stm.save(
+            SessionState(
+                session_id="sess-1",
+                trigger="test",
+                turn_count=5,
+            )
+        )
         loaded = stm.load()
         assert loaded is not None
         assert loaded.session_id == "sess-1"
@@ -163,9 +159,7 @@ class TestLoad:
         assert stm.load() is None
 
     def test_load_malformed(self, stm, anima_dir):
-        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text(
-            "not json", encoding="utf-8"
-        )
+        (anima_dir / "shortterm" / "chat" / "session_state.json").write_text("not json", encoding="utf-8")
         assert stm.load() is None
 
 

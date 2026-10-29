@@ -2,6 +2,8 @@
 
 Animaが作業するプロジェクトディレクトリ（ワークスペース）の概念と使い方。
 
+作業中の worktree・ビルド・一時ファイルの置き場所は `operations/scratch-and-worktrees.md` を参照する。
+
 ## ワークスペースとは
 
 ### 家と仕事場の概念
@@ -44,7 +46,7 @@ submit_tasks(batch_id="build", tasks=[
 委譲先の部下がそのワークスペースで作業する。
 
 ```
-delegate_task(name="aoi", instruction="API テストを実施して", deadline="2d", workspace="myproject")
+delegate_task(name="aoi", instruction="API テストを実施して", workspace="myproject")
 ```
 
 ## 登録と割り当て
@@ -55,7 +57,7 @@ delegate_task(name="aoi", instruction="API テストを実施して", deadline="
 要点:
 
 1. `config.json` の `workspaces` セクションにエイリアスとパスを追加
-2. または `core.workspace.register_workspace` を Python から呼び出す
+2. または `core.org.workspace.register_workspace` を Python から呼び出す
 3. ディレクトリは登録時に存在確認される（存在しないとエラー）
 
 ### 部下への割り当て

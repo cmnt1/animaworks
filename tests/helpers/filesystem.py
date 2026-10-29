@@ -30,7 +30,6 @@ DEFAULT_TEST_CONFIG: dict[str, Any] = {
         "max_tokens": 1024,
         "credential": "anthropic",
         "context_threshold": 0.50,
-        "max_chains": 2,
         "conversation_history_threshold": 0.30,
     },
     "animas": {},
@@ -97,7 +96,6 @@ def create_anima_dir(
     api_key_env: str = "ANTHROPIC_API_KEY",
     api_base_url: str | None = None,
     context_threshold: float = 0.50,
-    max_chains: int = 2,
     conversation_history_threshold: float = 0.30,
 ) -> Path:
     """Create an anima directory with all required files and subdirectories.
@@ -127,7 +125,6 @@ def create_anima_dir(
     status_data: dict[str, Any] = {
         "model": model,
         "context_threshold": context_threshold,
-        "max_chains": max_chains,
         "conversation_history_threshold": conversation_history_threshold,
     }
     if execution_mode is not None:

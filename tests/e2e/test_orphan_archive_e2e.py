@@ -6,6 +6,7 @@
 Tests the full pipeline of orphan detection, archiving, and cleanup
 using real filesystem operations without mocking core functionality.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,11 +22,10 @@ from core.config.models import (
     load_config,
     save_config,
 )
-from core.org_sync import (
+from core.org.org_sync import (
     cleanup_orphan_archives,
     detect_orphan_animas,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ def _make_orphan(
     """Create an orphan directory (no valid identity.md)."""
     orphan_dir = animas_dir / name
     orphan_dir.mkdir(parents=True, exist_ok=True)
-    for subdir in (subdirs or []):
+    for subdir in subdirs or []:
         (orphan_dir / subdir).mkdir(parents=True, exist_ok=True)
     for fpath, content in (files or {}).items():
         fobj = orphan_dir / fpath
@@ -108,7 +108,8 @@ class TestOrphanArchiveFullPipeline:
         _make_anima(animas_dir, "sakura")
 
         _make_orphan(
-            animas_dir, "bob",
+            animas_dir,
+            "bob",
             subdirs=["episodes", "knowledge", "state"],
             files={
                 "episodes/2026-02-20.jsonl": '{"event":"test"}\n',
@@ -132,12 +133,8 @@ class TestOrphanArchiveFullPipeline:
         archive = archives[0]
         assert archive.name.startswith("bob_")
 
-        assert (archive / "episodes" / "2026-02-20.jsonl").read_text(
-            encoding="utf-8"
-        ) == '{"event":"test"}\n'
-        assert "Important info" in (archive / "knowledge" / "notes.md").read_text(
-            encoding="utf-8"
-        )
+        assert (archive / "episodes" / "2026-02-20.jsonl").read_text(encoding="utf-8") == '{"event":"test"}\n'
+        assert "Important info" in (archive / "knowledge" / "notes.md").read_text(encoding="utf-8")
         assert (archive / "state" / "current_state.md").exists()
 
         # Step 3: Archive is preserved when young
@@ -177,7 +174,8 @@ class TestOrphanArchiveFullPipeline:
 
         # Non-trivial orphan: has episodes
         _make_orphan(
-            animas_dir, "nontrivial_test",
+            animas_dir,
+            "nontrivial_test",
             subdirs=["episodes"],
             files={"episodes/log.jsonl": "data\n"},
         )
@@ -215,7 +213,8 @@ class TestOrphanArchiveFullPipeline:
         )
         _make_anima(animas_dir, "sakura")
         _make_orphan(
-            animas_dir, "orphan_bob",
+            animas_dir,
+            "orphan_bob",
             subdirs=["state"],
         )
 

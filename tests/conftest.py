@@ -14,8 +14,10 @@ from __future__ import annotations
 # self-pipe wake-up が黙って失敗し to_thread/run_in_executor が返らなくなる。
 # socketpair が使えない環境でだけ os.pipe に差し替える（ホストでは no-op）。
 import importlib.util as _ilu
+import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -35,7 +37,13 @@ if _spec and _spec.loader:
 
 logger = logging.getLogger(__name__)
 
+_RUNNER_CMD_MARKERS = (
+    "core.runtime.runner",
+    "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+)
+
 from tests.helpers.filesystem import (
+    DEFAULT_TEST_CONFIG,
     create_anima_dir,
     create_test_data_dir,
 )
@@ -129,6 +137,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_rag_endpoints():
+    """Reset cached environment endpoint snapshots between tests."""
+    from core.memory.rag.endpoints import configure_endpoints
+
+    configure_endpoints(None)
+    yield
+    configure_endpoints(None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_app_timezone():
     """Reset the application timezone to the fallback after each test.
 
@@ -160,15 +178,21 @@ def _empty_external_roots(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
-def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
-    """Allow low-level Chroma tests to instantiate the guarded store explicitly."""
-    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
-
-
-@pytest.fixture(autouse=True)
 def _disable_external_sync_for_tests(monkeypatch: pytest.MonkeyPatch):
     """Prevent tests from sending board posts to real external services."""
     monkeypatch.setenv("ANIMAWORKS_DISABLE_EXTERNAL_SYNC", "1")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_server_url_for_tests(monkeypatch: pytest.MonkeyPatch):
+    """Keep unmocked host API calls away from a live local server.
+
+    ``server_url()`` falls back to 127.0.0.1:18500, which is the production
+    server on a dev host; an unmocked ``core.host_api`` call once created an
+    Anima there. Port 9 (discard) refuses connections. Tests that exercise the
+    default delete the variable themselves.
+    """
+    monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://127.0.0.1:9")
 
 
 @pytest.fixture(autouse=True)
@@ -263,6 +287,32 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _prompt_cache.clear()
 
 
+@pytest.fixture
+def data_dir_at_tmp_path(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Point runtime path accessors at ``tmp_path`` for legacy data-dir layouts.
+
+    Unlike ``data_dir``, this preserves tests that build their runtime files
+    directly beneath ``tmp_path`` while still exercising the real path/config
+    accessors instead of patching ``get_data_dir`` or ``load_config``.
+    """
+    from core.config import invalidate_cache
+    from core.paths import _prompt_cache
+
+    config_path = tmp_path / "config.json"
+    if not config_path.exists():
+        config_path.write_text(json.dumps(DEFAULT_TEST_CONFIG, indent=2), encoding="utf-8")
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    invalidate_cache()
+    _prompt_cache.clear()
+    yield tmp_path
+    invalidate_cache()
+    _prompt_cache.clear()
+
+
 def _kill_orphan_runners(data_dir_str: str) -> None:
     """Terminate supervisor.runner processes whose cmdline references *data_dir_str*.
 
@@ -274,8 +324,9 @@ def _kill_orphan_runners(data_dir_str: str) -> None:
 def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
     """Use pgrep + kill for matching runner processes."""
     try:
+        marker_pattern = "|".join(re.escape(marker) for marker in _RUNNER_CMD_MARKERS)
         result = subprocess.run(
-            ["pgrep", "-f", "core.supervisor.runner"],
+            ["pgrep", "-f", marker_pattern],
             capture_output=True,
             text=True,
             timeout=5,
@@ -286,7 +337,8 @@ def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
             try:
                 cmdline_path = Path(f"/proc/{pid}/cmdline")
                 cmdline = cmdline_path.read_text().replace("\x00", " ")
-                if data_dir_str not in cmdline:
+                # Trailing separator: tmp dir "x1" must not match runners of "x10".
+                if data_dir_str.rstrip(os.sep) + os.sep not in cmdline:
                     continue
             except OSError:
                 continue

@@ -11,19 +11,28 @@ Tests the notification pipeline:
   WebSocketManager.broadcast_notification  ->  queue / broadcast
   WebSocketManager.flush_notification_queue -> flush on connect
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
 from server.websocket import WebSocketManager
 
-
 # ── Helpers ───────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
 
 
 def _make_mock_notifier(*, channel_count: int = 1, notify_result: list[str] | None = None) -> MagicMock:
@@ -62,11 +71,14 @@ class TestToolHandlerNotifyHumanQueues:
         notifier = _make_mock_notifier()
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        result = handler.handle("call_human", {
-            "subject": "Test Alert",
-            "body": "Something happened",
-            "priority": "high",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "Test Alert",
+                "body": "Something happened",
+                "priority": "high",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "sent"
@@ -85,14 +97,20 @@ class TestToolHandlerNotifyHumanQueues:
         notifier = _make_mock_notifier()
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        handler.handle("call_human", {
-            "subject": "First",
-            "body": "First notification",
-        })
-        handler.handle("call_human", {
-            "subject": "Second",
-            "body": "Second notification",
-        })
+        handler.handle(
+            "call_human",
+            {
+                "subject": "First",
+                "body": "First notification",
+            },
+        )
+        handler.handle(
+            "call_human",
+            {
+                "subject": "Second",
+                "body": "Second notification",
+            },
+        )
 
         assert len(handler._pending_notifications) == 2
         assert handler._pending_notifications[0]["subject"] == "First"
@@ -108,14 +126,20 @@ class TestToolHandlerDrainNotifications:
         notifier = _make_mock_notifier()
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        handler.handle("call_human", {
-            "subject": "Alert",
-            "body": "Body text",
-        })
-        handler.handle("call_human", {
-            "subject": "Alert 2",
-            "body": "Body text 2",
-        })
+        handler.handle(
+            "call_human",
+            {
+                "subject": "Alert",
+                "body": "Body text",
+            },
+        )
+        handler.handle(
+            "call_human",
+            {
+                "subject": "Alert 2",
+                "body": "Body text 2",
+            },
+        )
 
         drained = handler.drain_notifications()
 
@@ -141,10 +165,13 @@ class TestToolHandlerNotifyHumanNoQueueOnFailure:
         """When no notifier is configured, no notification should be queued."""
         handler = _make_tool_handler(tmp_path, notifier=None)
 
-        result = handler.handle("call_human", {
-            "subject": "Alert",
-            "body": "Body",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "Alert",
+                "body": "Body",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "error"
@@ -155,10 +182,13 @@ class TestToolHandlerNotifyHumanNoQueueOnFailure:
         notifier = _make_mock_notifier(channel_count=0)
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        result = handler.handle("call_human", {
-            "subject": "Alert",
-            "body": "Body",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "Alert",
+                "body": "Body",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "error"
@@ -170,10 +200,13 @@ class TestToolHandlerNotifyHumanNoQueueOnFailure:
         notifier.notify = AsyncMock(side_effect=RuntimeError("channel down"))
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        result = handler.handle("call_human", {
-            "subject": "Alert",
-            "body": "Body",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "Alert",
+                "body": "Body",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "error"
@@ -185,10 +218,13 @@ class TestToolHandlerNotifyHumanNoQueueOnFailure:
         notifier = _make_mock_notifier()
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        result = handler.handle("call_human", {
-            "subject": "",
-            "body": "Body",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "",
+                "body": "Body",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "error"
@@ -199,10 +235,13 @@ class TestToolHandlerNotifyHumanNoQueueOnFailure:
         notifier = _make_mock_notifier()
         handler = _make_tool_handler(tmp_path, notifier=notifier)
 
-        result = handler.handle("call_human", {
-            "subject": "Alert",
-            "body": "",
-        })
+        result = handler.handle(
+            "call_human",
+            {
+                "subject": "Alert",
+                "body": "",
+            },
+        )
 
         parsed = json.loads(result)
         assert parsed["status"] == "error"
@@ -218,12 +257,15 @@ class TestAgentCoreDrainNotifications:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
 
             # The agent is a mock from patching AgentCore; verify the method exists
@@ -244,12 +286,15 @@ class TestDigitalAnimaDrainNotifications:
         anima_dir = make_anima("bob")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
 
             expected = [{"subject": "alert", "body": "test body"}]
@@ -264,12 +309,15 @@ class TestDigitalAnimaDrainNotifications:
         anima_dir = make_anima("charlie")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
 
             dp.agent.drain_notifications = MagicMock(return_value=[])
@@ -454,3 +502,29 @@ class TestWebSocketManagerFlushQueue:
         assert first_sent["data"]["subject"] == "queued"
         assert second_sent["type"] == "anima.notification"
         assert second_sent["data"]["subject"] == "queued"
+
+
+def test_web_delivered_notification_is_not_queued_again(tmp_path):
+    """The Web UI channel already pushed it; the chat stream must not repeat it."""
+    notifier = _make_mock_notifier(notify_result=["web: OK"])
+    notifier.delivers_to_web = True
+    handler = _make_tool_handler(tmp_path, notifier=notifier)
+
+    result = handler.handle("call_human", {"subject": "Team update", "body": "hinata joined"})
+
+    assert json.loads(result)["status"] == "sent"
+    assert handler._pending_notifications == []
+
+
+def test_web_only_notifier_sends_without_confirm_step(tmp_path):
+    """No external channel means nothing to cross-check; send on the first call."""
+    notifier = _make_mock_notifier(notify_result=["web: OK"])
+    notifier.has_external_channels = False
+    notifier.delivers_to_web = True
+    handler = _make_tool_handler(tmp_path, notifier=notifier)
+    handler._call_human_keys = MagicMock()
+
+    result = handler.handle("call_human", {"subject": "Team update", "body": "hinata joined"})
+
+    assert json.loads(result)["status"] == "sent"
+    handler._call_human_keys.check.assert_not_called()

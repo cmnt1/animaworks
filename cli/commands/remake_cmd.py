@@ -12,7 +12,7 @@ from core.time_utils import now_jst
 
 logger = logging.getLogger(__name__)
 
-ALL_STEPS = ["fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"]
+ALL_STEPS = ["fullbody", "bustup", "icon", "chibi", "pixel", "3d", "rigging", "animations"]
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -119,7 +119,7 @@ def _run(args: argparse.Namespace) -> None:
     # ── Resolve prompt (style-aware) ──
     prompt = args.prompt
     if prompt is None:
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = _resolve_prompt(target_dir, style=image_style)
         if not prompt:
@@ -144,6 +144,10 @@ def _run(args: argparse.Namespace) -> None:
             return
     else:
         steps = list(ALL_STEPS)
+
+    # A bustup/chibi remake invalidates the pixel sheet's identity references.
+    if ("bustup" in steps or "chibi" in steps) and "pixel" not in steps:
+        steps.append("pixel")
 
     # ── Validate vibe parameters ──
     if not 0.0 <= args.vibe_strength <= 1.0:
@@ -181,6 +185,7 @@ def _run(args: argparse.Namespace) -> None:
             "bustup": "Generate bustup expressions (neutral, smile, laugh, troubled, surprised)",
             "icon": "Generate icon from neutral bustup",
             "chibi": "Generate chibi with Flux Kontext",
+            "pixel": "Generate pixel workspace sheet with codex image_gen",
             "3d": "Generate 3D model with Meshy Image-to-3D",
             "rigging": "Rig 3D model with Meshy Rigging",
             "animations": "Generate animations (idle, sitting, waving, talking)",
@@ -208,7 +213,7 @@ def _run(args: argparse.Namespace) -> None:
 
     # ── Run pipeline ──
     from core.config.models import ImageGenConfig, load_config
-    from core.tools.image_gen import ImageGenPipeline
+    from core.integrations.image_gen import ImageGenPipeline
 
     try:
         image_config = load_config().image_gen.model_copy(update={"image_style": image_style})
@@ -254,6 +259,8 @@ def _run(args: argparse.Namespace) -> None:
         print(f"  icon:     {result.icon_path}")
     if result.chibi_path:
         print(f"  chibi:    {result.chibi_path}")
+    if result.pixel_sheet_path:
+        print(f"  pixel:    {result.pixel_sheet_path}")
     if result.model_path:
         print(f"  3d:       {result.model_path}")
     if result.rigged_model_path:

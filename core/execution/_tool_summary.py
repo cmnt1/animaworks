@@ -8,6 +8,8 @@ so the UI can show *what* a tool is doing while it runs.
 
 from typing import Any
 
+from core.execution.events import tool_detail_event
+
 _GENERIC_VALUE_LIMIT = 60
 _GENERIC_LIMIT = 120
 
@@ -94,9 +96,4 @@ def make_tool_detail_chunk(
     detail = summarize_tool_args(tool_name, args)
     if not detail:
         return None
-    return {
-        "type": "tool_detail",
-        "tool_id": tool_id,
-        "tool_name": tool_name,
-        "detail": detail,
-    }
+    return tool_detail_event(tool_id, tool_name=tool_name, detail=detail)

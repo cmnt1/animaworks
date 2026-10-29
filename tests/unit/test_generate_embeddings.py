@@ -20,7 +20,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset singletons and module-level _EMBED_URL before/after each test."""
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield
@@ -52,14 +52,12 @@ class TestGenerateEmbeddingsLocal:
         """Empty list should return empty list without touching model."""
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
 
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         result = generate_embeddings([])
         assert result == []
 
-    def test_local_mode_uses_model(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_local_mode_uses_model(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """When ANIMAWORKS_EMBED_URL is not set, generate_embeddings uses local model."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
@@ -70,7 +68,7 @@ class TestGenerateEmbeddingsLocal:
         mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
         mock_sentence_transformers.return_value = mock_model
 
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         result = generate_embeddings(["hello", "world"])
 
@@ -84,9 +82,7 @@ class TestGenerateEmbeddingsLocal:
             batch_size=32,
         )
 
-    def test_local_mode_returns_lists(
-        self, tmp_path, monkeypatch, mock_sentence_transformers
-    ):
+    def test_local_mode_returns_lists(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """Local mode should return plain lists, not numpy arrays."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
@@ -97,7 +93,7 @@ class TestGenerateEmbeddingsLocal:
         mock_model.encode.return_value = np.array([[1.0, 2.0]])
         mock_sentence_transformers.return_value = mock_model
 
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         result = generate_embeddings(["test"])
         assert isinstance(result[0], list)
@@ -116,7 +112,7 @@ def _mock_embed_client(**post_kwargs):
     """
     client = MagicMock()
     client.post = MagicMock(**post_kwargs)
-    with patch("core.memory.rag.singleton._shared_http_client", return_value=client):
+    with patch("core.memory.rag.embedding._shared_http_client", return_value=client):
         yield client.post
 
 
@@ -130,7 +126,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_response.raise_for_status = MagicMock()
 
         with _mock_embed_client(return_value=mock_response) as mock_post:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             result = generate_embeddings(["hello", "world"])
 
@@ -150,7 +146,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_response.raise_for_status = MagicMock()
 
         with _mock_embed_client(return_value=mock_response) as mock_post:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             assert generate_embeddings(["bulk"], priority="bulk") == [[0.1]]
 
@@ -173,7 +169,7 @@ class TestGenerateEmbeddingsHTTP:
         batch2_resp.raise_for_status = MagicMock()
 
         with _mock_embed_client(side_effect=[batch1_resp, batch2_resp]) as mock_post:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             texts = [f"text_{i}" for i in range(1002)]
             result = generate_embeddings(texts)
@@ -196,7 +192,7 @@ class TestGenerateEmbeddingsHTTP:
             _mock_embed_client(return_value=mock_response),
             pytest.raises(httpx.HTTPStatusError),
         ):
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             generate_embeddings(["test"])
 
@@ -205,7 +201,7 @@ class TestGenerateEmbeddingsHTTP:
         monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://localhost/embed")
 
         with _mock_embed_client() as mock_post:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             result = generate_embeddings([])
 
@@ -220,13 +216,12 @@ class TestIndexerDelegation:
     def test_indexer_delegates_to_generate_embeddings(self, tmp_path):
         """MemoryIndexer._generate_embeddings() should delegate to singleton."""
         mock_store = MagicMock()
-        mock_model = MagicMock()
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir(parents=True)
 
         with patch(
-            "core.memory.rag.singleton.generate_embeddings",
+            "core.memory.rag.embedding.generate_embeddings",
             return_value=[[0.1, 0.2]],
         ) as mock_gen:
             from core.memory.rag.indexer import MemoryIndexer
@@ -235,45 +230,22 @@ class TestIndexerDelegation:
                 vector_store=mock_store,
                 anima_name="test-anima",
                 anima_dir=anima_dir,
-                embedding_model=mock_model,
             )
             result = indexer._generate_embeddings(["hello"])
 
         assert result == [[0.1, 0.2]]
         mock_gen.assert_called_once_with(["hello"], purpose="document", priority="bulk")
 
-    def test_indexer_skips_model_init_when_embed_url_set(self, tmp_path, monkeypatch):
-        """When ANIMAWORKS_EMBED_URL is set, indexer skips model loading."""
-        monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://localhost/embed")
-
-        mock_store = MagicMock()
-        anima_dir = tmp_path / "test-anima"
-        anima_dir.mkdir(parents=True)
-
-        with patch(
-            "core.memory.rag.indexer.MemoryIndexer._init_embedding_model"
-        ) as mock_init:
-            from core.memory.rag.indexer import MemoryIndexer
-
-            indexer = MemoryIndexer(
-                vector_store=mock_store,
-                anima_name="test-anima",
-                anima_dir=anima_dir,
-            )
-
-            mock_init.assert_not_called()
-            assert indexer.embedding_model is None
-
 
 class TestEmbeddingPriority:
     def test_bulk_yields_between_batches_to_waiting_interactive(self, monkeypatch):
         """A waiting interactive encode should run before the next bulk batch."""
-        from core.memory.rag import singleton
+        from core.memory.rag import embedding
 
-        singleton._reset_for_testing()
+        embedding._reset_for_testing()
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
-        monkeypatch.setattr(singleton, "_get_embedding_batch_size", lambda: 1)
-        monkeypatch.setattr(singleton, "_get_bulk_yield_batches", lambda: 5)
+        monkeypatch.setattr(embedding, "_get_embedding_batch_size", lambda: 1)
+        monkeypatch.setattr(embedding, "_get_bulk_yield_batches", lambda: 5)
 
         first_bulk_started = threading.Event()
         release_first_bulk = threading.Event()
@@ -288,16 +260,16 @@ class TestEmbeddingPriority:
                     assert release_first_bulk.wait(timeout=2)
                 return [[float(len(call_order))] for _ in texts]
 
-        monkeypatch.setattr(singleton, "get_embedding_model", lambda: FakeModel())
+        monkeypatch.setattr(embedding, "get_embedding_model", lambda: FakeModel())
 
         bulk_result: list[list[float]] = []
         interactive_result: list[list[float]] = []
 
         def run_bulk():
-            bulk_result.extend(singleton.thread_safe_encode(["bulk-1", "bulk-2"], priority="bulk"))
+            bulk_result.extend(embedding.thread_safe_encode(["bulk-1", "bulk-2"], priority="bulk"))
 
         def run_interactive():
-            interactive_result.extend(singleton.thread_safe_encode(["interactive"], priority="interactive"))
+            interactive_result.extend(embedding.thread_safe_encode(["interactive"], priority="interactive"))
 
         bulk_thread = threading.Thread(target=run_bulk)
         bulk_thread.start()
@@ -308,8 +280,8 @@ class TestEmbeddingPriority:
 
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
-            with singleton._priority_condition:
-                if singleton._interactive_waiters > 0:
+            with embedding._priority_condition:
+                if embedding._interactive_waiters > 0:
                     break
             time.sleep(0.01)
         else:

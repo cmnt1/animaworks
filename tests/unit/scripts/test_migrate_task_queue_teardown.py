@@ -1,4 +1,4 @@
-"""Unit tests for scripts/migrate_task_queue_teardown.py (temp dirs only)."""
+"""Unit tests for scripts/migrations/migrate_task_queue_teardown.py (temp dirs only)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.migrate_task_queue_teardown import main, migrate_anima, plan_anima
+from scripts.migrations.migrate_task_queue_teardown import main, migrate_anima, plan_anima
 
 
 def _write_legacy_row(queue_path: Path, *, task_id: str, status: str, summary: str = "s") -> None:

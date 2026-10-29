@@ -13,7 +13,7 @@ import { buildTimelineDOM, renderList, createEventElement, updateLoadMoreButton 
 import { replayEvent, ensureHighlightFns } from "./timeline-replay.js";
 import { fetchHistory as _fetchHistory, fetchMore as _fetchMore, hasMore, totalCount, resetPagination } from "./timeline-history.js";
 import { renderRunningTasksStrip } from "../../shared/activity-context.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { t } from "/shared/i18n.js";
 
 // ── Timestamp helper ──────────────────────────────
@@ -107,9 +107,7 @@ function _updateCount() {
 async function _refreshRunningTasks() {
   if (!_runningTasksEl) return;
   try {
-    const response = await fetch(`${basePath}/api/activity/running-tasks`);
-    if (!response.ok) return;
-    renderRunningTasksStrip(_runningTasksEl, await response.json(), t);
+    renderRunningTasksStrip(_runningTasksEl, await api("/api/activity/running-tasks"), t);
   } catch (err) {
     console.warn("[timeline] Failed to load running tasks:", err);
   }

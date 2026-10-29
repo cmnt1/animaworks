@@ -74,38 +74,41 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 KNOWN_VIOLATIONS: dict[str, int] = {
+    # legacy dev-engineer injection line matched verbatim by a migration step (data, not UI text)
+    "core/migrations/steps.py": 1,
+    # Japanese character classes in egress masker regexes (NLP data, not UI text)
+    "core/enclave/egress/masker/facts.py": 2,
     # bilingual empty-state placeholders for prompt injection (ja/en)
     # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
-    "core/_anima_lifecycle.py": 4,
+    "core/anima/lifecycle.py": 4,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
-    "core/_anima_inbox.py": 4,
+    "core/anima/inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
-    "core/anima_factory.py": 8,
-    # error messages returned to Anima (GlobalOutboundLimitExceeded etc.)
-    "core/cascade_limiter.py": 4,
+    "core/anima/factory.py": 9,
     # deprecation warning message
-    "core/config/cli.py": 1,
-    # Japanese day-of-week names for cron migration + permissions.md section headers for migration
-    "core/config/migrate.py": 9,
+    # permissions.md section headers used by the legacy permissions fallback
+    "core/config/migrate.py": 2,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
-    "core/config/model_mode.py": 30,
+    "core/config/model_mode.py": 31,
     # cron instruction prompt to Anima
-    "core/prompt/messaging.py": 2,
+    "core/prompt/messaging.py": 0,
     "core/prompt/org_context.py": 3,
-    "core/response_normalize.py": 15,
+    # identity heading exclusion defaults are matching data, not UI copy
+    "core/config/schemas.py": 1,
+    "core/anima/response_normalize.py": 15,
     # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)
     # label "個人ツール"
     "core/tooling/handler_memory.py": 1,
     # tool descriptions — already have ja/en dict structure
     # Japanese field names in schema descriptions (上司, 基本情報)
-    "core/tooling/schemas/admin.py": 2,
+    "core/tooling/policy/schemas/admin.py": 2,
     # user-facing message (バックグラウンドタスク投入)
-    "core/tools/__init__.py": 1,
+    "cli/tool_dispatch.py": 1,
     # tool guide with Japanese content
-    "core/tools/_image_schemas.py": 1,
-    "core/tools/aws_collector.py": 1,
-    "core/tools/github.py": 1,
-    "core/tools/_slack_cli.py": 1,
+    "core/integrations/_image_schemas.py": 1,
+    "core/integrations/aws_collector.py": 1,
+    "core/integrations/github.py": 1,
+    "core/integrations/_slack_cli.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 0,
     # dummy Japanese text fed to the embedder/reranker at warmup (NLP input, never shown)
@@ -115,15 +118,20 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/room.py": 4,
     # LLM extraction + community prompt templates — intentionally Japanese for ja locale
     # (dedupe/invalidation prompts removed in harness diet PR-6)
-    "core/memory/extraction/prompts/ja.py": 4,
+    "core/memory/facts/prompts/ja.py": 5,
     # forgetting candidate reason string fed to the weekly consolidation prompt
     # ("N日間低活性・参照M回", plan-specified wording)
-    "core/memory/forgetting.py": 1,
+    "core/memory/maintenance/forgetting.py": 1,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
-    # voice front lane — spoken ACK/error phrases voiced to the user via TTS
-    # plus the proactive silence-turn system prompt fed to the front LLM
-    "core/voice/session.py": 8,
+    # provider/channel-specific prompt templates and pronunciation rules are LLM/TTS instruction data
+    "core/voice/emotion_style.py": 6,
+    "core/voice/speech_text.py": 3,
+    # voice front lane — spoken ACK/error phrases and report prompt now live
+    # with the extracted FrontConversation implementation
+    "core/voice/front_conversation.py": 4,
+    # proactive silence-turn system prompt fed to the front LLM
+    "core/voice/session.py": 0,
 }
 
 

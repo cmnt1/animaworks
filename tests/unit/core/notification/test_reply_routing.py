@@ -295,7 +295,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -306,6 +306,44 @@ class TestRouteThreadReply:
         assert call_kwargs["external_channel_id"] == "C001"
         assert call_kwargs["external_thread_ts"] == "parent.ts"
         assert "Got it, looking into this now" in call_kwargs["content"]
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_is_recorded_in_conversation_history(
+        self,
+        routing_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from core.activity.logger import ActivityLogger
+        from core.notification.reply_routing import save_notification_mapping
+
+        animas_dir = routing_dir / "animas"
+        anima_dir = animas_dir / "mikoto"
+        anima_dir.mkdir(parents=True)
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
+        save_notification_mapping("parent.ts", "C001", "mikoto")
+
+        event = {
+            "type": "message",
+            "text": "Please check the deployment.",
+            "user": "U_HUMAN",
+            "channel": "C001",
+            "ts": "reply.ts",
+            "thread_ts": "parent.ts",
+        }
+
+        messenger_mock = MagicMock()
+        with (
+            patch("core.messaging.messenger.Messenger", return_value=messenger_mock),
+            patch("core.notification.slack_names.get_cached_user_name", return_value="Alice Example"),
+        ):
+            assert await route_thread_reply(event, routing_dir / "shared") is True
+
+        view = ActivityLogger(anima_dir).get_conversation_view(limit=20, thread_id="default")
+        messages = [message for session in view["sessions"] for message in session["messages"]]
+        reply = next(message for message in messages if message.get("type") == "human_reply")
+        assert reply["content"] == "Please check the deployment."
+        assert reply["from_person"] == "Alice Example"
+        assert reply["via"] == "slack"
 
     @pytest.mark.asyncio
     async def test_thread_reply_includes_stored_notification_text(self, routing_dir: Path) -> None:
@@ -329,7 +367,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -363,7 +401,7 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with (
-            patch("core.messenger.Messenger", return_value=messenger_mock),
+            patch("core.messaging.messenger.Messenger", return_value=messenger_mock),
             patch(
                 "core.notification.reply_routing._fetch_thread_context_for_reply",
                 return_value=thread_ctx,
@@ -432,7 +470,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -483,8 +521,8 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with (
-            patch("core.messenger.Messenger", return_value=messenger_mock),
-            patch("server.slack_socket._get_cached_user_name", return_value="Human"),
+            patch("core.messaging.messenger.Messenger", return_value=messenger_mock),
+            patch("core.notification.slack_names.get_cached_user_name", return_value="Human"),
         ):
             result = await route_thread_reply(event, shared_dir, slack_token="")
 

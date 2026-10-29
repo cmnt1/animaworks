@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ── Constants ────────────────────────────────────────────────────────
@@ -72,60 +72,60 @@ _JA_ONLY: frozenset[str] = frozenset(
 DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — communication ──
     "reference/communication/messaging-guide.md": [
-        "core/messenger.py",
-        "core/outbound.py",
+        "core/messaging/messenger.py",
+        "core/messaging/outbound.py",
     ],
     "common_knowledge/communication/board-guide.md": [
-        "core/messenger.py",
+        "core/messaging/messenger.py",
         "server/routes/channels.py",
     ],
     "reference/communication/instruction-patterns.md": [
-        "core/messenger.py",
+        "core/messaging/messenger.py",
         "core/tooling/handler_comms.py",
     ],
     "reference/communication/reporting-guide.md": [
-        "core/messenger.py",
-        "core/outbound.py",
+        "core/messaging/messenger.py",
+        "core/messaging/outbound.py",
     ],
     "common_knowledge/communication/sending-limits.md": [
-        "core/outbound.py",
-        "core/memory/activity.py",
+        "core/messaging/outbound.py",
+        "core/activity/logger.py",
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
-        "core/background.py",
+        "core/tasks/background.py",
         "core/tooling/",
-        "core/memory/task_queue.py",
+        "core/tasks/queue.py",
     ],
     "common_knowledge/operations/task-delegation-guide.md": [
         "core/tooling/handler_delegation.py",
-        "core/memory/task_queue.py",
-        "core/_anima_heartbeat.py",
-        "core/execution/_sdk_hooks.py",
+        "core/tasks/queue.py",
+        "core/anima/heartbeat.py",
+        "core/execution/engines/claude/_sdk_hooks.py",
     ],
     "reference/operations/heartbeat-cron-guide.md": [
-        "core/background.py",
-        "core/schedule_parser.py",
-        "core/_anima_heartbeat.py",
+        "core/tasks/background.py",
+        "core/runtime/schedule_parser.py",
+        "core/anima/heartbeat.py",
     ],
     "common_knowledge/operations/background-tasks.md": [
-        "core/background.py",
-        "core/supervisor/pending_executor.py",
+        "core/tasks/background.py",
+        "core/tasks/pending_executor.py",
     ],
     "common_knowledge/operations/task-board-guide.md": [
         "server/routes/tasks.py",
     ],
     "reference/operations/mode-s-auth-guide.md": [
-        "core/execution/agent_sdk.py",
-        "core/execution/_sdk_security.py",
+        "core/execution/engines/claude/executor.py",
+        "core/execution/engines/claude/_sdk_security.py",
     ],
     "reference/operations/project-setup.md": [
-        "core/init.py",
+        "core/infra/runtime_init.py",
         "cli/commands/init_cmd.py",
     ],
     "reference/operations/tool-usage-overview.md": [
         "core/tooling/",
-        "core/tools/",
+        "core/integrations/",
     ],
     "reference/operations/voice-chat-guide.md": [
         "core/voice/",
@@ -133,22 +133,22 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     # ── common_knowledge — anatomy ──
     "common_knowledge/anatomy/what-is-anima.md": [
-        "core/anima.py",
-        "core/background.py",
+        "core/anima/digital_anima.py",
+        "core/tasks/background.py",
         "core/lifecycle.py",
     ],
     "reference/anatomy/anima-anatomy.md": [
-        "core/anima_factory.py",
-        "core/init.py",
+        "core/anima/factory.py",
+        "core/infra/runtime_init.py",
         "core/prompt/builder.py",
-        "core/schedule_parser.py",
+        "core/runtime/schedule_parser.py",
     ],
     "reference/anatomy/memory-system.md": [
         "core/memory/",
-        "core/memory/bm25.py",
+        "core/memory/retrieval/bm25.py",
         "core/memory/priming.py",
-        "core/memory/consolidation.py",
-        "core/memory/forgetting.py",
+        "core/memory/maintenance/consolidation.py",
+        "core/memory/maintenance/forgetting.py",
         "core/memory/rag/",
     ],
     # ── common_knowledge — organization ──
@@ -158,16 +158,16 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/organization/roles.md": [
         "templates/_shared/",
-        "core/anima_factory.py",
+        "core/anima/factory.py",
     ],
     "reference/organization/structure.md": [
-        "core/org_sync.py",
-        "core/anima_factory.py",
+        "core/org/org_sync.py",
+        "core/anima/factory.py",
     ],
     # ── common_knowledge — security ──
     "common_knowledge/security/prompt-injection-awareness.md": [
         "core/prompt/builder.py",
-        "core/execution/_sanitize.py",
+        "core/trust.py",
     ],
     # ── common_knowledge — troubleshooting ──
     "reference/troubleshooting/common-issues.md": ["core/"],
@@ -182,12 +182,12 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/memory/",
     ],
     "common_skills/cron-management/SKILL.md": [
-        "core/schedule_parser.py",
-        "core/background.py",
+        "core/runtime/schedule_parser.py",
+        "core/tasks/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [
-        "core/tools/image_gen.py",
-        "core/image_artifacts.py",
+        "core/integrations/image_gen.py",
+        "core/anima/image_artifacts.py",
     ],
     "common_skills/skill-creator/SKILL.md": [
         "core/tooling/skill_creator.py",
@@ -200,18 +200,18 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/skill_creator.py",
     ],
     "common_skills/subagent-cli/SKILL.md": [
-        "core/execution/agent_sdk.py",
-        "core/execution/codex_sdk.py",
+        "core/execution/engines/claude/executor.py",
+        "core/execution/engines/codex/executor.py",
     ],
     "common_skills/subordinate-management/SKILL.md": [
         "core/tooling/handler_org.py",
         "core/tooling/schemas.py",
     ],
-    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/tools/"],
+    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/integrations/"],
     "common_skills/discord-tool/SKILL.md": [
-        "core/tools/discord.py",
-        "core/tools/_discord_client.py",
-        "core/tools/_discord_cli.py",
+        "core/integrations/discord.py",
+        "core/integrations/_discord_client.py",
+        "core/integrations/_discord_cli.py",
     ],
     # ── docs (OSS公開リポジトリ同期ドキュメント) ──
     # publish.sh で公開リポジトリに同期されるファイル。
@@ -222,13 +222,13 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     "docs/memory": ["core/memory/"],
     "docs/brain-mapping": ["core/memory/", "core/prompt/"],
     "docs/security": [
-        "core/execution/_sanitize.py",
-        "core/execution/_sdk_security.py",
+        "core/trust.py",
+        "core/execution/engines/claude/_sdk_security.py",
         "core/tooling/handler.py",
         "core/prompt/builder.py",
     ],
     "docs/slack-socket-mode-setup": [
-        "core/tools/slack.py",
+        "core/integrations/slack.py",
         "server/routes/webhooks.py",
     ],
     # ── root-level files ──
@@ -530,7 +530,7 @@ def run_fix(
     *,
     model: str,
     dry_run: bool = False,
-    skip_en: bool = False,
+    skip_en: bool = True,
     timeout: int = 1800,
 ) -> None:
     if not dry_run:
@@ -543,11 +543,11 @@ def run_fix(
             sys.exit(1)
 
     ja_entries = [e for e in entries if e.locale == "ja"]
+    if skip_en:
+        print("en/ko translations are generated by scripts/translate.py.")
     if not ja_entries:
         print("No stale ja documents to fix.")
         return
-
-    fixed_keys: set[str] = set()
 
     for e in ja_entries:
         prompt = (
@@ -569,34 +569,6 @@ def run_fix(
             if result.returncode != 0:
                 print(f"  WARN: cursor-agent exited {result.returncode}, skipping")
                 continue
-        fixed_keys.add(e.doc_key)
-
-    if skip_en:
-        return
-
-    for doc_key in sorted(fixed_keys):
-        en_path = _en_rel(doc_key)
-        if en_path is None:
-            continue
-
-        ja_path = _ja_rel(doc_key)
-        prompt = (
-            f"{ja_path}の内容を英語に翻訳して{en_path}を更新してください。"
-            f"技術用語は適切に翻訳し、マークダウン構造は維持してください。"
-        )
-        cmd = [*_agent_base_cmd(model), prompt]
-
-        if dry_run:
-            print(f"[DRY-RUN] {_shell_join(cmd)}")
-        else:
-            print(f"\n>>> Translating to {en_path} ...")
-            try:
-                result = subprocess.run(cmd, cwd=WORKSPACE, timeout=timeout)
-            except subprocess.TimeoutExpired:
-                print(f"  WARN: timed out after {timeout}s, skipping")
-                continue
-            if result.returncode != 0:
-                print(f"  WARN: cursor-agent exited {result.returncode}, skipping")
 
 
 def _shell_join(cmd: list[str]) -> str:
@@ -653,7 +625,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--skip-en",
         action="store_true",
-        help="Skip en translation in fix mode",
+        default=True,
+        help="Compatibility flag; en/ko translations are generated by scripts/translate.py (default)",
     )
     p.add_argument(
         "--timeout",

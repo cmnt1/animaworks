@@ -1,1 +1,1 @@
-Contact the human administrator. Use for important reports, escalation, or decisions requiring human input. Delivered to chat UI and external channel (e.g. Slack). Use send_message for routine reports; call_human for urgent cases only.
+Contact the human administrator for important reports, escalation, or decisions requiring human judgment. Delivered to the chat UI and external channels (e.g. Slack). Use send_message for routine reports; reserve call_human for urgent matters.

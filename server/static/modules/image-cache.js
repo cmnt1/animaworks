@@ -4,6 +4,8 @@
  * caches them in Cache API for persistence and Map for session-level reuse.
  */
 
+import { api } from "./api.js";
+
 const CACHE_NAME = "anima-avatars-v1";
 const SIZES = { S: 96, M: 192, L: 400 };
 const WEBP_QUALITY = 0.85;
@@ -143,7 +145,14 @@ async function _readMeta(cache, key) {
 function _scheduleRevalidation(url, key, oldEtag) {
   (async () => {
     try {
-      const resp = await fetch(url, { method: "HEAD" });
+      const resp = await api(url, {
+        method: "HEAD",
+        cache: "default",
+        rawResponse: true,
+        redirectOnUnauthorized: false,
+        throwOnHttpError: false,
+        logErrors: false,
+      });
       const newEtag = resp.headers.get("etag") || "";
       if (newEtag && newEtag !== oldEtag) {
         await invalidateCache(url);
@@ -167,7 +176,7 @@ function _scheduleRevalidation(url, key, oldEtag) {
  * @param {"S"|"M"|"L"} size
  * @returns {Promise<string>}
  */
-export async function getCachedImage(url, size = "S") {
+async function getCachedImage(url, size = "S") {
   if (!url) return url;
   const targetSize = SIZES[size] || SIZES.S;
   const key = _cacheKey(url, size);
@@ -193,7 +202,13 @@ export async function getCachedImage(url, size = "S") {
       }
     }
 
-    const resp = await fetch(url);
+    const resp = await api(url, {
+      cache: "default",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     if (!resp.ok) return url;
 
     const etag = resp.headers.get("etag") || "";

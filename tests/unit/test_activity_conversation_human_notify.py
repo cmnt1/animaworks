@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 
 
 @pytest.fixture
@@ -95,6 +95,46 @@ class TestEntriesToMessages:
         assert msg["source_key"] == "call_human_reply"
         assert msg["tool_calls"] == []
 
+    def test_response_emotion_is_extracted_and_tag_removed(self, activity_logger: ActivityLogger) -> None:
+        tagged = _make_entry(
+            "response_sent",
+            "2026-08-09T10:00:00+09:00",
+            content='こんにちは。 <!-- emotion: {"emotion": "smile"} -->',
+        )
+        plain = _make_entry("response_sent", "2026-08-09T10:01:00+09:00", content="普通の返答")
+
+        messages = activity_logger._entries_to_messages([tagged, plain])
+
+        assert messages[0]["content"] == "こんにちは。"
+        assert messages[0]["emotion"] == "smile"
+        assert messages[1]["content"] == "普通の返答"
+        assert messages[1]["emotion"] is None
+
+    def test_notification_id_and_replied_state(self, activity_logger: ActivityLogger) -> None:
+        notification_ts = "2026-08-09T10:00:00+09:00"
+        entries = [
+            _make_entry(
+                "human_notify",
+                notification_ts,
+                content="Please approve",
+                meta={"callback_id": "cb-1"},
+            ),
+            _make_entry(
+                "human_reply",
+                "2026-08-09T10:05:00+09:00",
+                content="approve",
+                from_person="alice",
+                via="web",
+                meta={"notification_id": notification_ts},
+            ),
+        ]
+
+        messages = activity_logger._entries_to_messages(entries)
+
+        notification = messages[0]
+        assert notification["notification_id"] == notification_ts
+        assert notification["replied"] is True
+
     def test_call_human_tool_use_skipped(self, activity_logger: ActivityLogger) -> None:
         """call_human tool_use is not nested; human_notify card is canonical."""
         entries = [
@@ -146,9 +186,7 @@ class TestEntriesToMessages:
 
 
 class TestConversationViewLoad:
-    def test_human_events_appear_on_default_thread(
-        self, activity_logger: ActivityLogger, anima_dir: Path
-    ) -> None:
+    def test_human_events_appear_on_default_thread(self, activity_logger: ActivityLogger, anima_dir: Path) -> None:
         activity_logger.log(
             "human_notify",
             content="Body text",
@@ -169,9 +207,7 @@ class TestConversationViewLoad:
         assert "human_notify" in types
         assert "human_reply" in types
 
-    def test_inbox_ctx_human_events_still_on_default(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_inbox_ctx_human_events_still_on_default(self, activity_logger: ActivityLogger) -> None:
         """human_notify/human_reply with inbox channel still appear on default."""
         activity_logger.log(
             "human_notify",
@@ -207,3 +243,81 @@ class TestConversationViewLoad:
         assert "Inbox-originated notify" in contents
         assert "got it" in contents
         assert "secret inbox only" not in contents
+
+
+class TestExternalUserAliases:
+    def test_slack_user_id_is_shown_as_configured_alias(
+        self, activity_logger: ActivityLogger, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import core.activity.conversation as conversation
+
+        monkeypatch.setattr(conversation, "_external_user_aliases", lambda: {"U06TEST": "taka"})
+        entries = [
+            _make_entry("human_reply", "2026-10-28T09:00:00+09:00", content="ok", from_person="U06TEST", via="slack"),
+            _make_entry("message_received", "2026-10-28T09:01:00+09:00", content="hi", from_person="someone"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        assert messages[0]["from_person"] == "taka"
+        assert messages[1]["from_person"] == "someone"
+
+
+class TestInterimTexts:
+    def test_progress_remarks_move_out_of_reply_body(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry(
+                "response_sent",
+                "2026-10-28T10:00:00+09:00",
+                content="Cause confirmed.\nChecking sites.\n\nnginx は直りました。",
+                meta={"interim_texts": ["Cause confirmed.", "Checking sites."]},
+            )
+        ]
+        msg = activity_logger._entries_to_messages(entries)[0]
+        assert msg["content"] == "nginx は直りました。"
+        assert msg["interim_texts"] == ["Cause confirmed.", "Checking sites."]
+
+    def test_reply_unchanged_when_remarks_do_not_line_up(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry(
+                "response_sent",
+                "2026-10-28T10:00:00+09:00",
+                content="nginx は直りました。",
+                meta={"interim_texts": ["Cause confirmed."]},
+            )
+        ]
+        msg = activity_logger._entries_to_messages(entries)[0]
+        assert msg["content"] == "nginx は直りました。"
+        assert "interim_texts" not in msg
+
+
+class TestNotifyAnsweredInChat:
+    def test_later_human_chat_message_marks_notification_replied(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry("human_notify", "2026-10-28T10:00:00+09:00", content="決めてください", via="web"),
+            _make_entry("message_received", "2026-10-28T10:05:00+09:00", content="Aでお願い", from_person="taka"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        notify = next(m for m in messages if m.get("type") == "human_notify")
+        assert notify["replied"] is True
+
+    def test_message_from_another_anima_does_not_count_as_reply(
+        self, activity_logger: ActivityLogger, anima_dir: Path
+    ) -> None:
+        (anima_dir.parent / "rin").mkdir()
+        entries = [
+            _make_entry("human_notify", "2026-10-28T10:00:00+09:00", content="決めてください", via="web"),
+            _make_entry("message_received", "2026-10-28T10:05:00+09:00", content="FYI", from_person="rin"),
+        ]
+        messages = activity_logger._entries_to_messages(entries)
+        notify = next(m for m in messages if m.get("type") == "human_notify")
+        assert notify["replied"] is False
+
+
+class TestNotifyNeedsReply:
+    def test_low_priority_notice_does_not_wait_for_reply(self, activity_logger: ActivityLogger) -> None:
+        entries = [
+            _make_entry("human_notify", "2026-10-28T12:32:00+09:00", content="記事5件", meta={"priority": "low"}),
+            _make_entry("human_notify", "2026-10-28T12:40:00+09:00", content="決めて", meta={"priority": "high"}),
+        ]
+        low, high = [m for m in activity_logger._entries_to_messages(entries) if m.get("type") == "human_notify"]
+        assert low["needs_reply"] is False
+        assert high["needs_reply"] is True

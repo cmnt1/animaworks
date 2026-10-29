@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ async def test_internal_update_task_persists_meta_and_status(tmp_path, monkeypat
 async def test_host_updates_are_fenced_inside_executor_thread(tmp_path, monkeypatch):
     from fastapi import FastAPI
 
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.dispatch import publish_tasks
     from server.routes.internal import create_internal_router
 
     anima_dir = tmp_path / "animas" / "rin"

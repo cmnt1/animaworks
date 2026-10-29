@@ -43,7 +43,7 @@ function showContentArea() {
 // ── Render ──────────────────────
 
 /** Build the full memory browser DOM inside the given container. */
-export function renderMemoryBrowser(container) {
+function renderMemoryBrowser(container) {
   _container = container;
   const { activeMemoryTab } = getState();
 

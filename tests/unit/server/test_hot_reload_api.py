@@ -39,31 +39,17 @@ def _create_test_app(reload_manager=None, supervisor=None) -> FastAPI:
     return app
 
 
-class TestHotReloadAllEndpoint:
-    """Tests for POST /api/system/hot-reload."""
-
-    def test_returns_503_when_no_reload_manager(self):
+class TestRemovedSystemRoutes:
+    def test_removed_cost_task_summary_and_duplicate_reload_routes_return_404(self):
         app = _create_test_app()
         client = TestClient(app)
-        resp = client.post("/api/system/hot-reload")
-        assert resp.status_code == 503
-        assert "not initialized" in resp.json()["error"]
-
-    def test_calls_reload_all(self):
-        mock_mgr = AsyncMock()
-        mock_mgr.reload_all.return_value = {
-            "config": {"status": "ok"},
-            "credentials": {"status": "ok"},
-            "slack": {"status": "ok"},
-            "animas": {"status": "ok"},
-        }
-        app = _create_test_app(reload_manager=mock_mgr)
-        client = TestClient(app)
-        resp = client.post("/api/system/hot-reload")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["config"]["status"] == "ok"
-        mock_mgr.reload_all.assert_awaited_once()
+        responses = [
+            client.get("/api/system/cost"),
+            client.get("/api/tasks/summary"),
+            client.post("/api/system/hot-reload"),
+            client.post("/api/system/hot-reload/animas"),
+        ]
+        assert [response.status_code for response in responses] == [404, 404, 404, 404]
 
 
 class TestHotReloadSlackEndpoint:
@@ -110,23 +96,3 @@ class TestHotReloadCredentialsEndpoint:
         assert data["status"] == "ok"
         assert data["slack"]["status"] == "ok"
         mock_mgr.reload_credentials.assert_awaited_once()
-
-
-class TestHotReloadAnimasEndpoint:
-    """Tests for POST /api/system/hot-reload/animas."""
-
-    def test_returns_503_when_no_reload_manager(self):
-        app = _create_test_app()
-        client = TestClient(app)
-        resp = client.post("/api/system/hot-reload/animas")
-        assert resp.status_code == 503
-
-    def test_calls_reload_animas(self):
-        mock_mgr = AsyncMock()
-        mock_mgr.reload_animas.return_value = {"status": "ok"}
-        app = _create_test_app(reload_manager=mock_mgr)
-        client = TestClient(app)
-        resp = client.post("/api/system/hot-reload/animas")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
-        mock_mgr.reload_animas.assert_awaited_once()

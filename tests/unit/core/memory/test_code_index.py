@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.code_index import search_code
+from core.memory.retrieval.code_index import search_code
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def test_search_code_incrementally_replaces_changed_file(
     assert search_code(anima_dir, "demo", "OldNeedle")
 
     source.write_text("def ReplacementNeedle():\n    return 'new'\n", encoding="utf-8")
-    monkeypatch.setattr("core.memory.code_index._SCAN_DEBOUNCE_SECONDS", 0)
+    monkeypatch.setattr("core.memory.retrieval.code_index._SCAN_DEBOUNCE_SECONDS", 0)
 
     assert search_code(anima_dir, "demo", "OldNeedle") == []
     updated = search_code(anima_dir, "demo", "ReplacementNeedle")

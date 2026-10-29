@@ -5,6 +5,7 @@
 
 import { parseConvSSE, getErrorMessage } from "./sse-parser.js";
 import { createLogger } from "./logger.js";
+import { api } from "../modules/api.js";
 import { basePath } from "/shared/base-path.js";
 
 const logger = createLogger("chat-stream");
@@ -18,7 +19,7 @@ const logger = createLogger("chat-stream");
  * watchdog `reader.read()` can block forever, the promise never settles, and
  * the caller's `isStreaming` state is never cleared (history polling stalls).
  */
-export const SSE_IDLE_TIMEOUT_MS = 90_000;
+const SSE_IDLE_TIMEOUT_MS = 90_000;
 
 /**
  * Wrap `reader.read()` with an idle timeout.
@@ -65,11 +66,9 @@ function _cancelReaderQuietly(reader, reason) {
  */
 export async function fetchActiveStream(animaName, threadId) {
   try {
-    let url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/stream/active`;
-    if (threadId) url += `?thread_id=${encodeURIComponent(threadId)}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
+    let path = `/api/animas/${encodeURIComponent(animaName)}/stream/active`;
+    if (threadId) path += `?thread_id=${encodeURIComponent(threadId)}`;
+    const data = await api(path);
     return data.active ? data : null;
   } catch {
     return null;
@@ -84,11 +83,9 @@ export async function fetchActiveStream(animaName, threadId) {
  */
 export async function fetchStreamProgress(animaName, responseId) {
   try {
-    const res = await fetch(
-      `${basePath}/api/animas/${encodeURIComponent(animaName)}/stream/${encodeURIComponent(responseId)}/progress`
+    return await api(
+      `/api/animas/${encodeURIComponent(animaName)}/stream/${encodeURIComponent(responseId)}/progress`
     );
-    if (!res.ok) return null;
-    return await res.json();
   } catch {
     return null;
   }

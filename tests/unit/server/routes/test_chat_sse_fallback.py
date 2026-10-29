@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from core.supervisor.ipc import IPCResponse
+from core.runtime.ipc import IPCResponse
 
 
 def _make_ipc_response(

@@ -9,9 +9,9 @@ description: >-
 
 ### cron（定時タスク）
 
-cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/supervisor/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
+cron の**パース**は `core/runtime/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/runtime/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
 
-### `core/background.py`（cron とは別系統）
+### `core/tasks/background.py`（cron とは別系統）
 
 このモジュールは **cron のスケジューリングをしない**。長時間ツール呼び出しのバックグラウンド実行と、DM ログのローテーションを担当する。cron と混同しないこと。
 
@@ -26,7 +26,7 @@ cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_sc
   - `cleanup_old_tasks(max_age_hours=24)` — 完了・失敗タスクを **24 時間**超で削除。加えて `running` のまま **48 時間**超経過した JSON（クラッシュ孤児）も削除。
 - **`from_profiles(anima_dir, ..., profiles, config_eligible)`**: バックグラウンド対象ツール集合は次の **3 層マージ**（後勝ち）。
   1. コード内デフォルト `_DEFAULT_ELIGIBLE_TOOLS`（Mode A 互換の固定一覧）
-  2. 各ツールモジュールの `EXECUTION_PROFILE` から `background_eligible: true` のエントリ（`core.tools._base.get_eligible_tools_from_profiles`）。キーは `"{tool}:{subcommand}"` 形式（Mode S の `submit` と整合）
+  2. 各ツールモジュールの `EXECUTION_PROFILE` から `background_eligible: true` のエントリ（`core.integrations._base.get_eligible_tools_from_profiles`）。キーは `"{tool}:{subcommand}"` 形式（Mode S の `submit` と整合）
   3. `config.json` 等から渡る `config_eligible`（明示上書き）
 - **`is_eligible(tool_name)`**: 次のどちらの名前でも照合可能 — スキーマ名（例: `generate_3d_model`）、プロファイルキー（例: `image_gen:3d`）。
 - **デフォルトで `_DEFAULT_ELIGIBLE_TOOLS` に含まれる例**（値は目安秒）: `generate_character_assets` / `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` / `generate_3d_model` / `generate_rigged_model` / `generate_animations`（各 30）、`local_llm` / `run_command`（各 60）。
@@ -211,7 +211,7 @@ args:
   text: "おはようございます！"
 ```
 
-- `tool:` にツール名（`get_tool_schemas()` / `permissions.md` で許可されたスキーマ名。例: Slack 投稿は `slack_channel_post` など）
+- `tool:` にツール名（`permissions.json` の許可設定に含まれるスキーマ名。例: Slack 投稿は `slack_channel_post` など）
 - `args:` 以降はYAMLブロック形式でインデント2スペース
 - `ToolHandler.handle(tool, args)` で実行され、結果文字列が stdout 相当として扱われる
 
@@ -282,17 +282,15 @@ Animaには判断・分析・報告に集中させること。
 
 ---
 
-## cron ヘルス通知（自動）
+## cron.md 解析通知（自動）
 
-スケジューラは問題検知時に `state/background_notifications/cron_health_{タイムスタンプ}.md` を生成する。次回の heartbeat または cron 実行のコンテキストで読み取り・対応される想定。
+cron.md の初回登録または `reload_schedule` 時に解析・登録エラーを検知すると、スケジューラは `state/background_notifications/cron_health_{タイムスタンプ}.md` を生成する。通知は次回の heartbeat または cron 実行のコンテキストに含まれる。登録済み cron の実行状況を定期監視する機能はない。
 
-**レイヤー1（セットアップ／`reload_schedule` 直後）** — `parse_cron_md` 結果と raw テキストを照合:
+**検知する問題**:
 
 - タスクは定義されているが**有効なスケジュールが1件も登録できない**（式がすべて無効など）
-- 行頭に空白がある `schedule:` 行が raw に含まれる（コードフェンス内のインデント付き行なども検出。通常は **`schedule:` を行頭（または行全体を trim して `schedule:` で始まる形）** に書く）
-- raw に `schedule:` という文字列があるのに、パーサーが **1件もタスクを返さない**
-
-**レイヤー2（3時間ごと）** — 登録済みのユーザー cron ジョブが1件以上あるのに、直近 **3時間** の activity_log に `cron_executed` が **0件** のとき警告（実行自体が動いていない可能性）
+- コメントやコードフェンスの外に、行頭の空白を含む `schedule:` 行がある（`schedule:` は行頭に記述する）
+- 有効な設定テキストに `schedule:` があるのに、パーサーが **1件もタスクを返さない**
 
 ---
 
@@ -301,8 +299,8 @@ Animaには判断・分析・報告に集中させること。
 ### 対象パスと配下編集
 
 - 自分の `cron.md` は `read_memory_file(path="cron.md")` で読み、`write_memory_file(path="cron.md", ...)` で更新する。
-- 上司が配下 Anima の `cron.md` / `heartbeat.md` / `injection.md` / `status.json` を編集する場合も、Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等の直接ファイル操作は使わない。
-- 配下の管理ファイルは write memoryツールで `../{anima_name}/cron.md` のように指定して編集する（例: `../yuki/cron.md`）。対象は自分の全配下（子・孫以下）。`identity.md` は読み取りのみ。
+- 上司は配下の `cron.md` / `heartbeat.md` を write memory ツールで `../{anima_name}/cron.md` のように指定して編集できる（子・孫以下の全配下が対象）。
+- `status.json` / `identity.md` / `permissions.json` は root 所有で、記憶・ファイルツールから書き込めない。許可された上司の `injection.md` 変更と bootstrap 中の identity 作成依頼は root に転送・認可される。直接ファイル操作はしない。
 
 ### 新規タスク追加
 
@@ -367,7 +365,7 @@ cron.mdを更新する前に、以下を**必ず**確認すること:
 ```bash
 # プロジェクトルートで実行。ANIMAWORKS_ANIMA_DIR 未設定時は ~/.animaworks/animas/default を使用
 python -c "
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 import os
 from pathlib import Path
 

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import _SENTINEL_CANCELLED, PendingTaskExecutor
+from core.tasks.pending_executor import _SENTINEL_CANCELLED, PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_executor(tmp_path: Path, stop_kind: str = "normal") -> PendingTaskExecutor:
@@ -16,10 +16,8 @@ def _make_executor(tmp_path: Path, stop_kind: str = "normal") -> PendingTaskExec
     (anima_dir / "state").mkdir(parents=True)
     anima = MagicMock()
     anima._background_lock = asyncio.Lock()
-    anima._task_semaphore = None
     anima._status_slots = {"background": "idle"}
     anima._task_slots = {"background": ""}
-    anima._active_parallel_tasks = {}
     anima._active_background_workers = {}
 
     async def stream(*_args, **_kwargs):
@@ -74,8 +72,9 @@ def _queue_task(executor: PendingTaskExecutor, task_id: str, *, status: str = "i
 def _execution_patches():
     with (
         patch("core.paths.load_prompt", return_value="prompt"),
-        patch("core.memory.activity.ActivityLogger"),
+        patch("core.activity.logger.ActivityLogger") as activity,
     ):
+        activity.return_value.alog = AsyncMock()
         yield
 
 
@@ -121,8 +120,8 @@ async def test_normal_stop_without_declaration_returns_to_pending(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_undeclared_result_is_saved_for_its_attempt_without_completing(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     publish_tasks(executor._anima_dir, [_task("attempt-result")])
@@ -151,8 +150,8 @@ async def test_external_cancel_keeps_terminal_status_and_only_references_real_ar
     tmp_path: Path, has_partial_artifact: bool
 ) -> None:
     """A SIGTERM before child result must not become a successful empty run."""
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     executor._task_isolated = True
@@ -210,8 +209,8 @@ async def test_resumed_attempt_records_its_own_stop_kind(
     tmp_path: Path, stop_kind: str, declare_done: bool, expected_status: str
 ) -> None:
     """A previous crash must not override a resumed run's actual outcome."""
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path, stop_kind)
     task_id = "resumed"
@@ -266,8 +265,8 @@ async def test_resumed_attempt_records_its_own_stop_kind(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stop_kind", ["crash", "interrupted"])
 async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_path: Path, stop_kind: str) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     task_id = "terminated-after-cycle"
@@ -301,8 +300,8 @@ async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_pa
 
 @pytest.mark.asyncio
 async def test_mid_run_cancel_preserves_owners_business_reason(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     task_id = "cancelled-duplicate"
@@ -331,7 +330,7 @@ async def test_mid_run_cancel_preserves_owners_business_reason(tmp_path: Path) -
 
 def test_new_cancel_uses_generic_localized_summary(tmp_path: Path) -> None:
     from core.i18n import t
-    from core.supervisor.pending_executor import _classify_task_result
+    from core.tasks.pending_executor import _classify_task_result
 
     executor = _make_executor(tmp_path)
     manager = _queue_task(executor, "new-cancel")
@@ -380,20 +379,21 @@ async def test_budget_skipped_keeps_queue_pending_and_records_activity(tmp_path:
 
     with (
         patch("core.paths.load_prompt", return_value="prompt"),
-        patch("core.memory.activity.ActivityLogger") as activity,
+        patch("core.activity.logger.ActivityLogger") as activity,
     ):
+        activity.return_value.alog = AsyncMock()
         await executor._execute_llm_task(_task("budget"))
 
     entry = manager.get_task_by_id("budget")
     assert entry is not None
     assert entry.status == "pending"
-    assert activity.return_value.log.call_args_list[-1].kwargs["meta"]["status"] == "budget_skipped"
+    assert activity.return_value.alog.await_args_list[-1].kwargs["meta"]["status"] == "budget_skipped"
 
 
 @pytest.mark.asyncio
 async def test_cancelled_batch_result_does_not_start_dependent(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     publish_tasks(
@@ -464,3 +464,72 @@ async def test_stream_error_is_not_suppressed_without_declaration(tmp_path: Path
     assert entry.status == "pending"
     assert "streaming error" in entry.meta["last_run_note"]
     assert entry.meta["last_run_stop_kind"] == "crash"
+
+
+def _claim_with_mid_run_status(tmp_path: Path, task_id: str, mid_run_status: str | None):
+    """Claim a canonical task whose model sets ``mid_run_status`` before the cycle ends."""
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    publish_tasks(executor._anima_dir, [_task(task_id, reply_to="manager-anima")])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", task_id, process_identity())
+    assert claim is not None
+
+    async def stream(*_args, **_kwargs):
+        if mid_run_status is not None:
+            manager.update_status(task_id, mid_run_status)
+        yield {"type": "text_delta", "text": "output"}
+        yield {
+            "type": "cycle_done",
+            "cycle_result": {
+                "summary": "result",
+                "action": "responded",
+                "stop_kind": "normal",
+                "tool_call_records": [],
+            },
+        }
+
+    executor._anima.agent.run_cycle_streaming = stream
+    return executor, manager, claim
+
+
+@pytest.mark.asyncio
+async def test_pending_declared_by_the_anima_raises_no_wakeup(tmp_path: Path) -> None:
+    """Handing the task back to pending (e.g. waiting on a delegate) is a decision, not a failure."""
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "waiting", "pending")
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    assert manager.get_task_by_id("waiting").status == "pending"
+    assert manager.store.wakeups("test-anima") == []
+    executor._deliver_task_wakeups(manager.store)
+    executor._anima.messenger.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delegated_status_survives_the_attempt_finalizer(tmp_path: Path) -> None:
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "handed-off", "delegated")
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    assert manager.get_task_by_id("handed-off").status == "delegated"
+    assert manager.store.wakeups("test-anima") == []
+
+
+@pytest.mark.asyncio
+async def test_undeclared_normal_end_is_not_reported_as_a_failure(tmp_path: Path) -> None:
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "silent", None)
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    wakeups = manager.store.wakeups("test-anima")
+    assert [event["reason"] for event in wakeups] == ["normal"]
+    with patch("core.tasks.pending_executor.t", side_effect=lambda key, **_kw: key):
+        executor._deliver_task_wakeups(manager.store)
+    contents = {call.kwargs["content"] for call in executor._anima.messenger.send.call_args_list}
+    assert contents == {"pending_executor.task_undeclared_notify"}

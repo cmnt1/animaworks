@@ -160,13 +160,13 @@ class TestOrgDashboardKpiBar:
         assert "Active" in self.src
 
     def test_kpi_shows_events_per_hour(self):
-        assert "events/h" in self.src
+        assert "ws.kpi_events_per_hour" in self.src
 
     def test_kpi_shows_tasks(self):
-        assert "Tasks" in self.src
+        assert "ws.kpi_tasks" in self.src
 
     def test_kpi_shows_errors(self):
-        assert "Errors" in self.src
+        assert "ws.kpi_errors" in self.src
 
 
 class TestOrgDashboardCanvasPan:

@@ -261,8 +261,8 @@ class TestStartupHashCheck:
         cache2.load(fp, interactive=True)
         assert cache2.loaded
 
-    def test_hash_mismatch_non_tty_exits(self, tmp_path: Path):
-        """Non-TTY session with hash mismatch should raise SystemExit."""
+    def test_hash_mismatch_without_confirmation_callback_exits(self, tmp_path: Path):
+        """A changed file cannot load without an interface confirmation callback."""
         fp = _write_config(tmp_path)
         cache = GlobalPermissionsCache.get()
         cache.load(fp, interactive=False)
@@ -275,13 +275,11 @@ class TestStartupHashCheck:
         GlobalPermissionsCache.reset()
         cache2 = GlobalPermissionsCache.get()
 
-        with patch("sys.stdin") as mock_stdin:
-            mock_stdin.isatty.return_value = False
-            with pytest.raises(SystemExit, match="non-interactive"):
-                cache2.load(fp, interactive=True)
+        with pytest.raises(SystemExit, match="non-interactive"):
+            cache2.load(fp, interactive=True)
 
     def test_hash_mismatch_tty_accepted(self, tmp_path: Path):
-        """TTY session where user types 'yes' should proceed."""
+        """An interface callback accepting the change allows startup."""
         fp = _write_config(tmp_path)
         cache = GlobalPermissionsCache.get()
         cache.load(fp, interactive=False)
@@ -293,9 +291,12 @@ class TestStartupHashCheck:
         GlobalPermissionsCache.reset()
         cache2 = GlobalPermissionsCache.get()
 
-        with patch("sys.stdin") as mock_stdin, patch("builtins.input", return_value="yes"):
-            mock_stdin.isatty.return_value = True
-            cache2.load(fp, interactive=True)
+        with patch("builtins.input", return_value="yes") as mock_input:
+            cache2.load(fp, interactive=True, confirm_change=lambda prompt: input(prompt).strip().lower() == "yes")
+            mock_input.assert_called_once_with(
+                "permissions.global.json was modified outside of normal "
+                "server lifecycle. Accept changes? [yes/no]: "
+            )
             assert cache2.loaded
 
     def test_hash_mismatch_tty_rejected(self, tmp_path: Path):
@@ -311,10 +312,8 @@ class TestStartupHashCheck:
         GlobalPermissionsCache.reset()
         cache2 = GlobalPermissionsCache.get()
 
-        with patch("sys.stdin") as mock_stdin, patch("builtins.input", return_value="no"):
-            mock_stdin.isatty.return_value = True
-            with pytest.raises(SystemExit, match="rejected"):
-                cache2.load(fp, interactive=True)
+        with pytest.raises(SystemExit, match="rejected"):
+            cache2.load(fp, interactive=True, confirm_change=lambda _prompt: False)
 
     def test_interactive_false_skips_prompt(self, tmp_path: Path):
         """interactive=False should skip hash check entirely."""

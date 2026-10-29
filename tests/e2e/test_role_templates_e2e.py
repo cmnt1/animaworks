@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.anima_factory import create_from_md
+from core.anima.factory import create_from_md
 from core.config import (
     invalidate_cache,
     load_config,
@@ -138,8 +138,7 @@ class TestCreateFromMdEngineerRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Engineer defaults.json specifies these values
-        assert status["model"] == "claude-opus-4-6"
-        assert status["max_chains"] == 10
+        assert status["model"] == "claude-opus-5-5"
         assert status["context_threshold"] == 0.80
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
@@ -154,7 +153,7 @@ class TestCreateFromMdEngineerRole:
 | 項目 | 設定 |
 |------|------|
 | 英名 | testeng2 |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | 上司 | (なし) |
 | 実行モード | autonomous |
 
@@ -173,9 +172,7 @@ class TestCreateFromMdEngineerRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Character sheet model should override role default
-        assert status["model"] == "claude-sonnet-4-6"
-        # But other role defaults should still be applied
-        assert status["max_chains"] == 10
+        assert status["model"] == "claude-sonnet-5-5"
 
 
 # ── Test 2: create_from_md with role="general" (default) ───
@@ -215,8 +212,7 @@ class TestCreateFromMdGeneralRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # general defaults.json values
-        assert status["model"] == "claude-sonnet-4-6"
-        assert status["max_chains"] == 2
+        assert status["model"] == "claude-sonnet-5-5"
         assert status["context_threshold"] == 0.50
         assert status["conversation_history_threshold"] == 0.30
 
@@ -249,7 +245,6 @@ class TestCreateFromMdResearcherRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["model"] == expected["model"]
-        assert status["max_chains"] == expected["max_chains"]
         assert status["context_threshold"] == expected["context_threshold"]
         assert status["conversation_history_threshold"] == expected["conversation_history_threshold"]
         assert status["role"] == "researcher"
@@ -274,8 +269,7 @@ class TestTwoLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Engineer role defaults in status.json should override global defaults
-        assert model_config.model == "claude-opus-4-6"
-        assert model_config.max_chains == 10
+        assert model_config.model == "claude-opus-5-5"
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
 
@@ -291,7 +285,7 @@ class TestTwoLayerConfigResolution:
 
         status_path = anima_dir / "status.json"
         status_data = json.loads(status_path.read_text(encoding="utf-8"))
-        status_data["model"] = "claude-sonnet-4-6"
+        status_data["model"] = "claude-sonnet-5-5"
         legacy_key = "max_turns"
         status_data[legacy_key] = 50
         status_path.write_text(
@@ -304,10 +298,9 @@ class TestTwoLayerConfigResolution:
         model_config = memory.read_model_config()
 
         # Updated fields from status.json
-        assert model_config.model == "claude-sonnet-4-6"
+        assert model_config.model == "claude-sonnet-5-5"
         assert not hasattr(model_config, legacy_key)
         # Non-updated fields still come from original status.json (engineer role)
-        assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
 
     def test_resolve_anima_config_directly(self, data_dir: Path, tmp_path: Path):
@@ -333,8 +326,7 @@ class TestTwoLayerConfigResolution:
 
         # Layer 1: status.json (engineer role defaults + our override)
         assert not hasattr(resolved, legacy_key)
-        assert resolved.model == "claude-opus-4-6"
-        assert resolved.max_chains == 10
+        assert resolved.model == "claude-opus-5-5"
         assert resolved.context_threshold == 0.80
         # Layer 2: global defaults (for fields not set in status.json)
         assert resolved.max_tokens == 1024  # from test config anima_defaults
@@ -383,26 +375,16 @@ class TestSpecialtyPromptInjection:
 
         assert injection_content, "injection.md should have content"
         assert specialty_content, "specialty_prompt.md should have content"
-        assert permissions_content, "permissions.md should have content"
-
-        # Find the positions in the assembled prompt
-        # Use a distinctive string from each section
-        injection_marker = "テスト用の行動方針です"
-        specialty_marker = "エンジニア専門ガイドライン"
-        permissions_marker = "Permissions"
-
-        injection_pos = prompt.find(injection_marker)
-        specialty_pos = prompt.find(specialty_marker)
-        permissions_pos = prompt.find(permissions_marker)
-
-        assert injection_pos >= 0, f"Injection marker '{injection_marker}' not found in prompt"
-        assert specialty_pos >= 0, f"Specialty marker '{specialty_marker}' not found in prompt"
-        assert permissions_pos >= 0, f"Permissions marker '{permissions_marker}' not found in prompt"
-
-        # Verify ordering: injection < specialty < permissions
-        assert injection_pos < specialty_pos < permissions_pos, (
-            f"Incorrect ordering: injection@{injection_pos}, specialty@{specialty_pos}, permissions@{permissions_pos}"
-        )
+        # Default (open) permissions render no section; ordering only applies when present.
+        injection_pos = prompt.find("テスト用の行動方針です")
+        specialty_pos = prompt.find("エンジニア専門ガイドライン")
+        assert injection_pos >= 0, "Injection marker not found in prompt"
+        assert specialty_pos >= 0, "Specialty marker not found in prompt"
+        assert injection_pos < specialty_pos
+        if permissions_content:
+            permissions_pos = prompt.find("Permissions")
+            assert permissions_pos >= 0, "Permissions marker not found in prompt"
+            assert specialty_pos < permissions_pos
 
     def test_general_role_specialty_prompt_in_system_prompt(self, data_dir: Path, tmp_path: Path):
         """General role specialty prompt should also appear in system prompt."""

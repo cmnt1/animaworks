@@ -28,8 +28,7 @@
 
 .taskboard-icon-btn,
 .taskboard-actions button,
-.taskboard-mobile-tab,
-.taskboard-segment {
+.taskboard-mobile-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -122,19 +121,6 @@
   white-space: nowrap;
 }
 
-.taskboard-segmented {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  border: 0;
-}
-
-.taskboard-segment {
-  padding: 0 12px;
-}
-
-.taskboard-segment.is-active,
 .taskboard-mobile-tab.is-active {
   border-color: var(--aw-color-accent);
   background: var(--aw-color-accent);
@@ -221,10 +207,6 @@
   padding: 12px;
 }
 
-.taskboard-card.is-dragging {
-  opacity: 0.55;
-}
-
 .taskboard-card-topline,
 .taskboard-meta-row,
 .taskboard-card-facts,
@@ -240,7 +222,6 @@
 }
 
 .taskboard-anima,
-.taskboard-visibility,
 .taskboard-badge {
   display: inline-flex;
   align-items: center;
@@ -256,11 +237,6 @@
   color: #17664a;
 }
 
-.taskboard-visibility {
-  background: #f1f0ff;
-  color: #4c438f;
-}
-
 .taskboard-badge {
   background: #eef2f6;
   color: #394756;
@@ -272,7 +248,6 @@
   color: #135c9e;
 }
 
-.taskboard-badge--blocked,
 .taskboard-badge--failed {
   background: #ffeded;
   color: #a13333;
@@ -287,6 +262,11 @@
 .taskboard-badge--cancelled {
   background: #edf7e7;
   color: #346b21;
+}
+
+.taskboard-badge--human {
+  background: #fff3d6;
+  color: #7b4e00;
 }
 
 .taskboard-card-title-row {
@@ -366,9 +346,11 @@
   gap: 4px;
 }
 
-.taskboard-card-facts .is-overdue {
-  color: var(--aw-color-error);
-  font-weight: 700;
+.taskboard-card-fact--waiting,
+.taskboard-card-fact--lease {
+  border-radius: 5px;
+  background: var(--aw-color-bg-subtle);
+  padding: 3px 6px;
 }
 
 .taskboard-actions button {
@@ -382,9 +364,7 @@
 .taskboard-icon-btn:hover,
 .taskboard-icon-btn:active,
 .taskboard-mobile-tab:hover,
-.taskboard-mobile-tab:active,
-.taskboard-segment:hover,
-.taskboard-segment:active {
+.taskboard-mobile-tab:active {
   background: var(--aw-color-bg-hover);
 }
 

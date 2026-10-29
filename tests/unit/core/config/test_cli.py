@@ -1,4 +1,4 @@
-"""Unit tests for core/config/cli.py — config CLI subcommands."""
+"""Unit tests for CLI configuration commands and core configuration operations."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,17 +11,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.config.cli import (
-    _coerce_value,
-    _flatten_dict,
-    _mask_secret,
-    _set_nested,
+from cli.commands.config_cmd import (
     cmd_config_dispatch,
     cmd_config_get,
     cmd_config_list,
     cmd_config_set,
 )
 from core.config.models import invalidate_cache
+from core.config.ops import _coerce_value, _flatten_dict, _mask_secret, _set_nested
 
 # ── _flatten_dict ─────────────────────────────────────────
 
@@ -149,7 +146,7 @@ class TestCmdConfigDispatch:
 
     def test_interactive_flag(self, data_dir):
         args = argparse.Namespace(interactive=True)
-        with patch("core.config.cli._interactive_setup") as mock_wizard:
+        with patch("cli.commands.config_cmd._interactive_setup") as mock_wizard:
             cmd_config_dispatch(args)
             mock_wizard.assert_called_once()
 
@@ -193,17 +190,17 @@ class TestCmdConfigSet:
         invalidate_cache()
 
     def test_set_value(self, data_dir, capsys):
-        args = argparse.Namespace(key="system.log_level", value="DEBUG")
+        args = argparse.Namespace(key="system.timezone", value="Asia/Tokyo")
         cmd_config_set(args)
         captured = capsys.readouterr()
-        assert "DEBUG" in captured.out
+        assert "Asia/Tokyo" in captured.out
 
         # Verify persisted
         invalidate_cache()
         from core.config.models import load_config
 
         config = load_config(data_dir / "config.json")
-        assert config.system.log_level == "DEBUG"
+        assert config.system.timezone == "Asia/Tokyo"
 
     def test_set_new_anima(self, data_dir, capsys):
         """animas.X.model triggers deprecation warning and writes to status.json."""
@@ -222,6 +219,53 @@ class TestCmdConfigSet:
 
         status = json.loads(status_path.read_text(encoding="utf-8"))
         assert status["model"] == "gpt-4o"
+
+    def test_server_running_routes_config_set_to_root_api(self, data_dir):
+        (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+        args = argparse.Namespace(key="system.timezone", value="Asia/Tokyo", gateway_url=None)
+        response = MagicMock()
+        with (
+            patch("cli._gateway.gateway_request", return_value=response) as gateway,
+            patch("cli.commands.config_cmd.set_config_value") as local_set,
+        ):
+            cmd_config_set(args)
+
+        gateway.assert_called_once_with(
+            args,
+            "PUT",
+            "/api/system/config/value",
+            json={"key": "system.timezone", "value": "Asia/Tokyo"},
+            timeout=30.0,
+            raw_response=True,
+        )
+        response.raise_for_status.assert_called_once()
+        local_set.assert_not_called()
+
+    def test_set_per_anima_heartbeat_interval_uses_status_store(self, data_dir, capsys):
+        args = argparse.Namespace(key="animas.alice.heartbeat_interval_minutes", value="60")
+        cmd_config_set(args)
+        status = json.loads((data_dir / "animas" / "alice" / "status.json").read_text(encoding="utf-8"))
+        assert status["heartbeat_interval_minutes"] == 60
+        captured = capsys.readouterr()
+        assert "heartbeat_interval_minutes" in captured.err
+        assert "root" in captured.err.lower()
+
+    def test_organization_status_field_updates_root_owned_config_and_status(self, data_dir, capsys):
+        from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, save_config
+
+        anima_dir = data_dir / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        save_config(AnimaWorksConfig(animas={"alice": AnimaModelConfig()}), data_dir / "config.json")
+        invalidate_cache()
+
+        cmd_config_set(argparse.Namespace(key="animas.alice.supervisor", value="boss"))
+
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["supervisor"] == "boss"
+        assert load_config(data_dir / "config.json").animas["alice"].supervisor == "boss"
+        assert "root" in capsys.readouterr().err
 
     def test_set_new_credential(self, data_dir, capsys):
         args = argparse.Namespace(key="credentials.openrouter.api_key", value="sk-test")

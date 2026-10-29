@@ -204,7 +204,7 @@ export function populateModelSelect(selectEl, catalog, selectedId, opts = {}) {
  * @param {string|null}       id               model id
  * @returns {string} short label, falling back to the id, then ""
  */
-export function modelShortLabel(catalogOrModels, id) {
+function modelShortLabel(catalogOrModels, id) {
   let list = null;
   if (catalogOrModels && typeof catalogOrModels === "object" && Array.isArray(catalogOrModels.models)) {
     list = catalogOrModels.models;

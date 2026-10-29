@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.execution.session_types import (
+from core.execution.session.session_types import (
     is_chat_session_type,
     is_clean_start_session,
     is_persistent_codex_session,

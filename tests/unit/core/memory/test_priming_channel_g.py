@@ -1,499 +1,256 @@
-"""Unit tests for Channel G: graph context (community + recent facts).
-
-All tests use mocked MemoryBackend — no real Neo4j or LLM calls.
-"""
-
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for Channel G: recent atomic facts in PrimingEngine."""
+
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core.memory.backend.base import RetrievedMemory
-from core.memory.priming.channel_g import collect_graph_context
-from core.memory.priming.constants import _BUDGET_GRAPH_CONTEXT
+import pytest
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-
-def _make_backend(
-    communities: list[RetrievedMemory] | None = None,
-    facts: list[RetrievedMemory] | None = None,
-) -> MagicMock:
-    """Create a mock MemoryBackend with configured return values."""
-    backend = MagicMock()
-    backend.get_community_context = AsyncMock(return_value=communities or [])
-    backend.get_recent_facts = AsyncMock(return_value=facts or [])
-    return backend
+from core.config.schemas import PrimingConfig
+from core.i18n import t
+from core.memory.priming import PrimingEngine, PrimingResult, channel_g, format_priming_section
+from core.text.tokens import estimate_tokens
 
 
-def _mem(content: str, score: float = 1.0) -> RetrievedMemory:
-    return RetrievedMemory(content=content, score=score, source="test")
+@pytest.fixture
+def anima_dir(tmp_path: Path) -> Path:
+    path = tmp_path / "animas" / "test_anima"
+    path.mkdir(parents=True)
+    (path / "knowledge").mkdir()
+    return path
 
 
-# ── TestCollectGraphContext ────────────────────────────────────────────────
+def _searcher(rows: list[dict] | None = None, *, error: Exception | None = None) -> MagicMock:
+    searcher = MagicMock()
+    searcher.search_many.return_value = rows or []
+    if error is not None:
+        searcher.search_many.side_effect = error
+    searcher.last_search_meta = {"abstain": False}
+    return searcher
 
 
-class TestCollectGraphContext:
-    """Tests for collect_graph_context()."""
+def _stub_non_recall_channels(monkeypatch: pytest.MonkeyPatch, engine: PrimingEngine) -> None:
+    monkeypatch.setattr(engine, "_channel_a_sender_profile", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_channel_b_recent_activity", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_channel_c0_important_knowledge", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_channel_e_pending_tasks", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_channel_f_episodes", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_collect_recent_outbound", AsyncMock(return_value=""))
+    monkeypatch.setattr(engine, "_collect_pending_human_notifications", AsyncMock(return_value=""))
 
-    async def test_returns_both_communities_and_facts(self) -> None:
-        backend = _make_backend(
-            communities=[_mem("[Team A] Frontend team")],
-            facts=[_mem("Alice → React: works with")],
-        )
 
-        result = await collect_graph_context(backend, "test query")
-
-        assert "## Communities" in result
-        assert "[Team A] Frontend team" in result
-        assert "## Recent Facts" in result
-        assert "Alice → React: works with" in result
-
-    async def test_communities_only(self) -> None:
-        backend = _make_backend(communities=[_mem("[Eng] Engineers")])
-
-        result = await collect_graph_context(backend, "test")
-
-        assert "## Communities" in result
-        assert "## Recent Facts" not in result
-
-    async def test_facts_only(self) -> None:
-        backend = _make_backend(facts=[_mem("Bob → Python: uses")])
-
-        result = await collect_graph_context(backend, "test")
-
-        assert "## Recent Facts" in result
-        assert "## Communities" not in result
-
-    async def test_empty_returns_empty_string(self) -> None:
-        backend = _make_backend()
-
-        result = await collect_graph_context(backend, "test")
-
-        assert result == ""
-
-    async def test_backend_exception_returns_empty(self) -> None:
-        backend = MagicMock()
-        backend.get_community_context = AsyncMock(side_effect=RuntimeError("Neo4j down"))
-        backend.get_recent_facts = AsyncMock(side_effect=RuntimeError("Neo4j down"))
-
-        result = await collect_graph_context(backend, "test")
-
-        assert result == ""
-
-    async def test_calls_backend_with_correct_params(self) -> None:
-        backend = _make_backend()
-
-        await collect_graph_context(
-            backend,
-            "my query",
-            budget_tokens=300,
+@pytest.mark.asyncio
+async def test_collect_recent_facts_formats_fact_and_searches_facts_scope(anima_dir: Path) -> None:
+    searcher = _searcher(
+        [
+            {
+                "source_file": "facts/preferences.jsonl",
+                "content": "Rin prefers tea",
+                "source_entity": "Rin",
+                "edge_type": "PREFERS",
+                "target_entity": "tea",
+            }
+        ]
+    )
+    with (
+        patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=searcher),
+        patch("core.memory.priming.channel_g.get_min_retrieval_score", return_value=0.42),
+    ):
+        result = await channel_g.collect_recent_facts(
+            anima_dir,
+            lambda: None,
+            ["tea preference"],
             trigger="inbox:alice",
         )
 
-        backend.get_community_context.assert_awaited_once_with("my query", limit=3)
-        backend.get_recent_facts.assert_awaited_once_with(
-            "my query",
-            hours=24,
-            limit=10,
-            trigger="inbox",
-        )
-
-    async def test_query_affects_returned_context(self) -> None:
-        backend = MagicMock()
-
-        async def _communities(query: str, limit: int = 3):
-            if "frontend" in query:
-                return [_mem("[Frontend] React owners")]
-            return [_mem("[Backend] Database owners")]
-
-        async def _facts(
-            query: str,
-            hours: int = 24,
-            limit: int = 10,
-            trigger: str = "chat",
-        ):
-            if "frontend" in query:
-                return [_mem("Alice -[OWNS]-> React: maintains UI")]
-            return [_mem("Bob -[OWNS]-> Postgres: maintains DB")]
-
-        backend.get_community_context = AsyncMock(side_effect=_communities)
-        backend.get_recent_facts = AsyncMock(side_effect=_facts)
-
-        result = await collect_graph_context(backend, "frontend bug")
-
-        assert "Frontend" in result
-        assert "React" in result
-        assert "Backend" not in result
-        assert "Postgres" not in result
-
-    async def test_truncates_to_budget(self) -> None:
-        from core.prompt.tokens import estimate_tokens
-
-        long_facts = [_mem(f"Fact number {i} with some longer content here") for i in range(50)]
-        backend = _make_backend(facts=long_facts)
-
-        result = await collect_graph_context(backend, "test", budget_tokens=50)
-
-        assert estimate_tokens(result) <= 50
-
-    async def test_default_budget_matches_constant(self) -> None:
-        assert _BUDGET_GRAPH_CONTEXT == 500
-
-
-# ── TestPrimingResultGraphContext ──────────────────────────────────────────
-
-
-class TestPrimingResultGraphContext:
-    """Tests for graph_context field in PrimingResult."""
-
-    def test_graph_context_default_empty(self) -> None:
-        from core.memory.priming.engine import PrimingResult
-
-        result = PrimingResult()
-        assert result.graph_context == ""
-
-    def test_graph_context_included_in_is_empty(self) -> None:
-        from core.memory.priming.engine import PrimingResult
-
-        result = PrimingResult(graph_context="some context")
-        assert not result.is_empty()
-
-    def test_graph_context_included_in_total_chars(self) -> None:
-        from core.memory.priming.engine import PrimingResult
-
-        result = PrimingResult(graph_context="hello")
-        assert result.total_chars() == 5
-
-
-# ── TestFormatPrimingSectionGraphContext ───────────────────────────────────
-
-
-class TestFormatPrimingSectionGraphContext:
-    """Tests for graph_context rendering in format_priming_section."""
-
-    def test_graph_context_rendered_in_output(self) -> None:
-        from core.memory.priming.engine import PrimingResult
-        from core.memory.priming.format import format_priming_section
-
-        result = PrimingResult(graph_context="## Communities\n- [Team A] Engineers")
-
-        output = format_priming_section(result, "human")
-
-        assert '<priming source="graph_context"' in output
-        assert "Team A" in output
-
-    def test_empty_graph_context_not_rendered(self) -> None:
-        from core.memory.priming.engine import PrimingResult
-        from core.memory.priming.format import format_priming_section
-
-        result = PrimingResult(sender_profile="some profile")
-
-        output = format_priming_section(result, "human")
-
-        assert "graph_context" not in output
-
-
-# ── TestPrimingEngineChannelG ─────────────────────────────────────────────
-
-
-class TestPrimingEngineChannelG:
-    """Tests for channel G integration in PrimingEngine."""
-
-    async def test_channel_g_skips_legacy_backend(self, tmp_path) -> None:
-        from core.memory.backend.legacy import LegacyRAGBackend
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        engine._memory_backend = LegacyRAGBackend(tmp_path)
-
-        with patch("core.memory.priming.engine._channel_g.collect_graph_context", new_callable=AsyncMock) as collect:
-            result = await engine._channel_g_graph_context("test message")
-
-        assert result == ""
-        collect.assert_not_awaited()
-
-    async def test_channel_g_called_in_prime_memories(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-
-        backend = _make_backend(
-            facts=[_mem("Alice → Bob: knows")],
-        )
-        engine._memory_backend = backend
-
-        with (
-            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
-            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-        ):
-            result = await engine.prime_memories("test message")
-
-        assert "Alice → Bob: knows" in result.graph_context
-        backend.get_recent_facts.assert_awaited_once_with(
-            "test message",
-            hours=24,
-            limit=10,
-            trigger="chat",
-        )
-
-    async def test_prime_memories_propagates_heartbeat_to_channel_g(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        engine._memory_backend = _make_backend()
-
-        with (
-            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
-            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_g_graph_context", new_callable=AsyncMock, return_value="") as channel_g,
-        ):
-            await engine.prime_memories("heartbeat check", channel="heartbeat")
-
-        channel_g.assert_awaited_once_with("heartbeat check", trigger="heartbeat")
-
-    async def test_prime_memories_does_not_schedule_channel_g_for_legacy(self, tmp_path) -> None:
-        from core.memory.backend.legacy import LegacyRAGBackend
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        engine._memory_backend = LegacyRAGBackend(tmp_path)
-
-        with (
-            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
-            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_g_graph_context", new_callable=AsyncMock, return_value="") as channel_g,
-        ):
-            result = await engine.prime_memories("test message")
-
-        assert result.graph_context == ""
-        channel_g.assert_not_called()
-
-    async def test_channel_g_timeout_degrades_only_that_channel(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        engine._config_loaded = True
-        engine._channel_timeout_seconds = 0.01
-
-        async def slow_graph_context(
-            _query: str,
-            *,
-            trigger: str = "chat",
-        ) -> str:
-            import asyncio
-
-            await asyncio.sleep(1)
-            return "late graph context"
-
-        with (
-            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value="profile"),
-            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
-            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_g_graph_context", side_effect=slow_graph_context),
-        ):
-            result = await engine.prime_memories("test message")
-
-        assert result.sender_profile == "profile"
-        assert result.graph_context == ""
-
-    async def test_channel_g_empty_when_no_backend(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        engine._memory_backend_init_failed = True
-
-        with (
-            patch.object(engine, "_channel_a_sender_profile", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_b_recent_activity", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c0_important_knowledge", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_c_related_knowledge", new_callable=AsyncMock, return_value=("", "")),
-            patch.object(engine, "_channel_e_pending_tasks", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-        ):
-            result = await engine.prime_memories("test message")
-
-        assert result.graph_context == ""
-
-    def test_get_memory_backend_lazy_init(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        mock_backend = MagicMock()
-
-        with (
-            patch("core.memory.backend.registry.get_backend", return_value=mock_backend),
-            patch("core.config.models.load_config") as mock_cfg,
-        ):
-            mock_cfg.return_value = MagicMock(memory=MagicMock(backend="neo4j"))
-            result = engine._get_memory_backend()
-
-        assert result is mock_backend
-
-    def test_get_memory_backend_caches_failure(self, tmp_path) -> None:
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-
-        with patch("core.memory.backend.registry.resolve_backend_type", side_effect=RuntimeError("no config")):
-            result1 = engine._get_memory_backend()
-            result2 = engine._get_memory_backend()
-
-        assert result1 is None
-        assert result2 is None
-        assert engine._memory_backend_init_failed is True
-
-
-class TestNeo4jQueryAwareGraphContext:
-    """Tests for Neo4j-backed Channel G relevance behavior."""
-
-    def _make_backend(self, tmp_path):
-        from core.memory.backend.neo4j_graph import Neo4jGraphBackend
-
-        backend = Neo4jGraphBackend(tmp_path, group_id="test")
-        mock_driver = AsyncMock()
-        mock_driver.execute_query = AsyncMock()
-        backend._driver = mock_driver
-        backend._schema_ensured = True
-        return backend, mock_driver
-
-    async def test_community_context_uses_fulltext_when_query_is_non_empty(self, tmp_path) -> None:
-        from core.memory.graph.queries import FULLTEXT_SEARCH_COMMUNITIES
-
-        backend, mock_driver = self._make_backend(tmp_path)
-        mock_driver.execute_query = AsyncMock(
-            return_value=[
-                {
-                    "uuid": "c1",
-                    "name": "Frontend",
-                    "summary": "React owners",
-                    "score": 0.8,
-                    "created_at": "2026-05-14T00:00:00Z",
-                }
-            ]
-        )
-
-        result = await backend.get_community_context("frontend bug", limit=3)
-
-        assert len(result) == 1
-        assert result[0].score == 0.8
-        assert result[0].content == "[Frontend] React owners"
-        mock_driver.execute_query.assert_awaited_once()
-        query, params = mock_driver.execute_query.call_args.args
-        assert query == FULLTEXT_SEARCH_COMMUNITIES
-        assert params["query"] == "frontend bug"
-        assert params["top_k"] == 9
-
-    async def test_community_context_uses_recency_fallback_when_query_is_empty(self, tmp_path) -> None:
-        from core.memory.graph.queries import SEARCH_COMMUNITIES
-
-        backend, mock_driver = self._make_backend(tmp_path)
-        mock_driver.execute_query = AsyncMock(return_value=[{"uuid": "c1", "name": "Latest", "summary": "Recent"}])
-
-        result = await backend.get_community_context("   ", limit=2)
-
-        assert len(result) == 1
-        assert result[0].score == 1.0
-        query, params = mock_driver.execute_query.call_args.args
-        assert query == SEARCH_COMMUNITIES
-        assert params == {"group_id": "test", "limit": 2}
-
-    async def test_recent_facts_uses_hybrid_search_and_recency_filter_when_query_is_non_empty(self, tmp_path) -> None:
-        backend, mock_driver = self._make_backend(tmp_path)
-        now = datetime.now(tz=UTC)
-        rows = [
+    assert result == "## Recent Facts\n- [Rin PREFERS tea] Rin prefers tea"
+    kwargs = searcher.search_many.call_args.kwargs
+    assert kwargs["scope"] == "facts"
+    assert kwargs["limit"] == 10
+    assert kwargs["trigger"] == "inbox"
+    assert kwargs["min_score"] == 0.42
+
+
+@pytest.mark.asyncio
+async def test_collect_recent_facts_returns_empty_for_no_hits_or_search_error(anima_dir: Path) -> None:
+    searcher = _searcher()
+    with patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=searcher):
+        no_hits = await channel_g.collect_recent_facts(anima_dir, lambda: None, ["unmatched"])
+
+    assert no_hits == ""
+
+    failed_searcher = _searcher(error=RuntimeError("search failed"))
+    with patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=failed_searcher):
+        failed = await channel_g.collect_recent_facts(anima_dir, lambda: None, ["query"])
+
+    assert failed == ""
+
+
+@pytest.mark.asyncio
+async def test_collect_recent_facts_excludes_denied_sources(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    denied_root = anima_dir / "facts" / "private"
+    denied_root.mkdir(parents=True)
+    monkeypatch.setattr(channel_g, "load_denied_roots", lambda _anima_dir: (denied_root.resolve(),))
+    searcher = _searcher(
+        [
             {
-                "uuid": "recent",
-                "fact": "maintains UI",
-                "source_name": "Alice",
-                "target_name": "React",
-                "edge_type": "OWNS",
-                "created_at": (now - timedelta(hours=1)).isoformat(),
-                "rrf_score": 0.7,
-            },
-            {
-                "uuid": "old",
-                "fact": "maintains API",
-                "source_name": "Bob",
-                "target_name": "FastAPI",
-                "created_at": (now - timedelta(hours=48)).isoformat(),
-                "rrf_score": 0.9,
-            },
-            {
-                "uuid": "missing-created-at",
-                "fact": "has no timestamp",
-                "source_name": "Eve",
-                "target_name": "Unknown",
-                "rrf_score": 0.8,
-            },
+                "source_file": "facts/private/secret.jsonl",
+                "content": "A private fact",
+                "source_entity": "Rin",
+                "edge_type": "KNOWS",
+                "target_entity": "secret",
+            }
         ]
-        mock_search = MagicMock()
-        mock_search.search = AsyncMock(return_value=rows)
+    )
+    with patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=searcher):
+        result = await channel_g.collect_recent_facts(anima_dir, lambda: None, ["secret"])
 
-        with (
-            patch.object(backend, "_embed_texts", new_callable=AsyncMock, return_value=[[0.1] * 384]),
-            patch("core.memory.graph.search.HybridSearch", return_value=mock_search) as mock_search_cls,
-        ):
-            result = await backend.get_recent_facts("frontend", hours=24, limit=2)
+    assert result == ""
 
-        assert [mem.source for mem in result] == ["fact:recent"]
-        assert result[0].score == 0.7
-        assert result[0].content == "Alice -[OWNS]-> React: maintains UI"
-        mock_search_cls.assert_called_once_with(mock_driver, "test")
-        mock_search.search.assert_awaited_once()
-        _, kwargs = mock_search.search.call_args
-        assert kwargs["scope"] == "fact"
-        assert kwargs["limit"] == 6
-        assert kwargs["query_embedding"] == [0.1] * 384
 
-    async def test_recent_facts_uses_recency_query_when_query_is_empty(self, tmp_path) -> None:
-        from core.memory.graph.queries import FIND_RECENT_FACTS
-
-        backend, mock_driver = self._make_backend(tmp_path)
-        mock_driver.execute_query = AsyncMock(
-            return_value=[
-                {
-                    "uuid": "f1",
-                    "fact": "recent fact",
-                    "source_name": "Alice",
-                    "target_name": "React",
-                    "created_at": "2026-05-14T00:00:00Z",
-                }
-            ]
+@pytest.mark.asyncio
+async def test_collect_recent_facts_truncates_to_budget(anima_dir: Path) -> None:
+    searcher = _searcher(
+        [
+            {
+                "source_file": f"facts/fact-{index}.jsonl",
+                "content": "A long matching fact " * 80,
+                "source_entity": "Rin",
+                "edge_type": "RELATES_TO",
+                "target_entity": "memory",
+            }
+            for index in range(5)
+        ]
+    )
+    with patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=searcher):
+        result = await channel_g.collect_recent_facts(
+            anima_dir,
+            lambda: None,
+            ["memory"],
+            budget_tokens=32,
         )
 
-        with patch("core.memory.graph.search.HybridSearch") as mock_search_cls:
-            result = await backend.get_recent_facts(" ", hours=12, limit=4)
+    assert result
+    assert estimate_tokens(result) <= 32
+    # The header and the best match survive; the tail is cut.
+    assert result.startswith(t("priming.recent_facts_header"))
 
-        assert len(result) == 1
-        assert result[0].score == 1.0
-        mock_search_cls.assert_not_called()
-        query, params = mock_driver.execute_query.call_args.args
-        assert query == FIND_RECENT_FACTS
-        assert params["group_id"] == "test"
-        assert params["limit"] == 4
+
+def test_priming_result_tracks_recent_facts() -> None:
+    result = PrimingResult(recent_facts="fact")
+
+    assert not result.is_empty()
+    assert result.total_chars() == len("fact")
+    assert result.estimated_tokens() == estimate_tokens("fact")
+
+
+def test_format_priming_section_places_recent_facts_after_related_knowledge() -> None:
+    result = PrimingResult(
+        related_knowledge="C channel marker",
+        recent_facts="## Recent Facts\n- [Rin PREFERS tea] Rin prefers tea",
+    )
+
+    formatted = format_priming_section(result)
+
+    assert formatted.index("C channel marker") < formatted.index("## Recent Facts")
+
+
+@pytest.mark.asyncio
+async def test_engine_includes_recent_facts_in_formatted_chat_priming(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = PrimingEngine(anima_dir)
+    _stub_non_recall_channels(monkeypatch, engine)
+    monkeypatch.setattr(engine, "_recent_facts_settings", lambda: (True, 500))
+    monkeypatch.setattr(engine, "_channel_c_related_knowledge", AsyncMock(return_value=("", "")))
+    collect_facts = AsyncMock(return_value="## Recent Facts\n- [Rin PREFERS tea] Rin prefers tea")
+    monkeypatch.setattr(engine, "_channel_g_recent_facts", collect_facts)
+
+    result = await engine.prime_memories("What tea does Rin prefer?", channel="chat")
+    formatted = format_priming_section(result)
+
+    collect_facts.assert_awaited_once()
+    assert collect_facts.await_args.kwargs["budget_tokens"] == 500
+    assert collect_facts.await_args.kwargs["trigger"] == "chat"
+    assert "## Recent Facts" in formatted
+    assert "[Rin PREFERS tea] Rin prefers tea" in formatted
+
+
+@pytest.mark.asyncio
+async def test_engine_skips_recent_facts_when_disabled(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = PrimingEngine(anima_dir)
+    _stub_non_recall_channels(monkeypatch, engine)
+    monkeypatch.setattr(engine, "_recent_facts_settings", lambda: (False, 500))
+    monkeypatch.setattr(engine, "_channel_c_related_knowledge", AsyncMock(return_value=("", "")))
+    collect_facts = AsyncMock(return_value="## Recent Facts\n- hidden")
+    monkeypatch.setattr(engine, "_channel_g_recent_facts", collect_facts)
+
+    result = await engine.prime_memories("A question", channel="chat")
+
+    collect_facts.assert_not_awaited()
+    assert result.recent_facts == ""
+    assert "## Recent Facts" not in format_priming_section(result)
+
+
+@pytest.mark.asyncio
+async def test_engine_recent_facts_budget_does_not_reduce_channel_c_budget(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = PrimingEngine(anima_dir)
+    _stub_non_recall_channels(monkeypatch, engine)
+    monkeypatch.setattr(engine, "_recent_facts_settings", lambda: (True, 500))
+    monkeypatch.setattr(engine, "_channel_c_related_knowledge", AsyncMock(return_value=("C" * 1000, "")))
+    monkeypatch.setattr(engine, "_channel_g_recent_facts", AsyncMock(return_value="G" * 1000))
+
+    result = await engine.prime_memories("A question", channel="chat", max_tokens=100)
+
+    assert 90 <= estimate_tokens(result.related_knowledge) <= 100
+    assert result.recent_facts == "G" * 1000
+
+
+def test_recent_facts_config_defaults() -> None:
+    config = PrimingConfig()
+
+    assert config.recent_facts_enabled is True
+    assert config.recent_facts_max_tokens == 500
+
+
+def test_engine_reads_recent_facts_config(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = PrimingEngine(anima_dir)
+    priming = PrimingConfig(recent_facts_enabled=False, recent_facts_max_tokens=123)
+    monkeypatch.setattr("core.config.models.load_config", lambda: SimpleNamespace(priming=priming))
+
+    assert engine._recent_facts_settings() == (False, 123)
+
+
+@pytest.mark.asyncio
+async def test_collect_recent_facts_caps_each_fact(anima_dir: Path) -> None:
+    searcher = _searcher(
+        [
+            {"source_file": "facts/a.jsonl", "content": "x" * 1000},
+            {"source_file": "facts/b.jsonl", "content": "second fact"},
+        ]
+    )
+    with patch("core.memory.priming.channel_g.UnifiedMemorySearch", return_value=searcher):
+        result = await channel_g.collect_recent_facts(anima_dir, lambda: None, ["memory"], budget_tokens=2000)
+
+    lines = result.splitlines()[1:]
+    assert len(lines[0]) <= channel_g._MAX_FACT_CHARS + 2
+    assert lines[1] == "- second fact"

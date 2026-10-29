@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from typing import Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -41,12 +42,17 @@ class CompactRequest(BaseModel):
     thread_id: str = "default"
 
 
+class GreetRequest(BaseModel):
+    mode: Literal["visit", "first_meeting"] = "visit"
+
+
 # Re-exports for tests and external consumers
 __all__ = [
     "AnimaNotFoundError",
     "ChatRequest",
     "ChatResponse",
     "CompactRequest",
+    "GreetRequest",
     "ImageAttachment",
     "MAX_CHAT_MESSAGE_SIZE",
     "MAX_IMAGE_PAYLOAD_SIZE",
@@ -171,11 +177,12 @@ def create_chat_router() -> APIRouter:
             )
 
     @router.post("/animas/{name}/greet")
-    async def greet(name: str, request: Request):
+    async def greet(name: str, request: Request, body: GreetRequest | None = None):
         """Generate a greeting when user clicks the character.
 
-        Returns cached response if called within the 1-hour cooldown.
-        Non-streaming, returns a single JSON response.
+        The 1-hour response cache was removed; ``cached`` is kept always
+        ``false`` for API compatibility.  Non-streaming, returns a single
+        JSON response.
         """
         supervisor = request.app.state.supervisor
 
@@ -187,17 +194,24 @@ def create_chat_router() -> APIRouter:
             )
 
         try:
+            body = body or GreetRequest()
+            user = getattr(request.state, "user", None)
+            user_name = ""
+            user_id = ""
+            if user is not None:
+                user_id = getattr(user, "username", "") or ""
+                user_name = getattr(user, "display_name", "") or user_id
             result = await supervisor.send_request(
                 anima_name=name,
                 method="greet",
-                params={},
-                timeout=60.0,
+                params={"mode": body.mode, "user_name": user_name, "user_id": user_id},
+                timeout=120.0,
             )
 
             return {
                 "response": result.get("response", ""),
                 "emotion": result.get("emotion", "neutral"),
-                "cached": result.get("cached", False),
+                "cached": False,
                 "anima": name,
             }
 

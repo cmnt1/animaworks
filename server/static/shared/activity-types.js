@@ -87,7 +87,7 @@ export const GROUP_TYPE_COLORS = {
 export const AMBIENT_GROUP_TYPES = new Set(["cron", "heartbeat"]);
 
 /** Signal (foreground) group types — drawn tall/opaque. */
-export const SIGNAL_GROUP_TYPES = new Set(["chat", "dm", "task_exec", "inbox"]);
+const SIGNAL_GROUP_TYPES = new Set(["chat", "dm", "task_exec", "inbox"]);
 
 // ── Type-based default summaries (i18n keys) ────
 const TYPE_DEFAULT_KEYS = {

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
-from core.memory.rag.repair_rebuild import RebuildVerificationError, _reindex_into_store
+from core.memory.rag.repair.rebuild import RebuildVerificationError, _reindex_into_store
 from core.memory.rag.store import ChromaVectorStore
 
 
@@ -17,9 +17,9 @@ def _entity_rebuild_fixture(tmp_path, monkeypatch, *, entities):
     indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
     monkeypatch.setattr("core.memory.rag.MemoryIndexer", MagicMock(return_value=indexer))
     registry = {"version": 1, "entities": entities}
-    monkeypatch.setattr("core.memory.entity_index.load_entity_registry", lambda _path: registry)
+    monkeypatch.setattr("core.memory.facts.entity_index.load_entity_registry", lambda _path: registry)
     monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings",
+        "core.memory.rag.embedding.generate_embeddings",
         lambda texts, **kwargs: [[0.1, 0.2] for _ in texts],
     )
     store = MagicMock()

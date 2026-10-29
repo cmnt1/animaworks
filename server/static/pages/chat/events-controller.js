@@ -1,5 +1,6 @@
 // ── Event Binding Controller ──────────────────
 import { saveDraft, chatInputMaxHeight } from "./ctx.js";
+import { clearReplyTarget, setReplyTarget } from "../../shared/chat/reply-target.js";
 
 function _positionDropdown(menu, trigger, { align = "right" } = {}) {
   const rect = trigger.getBoundingClientRect();
@@ -8,7 +9,13 @@ function _positionDropdown(menu, trigger, { align = "right" } = {}) {
   menu.style.top = `${rect.bottom + gap}px`;
   menu.style.bottom = "auto";
 
-  if (align === "right") {
+  if (align === "beside") {
+    // Open next to a rail button (left column) instead of over the sidebar.
+    menu.style.right = "auto";
+    menu.style.left = `${rect.right + gap}px`;
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.max(8, window.innerHeight - rect.bottom)}px`;
+  } else if (align === "right") {
     menu.style.left = "auto";
     menu.style.right = `${window.innerWidth - rect.right}px`;
   } else {
@@ -26,7 +33,11 @@ function _positionDropdown(menu, trigger, { align = "right" } = {}) {
       menu.style.right = "auto";
       menu.style.left = "8px";
     }
-    if (mRect.bottom > window.innerHeight - 8) {
+    if (align === "beside" && mRect.top < 8) {
+      menu.style.bottom = "auto";
+      menu.style.top = `${rect.bottom + gap}px`;
+    }
+    if (align !== "beside" && mRect.bottom > window.innerHeight - 8) {
       menu.style.top = "auto";
       menu.style.bottom = `${window.innerHeight - rect.top + gap}px`;
     }
@@ -54,7 +65,56 @@ export function createEventsController(ctx) {
     }
   }
 
+  function showReplyTarget(target) {
+    const normalized = setReplyTarget(state, {
+      ...target,
+      animaName: state.selectedAnima,
+      threadId: state.selectedThreadId,
+    });
+    const chip = $("chatReplyChip");
+    const label = $("chatReplyText");
+    if (!chip || !label) return;
+    const preview = String(normalized?.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    label.textContent = t("chat.line.replying_to", {
+      name: normalized?.name || state.selectedAnima || "",
+      text: preview,
+    });
+    chip.classList.remove("failed");
+    chip.hidden = !normalized;
+    $("chatPageInput")?.focus();
+  }
+
+  function clearChatReplyTarget() {
+    clearReplyTarget(state);
+    const chip = $("chatReplyChip");
+    if (chip) {
+      chip.hidden = true;
+      chip.classList.remove("failed");
+    }
+  }
+
+  function showReplyError(message) {
+    const chip = $("chatReplyChip");
+    const label = $("chatReplyText");
+    if (!chip || !label) return;
+    chip.classList.add("failed");
+    label.textContent = message;
+    chip.hidden = false;
+  }
+
   function bindPaneEvents() {
+    const showBg = $("chatShowBackground");
+    if (showBg) {
+      showBg.checked = localStorage.getItem("aw-chat-show-bg") !== "false";
+      const handleShowBgChange = () => {
+        localStorage.setItem("aw-chat-show-bg", showBg.checked ? "true" : "false");
+        ctx.controllers.renderer.renderChat(false);
+      };
+      showBg.addEventListener("change", handleShowBgChange);
+      state.boundListeners.push({ el: showBg, event: "change", handler: handleShowBgChange });
+    }
+    addListener("chatReplyCancel", "click", clearChatReplyTarget);
+
     // Add conversation picker
     addListener("chatAddConversationBtn", "click", e => {
       e.stopPropagation();
@@ -66,7 +126,7 @@ export function createEventsController(ctx) {
         ctx.controllers.anima.renderAddConversationMenu();
         const menu = $("chatAddConversationMenu");
         const btn = $("chatAddConversationBtn");
-        if (menu && btn) _positionDropdown(menu, btn);
+        if (menu && btn) _positionDropdown(menu, btn, { align: "beside" });
       }
     });
     const closeMenu = e => {
@@ -211,7 +271,7 @@ export function createEventsController(ctx) {
       if (mainLogout) mainLogout.click();
     });
 
-    addListener("chatUnifiedInfoBtn", "click", () => ctx.controllers.sidebar.toggleRightPane());
+    addListener("chatUnifiedInfoBtn", "click", (event) => ctx.controllers.memoryPopover.open(event.currentTarget));
 
     _populateUnifiedUser();
 
@@ -277,5 +337,5 @@ export function createEventsController(ctx) {
     chipsEl.style.display = "flex";
   }
 
-  return { bindPaneEvents, updateDemoChips };
+  return { bindPaneEvents, updateDemoChips, showReplyTarget, clearReplyTarget: clearChatReplyTarget, showReplyError };
 }

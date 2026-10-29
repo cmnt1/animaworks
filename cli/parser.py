@@ -8,35 +8,11 @@ import argparse
 import os
 
 from core.i18n import t
+from core.platform.env import get_env
 
 
-def cli_main() -> None:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    from core.config import load_config
-    from core.logging_config import setup_logging
-    from core.paths import get_data_dir
-    from core.time_utils import configure_timezone
-
-    # Fail-open: a corrupt config must not crash before logging is even set up
-    # (mirrors runner.py). Fall back to the secure default (redaction on).
-    config_path = get_data_dir() / "config.json"
-    try:
-        _cfg = load_config(config_path) if config_path.exists() else None
-    except Exception:
-        _cfg = None
-
-    setup_logging(
-        level=os.environ.get("ANIMAWORKS_LOG_LEVEL", "INFO"),
-        log_dir=get_data_dir() / "logs",
-        redaction_enabled=_cfg.logging.redaction_enabled if _cfg else True,
-    )
-
-    configure_timezone(_cfg.system.timezone if _cfg else "")
-
-    parser = argparse.ArgumentParser(description="AnimaWorks - Digital Anima Framework")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="animaworks", description="AnimaWorks - Digital Anima Framework")
     parser.add_argument("--gateway-url", default=None, help="Gateway URL")
     parser.add_argument(
         "--data-dir",
@@ -85,37 +61,6 @@ def cli_main() -> None:
     )
     p_init.set_defaults(func=_lazy_init)
 
-    # ── Create Anima ─────────────────────────────────────
-    p_create = sub.add_parser("create-anima", help="Create a new Digital Anima")
-    p_create.add_argument(
-        "--name",
-        default=None,
-        help="Anima name (required for blank, optional for template/md)",
-    )
-    p_create.add_argument(
-        "--template",
-        default=None,
-        help="Create from a named template",
-    )
-    p_create.add_argument(
-        "--from-md",
-        default=None,
-        metavar="PATH",
-        help="Create from an MD file",
-    )
-    p_create.add_argument(
-        "--supervisor",
-        default=None,
-        help="Supervisor anima name (overrides character sheet)",
-    )
-    p_create.add_argument(
-        "--role",
-        default=None,
-        choices=["engineer", "researcher", "manager", "writer", "ops", "general"],
-        help="Role template to apply (default: general)",
-    )
-    p_create.set_defaults(func=_lazy_create_anima)
-
     # ── Start ─────────────────────────────────────────────
     p_start = sub.add_parser("start", help="Start the AnimaWorks server")
     p_start.add_argument("--host", default="0.0.0.0")
@@ -145,7 +90,7 @@ def cli_main() -> None:
     p_stop.add_argument(
         "--force",
         action="store_true",
-        help="Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners",
+        help="Immediately send SIGKILL without draining active work",
     )
     p_stop.set_defaults(func=_lazy_stop)
 
@@ -174,17 +119,9 @@ def cli_main() -> None:
     p_restart.add_argument(
         "--force",
         action="store_true",
-        help="Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners",
+        help="Immediately send SIGKILL without draining active work",
     )
     p_restart.set_defaults(func=_lazy_restart)
-
-    # ── Gateway (deprecated) ──────────────────────────────
-    p_gw = sub.add_parser("gateway", help=argparse.SUPPRESS)
-    p_gw.set_defaults(func=_lazy_gateway)
-
-    # ── Worker (deprecated) ───────────────────────────────
-    p_wk = sub.add_parser("worker", help=argparse.SUPPRESS)
-    p_wk.set_defaults(func=_lazy_worker)
 
     # ── Chat ──────────────────────────────────────────────
     p_chat = sub.add_parser("chat", help="Chat with an anima")
@@ -285,12 +222,15 @@ def cli_main() -> None:
     p_board_dm.add_argument("from_anima", help="Self anima name")
     p_board_dm.add_argument("peer", help="Peer anima name")
     p_board_dm.add_argument("--limit", type=int, default=20, help="Max messages")
+    p_board_dm.add_argument(
+        "--direction",
+        choices=("sent", "received", "both"),
+        default="both",
+        help="Filter by message direction (default: both)",
+    )
+    p_board_dm.add_argument("--hours", type=int, default=None, help="Only include messages from the last N hours")
+    p_board_dm.add_argument("--keyword", default=None, help="Only include messages containing this keyword")
     p_board_dm.set_defaults(func=_lazy_board_dm_history)
-
-    # ── List ──────────────────────────────────────────────
-    p_list = sub.add_parser("list", help="List all animas")
-    p_list.add_argument("--local", action="store_true", help="Scan filesystem directly")
-    p_list.set_defaults(func=_lazy_list)
 
     # ── Status ────────────────────────────────────────────
     p_status = sub.add_parser("status", help="Show system status from gateway")
@@ -300,6 +240,16 @@ def cli_main() -> None:
     from cli.commands.index_cmd import setup_index_command
 
     setup_index_command(sub)
+
+    # ── Memory maintenance ────────────────────────────────
+    from cli.commands.memory_cmd import register_memory_command
+
+    register_memory_command(sub)
+
+    # ── Enclave operations ────────────────────────────────
+    from cli.commands.enclave_cmd import register_enclave_command
+
+    register_enclave_command(sub)
 
     # ── MCP stdio server ──────────────────────────────────
     from cli.commands.mcp_cmd import setup_mcp_command
@@ -320,11 +270,6 @@ def cli_main() -> None:
 
     register_skills_command(sub)
 
-    # ── Cron Guard ────────────────────────────────────────
-    from cli.commands.cron_guard import register_cron_guard_command
-
-    register_cron_guard_command(sub)
-
     # ── External Agent Import ─────────────────────────────
     from cli.commands.import_cmd import register_import_command
 
@@ -336,7 +281,7 @@ def cli_main() -> None:
     register_company_command(sub)
 
     # ── Config ────────────────────────────────────────────
-    from core.config.cli import (
+    from cli.commands.config_cmd import (
         cmd_config_dispatch,
         cmd_config_get,
         cmd_config_list,
@@ -354,7 +299,7 @@ def cli_main() -> None:
     config_sub = p_config.add_subparsers(dest="config_command")
 
     p_cfg_get = config_sub.add_parser("get", help="Get a config value")
-    p_cfg_get.add_argument("key", help="Dot-notation key (e.g. system.gateway.port)")
+    p_cfg_get.add_argument("key", help="Dot-notation key (e.g. system.timezone)")
     p_cfg_get.add_argument(
         "--show-secrets",
         action="store_true",
@@ -465,35 +410,6 @@ def cli_main() -> None:
     )
     p_anima_info.set_defaults(func=_lazy_anima_info)
 
-    # anima repair-bootstrap
-    p_anima_repair_bootstrap = anima_sub.add_parser(
-        "repair-bootstrap",
-        help="Inspect or repair first-run bootstrap state",
-    )
-    p_anima_repair_bootstrap.add_argument("anima", help="Anima name")
-    repair_group = p_anima_repair_bootstrap.add_mutually_exclusive_group(required=True)
-    repair_group.add_argument(
-        "--status",
-        action="store_true",
-        help="Show bootstrap state and validation errors without changing files",
-    )
-    repair_group.add_argument(
-        "--retry",
-        action="store_true",
-        help="Restore bootstrap artifacts and prepare another bootstrap attempt",
-    )
-    repair_group.add_argument(
-        "--complete",
-        action="store_true",
-        help="Archive stale bootstrap artifacts and mark a fully defined Anima as completed",
-    )
-    repair_group.add_argument(
-        "--fresh",
-        action="store_true",
-        help="Archive runtime data and recreate a blank Anima while preserving model settings",
-    )
-    p_anima_repair_bootstrap.set_defaults(func=_lazy_anima_repair_bootstrap)
-
     # anima permissions
     p_anima_permissions = anima_sub.add_parser(
         "permissions",
@@ -528,29 +444,6 @@ def cli_main() -> None:
     )
     p_anima_set_model.set_defaults(func=_lazy_anima_set_model)
 
-    # anima codex-yolo
-    p_anima_codex_yolo = anima_sub.add_parser(
-        "codex-yolo",
-        help="Set Codex-mode Animas to YOLO sandbox defaults",
-    )
-    p_anima_codex_yolo.add_argument(
-        "anima",
-        nargs="?",
-        default=None,
-        help="Anima name (not required with --all)",
-    )
-    p_anima_codex_yolo.add_argument(
-        "--all",
-        action="store_true",
-        help="Apply to all enabled Codex-mode animas",
-    )
-    p_anima_codex_yolo.add_argument(
-        "--restart",
-        action="store_true",
-        help="Restart updated animas when the server is running",
-    )
-    p_anima_codex_yolo.set_defaults(func=_lazy_anima_codex_yolo)
-
     # anima set-background-model
     p_bg = anima_sub.add_parser("set-background-model", help="Set heartbeat/cron model")
     p_bg.add_argument("anima", nargs="?", default=None, help="Anima name")
@@ -559,44 +452,6 @@ def cli_main() -> None:
     p_bg.add_argument("--all", action="store_true", help="Apply to all enabled animas")
     p_bg.add_argument("--clear", action="store_true", help="Remove background model override")
     p_bg.set_defaults(func=_lazy_anima_set_background_model)
-
-    # anima set-memory-backend
-    p_mb = anima_sub.add_parser("set-memory-backend", help="Set per-anima memory backend")
-    p_mb.add_argument("anima", nargs="?", default=None, help="Anima name")
-    p_mb.add_argument("backend", nargs="?", default=None, help="Backend type (legacy/neo4j)")
-    p_mb.add_argument("--clear", action="store_true", help="Remove per-anima override (use global)")
-    p_mb.set_defaults(func=_lazy_anima_set_memory_backend)
-
-    # anima set-outbound-limit
-    p_set_outbound = anima_sub.add_parser(
-        "set-outbound-limit",
-        help="Set per-Anima outbound message limits",
-    )
-    p_set_outbound.add_argument("name", help="Anima name")
-    p_set_outbound.add_argument(
-        "--per-hour",
-        type=int,
-        default=None,
-        help="Max outbound messages per hour",
-    )
-    p_set_outbound.add_argument(
-        "--per-day",
-        type=int,
-        default=None,
-        help="Max outbound messages per day",
-    )
-    p_set_outbound.add_argument(
-        "--per-run",
-        type=int,
-        default=None,
-        help="Max DM recipients per run",
-    )
-    p_set_outbound.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear overrides (fallback to role defaults)",
-    )
-    p_set_outbound.set_defaults(func=_lazy_anima_set_outbound_limit)
 
     # anima reload
     p_anima_reload = anima_sub.add_parser("reload", help="Hot-reload anima config from status.json")
@@ -644,58 +499,6 @@ def cli_main() -> None:
     )
     p_anima_rename.set_defaults(func=_lazy_anima_rename)
 
-    # anima merge
-    p_anima_merge = anima_sub.add_parser("merge", help="Merge one anima into another")
-    p_anima_merge.add_argument("source", help="Anima to merge from")
-    p_anima_merge.add_argument("target", help="Anima to merge into")
-    merge_mode = p_anima_merge.add_mutually_exclusive_group()
-    merge_mode.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Generate a merge manifest without changing either anima (default)",
-    )
-    merge_mode.add_argument(
-        "--execute",
-        action="store_true",
-        help="Execute the merge through source tombstone",
-    )
-    p_anima_merge.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume an interrupted --execute operation",
-    )
-    p_anima_merge.add_argument(
-        "--force",
-        action="store_true",
-        help="Continue despite preflight warnings for recoverable in-progress state",
-    )
-    p_anima_merge.set_defaults(func=_lazy_anima_merge)
-
-    # anima merge-finalize
-    p_anima_merge_finalize = anima_sub.add_parser(
-        "merge-finalize",
-        help="Archive and unregister a completed merge tombstone",
-    )
-    p_anima_merge_finalize.add_argument("source", help="Tombstoned source anima")
-    p_anima_merge_finalize.add_argument("target", help="Merged target anima")
-    finalize_mode = p_anima_merge_finalize.add_mutually_exclusive_group()
-    finalize_mode.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Validate and show the finalize plan without changing data (default)",
-    )
-    finalize_mode.add_argument(
-        "--execute",
-        action="store_true",
-        help="Archive the source and remove its registration",
-    )
-    p_anima_merge_finalize.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume an interrupted --execute operation",
-    )
-    p_anima_merge_finalize.set_defaults(func=_lazy_anima_merge_finalize)
-
     # anima audit
     p_anima_audit = anima_sub.add_parser(
         "audit",
@@ -722,20 +525,6 @@ def cli_main() -> None:
         help="Specific date (YYYY-MM-DD, 'today', or 'yesterday'). Shows only that day's activity",
     )
     p_anima_audit.set_defaults(func=_lazy_anima_audit)
-
-    # anima detect-communities
-    p_detect_communities = anima_sub.add_parser(
-        "detect-communities",
-        help="Run batch community detection for Neo4j backend",
-    )
-    p_detect_communities.add_argument("anima", nargs="?", default=None, help="Anima name (omit with --all)")
-    p_detect_communities.add_argument(
-        "--all",
-        action="store_true",
-        dest="detect_all",
-        help="Run for all Neo4j-enabled animas",
-    )
-    p_detect_communities.set_defaults(func=_lazy_anima_detect_communities)
 
     # ── Logs ──────────────────────────────────────────────────
     p_logs = sub.add_parser("logs", help="View anima logs")
@@ -771,13 +560,6 @@ def cli_main() -> None:
         help="Output as JSON",
     )
     p_cost.set_defaults(func=_lazy_cost)
-
-    # ── Migrate Cron ─────────────────────────────────────────
-    p_migrate_cron = sub.add_parser(
-        "migrate-cron",
-        help="Migrate cron.md files from Japanese format to standard cron expressions",
-    )
-    p_migrate_cron.set_defaults(func=_lazy_migrate_cron)
 
     # ── Migrate ────────────────────────────────────────────────
     from cli.commands.migrate_cmd import register_migrate_command
@@ -828,26 +610,61 @@ def cli_main() -> None:
 
     register_models_command(sub)
 
-    # ── Memory ──────────────────────────────────────────────
-    from cli.commands.memory_cmd import register_memory_command
-
-    register_memory_command(sub)
-
     # ── Profile ───────────────────────────────────────────────
     from cli.commands.profile import register_profile_command
 
     register_profile_command(sub)
+
+    return parser
+
+
+def cli_main() -> None:
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("cli")
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    from core.config import load_config
+    from core.infra.logging_config import setup_logging
+    from core.paths import get_data_dir
+    from core.time_utils import configure_timezone
+
+    # Fail-open: a corrupt config must not crash before logging is even set up
+    # (mirrors runner.py). Fall back to the secure default (redaction on).
+    config_path = get_data_dir() / "config.json"
+    try:
+        _cfg = load_config(config_path) if config_path.exists() else None
+    except Exception:
+        _cfg = None
+
+    setup_logging(
+        level=get_env("ANIMAWORKS_LOG_LEVEL", "INFO"),
+        log_dir=get_data_dir() / "logs",
+        redaction_enabled=_cfg.logging.redaction_enabled if _cfg else True,
+    )
+
+    configure_timezone(_cfg.system.timezone if _cfg else "")
+
+    parser = build_parser()
 
     # Fallback: if first arg looks like an external tool name, forward to cli_dispatch
     import sys as _sys
 
     _first_arg = _sys.argv[1] if len(_sys.argv) > 1 else None
     if _first_arg and not _first_arg.startswith("-"):
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
-        if _first_arg in TOOL_MODULES or _first_arg == "submit":
+        # Real subcommands win over same-named tool modules (e.g. "enclave").
+        _subcommands = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            {},
+        )
+        if _first_arg not in _subcommands and (_first_arg in TOOL_MODULES or _first_arg == "submit"):
             _sys.argv[0] = "animaworks-tool"
-            from core.tools import cli_dispatch
+            from cli.tool_dispatch import cli_dispatch
 
             cli_dispatch()
             return
@@ -858,10 +675,13 @@ def cli_main() -> None:
     if args.data_dir:
         os.environ["ANIMAWORKS_DATA_DIR"] = args.data_dir
 
-    if hasattr(args, "func"):
-        args.func(args)
-    else:
-        parser.print_help()
+    if not hasattr(args, "func"):
+        # Bare ``animaworks`` opens a chat with the default (head) anima.
+        args = parser.parse_args([*_sys.argv[1:], "chat"])
+        if args.data_dir:
+            os.environ["ANIMAWORKS_DATA_DIR"] = args.data_dir
+
+    args.func(args)
 
 
 # ── Lazy import wrappers ──────────────────────────────────
@@ -871,15 +691,6 @@ def _lazy_init(args: argparse.Namespace) -> None:
     from cli.commands.init_cmd import cmd_init
 
     cmd_init(args)
-
-
-def _lazy_create_anima(args: argparse.Namespace) -> None:
-    import sys
-
-    print("Warning: 'create-anima' is deprecated. Use 'anima create' instead.", file=sys.stderr)
-    from cli.commands.anima import cmd_create_anima
-
-    cmd_create_anima(args)
 
 
 def _lazy_start(args: argparse.Namespace) -> None:
@@ -912,18 +723,6 @@ def _lazy_reset(args: argparse.Namespace) -> None:
     cmd_reset(args)
 
 
-def _lazy_gateway(args: argparse.Namespace) -> None:
-    from cli.commands.server import cmd_gateway
-
-    cmd_gateway(args)
-
-
-def _lazy_worker(args: argparse.Namespace) -> None:
-    from cli.commands.server import cmd_worker
-
-    cmd_worker(args)
-
-
 def _lazy_chat(args: argparse.Namespace) -> None:
     from cli.commands.anima import cmd_chat
 
@@ -940,15 +739,6 @@ def _lazy_send(args: argparse.Namespace) -> None:
     from cli.commands.messaging import cmd_send
 
     cmd_send(args)
-
-
-def _lazy_list(args: argparse.Namespace) -> None:
-    import sys
-
-    print("Warning: 'list' is deprecated. Use 'anima list' instead.", file=sys.stderr)
-    from cli.commands.messaging import cmd_list
-
-    cmd_list(args)
 
 
 def _lazy_anima_restart(args: argparse.Namespace) -> None:
@@ -979,18 +769,6 @@ def _lazy_status(args: argparse.Namespace) -> None:
     from cli.commands.messaging import cmd_status
 
     cmd_status(args)
-
-
-def _lazy_migrate_cron(args: argparse.Namespace) -> None:
-    from core.config.migrate import migrate_all_cron
-    from core.paths import get_data_dir
-
-    animas_dir = get_data_dir() / "animas"
-    count = migrate_all_cron(animas_dir)
-    if count:
-        print(t("cli.migrate_cron_done", count=count))
-    else:
-        print(t("cli.migrate_cron_skipped"))
 
 
 def _lazy_anima_create(args: argparse.Namespace) -> None:
@@ -1035,12 +813,6 @@ def _lazy_anima_permissions(args: argparse.Namespace) -> None:
     cmd_anima_permissions(args)
 
 
-def _lazy_anima_repair_bootstrap(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
-
-    cmd_anima_repair_bootstrap(args)
-
-
 def _lazy_anima_set_role(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_role
 
@@ -1053,28 +825,10 @@ def _lazy_anima_set_model(args: argparse.Namespace) -> None:
     cmd_anima_set_model(args)
 
 
-def _lazy_anima_codex_yolo(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_codex_yolo
-
-    cmd_anima_codex_yolo(args)
-
-
 def _lazy_anima_set_background_model(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_background_model
 
     cmd_anima_set_background_model(args)
-
-
-def _lazy_anima_set_memory_backend(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_set_memory_backend
-
-    cmd_anima_set_memory_backend(args)
-
-
-def _lazy_anima_set_outbound_limit(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_set_outbound_limit
-
-    cmd_anima_set_outbound_limit(args)
 
 
 def _lazy_anima_reload(args: argparse.Namespace) -> None:
@@ -1089,28 +843,10 @@ def _lazy_anima_rename(args: argparse.Namespace) -> None:
     cmd_anima_rename(args)
 
 
-def _lazy_anima_merge(args: argparse.Namespace) -> None:
-    from cli.commands.anima_merge import cmd_anima_merge
-
-    cmd_anima_merge(args)
-
-
-def _lazy_anima_merge_finalize(args: argparse.Namespace) -> None:
-    from cli.commands.anima_merge import cmd_anima_merge_finalize
-
-    cmd_anima_merge_finalize(args)
-
-
 def _lazy_anima_audit(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_audit
 
     cmd_anima_audit(args)
-
-
-def _lazy_anima_detect_communities(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_detect_communities
-
-    cmd_anima_detect_communities(args)
 
 
 def _lazy_board_read(args: argparse.Namespace) -> None:

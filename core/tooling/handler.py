@@ -17,45 +17,35 @@ The class is composed from responsibility-specific Mixins:
   - OrgToolsMixin     (handler_org.py)
   - SkillsToolsMixin  (handler_skills.py)
   - FileToolsMixin    (handler_files.py)
+  - ExecutionToolsMixin (handler_exec.py)
   - PermissionsMixin  (handler_perms.py)
 """
 
 import json as _json
 import logging
-import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from core.background import BackgroundTaskManager
+from core.activity.logger import ActivityLogger
 from core.exceptions import AnimaWorksError, ConfigError
-from core.execution.session_context import RuntimeSessionContext, current_runtime_session
+from core.execution.session.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.activity import ActivityLogger
-from core.messenger import Messenger
+from core.memory.state_lock import StateFileLock
+from core.messaging.messenger import Messenger
+from core.notification import CallHumanKeys
 from core.notification.notifier import HumanNotifier
+from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher
 
-# ── Re-export all handler_base symbols for backward compatibility ──
+# ── Shared handler-base exports used by callers and mixins ──
 from core.tooling.handler_base import (  # noqa: F401
-    _EPISODE_FILENAME_RE,
-    _NEEDS_SHELL_RE,
-    _PROTECTED_DIRS,
-    _PROTECTED_FILES,
-    _READ_FILE_SAFETY_NOTICE,
     MemoryWriteError,
     OnMessageSentFn,
     ToolExecutionError,
     _error_result,
-    _extract_first_heading,
-    _get_blocked_patterns,
-    _get_injection_re,
-    _is_protected_write,
-    _validate_episode_path,
-    _validate_procedure_format,
-    _validate_skill_format,
     active_session_type,
     meeting_mode,
     suppress_board_fanout,
@@ -63,12 +53,14 @@ from core.tooling.handler_base import (  # noqa: F401
 
 # ── Import Mixins ──
 from core.tooling.handler_comms import CommsToolsMixin
+from core.tooling.handler_exec import ExecutionToolsMixin
 from core.tooling.handler_files import FileToolsMixin
 from core.tooling.handler_memory import MemoryToolsMixin
 from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
 from core.tooling.handler_skills import SkillsToolsMixin
 from core.tooling.handler_workspace import WorkspaceToolsMixin
+from core.tooling.tool_context import ToolContext
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -97,6 +89,7 @@ class ToolHandler(
     SkillsToolsMixin,
     WorkspaceToolsMixin,
     FileToolsMixin,
+    ExecutionToolsMixin,
     PermissionsMixin,
 ):
     """Dispatches tool calls to the appropriate handler.
@@ -125,6 +118,11 @@ class ToolHandler(
         self._superuser = superuser
         self._default_project = default_project
         self._anima_name = anima_dir.name
+        self._tool_context = ToolContext(
+            anima_dir=anima_dir,
+            anima_name=self._anima_name,
+            check_command_permission=self._check_command_permission,
+        )
         self._memory = memory
         self._messenger = messenger
         self._on_message_sent = on_message_sent
@@ -135,6 +133,8 @@ class ToolHandler(
         self._process_supervisor = process_supervisor
         self._pending_notifications: list[dict[str, Any]] = []
         self._last_call_human_callback_id: str | None = None
+        self._last_call_human_denied = False
+        self._call_human_keys = CallHumanKeys()
         self._replied_to: dict[str, set[str]] = {
             "chat": set(),
             "heartbeat": set(),
@@ -153,7 +153,7 @@ class ToolHandler(
         self._session_id: str = uuid.uuid4().hex[:12]
         self._runtime_session_context: RuntimeSessionContext | None = None
         self._activity = ActivityLogger(self._anima_dir)
-        self._state_file_lock: threading.Lock | None = None
+        self._state_file_lock: StateFileLock | None = None
         self._external = ExternalToolDispatcher(
             tool_registry or [],
             personal_tools=personal_tools,
@@ -162,9 +162,6 @@ class ToolHandler(
         # ── Session origin tracking (provenance Phase 3) ──
         self._session_origin: str = ""
         self._session_origin_chain: list[str] = []
-
-        # ── TaskExec CWD override ──
-        self._task_cwd: Path | None = None
 
         # ── Current trigger (set by caller before execution) ──
         self._trigger: str = ""
@@ -205,7 +202,7 @@ class ToolHandler(
             _all_descendants = self._get_all_descendants()
             for _desc_name in _all_descendants:
                 _desc_dir = (_animas_dir / _desc_name).resolve()
-                for _fname in ("cron.md", "heartbeat.md", "status.json", "injection.md"):
+                for _fname in ("cron.md", "heartbeat.md"):
                     self._subordinate_management_files.append(_desc_dir / _fname)
                 self._subordinate_root_dirs.append(_desc_dir)
                 self._descendant_activity_dirs.append(_desc_dir / "activity_log")
@@ -214,7 +211,6 @@ class ToolHandler(
                 self._descendant_state_files.append(_desc_dir / "identity.md")
                 self._descendant_state_files.append(_desc_dir / "injection.md")
                 self._descendant_state_files.append(_desc_dir / "state" / "task_queue.jsonl")
-                self._descendant_state_dirs.append(_desc_dir / "state" / "pending")
                 self._descendant_state_dirs.append(_desc_dir / "state" / "plans")
         except (ConfigError, OSError, PermissionError, KeyError, AttributeError):
             logger.debug("Failed to cache subordinate paths for %s", self._anima_name, exc_info=True)
@@ -424,13 +420,18 @@ class ToolHandler(
         self._replied_to.setdefault(ctx.session_type, set())
         self._posted_channels.setdefault(ctx.session_type, set())
 
-    def set_state_file_lock(self, lock: threading.Lock) -> None:
-        """Attach a state-file lock from DigitalAnima for concurrent write protection."""
+    def set_state_file_lock(self, lock: StateFileLock) -> None:
+        """Attach a process-safe state-file lock for concurrent write protection."""
         self._state_file_lock = lock
 
-    def set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:
-        """Attach the PendingTaskExecutor's wake callback for submit_tasks."""
-        self._pending_executor_wake = wake_fn
+    @property
+    def _task_cwd(self) -> Path | None:
+        """Current TaskExec CWD override, backed by the shared tool context."""
+        return self._tool_context.task_cwd
+
+    @_task_cwd.setter
+    def _task_cwd(self, cwd: Path | None) -> None:
+        self._tool_context.task_cwd = cwd
 
     def set_task_cwd(self, cwd: Path | None) -> None:
         """Set override cwd for TaskExec command execution."""
@@ -552,7 +553,7 @@ class ToolHandler(
     def _attach_action_rules(self, name: str, args: dict[str, Any], result: str) -> str:
         """Append any relevant ACTION-RULE bodies to a side-effect tool result."""
         try:
-            from core.memory.action_gate import (
+            from core.tooling.policy.action_gate import (
                 action_tool_name_for_handler,
                 find_action_rules,
                 format_action_rules,
@@ -650,6 +651,9 @@ class ToolHandler(
         """Record tool usage in unified activity log."""
         try:
             activity_type = self._ACTIVITY_TYPE_MAP.get(name)
+            if name == "call_human" and self._last_call_human_denied:
+                activity_type = None
+                self._last_call_human_denied = False
             meta: dict[str, Any] = {}
             if tool_use_id:
                 meta["tool_use_id"] = tool_use_id
@@ -741,10 +745,9 @@ class ToolHandler(
         delegates to the tool module's ``dispatch()`` function directly.
         Supports core tools (TOOL_MODULES), common tools, and personal tools.
         """
-        import importlib
+        from core.tooling.policy.registry import get_tool_modules, load_tool_module
 
-        from core.tools import TOOL_MODULES
-
+        tool_modules = get_tool_modules()
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")
         tool_args = args.get("args") or {}
@@ -764,34 +767,35 @@ class ToolHandler(
         if not is_core and not is_personal:
             return _error_result(
                 "PermissionDenied",
-                f"Tool '{tool_name}' is not permitted. Check permissions.md for allowed external tools.",
+                t("tooling.tool_not_permitted", tool=tool_name),
             )
 
         schema_name = f"{tool_name}_{action}"
 
-        # Check gated action permission
-        permitted: set[str] = set()
-        try:
-            from core.config.models import load_permissions
-            from core.tooling.permissions import get_permitted_tools
+        # Single permission gate covering tool-level allow/deny and gated actions.
+        from core.messaging.reply_grants import reply_grant_ok_for_action
+        from core.tooling.permissions import check_tool_access
 
-            perm_config = load_permissions(self._anima_dir)
-            permitted = get_permitted_tools(perm_config)
-        except Exception:
-            logger.debug("Failed to load permissions for gated action check; defaulting to empty set")
-
-        from core.tooling.permissions import is_action_gated
-
-        if is_action_gated(tool_name, action, permitted):
+        origin = "core" if tool_name in tool_modules else "personal"
+        tool_file = Path(personal_tools[tool_name]) if is_personal else None
+        decision = check_tool_access(
+            self._anima_dir,
+            tool_name,
+            action,
+            origin=origin,  # type: ignore[arg-type]
+            tool_file=tool_file,
+            reply_grant_ok=reply_grant_ok_for_action(self._anima_dir, tool_name, action, tool_args),
+        )
+        if not decision.allowed:
             return _error_result(
                 "PermissionDenied",
-                t("tooling.gated_action_denied", tool=tool_name, action=action),
+                decision.message,
             )
 
         dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}
 
         try:
-            if is_personal and tool_name not in TOOL_MODULES:
+            if is_personal and tool_name not in tool_modules:
                 import importlib.util
 
                 spec = importlib.util.spec_from_file_location(
@@ -806,12 +810,12 @@ class ToolHandler(
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)  # type: ignore[union-attr]
             else:
-                if tool_name not in TOOL_MODULES:
+                if tool_name not in tool_modules:
                     return _error_result(
                         "InvalidArguments",
                         f"Unknown tool module: {tool_name}",
                     )
-                mod = importlib.import_module(TOOL_MODULES[tool_name])
+                mod = load_tool_module(tool_name, tool_modules)
 
             result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
             return self._attach_action_rules(schema_name, tool_args, result)
@@ -826,52 +830,78 @@ class ToolHandler(
     # ── Vault tools ──────────────────────────────────────────
 
     def _handle_vault_get(self, args: dict[str, Any]) -> str:
-        """Retrieve a decrypted value from the credential vault."""
-        from core.config.vault import get_vault_manager
+        """Retrieve a decrypted value from the caller's vault sections."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        section = args.get("section", "")
         key = args.get("key", "")
-        if not section or not key:
-            return _error_result("InvalidArguments", "section and key are required")
+        section = args.get("section")
+        if not isinstance(key, str) or not key:
+            return _error_result("InvalidArguments", "key is required")
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
+
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
 
         vault = get_vault_manager()
-        value = vault.get(section, key)
-        if value is None:
-            return _error_result("NotFound", f"No entry for {section}/{key}")
-        return value
+        for allowed_section in sections:
+            value = vault.get(allowed_section, key)
+            if value is not None:
+                return value
+        searched = ", ".join(sections)
+        return _error_result("NotFound", f"No entry for {key} (searched sections: {searched})")
 
     def _handle_vault_store(self, args: dict[str, Any]) -> str:
-        """Store an encrypted value in the credential vault."""
-        from core.config.vault import get_vault_manager
+        """Store an encrypted value in the caller's own vault section."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        section = args.get("section", "")
         key = args.get("key", "")
-        value = args.get("value", "")
-        if not section or not key or not value:
-            return _error_result(
-                "InvalidArguments",
-                "section, key, and value are required",
-            )
+        section = args.get("section")
+        value = args.get("value")
+        if not isinstance(key, str) or not key:
+            return _error_result("InvalidArguments", "key is required")
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
 
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section, write=True)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
+        if not isinstance(value, str):
+            return _error_result("InvalidArguments", "value is required")
+
+        own_section = sections[0]
         vault = get_vault_manager()
-        vault.store(section, key, value)
+        vault.store(own_section, key, value)
         return _json.dumps(
-            {"status": "ok", "message": f"Stored {section}/{key}"},
+            {"status": "ok", "message": f"Stored {own_section}/{key}"},
             ensure_ascii=False,
         )
 
     def _handle_vault_list(self, args: dict[str, Any]) -> str:
-        """List vault sections and keys (values are never shown)."""
-        from core.config.vault import get_vault_manager
+        """List keys in the caller's vault sections without exposing values."""
+        from core.config.vault import VaultAccessError, get_vault_manager, resolve_vault_sections
 
-        vault = get_vault_manager()
-        data = vault.load_vault()
         section = args.get("section")
-        if section:
-            keys = list(data.get(section, {}).keys())
+        if section is not None and not isinstance(section, str):
+            return _error_result("InvalidArguments", "section must be a string")
+
+        try:
+            sections = resolve_vault_sections(self._anima_name, section=section)
+        except VaultAccessError as exc:
+            return _error_result("PermissionDenied", str(exc))
+
+        data = get_vault_manager().load_vault()
+        section_keys = {
+            name: sorted(entries) if isinstance(entries, dict) else []
+            for name in sections
+            for entries in (data.get(name),)
+        }
+        if section is not None:
             return _json.dumps(
-                {"section": section, "keys": keys},
+                {"section": section, "keys": section_keys.get(section, [])},
                 ensure_ascii=False,
             )
-        sections = {s: list(v.keys()) for s, v in data.items()}
-        return _json.dumps({"sections": sections}, ensure_ascii=False)
+        return _json.dumps({"sections": section_keys}, ensure_ascii=False)

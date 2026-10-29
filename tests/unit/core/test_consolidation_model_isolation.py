@@ -9,9 +9,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
+from core.agent.priming import PrimingMixin
 from core.execution.base import ExecutionResult
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import CycleResult, ModelConfig
 
 
@@ -32,33 +33,60 @@ class _FakeEngine:
         chunks: list[str] | None = None,
         existing_episode: str = "",
         recent_episodes: list[dict[str, str]] | None = None,
+        project: str | None = None,
     ) -> None:
         self.episodes_dir = Path("/tmp/fake-episodes")
         self.chunks = chunks or []
         self.existing_episode = existing_episode
         self.recent_episodes = recent_episodes or []
-        self.carryover_items: list[dict[str, str]] = [
-            {
-                "date": "2026-06-09",
-                "episodes_summary": "Unprocessed episode",
-                "reason": "test",
-            }
-        ]
-        self.carryover_cleared = False
+        self.project = project
         self.collect_calls: list[dict] = []
         self.write_calls: list[dict] = []
+        self.target_date: date | None = None
 
     def previous_local_day_window(self, reference=None):
-        return ConsolidationEngine.previous_local_day_window(reference)
+        result = ConsolidationEngine.previous_local_day_window(reference)
+        self.target_date = result[0]
+        return result
 
-    def collect_activity_chunks(self, *, hours: int, model: str, since=None, until=None):
-        self.collect_calls.append({"hours": hours, "model": model, "since": since, "until": until})
-        return self.chunks
+    def local_day_window(self, target_date: date, reference=None):
+        return ConsolidationEngine.local_day_window(target_date, reference)
+
+    def collect_activity_chunks(
+        self,
+        *,
+        hours: int,
+        model: str,
+        since=None,
+        until=None,
+        max_input_bytes: int = 200 * 1024,
+        **_kwargs,
+    ):
+        self.collect_calls.append(
+            {"hours": hours, "model": model, "since": since, "until": until, "max_input_bytes": max_input_bytes}
+        )
+        return self.chunks if since is None or since.date() == self.target_date else []
+
+    def collect_pending_activity_chunks(
+        self,
+        target_date: date,
+        *,
+        model: str,
+        max_input_bytes: int = 200 * 1024,
+        exclude_noop_cron: bool = False,
+        **_kwargs,
+    ):
+        start, end = self.local_day_window(target_date)
+        chunks = self.collect_activity_chunks(
+            hours=24, model=model, since=start, until=end, max_input_bytes=max_input_bytes
+        )
+        pending = self.unprocessed_activity_chunks(target_date, chunks)
+        return pending, False
 
     def unprocessed_activity_chunks(self, target_date, chunks):
         return chunks
 
-    def record_consolidated_chunks(self, target_date, chunks):
+    def record_consolidated_chunks(self, target_date, chunks, *, noop_cron_filtered=False, input_profile=None):
         pass
 
     def read_episode_for_date(self, target_date):
@@ -70,55 +98,26 @@ class _FakeEngine:
     def _sanitize_llm_output(self, text):
         return text
 
+    _truncate_utf8 = staticmethod(ConsolidationEngine._truncate_utf8)
+
     def write_consolidated_episode(self, target_date, consolidated_timeline):
         self.write_calls.append({"target_date": target_date, "content": consolidated_timeline})
         return self.episodes_dir / f"{target_date}.md"
 
-    async def extract_facts_from_text(self, *args, **kwargs):
-        return 0
+    async def extract_facts_from_text_outcome(self, *args, **kwargs):
+        from core.memory.facts.extraction import FactExtractionOutcome
+
+        return FactExtractionOutcome([])
 
     def _collect_recent_episodes(self, *, hours: int):
         return self.recent_episodes
-
-    def record_phase_b_carryover(self, episodes_summary, *, target_date, reason, incremental=False):
-        self.carryover_items = [
-            {
-                "date": target_date.isoformat(),
-                "recorded_at": "2026-06-10T02:00:00+09:00",
-                "reason": reason,
-                "episodes_summary": episodes_summary,
-            }
-        ]
-        return self.carryover_items
-
-    def load_phase_b_carryover(self):
-        return self.carryover_items
-
-    def format_phase_b_carryover(self, items):
-        return ConsolidationEngine.format_phase_b_carryover(items)
-
-    def clear_phase_b_carryover(self):
-        self.carryover_cleared = True
-        self.carryover_items = []
-
-    def _extract_reflections_from_episodes(self, episodes_summary: str):
-        return ""
-
-    def _collect_resolved_events(self, *, hours: int):
-        return []
-
-    def _collect_error_entries(self, *, hours: int):
-        return ""
-
-    def _list_knowledge_files_with_meta(self):
-        return []
 
     def _find_merge_candidates(self, *, max_pairs: int):
         return []
 
 
 def _make_lifecycle(status_config: ModelConfig):
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
 
     class FakeAnima(LifecycleMixin):
         pass
@@ -140,7 +139,6 @@ def _mock_config(
         consolidation=SimpleNamespace(
             llm_model=consolidation_model,
             llm_credential=consolidation_credential,
-            knowledge_mutation_enabled=True,
             skill_autolearn_enabled=False,
         ),
         credentials={
@@ -150,11 +148,12 @@ def _mock_config(
                 keys={},
             ),
         },
+        model_modes={},
     )
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_executor():
+async def test_project_consolidation_uses_helper_model_without_mutating_agent_executor():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     original_executor = anima.agent._executor
@@ -163,11 +162,16 @@ async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_exe
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
         patch(
-            "core._anima_lifecycle.load_prompt",
+            "core.anima.lifecycle.load_prompt",
             return_value="daily prompt",
         ),
     ):
-        result = await anima._run_daily_consolidation(_FakeEngine())
+        result = await anima._run_daily_consolidation(
+            _FakeEngine(
+                recent_episodes=[{"date": "2026-06-09", "time": "14:00", "content": "Project notes"}],
+                project="project-a",
+            )
+        )
 
     assert result.trigger == "consolidation:daily"
     assert anima.agent._executor is original_executor
@@ -203,9 +207,9 @@ async def test_daily_phase_a_uses_previous_local_day_window_and_existing_episode
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", side_effect=fake_load_prompt),
-        patch("core.memory._llm_utils.one_shot_completion", side_effect=fake_one_shot),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", side_effect=fake_load_prompt),
+        patch("core.llm.oneshot.one_shot_completion", side_effect=fake_one_shot),
     ):
         await anima._run_daily_consolidation(engine)
 
@@ -216,6 +220,49 @@ async def test_daily_phase_a_uses_previous_local_day_window_and_existing_episode
     assert "previous day work" in engine.write_calls[0]["content"]
     assert episode_prompt_kwargs[0]["time_range"] == "2026-06-09 chunk 1/1"
     assert episode_prompt_kwargs[0]["existing_episode"] == "raw daytime note"
+    assert anima.agent.calls == []
+
+
+@pytest.mark.asyncio
+async def test_daily_without_project_never_runs_tool_loop_even_with_legacy_setting():
+    status_config = ModelConfig(model="test-model")
+    anima = _make_lifecycle(status_config)
+    config = _mock_config()
+    config.consolidation.knowledge_mutation_enabled = True
+
+    with patch("core.config.load_config", return_value=config):
+        result = await anima._run_daily_consolidation(_FakeEngine())
+
+    assert result.action == "skipped"
+    assert anima.agent.calls == []
+
+
+@pytest.mark.asyncio
+async def test_project_consolidation_uses_recent_episodes_without_writing_state(tmp_path: Path):
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    engine = ConsolidationEngine(tmp_path, "ritsu", project="p")
+    episodes = [{"date": "2026-06-09", "time": "14:00", "content": "Project source"}]
+    engine._collect_recent_episodes = MagicMock(return_value=episodes)
+    prompt_kwargs: dict = {}
+
+    def capture_prompt(name: str, **kwargs):
+        assert name == "memory/consolidation_instruction"
+        prompt_kwargs.update(kwargs)
+        return "project prompt"
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
+    ):
+        result = await anima._run_daily_consolidation(engine)
+
+    assert result.action == "completed"
+    assert prompt_kwargs["episodes_summary"] == "## 2026-06-09 14:00\nProject source"
+    assert len(anima.agent.calls) == 1
+    assert anima.agent.calls[0]["trigger"] == "consolidation:daily"
+    assert not (tmp_path / "state").exists()
 
 
 @pytest.mark.asyncio
@@ -230,25 +277,31 @@ async def test_daily_phase_a_llm_failure_leaves_existing_episode_unchanged(tmp_p
     original = "# 2026-06-09\n\n## 14:00 — Raw\n\nmust survive"
     episode_path.write_text(original, encoding="utf-8")
     engine.collect_activity_chunks = MagicMock(return_value=["[14:00] RESPONSE: work"])
+    config = _mock_config()
+    config.consolidation.episode_summary_backfill_days = 1
 
     with (
-        patch("core.config.load_config", return_value=_mock_config()),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="episode prompt"),
-        patch("core.memory._llm_utils.one_shot_completion", side_effect=RuntimeError("llm timeout")),
-        pytest.raises(RuntimeError, match="llm timeout"),
+        patch("core.config.load_config", return_value=config),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", return_value="episode prompt"),
+        patch("core.llm.oneshot.one_shot_completion", side_effect=RuntimeError("llm timeout")),
+        patch("core.anima.lifecycle.logger.warning") as warning,
     ):
-        await anima._run_daily_consolidation(engine)
+        result = await anima._run_daily_consolidation(engine)
 
+    assert result.action == "skipped"
+    warning.assert_called_once()
+    assert "Episode summary failed" in warning.call_args.args[0]
+    assert "RuntimeError" in warning.call_args.args[-1]
     assert episode_path.read_text(encoding="utf-8") == original
     assert not (anima_dir / "archive" / "episodes").exists()
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_timeout_keeps_carryover_source_bundle():
+async def test_project_consolidation_timeout_propagates():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
-    anima.agent.run_cycle = AsyncMock(side_effect=TimeoutError("phase b timed out"))
+    anima.agent.run_cycle = AsyncMock(side_effect=TimeoutError("project consolidation timed out"))
     engine = _FakeEngine(
         recent_episodes=[
             {
@@ -256,25 +309,21 @@ async def test_daily_phase_b_timeout_keeps_carryover_source_bundle():
                 "time": "14:00",
                 "content": "Important episode source",
             }
-        ]
+        ],
+        project="project-a",
     )
-    fixed_now = datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
 
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
-        pytest.raises(TimeoutError, match="phase b timed out"),
+        patch("core.anima.lifecycle.load_prompt", return_value="project prompt"),
+        pytest.raises(TimeoutError, match="project consolidation timed out"),
     ):
         await anima._run_daily_consolidation(engine)
 
-    assert engine.carryover_items
-    assert engine.carryover_items[0]["date"] == "2026-06-09"
-
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_interruption_returns_truncated_and_keeps_carryover():
+async def test_project_consolidation_interruption_returns_truncated_without_carryover_text():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     anima.agent.run_cycle = AsyncMock(
@@ -292,28 +341,25 @@ async def test_daily_phase_b_interruption_returns_truncated_and_keeps_carryover(
                 "time": "14:00",
                 "content": "Important episode source",
             }
-        ]
+        ],
+        project="project-a",
     )
-    fixed_now = datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
 
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+        patch("core.anima.lifecycle.load_prompt", return_value="project prompt"),
     ):
         result = await anima._run_daily_consolidation(engine)
 
     assert result.action == "truncated"
     assert "[TRUNCATED]" in result.summary
-    assert engine.carryover_items
-    assert engine.carryover_cleared is False
-    assert "Unprocessed episode" in engine.carryover_items[0]["episodes_summary"]
-    assert engine.carryover_cleared is False
+    assert "Project consolidation was interrupted; partial outputs were kept" in result.summary
+    assert "carryover" not in result.summary.lower()
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_normal_summary_without_truncation_clears_carryover():
+async def test_project_consolidation_normal_summary_completes():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     anima.agent.run_cycle = AsyncMock(
@@ -331,22 +377,32 @@ async def test_daily_phase_b_normal_summary_without_truncation_clears_carryover(
                 "time": "14:00",
                 "content": "Important episode source",
             }
-        ]
+        ],
+        project="project-a",
     )
-    fixed_now = datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
 
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+        patch("core.anima.lifecycle.load_prompt", return_value="project prompt"),
     ):
         result = await anima._run_daily_consolidation(engine)
 
     assert result.action == "completed"
     assert "[TRUNCATED]" not in result.summary
-    assert engine.carryover_cleared is True
-    assert engine.carryover_items == []
+
+
+@pytest.mark.asyncio
+async def test_project_consolidation_without_recent_episodes_is_skipped():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    engine = _FakeEngine(project="project-a")
+
+    with patch("core.config.load_config", return_value=_mock_config()):
+        result = await anima._run_daily_consolidation(engine)
+
+    assert result.action == "skipped"
+    assert anima.agent.calls == []
 
 
 @pytest.mark.asyncio
@@ -358,7 +414,7 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.load_prompt", return_value="weekly prompt"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
     ):
         result = await anima._run_weekly_consolidation(_FakeEngine())
 
@@ -376,58 +432,67 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     assert override.resolved_mode == "D"
 
 
-@pytest.mark.parametrize(
-    ("report", "expected"),
-    [
-        (
-            {
-                "merged_leftovers": [{"path": "knowledge/_merged_team.md", "first_seen": "2026-07-18"}],
-                "inherited_dirs": [],
-                "mdc_files": [],
-                "oversized_knowledge": [],
-                "noncanonical_archive_dirs": [],
-            },
-            "knowledge/_merged_team.md",
-        ),
-        (
-            {
-                "merged_leftovers": [],
-                "inherited_dirs": [],
-                "mdc_files": [],
-                "oversized_knowledge": [],
-                "noncanonical_archive_dirs": [],
-            },
-            "",
-        ),
-    ],
-)
 @pytest.mark.asyncio
-async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, expected):
+async def test_weekly_consolidation_passes_hygiene_candidates_to_prompt(tmp_path: Path):
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
-    anima.anima_dir = Path("/tmp/test-weekly-hygiene")
+    anima.anima_dir = tmp_path / "animas" / "ritsu"
+    knowledge = anima.anima_dir / "knowledge"
+    knowledge.mkdir(parents=True)
+    (knowledge / "_merged_x.md").write_text("leftover", encoding="utf-8")
     prompt_kwargs: dict = {}
 
     def capture_prompt(name: str, **kwargs):
         prompt_kwargs.update(kwargs)
         return "weekly prompt"
 
+    fake_forgetter = MagicMock()
+    fake_forgetter.list_forgetting_candidates.return_value = []
+
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.hygiene.scan_memory_hygiene", return_value=report) as scan,
-        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_forgetter),
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(_FakeEngine())
 
-    assert prompt_kwargs["hygiene_section"] == ""
+    assert "knowledge/_merged_x.md" in prompt_kwargs["hygiene_section"]
+
+
+@pytest.mark.asyncio
+async def test_weekly_project_consolidation_does_not_scan_hygiene(tmp_path: Path):
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    anima.anima_dir = tmp_path / "animas" / "ritsu"
+    prompt_kwargs: dict = {}
+
+    def capture_prompt(name: str, **kwargs):
+        prompt_kwargs.update(kwargs)
+        return "weekly prompt"
+
+    fake_forgetter = MagicMock()
+    fake_forgetter.list_forgetting_candidates.return_value = []
+    engine = _FakeEngine()
+    engine.project = "project-a"
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_forgetter),
+        patch("core.memory.maintenance.hygiene.scan_memory_hygiene") as scan,
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
+    ):
+        await anima._run_weekly_consolidation(engine)
+
     scan.assert_not_called()
+    assert prompt_kwargs["hygiene_section"] == ""
 
 
 @pytest.mark.asyncio
 async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     """Weekly consolidation passes forgetting candidates into the prompt."""
-    from core.memory.forgetting import ForgettingCandidate
+    from core.memory.maintenance.forgetting import ForgettingCandidate
 
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
@@ -454,8 +519,8 @@ async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.forgetting.ForgettingEngine", return_value=fake_engine),
-        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_engine),
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(fake_engine)
 
@@ -468,6 +533,9 @@ class _FakeExecutor:
 
     def __init__(self, model_config: ModelConfig) -> None:
         self.model_config = model_config
+
+    def prepare_tracker(self, tracker, system_prompt, prompt) -> None:
+        pass
 
     async def execute(self, **kwargs):
         return ExecutionResult(text=f"blocking:{self.model_config.model}")
@@ -483,7 +551,7 @@ class _FakeExecutor:
         }
 
 
-class _FakeCycle(CycleMixin):
+class _FakeCycle(CycleMixin, PrimingMixin):
     def __init__(self, tmp_path) -> None:
         self.anima_dir = tmp_path / "ritsu"
         self.anima_dir.mkdir()
@@ -529,7 +597,7 @@ class _FakeCycle(CycleMixin):
         }
 
     async def _preflight_size_check(self, system_prompt, prompt, conv_memory, **kwargs):
-        return system_prompt, prompt, False
+        return system_prompt, prompt
 
     @staticmethod
     def _extract_sender(prompt: str, trigger: str) -> str:
@@ -547,12 +615,12 @@ async def test_run_cycle_override_uses_local_executor_without_mutating_shared_st
     prompt_log_calls = []
 
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.priming.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
-            "core._agent_cycle._save_prompt_log",
+            "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
         ),
-        patch("core._agent_cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._save_prompt_log_end"),
     ):
         result = await agent.run_cycle("hello", trigger="manual", model_config_override=override)
 
@@ -571,12 +639,12 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
     chunks = []
 
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.priming.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
-            "core._agent_cycle._save_prompt_log",
+            "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
         ),
-        patch("core._agent_cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._save_prompt_log_end"),
     ):
         async for chunk in agent.run_cycle_streaming(
             "hello",
@@ -630,7 +698,6 @@ class _FakeMessagingAgent:
                 "summary": "ok",
                 "duration_ms": 1,
                 "context_usage_ratio": 0.0,
-                "session_chained": False,
                 "total_turns": 1,
                 "tool_call_records": [],
             },
@@ -663,7 +730,7 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     voice_effort,
     expected_effort,
 ):
-    from core._anima_messaging import MessagingMixin
+    from core.anima.messaging import MessagingMixin
 
     class FakeAnima(MessagingMixin):
         pass
@@ -693,6 +760,7 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     anima._status_slots = {}
     anima._task_slots = {}
     anima._activity = MagicMock()
+    anima._activity.alog = AsyncMock()
     anima._last_activity = None
 
     anima._validate_thread_id = lambda thread_id: None
@@ -702,7 +770,7 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     anima._notify_lock_released = lambda: None
     anima._log_human_conversation = lambda *args, **kwargs: None
     anima._resolve_chat_external_recipient = lambda *args, **kwargs: None
-    anima._maybe_neo4j_realtime_ingest = lambda *args, **kwargs: None
+    anima.drain_chat_background_notifications = lambda: []
 
     chunks = [
         chunk
@@ -719,3 +787,46 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     assert agent.streaming_config.thinking_effort == expected_effort
     assert (agent.streaming_config is status_config) is not voice_mode
     assert anima.model_config.model == "openai/deepseek-v4-flash"
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_uses_weekly_model_when_configured():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    config = _mock_config()
+    config.consolidation.weekly_llm_model = "openai/deepseek-v4-flash"
+    config.consolidation.weekly_llm_credential = "vllm-lb"
+
+    with (
+        patch("core.config.load_config", return_value=config),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
+    ):
+        result = await anima._run_weekly_consolidation(_FakeEngine())
+
+    assert result.trigger == "consolidation:weekly"
+    assert len(anima.agent.calls) == 1
+    call = anima.agent.calls[0]
+    assert call["trigger"] == "consolidation:weekly"
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"
+    assert override.credential == "vllm-lb"
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_defaults_to_llm_model_when_weekly_unset():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    config = _mock_config()  # weekly_llm_model is unset
+
+    with (
+        patch("core.config.load_config", return_value=config),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
+    ):
+        result = await anima._run_weekly_consolidation(_FakeEngine())
+
+    assert result.trigger == "consolidation:weekly"
+    call = anima.agent.calls[0]
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"  # falls back to llm_model

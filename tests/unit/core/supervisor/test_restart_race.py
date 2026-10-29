@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.exceptions import ProcessError
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ class TestStartAnimaRestartingGuard:
         supervisor._restarting.add("test-anima")
 
         # Mock ProcessHandle to avoid real process creation
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -62,7 +62,7 @@ class TestStartAnimaRestartingGuard:
     async def test_start_anima_proceeds_when_not_restarting(self, supervisor: ProcessSupervisor):
         """start_anima() proceeds normally when anima is not in _restarting."""
         # Mock ProcessHandle to avoid real process creation
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -159,7 +159,7 @@ class TestStartAnimaStartingGuard:
         """start_anima() returns early when the same anima is already starting."""
         supervisor._starting.add("test-anima")
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             await supervisor.start_anima("test-anima")
 
             # ProcessHandle should never be instantiated
@@ -174,7 +174,7 @@ class TestStartAnimaStartingGuard:
 
         original_start = ProcessSupervisor.start_anima
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=99999)
             mock_handle.send_request = AsyncMock(
@@ -198,7 +198,7 @@ class TestStartAnimaStartingGuard:
     @pytest.mark.asyncio
     async def test_start_anima_clears_starting_on_failure(self, supervisor: ProcessSupervisor):
         """_starting flag is cleared even when process start fails."""
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.start = AsyncMock(side_effect=RuntimeError("spawn failed"))
             MockHandle.return_value = mock_handle

@@ -3,7 +3,6 @@ import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { createPageTabs } from "../shared/page-tabs.js";
 import { t } from "/shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
 import { applyTheme, applyDisplayMode, getDisplayMode, applyFontSize, getFontSize } from "../modules/app.js";
 
 const _LS_ACTIVITY  = "aw-activity-level";
@@ -26,7 +25,7 @@ const _TABS = [
  * @param {string} [subPath]
  * @returns {"general"|"activity"|"api"|"users"}
  */
-export function resolveSettingsTab(subPath) {
+function resolveSettingsTab(subPath) {
   const head = String(subPath || "")
     .split("/")
     .filter(Boolean)[0] || "";
@@ -37,7 +36,7 @@ export function resolveSettingsTab(subPath) {
  * @param {string} tabId
  * @returns {string}
  */
-export function buildSettingsTabHash(tabId) {
+function buildSettingsTabHash(tabId) {
   return tabId === "general" || !_TABS.some((tab) => tab.id === tabId)
     ? "#/settings"
     : `#/settings/${tabId}`;
@@ -235,7 +234,7 @@ function _renderGeneral(container) {
       <div class="settings-mode-cards">
         <button class="settings-mode-card ${currentMode === "anime" ? "active" : ""}" data-mode="anime">
           <div class="settings-mode-icon">
-            <span class="nav-emoji">&#x1F338;</span>
+            <span class="settings-mode-emoji" aria-hidden="true">&#x1F338;</span>
           </div>
           <div class="settings-mode-info">
             <strong>${t("settings.mode.anime")}</strong>
@@ -292,6 +291,11 @@ function _renderGeneral(container) {
         <input type="checkbox" id="enterToSendToggle" ${_isEnterToSend() ? "checked" : ""} />
         <span>${t("settings.input.enter_to_send")}</span>
       </label>
+      <label class="settings-checkbox-label">
+        <input type="checkbox" id="chatPresenceToggle" ${_isPresenceOn() ? "checked" : ""} />
+        <span>${t("chat.presence.setting_label")}</span>
+      </label>
+      <p class="settings-section-desc">${t("chat.presence.setting_hint")}</p>
     </section>
   `;
 
@@ -306,6 +310,11 @@ function _renderGeneral(container) {
 
   container.querySelector("#enterToSendToggle")?.addEventListener("change", (e) => {
     try { localStorage.setItem(_LS_ENTER_SEND, e.target.checked ? "true" : "false"); } catch { /* */ }
+  });
+
+  container.querySelector("#chatPresenceToggle")?.addEventListener("change", (e) => {
+    try { localStorage.setItem("aw-chat-presence", e.target.checked ? "on" : "off"); } catch { /* */ }
+    window.dispatchEvent(new CustomEvent("aw:presence-pref"));
   });
 
   // Font Size
@@ -357,7 +366,7 @@ async function _onModeChange(mode, container) {
   localStorage.removeItem("aw-workspace-view");
 
   try {
-    await fetch(`${basePath}/api/settings/display-mode`, {
+    await api("/api/settings/display-mode", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
@@ -381,18 +390,11 @@ async function _initActivityLevel(container) {
   let level = 100;
   let fromApi = false;
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-level`);
-    if (res.ok) {
-      const data = await res.json();
-      level = data.activity_level || 100;
-      schedule = data.activity_schedule || [];
-      fromApi = true;
-      _cacheActivityState(level, schedule);
-    } else {
-      console.warn("[Settings] GET activity-level failed:", res.status);
-      ({ level, schedule } = _loadCachedActivityState());
-      if (!schedule.length) _showSettingsStatus(container, t("settings.load_error"), true);
-    }
+    const data = await api("/api/settings/activity-level");
+    level = data.activity_level || 100;
+    schedule = data.activity_schedule || [];
+    fromApi = true;
+    _cacheActivityState(level, schedule);
   } catch (err) {
     console.warn("[Settings] GET activity-level error:", err);
     ({ level, schedule } = _loadCachedActivityState());
@@ -469,15 +471,11 @@ function _updatePresetButtons(container, level) {
 async function _setActivityLevel(level, container) {
   _cacheActivityState(level, null);
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-level`, {
+    await api("/api/settings/activity-level", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_level: level }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT activity-level failed:", res.status);
-      _showSettingsStatus(container, t("settings.save_error"), true);
-    }
   } catch (err) {
     console.warn("[Settings] PUT activity-level error:", err);
     _showSettingsStatus(container, t("settings.save_error"), true);
@@ -571,19 +569,11 @@ async function _saveNightMode(container, revertOnFail) {
   _cacheActivityState(dayLevel, schedule);
 
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-schedule`, {
+    await api("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: schedule }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT activity-schedule failed:", res.status);
-      _showSettingsStatus(container, t("settings.save_error"), true);
-      if (revertOnFail) {
-        _revertNightModeToggle(container, false);
-        _cacheActivityState(dayLevel, []);
-      }
-    }
   } catch (err) {
     console.warn("[Settings] PUT activity-schedule error:", err);
     _showSettingsStatus(container, t("settings.save_error"), true);
@@ -601,19 +591,11 @@ async function _clearNightMode(container) {
   _cacheActivityState(curLevel, []);
 
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-schedule`, {
+    await api("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: [] }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT clear schedule failed:", res.status);
-      if (container) {
-        _showSettingsStatus(container, t("settings.save_error"), true);
-        _revertNightModeToggle(container, true);
-        _cacheActivityState(curLevel, prevSchedule);
-      }
-    }
   } catch (err) {
     console.warn("[Settings] PUT clear schedule error:", err);
     if (container) {
@@ -628,6 +610,10 @@ async function _clearNightMode(container) {
 
 function _isEnterToSend() {
   try { return localStorage.getItem(_LS_ENTER_SEND) === "true"; } catch { return false; }
+}
+
+function _isPresenceOn() {
+  try { return localStorage.getItem("aw-chat-presence") !== "off"; } catch { return true; }
 }
 
 // ── localStorage Cache ─────────────────────
@@ -700,13 +686,21 @@ async function _loadApiKeys() {
     }
     flattenConfig(config);
 
-    const keyEntries = rows.filter(r => /key|api_key|token/i.test(r.key));
+    // Only credentials belong here: "max_tokens" or "token_budget_monthly"
+    // are tuning knobs, not keys, and an unset optional key is not an error.
+    const isCredential = (fullKey) => {
+      const leaf = fullKey.split(".").pop() || "";
+      // *_env / *_vault_key only name where a secret is looked up.
+      if (/tokens|budget|^max_|_max_|_env$|vault_key$/i.test(leaf)) return false;
+      return /(^|_)(api_key|key|secret|password|token)$/i.test(leaf);
+    };
+    const keyEntries = rows.filter(r => isCredential(r.key));
     if (keyEntries.length > 0) {
       keysEl.innerHTML = keyEntries.map(k => {
         const configured = k.val && k.val !== "null" && k.val !== "None" && k.val !== "";
         return `
           <div class="settings-auth-row">
-            <span class="settings-auth-icon">${configured ? "\u2705" : "\u274C"}</span>
+            <span class="settings-auth-icon">${configured ? "\u2705" : "\u2796"}</span>
             <span class="settings-auth-label">${escapeHtml(k.key)}</span>
             <code class="settings-auth-value">${escapeHtml(k.val)}</code>
           </div>
@@ -793,7 +787,7 @@ async function _loadAnthropicAuthSettings() {
         `).join("")}
       </div>
 
-      <form id="anthropicAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+      <form id="anthropicAuthForm" class="users-form settings-auth-form">
         <label style="display:flex; flex-direction:column; gap:0.35rem;">
           <span>${t("settings.api_auth.anthropic_mode_label")}</span>
           <select id="anthropicAuthMode">
@@ -807,7 +801,7 @@ async function _loadAnthropicAuthSettings() {
           <small style="color:var(--text-secondary, #666);">${t("settings.api_auth.anthropic_api_key_hint")}</small>
         </label>
         <div id="anthropicAuthResult" class="login-error hidden"></div>
-        <button type="submit" class="btn-login" style="width:auto;">${t("settings.api_auth.anthropic_save")}</button>
+        <button type="submit" class="btn-primary">${t("settings.api_auth.anthropic_save")}</button>
       </form>
     `;
 
@@ -834,31 +828,25 @@ async function _loadAnthropicAuthSettings() {
       }
 
       try {
-        const saveRes = await fetch(`${basePath}/api/settings/anthropic-auth`, {
+        await api("/api/settings/anthropic-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
           body: JSON.stringify({
             auth_mode: authMode,
             api_key: apiKey,
           }),
         });
-        const saveData = await saveRes.json();
-        if (!saveRes.ok) {
-          result.style.color = "#ef4444";
-          result.textContent = saveData.detail || t("settings.api_auth.anthropic_save_failed");
-          result.classList.remove("hidden");
-          return;
-        }
 
         result.style.color = "#22c55e";
         result.textContent = t("settings.api_auth.anthropic_saved_success");
         result.classList.remove("hidden");
         await _loadApiKeys();
         await _loadAnthropicAuthSettings();
-      } catch {
+      } catch (err) {
         result.style.color = "#ef4444";
-        result.textContent = t("settings.api_auth.network_error");
+        result.textContent = err.status
+          ? err.message || t("settings.api_auth.anthropic_save_failed")
+          : t("settings.api_auth.network_error");
         result.classList.remove("hidden");
       }
     });
@@ -944,7 +932,7 @@ async function _loadOpenAIAuthSettings() {
         `).join("")}
       </div>
 
-      <form id="openaiAuthForm" style="display:flex; flex-direction:column; gap:0.75rem; max-width:420px;">
+      <form id="openaiAuthForm" class="users-form settings-auth-form">
         <label style="display:flex; flex-direction:column; gap:0.35rem;">
           <span>${t("settings.api_auth.openai_mode_label")}</span>
           <select id="openaiAuthMode">
@@ -958,7 +946,7 @@ async function _loadOpenAIAuthSettings() {
           <small style="color:var(--text-secondary, #666);">${t("settings.api_auth.openai_api_key_hint")}</small>
         </label>
         <div id="openaiAuthResult" class="login-error hidden"></div>
-        <button type="submit" class="btn-login" style="width:auto;">${t("settings.api_auth.openai_save")}</button>
+        <button type="submit" class="btn-primary">${t("settings.api_auth.openai_save")}</button>
       </form>
     `;
 
@@ -985,31 +973,25 @@ async function _loadOpenAIAuthSettings() {
       }
 
       try {
-        const saveRes = await fetch(`${basePath}/api/settings/openai-auth`, {
+        await api("/api/settings/openai-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
           body: JSON.stringify({
             auth_mode: authMode,
             api_key: apiKey,
           }),
         });
-        const saveData = await saveRes.json();
-        if (!saveRes.ok) {
-          result.style.color = "#ef4444";
-          result.textContent = saveData.detail || t("settings.api_auth.openai_save_failed");
-          result.classList.remove("hidden");
-          return;
-        }
 
         result.style.color = "#22c55e";
         result.textContent = t("settings.api_auth.openai_saved_success");
         result.classList.remove("hidden");
         await _loadApiKeys();
         await _loadOpenAIAuthSettings();
-      } catch {
+      } catch (err) {
         result.style.color = "#ef4444";
-        result.textContent = t("settings.api_auth.network_error");
+        result.textContent = err.status
+          ? err.message || t("settings.api_auth.openai_save_failed")
+          : t("settings.api_auth.network_error");
         result.classList.remove("hidden");
       }
     });

@@ -2,7 +2,10 @@
 // All WS event subscriptions for the workspace dashboard.
 
 import { getState, setState, subscribe } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
+import { mapAnimaStatusToAnim } from "./anima-status.js";
+import { getActiveRenderer } from "./office-renderer.js";
+export { mapAnimaStatusToAnim } from "./anima-status.js";
 import { connect, onEvent } from "./websocket.js";
 import { renderAnimaSelector, renderStatus } from "./anima.js";
 import { updateCharacterState, removeCharacter, createCharacter } from "./character.js";
@@ -28,21 +31,8 @@ function applyOrBufferReplay(handler, data) {
   }
 }
 
-// ── Status Mapping ──────────────────────
-
-export function mapAnimaStatusToAnim(status) {
-  if (!status) return "idle";
-  const s = typeof status === "object" ? status.state || status.status || "idle" : String(status);
-  const lower = s.toLowerCase();
-  if (lower === "not_found" || lower === "stopped") return "sleeping";
-  if (lower.includes("bootstrap")) return "thinking";
-  if (lower.includes("think") || lower.includes("process")) return "thinking";
-  if (lower.includes("work") || lower.includes("busy") || lower.includes("running")) return "working";
-  if (lower.includes("error") || lower.includes("fail")) return "error";
-  if (lower.includes("sleep") || lower.includes("stop") || lower.includes("inactive")) return "sleeping";
-  if (lower.includes("talk") || lower.includes("chat")) return "talking";
-  if (lower.includes("report")) return "reporting";
-  return "idle";
+function is3dOfficeReady() {
+  return getActiveRenderer() === "3d" && getState().officeInitialized;
 }
 
 // ── WebSocket Setup ──────────────────────
@@ -71,7 +61,7 @@ export function setupWebSocket(deps) {
       if (data.name === selectedAnima) {
         renderStatus(dom.paneState);
       }
-      if (getState().officeInitialized) {
+      if (is3dOfficeReady()) {
         const animState = mapAnimaStatusToAnim(data.status);
         updateCharacterState(data.name, animState);
         setState({ characterStates: { ...getState().characterStates, [data.name]: animState } });
@@ -90,14 +80,17 @@ export function setupWebSocket(deps) {
   // ── anima.interaction — inter-anima messaging visualization ──
   wsUnsubscribers.push(onEvent("anima.interaction", (data) => {
     applyOrBufferReplay((data) => {
+      if (!is3dOfficeReady()) return;
       cancelBehavior(data.from_person);
       cancelBehavior(data.to_person);
-
       if (data.type === "message") {
         showMessageEffect(data.from_person, data.to_person, data.summary || "");
-        if (getCurrentView() === "org") {
-          showMessageLine(data.from_person, data.to_person, data.summary || "");
-        }
+      }
+    }, data);
+
+    applyOrBufferReplay((data) => {
+      if (data.type === "message" && getCurrentView() === "org") {
+        showMessageLine(data.from_person, data.to_person, data.summary || "");
       }
     }, data);
 
@@ -301,7 +294,7 @@ export function setupWebSocket(deps) {
           setState({ animas: [...animas] });
           renderAnimaSelector(dom.animaSelector);
         }
-        if (getState().officeInitialized) {
+        if (is3dOfficeReady()) {
           updateCharacterState(name, "thinking");
         }
         addActivity("system", name, t("ws.bootstrap_start"));
@@ -313,7 +306,7 @@ export function setupWebSocket(deps) {
           setState({ animas: [...animas] });
           renderAnimaSelector(dom.animaSelector);
         }
-        if (getState().officeInitialized) {
+        if (is3dOfficeReady()) {
           updateCharacterState(name, "idle");
         }
         addActivity("system", name, t("ws.bootstrap_done"));
@@ -325,7 +318,7 @@ export function setupWebSocket(deps) {
           setState({ animas: [...animas] });
           renderAnimaSelector(dom.animaSelector);
         }
-        if (getState().officeInitialized) {
+        if (is3dOfficeReady()) {
           updateCharacterState(name, "error");
         }
         addActivity("system", name, t("ws.bootstrap_failed"));
@@ -349,7 +342,7 @@ export function setupWebSocket(deps) {
         if (avatarUrl) await playReveal({ name: animaName, avatarUrl });
       }
 
-      if (getState().officeInitialized) {
+      if (is3dOfficeReady()) {
         const desks = getDesks();
         const deskPos = desks[animaName];
         if (deskPos) {

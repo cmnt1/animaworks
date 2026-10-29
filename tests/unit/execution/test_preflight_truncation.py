@@ -13,7 +13,7 @@ class TestPreflightTruncation:
 
     def test_truncation_preserves_minimum_chars(self):
         """Truncation should never reduce system content below 2000 chars."""
-        from core.execution._litellm_context import ContextMixin
+        from core.execution.engines.litellm._litellm_context import ContextMixin
 
         mixin = ContextMixin()
         mixin._resolve_cw = lambda: 8000

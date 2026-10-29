@@ -223,11 +223,13 @@ class TestEdgeCases:
         assert "config" in str(ctx.value).lower()
 
     def test_disable_with_invalid_status_json(self, tmp_path):
-        """When status.json contains invalid JSON, treat as empty and proceed."""
+        """Invalid status JSON is rejected without overwriting the original bytes."""
         handler = _make_handler(tmp_path, "sakura")
         anima_dir = tmp_path / "animas" / "hinata"
         anima_dir.mkdir(parents=True, exist_ok=True)
-        (anima_dir / "status.json").write_text("not valid json{{{", encoding="utf-8")
+        status_file = anima_dir / "status.json"
+        original = b"not valid json{{{"
+        status_file.write_bytes(original)
 
         mock_cfg = _mock_config(tmp_path, {
             "sakura": {},
@@ -240,9 +242,10 @@ class TestEdgeCases:
         ):
             result = handler.handle("disable_subordinate", {"name": "hinata"})
 
-        assert "休止" in result
-        status = json.loads((anima_dir / "status.json").read_text())
-        assert status["enabled"] is False
+        error = json.loads(result)
+        assert error["status"] == "error"
+        assert error["error_type"] == "InvalidState"
+        assert status_file.read_bytes() == original
 
     def test_disable_with_missing_status_json(self, tmp_path):
         """When status.json doesn't exist, create it with enabled=false."""

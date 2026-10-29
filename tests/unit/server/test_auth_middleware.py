@@ -16,6 +16,7 @@ from core.auth.models import AuthConfig, AuthUser
 
 def _create_test_app(data_dir: Path, *, base_path: str = ""):
     import json
+
     from server.app import create_app
 
     animas_dir = data_dir / "animas"
@@ -34,11 +35,14 @@ def _create_test_app(data_dir: Path, *, base_path: str = ""):
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
 
     from core.config import invalidate_cache
+
     invalidate_cache()
 
-    with patch("core.paths.get_data_dir", return_value=data_dir), \
-         patch("server.app.ProcessSupervisor"), \
-         patch("server.app.WebSocketManager"):
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("server.app.ProcessSupervisor"),
+        patch("server.app.WebSocketManager"),
+    ):
         app = create_app(animas_dir, shared_dir)
     return app
 
@@ -258,3 +262,25 @@ class TestAuthGuardMiddleware:
         """AuthConfig() has trust_localhost=True by default."""
         config = AuthConfig()
         assert config.trust_localhost is True
+
+    def test_internal_token_passes_without_trust_localhost(self, data_dir):
+        """password mode + trust_localhost=False: a valid internal token on
+        /api/internal/* must still pass auth_guard."""
+        config = AuthConfig(
+            auth_mode="password",
+            trust_localhost=False,
+            owner=AuthUser(username="admin", password_hash=hash_password("pw"), role="owner"),
+        )
+        save_auth(config)
+
+        app = _create_test_app(data_dir)
+        client = TestClient(app)
+        token = app.state.internal_auth.token_for_anima("test")
+        # /api/internal/embed: as long as auth_guard does not return 401,
+        # the internal token gate worked (the vector worker may not be up,
+        # but that yields 5xx rather than 401).
+        resp = client.get(
+            "/api/internal/embed",
+            headers={"X-AnimaWorks-Internal-Auth": token},
+        )
+        assert resp.status_code != 401

@@ -3,37 +3,21 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
 import os
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import Any
 
-import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.config.local_llm import (
-    apply_local_llm_presets_to_animas,
-    normalize_ollama_base_url,
-    normalize_ollama_model_name,
-)
-from core.config.model_catalog import (  # noqa: F401
-    validate_chat_model,
-    validate_model_override,
-)
+from core.config.io import get_config_path
+from core.config.model_catalog import validate_chat_model  # noqa: F401
 from core.config.model_discovery import discover_models
-from core.config.models import (
-    DEFAULT_LOCAL_LLM_BASE_URL,
-    DEFAULT_LOCAL_LLM_PRESETS,
-    DEFAULT_LOCAL_LLM_ROLE_PRESETS,
-    CredentialConfig,
-    LocalLLMConfig,
-    load_config,
-    save_config,
-)
+from core.config.models import CredentialConfig, load_config, update_config
 from core.i18n import t
-from core.paths import get_animas_dir
 from core.platform.claude_code import is_claude_code_available
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
 
@@ -50,11 +34,15 @@ class UpdateOpenAIAuthRequest(BaseModel):
     api_key: str = ""
 
 
-class UpdateLocalLLMRequest(BaseModel):
-    base_url: str = DEFAULT_LOCAL_LLM_BASE_URL
-    default_model: str = DEFAULT_LOCAL_LLM_PRESETS["coding"]
-    presets: dict[str, str] = {}
-    role_presets: dict[str, str] = {}
+class UpdateConfigValueRequest(BaseModel):
+    key: str
+    value: Any
+
+
+class SaveConfigWizardRequest(BaseModel):
+    credentials: dict[str, dict[str, Any]]
+    anima_names: list[str]
+    status_updates: dict[str, dict[str, str]]
 
 
 def _mask_secrets(obj: object) -> object:
@@ -69,6 +57,9 @@ def _mask_secrets(obj: object) -> object:
 def _mask_value(key: str, value: object) -> object:
     """Mask a value if its key suggests it contains a secret."""
     if isinstance(value, str) and any(kw in key.lower() for kw in ("key", "token", "secret", "password")):
+        if not value:
+            # An unset secret stays visibly unset ("***" would read as configured).
+            return value
         if len(value) > 8:
             return value[:3] + "..." + value[-4:]
         return "***"
@@ -131,70 +122,13 @@ def _serialize_anthropic_auth() -> dict[str, object]:
     }
 
 
-def _list_ollama_models(base_url: str) -> list[str]:
-    response = httpx.get(
-        f"{base_url}/api/tags",
-        timeout=httpx.Timeout(5.0, connect=5.0),
-    )
-    response.raise_for_status()
-    data = response.json()
-    models = sorted(
-        {
-            normalize_ollama_model_name(str(item.get("name", "")).strip())
-            for item in data.get("models", [])
-            if item.get("name")
-        }
-    )
-    return [model for model in models if model]
-
-
-def _serialize_local_llm() -> dict[str, object]:
-    config = load_config()
-    local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
-    base_url = normalize_ollama_base_url(local_llm.base_url)
-    default_model = normalize_ollama_model_name(local_llm.default_model)
-    presets = {name: normalize_ollama_model_name(model) for name, model in local_llm.presets.items()}
-
-    available_models: list[str] = []
-    reachable = False
-    error: str | None = None
-    try:
-        available_models = _list_ollama_models(base_url)
-        reachable = True
-    except Exception as exc:  # pragma: no cover
-        error = str(exc)
-
-    ollama_credential = config.credentials.get("ollama")
-    configured = (
-        config.anima_defaults.credential == "ollama"
-        and normalize_ollama_model_name(config.anima_defaults.model) == default_model
-        and ollama_credential is not None
-        and normalize_ollama_base_url(ollama_credential.base_url) == base_url
-    )
-
-    return {
-        "base_url": base_url,
-        "default_model": default_model,
-        "presets": presets,
-        "role_presets": dict(local_llm.role_presets),
-        "recommended_presets": dict(DEFAULT_LOCAL_LLM_PRESETS),
-        "recommended_role_presets": dict(DEFAULT_LOCAL_LLM_ROLE_PRESETS),
-        "available_models": available_models,
-        "reachable": reachable,
-        "error": error,
-        "configured": configured,
-        "current_default_model": config.anima_defaults.model,
-        "current_default_credential": config.anima_defaults.credential,
-    }
-
-
 def create_config_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/system/config")
     async def get_config(request: Request):
         """Read and return the AnimaWorks config with masked secrets."""
-        config_path = Path.home() / ".animaworks" / "config.json"
+        config_path = get_config_path()
         if not config_path.exists():
             raise HTTPException(status_code=404, detail="Config file not found")
 
@@ -205,59 +139,110 @@ def create_config_router() -> APIRouter:
 
         return _mask_secrets(config)
 
-    @router.get("/system/init-status")
-    async def init_status(request: Request):
-        """Check initialization status of AnimaWorks."""
-        base_dir = Path.home() / ".animaworks"
-        config_path = base_dir / "config.json"
-        animas_dir = base_dir / "animas"
-        shared_dir = base_dir / "shared"
+    @router.put("/system/config/value")
+    async def update_config_value(body: UpdateConfigValueRequest, request: Request):
+        """Apply one validated CLI config-set operation through the root server."""
+        from core.config.ops import legacy_model_status_target, set_config_value
 
-        # Count animas
-        animas_count = 0
-        if animas_dir.exists():
-            for d in animas_dir.iterdir():
-                if d.is_dir() and (d / "identity.md").exists():
-                    animas_count += 1
+        if not body.key.strip() or any(not part for part in body.key.split(".")):
+            raise HTTPException(status_code=400, detail="key must be a non-empty dot-notation path")
+        activity_update = None
+        if body.key == "activity_level":
+            from server.supervisor.activity_schedule import apply_activity_schedule
 
-        # Check API keys / subscription auth
-        has_anthropic_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-        anthropic_cred = load_config().credentials.get("anthropic", CredentialConfig())
-        has_anthropic_subscription = anthropic_cred.type == "claude_code_login" and is_claude_code_available()
-        has_anthropic = has_anthropic_key or has_anthropic_subscription
-        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-        has_codex_login = is_codex_login_available()
-        has_openai_auth = has_openai or has_codex_login
-        has_google = bool(os.environ.get("GOOGLE_API_KEY"))
+            if not isinstance(body.value, int) or isinstance(body.value, bool) or not 10 <= body.value <= 400:
+                raise HTTPException(status_code=400, detail="activity_level must be int 10-400")
+            activity_update = await asyncio.to_thread(apply_activity_schedule, activity_level=body.value)
+        elif body.key == "activity_schedule":
+            from core.config.models import ActivityScheduleEntry
+            from server.supervisor.activity_schedule import apply_activity_schedule
 
-        config_exists = config_path.exists()
-        initialized = config_exists and animas_count > 0
+            if not isinstance(body.value, list) or len(body.value) > 24:
+                raise HTTPException(status_code=400, detail="activity_schedule must be a list with at most 24 entries")
+            try:
+                entries = [ActivityScheduleEntry.model_validate(value) for value in body.value]
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            activity_update = await asyncio.to_thread(apply_activity_schedule, activity_schedule=entries)
 
-        return {
-            "checks": [
-                {"label": t("config.config_file"), "ok": config_exists},
-                {
-                    "label": t("config.anima_registration"),
-                    "ok": animas_count > 0,
-                    "detail": t("config.anima_count_detail", count=animas_count),
-                },
-                {"label": t("config.shared_dir"), "ok": shared_dir.exists()},
-                {"label": t("config.anthropic_auth"), "ok": has_anthropic},
-                {"label": t("config.openai_auth"), "ok": has_openai_auth},
-                {"label": t("config.google_api_key"), "ok": has_google},
-                {"label": t("config.init_complete"), "ok": initialized},
-            ],
-            "config_exists": config_exists,
-            "animas_count": animas_count,
-            "api_keys": {
-                "anthropic": has_anthropic,
-                "openai": has_openai_auth,
-                "codex_login": has_codex_login,
-                "google": has_google,
-            },
-            "shared_dir_exists": shared_dir.exists(),
-            "initialized": initialized,
-        }
+        target = legacy_model_status_target(body.key)
+        if target is not None:
+            from core.anima.factory import validate_anima_name
+
+            anima_name, _field = target
+            name_error = validate_anima_name(anima_name)
+            if name_error:
+                raise HTTPException(status_code=400, detail=name_error)
+        try:
+            if activity_update is None:
+                await asyncio.to_thread(set_config_value, body.key, body.value)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to update config value %s", body.key)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if activity_update is not None and supervisor is not None:
+            methods: list[str] = []
+            if activity_update.activity_level_changed:
+                methods.append("reschedule_heartbeat")
+            if body.key == "activity_schedule" and activity_update.activity_schedule_changed:
+                methods.append("reload_activity_schedule")
+            for name in list(getattr(supervisor, "processes", {})):
+                for method in methods:
+                    try:
+                        await supervisor.send_request(name, method, {}, timeout=10.0)
+                    except Exception:
+                        logger.warning("Failed to send %s to %s after config update", method, name, exc_info=True)
+        elif body.key == "heartbeat.interval_minutes" and supervisor is not None:
+            for name in list(getattr(supervisor, "processes", {})):
+                try:
+                    await supervisor.send_request(name, "reschedule_heartbeat", {}, timeout=10.0)
+                except Exception:
+                    logger.warning("Failed to reschedule heartbeat for %s after config update", name, exc_info=True)
+        elif target is not None and supervisor is not None:
+            anima_name, status_field = target
+            if anima_name in getattr(supervisor, "processes", {}) and status_field not in {"supervisor", "speciality"}:
+                method = "reschedule_heartbeat" if status_field == "heartbeat_interval_minutes" else "reload_config"
+                try:
+                    await supervisor.send_request(anima_name, method, {}, timeout=10.0)
+                except Exception:
+                    logger.info("Settings reload deferred until next start for anima=%s", anima_name, exc_info=True)
+        return {"ok": True, "key": body.key, "status_target": target}
+
+    @router.put("/system/config/wizard")
+    async def save_config_wizard(body: SaveConfigWizardRequest, request: Request):
+        """Apply the interactive CLI wizard changes on the root server."""
+        from core.config.models import CredentialConfig
+        from core.config.ops import save_config_wizard as persist_config_wizard
+        from core.paths import get_animas_dir
+
+        try:
+            credentials = {name: CredentialConfig.model_validate(payload) for name, payload in body.credentials.items()}
+            await asyncio.to_thread(
+                persist_config_wizard,
+                credentials,
+                body.anima_names,
+                body.status_updates,
+                get_animas_dir(),
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to persist config wizard changes")
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None:
+            for anima_name in body.status_updates:
+                if anima_name not in getattr(supervisor, "processes", {}):
+                    continue
+                try:
+                    await supervisor.send_request(anima_name, "reload_config", {}, timeout=10.0)
+                except Exception:
+                    logger.info("Config reload deferred until next start for anima=%s", anima_name, exc_info=True)
+        return {"ok": True, "updated_animas": list(body.status_updates)}
 
     @router.get("/settings/anthropic-auth")
     async def get_anthropic_auth(request: Request):
@@ -268,11 +253,6 @@ def create_config_router() -> APIRouter:
     async def get_openai_auth(request: Request):
         """Return current OpenAI auth mode and runtime availability."""
         return _serialize_openai_auth()
-
-    @router.get("/settings/local-llm")
-    async def get_local_llm(request: Request):
-        """Return local Ollama-backed model settings and runtime availability."""
-        return _serialize_local_llm()
 
     @router.get("/system/available-models")
     def get_available_models(request: Request, refresh: bool = False):
@@ -309,8 +289,8 @@ def create_config_router() -> APIRouter:
     async def get_available_tools(request: Request):
         """Return available external tool module names (minus disabled services)."""
         try:
+            from core.integrations import TOOL_MODULES
             from core.tooling.permissions import _disabled_service_tools
-            from core.tools import TOOL_MODULES
 
             tools = sorted(set(TOOL_MODULES.keys()) - _disabled_service_tools())
         except Exception:
@@ -324,32 +304,34 @@ def create_config_router() -> APIRouter:
         if auth_mode not in ("api_key", "claude_code_login"):
             raise HTTPException(status_code=400, detail="Invalid auth mode. Must be 'api_key' or 'claude_code_login'.")
 
-        config = load_config()
-        current = config.credentials.get("anthropic", CredentialConfig())
+        if auth_mode == "claude_code_login" and not is_claude_code_available():
+            raise HTTPException(status_code=400, detail="Claude Code CLI is not installed.")
+        api_key = body.api_key.strip()
+        if auth_mode == "api_key" and not api_key:
+            raise HTTPException(status_code=400, detail="API key is required for api_key mode.")
 
+        def apply_anthropic_auth(config):
+            current = config.credentials.get("anthropic", CredentialConfig())
+            if auth_mode == "claude_code_login":
+                config.credentials["anthropic"] = CredentialConfig(
+                    type="claude_code_login",
+                    api_key="",
+                    base_url=current.base_url,
+                    keys=dict(current.keys),
+                )
+                config.anima_defaults.mode_s_auth = "max"
+            else:
+                config.credentials["anthropic"] = CredentialConfig(
+                    type="api_key",
+                    api_key=api_key,
+                    base_url=current.base_url,
+                    keys=dict(current.keys),
+                )
+            return config
+
+        update_config(apply_anthropic_auth)
         if auth_mode == "claude_code_login":
-            if not is_claude_code_available():
-                raise HTTPException(status_code=400, detail="Claude Code CLI is not installed.")
-            config.credentials["anthropic"] = CredentialConfig(
-                type="claude_code_login",
-                api_key="",
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-            config.anima_defaults.mode_s_auth = "max"
             logger.info("Anthropic auth set to subscription (claude_code_login), mode_s_auth=max")
-        else:
-            api_key = body.api_key.strip()
-            if not api_key:
-                raise HTTPException(status_code=400, detail="API key is required for api_key mode.")
-            config.credentials["anthropic"] = CredentialConfig(
-                type="api_key",
-                api_key=api_key,
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-
-        save_config(config)
         return _serialize_anthropic_auth()
 
     @router.put("/settings/openai-auth")
@@ -359,84 +341,27 @@ def create_config_router() -> APIRouter:
         if auth_mode not in ("api_key", "codex_login"):
             raise HTTPException(status_code=400, detail=t("config.openai_auth_invalid_mode"))
 
-        config = load_config()
-        current = config.credentials.get("openai", CredentialConfig())
-
         if auth_mode == "codex_login":
             if not is_codex_cli_available():
                 raise HTTPException(status_code=400, detail=t("config.codex_cli_not_installed"))
             if not is_codex_login_available():
                 raise HTTPException(status_code=400, detail=t("config.codex_login_not_available"))
-            config.credentials["openai"] = CredentialConfig(
-                type="codex_login",
-                api_key="",
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-        else:
-            api_key = body.api_key.strip()
-            if not api_key:
-                raise HTTPException(status_code=400, detail=t("config.openai_api_key_required"))
-            config.credentials["openai"] = CredentialConfig(
-                type="api_key",
-                api_key=api_key,
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
+        api_key = body.api_key.strip()
+        if auth_mode == "api_key" and not api_key:
+            raise HTTPException(status_code=400, detail=t("config.openai_api_key_required"))
 
-        save_config(config)
+        def apply_openai_auth(config):
+            current = config.credentials.get("openai", CredentialConfig())
+            config.credentials["openai"] = CredentialConfig(
+                type="codex_login" if auth_mode == "codex_login" else "api_key",
+                api_key="" if auth_mode == "codex_login" else api_key,
+                base_url=current.base_url,
+                keys=dict(current.keys),
+            )
+            return config
+
+        update_config(apply_openai_auth)
         return _serialize_openai_auth()
-
-    @router.put("/settings/local-llm")
-    async def update_local_llm(body: UpdateLocalLLMRequest, request: Request):
-        """Persist local LLM settings and make Ollama the default execution target."""
-        base_url = normalize_ollama_base_url(body.base_url)
-        config = load_config()
-        current_local_llm = LocalLLMConfig.model_validate(config.local_llm.model_dump())
-
-        default_model = normalize_ollama_model_name(body.default_model)
-        presets = dict(current_local_llm.presets)
-        for name, model in body.presets.items():
-            if name in presets and model.strip():
-                presets[name] = normalize_ollama_model_name(model)
-
-        role_presets = dict(current_local_llm.role_presets)
-        for role_name, preset_name in body.role_presets.items():
-            if role_name in role_presets and preset_name in presets:
-                role_presets[role_name] = preset_name
-
-        available_models = set(_list_ollama_models(base_url))
-        requested_models = {default_model, *presets.values()}
-        missing = sorted(model for model in requested_models if model not in available_models)
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ollama models not found on {base_url}: {', '.join(missing)}",
-            )
-
-        config.local_llm = LocalLLMConfig(
-            base_url=base_url,
-            default_model=default_model,
-            presets=presets,
-            role_presets=role_presets,
-        )
-        config.credentials["ollama"] = CredentialConfig(
-            type="ollama",
-            api_key="",
-            base_url=base_url,
-        )
-        config.anima_defaults.model = default_model
-        config.anima_defaults.credential = "ollama"
-
-        save_config(config)
-        return _serialize_local_llm()
-
-    @router.post("/settings/local-llm/apply-role-presets")
-    async def apply_local_llm_role_presets(request: Request):
-        """Apply the configured role-based local LLM presets to existing animas."""
-        config = load_config()
-        updated = apply_local_llm_presets_to_animas(get_animas_dir(), config)
-        return {"updated": updated, "count": len(updated)}
 
     # ── Discord channel membership ────────────────────────────
 
@@ -456,18 +381,20 @@ def create_config_router() -> APIRouter:
         if not all(isinstance(m, str) and m.strip() for m in members):
             raise HTTPException(status_code=400, detail="each member must be a non-empty string")
 
-        config = load_config()
-        known_animas = set(config.animas.keys())
-        unknown = [m for m in members if m not in known_animas]
-        if unknown:
-            raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
-
         members = [m.strip() for m in members]
-        if members:
-            config.external_messaging.discord.channel_members[channel_id] = members
-        else:
-            config.external_messaging.discord.channel_members.pop(channel_id, None)
-        save_config(config)
+
+        def update_channel_members(config):
+            unknown = [member for member in members if member not in config.animas]
+            if unknown:
+                raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
+            channel_members = config.external_messaging.discord.channel_members
+            if members:
+                channel_members[channel_id] = members
+            else:
+                channel_members.pop(channel_id, None)
+            return config
+
+        update_config(update_channel_members)
 
         # Reload gateway routing if available
         gw = getattr(request.app.state, "discord_gateway_manager", None)
@@ -489,8 +416,8 @@ def create_config_router() -> APIRouter:
             return {"channels": [], "error": "guild_id not configured"}
 
         try:
-            from core.tools._base import get_credential
-            from core.tools._discord_client import DiscordClient
+            from core.credentials import get_credential
+            from core.integrations._discord_client import DiscordClient
 
             token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
             client = DiscordClient(token=token)

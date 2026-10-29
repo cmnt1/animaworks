@@ -4,6 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
+import json
 import logging
 import re
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.platform.tasks import spawn
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 
@@ -81,14 +83,16 @@ _ASSET_CONTENT_TYPES = {
 }
 
 # Server-side avatar thumbnail sizes (matches client image-cache.js)
-_THUMB_SIZES: dict[str, int] = {"S": 96, "M": 192, "L": 400}
+# S/M/L are square crops; P/C preserve the original aspect ratio and constrain
+# only their named edge for the chat presence panel and call screen.
+_THUMB_SIZES: dict[str, int] = {"S": 96, "M": 192, "L": 400, "P": 360, "C": 1100}
 _THUMB_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
     """Return a WebP thumbnail path for *file_path*, or None to serve original.
 
-    Cache layout: ``<assets>/.thumbs/{filename}.{S|M|L}.webp``
+    Cache layout: ``<assets>/.thumbs/{filename}.{S|M|L|P|C}.webp``
     Regenerates when the source mtime is newer than the cache.
     On any failure (invalid size, missing Pillow, corrupt image) returns None
     so the caller falls back to the original file without raising.
@@ -131,12 +135,24 @@ def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
             else:
                 img = img.convert("RGB")
             w, h = img.size
-            side = min(w, h)
-            left = (w - side) // 2
-            top = (h - side) // 2
-            img = img.crop((left, top, left + side, top + side))
-            img = img.resize((target_px, target_px), Image.Resampling.LANCZOS)
-            img.save(thumb_path, format="WEBP", quality=85)
+            if key in {"P", "C"}:
+                if key == "P" and w > target_px:
+                    new_size = (target_px, max(1, round(h * target_px / w)))
+                elif key == "C" and h > target_px:
+                    new_size = (max(1, round(w * target_px / h)), target_px)
+                else:
+                    new_size = (w, h)
+                if new_size != img.size:
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                quality = 82
+            else:
+                side = min(w, h)
+                left = (w - side) // 2
+                top = (h - side) // 2
+                img = img.crop((left, top, left + side, top + side))
+                img = img.resize((target_px, target_px), Image.Resampling.LANCZOS)
+                quality = 85
+            img.save(thumb_path, format="WEBP", quality=quality)
         logger.debug("Generated thumbnail %s size=%s", thumb_path.name, key)
         return thumb_path
     except Exception as exc:
@@ -146,6 +162,82 @@ def _resolve_thumbnail(file_path: Path, size_key: str) -> Path | None:
             exc,
         )
         return None
+
+
+_FACE_SIZES: dict[str, int] = {"S": 96, "M": 192}
+
+
+def _face_source(assets_dir: Path, emotion: str, style: str) -> Path | None:
+    suffix = "_realistic" if style == "realistic" else ""
+    stem = "avatar_bustup" if emotion == "neutral" else f"avatar_bustup_{emotion}"
+    source = assets_dir / f"{stem}{suffix}.png"
+    if source.is_file():
+        return source
+    fallback = assets_dir / f"icon{suffix}.png"
+    return fallback if fallback.is_file() else None
+
+
+def _face_crop_config(assets_dir: Path, style: str) -> tuple[float, float, float]:
+    """Load normalized face crop coordinates, using the checked mei default."""
+    # Head and shoulders fit inside the round icon for both anime and realistic bust-ups.
+    default = (0.15, 0.0, 0.70)
+    path = assets_dir / "face_crop.json"
+    if not path.is_file():
+        return default
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        config = data.get(style, data) if isinstance(data, dict) else {}
+        if not isinstance(config, dict):
+            return default
+        x, y, width = (float(config.get(key, fallback)) for key, fallback in zip(("x", "y", "w"), default, strict=True))
+        if not all(0 <= value <= 1 for value in (x, y, width)) or width <= 0:
+            return default
+        return x, y, width
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        logger.warning("Invalid face crop configuration at %s", path)
+        return default
+
+
+def _resolve_face_thumbnail(
+    source: Path,
+    assets_dir: Path,
+    emotion: str,
+    style: str,
+    size_key: str,
+) -> Path:
+    """Generate or reuse a cropped WebP face thumbnail."""
+    target_px = _FACE_SIZES[size_key]
+    thumbs_dir = assets_dir / ".thumbs"
+    thumb_path = thumbs_dir / f"face2_{emotion}_{style}.{size_key}.webp"
+    crop_path = assets_dir / "face_crop.json"
+    newest_source_mtime = source.stat().st_mtime_ns
+    if crop_path.is_file():
+        newest_source_mtime = max(newest_source_mtime, crop_path.stat().st_mtime_ns)
+    if thumb_path.is_file() and thumb_path.stat().st_mtime_ns >= newest_source_mtime:
+        return thumb_path
+
+    from PIL import Image
+
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    is_face = source.name.startswith("avatar_bustup")
+    with Image.open(source) as original:
+        image = original.convert("RGBA") if original.mode in ("P", "RGBA", "LA") else original.convert("RGB")
+        width, height = image.size
+        if is_face:
+            x, y, crop_width = _face_crop_config(assets_dir, style)
+            side = max(1, min(round(crop_width * width), width, height))
+            left = max(0, min(round(x * width), width - side))
+            top = max(0, min(round(y * height), height - side))
+        else:
+            side = min(width, height)
+            left = (width - side) // 2
+            top = (height - side) // 2
+        image = image.crop((left, top, left + side, top + side))
+        image = image.resize((target_px, target_px), Image.Resampling.LANCZOS)
+        temporary = thumb_path.with_suffix(".webp.tmp")
+        image.save(temporary, format="WEBP", quality=85)
+        temporary.replace(thumb_path)
+    return thumb_path
 
 
 class AssetGenerateRequest(BaseModel):
@@ -173,7 +265,7 @@ class ExpressionGenerateRequest(BaseModel):
 class AssetRegenerateRequest(BaseModel):
     """Regenerate a single pipeline asset step (admin UI)."""
 
-    step: Literal["fullbody", "bustup", "icon", "chibi", "3d", "rigging", "animations"]
+    step: Literal["fullbody", "bustup", "icon", "chibi", "pixel", "3d", "rigging", "animations"]
     image_style: str | None = None
     prompt: str | None = None
     negative_prompt: str = ""
@@ -240,6 +332,16 @@ class RemakeConfirmRequest(BaseModel):
         if not re.match(r"^assets_backup_\d{8}_\d{6}$", v):
             raise ValueError(f"Invalid backup_id format: {v}. Expected: assets_backup_YYYYMMDD_HHMMSS")
         return v
+
+
+def _normalize_asset_steps(steps: list[str] | None) -> list[str] | None:
+    """Append the pixel sheet whenever a step updates its identity references."""
+    if steps is None:
+        return None
+    normalized = list(dict.fromkeys(steps))
+    if ("bustup" in normalized or "chibi" in normalized) and "pixel" not in normalized:
+        normalized.append("pixel")
+    return normalized
 
 
 def _next_preview_counter(assets_dir: Path, is_realistic: bool) -> int:
@@ -338,7 +440,7 @@ def create_assets_router() -> APIRouter:
 
             display_mode = load_config().image_gen.image_style or "anime"
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         result: dict = {
             "name": name,
@@ -476,6 +578,50 @@ def create_assets_router() -> APIRouter:
             "backup_id": backups[0] if backups else None,
         }
 
+    @router.get("/animas/{name}/assets/face/{emotion}")
+    async def get_face_asset(
+        name: str,
+        emotion: str,
+        request: Request,
+        size: str = "S",
+        style: str = "anime",
+    ):
+        """Serve a cached square crop of an Anima's bustup expression."""
+        from core.schemas import VALID_EMOTIONS
+
+        if emotion not in VALID_EMOTIONS:
+            raise HTTPException(status_code=400, detail="Invalid emotion")
+        if size not in _FACE_SIZES:
+            raise HTTPException(status_code=400, detail="Invalid size; expected S or M")
+        if style not in {"anime", "realistic"}:
+            raise HTTPException(status_code=400, detail="Invalid style; expected anime or realistic")
+        if not name or Path(name).name != name or name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Invalid anima name")
+
+        animas_dir = request.app.state.animas_dir
+        anima_dir = (animas_dir / name).resolve()
+        if not anima_dir.is_relative_to(animas_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid anima path")
+        if not anima_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        assets_dir = anima_dir / "assets"
+        source = _face_source(assets_dir, emotion, style)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Face asset not found")
+        try:
+            face_path = _resolve_face_thumbnail(source, assets_dir, emotion, style, size)
+        except ImportError as exc:
+            raise HTTPException(status_code=500, detail="Image processing is unavailable") from exc
+        except OSError as exc:
+            logger.warning("Failed to create face image for %s/%s: %s", name, emotion, exc)
+            raise HTTPException(status_code=500, detail="Unable to create face image") from exc
+        return FileResponse(
+            face_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+        )
+
     @router.api_route("/animas/{name}/assets/{filename}", methods=["GET", "HEAD"])
     async def get_asset(
         name: str,
@@ -587,7 +733,7 @@ def create_assets_router() -> APIRouter:
         if not body.prompt:
             raise HTTPException(status_code=400, detail="prompt is required")
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline_kwargs: dict = {}
         if body.image_style:
@@ -602,7 +748,7 @@ def create_assets_router() -> APIRouter:
                 prompt=body.prompt,
                 negative_prompt=body.negative_prompt,
                 skip_existing=body.skip_existing,
-                steps=body.steps,
+                steps=_normalize_asset_steps(body.steps),
             ),
         )
 
@@ -620,6 +766,8 @@ def create_assets_router() -> APIRouter:
             generated.append("avatar_chibi.glb")
         if result.rigged_model_path:
             generated.append("avatar_chibi_rigged.glb")
+        if result.pixel_sheet_path:
+            generated.append(result.pixel_sheet_path.name)
         for _, anim_path in result.animation_paths.items():
             generated.append(anim_path.name)
 
@@ -662,7 +810,7 @@ def create_assets_router() -> APIRouter:
 
         reference_bytes = reference_path.read_bytes()
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         style = body.image_style or "anime"
         pipeline = ImageGenPipeline(
@@ -703,7 +851,7 @@ def create_assets_router() -> APIRouter:
         body: AssetRegenerateRequest,
         request: Request,
     ):
-        """Regenerate one pipeline step (fullbody, bustup, icon, chibi, 3d, rigging, animations)."""
+        """Regenerate one pipeline step (fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations)."""
         import asyncio
 
         animas_dir = request.app.state.animas_dir
@@ -713,7 +861,7 @@ def create_assets_router() -> APIRouter:
 
         style = body.image_style or "anime"
         from core.config.models import ImageGenConfig
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -723,7 +871,7 @@ def create_assets_router() -> APIRouter:
         prompt = body.prompt or ""
         if body.step == "fullbody":
             if not prompt:
-                from core.asset_reconciler import _resolve_prompt
+                from core.anima.asset_reconciler import _resolve_prompt
 
                 prompt = _resolve_prompt(anima_dir, style="realistic" if style == "realistic" else "anime") or ""
             if not prompt.strip():
@@ -739,7 +887,7 @@ def create_assets_router() -> APIRouter:
                 prompt=prompt,
                 negative_prompt=body.negative_prompt,
                 skip_existing=False,
-                steps=[body.step],
+                steps=_normalize_asset_steps([body.step]),
             ),
         )
 
@@ -756,6 +904,8 @@ def create_assets_router() -> APIRouter:
             generated.append(result.model_path.name)
         if result.rigged_model_path:
             generated.append(result.rigged_model_path.name)
+        if result.pixel_sheet_path:
+            generated.append(result.pixel_sheet_path.name)
         for _, anim_path in result.animation_paths.items():
             generated.append(anim_path.name)
 
@@ -900,7 +1050,7 @@ def create_assets_router() -> APIRouter:
         # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
         prompt = body.prompt
         if not prompt:
-            from core.asset_reconciler import _extract_prompt, _resolve_prompt
+            from core.anima.asset_reconciler import _extract_prompt, _resolve_prompt
 
             # Fast path: check cached prompt files
             prompt = _resolve_prompt(anima_dir, style="realistic" if is_realistic else "anime")
@@ -963,7 +1113,7 @@ def create_assets_router() -> APIRouter:
                 shutil.copytree(assets_dir, backup_dir)
                 logger.info("Backup created: %s", backup_dir)
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -998,7 +1148,7 @@ def create_assets_router() -> APIRouter:
                 _free_vram, _ = _torch.cuda.mem_get_info()
                 _low_vram_mode = _free_vram < 7 * 1024**3
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         # Emit start event immediately so UI shows spinner
         await emit(
@@ -1047,7 +1197,7 @@ def create_assets_router() -> APIRouter:
                         bg_loop,
                     )
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
             gen_kwargs["fullbody_step_callback"] = _on_step
 
@@ -1057,7 +1207,7 @@ def create_assets_router() -> APIRouter:
                     try:
                         await _ws.broadcast({"type": etype, "data": data})
                     except Exception:
-                        pass
+                        logger.debug("Best-effort operation failed", exc_info=True)
 
             async def _emit_ready(source_bytes: bytes) -> None:
                 """Save source_bytes as a numbered preview only, then emit ready event.
@@ -1186,7 +1336,7 @@ def create_assets_router() -> APIRouter:
                     },
                 )
 
-        asyncio.create_task(_bg_generate())
+        spawn(_bg_generate(), name=f"asset-backup-generate-{name}-{backup_id}")
 
         # Return 202 immediately — result arrives via WebSocket
         return JSONResponse(
@@ -1300,12 +1450,12 @@ def create_assets_router() -> APIRouter:
             remaining_steps = ["bustup"] + [
                 f"expression:{e}" for e in ["smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"]
             ]
-            asyncio.create_task(_run_fullbody_copy())
+            spawn(_run_fullbody_copy(), name=f"asset-fullbody-copy-{name}")
             return {"status": "started", "steps": remaining_steps, "mode": "fullbody_only"}
 
         # ── Normal cascade rebuild ──
         # Resolve prompt (style-aware)
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = (
             _resolve_prompt(
@@ -1321,11 +1471,11 @@ def create_assets_router() -> APIRouter:
             )
 
         if is_realistic:
-            remaining_steps = ["bustup"]
+            remaining_steps = ["bustup", "pixel"]
         else:
-            remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
+            remaining_steps = ["bustup", "chibi", "pixel", "3d", "rigging", "animations"]
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -1371,6 +1521,8 @@ def create_assets_router() -> APIRouter:
                     completed.append("3d")
                 if result.rigged_model_path:
                     completed.append("rigging")
+                if result.pixel_sheet_path:
+                    completed.append("pixel")
                 if result.animation_paths:
                     completed.append("animations")
 
@@ -1412,7 +1564,7 @@ def create_assets_router() -> APIRouter:
             if ws:
                 await ws.broadcast({"type": event_type, "data": data})
 
-        asyncio.create_task(_run_cascade())
+        spawn(_run_cascade(), name=f"asset-cascade-{name}")
 
         return {
             "status": "started",

@@ -1,0 +1,5 @@
+{"kind": "stream_event", "event": {"type": "content_block_start", "content_block": {"type": "tool_use", "id": "tu_1", "name": "Read"}}}
+{"kind": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello "}}}
+{"kind": "assistant", "blocks": [{"type": "text", "text": "Hello world"}, {"type": "tool_use", "name": "Read", "id": "tu_1", "input": {"path": "README.md"}}]}
+{"kind": "tool_result", "tool_use_id": "tu_1", "content": "file contents", "is_error": false}
+{"kind": "result", "usage": {"input_tokens": 1000, "output_tokens": 200}, "num_turns": 1, "session_id": "ses-contract"}

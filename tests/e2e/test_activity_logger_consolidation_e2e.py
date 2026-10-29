@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.memory.activity import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.notification import notification_key_for
 
 # ── DigitalAnima activity logging ────────────────────────────
@@ -28,7 +28,7 @@ class TestAnimaActivityLogging:
     @staticmethod
     def _make_anima(anima_dir: Path):
         """Create a minimal DigitalAnima bypassing heavy __init__."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         anima.anima_dir = anima_dir
@@ -45,13 +45,8 @@ class TestAnimaActivityLogging:
         anima._on_lock_released = None
         anima._heartbeat_stream_queue = None
         anima._heartbeat_context = ""
-        anima._last_greet_at = None
-        anima._last_greet_text = None
-        anima._last_greet_emotion = "neutral"
-        anima._GREET_COOLDOWN = 3600
         anima._HEARTBEAT_HISTORY_N = 3
         anima._RECENT_REFLECTIONS_N = 3
-        anima._ws_broadcast = None
         anima.memory = MagicMock()
         anima.model_config = MagicMock()
         anima.messenger = MagicMock()
@@ -193,6 +188,7 @@ class TestToolHandlerActivityLogging:
         handler._pending_notifications = []
         handler._replied_to = set()
         handler._session_id = "test12345678"
+        handler._last_call_human_denied = False
         handler._external = MagicMock()
         handler._dispatch = {}
         return handler
@@ -299,7 +295,7 @@ class TestCrossComponentConsistency:
 
     def test_anima_and_handler_write_to_same_directory(self, tmp_path):
         """Both DigitalAnima and ToolHandler _activity instances share the same log dir."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
         from core.tooling.handler import ToolHandler
 
         anima_dir = tmp_path / "animas" / "test"

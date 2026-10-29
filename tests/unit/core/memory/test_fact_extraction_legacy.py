@@ -1,26 +1,34 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from core.memory import fact_extraction
-from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
-from core.memory.fact_extraction import (
+from core.memory.facts import extraction as fact_extraction
+from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
+from core.memory.facts.extraction import (
     DEFAULT_FACT_CONFIDENCE,
     _resolve_extraction_config,
-    extract_and_store_facts,
     extract_and_store_facts_with_outcome,
-    extract_fact_records,
     extract_fact_records_with_outcome,
     format_turns_for_fact_extraction,
     records_from_extraction,
 )
-from core.memory.fact_observability import reset_warning_rate_limits
-from core.memory.facts import FactRecord
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
+from core.memory.facts.observability import reset_warning_rate_limits
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
+from core.memory.facts.store import FactRecord
+
+
+@pytest.mark.unit
+def test_single_call_extraction_config_defaults_enabled() -> None:
+    from core.config.schemas import RAGConfig
+
+    assert RAGConfig().facts_extraction_single_call is True
+    assert RAGConfig(facts_extraction_single_call=False).facts_extraction_single_call is False
 
 
 class FakeExtractor:
@@ -89,164 +97,6 @@ def test_format_turns_for_fact_extraction_includes_timestamp_and_role() -> None:
     )
 
 
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_extract_fact_records_uses_injected_extractor(tmp_path: Path) -> None:
-    extractor = FakeExtractor()
-
-    records = await extract_fact_records(
-        tmp_path / "alice",
-        "Alice discusses LoCoMo score improvements.",
-        source_episode="episodes/2026-06-03.md",
-        source_session_id="session-1",
-        reference_time="2026-06-03T10:00:00+09:00",
-        extractor=extractor,
-        enabled=True,
-    )
-
-    assert extractor.entity_calls == 1
-    assert extractor.fact_calls == 1
-    assert [r.text for r in records] == ["Alice is evaluating LoCoMo memory scores."]
-    assert records[0].source_entity == "Alice"
-    assert records[0].target_entity == "LoCoMo"
-    assert records[0].recorded_at == "2026-06-03T10:00:00+09:00"
-    assert records[0].storage_date == "2026-06-03"
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_extract_fact_records_constructs_default_extractor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    anima_dir = tmp_path / "alice"
-    anima_dir.mkdir()
-    (anima_dir / "status.json").write_text(
-        json.dumps({"background_model": "status-background-model", "extraction_timeout": 9}),
-        encoding="utf-8",
-    )
-    created: dict[str, object] = {}
-
-    class ConstructedExtractor:
-        def __init__(self, *, model, locale, timeout, llm_extra, anima_dir, credential):
-            created.update(
-                {
-                    "model": model,
-                    "locale": locale,
-                    "timeout": timeout,
-                    "llm_extra": llm_extra,
-                    "anima_dir": anima_dir,
-                    "credential": credential,
-                }
-            )
-
-        async def extract_entities(self, content: str):
-            assert content == "Alice discusses LoCoMo score improvements."
-            return [ExtractedEntity(name="Alice")]
-
-        async def extract_facts(self, content: str, entities, *, reference_time: str | None = None):
-            return [
-                ExtractedFact(
-                    source_entity="Alice",
-                    target_entity="LoCoMo",
-                    fact="Alice discusses LoCoMo score improvements.",
-                    valid_at=reference_time,
-                    edge_type="DISCUSSES",
-                )
-            ]
-
-    monkeypatch.setattr("core.memory.extraction.extractor.FactExtractor", ConstructedExtractor)
-
-    records = await extract_fact_records(
-        anima_dir,
-        "Alice discusses LoCoMo score improvements.",
-        source_episode="episodes/2026-06-03.md",
-        reference_time="2026-06-03T10:00:00+09:00",
-        model="override-model",
-        locale="en",
-        llm_extra={"temperature": 0},
-        enabled=True,
-    )
-
-    assert created == {
-        "model": "override-model",
-        "locale": "en",
-        "timeout": 9,
-        "llm_extra": {"temperature": 0},
-        "anima_dir": anima_dir,
-        "credential": "",
-    }
-    assert records[0].edge_type == "DISCUSSES"
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_extract_fact_records_disabled_skips_extractor(tmp_path: Path) -> None:
-    extractor = FakeExtractor()
-
-    records = await extract_fact_records(
-        tmp_path / "alice",
-        "Alice discusses LoCoMo score improvements.",
-        source_episode="episodes/2026-06-03.md",
-        extractor=extractor,
-        enabled=False,
-    )
-
-    assert records == []
-    assert extractor.entity_calls == 0
-    assert extractor.fact_calls == 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_extract_fact_records_empty_or_config_disabled_skip_extractor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    extractor = FakeExtractor()
-
-    assert (
-        await extract_fact_records(
-            tmp_path / "alice",
-            "   ",
-            source_episode="episodes/2026-06-03.md",
-            extractor=extractor,
-            enabled=True,
-        )
-        == []
-    )
-
-    monkeypatch.setattr(fact_extraction, "_facts_extraction_enabled", lambda: False)
-    assert (
-        await extract_fact_records(
-            tmp_path / "alice",
-            "Alice discusses LoCoMo score improvements.",
-            source_episode="episodes/2026-06-03.md",
-            extractor=extractor,
-            enabled=None,
-        )
-        == []
-    )
-    assert extractor.entity_calls == 0
-    assert extractor.fact_calls == 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.unit
-async def test_extract_fact_records_failure_is_non_fatal(tmp_path: Path) -> None:
-    class RaisingExtractor:
-        async def extract_entities(self, content: str):
-            raise RuntimeError("extractor failed")
-
-    records = await extract_fact_records(
-        tmp_path / "alice",
-        "Alice discusses LoCoMo score improvements.",
-        source_episode="episodes/2026-06-03.md",
-        extractor=RaisingExtractor(),
-        enabled=True,
-    )
-
-    assert records == []
-
-
 @pytest.mark.unit
 def test_resolve_extraction_config_ignores_status_endpoint_fields(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
@@ -273,7 +123,7 @@ def test_resolve_extraction_config_ignores_status_endpoint_fields(tmp_path: Path
 
 
 @pytest.mark.unit
-def test_resolve_extraction_config_uses_background_model_and_handles_invalid_status(tmp_path: Path) -> None:
+def test_resolve_extraction_config_ignores_background_model_and_handles_invalid_status(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
     (anima_dir / "status.json").write_text(
@@ -289,11 +139,11 @@ def test_resolve_extraction_config_uses_background_model_and_handles_invalid_sta
 
     model, llm_extra, locale, timeout, credential = _resolve_extraction_config(anima_dir)
 
-    assert model == "background-safe-model"
+    assert model == "claude-sonnet-5-5"
     assert llm_extra == {}
     assert locale
     assert timeout == 11
-    assert credential == "background-cred"
+    assert credential == "anthropic"
 
     (anima_dir / "status.json").write_text("{invalid json", encoding="utf-8")
     fallback_model, fallback_extra, fallback_locale, fallback_timeout, fallback_credential = _resolve_extraction_config(
@@ -335,7 +185,7 @@ def test_resolve_extraction_config_defaults_to_consolidation_llm(
 
 
 @pytest.mark.unit
-def test_resolve_extraction_config_uncredentialed_background_model_falls_back_to_consolidation(
+def test_resolve_extraction_config_ignores_background_model_and_uses_legacy_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -399,7 +249,9 @@ def test_facts_extraction_enabled_returns_boolean() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_extract_and_store_facts_with_outcome_appends_and_indexes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     record = FactRecord(
         text="Alice tracks LoCoMo memory scores.",
         source_entity="Alice",
@@ -412,7 +264,7 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
     async def fake_extract(*args, **kwargs):
         calls["extract_args"] = args
         calls["extract_kwargs"] = kwargs
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         calls["append"] = (anima_dir, records)
@@ -432,14 +284,19 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
         extra_paths: set[Path] | None = None,
     ) -> None:
         calls["index"] = (anima_dir, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
+        try:
+            asyncio.get_running_loop()
+            calls["index_on_loop"] = True
+        except RuntimeError:
+            calls["index_on_loop"] = False
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_upsert_fact_entities", fake_upsert)
     monkeypatch.setattr(fact_extraction, "_index_fact_records", fake_index)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         tmp_path / "alice",
         "Alice tracks LoCoMo memory scores.",
         source_episode="episodes/2026-06-03.md",
@@ -449,16 +306,18 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
         enabled=True,
     )
 
-    assert stored == [record]
+    assert outcome.records == [record]
     assert calls["append"] == (tmp_path / "alice", [record])
     assert calls["upsert"] == (tmp_path / "alice", [record])
     assert calls["index"] == (tmp_path / "alice", [record], "episode", True, None, None, set())
+    # Synchronous vector writes must stay off the event loop thread.
+    assert calls["index_on_loop"] is False
     assert calls["extract_kwargs"]["source_session_id"] == "session-1"
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_skips_registry_when_disabled(
+async def test_extract_and_store_facts_with_outcome_skips_registry_when_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = FactRecord(
@@ -471,7 +330,7 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
     calls: dict[str, object] = {}
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         return records
@@ -491,14 +350,14 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
     ) -> None:
         calls["index"] = (anima_dir, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_entity_registry_enabled", lambda: False)
     monkeypatch.setattr(fact_extraction, "_upsert_fact_entities", fail_upsert)
     monkeypatch.setattr(fact_extraction, "_index_fact_records", fake_index)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         tmp_path / "alice",
         "Alice tracks LoCoMo memory scores.",
         source_episode="episodes/2026-06-03.md",
@@ -506,13 +365,13 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
         enabled=True,
     )
 
-    assert stored == [record]
+    assert outcome.records == [record]
     assert calls["index"] == (tmp_path / "alice", [record], "episode", False, None, None, set())
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_append_failure_is_non_fatal(
+async def test_extract_and_store_facts_with_outcome_append_failure_is_non_fatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = FactRecord(
@@ -524,24 +383,122 @@ async def test_extract_and_store_facts_append_failure_is_non_fatal(
     )
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         raise OSError("write failed")
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    assert (
-        await extract_and_store_facts(
-            tmp_path / "alice",
-            "Alice tracks LoCoMo memory scores.",
-            source_episode="episodes/2026-06-03.md",
-            enabled=True,
-        )
-        == []
+    outcome = await extract_and_store_facts_with_outcome(
+        tmp_path / "alice",
+        "Alice tracks LoCoMo memory scores.",
+        source_episode="episodes/2026-06-03.md",
+        enabled=True,
     )
+    assert outcome.records == []
+    assert outcome.failed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_extract_fact_records_uses_single_call_extractor_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.facts.extractor import FactExtractor
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(facts_extraction_single_call=True)),
+    )
+    completion = AsyncMock(
+        return_value=json.dumps(
+            {
+                "entities": [
+                    {"name": "Alice", "entity_type": "Person"},
+                    {"name": "LoCoMo", "entity_type": "Concept"},
+                ],
+                "facts": [
+                    {
+                        "source_entity": "Alice",
+                        "target_entity": "LoCoMo",
+                        "fact": "Alice evaluates LoCoMo.",
+                        "valid_at": "2026-06-03T10:00:00+09:00",
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", completion)
+    extractor = FactExtractor(model="test-model", max_retries=1)
+
+    outcome = await extract_fact_records_with_outcome(
+        tmp_path / "alice",
+        "Alice evaluates LoCoMo.",
+        source_episode="episodes/2026-06-03.md",
+        reference_time="2026-06-03T10:00:00+09:00",
+        extractor=extractor,
+        enabled=True,
+    )
+
+    assert len(outcome.records) == 1
+    assert completion.await_count == 1
+    assert outcome.extract_llm_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_extract_fact_records_config_can_restore_two_stage_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.facts.extractor import FactExtractor
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(facts_extraction_single_call=False)),
+    )
+    completion = AsyncMock(
+        side_effect=[
+            json.dumps(
+                {
+                    "entities": [
+                        {"name": "Alice", "entity_type": "Person"},
+                        {"name": "LoCoMo", "entity_type": "Concept"},
+                    ]
+                }
+            ),
+            json.dumps(
+                {
+                    "facts": [
+                        {
+                            "source_entity": "Alice",
+                            "target_entity": "LoCoMo",
+                            "fact": "Alice evaluates LoCoMo.",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", completion)
+    extractor = FactExtractor(model="test-model", max_retries=1)
+
+    outcome = await extract_fact_records_with_outcome(
+        tmp_path / "alice",
+        "Alice evaluates LoCoMo.",
+        source_episode="episodes/2026-06-03.md",
+        reference_time="2026-06-03T10:00:00+09:00",
+        extractor=extractor,
+        enabled=True,
+    )
+
+    assert len(outcome.records) == 1
+    assert completion.await_count == 2
+    assert outcome.extract_llm_calls == 2
 
 
 @pytest.mark.asyncio

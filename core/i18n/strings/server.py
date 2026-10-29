@@ -55,15 +55,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Preparing startup",
         "ko": "시작 준비 중",
     },
-    "startup.detail_vector_worker": {
-        "ja": "ベクターワーカーを起動中",
-        "en": "Starting vector worker",
-        "ko": "벡터 워커 시작 중",
-    },
     "startup.detail_preflight": {
-        "ja": "RAG preflight を実行中",
-        "en": "Running RAG preflight",
-        "ko": "RAG preflight 실행 중",
+        "ja": "実行エンジンの事前確認を実行中",
+        "en": "Checking execution engine prerequisites",
+        "ko": "실행 엔진 사전 점검 중",
     },
     "startup.detail_spawning": {
         "ja": "Anima プロセスを起動中",
@@ -124,6 +119,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Animaが再起動中です。しばらく待ってから再試行してください。",
         "en": "Anima is restarting. Please wait and retry.",
     },
+    "cli.server_waiting_for_work": {
+        "ja": "実行中の作業を待っています（最大 {seconds} 秒）",
+        "en": "Waiting for active work to finish (up to {seconds} seconds)",
+        "ko": "실행 중인 작업이 끝날 때까지 기다립니다 (최대 {seconds}초)",
+    },
+    "activity.cron_rerun": {
+        "ja": "中断された cron を再実行します: {task_name}",
+        "en": "Rerunning interrupted cron: {task_name}",
+        "ko": "중단된 cron을 다시 실행합니다: {task_name}",
+    },
     "chat.anima_unavailable": {
         "ja": "Animaのプロセスに接続できません。再起動中の可能性があります。",
         "en": "Cannot connect to Anima process. It may be restarting.",
@@ -155,6 +160,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "chat.internal_error": {
         "ja": "内部エラーが発生しました。再試行してください。",
         "en": "An internal error occurred. Please retry.",
+    },
+    "server.internal_auth_required": {
+        "ja": "内部 API の認証に失敗しました",
+        "en": "Internal API authentication required",
+    },
+    "server.internal_identity_mismatch": {
+        "ja": "呼び出し元 '{caller}' は '{claimed}' として操作できません",
+        "en": "Caller '{caller}' cannot act as '{claimed}'",
+    },
+    "server.internal_not_subordinate": {
+        "ja": "呼び出し元 '{caller}' は '{claimed}' を操作する権限がありません",
+        "en": "Caller '{caller}' is not authorized to access '{claimed}'",
+    },
+    "server.internal_newstaff_required": {
+        "ja": "Anima の作成には newstaff スキルが必要です",
+        "en": "The newstaff skill is required to create an Anima",
     },
     "chat.message_too_large": {
         "ja": "メッセージが大きすぎます（{size_mb}MB / 上限10MB）",
@@ -192,53 +213,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ワークスペース '{alias}' が見つかりません。登録済みワークスペース: {available}",
         "en": "Workspace '{alias}' not found. Available workspaces: {available}",
     },
-    "workspace.registered": {
-        "ja": "ワークスペースを登録しました: {qualified} → {path}",
-        "en": "Workspace registered: {qualified} → {path}",
-    },
-    "workspace.removed": {
-        "ja": "ワークスペース '{alias}' を削除しました。",
-        "en": "Workspace '{alias}' removed.",
-    },
-    "workspace.resolve_error": {
-        "ja": "ワークスペースの解決に失敗しました: {error}",
-        "en": "Failed to resolve workspace: {error}",
-    },
     "setup.codex_models_unavailable": {
         "ja": "Codexの利用可能なモデルを確認できませんでした。ログイン状態と接続を確認して、もう一度お試しください。",
         "en": "Could not load available Codex models. Check your login and connection, then try again.",
-    },
-    "setup.cli_tools_auth": {
-        "ja": "CLIツール認証状態",
-        "en": "CLI Tools Auth Status",
-    },
-    "setup.cli_tools_claude_code": {
-        "ja": "Claude Code CLI",
-        "en": "Claude Code CLI",
-    },
-    "setup.cli_tools_codex_cli": {
-        "ja": "Codex CLI",
-        "en": "Codex CLI",
-    },
-    "setup.cli_tools_codex_login": {
-        "ja": "Codex Login",
-        "en": "Codex Login",
-    },
-    "setup.cli_tools_cursor_agent": {
-        "ja": "Cursor Agent CLI",
-        "en": "Cursor Agent CLI",
-    },
-    "setup.cli_tools_cursor_auth": {
-        "ja": "Cursor Agent 認証",
-        "en": "Cursor Agent Auth",
-    },
-    "setup.cli_tools_gemini_cli": {
-        "ja": "Gemini CLI",
-        "en": "Gemini CLI",
-    },
-    "setup.cli_tools_gemini_auth": {
-        "ja": "Gemini CLI 認証",
-        "en": "Gemini CLI Auth",
     },
     "github_gateway.notify": {
         "ja": (
@@ -247,8 +224,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- イベント: {event_label}\n"
             "- 起点: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "本文（先頭500文字）:\n{excerpt}\n\n"
-            "対応が必要なら誰に頼むか決めてdelegate_taskしてください。"
+            "本文（先頭500文字）:\n{excerpt}"
         ),
         "en": (
             "[GitHub notification]\n\n"
@@ -256,8 +232,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- Event: {event_label}\n"
             "- Origin: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "Body (first 500 chars):\n{excerpt}\n\n"
-            "If this needs action, decide who to ask and call delegate_task."
+            "Body (first 500 chars):\n{excerpt}"
         ),
         "ko": (
             "【GitHub 알림】\n\n"
@@ -265,8 +240,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- 이벤트: {event_label}\n"
             "- 시작자: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "본문(첫 500자):\n{excerpt}\n\n"
-            "대응이 필요하면 누구에게 맡길지 정해서 delegate_task 하세요."
+            "본문(첫 500자):\n{excerpt}"
         ),
     },
     "github_gateway.notify_ci_line": {

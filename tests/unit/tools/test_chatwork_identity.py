@@ -9,8 +9,8 @@ import pytest
 
 from core.config.schemas import AnimaWorksConfig, ChatworkToolConfig
 from core.exceptions import ToolConfigError
-from core.tools._chatwork_cache import resolve_cache_db_path
-from core.tools._chatwork_identity import (
+from core.integrations._chatwork_cache import resolve_cache_db_path
+from core.integrations._chatwork_identity import (
     ChatworkIdentity,
     check_write_allowed,
     resolve_identity,
@@ -26,7 +26,7 @@ def test_primary_identity_uses_anima_dir_from_environment(
 ) -> None:
     monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", "/srv/animas/mei")
     with patch(
-        "core.tools._chatwork_identity.resolve_env_style_credential",
+        "core.integrations._chatwork_identity.resolve_env_style_credential",
         return_value="mei-token",
     ) as resolver:
         identity = resolve_identity()
@@ -40,7 +40,7 @@ def test_primary_identity_explicit_anima_dir_precedes_environment(
 ) -> None:
     monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", "/srv/animas/other")
     with patch(
-        "core.tools._chatwork_identity.resolve_env_style_credential",
+        "core.integrations._chatwork_identity.resolve_env_style_credential",
         return_value="kotoha-token",
     ) as resolver:
         identity = resolve_identity(anima_dir="/srv/animas/kotoha")
@@ -56,10 +56,13 @@ def test_missing_primary_token_does_not_fall_back_to_legacy_keys(
     monkeypatch.setenv("CHATWORK_API_TOKEN", "legacy-read-token")
     monkeypatch.setenv("CHATWORK_API_TOKEN_WRITE", "legacy-write-token")
     monkeypatch.setenv("CHATWORK_API_TOKEN_WRITE__mei", "legacy-per-anima-token")
-    with patch(
-        "core.tools._chatwork_identity.resolve_env_style_credential",
-        return_value=None,
-    ) as resolver, pytest.raises(ToolConfigError, match="CHATWORK_API_TOKEN__mei"):
+    with (
+        patch(
+            "core.integrations._chatwork_identity.resolve_env_style_credential",
+            return_value=None,
+        ) as resolver,
+        pytest.raises(ToolConfigError, match="CHATWORK_API_TOKEN__mei"),
+    ):
         resolve_identity()
 
     resolver.assert_called_once_with("CHATWORK_API_TOKEN__mei")
@@ -70,7 +73,7 @@ def test_read_grant_allows_resolution_but_rejects_write() -> None:
     with (
         patch("core.config.models.load_config", return_value=config),
         patch(
-            "core.tools._chatwork_identity.resolve_env_style_credential",
+            "core.integrations._chatwork_identity.resolve_env_style_credential",
             return_value="owner-token",
         ),
     ):
@@ -86,7 +89,7 @@ def test_readwrite_grant_allows_write() -> None:
     with (
         patch("core.config.models.load_config", return_value=config),
         patch(
-            "core.tools._chatwork_identity.resolve_env_style_credential",
+            "core.integrations._chatwork_identity.resolve_env_style_credential",
             return_value="owner-token",
         ),
     ):
@@ -97,7 +100,7 @@ def test_readwrite_grant_allows_write() -> None:
 def test_missing_grant_rejects_delegated_identity() -> None:
     with (
         patch("core.config.models.load_config", return_value=_config({})),
-        patch("core.tools._chatwork_identity.resolve_env_style_credential") as resolver,
+        patch("core.integrations._chatwork_identity.resolve_env_style_credential") as resolver,
         pytest.raises(ToolConfigError, match="has not been delegated"),
     ):
         resolve_identity("owner", anima_dir="/srv/animas/mei")
@@ -108,7 +111,7 @@ def test_missing_grant_rejects_delegated_identity() -> None:
 def test_no_anima_context_uses_owner(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
     with patch(
-        "core.tools._chatwork_identity.resolve_env_style_credential",
+        "core.integrations._chatwork_identity.resolve_env_style_credential",
         return_value="owner-token",
     ) as resolver:
         identity = resolve_identity()
@@ -127,7 +130,7 @@ def test_cache_paths_are_split_by_account_and_map_hits_skip_me(tmp_path) -> None
     first = SimpleNamespace(api_token="token-a", me=MagicMock(return_value={"account_id": 101}))
     second = SimpleNamespace(api_token="token-b", me=MagicMock(return_value={"account_id": 202}))
 
-    with patch("core.tools._chatwork_cache.DEFAULT_CACHE_DIR", tmp_path):
+    with patch("core.integrations._chatwork_cache.DEFAULT_CACHE_DIR", tmp_path):
         first_path = resolve_cache_db_path(first)
         second_path = resolve_cache_db_path(second)
 
@@ -143,20 +146,18 @@ def test_cache_paths_are_split_by_account_and_map_hits_skip_me(tmp_path) -> None
 
 
 def test_cli_read_only_delegation_rejects_write_before_client_creation(capsys) -> None:
-    from core.tools._chatwork_cli import cli_main
+    from core.integrations._chatwork_cli import cli_main
 
     with (
         patch(
-            "core.tools._chatwork_cli.resolve_identity",
+            "core.integrations._chatwork_cli.resolve_identity",
             return_value=ChatworkIdentity(name="owner", token="owner-token"),
         ),
         patch(
-            "core.tools._chatwork_cli.check_write_allowed",
-            side_effect=ToolConfigError(
-                "Delegation to identity owner is read-only; write operations are not allowed."
-            ),
+            "core.integrations._chatwork_cli.check_write_allowed",
+            side_effect=ToolConfigError("Delegation to identity owner is read-only; write operations are not allowed."),
         ),
-        patch("core.tools._chatwork_cli.ChatworkClient") as client_class,
+        patch("core.integrations._chatwork_cli.ChatworkClient") as client_class,
         pytest.raises(SystemExit) as exc_info,
     ):
         cli_main(["send", "123", "hello", "--as", "owner"])
@@ -167,16 +168,16 @@ def test_cli_read_only_delegation_rejects_write_before_client_creation(capsys) -
 
 
 def test_cli_read_command_accepts_as_identity(capsys) -> None:
-    from core.tools._chatwork_cli import cli_main
+    from core.integrations._chatwork_cli import cli_main
 
     client = MagicMock()
     client.me.return_value = {"account_id": 42, "name": "Owner"}
     with (
         patch(
-            "core.tools._chatwork_cli.resolve_identity",
+            "core.integrations._chatwork_cli.resolve_identity",
             return_value=ChatworkIdentity(name="owner", token="owner-token"),
         ) as resolver,
-        patch("core.tools._chatwork_cli.ChatworkClient", return_value=client) as client_class,
+        patch("core.integrations._chatwork_cli.ChatworkClient", return_value=client) as client_class,
     ):
         cli_main(["me", "--as", "owner"])
 

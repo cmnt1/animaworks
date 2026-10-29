@@ -9,11 +9,12 @@ Verifies:
 - _chunk_by_time_headings passes memory_type correctly
 - _chunk_file dispatches memory_type to all chunking strategies
 """
+
 from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -33,13 +34,12 @@ class TestChunkIdFormat:
     def _make_indexer(self, anima_dir: Path, prefix: str | None = None):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-                collection_prefix=prefix,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+            collection_prefix=prefix,
+        )
 
     def test_knowledge_chunk_id(self, anima_dir: Path):
         indexer = self._make_indexer(anima_dir)
@@ -80,13 +80,12 @@ class TestChunkByMarkdownHeadingsMemoryType:
     def _make_indexer(self, anima_dir: Path, prefix: str | None = None):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-                collection_prefix=prefix,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+            collection_prefix=prefix,
+        )
 
     def test_memory_type_propagated_to_chunk_ids(self, anima_dir: Path):
         """When called with memory_type='common_knowledge', chunk IDs reflect that."""
@@ -127,12 +126,11 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
     def _make_indexer(self, anima_dir: Path):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+        )
 
     def test_preamble_and_first_heading_have_different_ids(self, anima_dir: Path):
         """Preamble (#0) and first heading section (#1) must not collide."""
@@ -218,8 +216,7 @@ class TestChunkByMarkdownHeadingsPreambleCollision:
         indexer = self._make_indexer(anima_dir)
         f = anima_dir / "knowledge" / "topic.md"
         f.write_text(
-            "# Title\n\n[AUTO-CONSOLIDATED: 2026-02-16]\nExtra context line here.\n\n"
-            "## A\n\nBody A\n\n## B\n\nBody B",
+            "# Title\n\n[AUTO-CONSOLIDATED: 2026-02-16]\nExtra context line here.\n\n## A\n\nBody A\n\n## B\n\nBody B",
             encoding="utf-8",
         )
 
@@ -242,12 +239,11 @@ class TestChunkByTimeHeadingsMemoryType:
     def _make_indexer(self, anima_dir: Path):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+        )
 
     def test_memory_type_propagated_to_chunk_ids(self, anima_dir: Path):
         indexer = self._make_indexer(anima_dir)
@@ -278,12 +274,11 @@ class TestLoCoMoSessionHeadingEventTime:
     def _make_indexer(self, anima_dir: Path):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+        )
 
     def test_session_heading_em_dash_sets_event_metadata(self, anima_dir: Path):
         indexer = self._make_indexer(anima_dir)
@@ -365,12 +360,11 @@ class TestChunkFileDispatches:
     def _make_indexer(self, anima_dir: Path):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+        )
 
     def test_common_knowledge_dispatches_with_correct_type(self, anima_dir: Path):
         indexer = self._make_indexer(anima_dir)

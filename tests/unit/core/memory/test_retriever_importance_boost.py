@@ -14,8 +14,6 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
-
 from core.memory.rag.retriever import (
     WEIGHT_IMPORTANCE,
     MemoryRetriever,
@@ -50,25 +48,12 @@ class MockIndexer:
         return [[0.1] * 384 for _ in texts]
 
 
-class _MockConfigDisabled:
-    class _RAG:
-        enable_spreading_activation = False
-        spreading_memory_types = ["knowledge", "episodes"]
-
-    rag = _RAG()
-
-
 def _make_retriever(tmp_path: Path, items: list[tuple[float, dict]]) -> MemoryRetriever:
     vector_store = MockVectorStore(items)
     indexer = MockIndexer()
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(exist_ok=True)
-    with patch.object(
-        MemoryRetriever,
-        "_load_config",
-        staticmethod(lambda: _MockConfigDisabled()),
-    ):
-        return MemoryRetriever(vector_store, indexer, knowledge_dir)
+    return MemoryRetriever(vector_store, indexer, knowledge_dir)
 
 
 # ── WEIGHT_IMPORTANCE constant ───────────────────────────────────────

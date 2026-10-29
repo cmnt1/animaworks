@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -17,8 +18,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.memory.activity import ActivityLogger
-from core.messenger import Messenger
+from core.activity.logger import ActivityLogger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_iso
 from server.events import emit
 
@@ -104,7 +105,7 @@ def create_channels_router() -> APIRouter:
         if not channels_dir.exists():
             return []
 
-        from core.messenger import load_channel_meta
+        from core.messaging.messenger import load_channel_meta
 
         channels: list[dict] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
@@ -254,12 +255,12 @@ def create_channels_router() -> APIRouter:
         await emit(request, "board.post", event_data)
 
         # Sync to mapped Slack channel unless tests or embedded apps disable external side effects.
-        sync_disabled = os.environ.get("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
+        sync_disabled = get_env("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
             getattr(request.app.state, "disable_external_sync", False)
         )
         if not sync_disabled:
             try:
-                from core.outbound_auto import BoardSlackSync
+                from core.messaging.outbound_auto import BoardSlackSync
 
                 sync = BoardSlackSync()
                 await sync.sync_board_post(
@@ -336,7 +337,9 @@ def create_channels_router() -> APIRouter:
                     for e in entries:
                         sender = e.from_person or anima_dir.name
                         receiver = e.to_person
-                        if not receiver:
+                        # Self-addressed entries (e.g. background task failure
+                        # notices) are not a conversation between two parties.
+                        if not receiver or receiver == sender:
                             continue
                         pair_key = "-".join(sorted([sender, receiver]))
                         if pair_key not in pair_map:
@@ -373,7 +376,7 @@ def create_channels_router() -> APIRouter:
             if info["count"] == 0:
                 continue
             parts = pair_key.split("-", 1)
-            if len(parts) != 2:
+            if len(parts) != 2 or parts[0] == parts[1]:
                 continue
             if valid_names and not (parts[0] in valid_names and parts[1] in valid_names):
                 continue

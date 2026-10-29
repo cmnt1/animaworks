@@ -10,17 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution._sdk_session import _load_session_id, _save_session_id
-from core.execution.codex_sdk import _load_thread_id, _save_thread_id
-from core.memory.conversation import ConversationMemory
-from core.memory.streaming_journal import StreamingJournal
+from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+from core.execution.session.session_ids import EngineSessionIds
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
+from core.runtime import task_runner
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.runner import AnimaRunner
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 from core.schemas import ModelConfig
-from core.supervisor import task_runner
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 class _StreamSupervisor:
@@ -45,7 +45,6 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
         "sakura",
         tmp_path,
         task_runner_supervisor=_StreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -79,7 +78,6 @@ async def test_closing_isolated_stream_cancels_producer_and_releases_lock(tmp_pa
         "sakura",
         tmp_path,
         task_runner_supervisor=supervisor,
-        chat_isolated=True,
     )
     stream = handler.handle_stream(
         IPCRequest(id="req-close", method="process_message", params={"message": "hello", "stream": True})
@@ -102,7 +100,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "sakura",
         tmp_path,
         task_runner_supervisor=_CrashedStreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -117,39 +114,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "code": "CHAT_RUNNER_ERROR",
         "message": "task runner exited before returning a result (exit=-9)",
     }
-    assert handler._anima is anima
-
-
-@pytest.mark.asyncio
-async def test_legacy_stream_does_not_spawn_chat_runner(tmp_path: Path) -> None:
-    anima = MagicMock(needs_bootstrap=False)
-
-    async def _stream(*args, **kwargs):
-        yield {"type": "cycle_done", "cycle_result": {"summary": "legacy"}}
-
-    anima.process_message_stream = _stream
-    isolated = MagicMock()
-    handler = StreamingIPCHandler(
-        anima,
-        "sakura",
-        tmp_path,
-        task_runner_supervisor=isolated,
-        chat_isolated=False,
-    )
-
-    responses = [
-        response
-        async for response in handler.handle_stream(
-            IPCRequest(id="req-1", method="process_message", params={"message": "hello", "stream": True})
-        )
-    ]
-
-    assert responses[-1].result == {
-        "response": "legacy",
-        "replied_to": [],
-        "cycle_result": {"summary": "legacy"},
-    }
-    isolated.run_chat_stream.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -166,7 +130,7 @@ async def test_phase3_nonstream_chat_contracts_use_child(
     runner.anima = MagicMock()
     supervisor = MagicMock()
     supervisor.run_chat = AsyncMock(return_value={"response": "child"})
-    runner._scheduler_mgr = SimpleNamespace(_chat_isolated=True, _task_runner_supervisor=supervisor)
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
     result = await getattr(runner, method)({"message": "hello"})
 
@@ -175,6 +139,22 @@ async def test_phase3_nonstream_chat_contracts_use_child(
     runner.anima.process_message.assert_not_called()
     runner.anima.process_greet.assert_not_called()
     runner.anima.run_bootstrap.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_isolated_greet_forwards_first_meeting_payload(tmp_path: Path) -> None:
+    anima = MagicMock()
+    anima.process_greet = AsyncMock(return_value={"response": "hello", "cached": False})
+
+    result = await task_runner.execute_chat_contract(
+        anima,
+        kind="greet",
+        payload={"mode": "first_meeting", "user_name": "Taro", "user_id": "taro"},
+        send_stream_event=AsyncMock(),
+    )
+
+    assert result["response"] == "hello"
+    anima.process_greet.assert_awaited_once_with(mode="first_meeting", user_name="Taro", user_id="taro")
 
 
 @pytest.mark.asyncio
@@ -221,6 +201,156 @@ async def test_second_chat_interrupts_then_waits_for_lane_lock(tmp_path: Path) -
     release_first.set()
     await asyncio.gather(first, second)
     assert calls == ["chat-message", "chat-message"]
+
+
+@pytest.mark.asyncio
+async def test_different_chat_threads_run_concurrently_at_limit_two(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor(
+        "sakura", tmp_path / "animas" / "sakura", tmp_path / "shared", chat_max_concurrency=2
+    )
+    started = {thread_id: asyncio.Event() for thread_id in ("A", "B")}
+    release = {thread_id: asyncio.Event() for thread_id in ("A", "B")}
+
+    async def _run(**kwargs):
+        thread_id = kwargs["params_builder"]({})["payload"]["thread_id"]
+        started[thread_id].set()
+        await release[thread_id].wait()
+        return {"response": thread_id}
+
+    supervisor._run_isolated_job = AsyncMock(side_effect=_run)
+    tasks = [
+        asyncio.create_task(supervisor.run_chat(kind="message", payload={"thread_id": thread_id}))
+        for thread_id in ("A", "B")
+    ]
+    try:
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started.values())), timeout=1)
+        assert supervisor._run_isolated_job.await_count == 2
+    finally:
+        for event in release.values():
+            event.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_chat_limit_one_serializes_different_threads(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def _run(**kwargs):
+        thread_id = kwargs["params_builder"]({})["payload"]["thread_id"]
+        if thread_id == "A":
+            first_started.set()
+            await release_first.wait()
+        else:
+            second_started.set()
+        return {"response": thread_id}
+
+    supervisor._run_isolated_job = AsyncMock(side_effect=_run)
+    first = asyncio.create_task(supervisor.run_chat(kind="message", payload={"thread_id": "A"}))
+    second = asyncio.create_task(supervisor.run_chat(kind="message", payload={"thread_id": "B"}))
+    try:
+        await asyncio.wait_for(first_started.wait(), timeout=1)
+        await asyncio.sleep(0)
+        assert not second_started.is_set()
+        release_first.set()
+        await asyncio.wait_for(second_started.wait(), timeout=1)
+        await asyncio.gather(first, second)
+    finally:
+        release_first.set()
+        await asyncio.gather(first, second, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_same_chat_thread_stays_serialized_at_limit_three(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor(
+        "sakura", tmp_path / "animas" / "sakura", tmp_path / "shared", chat_max_concurrency=3
+    )
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release_first = asyncio.Event()
+    run_count = 0
+
+    async def _run(**kwargs):
+        nonlocal run_count
+        run_count += 1
+        if run_count == 1:
+            first_started.set()
+            await release_first.wait()
+        else:
+            second_started.set()
+        return {"response": "ok"}
+
+    supervisor._run_isolated_job = AsyncMock(side_effect=_run)
+    first = asyncio.create_task(supervisor.run_chat(kind="message", payload={"thread_id": "A"}))
+    second = asyncio.create_task(supervisor.run_chat(kind="message", payload={"thread_id": "A"}))
+    try:
+        await asyncio.wait_for(first_started.wait(), timeout=1)
+        await asyncio.sleep(0)
+        assert not second_started.is_set()
+        release_first.set()
+        await asyncio.wait_for(second_started.wait(), timeout=1)
+        await asyncio.gather(first, second)
+    finally:
+        release_first.set()
+        await asyncio.gather(first, second, return_exceptions=True)
+
+
+def _register_chat_job(
+    supervisor: TaskRunnerSupervisor,
+    job_id: str,
+    thread_id: str,
+    connection: AsyncMock,
+) -> TaskRunnerJob:
+    identity = IPCV2Identity(
+        job_id=job_id,
+        root_epoch=supervisor.root_epoch,
+        attempt=1,
+        lane="chat",
+        display_lane="chat",
+    )
+    job = TaskRunnerJob(
+        identity=identity,
+        request_id=f"run-{job_id}",
+        params={"payload": {"thread_id": thread_id}},
+        result=asyncio.get_running_loop().create_future(),
+        peer_state=IPCV2ConnectionState(identity),
+        connection=connection,
+    )
+    supervisor.jobs[job_id] = job
+    return job
+
+
+@pytest.mark.asyncio
+async def test_chat_request_on_thread_b_does_not_interrupt_thread_a(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
+    connection_a = AsyncMock()
+    job_a = _register_chat_job(supervisor, "chat-A", "A", connection_a)
+    supervisor._run_isolated_job = AsyncMock(return_value={"response": "B"})
+
+    result = await supervisor.run_chat(kind="message", payload={"thread_id": "B"})
+
+    assert result == {"response": "B"}
+    connection_a.send_event.assert_not_awaited()
+    job_a.result.cancel()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_chat_only_interrupts_requested_thread(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
+    connection_a = AsyncMock()
+    connection_b = AsyncMock()
+    job_a = _register_chat_job(supervisor, "chat-A", "A", connection_a)
+    job_b = _register_chat_job(supervisor, "chat-B", "B", connection_b)
+
+    result = await supervisor.interrupt_chat("A")
+
+    assert result["status"] == "interrupted"
+    connection_a.send_event.assert_awaited_once_with("interrupt", {"thread_id": "A"})
+    connection_b.send_event.assert_not_awaited()
+    job_a.result.cancel()
+    job_b.result.cancel()
 
 
 @pytest.mark.asyncio
@@ -283,12 +413,14 @@ def test_chat_exit_fsyncs_conversation_and_engine_resume_files(tmp_path: Path) -
     conversation = anima_dir / "state" / "conversation.json"
     conversation.parent.mkdir(parents=True, exist_ok=True)
     conversation.write_text("state", encoding="utf-8")
+    codex_session_ids = EngineSessionIds("codex")
     _save_session_id(anima_dir, "claude-session", "chat")
-    _save_thread_id(anima_dir, "codex-thread", "chat")
+    codex_session_ids.save(anima_dir, "codex-thread", "chat")
 
-    with patch("core.supervisor.task_runner.os.fsync") as fsync:
+    with patch("core.runtime.task_runner.os.fsync") as fsync:
         task_runner._fsync_chat_state(anima_dir)
 
     assert fsync.call_count == 3
     assert _load_session_id(anima_dir, "chat") == "claude-session"
-    assert _load_thread_id(anima_dir, "chat") == "codex-thread"
+    codex_session = codex_session_ids.load(anima_dir, "chat")
+    assert codex_session is not None and codex_session.session_id == "codex-thread"

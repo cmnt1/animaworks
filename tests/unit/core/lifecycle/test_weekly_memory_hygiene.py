@@ -19,7 +19,7 @@ async def test_weekly_pattern_distillation_calls_distiller(monkeypatch, tmp_path
             calls["distill"] = {"model": model, "days": days}
             return {"procedures_created": ["procedures/runbook.md"], "patterns_detected": 1}
 
-    monkeypatch.setattr("core.memory.distillation.ProceduralDistiller", FakeDistiller)
+    monkeypatch.setattr("core.memory.maintenance.distillation.ProceduralDistiller", FakeDistiller)
 
     await run_weekly_pattern_distillation(tmp_path / "animas" / "sakura", "sakura", model="test-model")
 

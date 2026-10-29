@@ -10,14 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.prompt.builder import (
+from core.prompt.assembler import (
     _MIN_SYSTEM_BUDGET,
     PromptBudget,
     SectionEntry,
     _allocate_sections,
     _compute_system_budget,
-    build_system_prompt,
 )
+from core.prompt.builder import build_system_prompt
 
 # ── _compute_system_budget ─────────────────────────────────
 
@@ -194,7 +194,6 @@ def _make_mock_memory(
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
     memory.read_current_state.return_value = "status: idle"
-    memory.read_pending.return_value = ""
     memory.read_resolutions.return_value = []
     memory.read_model_config.return_value = None
     memory.list_knowledge_files.return_value = []
@@ -202,8 +201,6 @@ def _make_mock_memory(
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 
@@ -221,7 +218,7 @@ class TestBudgetIntegration:
                 execution_mode="a",
                 context_window=context_window,
             )
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         # XML boundary tags add a small amount beyond section-content accounting.
         assert estimate_tokens(result.system_prompt) <= budget.ceiling + 500, (

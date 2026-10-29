@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ class TestSchedulerManagerE2E:
         cfg.activity_level = 100
         cfg.heartbeat.interval_minutes = 30
         cfg.heartbeat.anima_overrides = {}
-        with patch("core.supervisor.scheduler_manager.load_config", return_value=cfg):
+        with patch("core.runtime.scheduler_manager.load_config", return_value=cfg):
             yield
 
     @pytest.mark.asyncio
@@ -94,8 +94,8 @@ class TestSchedulerManagerE2E:
         assert "test-anima_heartbeat" in job_ids
         assert "test-anima_cron_0" in job_ids
         assert "test-anima_cron_1" in job_ids
-        assert "test-anima_cron_health" in job_ids
-        assert len(jobs) >= 3  # heartbeat + 2 cron + system jobs (cron_health, etc.)
+        assert "test-anima_cron_health" not in job_ids
+        assert len(jobs) >= 3  # heartbeat + 2 cron + background review drain
 
         # Verify heartbeat interval
         heartbeat_job = mgr.scheduler.get_job("test-anima_heartbeat")
@@ -153,7 +153,7 @@ class TestProcessSupervisorSystemCronE2E:
     """E2E: ProcessSupervisor sets up system cron with real config."""
 
     def _make_supervisor(self, tmp_path: Path):
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)
@@ -175,7 +175,9 @@ class TestProcessSupervisorSystemCronE2E:
 
         with patch("core.config.load_config") as mock_config:
             mock_cfg = MagicMock()
-            mock_cfg.consolidation = MagicMock(
+            from core.config.schemas import ConsolidationConfig
+
+            mock_cfg.consolidation = ConsolidationConfig(
                 daily_enabled=True,
                 daily_time="02:00",
                 weekly_enabled=True,
@@ -187,7 +189,8 @@ class TestProcessSupervisorSystemCronE2E:
 
         assert sup.is_scheduler_running() is True
         jobs = sup.scheduler.get_jobs()
-        assert len(jobs) == 6  # daily + weekly + indexing + activity_log + housekeeping + dm_log
+        # Root-owned activity schedule polling was added in 72e47cf4.
+        assert len(jobs) == 8  # daily + weekly + indexing + activity schedule + activity_log + housekeeping + workspace sweep + dm_log
 
         # Check job details
         daily = sup.scheduler.get_job("system_daily_consolidation")
@@ -202,9 +205,17 @@ class TestProcessSupervisorSystemCronE2E:
         assert housekeeping is not None
         assert "Housekeeping" in housekeeping.name
 
+        workspace_sweep = sup.scheduler.get_job("system_workspace_sweep")
+        assert workspace_sweep is not None
+        assert "Workspace Sweep" in workspace_sweep.name
+
         indexing = sup.scheduler.get_job("system_daily_indexing")
         assert indexing is not None
         assert "Indexing" in indexing.name
+
+        activity_schedule = sup.scheduler.get_job("system_activity_schedule")
+        assert activity_schedule is not None
+        assert activity_schedule.name == "System: Activity Schedule"
 
         dm_rotation = sup.scheduler.get_job("system_dm_log_rotation")
         assert dm_rotation is not None

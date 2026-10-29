@@ -11,9 +11,9 @@ from pathlib import Path
 
 import yaml
 
-from core.memory._io import atomic_write_text
 from core.memory.frontmatter import parse_frontmatter
 from core.paths import get_common_skills_dir
+from core.platform.atomic_io import atomic_write_text
 from core.skills.guard import SkillScanner
 from core.skills.index import SkillIndex
 from core.skills.models import SkillLifecycleState, SkillScanVerdict, SkillTrustLevel, SkillUsageEventType
@@ -75,6 +75,8 @@ def promote_skill_to_trusted(
 
     skill_path = meta.path
     text = skill_path.read_text(encoding="utf-8")
+    from core.skills.ledger import record_skill_change
+
     frontmatter, body = parse_frontmatter(text)
     scan = (scanner or SkillScanner()).scan_skill(
         skill_path.parent if skill_path.name == "SKILL.md" else skill_path, source="anima"
@@ -107,7 +109,18 @@ def promote_skill_to_trusted(
         }
     )
     rendered = yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
-    atomic_write_text(skill_path, f"---\n{rendered}\n---\n\n{body.rstrip()}\n")
+    updated_text = f"---\n{rendered}\n---\n\n{body.rstrip()}\n"
+    atomic_write_text(skill_path, updated_text)
+    record_skill_change(
+        skill_path,
+        (True, text),
+        anima_dir=anima_dir,
+        after_text=updated_text,
+        after_exists=True,
+        actor=trusted_by,
+        route="promote_skill_to_trusted",
+        reason=trust_reason,
+    )
     SkillUsageTracker(anima_dir).record(
         meta.name, SkillUsageEventType.patch, is_common=meta.is_common, notes="trusted_promotion"
     )

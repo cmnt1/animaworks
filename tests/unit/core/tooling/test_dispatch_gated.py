@@ -104,13 +104,14 @@ class TestDispatchGatedAllowed:
             mock_reg.assert_called_once()
             assert result == '{"success": true}'
 
-    def test_missing_anima_dir_skips_gated_check(self, dispatcher: ExternalToolDispatcher) -> None:
-        """When anima_dir is missing, gated check is skipped; dispatch proceeds."""
+    def test_missing_anima_dir_blocks_gated_action(self, dispatcher: ExternalToolDispatcher) -> None:
+        """Without anima_dir, gated actions are still rejected (fail-closed default)."""
         with patch.object(dispatcher, "_dispatch_from_registry", return_value='{"success": true}') as mock_reg:
             result = dispatcher.dispatch(
                 "gmail_send",
                 {"to": "x@y.z", "subject": "S", "body": "B"},
             )
 
-            mock_reg.assert_called_once()
-            assert result == '{"success": true}'
+            mock_reg.assert_not_called()
+            parsed = json.loads(result)
+            assert parsed.get("error_type") == "PermissionDenied"

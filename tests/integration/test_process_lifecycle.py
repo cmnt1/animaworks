@@ -12,8 +12,8 @@ import pytest
 
 psutil = pytest.importorskip("psutil")
 
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 
 @pytest.mark.asyncio

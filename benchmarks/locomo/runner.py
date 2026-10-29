@@ -105,21 +105,16 @@ def _print_summary(mode: str, summary: dict[str, Any], *, total_count: int) -> N
 
 
 def _print_comparison(all_results: dict[str, Any]) -> None:
-    """Print cross-mode F1 comparison with Mem0 reference column.
-
-    Assumes the standard three ``SEARCH_MODES`` when ``--mode all`` completed.
-    """
+    """Print cross-mode F1 comparison with Mem0 reference column."""
     modes: list[str] = [m for m in SEARCH_MODES if m in all_results]
     if not modes:
         return
     mem0 = _REFERENCE_SCORES.get("Mem0", {})
-    print("\n+-------------------------------------------------------------+")
-    print("|  LoCoMo Comparison (F1 %)                                   |")
-    print("+--------------+---------+--------------+-----------+---------+")
-    print(
-        f"| {'Category':<12} | {'vector':>7} | {'vector_graph':>12} | {'scope_all':>9} | {'Mem0*':>7} |",
-    )
-    print("+--------------+---------+--------------+-----------+---------+")
+    print("\n+-----------------------------------------------+")
+    print("|  LoCoMo Comparison (F1 %)                     |")
+    print("+--------------+---------+-----------+---------+")
+    print(f"| {'Category':<12} | {'vector':>7} | {'scope_all':>9} | {'Mem0*':>7} |")
+    print("+--------------+---------+-----------+---------+")
     cat_order = [CATEGORY_NAMES[i] for i in sorted(CATEGORY_NAMES)]
     for cname in cat_order:
         cells: list[str] = []
@@ -128,26 +123,22 @@ def _print_comparison(all_results: dict[str, Any]) -> None:
             bc = (summ.get("by_category") or {}).get(cname, {})
             f1 = float(bc.get("f1", 0.0)) * 100.0
             cells.append(f"{f1:5.1f}")
-        while len(cells) < 3:
+        while len(cells) < len(SEARCH_MODES):
             cells.append("  -  ")
         m0v = mem0.get(cname)
         ref_s = f"{m0v:5.1f}" if m0v is not None else "  -  "
-        print(
-            f"| {cname:<12} | {cells[0]:>7} | {cells[1]:>12} | {cells[2]:>9} | {ref_s:>7} |",
-        )
+        print(f"| {cname:<12} | {cells[0]:>7} | {cells[1]:>9} | {ref_s:>7} |")
     o_cells: list[str] = []
     for m in modes:
         summ = all_results[m].get("summary", {})
         o_cells.append(f"{float(summ.get('overall_f1', 0.0)) * 100.0:5.1f}")
-    while len(o_cells) < 3:
+    while len(o_cells) < len(SEARCH_MODES):
         o_cells.append("  -  ")
     mo = mem0.get("overall")
     ref_o = f"{mo:5.1f}" if mo is not None else "  -  "
-    print("+--------------+---------+--------------+-----------+---------+")
-    print(
-        f"| {'OVERALL':<12} | {o_cells[0]:>7} | {o_cells[1]:>12} | {o_cells[2]:>9} | {ref_o:>7} |",
-    )
-    print("+--------------+---------+--------------+-----------+---------+")
+    print("+--------------+---------+-----------+---------+")
+    print(f"| {'OVERALL':<12} | {o_cells[0]:>7} | {o_cells[1]:>9} | {ref_o:>7} |")
+    print("+--------------+---------+-----------+---------+")
     print(
         "* Reference scores from memobase benchmark (LLM Judge, cat5 excluded)",
     )
@@ -596,7 +587,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=[*SEARCH_MODES, "all"],
         default="all",
-        help="search mode: vector, vector_graph, scope_all, or all (default: all)",
+        help="search mode: vector, scope_all, or all (default: all)",
     )
     p.add_argument(
         "--conversations",

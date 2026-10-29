@@ -12,9 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.memory.task_queue import TaskQueueManager
 from core.skills.hub import SkillHub
-from core.taskboard.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
 from ._common import (
@@ -72,9 +71,9 @@ def import_hermes(options: HermesImportOptions) -> MigrationReport:
     if options.apply:
         backup_targets = _planned_backup_targets(source, options, migration_dir)
         if options.target_anima:
-            from core.taskboard.tasks import TaskStore, task_database_path
+            from core.tasks.queue import TaskQueueManager
 
-            task_store = TaskStore(task_database_path(_anima_dir(options)))
+            task_store = TaskQueueManager(_anima_dir(options)).store
             task_backup = migration_dir / f"{batch_id}_taskboard.sqlite3"
             task_store.backup(task_backup)
             backup_targets.append(task_backup)
@@ -352,20 +351,19 @@ def _migrate_tasks(
                 report.add_item(MigrationItem("hermes_task", str(path), target_path, "taskboard_import", "skipped", fp))
                 continue
             if options.apply:
-                entry = TaskQueueManager(_anima_dir(options)).add_task(
+                TaskQueueManager(_anima_dir(options)).add_task(
                     source="anima",
                     original_instruction=str(task.get("description") or summary),
                     assignee=options.target_anima,
                     summary=summary,
                     task_id=task_id,
                     status=task_status(str(task.get("status") or "pending")),
-                    meta={"source_system": "hermes", "import_batch_id": report.batch_id, "source_fingerprint": fp},
-                )
-                TaskBoardStore(options.data_dir / "shared" / "taskboard.sqlite3").upsert_metadata(
-                    anima_name=options.target_anima,
-                    task_id=entry.task_id,
-                    actor="migration",
-                    source_ref=f"hermes://{path.name}#{index}",
+                    meta={
+                        "source_system": "hermes",
+                        "import_batch_id": report.batch_id,
+                        "source_fingerprint": fp,
+                        "source_ref": f"hermes://{path.name}#{index}",
+                    },
                 )
                 append_import_lock(
                     import_lock_path,

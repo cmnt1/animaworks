@@ -7,7 +7,6 @@ from __future__ import annotations
 """Issue A + B: Verify safe defaults for PR #149 features.
 
 - auto_response defaults to False
-- Usage Governor defaults to disabled
 - Ollama keep_alive defaults to empty string (Ollama native default)
 - Ollama total_timeout defaults to 0 (unlimited)
 - Heartbeat current_state_max_chars defaults to 8000 (auto-trim enabled)
@@ -17,7 +16,6 @@ from core.config.schemas import (
     ExternalMessagingChannelConfig,
     HeartbeatConfig,
     ServerConfig,
-    UsageGovernorConfig,
 )
 
 
@@ -29,20 +27,6 @@ class TestAutoResponseDefault:
     def test_explicit_true(self):
         cfg = ExternalMessagingChannelConfig(auto_response=True)
         assert cfg.auto_response is True
-
-
-class TestUsageGovernorDefault:
-    def test_default_disabled(self):
-        cfg = UsageGovernorConfig()
-        assert cfg.enabled is False
-
-    def test_explicit_enabled(self):
-        cfg = UsageGovernorConfig(enabled=True)
-        assert cfg.enabled is True
-
-    def test_nested_in_server_config(self):
-        cfg = ServerConfig()
-        assert cfg.usage_governor.enabled is False
 
 
 class TestOllamaDefaults:

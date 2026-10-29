@@ -25,7 +25,7 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from core.background import _rotate_dm_logs_sync
+from core.tasks.background import _rotate_dm_logs_sync
 from core.time_utils import now_jst
 
 
@@ -159,9 +159,12 @@ class TestRotateDmLogs:
         dm_logs.mkdir(parents=True)
         path = dm_logs / "pair.jsonl"
         path.write_text(
-            json.dumps(_make_dm_entry("a", "b", "valid", ts=old_ts), ensure_ascii=False) + "\n"
+            json.dumps(_make_dm_entry("a", "b", "valid", ts=old_ts), ensure_ascii=False)
+            + "\n"
             + "{not valid json}\n"
-            + "{\"ts\":\"" + (base - timedelta(days=1)).isoformat() + "\",\"from\":\"x\",\"to\":\"y\",\"text\":\"ok\"}\n"
+            + '{"ts":"'
+            + (base - timedelta(days=1)).isoformat()
+            + '","from":"x","to":"y","text":"ok"}\n'
         )
 
         result = _rotate_dm_logs_sync(tmp_path, max_age_days=7)
@@ -211,7 +214,7 @@ class TestDmLogRotationSchedulerRegistration:
         """system_dm_log_rotation ジョブがスケジューラに登録される。"""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
         from core.time_utils import get_app_timezone
 
         supervisor = ProcessSupervisor(
@@ -224,3 +227,30 @@ class TestDmLogRotationSchedulerRegistration:
         job = supervisor.scheduler.get_job("system_dm_log_rotation")
         assert job is not None, "system_dm_log_rotation job not found in scheduler"
         assert "DM Log Rotation" in job.name
+
+
+class TestDmLogFileMode:
+    """DM logs hold full message text, so only the runtime owner may read them."""
+
+    def test_append_restricts_mode(self, tmp_path: Path) -> None:
+        from core.messaging.messenger import Messenger
+
+        shared = tmp_path / "shared"
+        messenger = Messenger(shared, "alice")
+        messenger._append_dm_log("bob", "secret text")
+
+        path = shared / "dm_logs" / "alice-bob.jsonl"
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.parent.stat().st_mode & 0o777 == 0o700
+
+    def test_rotation_restricts_mode(self, tmp_path: Path) -> None:
+        dm_dir = tmp_path / "dm_logs"
+        old_ts = (now_jst() - timedelta(days=30)).isoformat()
+        path = _write_dm_entries(dm_dir, "alice-bob", [_make_dm_entry(ts=old_ts), _make_dm_entry()])
+        path.chmod(0o664)
+
+        _rotate_dm_logs_sync(tmp_path, max_age_days=7)
+
+        assert path.stat().st_mode & 0o777 == 0o600
+        for archive in dm_dir.glob("*.archive.jsonl"):
+            assert archive.stat().st_mode & 0o777 == 0o600

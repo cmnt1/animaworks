@@ -19,9 +19,10 @@ from core.memory.priming import (
     _BUDGET_IMPORTANT_KNOWLEDGE,
     PrimingEngine,
 )
+from core.memory.priming.channel_c import extract_summary
 from core.memory.rag.retriever import MemoryRetriever
 from core.memory.rag.store import ChromaVectorStore, Document, SearchResult
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 # ── ChromaVectorStore.get_by_metadata ────────────────────────────────────────
 
@@ -209,7 +210,9 @@ class TestChannelC0ImportantKnowledge:
             engine = PrimingEngine(temp_anima_dir)
             result = await engine._channel_c0_important_knowledge()
 
-        assert "### [IMPORTANT] Knowledge (summary pointers)" in result
+        from core.i18n import t
+
+        assert t("priming.important_knowledge_header") in result
         assert "My Important Rule" in result
         assert "knowledge/rule-a.md" in result
         assert "📌" in result
@@ -297,53 +300,32 @@ class TestChannelC0ImportantKnowledge:
 
 
 class TestExtractSummary:
-    """_extract_summary fallback: summary → # heading → filename."""
+    """extract_summary fallback: summary → # heading → filename."""
 
-    def test_prefers_summary_field(self, tmp_path):
+    def test_prefers_summary_field(self):
         """summary metadata is used when present."""
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir()
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "skills").mkdir()
-        engine = PrimingEngine(anima_dir)
         content = "Some content"
         meta = {"summary": "Custom summary text"}
-        assert engine._extract_summary(content, meta) == "Custom summary text"
+        title, _ = extract_summary(content, meta)
+        assert title == "Custom summary text"
 
-    def test_fallback_to_h1_heading(self, tmp_path):
+    def test_fallback_to_h1_heading(self):
         """First # heading is used when summary is absent."""
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir()
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "skills").mkdir()
-        engine = PrimingEngine(anima_dir)
         content = "# Main Title\n\nBody text"
         meta = {}
-        assert engine._extract_summary(content, meta) == "Main Title"
+        title, _ = extract_summary(content, meta)
+        assert title == "Main Title"
 
-    def test_fallback_to_filename_stem(self, tmp_path):
+    def test_fallback_to_filename_stem(self):
         """source_file stem is used when no summary or heading."""
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir()
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "skills").mkdir()
-        engine = PrimingEngine(anima_dir)
         content = "Plain content without heading"
         meta = {"source_file": "knowledge/my-rule-file.md"}
-        result = engine._extract_summary(content, meta)
+        result, _ = extract_summary(content, meta)
         assert result == "my rule file"
 
-    def test_empty_when_no_source(self, tmp_path):
+    def test_empty_when_no_source(self):
         """Returns empty when no summary, heading, or source_file."""
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir()
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "skills").mkdir()
-        engine = PrimingEngine(anima_dir)
         content = "Plain content"
         meta = {}
-        assert engine._extract_summary(content, meta) == ""
+        title, _ = extract_summary(content, meta)
+        assert title == ""

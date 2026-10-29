@@ -8,15 +8,12 @@ Verifies:
 - min_score filters out results with vector score < threshold
 - min_score keeps results with vector score >= threshold
 - min_score that filters ALL results returns empty list
-- Spreading activation results (no "vector" in source_scores) are NOT filtered
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
-
-from core.memory.rag.retriever import MemoryRetriever, RetrievalResult
+from core.memory.rag.retriever import MemoryRetriever
 from core.memory.rag.store import Document, SearchResult
 
 # ── Mock fixtures ────────────────────────────────────────────────────
@@ -49,19 +46,6 @@ class MockIndexer:
         return [[0.1] * 384 for _ in texts]
 
 
-# ── Config mock for spreading activation ────────────────────────────
-
-
-class _MockConfigDisabled:
-    """Config with spreading activation disabled (avoids graph expansion)."""
-
-    class _RAG:
-        enable_spreading_activation = False
-        spreading_memory_types = ["knowledge", "episodes"]
-
-    rag = _RAG()
-
-
 # ── min_score=None returns all ────────────────────────────────────────
 
 
@@ -76,12 +60,7 @@ class TestMinScoreNone:
         knowledge_dir = tmp_path / "knowledge"
         knowledge_dir.mkdir()
 
-        with patch.object(
-            MemoryRetriever,
-            "_load_config",
-            staticmethod(lambda: _MockConfigDisabled()),
-        ):
-            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
+        retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
 
         results = retriever.search(
             "query",
@@ -109,12 +88,7 @@ class TestMinScoreFilters:
         knowledge_dir = tmp_path / "knowledge"
         knowledge_dir.mkdir()
 
-        with patch.object(
-            MemoryRetriever,
-            "_load_config",
-            staticmethod(lambda: _MockConfigDisabled()),
-        ):
-            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
+        retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
 
         results = retriever.search(
             "query",
@@ -137,12 +111,7 @@ class TestMinScoreFilters:
         knowledge_dir = tmp_path / "knowledge"
         knowledge_dir.mkdir()
 
-        with patch.object(
-            MemoryRetriever,
-            "_load_config",
-            staticmethod(lambda: _MockConfigDisabled()),
-        ):
-            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
+        retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
 
         results = retriever.search(
             "query",
@@ -168,12 +137,7 @@ class TestMinScoreFilters:
         knowledge_dir = tmp_path / "knowledge"
         knowledge_dir.mkdir()
 
-        with patch.object(
-            MemoryRetriever,
-            "_load_config",
-            staticmethod(lambda: _MockConfigDisabled()),
-        ):
-            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
+        retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
 
         results = retriever.search(
             "query",
@@ -184,51 +148,3 @@ class TestMinScoreFilters:
         )
 
         assert results == []
-
-
-# ── Spreading activation results not filtered ──────────────────────────
-
-
-class TestMinScoreSpreadingActivation:
-    def test_spreading_results_without_vector_not_filtered(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Results with no 'vector' key in source_scores are NOT filtered by min_score."""
-        # Simulate spreading activation results: source_scores has "pagerank" but no "vector"
-        # The retriever uses: r.source_scores.get("vector", 1.0) >= min_score
-        # So when there's no "vector" key, get returns 1.0, which passes any min_score
-        vector_store = MockVectorStoreWithScores([0.9])
-        indexer = MockIndexer()
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir()
-
-        with patch.object(
-            MemoryRetriever,
-            "_load_config",
-            staticmethod(lambda: _MockConfigDisabled()),
-        ):
-            retriever = MemoryRetriever(vector_store, indexer, knowledge_dir)
-
-        # Get one result, then manually create a spreading-style result
-        results = retriever.search(
-            "query",
-            "test_anima",
-            memory_type="knowledge",
-            top_k=5,
-            min_score=0.3,
-        )
-        assert len(results) >= 1
-
-        # Verify: result with only pagerank (no vector) would pass min_score
-        # because source_scores.get("vector", 1.0) = 1.0 >= 0.3
-        spreading_result = RetrievalResult(
-            doc_id="anima/knowledge/spread.md#0",
-            content="Spreading content",
-            score=0.5,
-            metadata={"source_file": "knowledge/spread.md", "activation": "spreading"},
-            source_scores={"pagerank": 0.8},
-        )
-        # The filter is: r.source_scores.get("vector", 1.0) >= min_score
-        # For spreading_result: get("vector", 1.0) = 1.0, so 1.0 >= 0.3 -> kept
-        assert spreading_result.source_scores.get("vector", 1.0) >= 0.3

@@ -1,0 +1,35 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "tool-error",
+  "events": null,
+  "result": {
+    "text": "Recovered after tool error",
+    "tool_call_records": [
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_error_1",
+        "input_summary": "{'query': 'golden tool error'}",
+        "result_summary": "{\"status\": \"error\", \"error_type\": \"ExecutionError\", \"message\": \"simulated tool failure\"}",
+        "is_error": true
+      }
+    ],
+    "usage": {
+      "input_tokens": 30,
+      "output_tokens": 8,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": null,
+    "num_turns": null
+  },
+  "raised": null,
+  "activity": []
+}

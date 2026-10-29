@@ -1,4 +1,4 @@
-"""Tests for core/tools/chatwork.py — Chatwork integration."""
+"""Tests for core/integrations/chatwork.py — Chatwork integration."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.chatwork import (
+from core.integrations._base import ToolConfigError
+from core.integrations.chatwork import (
     ChatworkClient,
     MessageCache,
     _format_timestamp,
@@ -71,7 +71,7 @@ class TestChatworkClient:
         mock_requests = MagicMock()
         mock_session = MagicMock()
         mock_requests.Session.return_value = mock_session
-        with patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}):
+        with patch.dict("core.integrations._chatwork_client.__dict__", {"requests": mock_requests}):
             self._mock_session = mock_session
             self._mock_requests = mock_requests
             yield
@@ -96,17 +96,13 @@ class TestChatworkClient:
             ChatworkClient()  # type: ignore[call-arg]
 
     def test_me(self):
-        self._mock_session.request.return_value = self._make_response(
-            json_data={"account_id": 123, "name": "Bot"}
-        )
+        self._mock_session.request.return_value = self._make_response(json_data={"account_id": 123, "name": "Bot"})
         client = ChatworkClient(api_token="test-cw-token")
         result = client.me()
         assert result["account_id"] == 123
 
     def test_rooms(self):
-        self._mock_session.request.return_value = self._make_response(
-            json_data=[{"room_id": 1, "name": "Room1"}]
-        )
+        self._mock_session.request.return_value = self._make_response(json_data=[{"room_id": 1, "name": "Room1"}])
         client = ChatworkClient(api_token="test-cw-token")
         result = client.rooms()
         assert len(result) == 1
@@ -134,9 +130,7 @@ class TestChatworkClient:
         assert result["room_id"] == 2
 
     def test_get_room_by_name_not_found(self):
-        self._mock_session.request.return_value = self._make_response(
-            json_data=[{"room_id": 1, "name": "only-room"}]
-        )
+        self._mock_session.request.return_value = self._make_response(json_data=[{"room_id": 1, "name": "only-room"}])
         client = ChatworkClient(api_token="test-cw-token")
         result = client.get_room_by_name("nonexistent")
         assert result is None
@@ -146,16 +140,12 @@ class TestChatworkClient:
         assert client.resolve_room_id("12345") == "12345"
 
     def test_resolve_room_id_by_name(self):
-        self._mock_session.request.return_value = self._make_response(
-            json_data=[{"room_id": 999, "name": "target"}]
-        )
+        self._mock_session.request.return_value = self._make_response(json_data=[{"room_id": 999, "name": "target"}])
         client = ChatworkClient(api_token="test-cw-token")
         assert client.resolve_room_id("target") == "999"
 
     def test_resolve_room_id_not_found(self):
-        self._mock_session.request.return_value = self._make_response(
-            json_data=[{"room_id": 1, "name": "other"}]
-        )
+        self._mock_session.request.return_value = self._make_response(json_data=[{"room_id": 1, "name": "other"}])
         client = ChatworkClient(api_token="test-cw-token")
         with pytest.raises(ToolConfigError):
             client.resolve_room_id("missing")
@@ -168,7 +158,7 @@ class TestChatworkClient:
         self._mock_session.request.side_effect = [rate_resp, ok_resp]
 
         client = ChatworkClient(api_token="test-cw-token")
-        with patch("core.tools._retry.time.sleep"):
+        with patch("core.integrations._retry.time.sleep"):
             result = client.get("/me")
         assert result == {"ok": True}
 
@@ -188,9 +178,7 @@ class TestChatworkClient:
         assert len(tasks) == 1
 
     def test_upload_file(self, tmp_path: Path):
-        self._mock_session.request.return_value = self._make_response(
-            json_data={"file_id": 1}
-        )
+        self._mock_session.request.return_value = self._make_response(json_data={"file_id": 1})
         file_path = tmp_path / "report.pdf"
         file_path.write_bytes(b"%PDF-1.4 fake content")
         client = ChatworkClient(api_token="test-cw-token")
@@ -228,9 +216,9 @@ class TestChatworkMessageCache:
     def test_init_creates_tables(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            tables = {r["name"] for r in cache.conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()}
+            tables = {
+                r["name"] for r in cache.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
             assert "rooms" in tables
             assert "messages" in tables
             assert "sync_state" in tables
@@ -241,9 +229,7 @@ class TestChatworkMessageCache:
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
             cache.upsert_room({"room_id": 1, "name": "TestRoom"})
-            row = cache.conn.execute(
-                "SELECT * FROM rooms WHERE room_id = '1'"
-            ).fetchone()
+            row = cache.conn.execute("SELECT * FROM rooms WHERE room_id = '1'").fetchone()
             assert row["name"] == "TestRoom"
         finally:
             cache.close()
@@ -269,10 +255,18 @@ class TestChatworkMessageCache:
     def test_get_recent(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("100", [
-                {"message_id": "m1", "send_time": 1, "account": {"account_id": "a1", "name": "A"}, "body": "first"},
-                {"message_id": "m2", "send_time": 2, "account": {"account_id": "a1", "name": "A"}, "body": "second"},
-            ])
+            cache.upsert_messages(
+                "100",
+                [
+                    {"message_id": "m1", "send_time": 1, "account": {"account_id": "a1", "name": "A"}, "body": "first"},
+                    {
+                        "message_id": "m2",
+                        "send_time": 2,
+                        "account": {"account_id": "a1", "name": "A"},
+                        "body": "second",
+                    },
+                ],
+            )
             results = cache.get_recent("100", limit=1)
             assert len(results) == 1
             assert results[0]["body"] == "second"
@@ -282,20 +276,23 @@ class TestChatworkMessageCache:
     def test_find_mentions(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("100", [
-                {
-                    "message_id": "m1",
-                    "send_time": 1,
-                    "account": {"account_id": "other", "name": "Other"},
-                    "body": "[To:myid]Alice\nPlease check",
-                },
-                {
-                    "message_id": "m2",
-                    "send_time": 2,
-                    "account": {"account_id": "myid", "name": "Me"},
-                    "body": "my own msg",
-                },
-            ])
+            cache.upsert_messages(
+                "100",
+                [
+                    {
+                        "message_id": "m1",
+                        "send_time": 1,
+                        "account": {"account_id": "other", "name": "Other"},
+                        "body": "[To:myid]Alice\nPlease check",
+                    },
+                    {
+                        "message_id": "m2",
+                        "send_time": 2,
+                        "account": {"account_id": "myid", "name": "Me"},
+                        "body": "my own msg",
+                    },
+                ],
+            )
             mentions = cache.find_mentions("myid")
             assert len(mentions) == 1
             assert "Please check" in mentions[0]["body"]
@@ -305,26 +302,32 @@ class TestChatworkMessageCache:
     def test_find_unreplied(self, tmp_path: Path):
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            cache.upsert_messages("100", [
-                {
-                    "message_id": "m1",
-                    "send_time": 1,
-                    "account": {"account_id": "other", "name": "Other"},
-                    "body": "[To:myid]Check this",
-                },
-            ])
+            cache.upsert_messages(
+                "100",
+                [
+                    {
+                        "message_id": "m1",
+                        "send_time": 1,
+                        "account": {"account_id": "other", "name": "Other"},
+                        "body": "[To:myid]Check this",
+                    },
+                ],
+            )
             unreplied = cache.find_unreplied("myid")
             assert len(unreplied) == 1
 
             # Now add a reply
-            cache.upsert_messages("100", [
-                {
-                    "message_id": "m2",
-                    "send_time": 2,
-                    "account": {"account_id": "myid", "name": "Me"},
-                    "body": "Done",
-                },
-            ])
+            cache.upsert_messages(
+                "100",
+                [
+                    {
+                        "message_id": "m2",
+                        "send_time": 2,
+                        "account": {"account_id": "myid", "name": "Me"},
+                        "body": "Done",
+                    },
+                ],
+            )
             unreplied = cache.find_unreplied("myid")
             assert len(unreplied) == 0
         finally:
@@ -343,9 +346,12 @@ class TestChatworkMessageCache:
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
             cache.upsert_room({"room_id": 1, "name": "R"})
-            cache.upsert_messages("1", [
-                {"message_id": "m1", "send_time": 1, "account": {"account_id": "a", "name": "A"}, "body": "msg"},
-            ])
+            cache.upsert_messages(
+                "1",
+                [
+                    {"message_id": "m1", "send_time": 1, "account": {"account_id": "a", "name": "A"}, "body": "msg"},
+                ],
+            )
             stats = cache.get_stats()
             assert stats["rooms"] == 1
             assert stats["messages"] == 1
@@ -382,7 +388,7 @@ class TestSyncRooms:
 
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = _sync_rooms(client, cache, sync_limit=10)
 
             # Both rooms saved
@@ -393,9 +399,7 @@ class TestSyncRooms:
             assert result["messages"] == 2
 
             # Room types preserved
-            row = cache.conn.execute(
-                "SELECT type FROM rooms WHERE room_id = '200'"
-            ).fetchone()
+            row = cache.conn.execute("SELECT type FROM rooms WHERE room_id = '200'").fetchone()
             assert row["type"] == "direct"
         finally:
             cache.close()
@@ -414,7 +418,7 @@ class TestSyncRooms:
 
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = _sync_rooms(client, cache, sync_limit=1)
 
             # All 3 rooms have metadata
@@ -440,7 +444,7 @@ class TestSyncRooms:
 
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = _sync_rooms(client, cache, sync_limit=10)
 
             assert result["rooms"] == 2
@@ -458,7 +462,7 @@ class TestSyncRooms:
 
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = _sync_rooms(client, cache, sync_limit=10)
 
             assert result["rooms"] == 1
@@ -473,7 +477,7 @@ class TestSyncRooms:
 
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = _sync_rooms(client, cache, sync_limit=10)
 
             assert result["rooms"] == 0
@@ -494,14 +498,17 @@ class TestFindMentionsWithDMRooms:
         try:
             # Sync a direct room
             cache.upsert_room({"room_id": 500, "name": "DM with Alice", "type": "direct"})
-            cache.upsert_messages("500", [
-                {
-                    "message_id": "dm1",
-                    "send_time": 100,
-                    "account": {"account_id": "alice", "name": "Alice"},
-                    "body": "Hey, can you check this?",
-                },
-            ])
+            cache.upsert_messages(
+                "500",
+                [
+                    {
+                        "message_id": "dm1",
+                        "send_time": 100,
+                        "account": {"account_id": "alice", "name": "Alice"},
+                        "body": "Hey, can you check this?",
+                    },
+                ],
+            )
 
             # Should find as mention without [To:] tag
             mentions = cache.find_mentions("myid", config={"unreplied": {"include_direct_messages": True}})
@@ -515,14 +522,17 @@ class TestFindMentionsWithDMRooms:
         cache = MessageCache(db_path=tmp_path / "test.db")
         try:
             cache.upsert_room({"room_id": 600, "name": "Ops Channel", "type": "group"})
-            cache.upsert_messages("600", [
-                {
-                    "message_id": "w1",
-                    "send_time": 100,
-                    "account": {"account_id": "bob", "name": "Bob"},
-                    "body": "Server is down",
-                },
-            ])
+            cache.upsert_messages(
+                "600",
+                [
+                    {
+                        "message_id": "w1",
+                        "send_time": 100,
+                        "account": {"account_id": "bob", "name": "Bob"},
+                        "body": "Server is down",
+                    },
+                ],
+            )
 
             config = {"unreplied": {"watch_rooms": [{"room_id": "600"}]}}
             mentions = cache.find_mentions("myid", config=config)
@@ -543,24 +553,26 @@ class TestDispatch:
         mock_session.request.return_value = MagicMock(
             status_code=200,
             text="json",
-            json=MagicMock(return_value=[
-                {"room_id": 1, "name": "R1", "type": "group", "last_update_time": 1},
-            ]),
+            json=MagicMock(
+                return_value=[
+                    {"room_id": 1, "name": "R1", "type": "group", "last_update_time": 1},
+                ]
+            ),
             headers={},
             raise_for_status=MagicMock(),
         )
 
-        from core.tools.chatwork import dispatch
+        from core.integrations.chatwork import dispatch
 
         with (
-            patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}),
-            patch("core.tools.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
-            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "1" / "messages.db"),
-            patch("core.tools.chatwork.MessageCache") as MockCache,
+            patch.dict("core.integrations._chatwork_client.__dict__", {"requests": mock_requests}),
+            patch("core.integrations.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
+            patch("core.integrations.chatwork.resolve_cache_db_path", return_value=tmp_path / "1" / "messages.db"),
+            patch("core.integrations.chatwork.MessageCache") as MockCache,
         ):
             mock_cache = MagicMock()
             MockCache.return_value = mock_cache
-            with patch("core.tools._chatwork_cli.time.sleep"):
+            with patch("core.integrations._chatwork_cli.time.sleep"):
                 result = dispatch("chatwork_sync", {"limit": 5})
 
             assert result["rooms"] == 1
@@ -573,20 +585,22 @@ class TestDispatch:
 
         # me() call
         me_resp = MagicMock(
-            status_code=200, text="json",
+            status_code=200,
+            text="json",
             json=MagicMock(return_value={"account_id": 123, "name": "Bot"}),
-            headers={}, raise_for_status=MagicMock(),
+            headers={},
+            raise_for_status=MagicMock(),
         )
         mock_session.request.return_value = me_resp
 
-        from core.tools.chatwork import dispatch
+        from core.integrations.chatwork import dispatch
 
         with (
-            patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}),
-            patch("core.tools.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
-            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "123" / "messages.db"),
-            patch("core.tools.chatwork._load_chatwork_tool_config", return_value={}),
-            patch("core.tools.chatwork.MessageCache") as MockCache,
+            patch.dict("core.integrations._chatwork_client.__dict__", {"requests": mock_requests}),
+            patch("core.integrations.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
+            patch("core.integrations.chatwork.resolve_cache_db_path", return_value=tmp_path / "123" / "messages.db"),
+            patch("core.integrations.chatwork._load_chatwork_tool_config", return_value={}),
+            patch("core.integrations.chatwork.MessageCache") as MockCache,
         ):
             mock_cache = MagicMock()
             mock_cache.find_mentions.return_value = [{"message_id": "m1"}]
@@ -604,17 +618,17 @@ class TestDispatch:
 
     def test_dispatch_chatwork_unreplied_uses_resolved_identity(self, tmp_path: Path):
         """unreplied uses the delegated account's token and account ID."""
-        from core.tools.chatwork import dispatch
+        from core.integrations.chatwork import dispatch
 
         client = MagicMock()
         client.me.return_value = {"account_id": 987, "name": "Delegated"}
         identity = MagicMock(token="delegated-token")
         with (
-            patch("core.tools.chatwork.resolve_identity", return_value=identity) as resolver,
-            patch("core.tools.chatwork.ChatworkClient", return_value=client) as client_class,
-            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "987" / "messages.db"),
-            patch("core.tools.chatwork._load_chatwork_tool_config", return_value={}),
-            patch("core.tools.chatwork.MessageCache") as cache_class,
+            patch("core.integrations.chatwork.resolve_identity", return_value=identity) as resolver,
+            patch("core.integrations.chatwork.ChatworkClient", return_value=client) as client_class,
+            patch("core.integrations.chatwork.resolve_cache_db_path", return_value=tmp_path / "987" / "messages.db"),
+            patch("core.integrations.chatwork._load_chatwork_tool_config", return_value={}),
+            patch("core.integrations.chatwork.MessageCache") as cache_class,
         ):
             cache = cache_class.return_value
             cache.find_unreplied.return_value = [{"message_id": "m2"}]
@@ -638,29 +652,55 @@ class TestDispatch:
 
 class TestExecutionProfile:
     def test_profile_covers_all_commands(self):
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         expected = {
-            "rooms", "messages", "send", "upload", "search", "unreplied",
-            "sync", "me", "members", "contacts", "task",
-            "mytasks", "tasks", "mentions", "stats", "files", "download",
+            "rooms",
+            "messages",
+            "send",
+            "upload",
+            "search",
+            "unreplied",
+            "sync",
+            "me",
+            "members",
+            "contacts",
+            "task",
+            "mytasks",
+            "tasks",
+            "mentions",
+            "stats",
+            "files",
+            "download",
             "delete",
         }
         assert set(EXECUTION_PROFILE.keys()) == expected
 
     def test_sync_is_background_eligible(self):
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["sync"]["background_eligible"] is True
 
     def test_other_commands_not_background_eligible(self):
         """Commands other than sync and download are not background-eligible."""
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         non_eligible = (
-            "rooms", "messages", "send", "search", "unreplied",
-            "me", "members", "contacts", "task", "mytasks",
-            "tasks", "mentions", "stats", "files", "delete",
+            "rooms",
+            "messages",
+            "send",
+            "search",
+            "unreplied",
+            "me",
+            "members",
+            "contacts",
+            "task",
+            "mytasks",
+            "tasks",
+            "mentions",
+            "stats",
+            "files",
+            "delete",
         )
         for key in non_eligible:
             assert EXECUTION_PROFILE[key]["background_eligible"] is False, key

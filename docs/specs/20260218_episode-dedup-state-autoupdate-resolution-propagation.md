@@ -23,7 +23,7 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 
 ### Root Cause
 
-1. **per-message fire-and-forget `finalize_session()`** — `core/anima.py:355`, `core/anima.py:537`
+1. **per-message fire-and-forget `finalize_session()`** — `core/anima/digital_anima.py:355`, `core/anima/digital_anima.py:537`
    - メッセージ応答のたびに `asyncio.create_task(conv_memory.finalize_session(min_turns=3))` が呼ばれる
    - `finalize_session()` は**全蓄積ターン**を毎回 LLM で再要約する（`conversation.py:381-439`）
    - `append_episode()` は重複チェックなしで追記するだけ（`manager.py:730-745`）
@@ -43,10 +43,10 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/conversation.py` | Direct | finalize_session の大改修 |
-| `core/anima.py` | Direct | fire-and-forget 呼び出し削除、heartbeat に finalize 統合 |
-| `core/memory/activity.py` | Direct | `issue_resolved` イベントタイプ + ASCII ラベル追加 |
-| `core/memory/consolidation.py` | Direct | 解決イベント収集 + プロンプト注入 |
+| `core/memory/conversation/memory.py` | Direct | finalize_session の大改修 |
+| `core/anima/digital_anima.py` | Direct | fire-and-forget 呼び出し削除、heartbeat に finalize 統合 |
+| `core/memory/activity/logger.py` | Direct | `issue_resolved` イベントタイプ + ASCII ラベル追加 |
+| `core/memory/maintenance/consolidation.py` | Direct | 解決イベント収集 + プロンプト注入 |
 | `core/prompt/builder.py` | Direct | 解決レジストリセクション追加 |
 | `core/memory/manager.py` | Direct | 解決レジストリ読み書きメソッド追加 |
 | `core/memory/priming.py` | Indirect | `issue_resolved` がチャネル B で自動表示される（Priming Issue 側で対応済み前提） |
@@ -83,17 +83,17 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/conversation.py` | Modify | `ConversationState` に `last_finalized_turn_index` 追加、`finalize_session()` を差分要約+ステート抽出+ターン圧縮に改修、`finalize_if_session_ended()` 新設、`_parse_session_summary()` 新設、`_update_state_from_summary()` 新設 |
-| `core/anima.py` | Modify | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除（2箇所）。heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 |
-| `core/memory/activity.py` | Modify | type_map に `"issue_resolved": "RSLV"` 追加（Priming Issue で ASCII 化済みの前提） |
-| `core/memory/consolidation.py` | Modify | `daily_consolidate()` に解決イベント収集 + プロンプト注入を追加 |
+| `core/memory/conversation/memory.py` | Modify | `ConversationState` に `last_finalized_turn_index` 追加、`finalize_session()` を差分要約+ステート抽出+ターン圧縮に改修、`finalize_if_session_ended()` 新設、`_parse_session_summary()` 新設、`_update_state_from_summary()` 新設 |
+| `core/anima/digital_anima.py` | Modify | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除（2箇所）。heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 |
+| `core/memory/activity/logger.py` | Modify | type_map に `"issue_resolved": "RSLV"` 追加（Priming Issue で ASCII 化済みの前提） |
+| `core/memory/maintenance/consolidation.py` | Modify | `daily_consolidate()` に解決イベント収集 + プロンプト注入を追加 |
 | `core/prompt/builder.py` | Modify | `build_system_prompt()` に解決レジストリ注入セクション追加（Priming セクション直前） |
 | `core/memory/manager.py` | Modify | `read_resolutions()` と `append_resolution()` メソッド追加 |
 | `core/memory/priming.py` | No change | `issue_resolved` は Priming Issue のグルーピングで `type="single"` として自動表示される |
 
 #### Change 1: ConversationState に記録済みインデックス追加
 
-**Target**: `core/memory/conversation.py:60-69`
+**Target**: `core/memory/conversation/memory.py:60-69`
 
 ```python
 # Before
@@ -118,7 +118,7 @@ class ConversationState:
 
 #### Change 2: finalize_session() の大改修
 
-**Target**: `core/memory/conversation.py:381-439`
+**Target**: `core/memory/conversation/memory.py:381-439`
 
 ```python
 # Before
@@ -172,7 +172,7 @@ async def finalize_session(self, min_turns: int = 3) -> bool:
 
 #### Change 3: 要約プロンプトの拡張
 
-**Target**: `core/memory/conversation.py:488-` (`_summarize_session` を `_summarize_session_with_state` に改名)
+**Target**: `core/memory/conversation/memory.py:488-` (`_summarize_session` を `_summarize_session_with_state` に改名)
 
 ```python
 system = (
@@ -199,7 +199,7 @@ system = (
 
 #### Change 4: SessionSummary パーサー
 
-**Target**: `core/memory/conversation.py` (新規メソッド)
+**Target**: `core/memory/conversation/memory.py` (新規メソッド)
 
 ```python
 @dataclass
@@ -283,7 +283,7 @@ def _parse_session_summary(raw: str) -> ParsedSessionSummary:
 
 #### Change 5: ステート自動更新
 
-**Target**: `core/memory/conversation.py` (新規メソッド)
+**Target**: `core/memory/conversation/memory.py` (新規メソッド)
 
 ```python
 def _update_state_from_summary(
@@ -315,14 +315,14 @@ def _update_state_from_summary(
 
 #### Change 6: 解決イベント記録（3層）
 
-**Target**: `core/memory/conversation.py` (新規メソッド)
+**Target**: `core/memory/conversation/memory.py` (新規メソッド)
 
 ```python
 def _record_resolutions(
     self, memory_mgr: MemoryManager, resolved_items: list[str]
 ) -> None:
     """解決情報を3層に記録。"""
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     activity = ActivityLogger(self.anima_dir)
 
@@ -349,7 +349,7 @@ def _record_resolutions(
 
 #### Change 7: セッション境界検出
 
-**Target**: `core/memory/conversation.py` (新規メソッド)
+**Target**: `core/memory/conversation/memory.py` (新規メソッド)
 
 ```python
 SESSION_GAP_MINUTES = 10
@@ -375,7 +375,7 @@ async def finalize_if_session_ended(self) -> bool:
 
 #### Change 8: fire-and-forget 削除 + heartbeat 統合
 
-**Target**: `core/anima.py:354-355`, `core/anima.py:535-538`
+**Target**: `core/anima/digital_anima.py:354-355`, `core/anima/digital_anima.py:535-538`
 
 ```python
 # Before (process_message, L355):
@@ -391,7 +391,7 @@ asyncio.create_task(
 # After: 削除（3行ごと削除）
 ```
 
-**Target**: `core/anima.py` heartbeat 処理（L875 付近、heartbeat_end activity.log の直後に追加）
+**Target**: `core/anima/digital_anima.py` heartbeat 処理（L875 付近、heartbeat_end activity.log の直後に追加）
 
 ```python
 # heartbeat episode 記録（既存パス3）の後に追加:
@@ -406,7 +406,7 @@ except Exception:
 
 #### Change 9: type_map に `issue_resolved` 追加
 
-**Target**: `core/memory/activity.py` の type_map（Priming Issue で ASCII 化済みの前提）
+**Target**: `core/memory/activity/logger.py` の type_map（Priming Issue で ASCII 化済みの前提）
 
 ```python
 # Priming Issue 実装後の type_map に追加:
@@ -486,7 +486,7 @@ if priming_section:
 
 #### Change 12: consolidation に解決イベント注入
 
-**Target**: `core/memory/consolidation.py` `daily_consolidate()` 内
+**Target**: `core/memory/maintenance/consolidation.py` `daily_consolidate()` 内
 
 ```python
 # _summarize_episodes() の前に解決イベントを収集
@@ -508,7 +508,7 @@ if resolved_events:
 ```python
 def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
     """activity_log から issue_resolved イベントを収集。"""
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     activity = ActivityLogger(self.anima_dir)
     return activity.recent(days=1, limit=50, types=["issue_resolved"])
 ```
@@ -531,12 +531,12 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 
 | # | Task | Target |
 |---|------|--------|
-| 1-1 | `ConversationState` に `last_finalized_turn_index` フィールド追加、`save()` / `load()` 更新 | `core/memory/conversation.py` |
-| 1-2 | `finalize_session()` を差分要約に改修（`turns[last_finalized_turn_index:]` のみ要約）| `core/memory/conversation.py` |
-| 1-3 | `finalize_if_session_ended()` メソッド新設（10分アイドル検出） | `core/memory/conversation.py` |
-| 1-4 | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除 | `core/anima.py` |
-| 1-5 | heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 | `core/anima.py` |
-| 1-6 | finalize 後の記録済みターンを `compressed_summary` に統合する処理追加 | `core/memory/conversation.py` |
+| 1-1 | `ConversationState` に `last_finalized_turn_index` フィールド追加、`save()` / `load()` 更新 | `core/memory/conversation/memory.py` |
+| 1-2 | `finalize_session()` を差分要約に改修（`turns[last_finalized_turn_index:]` のみ要約）| `core/memory/conversation/memory.py` |
+| 1-3 | `finalize_if_session_ended()` メソッド新設（10分アイドル検出） | `core/memory/conversation/memory.py` |
+| 1-4 | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除 | `core/anima/digital_anima.py` |
+| 1-5 | heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 | `core/anima/digital_anima.py` |
+| 1-6 | finalize 後の記録済みターンを `compressed_summary` に統合する処理追加 | `core/memory/conversation/memory.py` |
 
 **テスト**:
 
@@ -556,9 +556,9 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 
 | # | Task | Target |
 |---|------|--------|
-| 2-1 | `_summarize_session_with_state()` — 要約プロンプトにステート抽出セクション追加 | `core/memory/conversation.py` |
-| 2-2 | `ParsedSessionSummary` dataclass + `_parse_session_summary()` パーサー新設 | `core/memory/conversation.py` |
-| 2-3 | `_update_state_from_summary()` — パース結果から state/current_state.md を自動更新 | `core/memory/conversation.py` |
+| 2-1 | `_summarize_session_with_state()` — 要約プロンプトにステート抽出セクション追加 | `core/memory/conversation/memory.py` |
+| 2-2 | `ParsedSessionSummary` dataclass + `_parse_session_summary()` パーサー新設 | `core/memory/conversation/memory.py` |
+| 2-3 | `_update_state_from_summary()` — パース結果から state/current_state.md を自動更新 | `core/memory/conversation/memory.py` |
 
 **テスト**:
 
@@ -577,11 +577,11 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 
 | # | Task | Target |
 |---|------|--------|
-| 3-1 | type_map に `"issue_resolved": "RSLV"` 追加 | `core/memory/activity.py` |
-| 3-2 | `_record_resolutions()` — ActivityLogger + shared/resolutions.jsonl への書き込み | `core/memory/conversation.py` |
+| 3-1 | type_map に `"issue_resolved": "RSLV"` 追加 | `core/memory/activity/logger.py` |
+| 3-2 | `_record_resolutions()` — ActivityLogger + shared/resolutions.jsonl への書き込み | `core/memory/conversation/memory.py` |
 | 3-3 | `append_resolution()` / `read_resolutions()` メソッド追加 | `core/memory/manager.py` |
 | 3-4 | builder.py に解決レジストリ注入セクション追加（Priming セクション直前） | `core/prompt/builder.py` |
-| 3-5 | `_collect_resolved_events()` + consolidation プロンプトへの解決情報注入 | `core/memory/consolidation.py` |
+| 3-5 | `_collect_resolved_events()` + consolidation プロンプトへの解決情報注入 | `core/memory/maintenance/consolidation.py` |
 
 **テスト**:
 
@@ -651,15 +651,15 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 
 ## References
 
-- `core/memory/conversation.py:381-439` — 現在の finalize_session 実装
-- `core/anima.py:355` — fire-and-forget 呼び出し箇所（process_message）
-- `core/anima.py:537` — fire-and-forget 呼び出し箇所（process_message_streaming）
-- `core/anima.py:876-889` — heartbeat エピソード記録（パス3、変更なし）
-- `core/anima.py:784-796` — DM 受信エピソード記録（パス2、変更なし）
+- `core/memory/conversation/memory.py:381-439` — 現在の finalize_session 実装
+- `core/anima/digital_anima.py:355` — fire-and-forget 呼び出し箇所（process_message）
+- `core/anima/digital_anima.py:537` — fire-and-forget 呼び出し箇所（process_message_streaming）
+- `core/anima/digital_anima.py:876-889` — heartbeat エピソード記録（パス3、変更なし）
+- `core/anima/digital_anima.py:784-796` — DM 受信エピソード記録（パス2、変更なし）
 - `core/memory/manager.py:730-745` — append_episode（重複チェックなし）
 - `core/memory/manager.py:747-751` — update_state / update_pending（呼び出し元なし）
-- `core/memory/consolidation.py:209-217` — dedup_key（先頭200文字判定）
-- `core/memory/activity.py:251-292` — _format_entry（Priming Issue で ASCII 化予定）
+- `core/memory/maintenance/consolidation.py:209-217` — dedup_key（先頭200文字判定）
+- `core/memory/activity/logger.py:251-292` — _format_entry（Priming Issue で ASCII 化予定）
 - `core/prompt/builder.py:393-400` — state 注入（⚠️ 進行中タスク MUST セクション）
 - `core/prompt/builder.py:408-416` — セクション9（Priming Issue で削除予定）
 - `core/prompt/builder.py:418-420` — Priming セクション（解決レジストリはこの直前に配置）

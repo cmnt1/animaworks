@@ -15,8 +15,8 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock
 
-from core.execution.agent_sdk import StreamDisconnectedError
-from core.memory.shortterm import ShortTermMemory
+from core.execution.engines.claude.executor import StreamDisconnectedError
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.builder import BuildResult
 from tests.helpers.mocks import (
     MockResultMessage,
@@ -85,6 +85,9 @@ def _make_streaming_executor(
             self.execute_streaming = execute_streaming
             self.call_count_getter = lambda: call_count
 
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
+
     return _MockExecutor()
 
 
@@ -109,6 +112,9 @@ def _make_always_failing_executor():
 
         def __init__(self) -> None:
             self.execute_streaming = execute_streaming
+
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
 
     return _MockExecutor()
 
@@ -154,11 +160,11 @@ class TestStreamRetryFullFlow:
 
         # Mock prompt building to avoid filesystem reads
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -170,14 +176,10 @@ class TestStreamRetryFullFlow:
         event_types = [e["type"] for e in events]
 
         # Must have a retry_start event (the first call disconnected)
-        assert "retry_start" in event_types, (
-            f"Expected retry_start in events, got: {event_types}"
-        )
+        assert "retry_start" in event_types, f"Expected retry_start in events, got: {event_types}"
 
         # Must have cycle_done at the end (retry succeeded)
-        assert "cycle_done" in event_types, (
-            f"Expected cycle_done in events, got: {event_types}"
-        )
+        assert "cycle_done" in event_types, f"Expected cycle_done in events, got: {event_types}"
 
         # The retry_start should indicate retry=1
         retry_events = [e for e in events if e["type"] == "retry_start"]
@@ -191,9 +193,7 @@ class TestStreamRetryFullFlow:
 
         # Checkpoint file should be cleared after success
         shortterm = ShortTermMemory(agent.anima_dir)
-        assert shortterm.load_checkpoint() is None, (
-            "Checkpoint should be cleared after successful retry"
-        )
+        assert shortterm.load_checkpoint() is None, "Checkpoint should be cleared after successful retry"
 
 
 class TestStreamRetryMaxExceeded:
@@ -231,11 +231,11 @@ class TestStreamRetryMaxExceeded:
         )
 
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -247,14 +247,10 @@ class TestStreamRetryMaxExceeded:
 
         # Should have retry_start events for each retry attempt
         retry_events = [e for e in events if e["type"] == "retry_start"]
-        assert len(retry_events) == 2, (
-            f"Expected 2 retry_start events, got {len(retry_events)}"
-        )
+        assert len(retry_events) == 2, f"Expected 2 retry_start events, got {len(retry_events)}"
 
         # Should have an error event after exhausting retries
-        assert "error" in event_types, (
-            f"Expected error event after max retries, got: {event_types}"
-        )
+        assert "error" in event_types, f"Expected error event after max retries, got: {event_types}"
 
         error_events = [e for e in events if e["type"] == "error"]
         assert len(error_events) == 1
@@ -266,9 +262,7 @@ class TestStreamRetryMaxExceeded:
         )
 
         # cycle_done should still be yielded (with whatever was accumulated)
-        assert "cycle_done" in event_types, (
-            "cycle_done should be yielded even after retry exhaustion"
-        )
+        assert "cycle_done" in event_types, "cycle_done should be yielded even after retry exhaustion"
 
 
 class TestCheckpointClearedOnSuccess:
@@ -298,11 +292,11 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -314,9 +308,7 @@ class TestCheckpointClearedOnSuccess:
         event_types = [e["type"] for e in events]
 
         # No retry events should be emitted
-        assert "retry_start" not in event_types, (
-            "No retries expected on clean execution"
-        )
+        assert "retry_start" not in event_types, "No retries expected on clean execution"
 
         # cycle_done must be present
         assert "cycle_done" in event_types
@@ -324,13 +316,10 @@ class TestCheckpointClearedOnSuccess:
         # The checkpoint file must not exist
         checkpoint_path = agent.anima_dir / "shortterm" / "stream_checkpoint.json"
         assert not checkpoint_path.exists(), (
-            f"stream_checkpoint.json should not exist after success, "
-            f"but found at {checkpoint_path}"
+            f"stream_checkpoint.json should not exist after success, but found at {checkpoint_path}"
         )
 
-    async def test_checkpoint_saved_during_tool_end_events(
-        self, make_agent_core, monkeypatch
-    ):
+    async def test_checkpoint_saved_during_tool_end_events(self, make_agent_core, monkeypatch):
         """Verify checkpoint is persisted when tool_end events are emitted,
         then cleared on successful completion."""
 
@@ -368,6 +357,9 @@ class TestCheckpointClearedOnSuccess:
             supports_streaming = True
             execute_streaming = staticmethod(execute_streaming_with_tool)
 
+            def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+                """Match BaseExecutor's engine preparation hook."""
+
         with patch_agent_sdk_streaming():
             agent = make_agent_core(
                 name="retry-tool",
@@ -388,11 +380,11 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.priming.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -409,12 +401,8 @@ class TestCheckpointClearedOnSuccess:
                     checkpoint_existed_during_stream = True
 
         # Checkpoint should have been saved during the tool_end event
-        assert checkpoint_existed_during_stream, (
-            "Checkpoint should be saved after tool_end events"
-        )
+        assert checkpoint_existed_during_stream, "Checkpoint should be saved after tool_end events"
 
         # But after completion, checkpoint should be cleared
         shortterm = ShortTermMemory(agent.anima_dir, session_type="task")
-        assert shortterm.load_checkpoint() is None, (
-            "Checkpoint should be cleared after successful completion"
-        )
+        assert shortterm.load_checkpoint() is None, "Checkpoint should be cleared after successful completion"

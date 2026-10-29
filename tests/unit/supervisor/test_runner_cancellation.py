@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.runner import AnimaRunner
+from core.runtime.ipc import IPCRequest
+from core.runtime.runner import AnimaRunner
 
 
 def _make_runner(tmp_path: Path) -> AnimaRunner:

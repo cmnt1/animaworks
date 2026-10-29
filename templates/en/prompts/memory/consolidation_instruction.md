@@ -1,4 +1,4 @@
-# Memory update (explicitly enabled daily maintenance)
+# Project memory update
 
 ## Scope and safeguards
 

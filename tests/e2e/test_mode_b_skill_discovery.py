@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 from tests.helpers.mocks import make_litellm_response, patch_litellm
 
 

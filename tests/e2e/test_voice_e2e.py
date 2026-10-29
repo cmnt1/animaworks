@@ -151,7 +151,7 @@ class TestVoiceWebSocket:
     @pytest.mark.skip(reason="Unreliable: WebSocket receive_json blocks indefinitely in TestClient")
     def test_speech_end_stt_response(self, test_data_dir: Path) -> None:
         """Test speech_end triggers STT and returns transcript."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
         from server.routes.voice import create_voice_router
 
         app = FastAPI()

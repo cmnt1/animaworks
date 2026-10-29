@@ -13,7 +13,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from core.time_utils import now_jst, today_local
+from core.time_utils import today_local
 from tests.helpers.mocks import make_litellm_response, patch_litellm
 
 
@@ -85,41 +85,6 @@ class TestModeBMock:
         assert "[assisted]" in content
         assert "What do you think?" in content
 
-    async def test_knowledge_extracted_after_response(self, make_agent_core):
-        """Knowledge file is created via MemoryManager after Mode B response.
-
-        The current Mode B executor (text-loop) does not auto-extract knowledge;
-        the caller is responsible for post-processing.  This test verifies that
-        MemoryManager.write_knowledge() works correctly after a Mode B cycle.
-        """
-        agent = make_agent_core(
-            name="b-knowledge",
-            model="ollama/gemma3:27b",
-            execution_mode="assisted",
-        )
-
-        main_resp = make_litellm_response(
-            content="The capital of France is Paris."
-        )
-
-        with patch_litellm(main_resp):
-            result = await agent.run_cycle("What is the capital of France?")
-
-        assert result.action == "responded"
-
-        # Simulate post-call knowledge extraction (formerly done by old AssistedExecutor)
-        knowledge_text = "France's capital is Paris — useful geographic fact."
-        topic = now_jst().strftime("learned_%Y%m%d_%H%M%S")
-        agent.memory.write_knowledge(topic, knowledge_text)
-
-        # Check knowledge file was created
-        knowledge_files = list(
-            agent.anima_dir.glob("knowledge/learned_*.md")
-        )
-        assert len(knowledge_files) >= 1
-        content = knowledge_files[0].read_text(encoding="utf-8")
-        assert "Paris" in content
-
     async def test_knowledge_extraction_skipped_when_nashi(self, make_agent_core):
         """No knowledge file when LLM returns 'なし'."""
         agent = make_agent_core(
@@ -155,9 +120,7 @@ class TestModeBLive:
             execution_mode="assisted",
         )
 
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_B_TEST_OK"
-        )
+        result = await agent.run_cycle("Reply with exactly: ANIMAWORKS_B_TEST_OK")
 
         assert result.summary
         assert result.action == "responded"
@@ -186,11 +149,7 @@ class TestModeBOllamaLive:
             api_base_url=os.environ.get("OLLAMA_API_BASE", ""),
         )
 
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_OLLAMA_TEST_OK"
-        )
+        result = await agent.run_cycle("Reply with exactly: ANIMAWORKS_OLLAMA_TEST_OK")
 
         assert result.summary
         assert result.action == "responded"
-
-

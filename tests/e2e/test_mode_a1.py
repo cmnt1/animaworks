@@ -74,8 +74,7 @@ class TestModeA1Mock:
             agent = make_agent_core(
                 name="a1-chain",
                 model="claude-sonnet-4-6",
-                context_threshold=0.01,  # Very low to force chaining
-                max_chains=1,
+                context_threshold=0.01,  # Very low to force short-term state saving
             )
             agent._sdk_available = True
 
@@ -100,9 +99,7 @@ class TestModeA1Live:
         if not agent._sdk_available:
             pytest.skip("Claude Agent SDK not installed")
 
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_A1_TEST_OK"
-        )
+        result = await agent.run_cycle("Reply with exactly: ANIMAWORKS_A1_TEST_OK")
 
         assert result.summary
         assert result.action == "responded"

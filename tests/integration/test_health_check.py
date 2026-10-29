@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from core.supervisor.manager import HealthConfig, ProcessSupervisor, RestartPolicy
+from server.supervisor.manager import HealthConfig, ProcessSupervisor, RestartPolicy
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,7 @@ import logging
 import pytest
 import structlog
 
-from core.logging_config import (
+from core.infra.logging_config import (
     bind_cycle_context,
     clear_cycle_context,
     setup_anima_logging,
@@ -70,9 +70,7 @@ def test_errors_log_receives_warning_and_above_only(tmp_path):
 def test_secret_is_masked_on_disk_across_handlers(tmp_path):
     setup_logging(level="DEBUG", log_dir=tmp_path, json_file=True)
 
-    logging.getLogger("test.e2e.redact").warning(
-        "outbound call failed with key sk-ant-api03-SUPERSECRETVALUE123456"
-    )
+    logging.getLogger("test.e2e.redact").warning("outbound call failed with key sk-ant-api03-SUPERSECRETVALUE123456")
     _flush_handlers()
 
     errors_content = (tmp_path / "errors.log").read_text(encoding="utf-8")
@@ -99,9 +97,7 @@ def test_anima_plain_log_carries_cycle_id_and_redacts(tmp_path):
 
     bind_cycle_context("feedface", "heartbeat")
     try:
-        logging.getLogger("test.e2e.anima").warning(
-            "leaking token=plaintextsecret9999 during cycle"
-        )
+        logging.getLogger("test.e2e.anima").warning("leaking token=plaintextsecret9999 during cycle")
     finally:
         clear_cycle_context()
     _flush_handlers()
@@ -124,9 +120,7 @@ def test_exception_traceback_and_stack_masked_all_sinks(tmp_path):
     try:
         raise ValueError("inner failure password=hunter2secretvalue and api_key=abcd12345678")
     except ValueError:
-        logging.getLogger("test.e2e.exc").exception(
-            "outer op failed sk-ant-MSGSECRET1234567", stack_info=True
-        )
+        logging.getLogger("test.e2e.exc").exception("outer op failed sk-ant-MSGSECRET1234567", stack_info=True)
     _flush_handlers()
 
     main_content = (tmp_path / "animaworks.log").read_text(encoding="utf-8")
@@ -147,9 +141,7 @@ def test_per_anima_errors_log_masks_exception(tmp_path):
     from core.time_utils import configure_timezone
 
     configure_timezone("Asia/Tokyo")
-    setup_anima_logging(
-        anima_name="yuki", log_dir=tmp_path, level="INFO", also_to_console=False
-    )
+    setup_anima_logging(anima_name="yuki", log_dir=tmp_path, level="INFO", also_to_console=False)
 
     logging.getLogger("test.e2e.anima2").info("routine startup line")
     try:

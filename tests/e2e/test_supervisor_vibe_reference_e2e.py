@@ -7,6 +7,7 @@ Tests the full flow from dispatch handler through ImageGenPipeline config
 resolution, verifying that supervisor's avatar image is correctly resolved
 and applied as the Vibe Transfer reference.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,8 +75,6 @@ def _dispatch_generate(args: dict, config: AnimaWorksConfig, animas_dir: Path):
 
     captured_configs: list[ImageGenConfig] = []
 
-    original_init = None
-
     def capture_pipeline_init(self, anima_dir, config=None):
         captured_configs.append(config)
         self._anima_dir = anima_dir
@@ -87,11 +86,12 @@ def _dispatch_generate(args: dict, config: AnimaWorksConfig, animas_dir: Path):
 
     with (
         patch("core.config.models.load_config", return_value=config),
-        patch("core.tools.image_gen.ImageGenPipeline.__init__", capture_pipeline_init),
-        patch("core.tools.image_gen.ImageGenPipeline.generate_all", mock_generate_all),
-        patch("core.tools.image_gen.logger"),
+        patch("core.integrations.image_gen.ImageGenPipeline.__init__", capture_pipeline_init),
+        patch("core.integrations.image_gen.ImageGenPipeline.generate_all", mock_generate_all),
+        patch("core.integrations.image_gen.logger"),
     ):
-        from core.tools.image_gen import dispatch
+        from core.integrations.image_gen import dispatch
+
         result = dispatch("generate_character_assets", dict(args))
 
     return result, captured_configs, mock_result
@@ -129,13 +129,9 @@ class TestSupervisorVibeReferenceE2E:
         assert len(captured_configs) == 1
         config_used = captured_configs[0]
         ref_name = (
-            "avatar_fullbody_realistic.png"
-            if config.image_gen.image_style == "realistic"
-            else "avatar_fullbody.png"
+            "avatar_fullbody_realistic.png" if config.image_gen.image_style == "realistic" else "avatar_fullbody.png"
         )
-        expected_path = str(
-            supervisor_with_image / "assets" / ref_name
-        )
+        expected_path = str(supervisor_with_image / "assets" / ref_name)
         assert config_used.style_reference == expected_path
         assert config_used.vibe_strength == 0.8
         assert config_used.vibe_info_extracted == 0.7
@@ -221,13 +217,9 @@ class TestSupervisorVibeReferenceE2E:
         assert len(captured_configs) == 1
         config_used = captured_configs[0]
         ref_name = (
-            "avatar_fullbody_realistic.png"
-            if config.image_gen.image_style == "realistic"
-            else "avatar_fullbody.png"
+            "avatar_fullbody_realistic.png" if config.image_gen.image_style == "realistic" else "avatar_fullbody.png"
         )
-        expected_path = str(
-            supervisor_with_image / "assets" / ref_name
-        )
+        expected_path = str(supervisor_with_image / "assets" / ref_name)
         assert config_used.style_reference == expected_path
         assert config_used.style_reference != "/global/org_style.png"
 
@@ -257,14 +249,15 @@ class TestSupervisorVibeReferenceE2E:
         assert config.image_gen.style_reference == original_ref
 
     def test_dispatch_accepts_supervisor_name_param(self):
-        """The image_gen dispatch should accept supervisor_name parameter."""
+        """The registered image-gen handler should accept supervisor_name."""
         import inspect
-        from core.tools.image_gen import dispatch
 
-        src = inspect.getsource(dispatch)
-        assert "supervisor_name" in src, (
-            "dispatch() should handle supervisor_name for Vibe Transfer"
-        )
+        from core.integrations import image_gen
+
+        # Dispatch is table-driven after the integration refactor (9d611ac8).
+        handler = image_gen._DISPATCH_HANDLERS["generate_character_assets"]
+        assert handler is image_gen._dispatch_character_assets
+        assert "supervisor_name" in inspect.getsource(handler)
 
     def test_multiple_subordinates_get_same_supervisor_reference(
         self,
@@ -293,13 +286,9 @@ class TestSupervisorVibeReferenceE2E:
             all_captured_configs.extend(captured)
 
         ref_name = (
-            "avatar_fullbody_realistic.png"
-            if config.image_gen.image_style == "realistic"
-            else "avatar_fullbody.png"
+            "avatar_fullbody_realistic.png" if config.image_gen.image_style == "realistic" else "avatar_fullbody.png"
         )
-        expected_path = str(
-            supervisor_with_image / "assets" / ref_name
-        )
+        expected_path = str(supervisor_with_image / "assets" / ref_name)
         assert len(all_captured_configs) == 3
         for cfg in all_captured_configs:
             assert cfg.style_reference == expected_path

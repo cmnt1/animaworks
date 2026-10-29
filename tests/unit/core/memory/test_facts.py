@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.facts import (
+from core.memory.facts.store import (
     FactRecord,
     append_fact_records,
     fact_file_for_record,

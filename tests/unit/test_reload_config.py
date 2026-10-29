@@ -21,17 +21,13 @@ from core.schemas import ModelConfig
 class TestAnimaReloadConfig:
     """Test DigitalAnima.reload_config() detects and applies changes."""
 
-    def _make_anima_mock(
-        self, old_model: str = "claude-sonnet-4-6", new_model: str = "claude-opus-4-6"
-    ) -> MagicMock:
-        from core.anima import DigitalAnima
+    def _make_anima_mock(self, old_model: str = "claude-sonnet-4-6", new_model: str = "claude-opus-4-6") -> MagicMock:
+        from core.anima.digital_anima import DigitalAnima
 
         anima = MagicMock(spec=DigitalAnima)
         anima.model_config = ModelConfig(model=old_model, max_tokens=4096)
         anima.memory = MagicMock()
-        anima.memory.read_model_config.return_value = ModelConfig(
-            model=new_model, max_tokens=16384
-        )
+        anima.memory.read_model_config.return_value = ModelConfig(model=new_model, max_tokens=16384)
         anima.agent = MagicMock()
         anima._iter_lane_agents.return_value = [anima.agent]
         anima.reload_config = DigitalAnima.reload_config.__get__(anima)
@@ -62,12 +58,8 @@ class TestAnimaReloadConfig:
         assert new_config.model == "claude-opus-4-6"
 
     def test_reload_no_changes(self):
-        anima = self._make_anima_mock(
-            old_model="claude-sonnet-4-6", new_model="claude-sonnet-4-6"
-        )
-        anima.memory.read_model_config.return_value = ModelConfig(
-            model="claude-sonnet-4-6", max_tokens=4096
-        )
+        anima = self._make_anima_mock(old_model="claude-sonnet-4-6", new_model="claude-sonnet-4-6")
+        anima.memory.read_model_config.return_value = ModelConfig(model="claude-sonnet-4-6", max_tokens=4096)
         result = anima.reload_config()
 
         assert result["status"] == "ok"
@@ -80,19 +72,25 @@ class TestAnimaReloadConfig:
 class TestAgentUpdateModelConfig:
     """Test AgentCore.update_model_config() updates internal state."""
 
-    @patch("core.agent.AgentCore._create_executor")
-    @patch("core.agent.AgentCore._check_sdk", return_value=False)
-    @patch("core.agent.AgentCore._build_human_notifier", return_value=None)
-    @patch("core.agent.AgentCore._build_background_manager", return_value=None)
-    @patch("core.agent.AgentCore._init_tool_registry", return_value=[])
-    @patch("core.agent.AgentCore._discover_personal_tools", return_value={})
-    @patch("core.agent.AgentCore._is_debug_superuser", return_value=False)
+    @patch("core.agent.agent_core.AgentCore._create_executor")
+    @patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False)
+    @patch("core.agent.agent_core.AgentCore._build_human_notifier", return_value=None)
+    @patch("core.agent.agent_core.AgentCore._build_background_manager", return_value=None)
+    @patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[])
+    @patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={})
+    @patch("core.agent.agent_core.AgentCore._is_debug_superuser", return_value=False)
     def test_update_rebuilds_executor(
         self,
-        _sup, _tools, _personal, _registry, _bg, _notifier, mock_create_executor,
+        _sup,
+        _tools,
+        _personal,
+        _registry,
+        _bg,
+        _notifier,
+        mock_create_executor,
         tmp_path,
     ):
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
         from core.memory import MemoryManager
 
         anima_dir = tmp_path / "animas" / "test"
@@ -111,19 +109,25 @@ class TestAgentUpdateModelConfig:
         assert agent.model_config.model == "claude-opus-4-6"
         assert mock_create_executor.call_count == call_count_before + 1
 
-    @patch("core.agent.AgentCore._create_executor")
-    @patch("core.agent.AgentCore._check_sdk", return_value=False)
-    @patch("core.agent.AgentCore._build_human_notifier", return_value=None)
-    @patch("core.agent.AgentCore._build_background_manager", return_value=None)
-    @patch("core.agent.AgentCore._init_tool_registry", return_value=[])
-    @patch("core.agent.AgentCore._discover_personal_tools", return_value={})
-    @patch("core.agent.AgentCore._is_debug_superuser", return_value=False)
+    @patch("core.agent.agent_core.AgentCore._create_executor")
+    @patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False)
+    @patch("core.agent.agent_core.AgentCore._build_human_notifier", return_value=None)
+    @patch("core.agent.agent_core.AgentCore._build_background_manager", return_value=None)
+    @patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[])
+    @patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={})
+    @patch("core.agent.agent_core.AgentCore._is_debug_superuser", return_value=False)
     def test_update_refreshes_context_window(
         self,
-        _sup, _tools, _personal, _registry, _bg, _notifier, _exec,
+        _sup,
+        _tools,
+        _personal,
+        _registry,
+        _bg,
+        _notifier,
+        _exec,
         tmp_path,
     ):
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
         from core.memory import MemoryManager
 
         anima_dir = tmp_path / "animas" / "test"
@@ -147,13 +151,11 @@ class TestIPCReloadHandler:
 
     @pytest.mark.asyncio
     async def test_handler_calls_anima_reload(self):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = MagicMock(spec=AnimaRunner)
         runner.anima = MagicMock()
-        runner.anima.reload_config.return_value = {
-            "status": "ok", "model": "test", "changes": ["model"]
-        }
+        runner.anima.reload_config.return_value = {"status": "ok", "model": "test", "changes": ["model"]}
 
         handler = AnimaRunner._handle_reload_config.__get__(runner)
         result = await handler({})
@@ -163,7 +165,7 @@ class TestIPCReloadHandler:
 
     @pytest.mark.asyncio
     async def test_handler_raises_when_no_anima(self):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = MagicMock(spec=AnimaRunner)
         runner.anima = None
@@ -179,18 +181,14 @@ class TestIPCReloadHandler:
 class TestCLIReloadCommand:
     """Test cmd_anima_reload() HTTP calls."""
 
-    def test_single_reload(self, tmp_path):
-        import requests as _req_mod
-
+    def test_single_reload(self, tmp_path, data_dir_at_tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
         pid_file.write_text("12345")
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "status": "ok", "model": "claude-opus-4-6", "changes": ["model"]
-        }
+        mock_response.json.return_value = {"status": "ok", "model": "claude-opus-4-6", "changes": ["model"]}
         mock_response.raise_for_status = MagicMock()
 
         args = argparse.Namespace(
@@ -200,19 +198,19 @@ class TestCLIReloadCommand:
         )
 
         with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(_req_mod, "post", return_value=mock_response) as mock_post,
+            patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)
 
-        mock_post.assert_called_once_with(
-            "http://localhost:18500/api/animas/kotoha/reload",
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            "/api/animas/kotoha/reload",
             timeout=10.0,
+            raw_response=True,
         )
 
-    def test_reload_all(self, tmp_path):
-        import requests as _req_mod
-
+    def test_reload_all(self, tmp_path, data_dir_at_tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -232,12 +230,14 @@ class TestCLIReloadCommand:
         )
 
         with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(_req_mod, "post", return_value=mock_response) as mock_post,
+            patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)
 
-        mock_post.assert_called_once_with(
-            "http://localhost:18500/api/animas/reload-all",
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            "/api/animas/reload-all",
             timeout=30.0,
+            raw_response=True,
         )

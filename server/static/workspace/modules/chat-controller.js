@@ -3,7 +3,7 @@
 // Workspace-specific: Live2D hooks, 3D office integration, conversation overlay DOM.
 
 import { getState, setState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { initBustup, setCharacter, setExpression, setTalking, onClick as onBustupClick } from "./live2d.js";
 import { createImageInput, initLightbox } from "../../shared/image-input.js";
 import { initTextArtifactHandlers } from "../../shared/text-artifact.js";
@@ -135,7 +135,7 @@ export function closeConversation() {
   wsHidePendingIndicator();
 }
 
-export function isConvStreaming() {
+function isConvStreaming() {
   const animaName = getState().conversationAnima;
   if (!animaName) return false;
   return ChatSessionManager.getInstance().isStreamingForAnima(animaName);

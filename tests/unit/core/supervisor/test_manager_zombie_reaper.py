@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 @pytest.fixture
@@ -170,3 +170,53 @@ async def test_reaper_preserves_real_exit_status_and_foreign_child(supervisor, r
         assert owned.wait(timeout=2) == returncode
         assert foreign.returncode is None
         assert foreign.wait(timeout=2) == 17
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "core.runtime.runner",
+        "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+    ],
+)
+def test_kill_zombie_runners_accepts_current_and_legacy_module_names(
+    supervisor: ProcessSupervisor,
+    module_name: str,
+) -> None:
+    pid_dir = supervisor.run_dir / "animas"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "sakura.pid"
+    pid_file.write_text("4321", encoding="utf-8")
+    process = MagicMock()
+    process.is_running.return_value = True
+    process.cmdline.return_value = ["python", "-m", module_name]
+
+    with (
+        patch("psutil.Process", return_value=process),
+        patch("server.supervisor.manager.snapshot_descendants", return_value=[]),
+        patch("server.supervisor.manager.kill_tree") as kill_tree,
+    ):
+        supervisor._kill_zombie_runners(["sakura"])
+
+    process.kill.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=5)
+    kill_tree.assert_called_once_with(4321, descendants=[], include_root=False)
+    assert not pid_file.exists()
+
+
+def test_kill_zombie_runners_skips_reused_pid_for_unrecognized_command(
+    supervisor: ProcessSupervisor,
+) -> None:
+    pid_dir = supervisor.run_dir / "animas"
+    pid_dir.mkdir(parents=True)
+    pid_file = pid_dir / "sakura.pid"
+    pid_file.write_text("4321", encoding="utf-8")
+    process = MagicMock()
+    process.is_running.return_value = True
+    process.cmdline.return_value = ["python", "-m", "unrelated.module"]
+
+    with patch("psutil.Process", return_value=process):
+        supervisor._kill_zombie_runners(["sakura"])
+
+    process.kill.assert_not_called()
+    assert not pid_file.exists()

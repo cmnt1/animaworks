@@ -1,0 +1,4 @@
+# Japanese overrides keyed as "METHOD /path".
+GET /api/animas: 利用可能な anima の一覧を取得します。
+POST /api/auth/login: 認証情報を検証し、セッションを開始します。
+POST /api/internal/vector/query: 内部サービス向けのベクトル検索を実行します。

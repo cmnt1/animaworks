@@ -8,16 +8,16 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 import asyncio
 import html
-import inspect
 import json
 import logging
-import os
 import re
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from threading import Event
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,21 +30,44 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from core import startup_progress
 from core.auth.manager import find_user, load_auth, validate_session
 from core.config import load_config
 from core.i18n import t
-from core.supervisor import ProcessSupervisor
+from core.infra import startup_progress
+from core.platform.tasks import spawn
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router
 from server.routes.setup import create_setup_router
 from server.stream_registry import StreamRegistry
+from server.supervisor import HealthConfig, ProcessSupervisor
 from server.websocket import WebSocketManager
 
 logger = logging.getLogger("animaworks.server")
 
+
+def _confirm_global_permissions_change(prompt: str) -> bool:
+    """Ask the server operator to accept changed global permission rules."""
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            "permissions.global.json was modified and non-interactive "
+            "session cannot confirm. Start server from an interactive terminal."
+        )
+    return input(prompt).strip().lower() == "yes"
+
+
 # Public embeddable avatars (e.g. Slack) — no session cookie required
 _PUBLIC_ICON_ASSET_PATH = re.compile(r"^/api/animas/[^/]+/assets/icon(?:_realistic)?\.png$")
+
+_AUTH_WHITELIST_PREFIXES = (
+    "/api/auth/login",
+    "/api/system/health",
+    "/api/setup",
+    "/api/approve",
+    # Webhook receivers authenticate via per-platform HMAC signature
+    # verification (Slack/Chatwork/Zoom), not session cookies.
+    "/api/webhooks/",
+    "/health",
+)
 
 # Paths to exclude from request logging (noisy health checks, etc.)
 _NOISY_PATHS = frozenset(
@@ -68,17 +91,6 @@ def _get_app_version() -> str:
         except Exception:
             logger.debug("Failed to read application version from pyproject.toml", exc_info=True)
     return "0.0.0"
-
-
-async def _call_optional_async(obj: object | None, method_name: str) -> None:
-    if obj is None:
-        return
-    method = getattr(obj, method_name, None)
-    if not callable(method):
-        return
-    result = method()
-    if inspect.isawaitable(result):
-        await result
 
 
 class RequestLoggingMiddleware:
@@ -195,11 +207,10 @@ class BasePathMiddleware:
         await self.app(updated_scope, receive, send)
 
 
-def _startup_default_preflight_runner(*, force_all_vectordb: bool = False) -> None:
-    from cli.commands.server import _run_execution_sdk_preflight, _run_rag_startup_preflight
+def _startup_default_preflight_runner() -> None:
+    from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
-    _run_execution_sdk_preflight()
-    _run_rag_startup_preflight(force_all_vectordb=force_all_vectordb)
+    run_execution_sdk_preflight()
 
 
 def _format_startup_elapsed(seconds: object) -> str:
@@ -355,6 +366,11 @@ def _render_startup_progress_html(snapshot: dict[str, object]) -> str:
     {error_html}
     <div class="bar" aria-hidden="true"><span></span></div>
   </main>
+  <script>
+    // meta refresh to the same URL is a same-document navigation when the URL
+    // has a fragment (e.g. /#/chat), so it never reloads; force a real reload.
+    setTimeout(function () {{ location.reload(); }}, 3000);
+  </script>
 </body>
 </html>
 """
@@ -391,9 +407,9 @@ def _request_accepts_html(request: Request) -> bool:
 
 
 async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
-    """Background task: generate missing anima assets after startup."""
+    """Background task: generate missing anima assets once during startup."""
     try:
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
         from core.config.models import load_config
 
         enable_3d = True
@@ -416,6 +432,17 @@ async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
         logger.exception("Startup asset reconciliation failed")
 
 
+def _schedule_startup_asset_reconciliation(app: FastAPI) -> None:
+    """Schedule one fallback asset scan per app runtime."""
+    if getattr(app.state, "_asset_reconciliation_scheduled", False):
+        return
+    app.state._asset_reconciliation_scheduled = True
+    spawn(
+        _reconcile_assets_at_startup(app.state.animas_dir),
+        name="startup-asset-reconciliation",
+    )
+
+
 async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = True) -> None:
     """Background task: start anima processes and post-startup services.
 
@@ -427,7 +454,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         def _on_anima_added(name: str) -> None:
             if name not in app.state.anima_names:
                 app.state.anima_names.append(name)
-                from core.org_sync import sync_org_structure
+                from core.org.org_sync import sync_org_structure
 
                 sync_org_structure(app.state.animas_dir)
                 logger.info("Anima added via reconciliation: %s", name)
@@ -470,183 +497,164 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         except Exception:
             logger.exception("Frontmatter migration failed (non-fatal)")
 
-        # Exclude governor-suspended animas from startup (only when Governor is enabled).
-        _gov_excluded: set[str] = set()
-        try:
-            from core.config.models import load_config as _lc_gov
-
-            if _lc_gov().server.usage_governor.enabled:
-                import json as _json
-
-                from core.paths import get_data_dir as _get_dd
-
-                _gsp = _get_dd() / "usage_governor_state.json"
-                if _gsp.is_file():
-                    _gsd = _json.loads(_gsp.read_text("utf-8"))
-                    _gov_excluded = set(_gsd.get("suspended_animas", []))
-                    if _gov_excluded:
-                        logger.info(
-                            "Startup: skipping %d governor-suspended animas: %s",
-                            len(_gov_excluded),
-                            ", ".join(sorted(_gov_excluded)),
-                        )
-        except Exception:
-            logger.debug("Failed to read governor state at startup", exc_info=True)
-
-        _names_to_start = [n for n in app.state.anima_names if n not in _gov_excluded]
-
-        # Do not choose a new task authority while legacy writers may be live.
-        from core.taskboard.readiness import require_task_store_ready
-
-        for name in _names_to_start:
-            require_task_store_ready(app.state.animas_dir / name)
-
-        # ── Ensure infrastructure services (Neo4j, etc.) ──────────
-        try:
-            from core.infra import ensure_infra_services
-            from core.paths import PROJECT_DIR
-
-            await ensure_infra_services(app.state.animas_dir, _names_to_start, PROJECT_DIR)
-        except Exception:
-            logger.warning("Infrastructure service check failed", exc_info=True)
+        _names_to_start = list(app.state.anima_names)
 
         # Start anima processes (parallel internally)
         await app.state.supervisor.start_all(_names_to_start)
 
         # Sync org structure from identity.md/status.json → config.json
         try:
-            from core.org_sync import sync_org_structure
+            from core.org.org_sync import sync_org_structure
 
             sync_org_structure(app.state.animas_dir)
         except Exception:
             logger.exception("Org structure sync failed at startup")
 
-        # Reconcile missing anima assets (fallback for failed bootstrap)
-        asyncio.create_task(_reconcile_assets_at_startup(app.state.animas_dir))
+        # Reconcile missing anima assets once as a fallback for failed bootstrap.
+        _schedule_startup_asset_reconciliation(app)
 
-        # ── Slack: ensure .env slots + warn about missing tokens ──
+        # Enclave mode never starts outward channels (Slack/Discord/Zoom/GitHub).
         try:
-            from core.config.env_slots import check_missing_slack_tokens, ensure_all_anima_slots
+            _enclave_mode = load_config().enclave.enabled
+        except Exception:
+            logger.warning("Could not read enclave mode; starting no external gateways", exc_info=True)
+            _enclave_mode = True
+        if _enclave_mode:
+            logger.info("Enclave mode: external gateways are not started")
+            for _attr in (
+                "slack_socket_manager",
+                "discord_gateway_manager",
+                "discord_channel_sync",
+                "zoom_gateway_manager",
+                "github_gateway_manager",
+                "slack_channel_sync",
+            ):
+                setattr(app.state, _attr, None)
+        else:
+            # ── Slack: ensure .env slots + warn about missing tokens ──
+            try:
+                from core.config.env_slots import ensure_all_anima_slots
+                from core.credentials import check_missing_slack_tokens
 
-            ensure_all_anima_slots()
-            missing = check_missing_slack_tokens()
-            if missing:
-                logger.warning(
-                    "Slack tokens missing for: %s — edit .env and restart",
-                    ", ".join(missing),
+                ensure_all_anima_slots()
+                missing = check_missing_slack_tokens()
+                if missing:
+                    logger.warning(
+                        "Slack tokens missing for: %s — edit .env and restart",
+                        ", ".join(missing),
+                    )
+            except Exception:
+                logger.debug("Slack env slot check failed", exc_info=True)
+
+            # ── Slack Socket Mode ─────────────────────────────────
+            _slack_enabled = False
+            try:
+                _slack_enabled = load_config().external_messaging.slack.enabled
+            except Exception:
+                logger.debug("Best-effort operation failed", exc_info=True)
+
+            try:
+                from server.gateways.slack_socket import SlackSocketModeManager
+
+                socket_manager = SlackSocketModeManager()
+                await asyncio.wait_for(socket_manager.start(), timeout=30)
+                app.state.slack_socket_manager = socket_manager
+            except TimeoutError:
+                logger.error("Slack Socket Mode startup timed out (30s)")
+                app.state.slack_socket_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Slack Socket Mode startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
                 )
-        except Exception:
-            logger.debug("Slack env slot check failed", exc_info=True)
+                app.state.slack_socket_manager = None
 
-        # ── Slack Socket Mode ─────────────────────────────────
-        _slack_enabled = False
-        try:
-            _slack_enabled = load_config().external_messaging.slack.enabled
-        except Exception:
-            pass
+            if _slack_enabled and app.state.slack_socket_manager is None:
+                logger.critical(
+                    "Slack is enabled but Socket Mode failed to start — "
+                    "Slack replies will NOT be received. "
+                    "Install slack-bolt: pip install 'animaworks[communication]'"
+                )
 
-        try:
-            from server.slack_socket import SlackSocketModeManager
-
-            socket_manager = SlackSocketModeManager()
-            await asyncio.wait_for(socket_manager.start(), timeout=30)
-            app.state.slack_socket_manager = socket_manager
-        except TimeoutError:
-            logger.error("Slack Socket Mode startup timed out (30s)")
-            app.state.slack_socket_manager = None
-        except Exception as exc:
-            logger.error(
-                "Slack Socket Mode startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.slack_socket_manager = None
-
-        if _slack_enabled and app.state.slack_socket_manager is None:
-            logger.critical(
-                "Slack is enabled but Socket Mode failed to start — "
-                "Slack replies will NOT be received. "
-                "Install slack-bolt: pip install 'animaworks[communication]'"
-            )
-
-        # ── Discord Gateway ────────────────────────────────────
-        try:
-            from server.discord_gateway import DiscordGatewayManager
-
-            discord_manager = DiscordGatewayManager()
-            await asyncio.wait_for(discord_manager.start(), timeout=35)
-            app.state.discord_gateway_manager = discord_manager
-        except TimeoutError:
-            logger.error("Discord Gateway startup timed out (35s)")
-            app.state.discord_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Discord Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.discord_gateway_manager = None
-
-        # ── Discord channel → board sync (initial) ───────────
-        if app.state.discord_gateway_manager is not None:
+            # ── Discord Gateway ────────────────────────────────────
             try:
-                from server.discord_channel_sync import DiscordChannelSync
+                from server.gateways.discord_gateway import DiscordGatewayManager
 
-                discord_sync = DiscordChannelSync()
-                await discord_sync.sync(app.state.discord_gateway_manager)
-                app.state.discord_channel_sync = discord_sync
-            except Exception:
-                logger.warning("Initial Discord channel sync failed", exc_info=True)
+                discord_manager = DiscordGatewayManager()
+                await asyncio.wait_for(discord_manager.start(), timeout=35)
+                app.state.discord_gateway_manager = discord_manager
+            except TimeoutError:
+                logger.error("Discord Gateway startup timed out (35s)")
+                app.state.discord_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Discord Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.discord_gateway_manager = None
+
+            # ── Discord channel → board sync (initial) ───────────
+            if app.state.discord_gateway_manager is not None:
+                try:
+                    from server.gateways.discord_channel_sync import DiscordChannelSync
+
+                    discord_sync = DiscordChannelSync()
+                    await discord_sync.sync(app.state.discord_gateway_manager)
+                    app.state.discord_channel_sync = discord_sync
+                except Exception:
+                    logger.warning("Initial Discord channel sync failed", exc_info=True)
+                    app.state.discord_channel_sync = None
+            else:
                 app.state.discord_channel_sync = None
-        else:
-            app.state.discord_channel_sync = None
 
-        # ── Zoom RTMS Gateway ──────────────────────────────────
-        try:
-            from server.zoom_gateway import ZoomRTMSManager
-
-            zoom_manager = ZoomRTMSManager()
-            await asyncio.wait_for(zoom_manager.start(), timeout=35)
-            app.state.zoom_gateway_manager = zoom_manager
-        except TimeoutError:
-            logger.error("Zoom RTMS Gateway startup timed out (35s)")
-            app.state.zoom_gateway_manager = None
-        except Exception as exc:
-            logger.error(
-                "Zoom RTMS Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.zoom_gateway_manager = None
-
-        # ── GitHub Webhook Gateway ─────────────────────────────
-        try:
-            from server.github_gateway import GitHubWebhookManager
-
-            github_manager = GitHubWebhookManager()
-            await github_manager.start()
-            app.state.github_gateway_manager = github_manager
-        except Exception as exc:
-            logger.error(
-                "GitHub Webhook Gateway startup failed: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
-            app.state.github_gateway_manager = None
-
-        # ── Slack channel → board sync (initial) ──────────────
-        if app.state.slack_socket_manager is not None:
+            # ── Zoom RTMS Gateway ──────────────────────────────────
             try:
-                from server.slack_channel_sync import SlackChannelSync
+                from server.gateways.zoom_gateway import ZoomRTMSManager
 
-                channel_sync = SlackChannelSync()
-                await channel_sync.sync(app.state.slack_socket_manager)
-                app.state.slack_channel_sync = channel_sync
-            except Exception:
-                logger.warning("Initial Slack channel sync failed", exc_info=True)
+                zoom_manager = ZoomRTMSManager()
+                await asyncio.wait_for(zoom_manager.start(), timeout=35)
+                app.state.zoom_gateway_manager = zoom_manager
+            except TimeoutError:
+                logger.error("Zoom RTMS Gateway startup timed out (35s)")
+                app.state.zoom_gateway_manager = None
+            except Exception as exc:
+                logger.error(
+                    "Zoom RTMS Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.zoom_gateway_manager = None
+
+            # ── GitHub Webhook Gateway ─────────────────────────────
+            try:
+                from server.gateways.github_gateway import GitHubWebhookManager
+
+                github_manager = GitHubWebhookManager()
+                await github_manager.start()
+                app.state.github_gateway_manager = github_manager
+            except Exception as exc:
+                logger.error(
+                    "GitHub Webhook Gateway startup failed: %s: %s",
+                    type(exc).__name__,
+                    exc,
+                )
+                app.state.github_gateway_manager = None
+
+            # ── Slack channel → board sync (initial) ──────────────
+            if app.state.slack_socket_manager is not None:
+                try:
+                    from server.gateways.slack_channel_sync import SlackChannelSync
+
+                    channel_sync = SlackChannelSync()
+                    await channel_sync.sync(app.state.slack_socket_manager)
+                    app.state.slack_channel_sync = channel_sync
+                except Exception:
+                    logger.warning("Initial Slack channel sync failed", exc_info=True)
+                    app.state.slack_channel_sync = None
+            else:
                 app.state.slack_channel_sync = None
-        else:
-            app.state.slack_channel_sync = None
 
         # ── ConfigReloadManager ───────────────────────────────
         from server.reload_manager import ConfigReloadManager
@@ -664,52 +672,34 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
             raise
 
 
-async def _prepare_startup_vector_worker(app: FastAPI) -> None:
-    vector_worker = getattr(app.state, "vector_worker", None)
-    previous_vector_url_present = "ANIMAWORKS_VECTOR_URL" in os.environ
-    previous_vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
-    app.state._previous_vector_url_present = previous_vector_url_present
-    app.state._previous_vector_url = previous_vector_url
-    await _call_optional_async(vector_worker, "start")
-    vector_worker_url = getattr(vector_worker, "base_url", None)
-    if isinstance(vector_worker_url, str) and vector_worker_url:
-        os.environ["ANIMAWORKS_VECTOR_URL"] = vector_worker_url
-        logger.info("Server RAG vector access routed through vector worker: %s", vector_worker_url)
+def _prepare_child_env_urls(app: FastAPI) -> None:
+    from core.memory.rag.endpoints import RagEndpoints, child_env
 
     _embed_config = load_config()
     _server_port = getattr(app.state, "listen_port", getattr(_embed_config.server, "port", 18500))
-    app.state.child_env_urls = {
-        "ANIMAWORKS_EMBED_URL": f"http://127.0.0.1:{_server_port}/api/internal/embed",
-        "ANIMAWORKS_VECTOR_URL": f"http://127.0.0.1:{_server_port}/api/internal/vector",
-        "ANIMAWORKS_RERANK_URL": f"http://127.0.0.1:{_server_port}/api/internal/rerank",
-    }
+    app.state.child_env_urls = child_env(RagEndpoints.for_server(_server_port))
     app.state.supervisor.child_env_urls = app.state.child_env_urls
-
-
-async def _start_usage_governor_if_enabled(app: FastAPI) -> None:
-    from core.config.models import load_config as _load_cfg_gov
-
-    if _load_cfg_gov().server.usage_governor.enabled:
-        from core.paths import get_data_dir
-        from server.usage_governor import UsageGovernor
-
-        governor = UsageGovernor(app, get_data_dir(), app.state.animas_dir)
-        app.state.usage_governor = governor
-        await governor.start()
-    else:
-        logger.info("Usage Governor is disabled (server.usage_governor.enabled=false)")
 
 
 async def _run_startup_initialization(app: FastAPI) -> None:
     """Run heavyweight startup work after the ASGI app is accepting requests."""
     app.state.worker_services_ready = False
     try:
-        startup_progress.set_phase("preflight", detail=t("startup.detail_vector_worker"), reset_counts=True)
-        await _prepare_startup_vector_worker(app)
+        from core.config.helper_models import validate_helper_model_credentials
+
+        try:
+            validate_helper_model_credentials(app.state.animas_dir)
+        except Exception as exc:
+            logger.warning("Helper model credential validation skipped: %s", type(exc).__name__)
+
+        _prepare_child_env_urls(app)
+        from core.memory.rag.vector_registry import configure_server_vector_access
+
+        configure_server_vector_access(app.state.supervisor.send_request, asyncio.get_running_loop())
 
         preflight_runner = getattr(app.state, "startup_preflight_runner", _startup_default_preflight_runner)
         startup_progress.set_phase("preflight", detail=t("startup.detail_preflight"), reset_counts=True)
-        await asyncio.to_thread(preflight_runner, force_all_vectordb=False)
+        await asyncio.to_thread(preflight_runner)
 
         startup_progress.raise_if_cancelled()
         app.state.worker_services_ready = True
@@ -720,7 +710,6 @@ async def _run_startup_initialization(app: FastAPI) -> None:
             total_count=len(getattr(app.state, "anima_names", []) or []),
         )
         await _startup_animas_background(app, suppress_errors=False)
-        await _start_usage_governor_if_enabled(app)
         startup_progress.set_phase("ready", detail=t("startup.detail_ready"), reset_counts=True)
         logger.info("Server startup initialization complete")
     except asyncio.CancelledError:
@@ -740,11 +729,14 @@ async def _run_model_warmup() -> None:
     20-30s cold-load penalty."""
 
     def _warm_native() -> None:
-        from core.memory.rag.singleton import thread_safe_encode
+        from core.config import load_config
+        from core.memory.rag.embedding import thread_safe_encode
         from core.memory.retrieval.reranker import get_reranker
 
         thread_safe_encode(["ウォームアップ"], purpose="query")
-        get_reranker().score_sync("ウォームアップ", ["テスト"])
+        model_name = load_config().rag.cross_encoder_model
+        reranker = get_reranker(model_name) if model_name else get_reranker()
+        reranker.score_sync("ウォームアップ", ["テスト"])
 
     try:
         await asyncio.to_thread(_warm_native)
@@ -760,6 +752,9 @@ async def _run_model_warmup() -> None:
         # 1s of 16kHz mono PCM16 silence — enough to force the model load.
         await stt.transcribe_buffer_async(b"\x00\x00" * 16000)
         logger.info("Model warmup complete: stt")
+    except ImportError as exc:
+        # Voice input is an optional extra; say so once instead of a traceback.
+        logger.info("Voice STT warmup skipped: %s", exc)
     except Exception:
         logger.exception("Model warmup failed: stt")
 
@@ -775,41 +770,6 @@ async def _warm_model_catalog() -> None:
         logger.exception("Model catalog warmup failed")
 
 
-async def _warm_voice_greets(app: FastAPI) -> None:
-    """Pre-populate the greet cache for voice-enabled animas (those with a
-    per-anima voice_id) so the popup greeting is instant after a restart."""
-    import json as _json
-
-    from core.paths import get_animas_dir
-
-    voiced: list[str] = []
-    try:
-        for status_path in sorted(get_animas_dir().glob("*/status.json")):
-            try:
-                voice = _json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {}
-            except (OSError, ValueError):
-                continue
-            if isinstance(voice, dict) and voice.get("voice_id"):
-                voiced.append(status_path.parent.name)
-    except OSError:
-        return
-    if not voiced:
-        return
-
-    supervisor = app.state.supervisor
-    for name in voiced:
-        # Wait for the anima process to come up (startup spawns them async).
-        for _ in range(60):
-            if supervisor.get_process_status(name).get("status") == "running":
-                break
-            await asyncio.sleep(5)
-        try:
-            await supervisor.send_request(anima_name=name, method="greet", params={}, timeout=120.0)
-            logger.info("Voice greet cache warmed: %s", name)
-        except Exception as e:
-            logger.info("Voice greet warmup skipped (%s): %s", name, e)
-
-
 async def _activate_runtime_services(app: FastAPI) -> None:
     """Start the runtime both at boot and when the setup wizard finishes."""
     app.state.worker_services_ready = False
@@ -821,7 +781,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     gp_cache = GlobalPermissionsCache.get()
     gp_path = get_global_permissions_path()
     try:
-        gp_cache.load(gp_path)
+        gp_cache.load(gp_path, confirm_change=_confirm_global_permissions_change)
     except SystemExit:
         raise
     except FileNotFoundError:
@@ -852,7 +812,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     msg_log_scheduler = AsyncIOScheduler(timezone=get_app_timezone())
 
     # ── Orphan anima detection ───────────────────────
-    from core.org_sync import detect_orphan_animas
+    from core.org.org_sync import detect_orphan_animas
 
     def _detect_orphans_task() -> None:
         try:
@@ -868,41 +828,8 @@ async def _activate_runtime_services(app: FastAPI) -> None:
         replace_existing=True,
     )
 
-    # ── Asset reconciliation (periodic) ───────────────
-    from core.asset_reconciler import reconcile_all_assets
-
-    async def _reconcile_assets_periodic() -> None:
-        try:
-            enable_3d = True
-            image_style = "realistic"
-            try:
-                from core.config.models import load_config
-
-                _cfg = load_config()
-                enable_3d = _cfg.image_gen.enable_3d
-                image_style = _cfg.image_gen.image_style or "realistic"
-            except Exception:
-                pass
-            await reconcile_all_assets(
-                app.state.animas_dir,
-                enable_3d=enable_3d,
-                image_style=image_style,
-            )
-        except asyncio.CancelledError:
-            logger.debug("Asset reconciliation cancelled (shutdown)")
-        except Exception:
-            logger.exception("Periodic asset reconciliation failed")
-
-    msg_log_scheduler.add_job(
-        _reconcile_assets_periodic,
-        IntervalTrigger(minutes=5),
-        id="asset_reconciliation",
-        name="System: Asset Reconciliation",
-        replace_existing=True,
-    )
-
     # ── Claude CLI / SDK auto-update ─────────────────
-    from core.auto_updater import run_update_check
+    from server.supervisor.auto_updater import run_update_check
 
     async def _auto_update_claude() -> None:
         try:
@@ -971,9 +898,9 @@ async def _activate_runtime_services(app: FastAPI) -> None:
             from datetime import UTC, datetime
 
             from core.config.models import load_config as _lc
-            from core.external_tasks.collector import collect_all
-            from core.external_tasks.store import ExternalTaskStore
             from core.paths import get_external_tasks_store_path
+            from core.tasks.external.collector import collect_all
+            from core.tasks.external.store import ExternalTaskStore
 
             store = ExternalTaskStore(get_external_tasks_store_path())
             previous = store.load()
@@ -997,7 +924,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
             replace_existing=True,
         )
         # Immediate non-blocking run on startup
-        asyncio.create_task(_external_tasks_collection())
+        spawn(_external_tasks_collection(), name="external-tasks-collection")
 
     msg_log_scheduler.start()
     app.state.msg_log_scheduler = msg_log_scheduler
@@ -1010,21 +937,83 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     )
     app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
     app.state._model_catalog_warmup_task = asyncio.create_task(_warm_model_catalog())
-    app.state._voice_greet_warmup_task = asyncio.create_task(_warm_voice_greets(app))
 
     logger.info("Server started (startup initialization running in background)")
 
 
+def _enclave_usage_summary(anima_dir: Path, days: int) -> dict[str, object]:
+    """Token usage plus budget fields for one anima, served by the enclave ``/v1/usage``."""
+    from core.usage.token_budget import read_budget_fields
+    from core.usage.token_usage import TokenUsageLogger
+
+    summary = TokenUsageLogger(anima_dir).summarize(days)
+    summary.update(read_budget_fields(anima_dir))
+    return summary
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.tasks.board.tasks import ensure_task_store_schema
+
+    ensure_task_store_schema(Path(app.state.shared_dir) / "taskboard.sqlite3")
     app.state.activate_runtime = lambda: _activate_runtime_services(app)
     if app.state.setup_complete:
         await app.state.activate_runtime()
     else:
         startup_progress.set_phase("ready", detail=t("startup.detail_setup_mode"), reset_counts=True)
         logger.info("Server started in setup mode (setup not yet complete)")
+    # Enclave gateway: start only when enclave mode is enabled (fail-closed on
+    # socket-rebinding errors).
+    from core.enclave.gateway_server import start_gateway
+
+    await start_gateway(app, usage_reader=_enclave_usage_summary)
+
+    from server.enclave_delivery import host_delivery_loop, should_start_host_delivery
+
+    delivery_config = load_config()
+    app.state.enclave_host_delivery_task = None
+    app.state.enclave_host_delivery_stop = None
+    if should_start_host_delivery(delivery_config):
+        delivery_stop = Event()
+        delivery_warnings: dict[str, str] = {}
+        app.state.enclave_host_delivery_stop = delivery_stop
+        app.state.enclave_host_delivery_task = asyncio.create_task(
+            host_delivery_loop(
+                delivery_config.enclaves,
+                app.state.anima_names,
+                app.state.shared_dir,
+                stop_event=delivery_stop,
+                warning_state=delivery_warnings,
+                interval_s=60.0,
+            ),
+            name="enclave-host-delivery",
+        )
+        logger.info("Enclave host result delivery started")
+
+    feed_prewarm_task = None
+    if app.state.setup_complete:
+        feed_prewarm_task = asyncio.create_task(
+            _prewarm_conversation_feeds(app),
+            name="conversation-feed-prewarm",
+        )
+
     yield
     # Shutdown
+    if feed_prewarm_task is not None and not feed_prewarm_task.done():
+        feed_prewarm_task.cancel()
+        try:
+            await feed_prewarm_task
+        except asyncio.CancelledError:
+            pass
+    delivery_stop = getattr(app.state, "enclave_host_delivery_stop", None)
+    delivery_task = getattr(app.state, "enclave_host_delivery_task", None)
+    if delivery_stop is not None:
+        delivery_stop.set()
+    if delivery_task is not None:
+        try:
+            await delivery_task
+        except asyncio.CancelledError:
+            pass
     if app.state.setup_complete:
         # Cancel background startup if still running
         startup_task = getattr(app.state, "_anima_startup_task", None)
@@ -1053,43 +1042,63 @@ async def lifespan(app: FastAPI):
             await app.state.zoom_gateway_manager.stop()
         if getattr(app.state, "github_gateway_manager", None):
             await app.state.github_gateway_manager.stop()
-        governor = getattr(app.state, "usage_governor", None)
-        if governor:
-            await governor.stop()
+        from core.enclave.gateway_server import stop_gateway
+
+        await stop_gateway(app)
         await app.state.supervisor.shutdown_all()
-        vector_worker = getattr(app.state, "vector_worker", None)
-        await _call_optional_async(vector_worker, "stop")
-        if getattr(app.state, "_previous_vector_url_present", False) is True:
-            previous = getattr(app.state, "_previous_vector_url", None)
-            if isinstance(previous, str):
-                os.environ["ANIMAWORKS_VECTOR_URL"] = previous
-        else:
-            os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+        from core.memory.rag.vector_registry import configure_server_vector_access
+
+        configure_server_vector_access(None)
+        from core.paths import get_data_dir as _shutdown_get_data_dir
+        from server.internal_auth import remove_operator_token
+
+        try:
+            remove_operator_token(_shutdown_get_data_dir() / "run" / "internal_api.auth")
+        except Exception:
+            logger.exception("Failed to remove operator token file")
         if hasattr(app.state, "msg_log_scheduler"):
             app.state.msg_log_scheduler.shutdown(wait=False)
     logger.info("Server stopped")
 
 
+async def _prewarm_conversation_feeds(app: FastAPI) -> None:
+    """Warm the first default-thread feed page after startup has settled."""
+    await asyncio.sleep(60)
+    from core.activity.logger import ActivityLogger
+
+    for name in list(getattr(app.state, "anima_names", []) or []):
+        anima_dir = Path(app.state.animas_dir) / name
+        if not anima_dir.is_dir():
+            continue
+        try:
+            activity = ActivityLogger(anima_dir)
+            await asyncio.to_thread(
+                activity.get_conversation_feed,
+                thread_id="default",
+                min_user_items=10,
+                _schedule_prefetch=False,
+            )
+        except Exception:
+            logger.debug("Conversation feed prewarm failed for %s", name, exc_info=True)
+
+
 def create_app(
     animas_dir: Path,
     shared_dir: Path,
-    *,
-    force_startup_repair_all_vectordb: bool = False,
 ) -> FastAPI:
+    from core.infra.event_export import register_activity_event_exporter
+
+    register_activity_event_exporter()
     app = FastAPI(title="AnimaWorks", version=_get_app_version(), lifespan=lifespan)
 
     ws_manager = WebSocketManager()
 
-    # Run Person→Anima rename migration before any animas_dir access
-    try:
-        from core.config.migrate import migrate_person_to_anima
-        from core.paths import get_data_dir as _get_data_dir
-
-        migrate_person_to_anima(_get_data_dir())
-    except Exception:
-        logger.exception("Person-to-Anima migration failed")
-
     config = load_config()
+
+    from core.enclave import enforce_enclave_runtime
+    from core.paths import get_data_dir
+
+    enforce_enclave_runtime(config, get_data_dir(), host=None)
     _base_path = _normalize_base_path(getattr(config.server, "base_path", ""))
 
     # Create run directory for sockets and PID files
@@ -1101,19 +1110,12 @@ def create_app(
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    from core.memory.rag.vector_worker_client import VectorWorkerManager
-
-    vector_worker = VectorWorkerManager.from_config(config, log_dir=log_dir)
-
-    from core.supervisor.manager import HealthConfig
-
     health_cfg = HealthConfig()
     try:
-        health_cfg.busy_hang_threshold_sec = float(config.server.busy_hang_threshold)
         health_cfg.health_check_warmup_seconds = float(config.server.health_check_warmup_seconds)
         health_cfg.runner_warmup_seconds = float(config.server.runner_warmup_seconds)
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
 
     supervisor = ProcessSupervisor(
         animas_dir=animas_dir,
@@ -1122,21 +1124,10 @@ def create_app(
         log_dir=log_dir,
         ws_manager=ws_manager,
         health_config=health_cfg,
-        vector_worker_manager=vector_worker,
     )
 
-    # Auto-migrate old Japanese cron.md format to standard cron expressions
-    try:
-        from core.config.migrate import migrate_all_cron
-
-        migrated = migrate_all_cron(animas_dir)
-        if migrated:
-            logger.info("Auto-migrated %d anima(s) cron.md to standard cron format", migrated)
-    except Exception:
-        logger.exception("Cron format auto-migration failed")
-
     # Discover anima names from disk (respect status.json)
-    from core.supervisor.manager import ProcessSupervisor as _PS
+    from server.supervisor.manager import ProcessSupervisor as _PS
 
     anima_names: list[str] = []
     if animas_dir.exists():
@@ -1149,14 +1140,24 @@ def create_app(
                 logger.info("Discovered anima: %s", anima_dir.name)
 
     app.state.supervisor = supervisor
+
+    # Internal API caller authentication (R04-1): a per-server secret from which
+    # per-anima / operator tokens are derived.  The secret lives only in
+    # process memory and is regenerated on every start.
+    from server.internal_auth import InternalAuth, set_current_auth, write_operator_token
+
+    internal_auth = InternalAuth.generate()
+    app.state.internal_auth = internal_auth
+    supervisor.internal_auth = internal_auth
+    set_current_auth(internal_auth)
+    write_operator_token(run_dir / "internal_api.auth")
+
     app.state.anima_names = anima_names
     app.state.ws_manager = ws_manager
     app.state.animas_dir = animas_dir
     app.state.shared_dir = shared_dir
     app.state.setup_complete = config.setup_complete
     app.state.worker_services_ready = False
-    app.state.vector_worker = vector_worker
-    app.state.force_startup_repair_all_vectordb = False
     app.state.startup_preflight_runner = _startup_default_preflight_runner
 
     # Meeting room manager
@@ -1205,12 +1206,14 @@ def create_app(
         if not setup_complete:
             # During setup: only setup API and the static assets needed by
             # the setup wizard are accessible.  The setup HTML imports shared
-            # modules through the versioned static route.
+            # modules through the versioned static route, and the wizard steps
+            # import the same-origin fetch wrapper from /modules/api.js.
             if (
                 path.startswith("/api/setup")
                 or path.startswith("/setup")
                 or path.startswith("/_v/")
                 or path.startswith("/shared/")
+                or path == "/modules/api.js"
             ):
                 response = await call_next(request)
                 # Prevent browser caching of setup static files so code
@@ -1242,17 +1245,6 @@ def create_app(
 
     # ── Auth guard middleware ──────────────────────────────
     # Paths that don't require authentication
-    _AUTH_WHITELIST_PREFIXES = (
-        "/api/auth/login",
-        "/api/system/health",
-        "/api/setup",
-        "/api/approve",
-        # Webhook receivers authenticate via per-platform HMAC signature
-        # verification (Slack/Chatwork/Zoom), not session cookies.
-        "/api/webhooks/",
-        "/health",
-    )
-
     @app.middleware("http")
     async def auth_guard(request: Request, call_next):
         path = request.url.path
@@ -1266,6 +1258,17 @@ def create_app(
 
         # Skip if local_trust mode
         if auth_config.auth_mode == "local_trust":
+            return await call_next(request)
+
+        # Internal API caller verification: a valid internal token lets an
+        # in-process / sandboxed caller through regardless of trust_localhost,
+        # so anima processes still work under password mode with
+        # trust_localhost=false.
+        if (
+            path.startswith("/api/internal/")
+            and getattr(request.app.state, "internal_auth", None) is not None
+            and request.app.state.internal_auth.verify(request.headers.get("X-AnimaWorks-Internal-Auth")) is not None
+        ):
             return await call_next(request)
 
         # Localhost trust: skip auth for verified local connections
@@ -1469,11 +1472,15 @@ def create_app(
     if _pixel_workspace_html_raw:
 
         @app.get("/workspace/pixel", include_in_schema=False)
-        async def _redirect_pixel_workspace():
-            return RedirectResponse(_base_prefixed("/workspace/pixel/"))
+        async def _redirect_pixel_workspace(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
+            return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
         @app.get("/workspace/pixel/", include_in_schema=False)
-        async def _serve_pixel_workspace_index():
+        async def _serve_pixel_workspace_index(request: Request):
+            if "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?renderer=pixel"))
             return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
     battle_index = static_dir / "battle" / "index.html"
@@ -1482,7 +1489,9 @@ def create_app(
 
         @app.get("/battle", include_in_schema=False)
         @app.get("/battle/", include_in_schema=False)
-        async def _serve_battle_index():
+        async def _serve_battle_index(request: Request):
+            if "demo" not in request.query_params and "mock" not in request.query_params:
+                return RedirectResponse(_base_prefixed("/workspace/?view=battle"))
             return HTMLResponse(_inject_html(battle_html), headers={"Cache-Control": "no-store"})
 
     if setup_static_dir.exists():

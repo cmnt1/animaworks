@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 @pytest.fixture

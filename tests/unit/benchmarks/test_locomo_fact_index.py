@@ -69,7 +69,7 @@ def test_write_fact_records_creates_markdown_and_skips_existing(tmp_path: Path) 
     fact_file = tmp_path / f"fact_{records[0].fact_id}.md"
     text = fact_file.read_text(encoding="utf-8")
     assert text.startswith("---\n")
-    assert "source_episode: \"episodes/conv-26.md\"" in text
+    assert 'source_episode: "episodes/conv-26.md"' in text
     assert "Caroline: I recommended Becoming Nicole." in text
     jsonl = tmp_path / "locomo_facts.jsonl"
     payload = json.loads(jsonl.read_text(encoding="utf-8").strip())

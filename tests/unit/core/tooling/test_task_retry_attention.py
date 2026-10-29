@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_handler(tmp_path: Path) -> Any:
@@ -15,7 +15,6 @@ def _make_handler(tmp_path: Path) -> Any:
     handler._anima_dir = tmp_path / "data" / "animas" / "sakura"
     handler._anima_name = "sakura"
     handler._activity = MagicMock()
-    handler._pending_executor_wake = None
     (handler._anima_dir / "state").mkdir(parents=True, exist_ok=True)
     return handler
 

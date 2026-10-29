@@ -13,16 +13,15 @@ Covers:
 - Maximum 50 messages are recorded per inbox run
 - Episode recording failures do not block inbox processing completion
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 from core.schemas import Message
 from core.tooling.handler import active_session_type
-
 
 # ══════════════════════════════════════════════════════════
 # TestHeartbeatMessageEpisodeRecording
@@ -37,11 +36,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -50,10 +51,13 @@ class TestHeartbeatMessageEpisodeRecording:
             # Create a message from "mio"
             msg = Message(from_person="mio", to_person="alice", content="Hello from mio")
             MockMsg.return_value.has_unread.return_value = True
-            MockMsg.return_value.receive_with_paths.return_value = [InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))]
+            MockMsg.return_value.receive_with_paths.return_value = [
+                InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))
+            ]
             MockMsg.return_value.archive_paths.return_value = 1
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -90,11 +94,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -112,7 +118,8 @@ class TestHeartbeatMessageEpisodeRecording:
             ]
             MockMsg.return_value.archive_paths.return_value = 3
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -155,11 +162,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -177,7 +186,8 @@ class TestHeartbeatMessageEpisodeRecording:
             ]
             MockMsg.return_value.archive_paths.return_value = 3
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -217,11 +227,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -231,10 +243,13 @@ class TestHeartbeatMessageEpisodeRecording:
             long_content = "A" * 1500
             msg = Message(from_person="mio", to_person="alice", content=long_content)
             MockMsg.return_value.has_unread.return_value = True
-            MockMsg.return_value.receive_with_paths.return_value = [InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))]
+            MockMsg.return_value.receive_with_paths.return_value = [
+                InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))
+            ]
             MockMsg.return_value.archive_paths.return_value = 1
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -274,11 +289,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -295,7 +312,8 @@ class TestHeartbeatMessageEpisodeRecording:
             ]
             MockMsg.return_value.archive_paths.return_value = 60
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -338,11 +356,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -351,7 +371,8 @@ class TestHeartbeatMessageEpisodeRecording:
             # No unread messages
             MockMsg.return_value.has_unread.return_value = False
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
@@ -368,11 +389,13 @@ class TestHeartbeatMessageEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             # Make append_episode raise an exception
@@ -382,10 +405,13 @@ class TestHeartbeatMessageEpisodeRecording:
             # Create a message
             msg = Message(from_person="mio", to_person="alice", content="Test message")
             MockMsg.return_value.has_unread.return_value = True
-            MockMsg.return_value.receive_with_paths.return_value = [InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))]
+            MockMsg.return_value.receive_with_paths.return_value = [
+                InboxItem(msg=msg, path=Path(f"/fake/{msg.id}.json"))
+            ]
             MockMsg.return_value.archive_paths.return_value = 1
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()

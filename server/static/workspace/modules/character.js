@@ -236,7 +236,7 @@ export function updateAllCharacters(deltaTime, elapsedTime) {
  * Each mesh has `userData.animaName` set.
  * @returns {THREE.Object3D[]}
  */
-export function getCharacterMeshes() {
+function getCharacterMeshes() {
   /** @type {THREE.Object3D[]} */
   const meshes = [];
   for (const rec of _characters.values()) {
@@ -255,7 +255,7 @@ export function getCharacterMeshes() {
  * @param {THREE.Intersection[]} intersects
  * @returns {string | null}
  */
-export function getCharacterAtIntersection(intersects) {
+function getCharacterAtIntersection(intersects) {
   for (const hit of intersects) {
     const name = hit.object.userData.animaName;
     if (name && _characters.has(name)) {
@@ -269,7 +269,7 @@ export function getCharacterAtIntersection(intersects) {
  * Dispose all characters and shared resources.
  * Call this when tearing down the 3D scene.
  */
-export function disposeCharacters() {
+function disposeCharacters() {
   const names = [..._characters.keys()];
   for (const name of names) {
     removeCharacter(name);

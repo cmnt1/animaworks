@@ -1,51 +1,52 @@
 ---
 name: local-llm-tool
 description: >-
-  Local LLM execution tool for text generation and chat through Ollama or vLLM endpoints.
-  Use when: running on-prem inference, calling a local GPU model, or summarizing with a self-hosted LLM.
+  A local LLM execution tool. Requests text generation and chat from models on GPU via Ollama or vLLM.
+  Use when: Use when: on-premise inference, calling Ollama endpoints, or needing summaries and generation with local models.
 tags: [llm, local, ollama, external]
 ---
 
+
 # Local LLM Tool
 
-External tool for text generation and chat via local LLM (Ollama/vLLM).
+An external tool that performs text generation and chat via local LLMs (Ollama/vLLM）).
 
-## Invocation via Bash
+## How to Call
 
-Use **Bash** with `animaworks-tool local_llm <subcommand> [args]`. See Actions below for syntax.
+**Bash**: Run with `animaworks-tool local_llm <サブコマンド> [引数]`
 
-## Actions
+## List of Actions
 
-### generate — Text generation
-```json
-{"tool_name": "local_llm", "action": "generate", "args": {"prompt": "prompt text", "system": "system prompt (optional)", "temperature": 0.7, "max_tokens": 2048}}
+### generate — Text Generation
+```bash
+animaworks-tool local_llm generate "プロンプト" [-S "システムプロンプト"]
 ```
 
-### chat — Multi-turn chat
-```json
-{"tool_name": "local_llm", "action": "chat", "args": {"messages": [{"role": "user", "content": "question"}], "system": "system prompt (optional)"}}
+### chat — Chat (Multi-turn)
+```bash
+animaworks-tool local_llm chat [--messages JSON] [-S "システムプロンプト"]
 ```
 
-### models — List available models
-```json
-{"tool_name": "local_llm", "action": "models", "args": {}}
+### models — List Models
+```bash
+animaworks-tool local_llm list
 ```
 
-### status — Server status
-```json
-{"tool_name": "local_llm", "action": "status", "args": {}}
+### status — Check Server Status
+```bash
+animaworks-tool local_llm status
 ```
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
-animaworks-tool local_llm generate "prompt" [-S "system prompt"]
+animaworks-tool local_llm generate "プロンプト" [-S "システムプロンプト"]
 animaworks-tool local_llm list
 animaworks-tool local_llm status
 ```
 
 ## Notes
 
-- Ollama or vLLM server must be running
-- Use -s/--server to specify server URL
-- Use -m/--model to specify model
+- The Ollama server or vLLM server must be running
+- -s/--server can be used to specify the server URL
+- -m/--model can be used to specify the model

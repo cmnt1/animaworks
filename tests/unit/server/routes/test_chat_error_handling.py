@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
-from core.supervisor.ipc import IPCResponse
+from core.runtime.ipc import IPCResponse
 from server.stream_registry import StreamRegistry
 
 

@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import time
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
 from core.platform.locks import file_lock
 
 logger = logging.getLogger("animaworks.memory")
@@ -60,27 +59,6 @@ def _shared_values(value: dict[str, object], path: Path) -> dict[str, str]:
     return meta
 
 
-def _atomic_write(path: Path, meta: dict[str, str]) -> None:
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            delete=False,
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-            json.dump(meta, temp_file, indent=2, ensure_ascii=False)
-            temp_file.write("\n")
-            temp_file.flush()
-            os.fsync(temp_file.fileno())
-        os.replace(temp_path, path)
-    finally:
-        if temp_path is not None and temp_path.exists():
-            temp_path.unlink()
-
-
 def _load_or_migrate_locked(anima_dir: Path) -> dict[str, str]:
     path = shared_index_meta_path(anima_dir)
     if path.exists():
@@ -98,7 +76,7 @@ def _load_or_migrate_locked(anima_dir: Path) -> dict[str, str]:
                 raise
             time.sleep(0.001)
     if legacy:
-        _atomic_write(path, legacy)
+        atomic_write_json(path, legacy)
     return legacy
 
 
@@ -133,7 +111,7 @@ def write_shared_hashes(anima_dir: Path, updates: dict[str, str]) -> None:
     with lock_path.open("a+", encoding="utf-8") as lock_file, file_lock(lock_file, exclusive=True):
         meta = _load_or_migrate_locked(anima_dir)
         meta.update(updates)
-        _atomic_write(shared_index_meta_path(anima_dir), meta)
+        atomic_write_json(shared_index_meta_path(anima_dir), meta)
 
 
 def write_shared_hash(anima_dir: Path, key: str, value: str) -> None:
@@ -181,4 +159,4 @@ def clear_shared_meta(anima_dir: Path) -> None:
     lock_path = anima_dir / SHARED_INDEX_META_LOCK_FILE
     with lock_path.open("a+", encoding="utf-8") as lock_file, file_lock(lock_file, exclusive=True):
         if path.exists():
-            _atomic_write(path, {})
+            atomic_write_json(path, {})

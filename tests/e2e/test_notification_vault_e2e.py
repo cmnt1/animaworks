@@ -24,6 +24,14 @@ from core.tooling.handler import ToolHandler
 # ── Fixtures ──────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
+
+
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "vault-test"

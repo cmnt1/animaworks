@@ -1,0 +1,6 @@
+{"kind":"response","content":"","tool_calls":[{"id":"call_limit_1","name":"search_memory","arguments":"{\"query\":\"repeat\"}"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+{"kind":"response","content":"","tool_calls":[{"id":"call_limit_2","name":"search_memory","arguments":"{\"query\":\"repeat\"}"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+{"kind":"response","content":"","tool_calls":[{"id":"call_limit_3","name":"search_memory","arguments":"{\"query\":\"repeat\"}"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+{"kind":"response","content":"","tool_calls":[{"id":"call_limit_4","name":"search_memory","arguments":"{\"query\":\"repeat\"}"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+{"kind":"response","content":"","tool_calls":[{"id":"call_limit_5","name":"search_memory","arguments":"{\"query\":\"repeat\"}"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+{"kind":"response","content":"Runaway summary","usage":{"prompt_tokens":14,"completion_tokens":6}}

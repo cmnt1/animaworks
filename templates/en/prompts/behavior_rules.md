@@ -18,7 +18,7 @@
 - Put the [IMPORTANT] tag at the top of knowledge that must never be forgotten.
 
 ### Communication
-- Reply to unread messages only when a response is needed. Do not exchange greetings, praise, or acknowledgements alone, and do not repeat the same topic without new information.
+- Reply to unread messages only when a response is needed. Do not reply to messages that are only greetings, praise, acknowledgements, or thanks, and do not repeat the same topic without new information.
 - When you identify work that needs doing, do not stop at a reply. Always turn it into a concrete task.
 - If a message carries [reply_instruction: ...], reply according to that instruction and do not use send_message.
 - Internalize standing instructions such as "always check X" or "do Y every morning" by adding them to heartbeat.md or cron.md, and report back to the instructor.

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -21,8 +22,6 @@ Covers:
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -56,12 +55,15 @@ def _make_handler(tmp_path: Path, anima_name: str = "supervisor"):
     handler._subordinate_management_files = []
 
     import uuid
+
     handler._session_id = uuid.uuid4().hex[:12]
 
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
+
     handler._activity = MagicMock(spec=ActivityLogger)
 
     from core.tooling.dispatch import ExternalToolDispatcher
+
     handler._external = MagicMock(spec=ExternalToolDispatcher)
 
     return handler
@@ -108,9 +110,7 @@ class TestSetSubordinateModel:
             ),
             patch("core.paths.get_data_dir", return_value=tmp_path),
         ):
-            result = handler._handle_set_subordinate_model(
-                {"name": "engineer", "model": known_model}
-            )
+            result = handler._handle_set_subordinate_model({"name": "engineer", "model": known_model})
 
         # Should succeed (no error JSON)
         assert "error" not in result.lower() or "警告" in result
@@ -118,6 +118,34 @@ class TestSetSubordinateModel:
         # status.json was updated
         updated_status = json.loads(status_file.read_text(encoding="utf-8"))
         assert updated_status["model"] == known_model
+
+    def test_anima_process_delegates_model_change_to_root_api(self, tmp_path: Path, monkeypatch):
+        from core.platform.process_role import PROCESS_ROLE_ENV
+
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = self._animas_dir(tmp_path) / "engineer"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        status_path = target_dir / "status.json"
+        status_path.write_text(json.dumps({"enabled": True, "supervisor": "manager"}), encoding="utf-8")
+        original_status = status_path.read_bytes()
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "ok": True,
+            "changed": True,
+            "result": {"model": "claude-sonnet-4-6", "family_changed": False},
+        }
+        monkeypatch.setenv(PROCESS_ROLE_ENV, "task_runner")
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.host_api.host_api.post", return_value=response) as mock_post,
+        ):
+            result = handler._handle_set_subordinate_model({"name": "engineer", "model": "claude-sonnet-4-6"})
+
+        assert "claude-sonnet-4-6" in result
+        assert mock_post.call_args.args[0] == "/api/internal/animas/engineer/control"
+        assert mock_post.call_args.kwargs["json"] == {"action": "set_model", "model": "claude-sonnet-4-6"}
+        assert status_path.read_bytes() == original_status
 
     def test_set_model_unknown_model_warns(self, tmp_path: Path, caplog):
         """Models outside KNOWN_MODELS succeed but emit a warning."""
@@ -141,9 +169,7 @@ class TestSetSubordinateModel:
             patch("core.paths.get_data_dir", return_value=tmp_path),
             caplog.at_level(logging.WARNING),
         ):
-            result = handler._handle_set_subordinate_model(
-                {"name": "engineer", "model": "unknown/totally-fake-model"}
-            )
+            result = handler._handle_set_subordinate_model({"name": "engineer", "model": "unknown/totally-fake-model"})
 
         # Should still return success (not an error)
         try:
@@ -161,9 +187,7 @@ class TestSetSubordinateModel:
         """Empty name returns InvalidArguments error."""
         handler = _make_handler(tmp_path, "manager")
 
-        result = handler._handle_set_subordinate_model(
-            {"name": "", "model": "claude-sonnet-4-6"}
-        )
+        result = handler._handle_set_subordinate_model({"name": "", "model": "claude-sonnet-4-6"})
 
         parsed = _parse_error(result)
         assert parsed["status"] == "error"
@@ -173,9 +197,7 @@ class TestSetSubordinateModel:
         """Empty model returns InvalidArguments error."""
         handler = _make_handler(tmp_path, "manager")
 
-        result = handler._handle_set_subordinate_model(
-            {"name": "engineer", "model": ""}
-        )
+        result = handler._handle_set_subordinate_model({"name": "engineer", "model": ""})
 
         parsed = _parse_error(result)
         assert parsed["status"] == "error"
@@ -185,19 +207,20 @@ class TestSetSubordinateModel:
         """Non-subordinate target returns PermissionDenied error."""
         handler = _make_handler(tmp_path, "manager")
 
-        perm_denied = json.dumps({
-            "status": "error",
-            "error_type": "PermissionDenied",
-            "message": "'stranger' はあなたの直属部下ではありません",
-        }, ensure_ascii=False)
+        perm_denied = json.dumps(
+            {
+                "status": "error",
+                "error_type": "PermissionDenied",
+                "message": "'stranger' はあなたの直属部下ではありません",
+            },
+            ensure_ascii=False,
+        )
 
         with patch(
             "core.tooling.handler.ToolHandler._check_descendant",
             return_value=perm_denied,
         ):
-            result = handler._handle_set_subordinate_model(
-                {"name": "stranger", "model": "claude-sonnet-4-6"}
-            )
+            result = handler._handle_set_subordinate_model({"name": "stranger", "model": "claude-sonnet-4-6"})
 
         # Result must be the PermissionDenied error unchanged
         parsed = _parse_error(result)
@@ -208,6 +231,25 @@ class TestSetSubordinateModel:
 # ── restart_subordinate tests ─────────────────────────────
 
 
+class TestDisableSubordinate:
+    def test_disable_rejects_corrupt_status_without_overwriting(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = tmp_path / "animas" / "engineer"
+        target_dir.mkdir(parents=True)
+        status_file = target_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            result = handler._handle_disable_subordinate({"name": "engineer"})
+
+        assert _parse_error(result)["status"] == "error"
+        assert status_file.read_bytes() == original
+
+
 class TestRestartSubordinate:
     """Tests for ToolHandler._handle_restart_subordinate()."""
 
@@ -216,6 +258,22 @@ class TestRestartSubordinate:
         d = tmp_path / "animas" / name
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def test_restart_rejects_corrupt_status_without_overwriting(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = self._make_target_dir(tmp_path, "engineer")
+        status_file = target_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            result = handler._handle_restart_subordinate({"name": "engineer"})
+
+        assert _parse_error(result)["status"] == "error"
+        assert status_file.read_bytes() == original
 
     def test_restart_success(self, tmp_path: Path):
         """restart_requested: true is written to an existing status.json."""
@@ -236,7 +294,9 @@ class TestRestartSubordinate:
             patch(
                 "core.tooling.handler._handle_restart_subordinate.__module__",
                 create=True,
-            ) if False else patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+            )
+            if False
+            else patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             result = handler._handle_restart_subordinate({"name": "engineer"})
 
@@ -269,7 +329,7 @@ class TestRestartSubordinate:
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
-            result = handler._handle_restart_subordinate({"name": "newbie"})
+            handler._handle_restart_subordinate({"name": "newbie"})
 
         assert status_file.exists()
         updated = json.loads(status_file.read_text(encoding="utf-8"))
@@ -289,11 +349,14 @@ class TestRestartSubordinate:
         """Non-subordinate target returns PermissionDenied error."""
         handler = _make_handler(tmp_path, "manager")
 
-        perm_denied = json.dumps({
-            "status": "error",
-            "error_type": "PermissionDenied",
-            "message": "'outsider' はあなたの直属部下ではありません",
-        }, ensure_ascii=False)
+        perm_denied = json.dumps(
+            {
+                "status": "error",
+                "error_type": "PermissionDenied",
+                "message": "'outsider' はあなたの直属部下ではありません",
+            },
+            ensure_ascii=False,
+        )
 
         with patch(
             "core.tooling.handler.ToolHandler._check_descendant",
@@ -314,6 +377,7 @@ class TestKnownModels:
 
     def _get_known_models(self):
         from core.config.models import KNOWN_MODELS
+
         return KNOWN_MODELS
 
     def test_known_models_structure(self):
@@ -326,12 +390,11 @@ class TestKnownModels:
             assert "name" in entry, f"Missing 'name' in entry: {entry}"
             assert "mode" in entry, f"Missing 'mode' in entry: {entry}"
             assert "note" in entry, f"Missing 'note' in entry: {entry}"
-            assert isinstance(entry["name"], str) and entry["name"], \
-                f"'name' must be a non-empty string: {entry}"
-            assert entry["mode"] in valid_modes, \
+            assert isinstance(entry["name"], str) and entry["name"], f"'name' must be a non-empty string: {entry}"
+            assert entry["mode"] in valid_modes, (
                 f"'mode' must be one of {sorted(valid_modes)}, got '{entry['mode']}': {entry}"
-            assert isinstance(entry["note"], str), \
-                f"'note' must be a string: {entry}"
+            )
+            assert isinstance(entry["note"], str), f"'note' must be a string: {entry}"
 
     def test_known_models_no_duplicates(self):
         """No duplicate names in KNOWN_MODELS."""

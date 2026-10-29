@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor import task_runner_supervisor
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner_supervisor
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 def _make_supervisor() -> TaskRunnerSupervisor:
@@ -25,7 +25,7 @@ def _make_supervisor() -> TaskRunnerSupervisor:
     supervisor.anima_dir = Path("/tmp/animas/sumire")
     supervisor._jobs = {}
     supervisor._hang_check_interval = 0.01
-    supervisor._busy_hang_threshold_sec = 99999.0
+    supervisor._runner_liveness_timeout_sec = 99999.0
     supervisor._terminate_hung_job = AsyncMock()
     return supervisor
 
@@ -57,7 +57,7 @@ def _patch_queue(monkeypatch, status: str):
     queue = MagicMock()
     queue.get_task_by_id.return_value = SimpleNamespace(status=status)
     monkeypatch.setattr(
-        "core.memory.task_queue.TaskQueueManager",
+        "core.tasks.queue.TaskQueueManager",
         lambda *a, **k: queue,
     )
     return queue
@@ -76,6 +76,7 @@ def test_watch_job_terminates_on_external_cancel(monkeypatch) -> None:
     finished_job = asyncio.run(main())
     supervisor._terminate_hung_job.assert_awaited_once()
     assert finished_job.hang_kill_started is True
+    assert finished_job.external_cancelled is True
 
 
 def test_watch_job_does_not_terminate_non_task_lane(monkeypatch) -> None:
@@ -111,7 +112,7 @@ def test_watch_job_does_not_terminate_when_not_cancelled(monkeypatch) -> None:
 
 
 def test_return_to_pending_skips_cancelled_entry(tmp_path) -> None:
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
     anima_dir = tmp_path / "animas" / "test-anima"
     anima_dir.mkdir(parents=True, exist_ok=True)
@@ -126,7 +127,7 @@ def test_return_to_pending_skips_cancelled_entry(tmp_path) -> None:
     queue.get_task_by_id.return_value = SimpleNamespace(status="cancelled")
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "core.memory.task_queue.TaskQueueManager",
+            "core.tasks.queue.TaskQueueManager",
             lambda *a, **k: queue,
         )
         executor._return_task_to_pending(

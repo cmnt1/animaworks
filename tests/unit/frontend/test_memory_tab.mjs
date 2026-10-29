@@ -192,7 +192,10 @@ globalThis.window = globalThis;
 
 function loadPageTabs() {
   const path = resolve(STATIC, "shared/page-tabs.js");
-  const source = readFileSync(path, "utf8");
+  const source = readFileSync(path, "utf8").replace(
+    /^import\s+\{\s*escapeAttr\s+as\s+_escapeAttr\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    'const _escapeAttr = (value) => String(value ?? "");',
+  );
   const url =
     "data:text/javascript;base64," + Buffer.from(source, "utf8").toString("base64");
   return import(url + "#page-tabs-" + Math.random());

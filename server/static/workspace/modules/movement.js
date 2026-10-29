@@ -167,7 +167,7 @@ export function isMoving(name) {
  * @param {string} name
  * @returns {THREE.Vector3 | null}
  */
-export function getPosition(name) {
+function getPosition(name) {
   const mover = _movers.get(name);
   return mover ? mover.group.position.clone() : null;
 }

@@ -9,18 +9,27 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import threading
 from typing import Any
-
-try:
-    from faster_whisper import WhisperModel
-except ImportError:
-    WhisperModel = None  # type: ignore[assignment, misc]
 
 logger = logging.getLogger(__name__)
 
 # ── Whisper singleton ──────────────────────────────────────────
 
-_whisper_model: WhisperModel | None = None
+_whisper_model: Any | None = None
+_whisper_model_config: tuple[str, str, str] | None = None
+_whisper_model_lock = threading.Lock()
+
+
+def _load_whisper_model_class():
+    """Import the optional STT dependency only when transcription is requested."""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise ImportError(
+            "Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]"
+        ) from exc
+    return WhisperModel
 
 
 # ── VoiceSTT ───────────────────────────────────────────────────
@@ -34,6 +43,7 @@ class VoiceSTT:
         model_name: str = "large-v3-turbo",
         device: str = "auto",
         compute_type: str = "default",
+        language: str | None = None,
     ) -> None:
         """Initialize STT engine.
 
@@ -41,28 +51,32 @@ class VoiceSTT:
             model_name: Whisper model name.
             device: Device ("auto", "cuda", "cpu").
             compute_type: Compute type ("default", "float16", "int8", etc.).
+            language: Preferred language code, or None to auto-detect.
         """
         self._model_name = model_name
         self._device = device
         self._compute_type = compute_type
-        self._model: WhisperModel | None = None
+        self._language = language
+        self._model: Any | None = None
 
-    def _ensure_model(self) -> WhisperModel:
-        """Lazy-load WhisperModel singleton."""
-        global _whisper_model
-        if _whisper_model is None:
-            if WhisperModel is None:
-                raise ImportError(
-                    "Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]"
-                )
-            device = self._device
-            if device == "auto":
-                device = "cuda" if shutil.which("nvidia-smi") else "cpu"
-            compute = self._compute_type
-            if compute == "default":
-                compute = "float16" if device == "cuda" else "int8"
-            _whisper_model = WhisperModel(self._model_name, device=device, compute_type=compute)
-        return _whisper_model
+    def _ensure_model(self) -> Any:
+        """Load the shared Whisper model once for the active model settings."""
+        global _whisper_model, _whisper_model_config
+        config = (self._model_name, self._device, self._compute_type)
+        with _whisper_model_lock:
+            if _whisper_model is None or _whisper_model_config != config:
+                whisper_model_class = _load_whisper_model_class()
+                device = self._device
+                if device == "auto":
+                    device = "cuda" if shutil.which("nvidia-smi") else "cpu"
+                compute = self._compute_type
+                if compute == "default":
+                    compute = "float16" if device == "cuda" else "int8"
+                model = whisper_model_class(self._model_name, device=device, compute_type=compute)
+                _whisper_model = model
+                _whisper_model_config = config
+            self._model = _whisper_model
+            return _whisper_model
 
     def transcribe_buffer(
         self,
@@ -87,20 +101,20 @@ class VoiceSTT:
         """
         import numpy as np
 
-        if WhisperModel is None:
-            raise ImportError("Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]")
         model = self._ensure_model()
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, info = model.transcribe(
-            audio_np,
-            beam_size=1,
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,
-            temperature=0.0,
-            language=language,
-            vad_filter=vad_filter,
-            initial_prompt=initial_prompt,
-        )
+        transcribe_options: dict[str, Any] = {
+            "beam_size": 1,
+            "condition_on_previous_text": False,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "vad_filter": vad_filter,
+            "initial_prompt": initial_prompt,
+        }
+        selected_language = language if language is not None else self._language
+        if selected_language is not None:
+            transcribe_options["language"] = selected_language
+        segments, info = model.transcribe(audio_np, **transcribe_options)
         segments_list = list(segments)
         raw_text = " ".join(seg.text.strip() for seg in segments_list)
         return {

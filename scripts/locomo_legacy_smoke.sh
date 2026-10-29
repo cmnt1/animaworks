@@ -5,23 +5,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-SKIP_NEO4J=0
-for arg in "$@"; do
-  if [[ "$arg" == "--skip-neo4j" ]]; then
-    SKIP_NEO4J=1
-  fi
-done
-
-if [[ "$SKIP_NEO4J" -eq 0 ]]; then
-  if command -v docker >/dev/null 2>&1; then
-    if docker compose -f docker-compose.neo4j.yml ps neo4j 2>/dev/null | grep -q healthy; then
-      echo "Neo4j: healthy (informational only for Legacy smoke)"
-    else
-      echo "Neo4j: not healthy — continuing (Legacy smoke does not require Neo4j)"
-    fi
-  fi
-fi
-
 if [[ -z "${OPENAI_API_BASE:-}" && -z "${OPENAI_BASE_URL:-}" ]]; then
   echo "OPENAI_API_BASE unset — using config credential (default: vllm-lb / localhost:4000)"
 fi

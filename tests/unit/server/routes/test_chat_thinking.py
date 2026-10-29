@@ -31,7 +31,6 @@ class TestDoneEventThinkingText:
                 "thinking_text": thinking_text,
                 "duration_ms": 100,
                 "context_usage_ratio": 0.5,
-                "session_chained": False,
                 "total_turns": 1,
                 "tool_call_records": [{"name": "test_tool"}],
                 "usage": None,

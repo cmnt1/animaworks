@@ -67,6 +67,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ランタイムディレクトリが初期化されていません: {data_dir}\n'animaworks init' を実行してください。",
         "en": "Runtime directory not initialized: {data_dir}\nRun 'animaworks init' first.",
     },
+    "migrate.unsupported_runtime_version": {
+        "ja": "ランタイムの記録バージョン {version} からの直接アップデートはサポートされていません。先に 0.14 を経由してアップデートしてください。",
+        "en": "Direct upgrades from runtime version {version} are not supported. Upgrade through 0.14 first.",
+        "ko": "런타임 기록 버전 {version}에서 직접 업그레이드하는 것은 지원되지 않습니다. 먼저 0.14를 거쳐 업그레이드하세요.",
+    },
     "migrate.dry_run_header": {
         "ja": "=== ドライラン — 変更は行いません ===",
         "en": "=== Dry run — no changes will be made ===",

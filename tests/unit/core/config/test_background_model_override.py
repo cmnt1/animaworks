@@ -257,10 +257,10 @@ class TestConfigReaderBackgroundModel:
         config_json = tmp_path / "config.json"
         config_json.write_text("{}")
 
-        with patch("core.config.get_config_path", return_value=config_json), \
-             patch("core.config.load_config", return_value=AnimaWorksConfig()), \
-             patch("core.config.resolve_anima_config") as mock_resolve, \
-             patch("core.config.resolve_execution_mode", return_value="A"):
+        with patch("core.config.models.get_config_path", return_value=config_json), \
+             patch("core.config.models.load_config", return_value=AnimaWorksConfig()), \
+             patch("core.config.models.resolve_anima_config") as mock_resolve, \
+             patch("core.config.models.resolve_execution_mode", return_value="A"):
             resolved = AnimaDefaults(
                 model="claude-opus-4-6",
                 background_model="claude-sonnet-4-6",
@@ -285,10 +285,10 @@ class TestConfigReaderBackgroundModel:
         config_json = tmp_path / "config.json"
         config_json.write_text("{}")
 
-        with patch("core.config.get_config_path", return_value=config_json), \
-             patch("core.config.load_config", return_value=AnimaWorksConfig()), \
-             patch("core.config.resolve_anima_config") as mock_resolve, \
-             patch("core.config.resolve_execution_mode", return_value="A"):
+        with patch("core.config.models.get_config_path", return_value=config_json), \
+             patch("core.config.models.load_config", return_value=AnimaWorksConfig()), \
+             patch("core.config.models.resolve_anima_config") as mock_resolve, \
+             patch("core.config.models.resolve_execution_mode", return_value="A"):
             resolved = AnimaDefaults(model="claude-opus-4-6")
             mock_resolve.return_value = (resolved, CredentialConfig(api_key="key1"))
 

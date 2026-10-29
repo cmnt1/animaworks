@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,12 +8,11 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Tests for knowledge frontmatter read/write and legacy migration."""
+"""Tests for knowledge frontmatter read/write behavior."""
 
 from pathlib import Path
 
 import pytest
-
 
 # ── Fixtures ────────────────────────────────────────────────
 
@@ -35,17 +35,6 @@ def memory_manager(temp_anima_dir: Path):
     from core.memory.manager import MemoryManager
 
     return MemoryManager(temp_anima_dir)
-
-
-@pytest.fixture
-def consolidation_engine(temp_anima_dir: Path):
-    """Create a ConsolidationEngine instance."""
-    from core.memory.consolidation import ConsolidationEngine
-
-    return ConsolidationEngine(
-        anima_dir=temp_anima_dir,
-        anima_name="test_anima",
-    )
 
 
 # ── Frontmatter Read/Write ──────────────────────────────────
@@ -74,7 +63,9 @@ class TestWriteKnowledgeWithMeta:
         assert "# Test Topic" in text
 
     def test_write_creates_parent_dirs(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """write_knowledge_with_meta creates parent directories if needed."""
         path = temp_anima_dir / "knowledge" / "sub" / "deep" / "file.md"
@@ -83,7 +74,9 @@ class TestWriteKnowledgeWithMeta:
         assert path.exists()
 
     def test_write_unicode_content(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Japanese content survives round-trip through YAML frontmatter."""
         path = temp_anima_dir / "knowledge" / "unicode.md"
@@ -102,7 +95,9 @@ class TestReadKnowledgeContent:
     """Test read_knowledge_content method."""
 
     def test_with_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Content is returned without frontmatter."""
         path = temp_anima_dir / "knowledge" / "with-fm.md"
@@ -117,7 +112,9 @@ class TestReadKnowledgeContent:
         assert "confidence" not in result
 
     def test_without_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Files without frontmatter return full text (backward compat)."""
         path = temp_anima_dir / "knowledge" / "no-fm.md"
@@ -128,7 +125,9 @@ class TestReadKnowledgeContent:
         assert "Legacy content." in result
 
     def test_empty_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Empty frontmatter block is handled gracefully."""
         path = temp_anima_dir / "knowledge" / "empty-fm.md"
@@ -142,7 +141,9 @@ class TestReadKnowledgeMetadata:
     """Test read_knowledge_metadata method."""
 
     def test_with_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Metadata dictionary is correctly parsed from YAML frontmatter."""
         path = temp_anima_dir / "knowledge" / "meta.md"
@@ -156,7 +157,9 @@ class TestReadKnowledgeMetadata:
         assert meta["auto_consolidated"] is True
 
     def test_without_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Files without frontmatter return empty dict."""
         path = temp_anima_dir / "knowledge" / "no-meta.md"
@@ -166,7 +169,9 @@ class TestReadKnowledgeMetadata:
         assert meta == {}
 
     def test_invalid_yaml(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Invalid YAML frontmatter returns empty dict."""
         path = temp_anima_dir / "knowledge" / "bad-yaml.md"
@@ -180,7 +185,9 @@ class TestRoundTrip:
     """Test write + read round-trip."""
 
     def test_full_roundtrip(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Metadata and content survive a write-then-read round trip."""
         path = temp_anima_dir / "knowledge" / "roundtrip.md"
@@ -239,111 +246,6 @@ class TestIndexerStripFrontmatter:
         content = "No frontmatter here.\n\n---\n\nThis is a horizontal rule."
         result = MemoryIndexer._strip_frontmatter(content)
         assert result == content
-
-
-# ── Legacy Migration ─────────────────────────────────────────
-
-
-class TestLegacyMigration:
-    """Test _migrate_legacy_knowledge method."""
-
-    def test_migrate_legacy_file(self, consolidation_engine: object) -> None:
-        """Legacy files without frontmatter are migrated."""
-        kdir = consolidation_engine.knowledge_dir
-        legacy_file = kdir / "old-topic.md"
-        legacy_file.write_text(
-            "# Old Topic\n\n[AUTO-CONSOLIDATED: 2026-02-10 09:00]\n\n"
-            "Some legacy knowledge content.",
-            encoding="utf-8",
-        )
-
-        migrated = consolidation_engine._migrate_legacy_knowledge()
-
-        assert migrated == 1
-
-        # Verify frontmatter was added
-        text = legacy_file.read_text(encoding="utf-8")
-        assert text.startswith("---\n")
-        assert "confidence: 0.5" in text
-        assert "migrated_from_legacy: true" in text
-        # Verify content is preserved
-        assert "Some legacy knowledge content." in text
-
-    def test_migrate_extracts_timestamp(self, consolidation_engine: object) -> None:
-        """created_at is extracted from [AUTO-CONSOLIDATED: ...] marker."""
-        from core.memory.manager import MemoryManager
-
-        kdir = consolidation_engine.knowledge_dir
-        legacy_file = kdir / "timestamped.md"
-        legacy_file.write_text(
-            "# Topic\n\n[AUTO-CONSOLIDATED: 2026-01-15 14:30]\n\nContent.",
-            encoding="utf-8",
-        )
-
-        consolidation_engine._migrate_legacy_knowledge()
-
-        mm = MemoryManager(consolidation_engine.anima_dir)
-        meta = mm.read_knowledge_metadata(legacy_file)
-        assert meta["created_at"] == "2026-01-15T14:30:00"
-
-    def test_skip_already_migrated(self, consolidation_engine: object) -> None:
-        """Files with existing frontmatter are skipped."""
-        kdir = consolidation_engine.knowledge_dir
-        existing = kdir / "already-done.md"
-        existing.write_text(
-            "---\nconfidence: 0.9\n---\n\n# Already Migrated",
-            encoding="utf-8",
-        )
-
-        migrated = consolidation_engine._migrate_legacy_knowledge()
-        assert migrated == 0
-
-    def test_marker_prevents_rerun(self, consolidation_engine: object) -> None:
-        """Migration runs only once (marker file prevents re-execution)."""
-        kdir = consolidation_engine.knowledge_dir
-        legacy_file = kdir / "topic.md"
-        legacy_file.write_text("# Legacy\n\nContent.", encoding="utf-8")
-
-        first = consolidation_engine._migrate_legacy_knowledge()
-        assert first == 1
-
-        # Create another legacy file
-        (kdir / "another.md").write_text("# Another", encoding="utf-8")
-
-        second = consolidation_engine._migrate_legacy_knowledge()
-        assert second == 0  # Marker prevents re-run
-
-    def test_backup_created(self, consolidation_engine: object) -> None:
-        """Backup copies are created in archive/pre_migration/."""
-        kdir = consolidation_engine.knowledge_dir
-        legacy_file = kdir / "backup-test.md"
-        original_content = "# Original\n\nOriginal content."
-        legacy_file.write_text(original_content, encoding="utf-8")
-
-        consolidation_engine._migrate_legacy_knowledge()
-
-        backup_dir = consolidation_engine.anima_dir / "archive" / "pre_migration"
-        backup = backup_dir / "backup-test.md"
-        assert backup.exists()
-        assert backup.read_text(encoding="utf-8") == original_content
-
-    def test_code_fence_removal(self, consolidation_engine: object) -> None:
-        """Code fences wrapping content are removed during migration."""
-        kdir = consolidation_engine.knowledge_dir
-        legacy_file = kdir / "fenced.md"
-        legacy_file.write_text(
-            "```markdown\n# Topic\n\nContent inside fences.\n```",
-            encoding="utf-8",
-        )
-
-        consolidation_engine._migrate_legacy_knowledge()
-
-        from core.memory.manager import MemoryManager
-        mm = MemoryManager(consolidation_engine.anima_dir)
-        content = mm.read_knowledge_content(legacy_file)
-        assert "```" not in content
-        assert "# Topic" in content
-        assert "Content inside fences." in content
 
 
 if __name__ == "__main__":

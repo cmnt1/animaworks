@@ -3,7 +3,6 @@
 import { state, dom, escapeHtml } from "./state.js";
 import { api } from "./api.js";
 import { initI18n, t } from "/shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
 
 let _startDashboard = null;
 
@@ -11,7 +10,7 @@ export function setStartDashboard(fn) {
   _startDashboard = fn;
 }
 
-export async function initLoginScreen() {
+async function initLoginScreen() {
   await initI18n();
   dom.loginScreen.innerHTML = `
     <div class="login-card">
@@ -34,28 +33,18 @@ export async function initLoginScreen() {
     errorEl.classList.add("hidden");
 
     try {
-      const res = await fetch(`${basePath}/api/auth/login`, {
+      const user = await api("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
+        redirectOnUnauthorized: false,
         body: JSON.stringify({ username, password }),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        errorEl.textContent = data.error || t("login.error");
-        errorEl.classList.remove("hidden");
-        return;
-      }
-
-      // Get user info
-      const user = await res.json();
       state.currentUser = user.username;
       state.currentUserRole = user.role;
       hideLoginScreen();
       if (_startDashboard) _startDashboard();
     } catch (err) {
-      errorEl.textContent = t("login.error_network");
+      errorEl.textContent = err.status ? err.message || t("login.error") : t("login.error_network");
       errorEl.classList.remove("hidden");
     }
   });
@@ -63,24 +52,18 @@ export async function initLoginScreen() {
 
 export async function checkAuth() {
   try {
-    const res = await fetch(`${basePath}/api/auth/me`, { credentials: "same-origin" });
-    if (res.ok) {
-      const user = await res.json();
-      state.currentUser = user.username;
-      state.currentUserRole = user.role;
-      state.authMode = user.auth_mode || null;
-      return true;
-    }
+    const user = await api("/api/auth/me", { redirectOnUnauthorized: false });
+    state.currentUser = user.username;
+    state.currentUserRole = user.role;
+    state.authMode = user.auth_mode || null;
+    return true;
   } catch { /* not authenticated */ }
   return false;
 }
 
 export async function logout() {
   try {
-    await fetch(`${basePath}/api/auth/logout`, {
-      method: "POST",
-      credentials: "same-origin",
-    });
+    await api("/api/auth/logout", { method: "POST", redirectOnUnauthorized: false });
   } catch { /* ignore */ }
   state.currentUser = null;
   state.currentUserRole = null;

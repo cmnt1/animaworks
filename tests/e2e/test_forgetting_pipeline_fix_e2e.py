@@ -13,7 +13,7 @@ during weekly consolidation, so source files and vectors are left intact.
 
 from pathlib import Path
 
-from core.memory.forgetting import ForgettingEngine
+from core.memory.maintenance.forgetting import ForgettingEngine
 
 _META = {
     "memory_type": "knowledge",
@@ -66,9 +66,7 @@ class TestListForgettingCandidates:
 
     def test_unprotected_low_activation_is_a_candidate(self, tmp_path: Path) -> None:
         engine, _source = self._engine(tmp_path, [])
-        engine._get_all_chunks = lambda _collection: [
-            {"id": "c", "metadata": dict(_META), "content": "x"}
-        ]
+        engine._get_all_chunks = lambda _collection: [{"id": "c", "metadata": dict(_META), "content": "x"}]
         assert len(engine.list_forgetting_candidates()) == 1
 
     def test_protected_chunk_not_a_candidate(self, tmp_path: Path) -> None:

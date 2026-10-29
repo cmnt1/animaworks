@@ -54,8 +54,8 @@ def test_cli_does_not_write_or_claim_compatibility_for_unknown_metadata(tmp_path
     path = tmp_path / "index_meta.json"
     path.write_text(raw)
     with (
-        patch("core.memory.rag.singleton.get_embedding_model_name", return_value="ruri"),
-        patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
+        patch("core.memory.rag.embedding.get_embedding_model_name", return_value="ruri"),
+        patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True),
     ):
         with pytest.raises(SystemExit):
             _check_model_change(tmp_path, full=False)

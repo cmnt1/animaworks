@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import data_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -22,9 +24,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from core.platform.atomic_io import atomic_write_json
 from core.platform.claude_code import get_claude_executable
 from core.platform.codex import get_codex_device_login, is_codex_login_available
 
@@ -70,10 +73,7 @@ def _save_usage_snapshot(payload: dict[str, Any]) -> None:
     path = _usage_snapshot_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(path, payload, indent=2, ensure_ascii=False)
     except Exception:
         logger.warning("Failed to save usage snapshot to %s", path, exc_info=True)
 
@@ -129,9 +129,9 @@ def _discover_claude_cred_paths() -> list[str]:
             if cred.is_file():
                 paths.append(str(cred))
     # Also check env variable pointing to specific directories
-    data_dir_env = os.environ.get("ANIMAWORKS_DATA_DIR")
-    if data_dir_env:
-        p = Path(data_dir_env).parent / ".claude" / ".credentials.json"
+    data_dir_override = data_dir_env()
+    if data_dir_override:
+        p = Path(data_dir_override).parent / ".claude" / ".credentials.json"
         paths.append(str(p))
     return paths
 
@@ -233,7 +233,7 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         oauth["accessToken"] = new_access
         oauth["refreshToken"] = new_refresh
         oauth["expiresAt"] = int(time.time() * 1000) + expires_in * 1000
-        cred_path.write_text(json.dumps(cred_data, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(cred_path, cred_data, indent=None, trailing_newline=False)
         logger.info("Refreshed Claude OAuth token, persisted to %s", cred_path)
         return new_access
     except Exception as e:
@@ -569,10 +569,7 @@ def _extract_codex_account_id(tokens: dict[str, Any]) -> str | None:
 
 
 def _persist_codex_auth_data(path: Path, auth_data: dict[str, Any]) -> None:
-    path.write_text(
-        json.dumps(auth_data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, auth_data, indent=2, ensure_ascii=False)
 
 
 def _refresh_codex_token(auth_path: Path, auth_data: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -820,25 +817,13 @@ def create_usage_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/usage")
-    async def get_usage(request: Request, skip_cache: bool = False) -> dict[str, Any]:
-        """Return combined Claude + OpenAI + nanoGPT usage data + governor status."""
-        governor = getattr(request.app.state, "usage_governor", None)
-        governor_info: dict[str, Any] = {"active": False}
-        if governor:
-            st = governor.state
-            governor_info = {
-                "active": st.is_governing,
-                "suspended_animas": st.suspended_animas,
-                "reason": st.reason,
-                "since": st.since,
-                "last_check": st.last_check,
-            }
+    async def get_usage(skip_cache: bool = False) -> dict[str, Any]:
+        """Return combined Claude + OpenAI + nanoGPT usage data."""
         payload = {
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
-            "governor": governor_info,
         }
         payload = _merge_usage_snapshot(payload)
         payload["snapshot_path"] = str(_usage_snapshot_path())
@@ -855,27 +840,5 @@ def create_usage_router() -> APIRouter:
     async def relogin_openai() -> JSONResponse:
         payload, status_code = _relogin_openai()
         return JSONResponse(payload, status_code=status_code)
-
-    @router.get("/usage/policy")
-    async def get_policy(request: Request) -> dict[str, Any]:
-        """Return the current usage policy."""
-        from core.paths import get_data_dir
-        from server.usage_governor import load_policy
-
-        return load_policy(get_data_dir())
-
-    @router.put("/usage/policy")
-    async def update_policy(request: Request):
-        """Update the usage policy."""
-        from core.paths import get_data_dir
-        from server.usage_governor import save_policy
-
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-
-        save_policy(get_data_dir(), body)
-        return {"ok": True}
 
     return router

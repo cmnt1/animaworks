@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.tooling.handler_files import CommandRunner
+from core.tooling.handler_exec import CommandRunner
 
 
 class _BlockingPipe:
@@ -187,7 +187,7 @@ class TestCommandRunnerTimeout:
 
 class TestCommandRunnerThreadCleanup:
     def test_blocked_pipe_reader_is_closed_and_reaped(self, tmp_path: Path, monkeypatch):
-        from core.tooling import handler_files
+        from core.tooling import handler_exec
 
         blocked_stdout = _BlockingPipe()
         fake_proc = MagicMock()
@@ -197,9 +197,9 @@ class TestCommandRunnerThreadCleanup:
         fake_proc.returncode = 0
         fake_proc.wait.return_value = 0
 
-        monkeypatch.setattr(handler_files, "_PIPE_THREAD_JOIN_TIMEOUT", 0.01)
-        monkeypatch.setattr(handler_files, "_PIPE_THREAD_REJOIN_TIMEOUT", 0.5)
-        monkeypatch.setattr(handler_files.subprocess, "Popen", MagicMock(return_value=fake_proc))
+        monkeypatch.setattr(handler_exec, "_PIPE_THREAD_JOIN_TIMEOUT", 0.01)
+        monkeypatch.setattr(handler_exec, "_PIPE_THREAD_REJOIN_TIMEOUT", 0.5)
+        monkeypatch.setattr(handler_exec.subprocess, "Popen", MagicMock(return_value=fake_proc))
 
         runner = CommandRunner("fake-command", tmp_path, timeout=10)
         cmd_id = runner.start(tmp_path / "state" / "cmd_output")
@@ -292,3 +292,19 @@ class TestHandleExecuteCommandBackground:
         assert "file_content_test" in content
         assert "--- FINISHED ---" in content
         assert "exit_code: 0" in content
+
+
+def test_background_command_does_not_wait_on_inherited_stdin(tmp_path: Path) -> None:
+    """A stdin reader (cat, jq with no file) gets EOF instead of hanging."""
+    runner = CommandRunner("cat", tmp_path, timeout=10)
+    output_dir = tmp_path / "state" / "cmd_output"
+    cmd_id = runner.start(output_dir)
+    deadline = time.time() + 10
+    content = ""
+    while time.time() < deadline:
+        content = (output_dir / f"{cmd_id}.txt").read_text()
+        if "--- FINISHED ---" in content:
+            break
+        time.sleep(0.1)
+    assert "--- FINISHED ---" in content
+    assert "exit_code: 0" in content

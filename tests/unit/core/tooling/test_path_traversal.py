@@ -17,7 +17,6 @@ Covers:
 - create_anima: valid character_sheet_path still works
 """
 
-import json
 import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -35,6 +34,13 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._anima_dir = tmp_path / "animas" / anima_name
     handler._anima_dir.mkdir(parents=True, exist_ok=True)
     handler._anima_name = anima_name
+    from core.tooling.tool_context import ToolContext
+
+    handler._tool_context = ToolContext(
+        anima_dir=handler._anima_dir,
+        anima_name=anima_name,
+        check_command_permission=lambda _command: None,
+    )
     handler._memory = MagicMock()
     handler._messenger = None
     handler._on_message_sent = None
@@ -56,7 +62,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._process_supervisor = None
     handler._read_paths: set[str] = set()
 
-    from core.memory.activity import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 
@@ -238,6 +244,25 @@ class TestReferenceWriteRejected:
         assert not (ref_dir / "tech_spec.md").exists()
 
 
+# ── descendant state read permissions ─────────────────────
+
+
+class TestDescendantStateReadPermissions:
+    def test_supervisor_can_read_plans_but_not_pending(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, anima_name="supervisor")
+        worker_dir = tmp_path / "animas" / "worker"
+        plans_dir = worker_dir / "state" / "plans"
+        plans_dir.mkdir(parents=True)
+        (worker_dir / "state" / "pending").mkdir()
+        handler._descendant_state_dirs = [plans_dir]
+
+        from core.config.schemas import PermissionsConfig
+
+        kwargs = {"config": PermissionsConfig(), "denied_roots": ()}
+        assert handler._check_file_permission(str(plans_dir / "x.md"), **kwargs) is None
+        assert handler._check_file_permission(str(worker_dir / "state" / "pending" / "x.json"), **kwargs) is not None
+
+
 # ── create_anima path traversal ──────────────────────────
 
 
@@ -276,21 +301,16 @@ class TestCreateAnimaPathTraversal:
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)
-        data_dir = tmp_path
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.paths.get_data_dir", return_value=data_dir),
-            patch("core.anima_factory.create_from_md") as mock_create,
-            patch("cli.commands.init_cmd._register_anima_in_config"),
-        ):
-            mock_create.return_value = animas_dir / "testchild"
-            (animas_dir / "testchild").mkdir(parents=True, exist_ok=True)
-            status = animas_dir / "testchild" / "status.json"
-            status.write_text(json.dumps({"enabled": True}), encoding="utf-8")
-
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"status": "ok", "anima_dir": str(animas_dir / "testchild")}
+        with patch("core.host_api.host_api.post", return_value=response) as mock_post:
             result = handler._handle_create_anima(
                 {"character_sheet_path": "character_sheet.md"},
             )
 
         assert "created successfully" in result
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["character_sheet_content"] == sheet.read_text(encoding="utf-8")
+        assert not (animas_dir / "testchild").exists()

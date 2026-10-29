@@ -1,0 +1,2 @@
+{"kind":"response","content":"","tool_calls":[{"id":"call_error_1","name":"search_memory","arguments":"{\"query\":\"golden tool error\"}"}],"usage":{"prompt_tokens":13,"completion_tokens":3}}
+{"kind":"response","content":"Recovered after tool error","usage":{"prompt_tokens":17,"completion_tokens":5}}

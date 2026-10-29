@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 
 # ── Create Anima ─────────────────────────────────────────
@@ -15,22 +16,70 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
     """Create a new Digital Anima."""
     from pathlib import Path
 
-    from cli.commands.init_cmd import _register_anima_in_config
-    from core.anima_factory import (
+    from core.anima.factory import (
         create_blank,
         create_from_md,
         create_from_template,
         validate_anima_name,
     )
-    from core.init import ensure_runtime_dir
+    from core.config import register_anima_in_config
+    from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir, get_data_dir
+    from core.platform.pid import is_server_running
+
+    data_dir = get_data_dir()
+    supervisor = getattr(args, "supervisor", None)
+    if is_server_running(data_dir):
+        payload: dict[str, object] = {"calling_anima": ""}
+        if args.from_md:
+            md_path = Path(args.from_md).expanduser().resolve()
+            try:
+                payload["character_sheet_content"] = md_path.read_text(encoding="utf-8")
+            except OSError:
+                payload["character_sheet_path"] = str(md_path)
+            payload["creation_type"] = "character_sheet"
+            payload["role"] = getattr(args, "role", None)
+        elif args.template:
+            payload.update(creation_type="template", template=args.template)
+        else:
+            name = args.name
+            if not name:
+                print("Error: --name is required for blank anima creation")
+                sys.exit(1)
+            err = validate_anima_name(name)
+            if err:
+                print(f"Error: {err}")
+                sys.exit(1)
+            payload.update(creation_type="blank", name=name)
+        if args.name:
+            payload["name"] = args.name
+        if supervisor:
+            payload["supervisor"] = supervisor
+
+        from core.host_api import response_detail
+        from core.internal_api import host_api
+
+        try:
+            response = host_api.post("/api/internal/anima/create", json=payload, timeout=60.0)
+        except Exception as exc:
+            print(f"Error: Root API unavailable: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if response.status_code >= 400:
+            print(f"Error: {response_detail(response)}", file=sys.stderr)
+            sys.exit(1)
+        result = response.json()
+        anima_dir = Path(result["anima_dir"])
+        if args.from_md:
+            print(f"Created anima '{anima_dir.name}' from {Path(args.from_md).name}")
+        elif args.template:
+            print(f"Created anima '{anima_dir.name}' from template '{args.template}'")
+        else:
+            print(f"Created blank anima '{anima_dir.name}'")
+        return
 
     ensure_runtime_dir(skip_animas=True)
-    data_dir = get_data_dir()
     animas_dir = get_animas_dir()
     animas_dir.mkdir(parents=True, exist_ok=True)
-
-    supervisor = getattr(args, "supervisor", None)
 
     if args.from_md:
         md_path = Path(args.from_md).resolve()
@@ -42,13 +91,13 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
             supervisor=supervisor,
             role=role,
         )
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from {md_path.name}")
         return
 
     if args.template:
         anima_dir = create_from_template(animas_dir, args.template, anima_name=args.name)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from template '{args.template}'")
         return
 
@@ -62,11 +111,49 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
         print(f"Error: {err}")
         sys.exit(1)
     anima_dir = create_blank(animas_dir, name)
-    _register_anima_in_config(data_dir, anima_dir.name)
+    register_anima_in_config(data_dir, anima_dir.name)
     print(f"Created blank anima '{anima_dir.name}'")
 
 
 # ── Chat ───────────────────────────────────────────────────
+
+
+def resolve_default_anima() -> str | None:
+    """Return the anima a bare ``animaworks chat`` should open.
+
+    ``cli.default_anima`` in config.json wins; otherwise the only enabled
+    anima without a supervisor. Returns None when that is ambiguous.
+    """
+    from core.config import load_config
+    from core.config.anima_registry import read_anima_supervisor
+    from core.paths import get_animas_dir
+
+    try:
+        configured = load_config().cli.default_anima.strip()
+    except Exception:
+        configured = ""
+    if configured:
+        return configured
+
+    heads: list[str] = []
+    animas_dir = get_animas_dir()
+    if animas_dir.is_dir():
+        for anima_dir in sorted(animas_dir.iterdir()):
+            status_path = anima_dir / "status.json"
+            if not status_path.is_file():
+                continue
+            try:
+                status = json.loads(status_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if status.get("enabled", True) and read_anima_supervisor(anima_dir) is None:
+                heads.append(anima_dir.name)
+    if len(heads) == 1:
+        return heads[0]
+    if heads:
+        print(f"multiple top-level animas: {', '.join(heads)}", file=sys.stderr)
+        print("set one with: animaworks config set cli.default_anima NAME", file=sys.stderr)
+    return None
 
 
 def cmd_chat(args: argparse.Namespace) -> None:
@@ -86,8 +173,10 @@ def cmd_chat(args: argparse.Namespace) -> None:
         return
 
     if args.anima is None and resume is None:
-        print("an anima name or --resume is required", file=sys.stderr)
-        sys.exit(2)
+        args.anima = resolve_default_anima()
+        if args.anima is None:
+            print("an anima name or --resume is required", file=sys.stderr)
+            sys.exit(2)
 
     if resume and not args.local:
         from cli.tui.session import latest_session, load_session
@@ -106,8 +195,8 @@ def cmd_chat(args: argparse.Namespace) -> None:
             DeprecationWarning,
             stacklevel=2,
         )
-        from core.anima import DigitalAnima
-        from core.init import ensure_runtime_dir
+        from core.anima.digital_anima import DigitalAnima
+        from core.infra.runtime_init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
 
         ensure_runtime_dir()
@@ -189,8 +278,8 @@ def cmd_heartbeat(args: argparse.Namespace) -> None:
             DeprecationWarning,
             stacklevel=2,
         )
-        from core.anima import DigitalAnima
-        from core.init import ensure_runtime_dir
+        from core.anima.digital_anima import DigitalAnima
+        from core.infra.runtime_init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
 
         ensure_runtime_dir()

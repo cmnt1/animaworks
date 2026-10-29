@@ -20,9 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.i18n import t
-from core.supervisor.pending_executor import (
+from core.tasks.pending_executor import (
     _SENTINEL_CANCELLED,
-    _SENTINEL_EXPIRED,
     PendingTaskExecutor,
     TaskExecError,
     _classify_task_result,
@@ -40,7 +39,6 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     mock_anima._background_lock = asyncio.Lock()
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
-    mock_anima._active_parallel_tasks = {}
     return PendingTaskExecutor(
         anima=mock_anima,
         anima_name="test-anima",
@@ -84,11 +82,6 @@ class TestClassifyTaskResult:
         status, summary = _classify_task_result(_SENTINEL_CANCELLED)
         assert status == "cancelled"
         assert summary == t("pending_executor.task_cancelled")
-
-    def test_expired(self):
-        status, summary = _classify_task_result(_SENTINEL_EXPIRED)
-        assert status == "cancelled"
-        assert "expired" in summary.lower()
 
     def test_normal_result(self):
         status, summary = _classify_task_result("Task completed successfully")
@@ -143,10 +136,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="Agent SDK timeout"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
     @pytest.mark.asyncio
@@ -175,9 +169,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert "recovered" in result
 
@@ -204,9 +199,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "all good"
 
@@ -238,9 +234,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "401 unauthorized の対処を文書化しました"
 
@@ -272,10 +269,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.streaming_journal.StreamingJournal"),
+            patch("core.activity.logger.ActivityLogger") as activity,
+            patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="authentication"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
 
@@ -294,18 +292,6 @@ class TestExecuteLlmTaskStatusMapping:
         ):
             await executor._execute_llm_task(task)
             mock_sync.assert_called_once_with("test-task-1", "cancelled", summary=t("pending_executor.task_cancelled"))
-
-    @pytest.mark.asyncio
-    async def test_expired_maps_to_cancelled_status(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        task = _make_task_desc()
-
-        with (
-            patch.object(executor, "_run_llm_task", return_value=_SENTINEL_EXPIRED),
-            patch.object(executor, "_sync_task_queue") as mock_sync,
-        ):
-            await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="expired (TTL exceeded)")
 
     @pytest.mark.asyncio
     async def test_normal_result_maps_to_done(self, tmp_path):
@@ -366,9 +352,9 @@ class TestSerialBatchUnfinishedDependency:
     @pytest.mark.asyncio
     async def test_unfinished_dependency_syncs_to_queue(self, tmp_path):
         """An ended incomplete predecessor never releases or reruns its child."""
-        from core.memory.task_queue import TaskQueueManager
-        from core.taskboard.tasks import process_identity
-        from core.tasks_dispatch import publish_tasks
+        from core.tasks.board.tasks import process_identity
+        from core.tasks.dispatch import publish_tasks
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         tasks = [
@@ -410,40 +396,51 @@ class TestSerialBatchUnfinishedDependency:
         assert store.get_input("test-anima", "child1")["depends_on"] == ["dep1"]
 
 
-# ── TTL gate: resume keeps submitted_at, so age follows the last queue touch ──
+# ── Submitted-time line: age is surfaced to the model instead of a TTL gate ──
 
 
-class _PastExpiryGate(Exception):
-    pass
-
-
-class TestTtlGateAfterResume:
+class TestSubmissionLine:
     @staticmethod
     def _iso(hours_ago: float) -> str:
         from datetime import UTC, datetime, timedelta
 
         return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
 
-    async def _run(self, tmp_path, *, submitted_hours_ago, entry):
-        executor = _make_executor(tmp_path)
-        task = _make_task_desc(submitted_at=self._iso(submitted_hours_ago))
-        with (
-            patch("core.memory.task_queue.TaskQueueManager.get_task_by_id", return_value=entry),
-            patch.object(executor, "_sync_task_queue", side_effect=_PastExpiryGate),
-        ):
-            return await executor._run_llm_task(task)
+    def test_missing_timestamp_yields_empty(self):
+        from core.tasks.pending_executor import _submission_line
 
-    @pytest.mark.asyncio
-    async def test_untouched_old_task_expires(self, tmp_path):
-        entry = MagicMock(status="pending", updated_at=self._iso(30))
-        assert await self._run(tmp_path, submitted_hours_ago=38, entry=entry) == _SENTINEL_EXPIRED
+        assert _submission_line("", locale="ja") == ""
+        assert _submission_line("garbage-date", locale="ja") == ""
 
-    @pytest.mark.asyncio
-    async def test_old_task_without_queue_entry_expires(self, tmp_path):
-        assert await self._run(tmp_path, submitted_hours_ago=38, entry=None) == _SENTINEL_EXPIRED
+    def test_ja_formats_submission_and_elapsed(self):
+        from core.tasks.pending_executor import _submission_line
 
-    @pytest.mark.asyncio
-    async def test_recently_resumed_old_task_is_not_expired(self, tmp_path):
-        entry = MagicMock(status="pending", updated_at=self._iso(0.01))
-        with pytest.raises(_PastExpiryGate):
-            await self._run(tmp_path, submitted_hours_ago=63, entry=entry)
+        line = _submission_line(self._iso(3.2), locale="ja")
+        assert line.startswith("提出: ")
+        assert "（経過 3時間" in line
+
+    def test_en_formats_submission_and_elapsed(self):
+        from core.tasks.pending_executor import _submission_line
+
+        line = _submission_line(self._iso(3.2), locale="en")
+        assert line.startswith("Submitted: ")
+        assert "3h " in line
+
+    def test_past_timestamp_never_negative(self):
+        from datetime import UTC, datetime, timedelta
+
+        from core.tasks.pending_executor import _submission_line
+
+        future = (datetime.now(UTC) + timedelta(hours=5)).isoformat()
+        line = _submission_line(future, locale="ja")
+        assert "0時間0分" in line
+
+    def test_submission_time_rendered_in_app_timezone(self):
+        from datetime import UTC, datetime
+
+        from core.tasks.pending_executor import _submission_line
+        from core.time_utils import get_app_timezone
+
+        line = _submission_line("2026-09-25T10:04:00+00:00", locale="ja")
+        expected = datetime(2026, 9, 25, 10, 4, tzinfo=UTC).astimezone(get_app_timezone())
+        assert line.startswith(f"提出: {expected:%Y-%m-%d %H:%M}（")

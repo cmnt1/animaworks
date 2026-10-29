@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_chat_cycle_guard_accepts_matching_chat_result():
-    from core._anima_messaging import _chat_cycle_isolated
+    from core.anima.messaging import _chat_cycle_isolated
 
     ok, meta = _chat_cycle_isolated(
         {
@@ -20,7 +20,7 @@ def test_chat_cycle_guard_accepts_matching_chat_result():
 
 
 def test_chat_cycle_guard_rejects_heartbeat_result():
-    from core._anima_messaging import _chat_cycle_isolated
+    from core.anima.messaging import _chat_cycle_isolated
 
     ok, meta = _chat_cycle_isolated(
         {
@@ -39,7 +39,7 @@ def test_chat_cycle_guard_rejects_heartbeat_result():
 
 
 def test_chat_cycle_guard_rejects_other_chat_thread():
-    from core._anima_messaging import _chat_cycle_isolated
+    from core.anima.messaging import _chat_cycle_isolated
 
     ok, meta = _chat_cycle_isolated(
         {

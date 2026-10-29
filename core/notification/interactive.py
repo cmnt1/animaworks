@@ -10,7 +10,7 @@ from __future__ import annotations
 """Interactive approval routing for call_human and related flows.
 
 Persists pending approval requests, validates tokens, and delivers outcomes
-to Anima inboxes via :meth:`core.messenger.Messenger.receive_external`.
+to Anima inboxes via :meth:`core.messaging.messenger.Messenger.receive_external`.
 """
 
 import asyncio
@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from core.auth.manager import load_auth
 from core.i18n import t
@@ -323,7 +323,7 @@ class InteractionRouter:
             lines.append(t("interactive.blocker_close_instruction"))
         content = "\n".join(lines)
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(get_shared_dir(), req.anima_name)
         messenger.receive_external(
@@ -336,11 +336,11 @@ class InteractionRouter:
 
         # Main-thread conversation view: human_reply card for web/slack/text_reply.
         try:
-            from core.memory.activity import ActivityLogger
+            from core.activity.logger import ActivityLogger
             from core.paths import get_animas_dir
 
             reply_content = f"{decision}: {comment}" if comment else decision
-            ActivityLogger(get_animas_dir() / req.anima_name).log(
+            await ActivityLogger(get_animas_dir() / req.anima_name).alog(
                 "human_reply",
                 content=reply_content,
                 from_person=actor,
@@ -443,66 +443,6 @@ class InteractionRouter:
             entries[callback_id] = entry
             self._write_all_entries(data)
 
-    async def prune(self, max_age_days: int = 7) -> int:
-        """Remove entries older than *max_age_days*; returns number removed."""
-        async with self._lock:
-            data = self._read_all_entries()
-            entries: dict[str, Any] = data.setdefault("entries", {})
-            now = datetime.now(UTC)
-            to_delete: list[str] = []
-            for cid, entry in list(entries.items()):
-                if not isinstance(entry, dict):
-                    to_delete.append(cid)
-                    continue
-                req_blob = entry.get("request")
-                if not isinstance(req_blob, dict):
-                    to_delete.append(cid)
-                    continue
-                try:
-                    req = self._parse_request(req_blob)
-                except (ValueError, TypeError, ValidationError):
-                    to_delete.append(cid)
-                    continue
-
-                cutpoint: datetime | None = None
-                if entry.get("resolved"):
-                    res_blob = entry.get("result")
-                    if isinstance(res_blob, dict) and res_blob.get("resolved_at"):
-                        try:
-                            ra = datetime.fromisoformat(str(res_blob["resolved_at"]))
-                            if ra.tzinfo is None:
-                                cutpoint = ra.replace(tzinfo=UTC)
-                            else:
-                                cutpoint = ra.astimezone(UTC)
-                        except (ValueError, TypeError):
-                            cutpoint = None
-                    if cutpoint is None:
-                        created = req.created_at
-                        if created.tzinfo is None:
-                            cutpoint = created.replace(tzinfo=UTC)
-                        else:
-                            cutpoint = created.astimezone(UTC)
-                else:
-                    created = req.created_at
-                    if created.tzinfo is None:
-                        cutpoint = created.replace(tzinfo=UTC)
-                    else:
-                        cutpoint = created.astimezone(UTC)
-
-                if cutpoint is None:
-                    to_delete.append(cid)
-                    continue
-                age_days = (now - cutpoint).total_seconds() / 86400.0
-                if age_days > float(max_age_days):
-                    to_delete.append(cid)
-
-            for cid in to_delete:
-                entries.pop(cid, None)
-            removed = len(to_delete)
-            if removed:
-                self._write_all_entries(data)
-            return removed
-
 
 # ── Singleton ────────────────────────────────────────────
 
@@ -522,12 +462,6 @@ def get_interaction_router() -> InteractionRouter:
 # Sandboxed CLIs / MCP servers cannot write {data_dir}/run/, so persistence
 # must go through the server internal API first, falling back to a local
 # write only when the server is unreachable (e.g. unit tests, CLI on host).
-
-
-def _server_base_url() -> str:
-    import os
-
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
 
 
 def _run_coro_sync(coro: Any) -> Any:
@@ -556,11 +490,11 @@ def create_interaction_resilient(
         ValueError: If *callback_id* is already in use.
         OSError: If both the server API and the local write fail.
     """
-    import httpx
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{_server_base_url()}/api/internal/interaction/create",
+        resp = host_api.post(
+            "/api/internal/interaction/create",
             json={
                 "anima_name": anima_name,
                 "category": category,
@@ -598,11 +532,11 @@ def update_interaction_message_ts_resilient(callback_id: str, platform: str, ts:
     Best-effort: the ts is only used for post-resolve button invalidation, so
     failures are logged rather than raised.
     """
-    import httpx
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{_server_base_url()}/api/internal/interaction/message-ts",
+        resp = host_api.post(
+            "/api/internal/interaction/message-ts",
             json={"callback_id": callback_id, "platform": platform, "ts": ts},
             timeout=10.0,
         )

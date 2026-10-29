@@ -7,6 +7,7 @@ from __future__ import annotations
 """Tests for MemoryIndexer source-file deletion cleanup."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from core.memory.rag.indexer import MemoryChunk, MemoryIndexer
 from core.memory.rag.store import Document, SearchResult
@@ -81,9 +82,7 @@ def test_delete_indexed_file_deletes_matching_source_chunks(tmp_path: Path) -> N
     deleted_count = indexer.delete_indexed_file(tmp_path / source_file, "knowledge")
 
     assert deleted_count == 2
-    assert vector_store.metadata_calls == [
-        ("test_anima_knowledge", {"source_file": source_file}, 10_000)
-    ]
+    assert vector_store.metadata_calls == [("test_anima_knowledge", {"source_file": source_file}, 10_000)]
     assert vector_store.deleted == [
         (
             "test_anima_knowledge",
@@ -137,9 +136,38 @@ def test_delete_indexed_file_uses_absolute_source_for_outside_path(tmp_path: Pat
     deleted_count = indexer.delete_indexed_file(outside, "knowledge")
 
     assert deleted_count == 0
-    assert vector_store.metadata_calls == [
-        ("test_anima_knowledge", {"source_file": str(outside)}, 10_000)
-    ]
+    assert vector_store.metadata_calls == [("test_anima_knowledge", {"source_file": str(outside)}, 10_000)]
+
+
+def test_index_file_skips_skill_when_curator_check_raises(tmp_path: Path, caplog) -> None:
+    """An unknown curator decision must remove old vectors and skip the skill."""
+    import logging
+
+    file_path = tmp_path / "skills" / "unsafe-skill" / "SKILL.md"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("---\nname: unsafe-skill\n---\n", encoding="utf-8")
+    source_file = "skills/unsafe-skill/SKILL.md"
+    vector_store = MockVectorStore([])
+    indexer = _make_indexer(tmp_path, vector_store)
+    indexer.index_meta[source_file] = {"hash": "old", "chunks": 1}
+    indexer._skill_curator_replay = None
+    indexer._skill_curator_state_marker = None
+    indexer.is_ragignored = lambda _path: False
+    indexer.delete_indexed_file = MagicMock()
+
+    with (
+        patch("core.skills.loader.load_skill_metadata", return_value=MagicMock()),
+        patch("core.skills.curator.replay_curator_state", return_value=MagicMock()),
+        patch("core.skills.curator.curator_allows_access", side_effect=RuntimeError("curator unavailable")),
+        caplog.at_level(logging.WARNING, logger="animaworks.rag.indexer"),
+    ):
+        indexed = indexer.index_file(file_path, "skills")
+
+    assert indexed == 0
+    assert indexer._last_index_file_outcome.status == "skipped"
+    indexer.delete_indexed_file.assert_called_once_with(file_path, "skills")
+    assert vector_store.upserts == []
+    assert any("Failed to evaluate skill curator access" in record.message for record in caplog.records)
 
 
 def test_index_file_removes_stale_chunks_after_successful_upsert(tmp_path: Path) -> None:

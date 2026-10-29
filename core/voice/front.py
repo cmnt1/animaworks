@@ -13,14 +13,21 @@ synchronous callbacks supplied by the voice session.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import litellm
 
+from core.i18n import t
+
 logger = logging.getLogger(__name__)
+
+# gpt-5, gpt-5.6-luna, gpt-6-luna, gpt-10... but not gpt-4.1 / gpt-4o.
+_REASONING_GPT_RE = re.compile(r"gpt-(?:[5-9]|\d{2,})(?!\d)")
 
 _DEFAULT_MAX_TOKENS = 2048
 _DEFAULT_TEMPERATURE = 0.7
@@ -52,7 +59,8 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
         "description": (
             "時間のかかる作業・ツール実行・記憶の検索保存・タスク化・調査・実装などを、"
             "自分自身の本体（フルエージェント）に依頼する。会話で即答できないことはこれで依頼する。"
-            "挨拶・お礼・雑談・意見や感想・自分で即答できる質問には使わない"
+            "挨拶・お礼・雑談・意見や感想・自分で即答できる質問には使わない。"
+            "実行中の依頼がある間は新しい依頼をせず、完了を待つ。"
         ),
         "parameters": {
             "type": "object",
@@ -66,6 +74,14 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
         },
     },
 }
+
+
+def localized_ask_anima_tool() -> dict[str, Any]:
+    """Return the ask_anima tool schema in the configured locale."""
+    tool = copy.deepcopy(ASK_ANIMA_TOOL)
+    tool["function"]["description"] = t("voice.ask_anima_tool_description")
+    return tool
+
 
 READ_MEMORY_TOOL: dict[str, Any] = {
     "type": "function",
@@ -96,7 +112,7 @@ def _is_repeating(text: str, window: int = _REPEAT_WINDOW) -> bool:
 
 def extract_emotion(full_text: str) -> str:
     """Parse the emotion tag from a front response; default to ``neutral``."""
-    from core.emotion_tag import parse_emotion_value
+    from core.anima.emotion_tag import parse_emotion_value
 
     return parse_emotion_value(full_text)
 
@@ -128,10 +144,9 @@ class VoiceFrontLane:
         # llama.cpp endpoints; "local" is a harmless placeholder.
         self._api_key = api_key
         self._api_version = api_version
-        # ponytail: gpt-5.x (Azure/OpenAI) rejects temperature != 1 and would
-        # spend the small max_tokens budget on reasoning; substring match is
-        # enough until a second reasoning family shows up.
-        self._reasoning_model = "gpt-5" in model
+        # gpt-5 and later (Azure/OpenAI) reject temperature != 1 and would
+        # spend the small max_tokens budget on reasoning.
+        self._reasoning_model = _REASONING_GPT_RE.search(str(model)) is not None
         self._system_prompt = system_prompt
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -244,6 +259,11 @@ class VoiceFrontLane:
             kwargs.pop("temperature")
             kwargs.pop("extra_body")
             kwargs["reasoning_effort"] = "none"
+            # LiteLLM does not know newer deployments (e.g. azure/gpt-6-luna)
+            # are reasoning models: it rejects reasoning_effort client-side and
+            # forwards max_tokens, which the API refuses.
+            kwargs["allowed_openai_params"] = ["reasoning_effort"]
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         if tools:
             kwargs["tools"] = tools
 
@@ -256,6 +276,7 @@ class VoiceFrontLane:
                 kwargs["tool_choice"] = tool_choice
             else:
                 kwargs.pop("tool_choice", None)
+            # Streaming plus tool calls uses the low-latency lane; one_shot_completion is not suitable here.
             response = await litellm.acompletion(**kwargs)
 
             chunks: list[str] = []

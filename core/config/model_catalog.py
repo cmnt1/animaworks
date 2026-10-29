@@ -39,6 +39,7 @@ def _configured_model_entries(config: Any) -> list[dict[str, str]]:
                 "label": model,
                 "credential": str(data.get("credential") or ""),
                 "mode": str(data.get("mode") or ""),
+                "origin": "catalog",
             }
         )
     configured = [getattr(config, "anima_defaults", None), *getattr(config, "animas", {}).values()]
@@ -54,8 +55,36 @@ def _configured_model_entries(config: Any) -> list[dict[str, str]]:
             parsed = parse_fallback_entry(value, config)
             if parsed is not None:
                 mode, model = parsed
-                entries.append({"id": model, "label": model, "credential": "", "mode": mode.upper()})
+                entries.append({"id": model, "label": model, "credential": "", "mode": mode.upper(), "origin": "anima"})
     return entries
+
+
+def model_credential_available(
+    model: str,
+    mode: str,
+    config: Any,
+    *,
+    codex_login: bool | None = None,
+    grok_login: bool | None = None,
+) -> bool:
+    """Return whether *model* can actually run with the configured credentials."""
+    from core.config.model_config import _FAMILY_CREDENTIAL_MAP, _model_family
+
+    mode = (mode or "").upper()
+    if mode == "C":
+        if codex_login is None:
+            codex_login = is_codex_login_available()
+        if codex_login:
+            return True
+    if mode == "X":
+        return is_grok_authenticated() if grok_login is None else grok_login
+    provider = _FAMILY_CREDENTIAL_MAP.get(_model_family(model), _model_family(model))
+    if provider == "gemini" and provider not in config.credentials and "google" in config.credentials:
+        provider = "google"
+    credential = config.credentials.get(provider)
+    return credential is not None and (
+        bool(credential.api_key) or credential.type in {"claude_code_login", "codex_login"}
+    )
 
 
 def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
@@ -72,14 +101,7 @@ def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
         provider = _FAMILY_CREDENTIAL_MAP.get(_model_family(model), _model_family(model))
         if provider == "gemini" and provider not in config.credentials and "google" in config.credentials:
             provider = "google"
-        credential = config.credentials.get(provider)
-        available = credential is not None and (
-            bool(credential.api_key) or credential.type in {"claude_code_login", "codex_login"}
-        )
-        if mode == "C":
-            available = available or codex_login
-        elif mode == "X":
-            available = grok_login
+        available = model_credential_available(model, mode, config, codex_login=codex_login, grok_login=grok_login)
         if not available or model in seen:
             continue
         models.append({"id": model, "label": model.removeprefix("openai/"), "credential": provider, "mode": mode})
@@ -88,6 +110,7 @@ def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
     # IDs. Wildcard routing patterns are not concrete picker entries.
     by_id = {entry["id"]: entry for entry in models}
     for entry in _configured_model_entries(config):
+        entry = {key: value for key, value in entry.items() if key != "origin"}
         by_id[entry["id"]] = {**by_id.get(entry["id"], entry), **{key: value for key, value in entry.items() if value}}
     return list(by_id.values())
 

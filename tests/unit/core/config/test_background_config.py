@@ -15,6 +15,7 @@ from core.config.models import (
     PrimingConfig,
     ServerConfig,
     resolve_background_worker_pool_size,
+    resolve_chat_max_concurrency,
 )
 
 # ── ServerConfig ─────────────────────────────────────────────
@@ -28,11 +29,13 @@ class TestServerConfig:
         assert sc.keepalive_interval == 30
         assert sc.anima_startup_ready_timeout == 120
         assert sc.anima_stop_timeout == 60.0
+        assert sc.restart_drain_timeout_seconds == 600
         assert sc.health_check_warmup_seconds == 300
         assert sc.runner_warmup_seconds == 180
         assert sc.spawn_timeout == 300
         assert sc.supervisor_respawn_max_retries == 3
         assert sc.supervisor_respawn_retry_interval_seconds == 30.0
+        assert sc.chat_max_concurrency == 1
 
     def test_server_config_rejects_invalid_intervals(self):
         """keepalive_interval must be less than ipc_stream_timeout."""
@@ -57,6 +60,10 @@ class TestServerConfig:
     def test_server_config_custom_anima_stop_timeout(self):
         sc = ServerConfig(anima_stop_timeout=45.5)
         assert sc.anima_stop_timeout == 45.5
+
+    def test_server_config_custom_restart_drain_timeout(self):
+        sc = ServerConfig(restart_drain_timeout_seconds=0)
+        assert sc.restart_drain_timeout_seconds == 0
 
     def test_server_config_custom_warmup_and_respawn_settings(self):
         sc = ServerConfig(
@@ -93,7 +100,7 @@ class TestBackgroundTaskConfig:
         """BackgroundTaskConfig has expected defaults."""
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
-        assert btc.result_retention_hours == 24
+        assert not hasattr(btc, "result_retention_hours")
         assert btc.result_memory_retention_minutes == 60
         assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
@@ -220,7 +227,6 @@ class TestAnimaWorksConfigBackground:
         config = AnimaWorksConfig()
         # Modify background_task settings
         config.background_task.enabled = False
-        config.background_task.result_retention_hours = 48
         config.background_task.result_memory_retention_minutes = 30
         config.background_task.max_completed_tasks_in_memory = 50
         config.background_task.eligible_tools["custom_tool"] = BackgroundToolConfig(
@@ -234,7 +240,7 @@ class TestAnimaWorksConfigBackground:
 
         # Verify background_task round-trip
         assert restored.background_task.enabled is False
-        assert restored.background_task.result_retention_hours == 48
+        assert not hasattr(restored.background_task, "result_retention_hours")
         assert restored.background_task.result_memory_retention_minutes == 30
         assert restored.background_task.max_completed_tasks_in_memory == 50
         assert "custom_tool" in restored.background_task.eligible_tools
@@ -242,7 +248,35 @@ class TestAnimaWorksConfigBackground:
 
         # Verify server round-trip
         assert restored.server.ipc_stream_timeout == 600
+        assert restored.server.chat_max_concurrency == 1
 
         # Verify default eligible tools survived round-trip
         assert "generate_character_assets" in restored.background_task.eligible_tools
         assert restored.background_task.eligible_tools["generate_character_assets"].threshold_s == 30
+
+
+class TestSchemasChatMaxConcurrency:
+    def test_chat_max_concurrency_status_override(self, tmp_path):
+        (tmp_path / "status.json").write_text('{"chat_max_concurrency": 4}', encoding="utf-8")
+
+        assert resolve_chat_max_concurrency(tmp_path, default=2) == 4
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            '{"chat_max_concurrency": 0}',
+            '{"chat_max_concurrency": 11}',
+            '{"chat_max_concurrency": true}',
+            '{"chat_max_concurrency": "3"}',
+            "not-json",
+        ],
+    )
+    def test_invalid_chat_max_concurrency_override_uses_default(self, tmp_path, status):
+        (tmp_path / "status.json").write_text(status, encoding="utf-8")
+
+        assert resolve_chat_max_concurrency(tmp_path, default=2) == 2
+
+    @pytest.mark.parametrize("value", [0, 11])
+    def test_server_config_rejects_invalid_chat_max_concurrency(self, value):
+        with pytest.raises(ValueError):
+            ServerConfig(chat_max_concurrency=value)

@@ -2,7 +2,7 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.execution.error_classifier — classification matrix."""
+"""Unit tests for core.llm.guard.error_classifier — classification matrix."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core.execution import error_classifier
-from core.execution.error_classifier import (
+from core.llm.guard import error_classifier
+from core.llm.guard.error_classifier import (
     FailoverReason,
     classify_llm_error,
     classify_llm_error_message,
@@ -418,6 +418,6 @@ def test_message_classifier_unknown_degrades_safely() -> None:
 def test_every_reason_has_hint(reason: FailoverReason) -> None:
     # Every enum member must be reachable via a hint template (guards the
     # complete taxonomy contract).
-    from core.execution.error_classifier import _HINTS
+    from core.llm.guard.error_classifier import _HINTS
 
     assert reason in _HINTS

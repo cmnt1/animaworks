@@ -78,6 +78,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "通知の優先度（デフォルト: normal）",
         "en": "Notification priority (default: normal)",
     },
+    "schema.call_human.sha": {
+        "ja": "確認キー（8桁）。初回の呼び出しで返されるので、そのセッションでは以降これを付ける",
+        "en": "Confirmation key (8 hex chars). Returned by the first call; include it on later calls in the same session",
+    },
     "schema.call_human.subject": {
         "ja": "通知の件名（簡潔に）",
         "en": "Notification subject (keep it brief)",
@@ -97,6 +101,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "schema.call_human.category_desc": {
         "ja": "通知カテゴリ（inbox分岐用）",
         "en": "Notification category for inbox routing",
+    },
+    "schema.call_human.callback_id": {
+        "ja": "インタラクティブ通知で使う安定したcallback ID（省略時は自動生成）",
+        "en": "Stable callback ID for an interactive notification (auto-generated if omitted)",
     },
     "schema.call_human.allowed_users_desc": {
         "ja": "プラットフォーム別の承認者ID",
@@ -119,6 +127,14 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": (
             "Check the list of currently permitted tools, external tools, and file access. Know what you can and cannot use in advance to avoid trial-and-error cycles."
         ),
+    },
+    "schema.check_permissions.tool_name": {
+        "ja": "特定ツールの許可状態を確認する場合に指定するツール名（任意）",
+        "en": "Optional tool name for a focused permission check.",
+    },
+    "schema.check_permissions.action": {
+        "ja": "特定ツールのアクションを確認する場合に指定するアクション名（任意）",
+        "en": "Optional action name for a focused permission check.",
     },
     "schema.create_skill.allowed_tools": {
         "ja": "frontmatter allowed_tools（任意）",
@@ -159,14 +175,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "schema.delegate_task.desc": {
         "ja": (
             "直属部下のAnimaにタスクを委譲する（部下のTaskExecが実行する）。"
+            "subject（と任意の version）を指定すると、同じ相手・同じ対象で未完了の依頼がある場合は"
+            "新しいタスクを作らず既存の依頼のタスクIDを返す。"
             "詳細は operations/task-delegation-guide.md を参照。"
         ),
         "en": (
             "Delegate a task to a direct subordinate Anima (executed by the subordinate's TaskExec). "
+            "When subject (and optionally version) is supplied and an open request for the same "
+            "recipient and subject exists, it returns the existing task ID instead of creating a new task. "
+            "A result with deduplicated=true means the request was consolidated into an existing task. "
             "See operations/task-delegation-guide.md for details."
         ),
         "ko": (
             "직속 부하 Anima에게 태스크를 위임한다(부하의 TaskExec가 실행). "
+            "subject(선택적으로 version)를 지정하면 같은 상대·같은 대상의 미완료 요청이 있을 때 "
+            "새 태스크를 만들지 않고 기존 요청의 태스크 ID를 반환한다. "
+            "deduplicated=true는 기존 요청에 통합되었다는 뜻이다. "
             "상세는 operations/task-delegation-guide.md 참조."
         ),
     },
@@ -214,9 +238,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "검증 가능한 수락 조건. 부하의 실행 프롬프트에 포함된다",
     },
     "schema.delegate_task.model": {
-        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-4-6' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
-        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
-        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-4-6' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
+        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
+        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
+        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
+    },
+    "schema.delegate_task.subject": {
+        "ja": "任意の対象キー（例: github:owner/repo#123、issue:owner/repo#45、または自由文字列）。同じ委譲元・委譲先・subject・version の未完了依頼があれば、新規作成せず既存の依頼のタスクIDを返す。未指定なら従来どおり毎回新規作成する",
+        "en": "Optional subject key (e.g. github:owner/repo#123, issue:owner/repo#45, or any free-form string). If an open request with the same delegator, recipient, subject and version exists, the existing task ID is returned instead of creating a new task. When unset, every call creates a new task as before",
+        "ko": "임의의 대상 키(예: github:owner/repo#123, issue:owner/repo#45 또는 자유 문자열). 같은 위임자·대상·subject·version의 미완료 요청이 있으면 새로 만들지 않고 기존 요청의 태스크 ID를 반환한다. 미지정이면 기존과 같이 매번 새로 만든다",
+    },
+    "schema.delegate_task.version": {
+        "ja": "任意の版キー（例: 対象の head SHA）。subject と組み合わせて依頼キーにする。版が変われば同じ対象でも別タスクになる",
+        "en": "Optional version key (e.g. the target head SHA). Combined with subject to form the request key; a different version creates a separate task even for the same subject",
+        "ko": "임의의 버전 키(예: 대상 head SHA). subject와 결합해 요청 키를 만든다. 버전이 다르면 같은 대상이라도 별도 태스크가 된다",
     },
     "schema.submit_tasks.resume": {
         "ja": "終了したpendingタスクを保存済みの実行入力で再開する。trueの場合はtask_idとresumeのみ指定。新規タスクにはtitleとdescriptionが必須。",
@@ -224,9 +258,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "저장된 실행 입력으로 종료된 pending 작업을 재개합니다. true이면 task_id와 resume만 지정합니다. 새 작업에는 title과 description이 필요합니다.",
     },
     "schema.submit_tasks.task_model": {
-        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-4-6' や 'c:codex/gpt-5.6-sol'）。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
-        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). Leave empty to use the Anima default model",
-        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-4-6' 또는 'c:codex/gpt-5.6-sol'). 보통은 미지정(기본 모델 사용)",
+        "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
+        "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). Leave empty to use the Anima default model",
+        "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 보통은 미지정(기본 모델 사용)",
     },
     "schema.disable_subordinate.desc": {
         "ja": "配下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の配下であれば操作可能。",
@@ -275,9 +309,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Status to filter by (omit for active tasks only)",
     },
     "schema.manage_channel.action": {
-        "ja": "操作種別。create=チャネル作成, add_member=メンバー追加, remove_member=メンバー削除, info=チャネル情報表示",
+        "ja": "操作種別。create=チャネル作成, archive=チャネルアーカイブ, add_member=メンバー追加, remove_member=メンバー削除, info=チャネル情報表示",
         "en": (
-            "Action type. create=create channel, add_member=add members, remove_member=remove members, info=show channel info"
+            "Action type. create=create channel, archive=archive channel, add_member=add members, remove_member=remove members, info=show channel info"
         ),
     },
     "schema.manage_channel.channel": {
@@ -286,10 +320,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.manage_channel.desc": {
         "ja": (
-            "Boardチャネルのアクセス制御(ACL)を管理する。チャネルの作成、メンバーの追加・削除、チャネル情報の確認ができる。メンバーリストが空のチャネル（general, ops等）は全員アクセス可能。"
+            "Boardチャネルのアクセス制御(ACL)を管理する。チャネルの作成・アーカイブ、メンバーの追加・削除、チャネル情報の確認ができる。メンバーリストが空のチャネル（general, ops等）は全員アクセス可能。"
         ),
         "en": (
-            "Manage Board channel access control (ACL). Create channels, add/remove members, and view channel info. Channels with an empty member list (general, ops, etc.) are accessible to all."
+            "Manage Board channel access control (ACL). Create/archive channels, add/remove members, and view channel info. Channels with an empty member list (general, ops, etc.) are accessible to all."
         ),
     },
     "schema.manage_channel.description": {
@@ -406,10 +440,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.restart_subordinate.desc": {
         "ja": (
-            "配下のAnimaプロセスを再起動する（配下であれば操作可能）。\nモデル変更（set_subordinate_model）後に呼び出すことで新モデルを即時反映できる。\nReconciliation ループが 30 秒以内にプロセスを再起動する。"
+            "配下のAnimaプロセスを再起動する（配下であれば操作可能）。\nモデル変更は root が稼働中プロセスへ reload_config を送るため通常は再起動不要。\nReconciliation ループが 30 秒以内にプロセスを再起動する。"
         ),
         "en": (
-            "Restart a descendant Anima process (any descendant can be targeted).\nCall this after set_subordinate_model to apply the new model immediately.\nThe reconciliation loop will restart the process within 30 seconds."
+            "Restart a descendant Anima process (any descendant can be targeted).\nRoot sends reload_config after model changes, so a restart is normally unnecessary.\nThe reconciliation loop will restart the process within 30 seconds."
         ),
     },
     "schema.restart_subordinate.name": {
@@ -426,10 +460,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.set_subordinate_background_model.desc": {
         "ja": (
-            "配下のAnimaのバックグラウンドモデル（heartbeat/cron用）を変更する（配下であれば操作可能）。\n変更は即時 status.json に保存される。反映には restart_subordinate を併用すること。\n\nバックグラウンドモデル未設定時はメインモデル（model）がそのまま使用される。\nクリアするには model に空文字 '' を指定する。"
+            "配下のAnimaのバックグラウンドモデル（heartbeat/cron用）を変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\nバックグラウンドモデル未設定時はメインモデル（model）がそのまま使用される。\nクリアするには model に空文字 '' を指定する。"
         ),
         "en": (
-            "Change a descendant's background model (for heartbeat/cron). Any descendant can be targeted.\nChanges are saved to status.json immediately. Use restart_subordinate to apply.\n\nWhen no background model is set, the main model is used.\nPass an empty string '' to clear the background model."
+            "Change a descendant's background model (for heartbeat/cron). Any descendant can be targeted.\nChanges are saved to status.json immediately and root asks running processes to reload it. Stopped Animas use it on next start.\n\nWhen no background model is set, the main model is used.\nPass an empty string '' to clear the background model."
         ),
     },
     "schema.set_subordinate_background_model.model": {
@@ -446,15 +480,15 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.set_subordinate_model.desc": {
         "ja": (
-            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 config.json に保存されるが、実行中プロセスへの反映には restart_subordinate を併用すること。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-4-6            最高性能・推奨\n  claude-sonnet-4-6          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode B / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
+            "配下のAnimaのLLMモデルを変更する（配下であれば操作可能）。\n変更は即時 status.json に保存され、root が稼働中プロセスへ再読み込みを依頼する。停止中の場合は次回起動時に反映される。\n\n指定するモデル名は provider/model_name 形式（Claude は prefix 不要）。\nKNOWN_MODELS 外の名前を指定した場合も警告のみで処理は続行する。\n\n主なモデル名:\n  [Mode S / Claude]\n  claude-opus-5-5            最高性能・推奨\n  claude-sonnet-5-5          バランス型・推奨\n  claude-haiku-4-5-20251001  軽量・高速（レガシー）\n  [Mode A / OpenAI]\n  openai/gpt-4.1             最新・コーディング強\n  openai/gpt-4.1-mini        高速・低コスト\n  openai/o4-mini-2025-04-16  推論・低コスト\n  [Mode A / Google]\n  google/gemini-2.5-pro      最高性能\n  google/gemini-2.5-flash    高速バランス\n  [Mode A / xAI]\n  xai/grok-4                 最新Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             ローカル・tool_use対応\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          中型ローカル\n"
         ),
         "en": (
-            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to config.json immediately, but require restart_subordinate to take effect on a running process.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-4-6            Highest performance, recommended\n  claude-sonnet-4-6          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode B / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
+            "Change a descendant's LLM model (any descendant can be targeted).\nChanges are saved to status.json immediately and root asks running processes to reload them. Stopped Animas use the new model on next start.\n\nModel names use provider/model_name format (Claude models need no prefix).\nUnknown model names produce a warning but processing continues.\n\nAvailable models:\n  [Mode S / Claude]\n  claude-opus-5-5            Highest performance, recommended\n  claude-sonnet-5-5          Balanced, recommended\n  claude-haiku-4-5-20251001  Lightweight, fast (legacy)\n  [Mode A / OpenAI]\n  openai/gpt-4.1             Latest, strong at coding\n  openai/gpt-4.1-mini        Fast, low cost\n  openai/o4-mini-2025-04-16  Reasoning, low cost\n  [Mode A / Google]\n  google/gemini-2.5-pro      Highest performance\n  google/gemini-2.5-flash    Fast, balanced\n  [Mode A / xAI]\n  xai/grok-4                 Latest Grok\n  [Mode A / Ollama local]\n  ollama/glm-4.7             Local, tool_use capable\n  [Mode A / Ollama local]\n  ollama/gemma3:12b          Mid-size local\n"
         ),
     },
     "schema.set_subordinate_model.model": {
-        "ja": "新しいモデル名（例: claude-sonnet-4-6, openai/gpt-4.1）",
-        "en": "New model name (e.g. claude-sonnet-4-6, openai/gpt-4.1)",
+        "ja": "新しいモデル名（例: claude-sonnet-5-5, openai/gpt-4.1）",
+        "en": "New model name (e.g. claude-sonnet-5-5, openai/gpt-4.1)",
     },
     "schema.set_subordinate_model.name": {
         "ja": "変更する部下のAnima名",

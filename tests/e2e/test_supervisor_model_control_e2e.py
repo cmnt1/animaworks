@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.config.models import AnimaModelConfig, load_config, save_config
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 from core.tooling.handler import ToolHandler
 
 

@@ -1,39 +1,36 @@
 ---
 name: web-search-tool
 description: >-
-  Web search tool. Queries the public internet via the Brave Search API.
-  Use when: researching current events, finding documentation, fact-checking, or fetching ranked search results.
+  Web search tool. Searches for information on the internet using the Brave Search API.
+  Use when: Use when: researching the latest news, searching technical documentation, fact-checking, or retrieving a list of search results.
 tags: [search, web, external]
 ---
 
+
 # Web Search Tool
 
-External tool for web search via Brave Search API.
+An external web search tool that uses the Brave Search API.
 
-## Invocation via Bash
+## How to Call
 
-Use **Bash** with `animaworks-tool web_search <subcommand> [args]`:
-
-```bash
-animaworks-tool web_search "search query" [-n 10] [-l ja] [-f pd]
-```
+**Bash**: Run with `animaworks-tool web_search "検索クエリ" [オプション]`
 
 ## Parameters
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+|-----------|-----|---------|-------------|
 | query | string | (required) | Search query |
-| count | integer | 10 | Number of results |
+| count | integer | 10 | Number of results to retrieve |
 | lang | string | "ja" | Search language |
-| freshness | string | null | Freshness filter (pd=24h, pw=1week, pm=1month, py=1year) |
+| freshness | string | null | Freshness filter (pd=24h, pw=1 week, pm=1 month, py=1 year) |
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
-animaworks-tool web_search "search query" [-n 10] [-l ja] [-f pd]
+animaworks-tool web_search "検索クエリ" [-n 10] [-l ja] [-f pd]
 ```
 
 ## Notes
 
-- BRAVE_API_KEY must be configured
-- Search results are treated as external (untrusted) data
+- Requires BRAVE_API_KEY configuration
+- Search results are treated as external sources (untrusted)

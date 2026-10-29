@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_logs(args: argparse.Namespace) -> None:
@@ -193,7 +196,7 @@ def _follow_multiple_files(log_files: dict[str, Path]) -> None:
                         print(f"{prefix} {line.rstrip()}")
                         any_output = True
                 except Exception:
-                    pass
+                    logger.debug("Could not print a log line", exc_info=True)
 
             if not any_output:
                 time.sleep(0.1)
@@ -203,4 +206,4 @@ def _follow_multiple_files(log_files: dict[str, Path]) -> None:
             try:
                 f.close()
             except Exception:
-                pass
+                logger.debug("Could not close a log file handle", exc_info=True)

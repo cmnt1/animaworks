@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from core.config.schemas import GitHubWebhookConfig
 from core.schemas import Message
-from server.github_gateway import GitHubWebhookManager
+from server.gateways.github_gateway import GitHubWebhookManager
 from server.routes.webhooks import create_webhooks_router
 
 pytestmark = pytest.mark.e2e
@@ -139,7 +139,7 @@ def test_signed_pr_webhook_notifies_dispatcher_after_quiet_period(data_dir, monk
         assert message.intent == "report"
         assert "【GitHub通知】" in message.content
         assert "example-org/example-repo#42" in message.content
-        assert "delegate_task" in message.content
+        assert "delegate_task" not in message.content
 
         state = json.loads(state_file.read_text(encoding="utf-8"))
         entry = state["prs"]["example-org/example-repo#42"]

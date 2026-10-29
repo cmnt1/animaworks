@@ -22,70 +22,47 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "フィルタ（all: 全件, active: 進行中, completed: 完了済み）。デフォルト: active",
         "en": ("Filter (all: all tasks, active: in-progress, completed: finished). Default: active"),
     },
-    "schema.text_format.args_label": {
-        "ja": "引数",
-        "en": "Args",
-    },
-    "schema.text_format.example": {
-        "ja": '{"tool": "ツール名", "arguments": {"引数名": "値"}}',
-        "en": '{"tool": "tool_name", "arguments": {"arg_name": "value"}}',
-    },
-    "schema.text_format.fewshot1_prompt": {
-        "ja": "ユーザー: docker ps して",
-        "en": "User: run docker ps",
-    },
-    "schema.text_format.fewshot2_prompt": {
-        "ja": "ユーザー: 今のメモリ使用量を教えて",
-        "en": "User: show current memory usage",
-    },
-    "schema.text_format.fewshot_header": {
-        "ja": "### 使用例",
-        "en": "### Examples",
-    },
-    "schema.text_format.header": {
-        "ja": "## 利用可能なツール",
-        "en": "## Available Tools",
-    },
-    "schema.text_format.instruction": {
-        "ja": "外部情報の取得やコマンド実行が必要な場合は、**必ず**以下の形式で ```json コードブロックを出力してツールを呼び出してください:",
-        "en": (
-            "When you need external information or command execution, you **MUST** output a ```json code block to invoke a tool:"
-        ),
-    },
-    "schema.text_format.required_label": {
-        "ja": "(必須)",
-        "en": "(required)",
-    },
-    "schema.text_format.rule_no_empty_promise": {
-        "ja": "「調べます」「確認します」とだけ言って終わらないでください。調べるならツールを呼び出してください。",
-        "en": 'Do NOT just say "I\'ll check" without actually calling a tool.',
-    },
-    "schema.text_format.rule_no_fabricate": {
-        "ja": "**重要**: コマンド出力・ファイル内容・プロセス情報などを推測や想像で生成してはいけません。必ずツールで取得してください。",
-        "en": (
-            "**Important**: NEVER fabricate command output, file contents, or system information. Always use a tool to retrieve real data."
-        ),
-    },
-    "schema.text_format.rule_one_call": {
-        "ja": "1回のメッセージでツール呼び出しは1つだけにしてください。",
-        "en": "Only one tool call per message.",
-    },
-    "schema.text_format.rule_plain_text": {
-        "ja": "ツールを使う必要がなければ、普通にテキストで返答してください。",
-        "en": "If you don't need to use a tool, respond with plain text.",
-    },
-    "schema.text_format.rule_wait": {
-        "ja": "ツールの実行結果は次のメッセージで提供されます。結果を待ってから回答してください。",
-        "en": ("Tool results will be provided in the next message. Wait for results before answering."),
-    },
-    "schema.text_format.tools_header": {
-        "ja": "### ツール一覧",
-        "en": "### Tool List",
-    },
     "schema.update_task.desc": {
-        "ja": ("タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。"),
-        "en": ("Update a task's status. Set status='done' on completion, status='cancelled' on abort."),
-        "ko": ("작업 상태를 업데이트한다. 완료 시 status='done', 중단 시 status='cancelled'로 설정한다."),
+        "ja": (
+            "タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。委譲したタスクには status='cancelled'（取り下げ）だけ指定できる。"
+            "pending で終える時は何を待っているかを waiting_for に書くと、それが起きた時に自動で再開される。"
+            "範囲を狭める・広げる・分ける時は scope_note に書くと依頼元に伝わる。"
+        ),
+        "en": (
+            "Update a task's status. Set status='done' on completion, status='cancelled' on abort. For a task you delegated, only status='cancelled' (withdraw the request) is allowed. "
+            "When ending as pending, put what you are waiting for in waiting_for so the task resumes automatically when it happens. "
+            "When narrowing, widening, or splitting the scope, write it in scope_note to inform the requester."
+        ),
+        "ko": (
+            "작업 상태를 업데이트한다. 완료 시 status='done', 중단 시 status='cancelled'로 설정한다. 위임한 작업에는 status='cancelled'(요청 철회)만 지정할 수 있다. "
+            "pending으로 끝낼 때 무엇을 기다리는지 waiting_for에 적으면 해당 사건이 발생했을 때 자동으로 재개된다. "
+            "범위를 좁히거나 넓히거나 나눌 때는 scope_note에 적으면 요청자에게 전달된다."
+        ),
+    },
+    "schema.update_task.waiting_for": {
+        "ja": "pending で終える時に何を待っているか（kind=task/time/message/external）。task/time は満たされると自動で再開される。",
+        "en": "What the task is waiting for when ending as pending (kind=task/time/message/external). task/time waits resume automatically when satisfied.",
+        "ko": "pending으로 끝낼 때 기다리는 대상(kind=task/time/message/external). task/time 대기는 충족되면 자동 재개된다.",
+    },
+    "schema.update_task.waiting_for_kind": {
+        "ja": "待ちの種類（task=タスク完了, time=時刻, message=返事, external=外部の出来事）",
+        "en": "Wait kind (task=task finished, time=timestamp, message=reply, external=external event)",
+        "ko": "대기 종류(task=태스크 완료, time=시각, message=회신, external=외부 사건)",
+    },
+    "schema.update_task.waiting_for_ref": {
+        "ja": "待つ対象（task はタスクID、message は相手、external は自由文字列）",
+        "en": "What to wait for (task ID for task, person for message, free text for external)",
+        "ko": "기다리는 대상(task는 태스크 ID, message는 상대, external은 자유 문자열)",
+    },
+    "schema.update_task.waiting_for_until": {
+        "ja": "待つ期限の ISO8601 時刻（kind=time では必須）",
+        "en": "ISO8601 timestamp to wait until (required for kind=time)",
+        "ko": "대기 기한의 ISO8601 시각(kind=time에서 필수)",
+    },
+    "schema.update_task.scope_note": {
+        "ja": "受け手が決めた範囲メモ（狭める・広げる・分ける内容）。履歴に追記され、依頼元に1通通知される。",
+        "en": "The receiver's scope note (narrowing, widening, or splitting). Appended to history and sent once to the requester.",
+        "ko": "수신자가 정한 범위 메모(좁히기·넓히기·나누기). 이력에 추가되고 요청자에게 한 번 알린다.",
     },
     "schema.update_task.status": {
         "ja": "新しいステータス",
@@ -111,10 +88,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.vault_get.desc": {
         "ja": (
-            "暗号化されたクレデンシャルvaultから値を取得する。APIキー、パスワード、トークンなどの秘密情報を安全に保管・取得できる。sectionとkeyを指定して値を取得する。"
+            "暗号化されたクレデンシャルvaultから値を取得する。自分の名前空間とsharedのみ読み取り可能。section省略時は自分の名前空間、次にsharedを検索する。"
         ),
         "en": (
-            "Retrieve a value from the encrypted credential vault. Securely stores and retrieves secrets such as API keys, passwords, and tokens. Specify section and key to get a value."
+            "Retrieve a value from the encrypted credential vault. Only your own namespace and shared are readable. If section is omitted, your namespace is searched before shared."
         ),
     },
     "schema.vault_get.key": {
@@ -122,23 +99,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Key name (e.g. 'api_key', 'master_password')",
     },
     "schema.vault_get.section": {
-        "ja": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
-        "en": "Section name (e.g. 'shared', 'bitwarden', 'bank')",
+        "ja": "自分の名前空間またはshared（省略時は両方を検索）",
+        "en": "Your own namespace or shared (omit to search both)",
     },
     "schema.vault_list.desc": {
-        "ja": "暗号化されたクレデンシャルvaultのセクション・キー一覧を表示する。値は表示されない（セクション名とキー名のみ）。",
-        "en": (
-            "List sections and keys in the encrypted credential vault. Values are not shown (section and key names only)."
-        ),
+        "ja": "自分の名前空間とsharedにあるキー名だけを一覧表示する。他のAnimaの名前空間は表示されず、値も表示されない。",
+        "en": ("List key names in your own namespace and shared. Other Animas' namespaces and all values are hidden."),
     },
     "schema.vault_list.section": {
-        "ja": "セクション名（省略時は全セクション一覧）",
-        "en": "Section name (omit to list all sections)",
+        "ja": "自分の名前空間またはshared（省略時は両方を一覧表示）",
+        "en": "Your own namespace or shared (omit to list both)",
     },
     "schema.vault_store.desc": {
-        "ja": "暗号化されたクレデンシャルvaultに値を保存する。APIキー、パスワード、トークンなどの秘密情報を暗号化して保管する。",
+        "ja": "自分の名前空間に値を暗号化して保存する。sharedや他のAnimaの名前空間には書き込めない。",
         "en": (
-            "Store a value in the encrypted credential vault. Encrypts and stores secrets such as API keys, passwords, and tokens."
+            "Encrypt and store a value in your own namespace. Animas cannot write to shared or another Anima's namespace."
         ),
     },
     "schema.vault_store.key": {
@@ -146,8 +121,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Key name (e.g. 'api_key', 'master_password')",
     },
     "schema.vault_store.section": {
-        "ja": "セクション名（例: 'shared', 'bitwarden', 'bank'）",
-        "en": "Section name (e.g. 'shared', 'bitwarden', 'bank')",
+        "ja": "自分の名前空間（省略時は自動選択）",
+        "en": "Your own namespace (selected automatically when omitted)",
     },
     "schema.vault_store.value": {
         "ja": "保存する値（暗号化されて保存される）",

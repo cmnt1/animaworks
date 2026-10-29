@@ -96,10 +96,11 @@ class SystemNote(Vertical):
     }
     """
 
-    def __init__(self, label: str, text: str, **kwargs) -> None:
+    def __init__(self, label: str, text: str, *, muted: bool = True, **kwargs) -> None:
         super().__init__(**kwargs)
         self._label = label
         self._text = text
+        self._muted = muted
         self.label_widget = Static("", classes="system-label")
         self.message = TranscriptText("", classes="system-message")
 
@@ -113,8 +114,9 @@ class SystemNote(Vertical):
         # `bright_black` means nothing — and an unknown name silently
         # drops the whole style, bold included. A `Style` object is kept
         # as it is.
-        self.label_widget.update(Text(self._label, style=Style.parse(f"{MUTED_STYLE} bold")))
-        rendered = render_markdown(strip_html_comments(self._text).rstrip(), muted=True)
+        label_style = f"{MUTED_STYLE} bold" if self._muted else "bold"
+        self.label_widget.update(Text(self._label, style=Style.parse(label_style)))
+        rendered = render_markdown(strip_html_comments(self._text).rstrip(), muted=self._muted)
         self.message.update(transcript_renderable(rendered))
 
 

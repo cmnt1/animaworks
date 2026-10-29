@@ -74,21 +74,6 @@ def strip_code_fence(text: str) -> str:
 _FENCE_BLOCK_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
 
 
-def extract_fenced_block(text: str) -> str | None:
-    """Return the content of the first fenced code block, if any.
-
-    Unlike :func:`strip_code_fence` (which expects a whole-value wrapper),
-    this finds a fence anywhere in the text.  Returns ``None`` when no
-    fence is present.
-    """
-    if not text:
-        return None
-    m = _FENCE_BLOCK_RE.search(text.strip())
-    if m:
-        return m.group(1).strip()
-    return None
-
-
 # ── Robust JSON loading ────────────────────────────────────────────────
 
 

@@ -1,43 +1,38 @@
 ---
 name: gmail-tool
 description: >-
-  Gmail integration tool for unread checks, reading bodies, and drafts via OAuth2 Gmail API access.
-  Use when: reading inbox mail, fetching message bodies, writing drafts, or searching labeled mail.
+  Gmail integration tool. Performs unread check, body retrieval, and draft creation via Gmail API using OAuth2.
+  Use when: Use when: you need to check received emails, read email bodies, create drafts, search the inbox, or work with labeled emails.
 tags: [communication, gmail, email, external]
 ---
 
+
 # Gmail Tool
 
-External tool for Gmail operations via OAuth2 API access.
+An external tool that directly operates on Gmail emails using OAuth2.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool gmail <subcommand> [args]`:
+**Bash**: Run with `animaworks-tool gmail <サブコマンド> [引数]`
 
-```bash
-animaworks-tool gmail unread [-n 20]
-animaworks-tool gmail read MESSAGE_ID
-animaworks-tool gmail draft --to ADDR --subject SUBJ --body BODY [--thread-id TID]
-```
-
-## Actions
+## Available Actions
 
 ### unread — List unread emails
-```json
-{"tool_name": "gmail", "action": "unread", "args": {"max_results": 20}}
+```bash
+animaworks-tool gmail unread [-n 20]
 ```
 
 ### read_body — Read email body
-```json
-{"tool_name": "gmail", "action": "read_body", "args": {"message_id": "message ID"}}
+```bash
+animaworks-tool gmail read MESSAGE_ID
 ```
 
 ### draft — Create draft
-```json
-{"tool_name": "gmail", "action": "draft", "args": {"to": "recipient@example.com", "subject": "Subject", "body": "Body text", "thread_id": "thread ID (optional)"}}
+```bash
+animaworks-tool gmail draft --to ADDR --subject SUBJ --body BODY [--thread-id TID]
 ```
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool gmail unread [-n 20]
@@ -47,5 +42,5 @@ animaworks-tool gmail draft --to ADDR --subject SUBJ --body BODY [--thread-id TI
 
 ## Notes
 
-- OAuth2 authentication flow required on first use
-- credentials.json and token.json must be in ~/.animaworks/
+- OAuth2 authentication flow is required on first use
+- credentials.json and token.json must be placed in ~/.animaworks/

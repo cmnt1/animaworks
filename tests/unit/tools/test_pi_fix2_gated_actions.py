@@ -17,7 +17,6 @@ import pytest
 from core.config.models import ExternalToolsPermission, PermissionsConfig
 from core.tooling.permissions import get_permitted_tools, is_action_gated
 
-
 # ── EXECUTION_PROFILE flags ───────────────────────────────────
 
 
@@ -25,27 +24,27 @@ class TestExecutionProfileGatedFlags:
     """Newly gated actions must advertise gated=True."""
 
     def test_chatwork_send_gated(self) -> None:
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["send"].get("gated") is True
 
     def test_discord_send_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["send"].get("gated") is True
 
     def test_discord_channel_post_still_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_post"].get("gated") is True
 
     def test_github_create_issue_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["create-issue"].get("gated") is True
 
     def test_github_create_pr_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["create-pr"].get("gated") is True
 
@@ -63,19 +62,13 @@ class TestExecutionProfileGatedFlags:
     ],
 )
 class TestGatedBlockedWithoutAllow:
-    def test_blocked_with_tool_only(
-        self, tool: str, action: str, permit_key: str
-    ) -> None:
+    def test_blocked_with_tool_only(self, tool: str, action: str, permit_key: str) -> None:
         permitted = {tool}
         assert is_action_gated(tool, action, permitted) is True
 
-    def test_blocked_with_allow_all_tool_set(
-        self, tool: str, action: str, permit_key: str
-    ) -> None:
+    def test_blocked_with_allow_all_tool_set(self, tool: str, action: str, permit_key: str) -> None:
         # Simulate allow_all: tool name present, action key absent
-        config = PermissionsConfig(
-            external_tools=ExternalToolsPermission(allow_all=True, allow=[], deny=[])
-        )
+        config = PermissionsConfig(external_tools=ExternalToolsPermission(allow_all=True, allow=[], deny=[]))
         permitted = get_permitted_tools(config)
         # gated action key must not be auto-included
         assert permit_key not in permitted
@@ -95,15 +88,11 @@ class TestGatedBlockedWithoutAllow:
     ],
 )
 class TestGatedAllowedWithExplicitAllow:
-    def test_allowed_with_explicit_key(
-        self, tool: str, action: str, permit_key: str
-    ) -> None:
+    def test_allowed_with_explicit_key(self, tool: str, action: str, permit_key: str) -> None:
         permitted = {tool, permit_key}
         assert is_action_gated(tool, action, permitted) is False
 
-    def test_allow_all_plus_explicit_permit(
-        self, tool: str, action: str, permit_key: str
-    ) -> None:
+    def test_allow_all_plus_explicit_permit(self, tool: str, action: str, permit_key: str) -> None:
         config = PermissionsConfig(
             external_tools=ExternalToolsPermission(
                 allow_all=True,
@@ -121,19 +110,19 @@ class TestGatedAllowedWithExplicitAllow:
 
 class TestReadActionsRemainOpen:
     def test_github_issues_not_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["issues"].get("gated") is not True
         assert is_action_gated("github", "issues", {"github"}) is False
 
     def test_discord_messages_not_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["messages"].get("gated") is not True
         assert is_action_gated("discord", "messages", {"discord"}) is False
 
     def test_chatwork_rooms_not_gated(self) -> None:
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["rooms"].get("gated") is not True
         assert is_action_gated("chatwork", "rooms", {"chatwork"}) is False
@@ -180,7 +169,7 @@ class TestRepresentativeAnimaShapes:
 
 class TestMigrationScriptDryRun:
     def test_dry_run_plans_adds_for_policy_animas(self, tmp_path: Path) -> None:
-        from scripts.migrate_pi_fix2_gated_allows import DEFAULT_ALLOWS, run
+        from scripts.migrations.migrate_pi_fix2_gated_allows import DEFAULT_ALLOWS, run
 
         animas = tmp_path / "animas"
         # mei: should get chatwork_send + discord_send + github keys
@@ -254,7 +243,7 @@ class TestMigrationScriptDryRun:
         assert "chatwork_send" not in mei_after["external_tools"]["allow"]
 
     def test_apply_is_idempotent(self, tmp_path: Path) -> None:
-        from scripts.migrate_pi_fix2_gated_allows import DEFAULT_ALLOWS, run
+        from scripts.migrations.migrate_pi_fix2_gated_allows import DEFAULT_ALLOWS, run
 
         animas = tmp_path / "animas"
         sakura = animas / "sakura"
@@ -275,14 +264,10 @@ class TestMigrationScriptDryRun:
 
         r1 = run(tmp_path, apply=True, policy=DEFAULT_ALLOWS)
         assert r1[0]["status"] == "applied"
-        allow1 = json.loads((sakura / "permissions.json").read_text(encoding="utf-8"))[
-            "external_tools"
-        ]["allow"]
+        allow1 = json.loads((sakura / "permissions.json").read_text(encoding="utf-8"))["external_tools"]["allow"]
         assert allow1.count("chatwork_send") == 1
 
         r2 = run(tmp_path, apply=True, policy=DEFAULT_ALLOWS)
         assert r2[0]["status"] == "noop"
-        allow2 = json.loads((sakura / "permissions.json").read_text(encoding="utf-8"))[
-            "external_tools"
-        ]["allow"]
+        allow2 = json.loads((sakura / "permissions.json").read_text(encoding="utf-8"))["external_tools"]["allow"]
         assert allow2 == allow1

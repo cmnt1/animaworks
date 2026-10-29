@@ -62,20 +62,20 @@ To alice: 캐싱 전략에 대한 판단을 부탁드립니다.
 ### 도구 목록
 
 | 도구 | 대상 범위 | 개요 | 주요 파라미터 |
-|------|----------|------|---------------|
-| `org_dashboard` | 전체 배하(재귀) | 배하 전체의 프로세스 상태, 최종 활동, 현재 태스크, 태스크 수를 트리로 표시 | 없음 |
-| `ping_subordinate` | 전체 배하(재귀) | 배하의 생존 확인. `name` 생략 시 전원 일괄, 지정 시 단일 Anima | `name` (선택) |
-| `read_subordinate_state` | 전체 배하(재귀) | 배하의 `state/current_state.md` 읽기 | `name` (필수) |
-| `delegate_task` | 직속 부하만 | 완전한 실행 입력과 추적 참조를 원자적으로 등록하고 부하에게 통지 | `name`, `instruction` (필수), `summary`, `acceptance_criteria`, `workspace`, `model` (선택) |
-| `task_tracker` | 자신의 위임 태스크 | `delegate_task`로 위임한 태스크의 진행 상황을 배하 측 큐에서 추적 | `status` (선택: "all"/"active"/"completed", 기본값 "active") |
-| `audit_subordinate` | 전체 배하(재귀) | 활동 타임라인 또는 통계 요약을 생성. `name` 생략 시 전체 배하를 일괄 감사 (통합 타임라인) | `name` (선택), `mode` (선택: `"report"`/`"summary"`, 기본값 `"report"`), `hours` (선택: 1~168, 기본값 24), `direct_only` (선택: boolean), `since` (선택: `"HH:MM"` 오늘의 시작 시각, 지정 시 hours보다 우선) |
-| `disable_subordinate` | 전체 배하(재귀) | 배하를 정지 (status.json enabled=false, 약 30초 후 프로세스 정지) | `name` (필수), `reason` (선택) |
-| `enable_subordinate` | 전체 배하(재귀) | 정지된 배하를 재개 | `name` (필수) |
-| `set_subordinate_model` | 전체 배하(재귀) | 배하의 모델을 변경 (status.json 업데이트. 반영에는 `restart_subordinate`가 필요) | `name`, `model` (필수), `reason` (선택) |
-| `set_subordinate_background_model` | 전체 배하(재귀) | 배하의 백그라운드 모델(Heartbeat/Cron용, Inbox는 메인)을 변경. 빈 문자열로 초기화. 반영에는 `restart_subordinate`가 필요 | `name`, `model` (필수), `credential`, `reason` (선택) |
-| `restart_subordinate` | 전체 배하(재귀) | 배하 프로세스를 재시작 (restart_requested 플래그, 약 30초 후 재시작) | `name` (필수), `reason` (선택) |
+|--------|---------|------|----------------|
+| `org_dashboard` | 전체 부하 (재귀) | 부하 전체의 프로세스 상태·최종 활동·현재 작업·작업 수를 트리로 표시 | 없음 |
+| `ping_subordinate` | 전체 부하 (재귀) | 부하의 생존 확인. `name` 생략 시 전원 일괄, 지정 시 단일 Anima만 | `name` (선택) |
+| `read_subordinate_state` | 전체 부하 (재귀) | 부하의 `state/current_state.md`를 읽기 | `name` (필수) |
+| `delegate_task` | 직속 부하만 | 완전한 실행 입력과 추적 참조를 원자적으로 등록하고, 부하에게 알림 | `name`, `instruction` (필수), `summary`, `acceptance_criteria`, `workspace`, `model` (선택) |
+| `task_tracker` | 자신의 위임 작업 | `delegate_task`로 위임한 작업의 진행 상황을 부하 측 큐에서 추적 | `status` (선택: "all"/"active"/"completed", 기본 "active") |
+| `audit_subordinate` | 전체 부하 (재귀) | 활동 타임라인 또는 통계 요약을 생성. `name` 생략 시 전체 부하를 일괄 감사 (통합 타임라인) | `name` (선택), `mode` (선택: `"report"`/`"summary"`, 기본 `"report"`), `hours` (선택: 1~168, 기본 24), `direct_only` (선택: boolean), `since` (선택: `"HH:MM"` 당일 시작 시각, 지정 시 hours보다 우선) |
+| `disable_subordinate` | 전체 부하 (재귀) | 부하를 휴지 (status.json enabled=false, 약 30초 후 프로세스 종료) | `name` (필수), `reason` (선택) |
+| `enable_subordinate` | 전체 부하 (재귀) | 휴지한 부하를 재개 | `name` (필수) |
+| `set_subordinate_model` | 전체 부하 (재귀) | root에 status.json의 업데이트를 요청하고, 시작 중인 메인 모델을 reload | `name`, `model` (필수), `reason` (선택) |
+| `set_subordinate_background_model` | 전체 부하 (재귀) | root에 Heartbeat/Cron용 백그라운드 모델 업데이트를 요청. 다음 백그라운드 작업부터 적용하고, 빈 문자열로 클리어 | `name`, `model` (필수), `credential`, `reason` (선택) |
+| `restart_subordinate` | 전체 부하 (재귀) | 부하 프로세스를 재시작 (restart_requested 플래그, 약 30초 후 재시작) | `name` (필수), `reason` (선택) |
 
-`check_permissions`는 모든 Anima가 사용 가능합니다 (자신의 권한 목록을 확인).
+`check_permissions`는 모든 Anima가 사용 가능 (자신의 권한 목록 확인).
 
 ### 태스크 위임 플로우
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.supervisor.runner import AnimaRunner
+from core.runtime.runner import AnimaRunner
 
 
 def test_runner_exports_anima_dir_for_child_processes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

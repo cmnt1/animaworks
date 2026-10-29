@@ -1,6 +1,14 @@
 /* ── State & DOM refs ──────────────────────── */
 
 import { basePath } from "/shared/base-path.js";
+import {
+  escapeAttr,
+  escapeHtml,
+  nowTimeStr,
+  smartTimestamp,
+  timeStr,
+} from "/shared/html-utils.js";
+export { escapeAttr, escapeHtml, nowTimeStr, smartTimestamp, timeStr };
 
 export const state = {
   uiTheme: "default",
@@ -33,46 +41,6 @@ export const dom = {
 
 // ── Helpers ────────────────────────────────
 
-export function timeStr(isoOrTs) {
-  if (!isoOrTs) return "--:--";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "--:--";
-  return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-}
-
-export function nowTimeStr() {
-  return new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-export function smartTimestamp(isoOrTs) {
-  if (!isoOrTs) return "";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) return time;
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (d.getFullYear() === now.getFullYear()) return `${mm}/${dd} ${time}`;
-  return `${d.getFullYear()}/${mm}/${dd} ${time}`;
-}
-
-export function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-export function escapeAttr(str) {
-  if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 export function statusClass(status) {
   if (!status) return "status-offline";
   const s = status.toLowerCase();
@@ -89,8 +57,26 @@ function _ensureKatex() {
   if (typeof markedKatex !== "undefined") {
     marked.use(markedKatex({ throwOnError: false, output: "htmlAndMathml" }));
   }
+  marked.use({ extensions: [_cjkStrongExtension] });
   _katexInitialized = true;
 }
+
+// CommonMark only closes "**" when it is followed by a space or punctuation,
+// so Japanese like "**桜庭 咲良（さくら）**と申します" stayed as literal
+// asterisks. This tokenizer runs before marked's own and ignores flanking.
+const _cjkStrongExtension = {
+  name: "cjkStrong",
+  level: "inline",
+  start(src) {
+    const i = src.indexOf("**");
+    return i < 0 ? undefined : i;
+  },
+  tokenizer(src) {
+    const m = /^\*\*(?![\s*])([^\n]*?[^\s*])\*\*/.exec(src);
+    if (!m) return undefined;
+    return { type: "strong", raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+  },
+};
 
 const _markedRenderer = new marked.Renderer();
 const _origLinkRenderer = _markedRenderer.link.bind(_markedRenderer);
@@ -158,11 +144,29 @@ function _ensureClosedTags(html) {
   return _sanitizerEl.innerHTML;
 }
 
+// A "---" line right under a paragraph is a Setext <h2> in Markdown. Anima
+// replies join progress notes with single newlines and then a "---" divider,
+// which turned every note into one big bold heading. Treat it as a rule.
+export function breakSetextHeadings(text) {
+  if (typeof text !== "string" || !text.includes("---")) return text;
+  const lines = text.split("\n");
+  const out = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s{0,3}(```|~~~)/.test(line)) inFence = !inFence;
+    if (!inFence && /^\s{0,3}-{3,}\s*$/.test(line) && out.length && out[out.length - 1].trim() !== "") {
+      out.push("");
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 export function renderMarkdown(text, animaName) {
   _ensureKatex();
   _mdAnimaCtx = animaName || null;
   try {
-    return _ensureClosedTags(marked.parse(text, _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(text), _markedOptions));
   } catch {
     return escapeHtml(text);
   } finally {
@@ -174,7 +178,7 @@ export function renderSafeMarkdown(text) {
   if (!text) return "";
   _ensureKatex();
   try {
-    return _ensureClosedTags(marked.parse(escapeHtml(text), _markedOptions));
+    return _ensureClosedTags(marked.parse(breakSetextHeadings(escapeHtml(text)), _markedOptions));
   } catch {
     return escapeHtml(text);
   }

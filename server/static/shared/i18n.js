@@ -1,5 +1,6 @@
 /* ── Shared i18n Module ────────────────────── */
 
+import { api } from "../modules/api.js";
 import { basePath } from "/shared/base-path.js";
 
 let _translations = {};
@@ -14,8 +15,7 @@ export async function initI18n() {
 
 async function _doInit() {
   try {
-    const res = await fetch(`${basePath}/api/system/config`);
-    const data = await res.json();
+    const data = await api("/api/system/config", { redirectOnUnauthorized: false });
     _locale = data.locale || 'ja';
   } catch {
     const stored = localStorage.getItem('animaworks-locale');

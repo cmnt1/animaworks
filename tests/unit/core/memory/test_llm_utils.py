@@ -2,16 +2,17 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core/memory/_llm_utils.py."""
+"""Unit tests for the one-shot LLM utilities in core.llm.oneshot."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import core.memory._llm_utils as llm_utils
+import core.llm.oneshot as llm_utils
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -247,9 +248,9 @@ class TestOneShotCompletion:
     """Tests for one_shot_completion() and its fallback behavior."""
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_litellm_success(
         self,
         mock_try_litellm: MagicMock,
@@ -267,9 +268,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_litellm_fails_sdk_success(
         self,
         mock_try_litellm: MagicMock,
@@ -288,9 +289,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_both_fail_returns_none(
         self,
         mock_try_litellm: MagicMock,
@@ -309,7 +310,7 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.litellm", create=True)
+    @patch("core.llm.oneshot.litellm", create=True)
     async def test_system_prompt_passed_to_litellm(
         self,
         mock_litellm: MagicMock,
@@ -320,7 +321,7 @@ class TestOneShotCompletion:
         mock_resp.choices[0].message.content = "ok"
         mock_litellm.acompletion = AsyncMock(return_value=mock_resp)
 
-        with patch("core.memory._llm_utils.litellm", mock_litellm):
+        with patch("core.llm.oneshot.litellm", mock_litellm):
             # Import litellm inside _try_litellm; patch at module level
             pass
         # Patch where litellm is used - it's imported inside _try_litellm
@@ -341,9 +342,9 @@ class TestOneShotCompletion:
         assert messages[1] == {"role": "user", "content": "user prompt"}
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_default_model_from_config(
         self,
         mock_try_litellm: MagicMock,
@@ -362,8 +363,8 @@ class TestOneShotCompletion:
         assert call_kwargs["model"] == "anthropic/claude-sonnet-4-6"
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_explicit_credential_forwarded_to_kwargs_resolver(
         self,
         mock_try_litellm: MagicMock,
@@ -387,9 +388,9 @@ class TestOneShotCompletion:
         mock_get_kwargs.assert_called_once_with("openai/deepseek-v4-flash", credential="vllm-lb")
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
-    @patch("core.memory._llm_utils._try_agent_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_consolidation_llm_kwargs")
+    @patch("core.llm.oneshot._try_agent_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_non_anthropic_model_skips_sdk(
         self,
         mock_try_litellm: MagicMock,
@@ -407,9 +408,9 @@ class TestOneShotCompletion:
         mock_try_agent_sdk.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.get_llm_kwargs_for_model")
-    @patch("core.memory._llm_utils._try_codex_sdk")
-    @patch("core.memory._llm_utils._try_litellm")
+    @patch("core.llm.oneshot.get_llm_kwargs_for_model")
+    @patch("core.llm.oneshot._try_codex_sdk")
+    @patch("core.llm.oneshot._try_litellm")
     async def test_codex_model_routes_directly_to_codex_sdk(
         self,
         mock_try_litellm: MagicMock,
@@ -425,6 +426,83 @@ class TestOneShotCompletion:
         assert result == "Codex direct text"
         mock_try_litellm.assert_not_called()
         mock_try_codex_sdk.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_codex_sdk_one_shot_patches_reasoning_effort_enum(self) -> None:
+        """The shared codex config may echo effort=max; the SDK enum must accept it."""
+        with (
+            patch("core.platform.codex.patch_reasoning_effort_enum") as mock_patch,
+            patch("openai_codex.AsyncCodex", side_effect=RuntimeError("stop")),
+        ):
+            result = await llm_utils._try_codex_sdk(
+                "Hi", system_prompt="", model="codex/gpt-6-luna", max_tokens=10, llm_kwargs={}
+            )
+
+        assert result is None
+        mock_patch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_memory_kwargs_temperature_and_timeout_are_forwarded(self) -> None:
+        memory_kwargs = {
+            "model": "openai/custom-model",
+            "api_base": "http://gateway.test/v1",
+            "timeout": 99,
+        }
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 0
+        extra = {"api_base": "http://gateway.test/v1"}
+
+        response = MagicMock()
+        response.choices[0].message.content = "completion"
+        with (
+            patch.object(llm_utils, "get_memory_llm_kwargs_for_model", return_value=memory_kwargs) as resolver,
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=response) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion(
+                "prompt",
+                model="custom-model",
+                credential="gateway-credential",
+                max_tokens=10,
+                temperature=0.0,
+                timeout=5,
+                llm_extra=extra,
+            )
+
+        assert result == "completion"
+        resolver.assert_called_once_with("custom-model", extra, credential="gateway-credential")
+        kwargs = litellm_call.call_args.kwargs
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["timeout"] == 5
+        assert kwargs["api_base"] == "http://gateway.test/v1"
+        assert kwargs["max_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_rate_guard_block_returns_none_without_litellm_attempt(self) -> None:
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 30
+
+        with (
+            patch.object(llm_utils, "get_llm_kwargs_for_model", return_value={"model": "openai/test-model"}),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
+            patch.object(llm_utils, "_try_litellm", new_callable=AsyncMock) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion("prompt", model="openai/test-model")
+
+        assert result is None
+        litellm_call.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sync_helper_requires_no_running_loop_and_runs_in_thread(self) -> None:
+        with pytest.raises(RuntimeError, match="active event loop"):
+            llm_utils.one_shot_completion_sync("prompt")
+
+        mock_one_shot = AsyncMock(return_value="thread completion")
+        with patch.object(llm_utils, "one_shot_completion", mock_one_shot):
+            result = await asyncio.to_thread(llm_utils.one_shot_completion_sync, "prompt")
+
+        assert result == "thread completion"
+        mock_one_shot.assert_awaited_once()
 
 
 class TestIsAnthropicModel:

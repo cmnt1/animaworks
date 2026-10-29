@@ -5,6 +5,7 @@ import { getState, setState } from "./state.js";
 import { t } from "/shared/i18n.js";
 import { fetchAnimas, fetchAnimaDetail } from "./api.js";
 import { escapeHtml, renderSimpleMarkdown } from "./utils.js";
+import { animaStatusLabel } from "/shared/anima-status.js";
 
 // ── Private State ──────────────────────
 
@@ -37,7 +38,7 @@ function statusLabel(status) {
 /**
  * Map a full model name to a short display alias.
  */
-export function modelAlias(model) {
+function modelAlias(model) {
   if (!model) return "";
   const m = model.toLowerCase();
   // S: Claude models
@@ -82,7 +83,7 @@ function renderDropdown() {
     } else if (p.status === "not_found" || p.status === "stopped") {
       html += `<option value="${escapeHtml(p.name)}"${selected}>\uD83D\uDCA4 ${escapeHtml(p.name)} (${t("animas.stopped")})</option>`;
     } else {
-      const st = p.status ? ` (${p.status})` : "";
+      const st = p.status ? ` (${escapeHtml(animaStatusLabel(p.status))})` : "";
       html += `<option value="${escapeHtml(p.name)}"${selected}>${escapeHtml(p.name)}${st}</option>`;
     }
   }

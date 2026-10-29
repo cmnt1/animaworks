@@ -86,16 +86,6 @@ class MigrationRunner:
             force=force,
         )
 
-    def run_resync_db(
-        self,
-        *,
-        dry_run: bool = False,
-        verbose: bool = False,
-    ) -> MigrationReport:
-        """Run only ``db_sync`` category steps (always forced)."""
-        db_steps = [s for s in self._steps if s.category == "db_sync"]
-        return self._run(db_steps, dry_run=dry_run, verbose=verbose, force=True)
-
     def list_steps(self) -> list[dict]:
         """Return metadata for every registered step."""
         state = self.tracker.load()

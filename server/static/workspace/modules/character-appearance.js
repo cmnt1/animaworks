@@ -12,7 +12,7 @@ export const STATES = /** @type {const} */ ([
 ]);
 
 /** Canvas size for face textures. */
-export const FACE_TEX_SIZE = 64;
+const FACE_TEX_SIZE = 64;
 
 // ── Profile Cache ──────────────────────
 

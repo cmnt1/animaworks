@@ -12,13 +12,13 @@ from pathlib import Path
 import pytest
 
 from core.config.schemas import ExternalTasksConfig, ExternalTasksSourcesConfig
-from core.external_tasks.collector import (
+from core.tasks.external.collector import (
     SOURCE_REGISTRY,
     CredentialNotFoundError,
     collect_all,
 )
-from core.external_tasks.models import ExternalTask, Snapshot, SourceHealth
-from core.external_tasks.store import ExternalTaskStore
+from core.tasks.external.models import ExternalTask, Snapshot, SourceHealth
+from core.tasks.external.store import ExternalTaskStore
 
 
 def _task(

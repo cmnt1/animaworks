@@ -3,7 +3,7 @@
 Verifies:
 1. Shared JS module structure (activity-types.js)
 2. Consumer JS files: local TYPE_ICONS removed, shared import added
-3. Backend: activity.log() calls include summary parameter
+3. Backend: activity.alog() calls include summary parameter
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -204,43 +204,6 @@ class TestWebSocketDefaultCase:
         default_idx = content.rfind("default:")
         default_section = content[default_idx : default_idx + 300]
         assert "data.summary" in default_section, "default case should use data.summary fallback"
-
-
-# ── Backend Summary Tests ────────────────────────────────
-
-
-class TestBackendActivityLogSummary:
-    """Verify anima modules' activity.log() calls include summary.
-
-    DigitalAnima is split into Mixin sub-modules; search the facade
-    plus all core/_anima_*.py files.
-    """
-
-    _ANIMA_FILES = [_WORKTREE / "core" / "anima.py", *(_WORKTREE / "core").glob("_anima_*.py")]
-
-    @classmethod
-    def _read_all(cls) -> str:
-        return "\n".join(p.read_text(encoding="utf-8") for p in cls._ANIMA_FILES)
-
-    def test_heartbeat_start_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.log\("heartbeat_start",\s*summary=t\("anima\.heartbeat_start"\)\)'
-        assert re.search(pattern, content), (
-            "heartbeat_start activity.log() should include summary=t('anima.heartbeat_start')"
-        )
-
-    def test_message_received_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.log\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
-        matches = re.findall(pattern, content)
-        assert len(matches) == 3, f"Expected 3 message_received calls with summary (chat, inbox, steer injection), found {len(matches)}"
-
-    def test_message_received_from_anima_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.log\(\s*"message_received",\s*content=_m\.content,\s*summary=_m\.content\[:200\]'
-        assert re.search(pattern, content), (
-            "message_received (from anima) activity.log() should use full content and summary=_m.content[:200]"
-        )
 
 
 # ── Workspace Timeline Filter Tests ─────────────────────

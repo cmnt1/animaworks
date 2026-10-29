@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,11 +12,11 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
-from core.time_utils import now_jst
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+
+from core.time_utils import now_jst
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def temp_anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def consolidation_engine(temp_anima_dir: Path):
     """Create a ConsolidationEngine instance."""
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     return ConsolidationEngine(
         anima_dir=temp_anima_dir,
@@ -101,40 +102,13 @@ class TestEpisodeCollection:
         assert len(entries) == 0
 
 
-class TestKnowledgeManagement:
-    """Test knowledge file management."""
-
-    def test_list_knowledge_files_empty(self, consolidation_engine):
-        """Test listing knowledge files when none exist."""
-        files = consolidation_engine._list_knowledge_files()
-        assert files == []
-
-    def test_list_knowledge_files_with_data(self, consolidation_engine):
-        """Test listing existing knowledge files."""
-        # Create some knowledge files
-        (consolidation_engine.knowledge_dir / "test-knowledge.md").write_text(
-            "# Test Knowledge", encoding="utf-8"
-        )
-        (consolidation_engine.knowledge_dir / "another-topic.md").write_text(
-            "# Another Topic", encoding="utf-8"
-        )
-
-        files = consolidation_engine._list_knowledge_files()
-
-        assert len(files) == 2
-        assert "another-topic.md" in files
-        assert "test-knowledge.md" in files
-
-
 class TestEpisodeCollectionGlobAndFallback:
     """Test glob-based episode file discovery, mtime fallback, and deduplication."""
 
     def test_collect_suffixed_episode_files(self, consolidation_engine):
         """Suffixed files with ## HH:MM headers are discovered and parsed."""
         today = now_jst().date()
-        episode_file = (
-            consolidation_engine.episodes_dir / f"{today}_heartbeat_check.md"
-        )
+        episode_file = consolidation_engine.episodes_dir / f"{today}_heartbeat_check.md"
         episode_file.write_text(
             "# Heartbeat Check\n\n"
             "## 11:00 — サーバー監視\n\n"
@@ -159,8 +133,7 @@ class TestEpisodeCollectionGlobAndFallback:
         # No standard file — only suffixed
         suffixed = consolidation_engine.episodes_dir / f"{today}_cron_run.md"
         suffixed.write_text(
-            "## 08:00 — Cronバッチ処理\n\n"
-            "**要点**: 全ジョブ成功\n",
+            "## 08:00 — Cronバッチ処理\n\n**要点**: 全ジョブ成功\n",
             encoding="utf-8",
         )
 
@@ -177,16 +150,14 @@ class TestEpisodeCollectionGlobAndFallback:
         # Standard file
         standard = consolidation_engine.episodes_dir / f"{today}.md"
         standard.write_text(
-            "## 09:00 — 朝会\n\n"
-            "**要点**: 進捗共有\n",
+            "## 09:00 — 朝会\n\n**要点**: 進捗共有\n",
             encoding="utf-8",
         )
 
         # Suffixed file
         suffixed = consolidation_engine.episodes_dir / f"{today}_heartbeat.md"
         suffixed.write_text(
-            "## 12:00 — 定期巡回\n\n"
-            "**要点**: 異常なし\n",
+            "## 12:00 — 定期巡回\n\n**要点**: 異常なし\n",
             encoding="utf-8",
         )
 
@@ -200,9 +171,7 @@ class TestEpisodeCollectionGlobAndFallback:
     def test_fallback_no_time_headers(self, consolidation_engine):
         """Files without ## HH:MM headers use mtime; entire content is one entry."""
         today = now_jst().date()
-        episode_file = (
-            consolidation_engine.episodes_dir / f"{today}_raw_notes.md"
-        )
+        episode_file = consolidation_engine.episodes_dir / f"{today}_raw_notes.md"
         raw_content = "手動メモ: 今日は特に問題なし。全システム正常稼働中。"
         episode_file.write_text(raw_content, encoding="utf-8")
 
@@ -222,9 +191,7 @@ class TestEpisodeCollectionGlobAndFallback:
     def test_fallback_mtime_respects_cutoff(self, consolidation_engine):
         """Files whose mtime falls outside the cutoff window are excluded."""
         today = now_jst().date()
-        episode_file = (
-            consolidation_engine.episodes_dir / f"{today}_old_notes.md"
-        )
+        episode_file = consolidation_engine.episodes_dir / f"{today}_old_notes.md"
         episode_file.write_text(
             "古いメモ: これは昨日の内容",
             encoding="utf-8",
@@ -269,16 +236,14 @@ class TestEpisodeCollectionGlobAndFallback:
         # Standard file
         standard = consolidation_engine.episodes_dir / f"{today}.md"
         standard.write_text(
-            "## 10:00 — イベントA\n\n"
-            "内容A: これはイベントAの詳細です。\n",
+            "## 10:00 — イベントA\n\n内容A: これはイベントAの詳細です。\n",
             encoding="utf-8",
         )
 
         # Suffixed file with different body
         suffixed = consolidation_engine.episodes_dir / f"{today}_other.md"
         suffixed.write_text(
-            "## 10:30 — イベントB\n\n"
-            "内容B: これはイベントBの詳細です。\n",
+            "## 10:30 — イベントB\n\n内容B: これはイベントBの詳細です。\n",
             encoding="utf-8",
         )
 
@@ -300,109 +265,13 @@ class TestEpisodeCollectionGlobAndFallback:
         ]
 
         for filename, content in files_data:
-            (consolidation_engine.episodes_dir / filename).write_text(
-                content, encoding="utf-8"
-            )
+            (consolidation_engine.episodes_dir / filename).write_text(content, encoding="utf-8")
 
         entries = consolidation_engine._collect_recent_episodes(hours=24)
 
         assert len(entries) == 3
         times = sorted(e["time"] for e in entries)
         assert times == ["08:00", "09:00", "10:00"]
-
-
-# ── Resolved Events Collection Tests ─────────────────────────
-
-
-class TestCollectResolvedEventsMeta:
-    """Test that _collect_resolved_events includes meta field."""
-
-    def test_resolved_events_include_meta(self, temp_anima_dir: Path) -> None:
-        """_collect_resolved_events should return dicts with 'meta' key."""
-        from dataclasses import dataclass, field
-        from typing import Any
-
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
-        )
-
-        @dataclass
-        class FakeEntry:
-            ts: str = "2026-02-22T10:00:00"
-            type: str = "issue_resolved"
-            content: str = "問題を解決した"
-            summary: str = "解決完了"
-            meta: dict[str, Any] = field(default_factory=lambda: {
-                "issue_type": "server_down",
-                "severity": "high",
-            })
-
-        fake_entries = [FakeEntry()]
-
-        with patch(
-            "core.memory.activity.ActivityLogger.recent",
-            return_value=fake_entries,
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        # Result should contain at least one entry
-        assert len(result) == 1
-        # The 'meta' field should be included in the result dict
-        assert "meta" in result[0]
-        assert result[0]["meta"]["issue_type"] == "server_down"
-        assert result[0]["meta"]["severity"] == "high"
-
-    def test_resolved_events_empty_meta(self, temp_anima_dir: Path) -> None:
-        """_collect_resolved_events should handle entries with None meta."""
-        from dataclasses import dataclass
-        from typing import Any
-
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
-        )
-
-        @dataclass
-        class FakeEntry:
-            ts: str = "2026-02-22T10:00:00"
-            type: str = "issue_resolved"
-            content: str = "修正完了"
-            summary: str = "バグ修正"
-            meta: dict[str, Any] | None = None
-
-        fake_entries = [FakeEntry()]
-
-        with patch(
-            "core.memory.activity.ActivityLogger.recent",
-            return_value=fake_entries,
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        assert len(result) == 1
-        # meta should default to empty dict when None (via `e.meta or {}`)
-        assert result[0]["meta"] == {}
-
-    def test_resolved_events_returns_empty_on_error(
-        self, temp_anima_dir: Path,
-    ) -> None:
-        """_collect_resolved_events should return [] on exception."""
-        from core.memory.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
-        )
-
-        with patch(
-            "core.memory.activity.ActivityLogger.recent",
-            side_effect=RuntimeError("Activity log unavailable"),
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        # Errors should be caught and return empty list
-        assert result == []
 
 
 if __name__ == "__main__":

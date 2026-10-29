@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 @pytest.mark.asyncio

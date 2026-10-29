@@ -33,7 +33,7 @@ class TestInternalCompanyBoundary:
         app = _make_test_app()
         transport = ASGITransport(app=app)
         with (
-            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
+            patch("core.org.company.get_company_display_name", return_value="Beta Corporation"),
             patch(
                 "core.config.models.read_anima_company_checked",
                 side_effect=[(True, "alpha"), (True, "beta")],
@@ -238,7 +238,7 @@ class TestInternalAnimaCreate:
         transport = ASGITransport(app=app)
         animas_dir = Path(data_dir) / "animas"
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/internal/anima/create",
@@ -265,7 +265,7 @@ class TestInternalAnimaCreate:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 first = await client.post(
                     "/api/internal/anima/create",

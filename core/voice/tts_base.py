@@ -29,6 +29,8 @@ class TTSSynthesisError(Exception):
 class BaseTTSProvider(ABC):
     """Abstract TTS provider interface."""
 
+    prefers_whole_reply: bool = False
+
     @abstractmethod
     async def synthesize(self, text: str, config: TTSConfig) -> AsyncIterator[bytes]:
         """Stream TTS audio chunks for given text.

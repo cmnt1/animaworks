@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from core.tooling.schemas import _task_tools, build_tool_list
+from core.tooling.policy.schemas import _task_tools
 
 
 class TestTaskToolSchemas:
@@ -32,13 +32,15 @@ class TestTaskToolSchemas:
         update_task = next(t for t in task_tools if t["name"] == "update_task")
         required = update_task["parameters"]["required"]
         assert "task_id" in required
-        assert "status" in required
+        assert "status" not in required
         assert update_task["parameters"]["properties"]["result"]["type"] == "string"
         assert update_task["parameters"]["properties"]["status"]["enum"] == [
             "pending",
             "done",
             "cancelled",
         ]
+        assert update_task["parameters"]["properties"]["waiting_for"]["type"] == "object"
+        assert update_task["parameters"]["properties"]["scope_note"]["type"] == "string"
         assert "unblock_check" not in update_task["parameters"]["properties"]
         assert "unblock_check" not in required
 
@@ -48,18 +50,6 @@ class TestTaskToolSchemas:
         assert "required" not in list_tasks["parameters"] or "status" not in list_tasks["parameters"].get(
             "required", []
         )
-
-    def test_build_tool_list_includes_task_tools(self):
-        tools = build_tool_list(include_task_tools=True)
-        names = {t["name"] for t in tools}
-        assert "backlog_task" in names
-        assert "update_task" in names
-        assert "list_tasks" in names
-
-    def test_build_tool_list_excludes_task_tools_by_default(self):
-        tools = build_tool_list()
-        names = {t["name"] for t in tools}
-        assert "backlog_task" not in names
 
 
 class TestTaskToolHandler:

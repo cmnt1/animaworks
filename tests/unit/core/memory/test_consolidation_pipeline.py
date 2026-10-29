@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -18,7 +19,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Fixtures ────────────────────────────────────────────────
 
 
@@ -34,7 +34,7 @@ def temp_anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def consolidation_engine(temp_anima_dir: Path):
     """Create a ConsolidationEngine instance."""
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     return ConsolidationEngine(
         anima_dir=temp_anima_dir,

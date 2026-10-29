@@ -11,8 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.models import ImageGenConfig
-from core.tools.image_gen import ImageGenPipeline
-
+from core.integrations.image_gen import ImageGenPipeline
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -38,7 +37,9 @@ class TestVibeImageOverridesConfig:
     """When vibe_image is passed directly, it takes precedence over config."""
 
     def test_vibe_image_overrides_config_style_reference(
-        self, anima_dir: Path, tmp_path: Path,
+        self,
+        anima_dir: Path,
+        tmp_path: Path,
     ):
         """Direct vibe_image bytes override config.style_reference path."""
         # Create a style reference file configured via ImageGenConfig
@@ -56,8 +57,8 @@ class TestVibeImageOverridesConfig:
         direct_vibe = b"DIRECT_VIBE_IMAGE"
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"
@@ -89,8 +90,8 @@ class TestVibeStrengthOverride:
         pipeline = ImageGenPipeline(anima_dir, config=config)
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"
@@ -120,8 +121,8 @@ class TestVibeStrengthOverride:
         pipeline = ImageGenPipeline(anima_dir, config=config)
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"
@@ -152,8 +153,8 @@ class TestProgressCallback:
         callback = MagicMock()
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"
@@ -178,8 +179,8 @@ class TestProgressCallback:
         callback = MagicMock()
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.side_effect = RuntimeError("API failure")
@@ -209,8 +210,8 @@ class TestSeedPassedToClient:
         pipeline = ImageGenPipeline(anima_dir, config=ImageGenConfig(image_style="anime"))
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"
@@ -231,8 +232,8 @@ class TestSeedPassedToClient:
         pipeline = ImageGenPipeline(anima_dir, config=ImageGenConfig(image_style="anime"))
 
         with (
-            patch("core.tools.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
-            patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls,
+            patch("core.integrations.image_gen.os.environ", {"NOVELAI_TOKEN": "test-token"}),
+            patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls,
         ):
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"GENERATED_PNG"

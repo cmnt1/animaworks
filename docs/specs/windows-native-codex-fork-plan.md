@@ -1,5 +1,7 @@
 # Windows-native Codex fork plan
 
+> **状態（2026-09 時点）**: 一部実装。Windows 向けの Codex 対応は一部の経路に実装済みであり、IPC の loopback TCP transport は phase3 でも使用される。現行の実行方式は [docs/ja/architecture/execution.md](../ja/architecture/execution.md) と [docs/ja/architecture/process.md](../ja/architecture/process.md) を参照。
+
 ## Goal
 
 Run AnimaWorks on native Windows without WSL and allow Mode C to use an
@@ -83,7 +85,7 @@ Primary files:
 - `core/supervisor/process_handle.py`
 - `core/supervisor/manager.py`
 - `core/tooling/handler_files.py`
-- `core/tools/machine.py`
+- `core/integrations/machine.py`
 
 Current assumptions:
 
@@ -107,7 +109,7 @@ Several features assume Bash behavior.
 Primary files:
 
 - `core/tooling/handler_files.py`
-- `core/_anima_lifecycle.py`
+- `core/anima/lifecycle.py`
 - templates and documentation that emit `bash` commands
 
 Phase 1 recommendation:
@@ -125,7 +127,7 @@ plus propagation of the shared `~/.codex/auth.json`.
 
 Primary files:
 
-- `core/execution/codex_sdk.py`
+- `core/execution/engines/codex/codex_sdk.py`
 - `README.md`
 
 Completed in this branch:

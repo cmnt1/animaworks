@@ -1,13 +1,13 @@
 // ── Swimlane layout pure helpers (dependency-free for Node tests) ──
 
-export const MIN_BAR_PX = 4;
+const MIN_BAR_PX = 4;
 export const LANE_HEIGHT = 28;
 export const ROW_HEIGHT = 22;
-export const EMPTY_LANE_HEIGHT = 14;
+const EMPTY_LANE_HEIGHT = 14;
 export const AMBIENT_BAR_H = 8;
 export const SIGNAL_BAR_H = 18;
 export const OPEN_WINDOW_MS = 5 * 60 * 1000;
-export const RECENT_WINDOW_MS = 60 * 60 * 1000;
+const RECENT_WINDOW_MS = 60 * 60 * 1000;
 
 export const AMBIENT_GROUP_TYPES = new Set(["cron", "heartbeat"]);
 

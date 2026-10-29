@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event
 
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.streaming_journal import StreamingJournal
 
 
 def test_task_journals_do_not_truncate_or_unlink_each_other(tmp_path: Path) -> None:

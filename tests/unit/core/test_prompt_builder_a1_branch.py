@@ -135,54 +135,25 @@ class TestOrgContextCommunicationRules:
         assert "communication_rules" not in template_names
 
 
-# ── TestHumanNotificationGuidanceBranching ───────────────
+# ── TestHumanNotificationGuidance ────────────────────────
 
 
-class TestHumanNotificationGuidanceBranching:
-    """Verify _build_human_notification_guidance selects the correct howto template."""
-
-    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
-    def test_s_mode_loads_howto_s(self, mock_load: MagicMock) -> None:
-        """When execution_mode='s', builder/human_notification_howto_s must be loaded."""
-        from core.prompt.builder import _build_human_notification_guidance
-
-        _build_human_notification_guidance(execution_mode="s")
-
-        template_names = [c.args[0] for c in mock_load.call_args_list]
-        assert "builder/human_notification_howto_s" in template_names
-        assert "builder/human_notification_howto_other" not in template_names
+class TestHumanNotificationGuidance:
+    """Notification guidance is mode-independent and omits tool-schema details."""
 
     @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
-    def test_a_mode_loads_howto_other(self, mock_load: MagicMock) -> None:
-        """When execution_mode='a', builder/human_notification_howto_other must be loaded."""
+    def test_loads_one_concise_template_for_every_mode(self, mock_load: MagicMock) -> None:
         from core.prompt.builder import _build_human_notification_guidance
 
-        _build_human_notification_guidance(execution_mode="a")
+        for mode in ("s", "a", ""):
+            assert _build_human_notification_guidance(execution_mode=mode) == "mocked prompt"
 
-        template_names = [c.args[0] for c in mock_load.call_args_list]
-        assert "builder/human_notification_howto_other" in template_names
-        assert "builder/human_notification_howto_s" not in template_names
-
-    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
-    def test_empty_mode_loads_howto_other(self, mock_load: MagicMock) -> None:
-        """When execution_mode is empty string, builder/human_notification_howto_other must be loaded."""
-        from core.prompt.builder import _build_human_notification_guidance
-
-        _build_human_notification_guidance(execution_mode="")
-
-        template_names = [c.args[0] for c in mock_load.call_args_list]
-        assert "builder/human_notification_howto_other" in template_names
-        assert "builder/human_notification_howto_s" not in template_names
-
-    @patch("core.prompt.messaging.load_prompt", return_value="mocked prompt")
-    def test_all_modes_load_human_notification_wrapper(self, mock_load: MagicMock) -> None:
-        """Regardless of mode, builder/human_notification wrapper template is always loaded."""
-        from core.prompt.builder import _build_human_notification_guidance
-
-        _build_human_notification_guidance(execution_mode="s")
-
-        template_names = [c.args[0] for c in mock_load.call_args_list]
-        assert "builder/human_notification" in template_names
+        assert [call.args[0] for call in mock_load.call_args_list] == [
+            "builder/human_notification",
+            "builder/human_notification",
+            "builder/human_notification",
+        ]
+        assert all(not call.kwargs for call in mock_load.call_args_list)
 
 
 # ── TestSTemplateContent ────────────────────────────────

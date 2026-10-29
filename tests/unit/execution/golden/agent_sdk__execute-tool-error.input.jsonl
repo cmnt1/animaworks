@@ -1,0 +1,4 @@
+{"kind":"assistant","blocks":[{"type":"tool_use","name":"Read","id":"tu_error_1","input":{"path":"/tmp/missing-golden.txt"}}]}
+{"kind":"tool_result","tool_use_id":"tu_error_1","content":"simulated read failure","is_error":true}
+{"kind":"assistant","blocks":[{"type":"text","text":"Recovered after tool error"}]}
+{"kind":"result","usage":{"input_tokens":26,"output_tokens":10},"num_turns":2,"session_id":"ses-tool-error"}

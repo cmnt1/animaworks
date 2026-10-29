@@ -26,7 +26,7 @@ const SQRT2 = Math.SQRT2;
  * @param {number} floorDepth
  * @returns {{ gx: number, gz: number }}
  */
-export function worldToGrid(wx, wz, floorWidth, floorDepth) {
+function worldToGrid(wx, wz, floorWidth, floorDepth) {
   const halfW = floorWidth / 2;
   const halfD = floorDepth / 2;
   const gx = Math.floor((wx + halfW) / GRID_CELL_SIZE);
@@ -43,7 +43,7 @@ export function worldToGrid(wx, wz, floorWidth, floorDepth) {
  * @param {number} floorDepth
  * @returns {{ wx: number, wz: number }}
  */
-export function gridToWorld(gx, gz, floorWidth, floorDepth) {
+function gridToWorld(gx, gz, floorWidth, floorDepth) {
   const halfW = floorWidth / 2;
   const halfD = floorDepth / 2;
   const wx = gx * GRID_CELL_SIZE + GRID_CELL_SIZE / 2 - halfW;
@@ -334,7 +334,7 @@ export function findPath(navGrid, startWorld, endWorld, floorWidth, floorDepth) 
  * @param {number} floorDepth
  * @returns {boolean}
  */
-export function isWalkable(navGrid, wx, wz, floorWidth, floorDepth) {
+function isWalkable(navGrid, wx, wz, floorWidth, floorDepth) {
   const { gx, gz } = worldToGrid(wx, wz, floorWidth, floorDepth);
   if (gx < 0 || gx >= navGrid.cols || gz < 0 || gz >= navGrid.rows) return false;
   return navGrid.grid[gz * navGrid.cols + gx] === 0;

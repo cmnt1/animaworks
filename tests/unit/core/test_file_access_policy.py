@@ -12,8 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.execution._sdk_security import _check_a1_file_access
-from core.file_access_policy import (
+from core.config.file_access_policy import (
     FileRootsConfigError,
     company_shared_write_root,
     effective_write_roots,
@@ -23,6 +22,7 @@ from core.file_access_policy import (
     shared_tool_cache_write_root,
     shell_internal_deny_paths,
 )
+from core.execution.engines.claude._sdk_security import _check_a1_file_access
 from core.tooling.handler import ToolHandler
 
 
@@ -289,3 +289,15 @@ def test_shared_tool_cache_write_root_creates_and_rejects_symlink(tmp_path: Path
     cache_root.rmdir()
     (data_dir / "cache").symlink_to(outside, target_is_directory=True)
     assert shared_tool_cache_write_root(anima_dir) is None
+
+
+def test_claude_file_tools_can_write_shared_package_cache(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "permissions.json").write_text(json.dumps({"version": 1, "file_roots": []}), encoding="utf-8")
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+
+    cache_file = data_dir / "cache" / "uv" / "archive" / "package.whl"
+
+    assert _check_a1_file_access(str(cache_file), anima_dir, write=True) is None

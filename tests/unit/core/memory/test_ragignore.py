@@ -23,6 +23,11 @@ from core.memory.rag.indexer import MemoryIndexer
 
 
 @pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Use the real data-dir accessor with each test's temporary root."""
+
+
+@pytest.fixture(autouse=True)
 def clear_ragignore_cache():
     """Clear class-level ragignore cache after each test."""
     yield
@@ -38,8 +43,7 @@ class TestIsRagignoredNoFile:
         tmp_path: Path,
     ) -> None:
         """is_ragignored() returns False when .ragignore doesn't exist."""
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            result = MemoryIndexer.is_ragignored(tmp_path / "any_file.md")
+        result = MemoryIndexer.is_ragignored(tmp_path / "any_file.md")
         assert result is False
 
 
@@ -55,8 +59,7 @@ class TestIsRagignoredExactMatch:
         ragignore = tmp_path / ".ragignore"
         ragignore.write_text("00_index.md\n", encoding="utf-8")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            result = MemoryIndexer.is_ragignored(tmp_path / "00_index.md")
+        result = MemoryIndexer.is_ragignored(tmp_path / "00_index.md")
         assert result is True
 
     def test_returns_true_for_exact_match_in_subdir(
@@ -67,8 +70,7 @@ class TestIsRagignoredExactMatch:
         ragignore = tmp_path / ".ragignore"
         ragignore.write_text("*knowledge/00_index.md\n", encoding="utf-8")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            result = MemoryIndexer.is_ragignored(tmp_path / "knowledge" / "00_index.md")
+        result = MemoryIndexer.is_ragignored(tmp_path / "knowledge" / "00_index.md")
         assert result is True
 
 
@@ -81,9 +83,8 @@ class TestIsRagignoredGlobPattern:
         ragignore = tmp_path / ".ragignore"
         ragignore.write_text("*.tmp\n", encoding="utf-8")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            assert MemoryIndexer.is_ragignored(tmp_path / "foo.tmp") is True
-            assert MemoryIndexer.is_ragignored(tmp_path / "bar.tmp") is True
+        assert MemoryIndexer.is_ragignored(tmp_path / "foo.tmp") is True
+        assert MemoryIndexer.is_ragignored(tmp_path / "bar.tmp") is True
 
     def test_returns_false_for_non_matching_file(
         self,
@@ -93,8 +94,7 @@ class TestIsRagignoredGlobPattern:
         ragignore = tmp_path / ".ragignore"
         ragignore.write_text("00_index.md\n*.tmp\n", encoding="utf-8")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            result = MemoryIndexer.is_ragignored(tmp_path / "included.md")
+        result = MemoryIndexer.is_ragignored(tmp_path / "included.md")
         assert result is False
 
 
@@ -113,8 +113,7 @@ class TestLoadRagignoreFormat:
             encoding="utf-8",
         )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            patterns = MemoryIndexer._load_ragignore()
+        patterns = MemoryIndexer._load_ragignore()
 
         assert patterns == ["00_index.md", "*.tmp"]
         assert "# comment" not in patterns
@@ -143,7 +142,6 @@ class TestLoadRagignoreCache:
             return original_read_text(self, encoding=encoding)
 
         with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
             patch.object(Path, "read_text", counting_read_text),
         ):
             p1 = MemoryIndexer._load_ragignore()
@@ -174,16 +172,12 @@ class TestIndexFileSkipsRagignored:
         excluded.write_text("# Excluded content\n\nShould not be indexed.", encoding="utf-8")
 
         mock_store = MagicMock()
-        with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(MemoryIndexer, "_init_embedding_model"),
-        ):
-            indexer = MemoryIndexer(
-                mock_store,
-                anima_name="test",
-                anima_dir=anima_dir,
-            )
-            result = indexer.index_file(excluded, "knowledge")
+        indexer = MemoryIndexer(
+            mock_store,
+            anima_name="test",
+            anima_dir=anima_dir,
+        )
+        result = indexer.index_file(excluded, "knowledge")
 
         assert result == 0
         mock_store.upsert.assert_not_called()
@@ -206,13 +200,9 @@ class TestIndexFileSkipsRagignored:
         excluded.write_text("# Excluded content\n\nBody.", encoding="utf-8")
 
         mock_store = MagicMock()
-        with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(MemoryIndexer, "_init_embedding_model"),
-        ):
-            indexer = MemoryIndexer(mock_store, anima_name="test", anima_dir=anima_dir)
-            indexer.delete_indexed_file = MagicMock(return_value=2)
-            result = indexer.index_file(excluded, "knowledge")
+        indexer = MemoryIndexer(mock_store, anima_name="test", anima_dir=anima_dir)
+        indexer.delete_indexed_file = MagicMock(return_value=2)
+        result = indexer.index_file(excluded, "knowledge")
 
         assert result == 0
         mock_store.upsert.assert_not_called()

@@ -26,6 +26,6 @@ TaskExec の結果要約は `state/task_results/{task_id}/{attempt_token}.md` �
 
 旧 `state/task_queue.jsonl` と `state/pending/` は移行・エクスポート用の証跡のみであり、保存する。移行は旧書き込み処理の停止とバックアップ後に運用者が明示的に行う。任意の読み取りで稼働中の旧データをインポートしない。
 
-長時間コマンドツールは別。`animaworks-tool submit` は引き続き `state/background_tasks/pending/` を使い、BackgroundTaskManager がコマンド状態・通知を保存する。LLM タスクの変更を理由にこのファイル経路を撤去しない。
+長時間コマンドツールも TaskStore の `task_type="command"` として実行試行を記録する。`animaworks-tool submit` の結果確認には、互換性のため `state/background_tasks/{task_id}.json` と完了通知を引き続き利用できる。詳細は `reference/operations/task-management.md` と `operations/background-tasks.md`。
 
 ツール例は `reference/operations/task-management.md`、コマンド実行は `operations/background-tasks.md` を参照。

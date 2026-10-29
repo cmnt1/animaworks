@@ -3,7 +3,7 @@
 **[English version](context-window-illusion.md)**
 
 > 作成日: 2026-03-05
-> 関連: [brain-mapping.ja.md](../brain-mapping.ja.md), [memory.ja.md](../memory.ja.md), [vision.ja.md](../vision.ja.md)
+> 関連: [brain-mapping](../ja/brain-mapping.md), [memory](../ja/memory/index.md), [vision](../ja/vision.md)
 
 ---
 

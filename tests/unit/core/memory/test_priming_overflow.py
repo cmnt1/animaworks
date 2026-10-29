@@ -54,7 +54,6 @@ class TestChannelCFullSearchOnly:
                 new_callable=AsyncMock,
                 return_value="",
             ),
-            patch.object(priming_engine, "_channel_g_graph_context", new_callable=AsyncMock, return_value=""),
         ):
             await priming_engine.prime_memories(
                 message="test message",

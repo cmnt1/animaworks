@@ -13,8 +13,6 @@ import pytest
 
 from core.exceptions import ToolExecutionError
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import USE_TOOL
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -116,10 +114,12 @@ class TestUseToolRejectsUnknownModule:
     """Tool in registry but not in TOOL_MODULES returns error."""
 
     def test_tool_in_registry_not_in_tool_modules(
-        self, handler_with_web_search: ToolHandler, anima_dir: Path,
+        self,
+        handler_with_web_search: ToolHandler,
+        anima_dir: Path,
     ):
         """Registry has web_search but TOOL_MODULES excludes it → unknown module."""
-        with patch("core.tools.TOOL_MODULES", {"other_tool": "core.tools.other"}):
+        with patch("core.tooling.policy.registry.TOOL_MODULES", {"other_tool": "core.integrations.other"}):
             result = handler_with_web_search.handle(
                 "use_tool",
                 {
@@ -140,14 +140,18 @@ class TestUseToolDispatchesCorrectly:
     """Correct tool_name+action constructs schema_name and calls dispatch."""
 
     def test_dispatches_with_correct_schema_name(
-        self, handler_with_web_search: ToolHandler, anima_dir: Path,
+        self,
+        handler_with_web_search: ToolHandler,
+        anima_dir: Path,
     ):
         mock_call = MagicMock(return_value='{"results": []}')
         mock_mod = MagicMock()
         mock_mod.dispatch = mock_call
 
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = handler_with_web_search.handle(
                 "use_tool",
                 {
@@ -172,14 +176,18 @@ class TestUseToolPassesArgsWithAnimaDir:
     """Args include anima_dir."""
 
     def test_dispatch_args_include_anima_dir(
-        self, handler_with_web_search: ToolHandler, anima_dir: Path,
+        self,
+        handler_with_web_search: ToolHandler,
+        anima_dir: Path,
     ):
         mock_dispatch = MagicMock(return_value="ok")
         mock_mod = MagicMock()
         mock_mod.dispatch = mock_dispatch
 
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             handler_with_web_search.handle(
                 "use_tool",
                 {
@@ -203,58 +211,26 @@ class TestUseToolHandlesDispatchException:
     """Exception during dispatch returns error."""
 
     def test_exception_during_dispatch_raises_tool_execution_error(
-        self, handler_with_web_search: ToolHandler,
+        self,
+        handler_with_web_search: ToolHandler,
     ):
         """Exception during import or dispatch raises ToolExecutionError."""
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch(
-                 "importlib.import_module",
-                 side_effect=ImportError("module not found"),
-             ):
-            with pytest.raises(ToolExecutionError, match="module not found"):
-                handler_with_web_search.handle(
-                    "use_tool",
-                    {
-                        "tool_name": "web_search",
-                        "action": "search",
-                        "args": {},
-                    },
-                )
-
-
-# ── test_use_tool_schema_definition ────────────────────────────
-
-
-class TestUseToolSchemaDefinition:
-    """USE_TOOL schema has correct structure."""
-
-    def test_use_tool_schema_exists(self):
-        assert len(USE_TOOL) >= 1
-        schema = USE_TOOL[0]
-
-    def test_schema_has_name(self):
-        schema = USE_TOOL[0]
-        assert schema["name"] == "use_tool"
-
-    def test_schema_has_description(self):
-        schema = USE_TOOL[0]
-        assert "description" in schema
-        assert len(schema["description"]) > 0
-
-    def test_schema_has_parameters(self):
-        schema = USE_TOOL[0]
-        assert "parameters" in schema
-        params = schema["parameters"]
-        assert "properties" in params
-        assert "tool_name" in params["properties"]
-        assert "action" in params["properties"]
-        assert "args" in params["properties"]
-
-    def test_schema_required_fields(self):
-        schema = USE_TOOL[0]
-        required = schema["parameters"].get("required", [])
-        assert "tool_name" in required
-        assert "action" in required
+        with (
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch(
+                "core.tooling.policy.registry.load_tool_module",
+                side_effect=ImportError("module not found"),
+            ),
+            pytest.raises(ToolExecutionError, match="module not found"),
+        ):
+            handler_with_web_search.handle(
+                "use_tool",
+                {
+                    "tool_name": "web_search",
+                    "action": "search",
+                    "args": {},
+                },
+            )
 
 
 # ── Personal tool dispatch ────────────────────────────────
@@ -266,7 +242,7 @@ def personal_tool_file(tmp_path: Path) -> Path:
     tool_file = tmp_path / "my_tool.py"
     tool_file.write_text(
         "def dispatch(schema_name, args):\n"
-        "    return '{\"ok\": true, \"schema\": \"' + schema_name + '\"}'\n"
+        '    return \'{"ok": true, "schema": "\' + schema_name + \'"}\'\n'
         "\n"
         "def get_tool_schemas():\n"
         "    return []\n",
@@ -296,7 +272,8 @@ class TestUseToolPersonalTools:
     """Personal tools are resolved via file-based dynamic import."""
 
     def test_personal_tool_dispatches(
-        self, handler_with_personal_tool: ToolHandler,
+        self,
+        handler_with_personal_tool: ToolHandler,
     ):
         result = handler_with_personal_tool.handle(
             "use_tool",
@@ -307,7 +284,8 @@ class TestUseToolPersonalTools:
         assert parsed.get("schema") == "my_tool_run"
 
     def test_personal_tool_rejects_unpermitted(
-        self, handler: ToolHandler,
+        self,
+        handler: ToolHandler,
     ):
         """A personal tool not registered is rejected."""
         result = handler.handle(
@@ -319,7 +297,9 @@ class TestUseToolPersonalTools:
         assert "permitted" in parsed["message"].lower() or "permission" in parsed["message"].lower()
 
     def test_personal_tool_passes_anima_dir(
-        self, handler_with_personal_tool: ToolHandler, anima_dir: Path,
+        self,
+        handler_with_personal_tool: ToolHandler,
+        anima_dir: Path,
     ):
         result = handler_with_personal_tool.handle(
             "use_tool",
@@ -329,10 +309,11 @@ class TestUseToolPersonalTools:
         assert parsed.get("schema") == "my_tool_info"
 
     def test_personal_tool_not_in_core_modules(
-        self, handler_with_personal_tool: ToolHandler,
+        self,
+        handler_with_personal_tool: ToolHandler,
     ):
         """Personal tool is loaded from file, not TOOL_MODULES."""
-        with patch("core.tools.TOOL_MODULES", {}):
+        with patch("core.tooling.policy.registry.TOOL_MODULES", {}):
             result = handler_with_personal_tool.handle(
                 "use_tool",
                 {"tool_name": "my_tool", "action": "check", "args": {}},
@@ -358,13 +339,19 @@ class TestUseToolMCPPermissionGate:
         assert "PermissionDenied" in parsed.get("error_type", "")
 
     def test_registry_allows_matching_tool(
-        self, handler_with_web_search: ToolHandler,
+        self,
+        handler_with_web_search: ToolHandler,
     ):
         """Handler with web_search in registry allows it (dispatch may still fail)."""
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=MagicMock(
-                 dispatch=MagicMock(return_value='{"ok": true}'),
-             )):
+        with (
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch(
+                "importlib.import_module",
+                return_value=MagicMock(
+                    dispatch=MagicMock(return_value='{"ok": true}'),
+                ),
+            ),
+        ):
             result = handler_with_web_search.handle(
                 "use_tool",
                 {"tool_name": "web_search", "action": "search", "args": {}},

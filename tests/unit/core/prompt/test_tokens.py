@@ -8,7 +8,7 @@ from core.memory.priming.constants import (
     _DEFAULT_MAX_PRIMING_TOKENS,
 )
 from core.memory.priming.engine import PrimingEngine
-from core.prompt.tokens import estimate_tokens, tokens_to_chars_hint, truncate_to_tokens
+from core.text.tokens import estimate_tokens, truncate_to_tokens
 
 
 def test_estimate_ascii_calibration() -> None:
@@ -58,12 +58,6 @@ def test_empty_text_estimates_zero() -> None:
     assert truncate_to_tokens("", 100) == ""
 
 
-def test_tokens_to_chars_hint_uses_sample_language_mix() -> None:
-    assert tokens_to_chars_hint(114, "日本語") == 100
-    assert tokens_to_chars_hint(31, "ascii") == 100
-    assert tokens_to_chars_hint(100) > 0
-
-
 @pytest.mark.asyncio
 async def test_prime_memories_keeps_japanese_channels_within_token_budgets(
     tmp_path: Path,
@@ -91,9 +85,8 @@ async def test_prime_memories_keeps_japanese_channels_within_token_budgets(
     monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
-    monkeypatch.setattr(engine, "_channel_g_graph_context", empty)
 
-    result = await engine.prime_memories("根拠を教えて")
+    result = await engine.prime_memories("根拠を教えて", channel="heartbeat")
 
     assert result.recent_activity
     assert result.related_knowledge

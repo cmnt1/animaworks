@@ -305,14 +305,14 @@ class TestTodoWriteSchema:
     """Schema integration test."""
 
     def test_schema_in_unified_list(self) -> None:
-        from core.tooling.schemas.builder import build_unified_tool_list
+        from core.tooling.policy.schemas.builder import build_unified_tool_list
 
         tools = build_unified_tool_list()
         names = [t["name"] for t in tools]
         assert "todo_write" in names
 
     def test_schema_has_required_fields(self) -> None:
-        from core.tooling.schemas.session_todo import _session_todo_tools
+        from core.tooling.policy.schemas.session_todo import _session_todo_tools
 
         schema = _session_todo_tools()[0]
         assert schema["name"] == "todo_write"

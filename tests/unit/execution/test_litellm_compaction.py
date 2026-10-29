@@ -15,7 +15,7 @@ pytestmark = pytest.mark.asyncio
 
 def _make_mixin():
     """Create a ContextMixin instance with required attributes."""
-    from core.execution._litellm_context import ContextMixin
+    from core.execution.engines.litellm._litellm_context import ContextMixin
 
     mixin = ContextMixin()
     mixin._model_config = types.SimpleNamespace(model="openai/gpt-4o")

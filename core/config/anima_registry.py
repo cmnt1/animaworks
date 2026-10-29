@@ -154,24 +154,31 @@ def register_anima_in_config(
         data_dir: The AnimaWorks data directory (e.g. ``~/.animaworks``).
         anima_name: Name of the anima to register.
     """
-    from core.config.models import load_config, save_config
+    from core.config.io import update_config
 
     config_path = data_dir / "config.json"
     if not config_path.exists():
         return
-    config = load_config(config_path)
-    if anima_name not in config.animas:
-        anima_dir = data_dir / "animas" / anima_name
-        supervisor = read_anima_supervisor(anima_dir) if anima_dir.exists() else None
-        config.animas[anima_name] = AnimaModelConfig(supervisor=supervisor)
-        save_config(config, config_path)
+    anima_dir = data_dir / "animas" / anima_name
+    supervisor = read_anima_supervisor(anima_dir) if anima_dir.exists() else None
+    registered = False
+
+    def register(config):
+        nonlocal registered
+        if anima_name not in config.animas:
+            config.animas[anima_name] = AnimaModelConfig(supervisor=supervisor)
+            registered = True
+        return config
+
+    update_config(register, config_path)
+    if registered:
         logger.debug(
             "Registered anima '%s' in config (supervisor=%s)",
             anima_name,
             supervisor,
         )
         try:
-            from core.anima_roster import refresh_anima_roster
+            from core.anima.roster import refresh_anima_roster
 
             refresh_anima_roster()
         except Exception:
@@ -205,19 +212,26 @@ def unregister_anima_from_config(
     Returns:
         True if the anima was found and removed, False if it was not present.
     """
-    from core.config.models import load_config, save_config
+    from core.config.io import update_config
 
     config_path = data_dir / "config.json"
     if not config_path.exists():
         return False
-    config = load_config(config_path)
-    if anima_name not in config.animas:
+    removed = False
+
+    def unregister(config):
+        nonlocal removed
+        if anima_name in config.animas:
+            del config.animas[anima_name]
+            removed = True
+        return config
+
+    update_config(unregister, config_path)
+    if not removed:
         return False
-    del config.animas[anima_name]
-    save_config(config, config_path)
     logger.debug("Unregistered anima '%s' from config", anima_name)
     try:
-        from core.anima_roster import refresh_anima_roster
+        from core.anima.roster import refresh_anima_roster
 
         refresh_anima_roster()
     except Exception:
@@ -243,37 +257,41 @@ def rename_anima_in_config(
     Raises:
         KeyError: If *old_name* is not found in ``config.animas``.
     """
-    from core.config.models import load_config, save_config
+    from core.config.io import update_config
 
     config_path = data_dir / "config.json"
     if not config_path.exists():
         raise KeyError(f"config.json not found in {data_dir}")
-    config = load_config(config_path)
-    if old_name not in config.animas:
-        raise KeyError(f"Anima '{old_name}' not found in config.animas")
-
-    # 1. Move animas entry
-    entry = config.animas.pop(old_name)
-    config.animas[new_name] = entry
-
-    # 2. Update supervisor references across all animas
     supervisor_count = 0
-    for _name, anima_cfg in config.animas.items():
-        if anima_cfg.supervisor == old_name:
-            anima_cfg.supervisor = new_name
-            supervisor_count += 1
 
-    # 3. Update external_messaging: anima_mapping, app_id_mapping, default_anima
-    for channel_cfg in (config.external_messaging.slack, config.external_messaging.chatwork):
-        for mapping_attr in ("anima_mapping", "app_id_mapping"):
-            mapping = getattr(channel_cfg, mapping_attr, {})
-            for key, mapped_name in list(mapping.items()):
-                if mapped_name == old_name:
-                    mapping[key] = new_name
-        if channel_cfg.default_anima == old_name:
-            channel_cfg.default_anima = new_name
+    def rename(config):
+        nonlocal supervisor_count
+        if old_name not in config.animas:
+            raise KeyError(f"Anima '{old_name}' not found in config.animas")
 
-    save_config(config, config_path)
+        # 1. Move animas entry
+        entry = config.animas.pop(old_name)
+        config.animas[new_name] = entry
+
+        # 2. Update supervisor references across all animas
+        supervisor_count = 0
+        for anima_cfg in config.animas.values():
+            if anima_cfg.supervisor == old_name:
+                anima_cfg.supervisor = new_name
+                supervisor_count += 1
+
+        # 3. Update external_messaging: anima_mapping, app_id_mapping, default_anima
+        for channel_cfg in (config.external_messaging.slack, config.external_messaging.chatwork):
+            for mapping_attr in ("anima_mapping", "app_id_mapping"):
+                mapping = getattr(channel_cfg, mapping_attr, {})
+                for key, mapped_name in list(mapping.items()):
+                    if mapped_name == old_name:
+                        mapping[key] = new_name
+            if channel_cfg.default_anima == old_name:
+                channel_cfg.default_anima = new_name
+        return config
+
+    update_config(rename, config_path)
     logger.debug(
         "Renamed anima '%s' → '%s' in config (%d supervisor refs)",
         old_name,

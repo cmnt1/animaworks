@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 class _FakeProc:
@@ -100,7 +100,7 @@ async def test_busy_lane_drain_waits_until_ping_reports_idle():
     )
 
     with patch(
-        "core.supervisor.process_handle.asyncio.sleep",
+        "server.supervisor.process_handle.asyncio.sleep",
         new_callable=AsyncMock,
     ) as sleep:
         await handle._drain_busy_lanes(5.0)

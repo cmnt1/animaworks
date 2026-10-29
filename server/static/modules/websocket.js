@@ -9,6 +9,7 @@ import { invalidateAvatarCache } from "./avatar-resolver.js";
 import { updateSystemStatus } from "./status.js";
 import { ChatSessionManager } from "../shared/chat/session-manager.js";
 import { createLogger } from "../shared/logger.js";
+import { notifyAnimaToast } from "./presence-ui.js";
 
 const logger = createLogger("websocket");
 
@@ -170,6 +171,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_start"));
+          window.dispatchEvent(new CustomEvent("aw:animas-changed"));
         } else if (bsStatus === "completed") {
           const existing = state.animas.find((p) => p.name === animaName);
           if (existing) {
@@ -178,6 +180,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_done"));
+          showNotificationToast(animaName, t("websocket.bootstrap_done"), "", "normal");
           // Pop-in animation for activated anima
           const el = document.querySelector(`[data-anima="${animaName}"]`);
           if (el) {
@@ -198,6 +201,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_failed"));
+          showNotificationToast(animaName, t("websocket.bootstrap_failed"), "", "high");
         } else if (bsStatus === "needs_repair") {
           const existing = state.animas.find((p) => p.name === animaName);
           if (existing) {
@@ -208,6 +212,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_needs_repair"));
+          showNotificationToast(animaName, t("websocket.bootstrap_needs_repair"), "", "high");
         } else if (bsStatus === "max_retries_exceeded") {
           const existing = state.animas.find((p) => p.name === animaName);
           if (existing) {
@@ -218,6 +223,7 @@ function handleWsMessage(raw) {
           }
           renderAnimaDropdown();
           addActivity("system", animaName, t("websocket.bootstrap_max_retries"));
+          showNotificationToast(animaName, t("websocket.bootstrap_max_retries"), "", "urgent");
         }
       }
       break;
@@ -273,8 +279,14 @@ function handleWsMessage(raw) {
       const body = data.body || "";
       const priority = data.priority || "normal";
       if (animaName) {
-        // Show toast notification
-        showNotificationToast(animaName, subject, body, priority);
+        // Show toast notification (suppressed while that conversation is on screen)
+        notifyAnimaToast({
+          kind: "notification",
+          anima: animaName,
+          body: (subject || body).replace(/\s+/g, " ").slice(0, 120),
+          priority,
+          replyTo: data.id || data.message_id || null,
+        });
         // Add to activity log
         addActivity("notification", animaName, subject || body.slice(0, 100));
       }
@@ -389,8 +401,9 @@ function showNotificationToast(animaName, subject, body, priority) {
     toast.addEventListener("animationend", () => toast.remove());
   }, dismissDelay);
 
-  // Click to dismiss
+  // Click opens the chat (where the message was added) and dismisses
   toast.addEventListener("click", () => {
+    if (!(window.location.hash || "").startsWith("#/chat")) window.location.hash = "#/chat";
     toast.classList.add("notification-toast-exit");
     toast.addEventListener("animationend", () => toast.remove());
   });

@@ -205,10 +205,20 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   /* --- Tap targets: 44px minimum --- */
   .btn-logout {
     min-height: 44px;
-    padding: 8px 14px;
+    padding: 8px 10px;
     font-size: 0.85rem;
     display: inline-flex;
     align-items: center;
+    /* Keep the 44px tap target, but a full-height bordered box dwarfed the
+       44px header; render it as a text button instead. */
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .btn-secondary.usage-refresh-btn {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
   }
 
   .nav-item {
@@ -877,43 +887,7 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 }
 
-/* ── Chat Page Layout (desktop defaults) ──── */
-
-.chat-page-layout {
-  display: flex;
-  gap: 1rem;
-  height: 100%;
-  min-height: 400px;
-}
-
-.chat-page-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-page-sidebar {
-  width: 340px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--aw-color-border-light);
-  overflow-y: auto;
-}
-
-.chat-page-sidebar .right-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--aw-color-bg-primary);
-}
-
-.chat-memory-section {
-  border-top: 1px solid var(--aw-color-border-light);
-  margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
-
-/* Mobile tabs: hidden on desktop */
+/* Mobile memory shortcut: hidden on desktop */
 .chat-mobile-tabs {
   display: none;
 }
@@ -921,9 +895,29 @@ body.sidebar-collapsed .sidebar-collapse-btn {
 /* ── Chat Page Mobile (< 768px) ──────────── */
 
 @media (max-width: 768px) {
-  /* Hide mobile tab bar — use desktop-style toggle button instead */
   .chat-mobile-tabs {
-    display: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 44px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--aw-color-border-light);
+    background: var(--aw-color-bg-primary);
+  }
+
+  .chat-mobile-tab {
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--aw-color-text-muted);
+    cursor: pointer;
+  }
+
+  .chat-mobile-tab.active {
+    background: var(--aw-color-bg-hover);
+    color: var(--aw-color-text-primary);
   }
 
   .chat-add-conversation-menu {
@@ -933,54 +927,18 @@ body.sidebar-collapsed .sidebar-collapse-btn {
     max-height: 280px;
   }
 
-  /* Right pane toggle: hidden on mobile (accessible via user menu or swipe) */
-  .chat-right-pane-handle {
-    display: none;
-  }
-
   .chat-page-layout {
-    height: 100%;
+    height: calc(100% - 44px);
     gap: 0;
     position: relative;
+    min-height: 0;
   }
 
   .chat-page-main {
-    flex: 1;
     display: flex;
+    flex: 1;
+    min-width: 0;
     flex-direction: column;
-  }
-
-  /* Sidebar as full overlay on mobile */
-  .chat-page-sidebar {
-    position: absolute;
-    top: 44px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    z-index: 10;
-    background: var(--aw-color-bg-primary);
-    border-left: none;
-    overflow-y: auto;
-  }
-
-  /* sidebar-hidden controls visibility on mobile */
-  .chat-page-layout.sidebar-hidden .chat-page-sidebar {
-    display: none !important;
-  }
-
-  .chat-page-layout:not(.sidebar-hidden) .chat-page-sidebar {
-    display: flex !important;
-    flex-direction: column;
-  }
-
-  .chat-page-layout:not(.sidebar-hidden) .chat-unified-info-btn {
-    color: var(--aw-color-accent);
-    background: var(--aw-color-bg-hover);
-  }
-
-  .chat-page-main.mobile-hidden {
-    display: none !important;
   }
 }
 

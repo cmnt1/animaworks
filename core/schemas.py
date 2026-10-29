@@ -66,8 +66,10 @@ class CronTask(BaseModel):
     tool: str | None = None  # Command型の内部ツール名
     args: dict[str, Any] | None = None  # toolの引数
     skills: list[str] = Field(default_factory=list)  # Optional skill pointers attached to the cron task
-    skip_pattern: str | None = None  # stdoutがマッチしたらheartbeatをスキップ
-    trigger_heartbeat: bool = True  # Falseならcron出力時のHBトリガーを抑制
+    skip_pattern: str | None = (
+        None  # Command型: stdoutがマッチしたらLLM follow-upをスキップ（stderrあり/非ゼロ終了時は実行）
+    )
+    trigger_heartbeat: bool = True  # FalseならCommand型のLLM follow-upを一切起動しない（skip_patternより優先）
 
 
 class ModelConfig(BaseModel):
@@ -84,16 +86,16 @@ class ModelConfig(BaseModel):
     api_base_url: str | None = None  # e.g. http://localhost:11434/v1
     context_threshold: float = 0.50  # short-term memory externalization threshold
     context_absolute_ceiling: float = 0.75
+    task_compaction_tokens: int = 0
+    task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
-    max_chains: int = 2  # max auto-continuation sessions
     conversation_history_threshold: float = 0.30  # conversation compression trigger
-    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A/B) or None for auto-resolve
+    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A) or None for auto-resolve
     supervisor: str | None = None  # supervisor Anima name
     speciality: str | None = None  # free-text specialisation
-    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"A"/"B" — resolved from config
+    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"A" — resolved from config
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think param)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
-    llm_timeout: int | None = None  # LLM API呼び出しタイムアウト（秒）
     background_model: str | None = None  # heartbeat/cron override model
     background_credential: str | None = None  # credential for background_model
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
@@ -105,18 +107,6 @@ class ModelConfig(BaseModel):
     frequency_penalty: float | None = None
     presence_penalty: float | None = None
     extra_mcp_servers: dict[str, dict] = Field(default_factory=dict)
-
-
-class AnimaConfig(BaseModel):
-    name: str
-    base_dir: Path
-    identity: str = ""
-    injection: str = ""
-    permissions: str = ""
-    heartbeat_interval: int = 30  # minutes
-    active_hours: tuple[int, int] | None = (9, 22)  # None = 24h, e.g. (9, 22) for daytime only
-    cron_tasks: list[CronTask] = []
-    model_config_data: ModelConfig = Field(default_factory=ModelConfig)
 
 
 EXTERNAL_PLATFORM_SOURCES: frozenset[str] = frozenset({"slack", "chatwork", "googlechat", "discord", "zoom"})
@@ -214,7 +204,6 @@ class CycleResult(BaseModel):
     context_usage_ratio: float = 0.0
     context_window: int = 0
     context_threshold: float = 0.0
-    session_chained: bool = False
     total_turns: int = 0
     truncated: bool = False
     tool_call_records: list[ToolCallRecordDict] = Field(default_factory=list)

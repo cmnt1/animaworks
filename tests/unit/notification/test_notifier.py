@@ -48,12 +48,14 @@ class MockChannel(NotificationChannel):
     ) -> str:
         if self._fail:
             raise ConnectionError("Mock connection error")
-        self.sent.append({
-            "subject": subject,
-            "body": body,
-            "priority": priority,
-            "anima_name": anima_name,
-        })
+        self.sent.append(
+            {
+                "subject": subject,
+                "body": body,
+                "priority": priority,
+                "anima_name": anima_name,
+            }
+        )
         return "mock: OK"
 
 
@@ -111,7 +113,8 @@ class TestHumanNotifier:
 
     @pytest.mark.asyncio
     async def test_notify_invalid_priority_defaults_to_normal(
-        self, notifier_with_channels,
+        self,
+        notifier_with_channels,
     ):
         notifier, channels = notifier_with_channels
         await notifier.notify("Test", "Body", "invalid_priority")
@@ -160,9 +163,7 @@ class TestChannelRegistry:
                 return "test_registered: OK"
 
         assert "test_registered" in _CHANNEL_REGISTRY
-        channel = create_channel(
-            NotificationChannelConfig(type="test_registered", config={})
-        )
+        channel = create_channel(NotificationChannelConfig(type="test_registered", config={}))
         assert channel.channel_type == "test_registered"
 
         # Cleanup
@@ -170,9 +171,7 @@ class TestChannelRegistry:
 
     def test_create_unknown_channel_raises(self):
         with pytest.raises(ValueError, match="Unknown notification channel"):
-            create_channel(
-                NotificationChannelConfig(type="nonexistent", config={})
-            )
+            create_channel(NotificationChannelConfig(type="nonexistent", config={}))
 
 
 # ── from_config ──────────────────────────────────────────────
@@ -182,6 +181,7 @@ class TestFromConfig:
     def test_from_config_creates_channels(self):
         config = HumanNotificationConfig(
             enabled=True,
+            web_ui=False,
             channels=[
                 NotificationChannelConfig(
                     type="ntfy",
@@ -195,6 +195,7 @@ class TestFromConfig:
     def test_from_config_skips_disabled(self):
         config = HumanNotificationConfig(
             enabled=True,
+            web_ui=False,
             channels=[
                 NotificationChannelConfig(
                     type="ntfy",
@@ -209,6 +210,7 @@ class TestFromConfig:
     def test_from_config_skips_unknown_type(self):
         config = HumanNotificationConfig(
             enabled=True,
+            web_ui=False,
             channels=[
                 NotificationChannelConfig(
                     type="does_not_exist_xyz",
@@ -220,6 +222,39 @@ class TestFromConfig:
         assert notifier.channel_count == 0
 
     def test_from_config_empty_channels(self):
-        config = HumanNotificationConfig(enabled=True, channels=[])
+        config = HumanNotificationConfig(enabled=True, channels=[], web_ui=False)
         notifier = HumanNotifier.from_config(config)
         assert notifier.channel_count == 0
+
+    def test_web_ui_channel_is_built_in(self):
+        notifier = HumanNotifier.from_config(HumanNotificationConfig())
+        assert notifier.channel_count == 1
+        assert notifier.delivers_to_web is True
+
+    def test_include_external_false_keeps_only_web(self):
+        config = HumanNotificationConfig(
+            enabled=False,
+            channels=[
+                NotificationChannelConfig(type="ntfy", config={"server_url": "https://ntfy.sh", "topic": "t"}),
+            ],
+        )
+        notifier = HumanNotifier.from_config(config, include_external=False)
+        assert notifier.channel_count == 1
+        assert notifier.delivers_to_web is True
+
+    def test_web_ui_off_and_no_channels_is_empty(self):
+        notifier = HumanNotifier.from_config(HumanNotificationConfig(web_ui=False))
+        assert notifier.channel_count == 0
+        assert notifier.delivers_to_web is False
+
+
+def test_has_external_channels_reflects_configured_channels():
+    web_only = HumanNotifier.from_config(HumanNotificationConfig())
+    assert web_only.has_external_channels is False
+    with_ntfy = HumanNotifier.from_config(
+        HumanNotificationConfig(
+            enabled=True,
+            channels=[NotificationChannelConfig(type="ntfy", config={"server_url": "https://ntfy.sh", "topic": "t"})],
+        )
+    )
+    assert with_ntfy.has_external_channels is True

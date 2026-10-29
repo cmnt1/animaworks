@@ -112,30 +112,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "═══ {name} — 行動レポート ({since}〜) ═══",
         "en": "═══ {name} — Activity Report (since {since}) ═══",
     },
-    "handler.audit_report_truncated": {
-        "ja": "  ... 他{remaining}件省略",
-        "en": "  ... {remaining} more entries omitted",
-    },
-    "handler.audit_section_actions": {
-        "ja": "■ コミュニケーション・タスク",
-        "en": "■ Communication & Tasks",
-    },
-    "handler.audit_section_errors": {
-        "ja": "■ エラー詳細",
-        "en": "■ Error Details",
-    },
-    "handler.audit_section_errors_report": {
-        "ja": "■ エラー",
-        "en": "■ Errors",
-    },
-    "handler.audit_section_responses": {
-        "ja": "■ 対話・応答",
-        "en": "■ Dialogue & Responses",
-    },
-    "handler.audit_section_thinking": {
-        "ja": "■ 思考・判断（ハートビート / 振り返り）",
-        "en": "■ Thinking & Decisions (Heartbeat / Reflection)",
-    },
     "handler.audit_section_tool_summary": {
         "ja": "■ ツール使用サマリー（全{count}回）",
         "en": "■ Tool Usage Summary ({count} total)",
@@ -152,10 +128,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスクをバックグラウンドで実行開始しました (task_id: {task_id})",
         "en": "Task started in background (task_id: {task_id})",
     },
-    "handler.bg_cmd_started": {
-        "ja": "コマンドをバックグラウンドで実行開始しました。進捗は出力ファイルをReadで確認できます。",
-        "en": "Command started in background. Read the output file to check progress.",
-    },
     "handler.bg_invalid_status": {
         "ja": "Error: 無効なステータス: {status}。有効値: running, completed, failed, pending",
         "en": ("Error: Invalid status: {status}. Valid values: running, completed, failed, pending"),
@@ -165,12 +137,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Changing {target_name}'s background_model to {model}",
     },
     "handler.bg_model_changed": {
-        "ja": "{target_name}のbackground_modelを'{model}'に変更しました。反映にはrestart_subordinateが必要です。",
-        "en": ("Changed {target_name}'s background_model to '{model}'. Call restart_subordinate to apply."),
+        "ja": "{target_name}のbackground_modelを'{model}'に変更し、稼働中プロセスへ root から再読み込みを依頼しました。停止中の場合は次回起動時に反映されます。",
+        "en": "Changed {target_name}'s background_model to '{model}' and asked root to reload the running process. Stopped Animas will use it on next start.",
     },
     "handler.bg_model_cleared": {
-        "ja": "{target_name}のbackground_modelをクリアしました（メインモデルを使用）。",
-        "en": "Cleared {target_name}'s background_model (will use main model).",
+        "ja": "{target_name}のbackground_modelをクリアしました（メインモデルを使用）。稼働中プロセスへ root から再読み込みを依頼しました。",
+        "en": "Cleared {target_name}'s background_model (will use main model) and asked root to reload the running process.",
     },
     "handler.bg_not_enabled": {
         "ja": "Error: バックグラウンドタスク機能が無効です",
@@ -297,12 +269,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "{target_name}にタスク委譲: {summary}",
         "en": "Delegated task to {target_name}: {summary}",
     },
+    "handler.delegate_dedup_log": {
+        "ja": "{target_name}への委譲は既存の依頼 {task_id} にまとめました: {summary}",
+        "en": "Consolidated the delegation to {target_name} into existing task {task_id}: {summary}",
+    },
     "handler.delegated_success": {
         "ja": (
             "タスクを {target_name} に委譲しました。\n- 部下側タスクID: {sub_id}\n- 追跡用タスクID: {own_id}\n- {dm_result}"
         ),
         "en": (
             "Task delegated to {target_name}.\n- Subordinate task ID: {sub_id}\n- Tracking task ID: {own_id}\n- {dm_result}"
+        ),
+    },
+    "handler.delegation_deduplicated": {
+        "ja": "同じ依頼が未完了で登録済みのため、新規作成せず既存のタスクID {task_id} にまとめました",
+        "en": "The same request is already open, so it was consolidated into existing task {task_id}",
+    },
+    "handler.delegation_deduplicated_note": {
+        "ja": (
+            "同じ依頼が未完了で登録済みのため、{target_name} への新規タスクは作らず"
+            "既存のタスクID {task_id} にまとめました。DM は送っていません。"
+        ),
+        "en": (
+            "The same request is already open, so no new task was created for {target_name}; "
+            "it was consolidated into existing task {task_id}. No DM was sent."
         ),
     },
     "handler.delegation_dm_content": {
@@ -322,21 +312,13 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: intent='delegation' has been deprecated. Use the delegate_task tool to assign tasks to subordinates. send_message only supports 'report' and 'question' intents."
         ),
     },
-    "handler.delegation_summary": {
-        "ja": "[委譲] {summary}",
-        "en": "[Delegated] {summary}",
-    },
     "handler.descendant_activity": {
         "ja": "配下のactivity_log",
         "en": "Descendant activity_log",
     },
-    "handler.descendant_pending": {
-        "ja": "配下のstate/pending/",
-        "en": "Descendant state/pending/",
-    },
     "handler.descendant_state": {
-        "ja": "配下のstatus.json, identity.md, injection.md, state/, task_queue.jsonl",
-        "en": "Descendant status.json, identity.md, injection.md, state/, task_queue.jsonl",
+        "ja": "配下のstatus.json, identity.md, injection.md, state/current_state.md, state/task_queue.jsonl, state/plans/",
+        "en": "Descendant status.json, identity.md, injection.md, state/current_state.md, state/task_queue.jsonl, state/plans/",
     },
     "handler.description_field_required": {
         "ja": "`description` フィールドが必要です。",
@@ -366,6 +348,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "'{target_name}' を休止にしました。Reconciliation が30秒以内にプロセスを停止します。",
         "en": ("'{target_name}' has been disabled. Reconciliation will stop the process within 30 seconds."),
     },
+    "handler.status_json_invalid": {
+        "ja": "'{target_name}' の status.json が壊れているか読み取れないため、変更しませんでした。",
+        "en": "'{target_name}' status.json is invalid or unreadable; no changes were made.",
+    },
     "handler.dm_already_sent": {
         "ja": "Error: このrunで既に {to} にメッセージを送信済みです。追加の連絡はBoardを使用してください。",
         "en": ("Error: Message already sent to {to} in this run. Use Board for additional communication."),
@@ -373,6 +359,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.send_feedback_header": {
         "ja": "[24h] {to}宛: {count}通",
         "en": "[24h] To {to}: {count} messages",
+    },
+    "handler.send_recipient_inbox_busy": {
+        "ja": (
+            "⏳ {to} は {since} から別のメッセージの処理中です（経過 {elapsed}）。"
+            "このメッセージはその処理が終わるまで読まれません（未読 {count} 件）。"
+            "急ぎなら別の手段を検討してください。"
+        ),
+        "en": (
+            "⏳ {to} has been processing other messages since {since} ({elapsed} elapsed). "
+            "This message will not be read until that run ends ({count} unread). "
+            "If it is urgent, consider another route."
+        ),
+    },
+    "handler.send_recipient_inbox_oldest": {
+        "ja": "最も古い未読は {oldest} 着。",
+        "en": " Oldest unread arrived at {oldest}.",
     },
     "handler.dm_intent_error": {
         "ja": (
@@ -389,12 +391,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": (
             "Error: You cannot send a DM to yourself. Use write_memory_file for notes to self, or update_task/the task queue for work tracking."
         ),
-    },
-    "handler.dm_max_recipients": {
-        "ja": (
-            "Error: 1回のrunでDMを送れるのは最大{limit}人までです。{limit}人以上への伝達はBoardを使用してください（post_channel ツール）。"
-        ),
-        "en": ("Error: Maximum {limit} DM recipients per run. Use Board (post_channel tool) for {limit}+ recipients."),
     },
     "handler.dm_send_failed": {
         "ja": "DM送信失敗: {e}",

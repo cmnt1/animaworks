@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import networkx as nx
 import pytest
 from httpx import ASGITransport, AsyncClient
-from networkx.readwrite import json_graph
-
 pytestmark = pytest.mark.e2e
 
 
@@ -72,34 +68,6 @@ async def test_graph_calendar_and_episode_content_through_full_app(
         "# July 20 episode",
         encoding="utf-8",
     )
-    graph = nx.DiGraph()
-    for node_id, memory_type, stem in (
-        ("alpha", "knowledge", "alpha"),
-        ("beta", "knowledge", "beta"),
-        ("episodes:2026-07-20", "episodes", "2026-07-20"),
-    ):
-        graph.add_node(
-            node_id,
-            node_type="memory_file",
-            memory_type=memory_type,
-            stem=stem,
-            rel_key=stem,
-            path=str(anima_dir / memory_type / f"{stem}.md"),
-        )
-    graph.add_edge("alpha", "beta", link_type="explicit", similarity=1.0)
-    graph.add_edge(
-        "alpha",
-        "episodes:2026-07-20",
-        link_type="implicit",
-        similarity=0.9,
-    )
-    cache_dir = anima_dir / "vectordb"
-    cache_dir.mkdir()
-    (cache_dir / "knowledge_graph.json").write_text(
-        json.dumps(json_graph.node_link_data(graph)),
-        encoding="utf-8",
-    )
-
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -113,7 +81,7 @@ async def test_graph_calendar_and_episode_content_through_full_app(
 
     assert graph_response.status_code == 200
     graph = graph_response.json()
-    assert graph["partial"] is False
+    assert graph["partial"] is True
     assert {node["id"] for node in graph["nodes"]} == {"alpha", "beta"}
     assert graph["edges"] == [
         {

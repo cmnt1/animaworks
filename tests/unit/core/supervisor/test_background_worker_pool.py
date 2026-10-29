@@ -7,12 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.anima import BackgroundWorkerSlot, DigitalAnima
-from core.memory.task_queue import TaskQueueManager
-from core.platform.processing_lease import processing_lease_path, write_processing_lease
-from core.supervisor.pending_executor import PendingTaskExecutor
-from core.taskboard.tasks import process_identity
-from core.tasks_dispatch import publish_tasks
+from core.anima.digital_anima import BackgroundWorkerSlot, DigitalAnima
+from core.tasks.board.tasks import process_identity
+from core.tasks.dispatch import publish_tasks
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 
 def _slot(slot_id: int) -> BackgroundWorkerSlot:
@@ -52,18 +51,18 @@ async def test_worker_lease_waits_at_capacity_and_release_unblocks() -> None:
     await asyncio.sleep(0)
 
     assert not waiting.done()
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     assert set(anima._active_background_workers.values()) == {"task-one", "task-two"}
 
     await anima._release_background_worker(first)
     third = await asyncio.wait_for(waiting, timeout=1)
 
     assert third is first
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     assert set(anima._active_background_workers.values()) == {"task-two", "task-three"}
 
     await anima._release_background_worker(second)
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     await anima._release_background_worker(third)
 
     assert not anima._background_lock.locked()
@@ -71,7 +70,7 @@ async def test_worker_lease_waits_at_capacity_and_release_unblocks() -> None:
     anima._mark_busy_start.assert_called_once_with()
 
 
-def test_pool_size_one_reuses_legacy_background_agent_and_session() -> None:
+def test_pool_size_one_reuses_legacy_background_agent_with_taskexec_session() -> None:
     anima = DigitalAnima.__new__(DigitalAnima)
     background_agent = MagicMock(name="legacy_background_agent")
     background_session_lock = asyncio.Lock()
@@ -88,8 +87,8 @@ def test_pool_size_one_reuses_legacy_background_agent_and_session() -> None:
     slot = anima._background_worker_slots[0]
     assert slot.slot_id == 0
     assert slot.agent is background_agent
-    assert slot.session_lock is background_session_lock
-    assert slot.interrupt_event is anima._get_interrupt_event("_background")
+    assert slot.session_lock is not background_session_lock
+    assert slot.interrupt_event is anima._get_interrupt_event("_taskexec")
     assert anima._background_worker_queue.get_nowait() is slot
 
 
@@ -376,38 +375,6 @@ async def test_watcher_shutdown_cancels_dispatch_after_drain_timeout(tmp_path: P
     assert cancelled.is_set()
     assert dispatch.cancelled()
     assert not executor._active_dispatch_tasks
-
-
-async def test_command_claim_stays_active_until_background_task_finishes(tmp_path: Path) -> None:
-    executor = _executor(tmp_path)
-    processing_path = tmp_path / "processing" / "command.json"
-    processing_path.parent.mkdir()
-    processing_path.write_text('{"task_id":"command"}', encoding="utf-8")
-    failed_dir = tmp_path / "failed"
-    failed_dir.mkdir()
-    write_processing_lease(processing_path, anima="pool-test", task_id="command")
-    executor._active_task_ids.add("command")
-    release = asyncio.Event()
-
-    async def wait_for_release() -> None:
-        await release.wait()
-
-    background_task = asyncio.create_task(wait_for_release())
-    executor._track_command_claim(
-        background_task,
-        task_id="command",
-        processing_path=processing_path,
-    )
-    assert "command" in executor._active_task_ids
-    assert processing_path.exists()
-
-    release.set()
-    await background_task
-    await asyncio.sleep(0)
-
-    assert "command" not in executor._active_task_ids
-    assert not processing_path.exists()
-    assert not processing_lease_path(processing_path).exists()
 
 
 async def _measure_concurrency(

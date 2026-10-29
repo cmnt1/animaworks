@@ -36,7 +36,6 @@ def anima_env(tmp_path: Path):
             "max_tokens": 4096,
             "credential": "anthropic",
             "context_threshold": 0.5,
-            "max_chains": 2,
             "conversation_history_threshold": 0.3,
         },
         "credentials": {

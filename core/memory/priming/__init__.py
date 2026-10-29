@@ -11,6 +11,9 @@ Implements brain-science-inspired automatic memory activation before agent
 execution, reducing the need for explicit search_memory tool calls.
 
 Based on: docs/design/priming-layer-design.md Phase 1
+
+Active channels: A (sender profile), B (recent activity), C (related knowledge),
+E (pending tasks), F (episodes), and G (recent atomic facts).
 """
 
 from __future__ import annotations
@@ -26,17 +29,7 @@ from core.memory.priming import (
     outbound,
 )
 from core.memory.priming.constants import (
-    _BUDGET_GRAPH_CONTEXT,
-    _BUDGET_GREETING,
-    _BUDGET_HEARTBEAT,
     _BUDGET_IMPORTANT_KNOWLEDGE,
-    _BUDGET_PENDING_TASKS,
-    _BUDGET_QUESTION,
-    _BUDGET_RECENT_ACTIVITY,
-    _BUDGET_RELATED_EPISODES,
-    _BUDGET_RELATED_KNOWLEDGE,
-    _BUDGET_REQUEST,
-    _BUDGET_SENDER_PROFILE,
     _DEFAULT_MAX_PRIMING_TOKENS,
     _MAX_KEYWORD_INPUT_LEN,
     _MINIMAL_STOPWORDS,
@@ -53,17 +46,7 @@ __all__ = [
     "format_priming_section",
     "render_items",
     "select_within_budget",
-    "_BUDGET_GRAPH_CONTEXT",
-    "_BUDGET_GREETING",
-    "_BUDGET_HEARTBEAT",
     "_BUDGET_IMPORTANT_KNOWLEDGE",
-    "_BUDGET_PENDING_TASKS",
-    "_BUDGET_QUESTION",
-    "_BUDGET_RECENT_ACTIVITY",
-    "_BUDGET_REQUEST",
-    "_BUDGET_RELATED_EPISODES",
-    "_BUDGET_RELATED_KNOWLEDGE",
-    "_BUDGET_SENDER_PROFILE",
     "_DEFAULT_MAX_PRIMING_TOKENS",
     "_MAX_KEYWORD_INPUT_LEN",
     "_MINIMAL_STOPWORDS",

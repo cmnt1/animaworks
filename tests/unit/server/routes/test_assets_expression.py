@@ -105,7 +105,7 @@ class TestGenerateExpressionEndpoint:
             )
         assert resp.status_code == 422
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_success_generates_expression(self, mock_pipeline_cls, tmp_path):
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"

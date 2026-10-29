@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 
 # ── Problem A: setting_sources verified in source ──────────────────
 
@@ -23,23 +24,18 @@ class TestSettingSourcesE2E:
     def test_both_methods_have_setting_sources(self):
         """_build_sdk_options() (used by execute and execute_streaming) must set setting_sources=[]."""
         import inspect
-        from core.execution.agent_sdk import AgentSDKExecutor
+
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         # Options construction is centralized in _build_sdk_options()
         options_src = inspect.getsource(AgentSDKExecutor._build_sdk_options)
-        assert "setting_sources=[]" in options_src, (
-            "_build_sdk_options() missing setting_sources=[]"
-        )
+        assert "setting_sources=[]" in options_src, "_build_sdk_options() missing setting_sources=[]"
 
-        # Verify both execute() and execute_streaming() use _build_sdk_options
+        # execute() now aggregates execute_streaming() (2c9ae785).
         execute_src = inspect.getsource(AgentSDKExecutor.execute)
         streaming_src = inspect.getsource(AgentSDKExecutor.execute_streaming)
-        assert "_build_sdk_options" in execute_src, (
-            "execute() must call _build_sdk_options()"
-        )
-        assert "_build_sdk_options" in streaming_src, (
-            "execute_streaming() must call _build_sdk_options()"
-        )
+        assert "execute_streaming" in execute_src, "execute() must delegate to execute_streaming()"
+        assert "_build_sdk_options" in streaming_src, "execute_streaming() must call _build_sdk_options()"
 
 
 # ── Problem B: Per-anima ChromaDB isolation ────────────────────────
@@ -59,7 +55,8 @@ class TestPerAnimaChromaDBIsolation:
         """Reset RAG singletons and clear HTTP delegation env vars."""
         monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
-        from core.memory.rag.singleton import _reset_for_testing
+        from tests.helpers.rag import reset_rag_state as _reset_for_testing
+
         _reset_for_testing()
         yield
         _reset_for_testing()
@@ -81,10 +78,17 @@ class TestPerAnimaChromaDBIsolation:
         This is the key E2E test: uses real ChromaDB PersistentClient instances
         to verify that per-anima databases are truly isolated.
         """
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.store import create_chroma_vector_store
+        from core.paths import get_anima_vectordb_dir
 
-        store_a = get_vector_store("alice")
-        store_b = get_vector_store("bob")
+        # Only the owning root opens native Chroma; open each store directly
+        # the way a root does.
+        store_a = create_chroma_vector_store(
+            persist_dir=get_anima_vectordb_dir("alice"), anima_name="alice", allow_direct=OWNER_CAPABILITY
+        )
+        store_b = create_chroma_vector_store(
+            persist_dir=get_anima_vectordb_dir("bob"), anima_name="bob", allow_direct=OWNER_CAPABILITY
+        )
 
         # Verify different persist directories
         assert store_a.persist_dir != store_b.persist_dir
@@ -94,6 +98,7 @@ class TestPerAnimaChromaDBIsolation:
         # Create a collection and insert data in store_a
         store_a.create_collection("test_collection")
         from core.memory.rag.store import Document
+
         doc = Document(
             id="doc1",
             content="Hello from Alice",
@@ -123,26 +128,3 @@ class TestPerAnimaChromaDBIsolation:
             top_k=5,
         )
         assert len(results_b) == 0
-
-    def test_none_anima_uses_shared_legacy_dir(self, data_dir: Path):
-        """get_vector_store(None) uses the shared legacy vectordb directory."""
-        from core.memory.rag.singleton import get_vector_store
-
-        shared_store = get_vector_store(None)
-        assert shared_store.persist_dir == data_dir / "vectordb"
-
-    def test_singleton_per_anima(self, data_dir: Path):
-        """Same anima_name returns the same ChromaDB instance."""
-        from core.memory.rag.singleton import get_vector_store
-
-        s1 = get_vector_store("charlie")
-        s2 = get_vector_store("charlie")
-        assert s1 is s2
-
-    def test_different_animas_different_instances(self, data_dir: Path):
-        """Different anima_names return different ChromaDB instances."""
-        from core.memory.rag.singleton import get_vector_store
-
-        sa = get_vector_store("alice")
-        sb = get_vector_store("bob")
-        assert sa is not sb

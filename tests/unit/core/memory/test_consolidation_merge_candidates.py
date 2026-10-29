@@ -5,77 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# ── _list_knowledge_files_with_meta ──────────────────────────────
-
-
-class TestListKnowledgeFilesWithMeta:
-    """Tests for ConsolidationEngine._list_knowledge_files_with_meta."""
-
-    def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-        return ConsolidationEngine(anima_dir, "test")
-
-    def test_empty_knowledge_dir(self, tmp_path: Path) -> None:
-        engine = self._make_engine(tmp_path)
-        result = engine._list_knowledge_files_with_meta()
-        assert result == []
-
-    def test_returns_metadata(self, tmp_path: Path) -> None:
-        engine = self._make_engine(tmp_path)
-        (engine.knowledge_dir / "topic-a.md").write_text(
-            "---\ncreated_at: '2026-03-01'\nconfidence: 0.8\nauto_consolidated: true\nsuccess_count: 2\n---\nContent A",
-            encoding="utf-8",
-        )
-        result = engine._list_knowledge_files_with_meta()
-        assert len(result) == 1
-        assert result[0]["path"] == "topic-a.md"
-        assert result[0]["confidence"] == 0.8
-        assert result[0]["auto_consolidated"] is True
-        assert result[0]["success_count"] == 2
-
-    def test_skips_archive(self, tmp_path: Path) -> None:
-        engine = self._make_engine(tmp_path)
-        archive_dir = engine.knowledge_dir / "archive"
-        archive_dir.mkdir()
-        (archive_dir / "old.md").write_text("---\n---\nOld", encoding="utf-8")
-        (engine.knowledge_dir / "active.md").write_text("---\n---\nActive", encoding="utf-8")
-        result = engine._list_knowledge_files_with_meta()
-        assert len(result) == 1
-        assert result[0]["path"] == "active.md"
-
-    def test_skips_dot_archive(self, tmp_path: Path) -> None:
-        """Files in .archive/ (LLM Mode S convention) are excluded."""
-        engine = self._make_engine(tmp_path)
-        dot_archive = engine.knowledge_dir / ".archive"
-        dot_archive.mkdir()
-        (dot_archive / "tombstone.md").write_text("---\narchived: true\n---\nOld", encoding="utf-8")
-        (engine.knowledge_dir / "live.md").write_text("---\n---\nLive", encoding="utf-8")
-        result = engine._list_knowledge_files_with_meta()
-        assert len(result) == 1
-        assert result[0]["path"] == "live.md"
-
-    def test_skips_underscore_archived(self, tmp_path: Path) -> None:
-        """Files in _archived/ (legacy convention) are excluded."""
-        engine = self._make_engine(tmp_path)
-        archived_dir = engine.knowledge_dir / "_archived"
-        archived_dir.mkdir()
-        (archived_dir / "legacy.md").write_text("---\n---\nLegacy", encoding="utf-8")
-        (engine.knowledge_dir / "current.md").write_text("---\n---\nCurrent", encoding="utf-8")
-        result = engine._list_knowledge_files_with_meta()
-        assert len(result) == 1
-        assert result[0]["path"] == "current.md"
-
-    def test_handles_no_frontmatter(self, tmp_path: Path) -> None:
-        engine = self._make_engine(tmp_path)
-        (engine.knowledge_dir / "plain.md").write_text("No frontmatter here", encoding="utf-8")
-        result = engine._list_knowledge_files_with_meta()
-        assert len(result) == 1
-        assert result[0]["path"] == "plain.md"
-
-
 # ── _find_merge_candidates ──────────────────────────────
 
 
@@ -83,7 +12,7 @@ class TestFindMergeCandidates:
     """Tests for ConsolidationEngine._find_merge_candidates."""
 
     def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -91,18 +20,18 @@ class TestFindMergeCandidates:
 
     def test_empty_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
-        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+        with patch("core.memory.rag.vector_registry.get_vector_store") as mock_store:
             assert engine._find_merge_candidates() == []
             mock_store.assert_not_called()
 
     def test_single_file_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "only.md").write_text("---\n---\nContent", encoding="utf-8")
-        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+        with patch("core.memory.rag.vector_registry.get_vector_store") as mock_store:
             assert engine._find_merge_candidates() == []
             mock_store.assert_not_called()
 
-    @patch("core.memory.rag.singleton.get_vector_store", return_value=None)
+    @patch("core.memory.rag.vector_registry.get_vector_store", return_value=None)
     def test_rag_unavailable(self, mock_store: MagicMock, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "a.md").write_text("---\n---\nA", encoding="utf-8")
@@ -131,7 +60,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -161,7 +90,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -187,7 +116,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -218,7 +147,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -238,13 +167,13 @@ class TestFormatHelpers:
     """Tests for _format_knowledge_list and _format_merge_candidates."""
 
     def test_format_knowledge_list_empty(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         result = _format_knowledge_list([])
         assert "knowledgeファイルなし" in result
 
     def test_format_knowledge_list_with_data(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         files = [
             {
@@ -258,13 +187,13 @@ class TestFormatHelpers:
         assert "0.8" in result
 
     def test_format_merge_candidates_empty(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         result = _format_merge_candidates([])
         assert "マージ候補なし" in result
 
     def test_format_merge_candidates_with_data(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         candidates = [("a.md", "b.md", 0.85)]
         result = _format_merge_candidates(candidates)
@@ -357,7 +286,7 @@ class TestFindConflictingFactCandidates:
     """Tests for ConsolidationEngine._find_conflicting_fact_candidates."""
 
     def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -384,12 +313,22 @@ class TestFindConflictingFactCandidates:
     def test_same_entity_attribute_different_value_one_pair(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 200",
+            recorded_at="2026-09-10T00:00:00",
         )
         result = engine._find_conflicting_fact_candidates()
         assert len(result) == 1
@@ -401,37 +340,67 @@ class TestFindConflictingFactCandidates:
     def test_same_value_no_conflict(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-10T00:00:00",
         )
         assert engine._find_conflicting_fact_candidates() == []
 
     def test_different_attribute_no_conflict(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_COLOR",
-            text="color is blue", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_COLOR",
+            text="color is blue",
+            recorded_at="2026-09-10T00:00:00",
         )
         assert engine._find_conflicting_fact_candidates() == []
 
     def test_archive_beyond_active_is_ignored(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact_with_valid_until(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
             valid_until="2026-09-05T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 200",
+            recorded_at="2026-09-10T00:00:00",
         )
         # The older fact is already invalid (archived) so it is not a live conflict.
         assert engine._find_conflicting_fact_candidates() == []
@@ -440,19 +409,37 @@ class TestFindConflictingFactCandidates:
         engine = self._make_engine(tmp_path)
         for _i, edge in enumerate(("A", "B", "C", "D", "E")):
             self._write_fact(
-                engine, "2026-09-01", source="Anima", target="Policy", edge=edge,
-                text=f"old {edge}", recorded_at="2026-09-01T00:00:00",
+                engine,
+                "2026-09-01",
+                source="Anima",
+                target="Policy",
+                edge=edge,
+                text=f"old {edge}",
+                recorded_at="2026-09-01T00:00:00",
             )
             self._write_fact(
-                engine, "2026-09-10", source="Anima", target="Policy", edge=edge,
-                text=f"new {edge}", recorded_at="2026-09-10T00:00:00",
+                engine,
+                "2026-09-10",
+                source="Anima",
+                target="Policy",
+                edge=edge,
+                text=f"new {edge}",
+                recorded_at="2026-09-10T00:00:00",
             )
         result = engine._find_conflicting_fact_candidates(max_pairs=3)
         assert len(result) == 3
 
     def _write_fact_with_valid_until(
-        self, engine, date_str: str, *, source: str, target: str, edge: str,
-        text: str, recorded_at: str, valid_until: str,
+        self,
+        engine,
+        date_str: str,
+        *,
+        source: str,
+        target: str,
+        edge: str,
+        text: str,
+        recorded_at: str,
+        valid_until: str,
     ):
         import json
 

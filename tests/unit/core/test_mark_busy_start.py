@@ -25,12 +25,12 @@ from core.time_utils import now_jst
 def _make_digital_anima(anima_dir, shared_dir):
     """Create a DigitalAnima with mocked dependencies."""
     with (
-        patch("core.anima.AgentCore"),
-        patch("core.anima.MemoryManager") as MockMM,
-        patch("core.anima.Messenger"),
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
     ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 
@@ -204,9 +204,9 @@ class TestHealthCheckWithFreshProgress:
         After _mark_busy_start(), the health check should see a fresh timestamp
         and NOT trigger a kill.
         """
-        from core.supervisor._mgr_health import HealthMixin
-        from core.supervisor.manager import HealthConfig
-        from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+        from server.supervisor._mgr_health import HealthMixin
+        from server.supervisor.manager import HealthConfig
+        from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -236,16 +236,21 @@ class TestHealthCheckWithFreshProgress:
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
         sup._shutdown = False
-        sup._permanently_failed = set()
-        sup._failed_log_times = {}
         sup._restarting = set()
-        sup._restart_counts = {}
+        from server.supervisor.restart_state import RestartController
+
+        sup._restart_ctl = RestartController(
+            failed_threshold=5,
+            base_delay_sec=2.0,
+            max_delay_sec=60.0,
+            stable_reset_sec=300.0,
+        )
         sup.restart_policy = MagicMock()
         sup.restart_policy.max_retries = 5
         sup.restart_policy.backoff_base_sec = 2.0
         sup.restart_policy.backoff_max_sec = 60.0
         sup.restart_policy.reset_after_sec = 300.0
-        sup._max_streaming_duration_sec = 1800
+        sup._stream_drain_timeout_sec = 1800
         sup.processes = {}
 
         hang_calls: list[str] = []
@@ -260,13 +265,13 @@ class TestHealthCheckWithFreshProgress:
         assert len(hang_calls) == 0, "Process with fresh _last_progress_at (3s ago) should NOT be killed"
 
     @pytest.mark.asyncio
-    async def test_stale_progress_still_triggers_kill(self, tmp_path):
-        """Genuinely stale progress (>15min) should still trigger kill."""
+    async def test_stale_progress_does_not_trigger_supervisor_busy_kill(self, tmp_path):
+        """Engine-side watchdog, not supervisor progress age, owns stream timeouts."""
         from unittest.mock import AsyncMock
 
-        from core.supervisor._mgr_health import HealthMixin
-        from core.supervisor.manager import HealthConfig
-        from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+        from server.supervisor._mgr_health import HealthMixin
+        from server.supervisor.manager import HealthConfig
+        from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -293,16 +298,21 @@ class TestHealthCheckWithFreshProgress:
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
         sup._shutdown = False
-        sup._permanently_failed = set()
-        sup._failed_log_times = {}
         sup._restarting = set()
-        sup._restart_counts = {}
+        from server.supervisor.restart_state import RestartController
+
+        sup._restart_ctl = RestartController(
+            failed_threshold=5,
+            base_delay_sec=2.0,
+            max_delay_sec=60.0,
+            stable_reset_sec=300.0,
+        )
         sup.restart_policy = MagicMock()
         sup.restart_policy.max_retries = 5
         sup.restart_policy.backoff_base_sec = 2.0
         sup.restart_policy.backoff_max_sec = 60.0
         sup.restart_policy.reset_after_sec = 300.0
-        sup._max_streaming_duration_sec = 1800
+        sup._stream_drain_timeout_sec = 1800
         sup.processes = {}
 
         hang_calls: list[str] = []
@@ -315,7 +325,7 @@ class TestHealthCheckWithFreshProgress:
         await sup._check_process_health("test-anima", handle)
         await asyncio.sleep(0)
 
-        assert len(hang_calls) == 1, "Process with genuinely stale progress (20min) should be killed"
+        assert len(hang_calls) == 0, "A busy stream is not killed by supervisor progress age"
 
 
 class TestPingReturnsBusySince:
@@ -329,7 +339,7 @@ class TestPingReturnsBusySince:
 
         dp._mark_busy_start()
 
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = object.__new__(AnimaRunner)
         runner.anima = dp

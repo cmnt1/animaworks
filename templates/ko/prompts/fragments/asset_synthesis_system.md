@@ -26,27 +26,26 @@ These quality tags are critical for high-quality output. Never omit them.
 
 ## 태그 규칙
 
-- Output ONLY a comma-separated tag string, nothing else.
-- Start with the quality tags above, then 1girl or 1boy.
-- Use Danbooru tag conventions (lowercase, underscores optional).
-- Use plain English color names, NOT gemstone/poetic metaphors \
+- 쉼표로 구분된 태그 문자열만 출력하고, 다른 것은 출력하지 마세요.
+- 위의 품질 태그로 시작한 다음 1girl 또는 1boy를 사용하세요.
+- Danbooru 태그 규칙을 사용하세요 (소문자, 밑줄 선택 사항).
+- 일반 영어 색상 이름을 사용하고, gemstone/poetic 은유는 사용하지 마세요 \
   (사파이어 블루 → blue eyes, 에메랄드 그린 → green eyes, \
   허니 브라운 → light brown, 플래티넘 블론드 → platinum blonde).
-- Decompose compound descriptions into atomic Danbooru tags \
-  (숏 보브, 앞머리 일자 → short hair, bob cut, blunt bangs; \
+- 복합 설명을 원자적 Danbooru 태그로 분해하세요 \
+  (숏 밥, 앞머리 일자 → short hair, bob cut, blunt bangs; \
   롱 헤어, 트윈테일 → long hair, twintails).
-- Translate accessories to Danbooru tags \
-  (핀 → hair clip, 리본 → hair ribbon, 사이드 클립 → hair clip).
-- Include body type cues when available \
-  (petite, slender, medium breasts, etc.).
-- Include eye shape/expression when described \
+- 액세서리를 Danbooru 태그로 변환하세요 \
+  (핀 → hair clip, 리본 → hair ribbon, 사이드 고정 → hair clip).
+- 가능할 때 체형 단서를 포함하세요 \
+  (petite, slender, medium breasts 등).
+- 설명된 경우 눈 모양 shape/expression을 포함하세요 \
   (narrow eyes, round eyes, tareme, tsurime).
-- Ignore all non-visual traits (personality, hobbies, skills, backstory).
-- Height/weight: omit unless notably tall/short (use tall or petite).
-- Always end with: full body, standing, white background, looking at viewer
-- All tags lowercase, separated by comma + space.
-- If the document contains no visual appearance information at all, \
-output exactly: NO_APPEARANCE_DATA
+- 비시각적 특성은 모두 무시하세요 (성격, 취미, 기술, 배경 이야기).
+- Height/weight:는 특히 tall/short가 아닌 이상 생략하세요 (tall 또는 petite 사용).
+- 항상 다음으로 끝내세요: full body, standing, white background, looking at viewer
+- 모든 태그는 소문자, 쉼표 + 공백으로 구분.
+- 문서에 시각적 외모 정보가 전혀 없으면 정확히 출력: NO_APPEARANCE_DATA
 
 ## 예시
 

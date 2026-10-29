@@ -3,7 +3,7 @@
 // Now delegates stream/queue state to ChatSessionManager; keeps Live2D hooks.
 
 import { getState, setState } from "./state.js";
-import { t } from "../../shared/i18n.js";
+import { t } from "/shared/i18n.js";
 import { getCurrentUser } from "./login.js";
 import { escapeHtml } from "./utils.js";
 import { setExpression, setTalking } from "./live2d.js";
@@ -530,7 +530,7 @@ export function wsUpdateSendButton(isStreaming) {
   else { dom.convSend.innerHTML = _ICONS.stop; dom.convSend.classList.add("stop"); dom.convSend.disabled = false; }
 }
 
-export function wsShowPendingIndicator() {
+function wsShowPendingIndicator() {
   const dom = _getDom();
   const { anima, thread } = _animaThread();
   if (!anima) return;
@@ -571,7 +571,7 @@ export function wsHidePendingIndicator() {
   if (dom.convPending) dom.convPending.style.display = "none";
 }
 
-export function wsStopStreaming() {
+function wsStopStreaming() {
   const animaName = getState().conversationAnima;
   if (!animaName) return;
   _mgr().stopStreaming(animaName);

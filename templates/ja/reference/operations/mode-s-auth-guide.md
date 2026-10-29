@@ -3,7 +3,7 @@
 Mode S（Claude Agent SDK）で使用する認証方式を Anima ごとに切り替える方法。
 認証モードは **`mode_s_auth`** という明示的な設定で指定する（credential の自動判定ではない）。
 
-実装: `core/execution/agent_sdk.py` の `_build_env()` が Claude Code 子プロセスの環境変数を構築する。
+実装: `core/execution/engines/claude/executor.py` の `_build_env()` が Claude Code 子プロセスの環境変数を構築する。
 
 ## 認証モード一覧
 
@@ -50,7 +50,7 @@ Anthropic API に直接接続する。ストリーミングが最もスムーズ
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "anthropic",
   "mode_s_auth": "api"
 }
@@ -95,7 +95,7 @@ AWS Bedrock 経由で接続する。credential の `keys` が `extra_keys` と�
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "bedrock",
   "execution_mode": "S",
   "mode_s_auth": "bedrock"
@@ -137,7 +137,7 @@ Google Vertex AI 経由で接続する。credential の `keys` が `extra_keys` 
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "vertex",
   "execution_mode": "S",
   "mode_s_auth": "vertex"
@@ -164,7 +164,7 @@ Claude Code のサブスクリプション認証（Max plan 等）を使用す�
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5-5",
   "credential": "max"
 }
 ```

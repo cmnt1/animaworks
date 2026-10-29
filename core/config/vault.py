@@ -52,6 +52,58 @@ class VaultError(ConfigError):
     """Vault-specific errors (missing key, decryption failure)."""
 
 
+class VaultAccessError(PermissionError):
+    """Raised when an anima requests a vault section outside its namespace."""
+
+
+SHARED_VAULT_SECTION = "shared"
+
+
+def resolve_vault_sections(
+    anima_name: str | None,
+    *,
+    section: str | None = None,
+    write: bool = False,
+    operator: bool = False,
+) -> list[str]:
+    """Return the vault sections available to a caller.
+
+    An anima may read its own section and ``shared``, but may only write its
+    own section. Callers without an anima identity must explicitly opt into
+    operator access and name a section; this preserves the operator-only CLI
+    without treating an identity-less tool handler as an operator.
+    """
+    if section is not None and (not isinstance(section, str) or not section or section != section.strip()):
+        raise VaultAccessError("section must be a non-empty string without surrounding whitespace")
+
+    if not anima_name:
+        if not operator:
+            raise VaultAccessError("An anima identity is required to access the vault")
+        if section is None:
+            raise VaultAccessError("An explicit vault section is required for operator access")
+        return [section]
+
+    own_section = anima_name.strip()
+    if not own_section:
+        raise VaultAccessError("Anima name must be a non-empty string")
+    if own_section == SHARED_VAULT_SECTION:
+        raise VaultAccessError("Anima name cannot use the reserved shared vault section")
+
+    allowed_sections = [own_section]
+    if not write:
+        allowed_sections.append(SHARED_VAULT_SECTION)
+
+    if section is None:
+        return allowed_sections
+    if section not in allowed_sections:
+        operation = "write" if write else "access"
+        allowed = ", ".join(allowed_sections)
+        raise VaultAccessError(
+            f"Anima '{own_section}' may not {operation} vault section '{section}'; allowed sections: {allowed}"
+        )
+    return [section]
+
+
 def resolve_vault_references(value: Any, data_dir: Path) -> Any:
     """Recursively resolve ``{"$vault": "KEY"}`` references.
 
@@ -103,11 +155,6 @@ class VaultManager:
         self._private_key: Any = None  # nacl.public.PrivateKey | None
 
     # ── Properties ───────────────────────────────────────────────
-
-    @property
-    def is_encryption_available(self) -> bool:
-        """Return True if PyNaCl is installed and usable."""
-        return _HAS_NACL
 
     @property
     def has_key(self) -> bool:
@@ -248,65 +295,6 @@ class VaultManager:
             return False
 
     # ── Config credentials encrypt / decrypt ─────────────────────
-
-    def encrypt_config_credentials(
-        self,
-        credentials: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Encrypt all sensitive fields in a config credentials dict.
-
-        Accepts either raw dicts or CredentialConfig instances.  Non-sensitive
-        fields (``type``, ``base_url``) are preserved in cleartext.
-
-        Returns:
-            A new dict with encrypted ``api_key`` and ``keys`` values.
-        """
-        result: dict[str, Any] = {}
-        for name, cred in credentials.items():
-            if hasattr(cred, "model_dump"):
-                cred = cred.model_dump(mode="json")
-
-            entry: dict[str, Any] = {
-                "type": cred.get("type", "api_key"),
-                "base_url": cred.get("base_url"),
-            }
-            api_key = cred.get("api_key", "")
-            entry["api_key"] = self.encrypt(api_key) if api_key else ""
-
-            encrypted_keys: dict[str, str] = {}
-            for k, v in cred.get("keys", {}).items():
-                encrypted_keys[k] = self.encrypt(v) if v else ""
-            entry["keys"] = encrypted_keys
-
-            result[name] = entry
-        return result
-
-    def decrypt_config_credentials(
-        self,
-        encrypted: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Decrypt all sensitive fields from an encrypted credentials dict.
-
-        Returns:
-            A new dict with plaintext ``api_key`` and ``keys`` values,
-            suitable for constructing ``CredentialConfig`` instances.
-        """
-        result: dict[str, Any] = {}
-        for name, entry in encrypted.items():
-            api_key = entry.get("api_key", "")
-            decrypted_key = self.decrypt(api_key) if api_key else ""
-
-            decrypted_keys: dict[str, str] = {}
-            for k, v in entry.get("keys", {}).items():
-                decrypted_keys[k] = self.decrypt(v) if v else ""
-
-            result[name] = {
-                "type": entry.get("type", "api_key"),
-                "api_key": decrypted_key,
-                "keys": decrypted_keys,
-                "base_url": entry.get("base_url"),
-            }
-        return result
 
     # ── vault.json CRUD ──────────────────────────────────────────
 

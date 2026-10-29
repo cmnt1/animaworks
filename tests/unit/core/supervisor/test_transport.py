@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from core.supervisor.transport import cleanup_ipc_endpoint, resolve_client_endpoint, start_ipc_server
+from core.runtime.transport import cleanup_ipc_endpoint, resolve_client_endpoint, start_ipc_server
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="AF_UNIX path limits only apply on POSIX")
 
@@ -22,7 +22,7 @@ async def test_long_unix_socket_path_falls_back_to_tcp(tmp_path, monkeypatch, ca
         writer.close()
         await writer.wait_closed()
 
-    with caplog.at_level(logging.WARNING, logger="core.supervisor.transport"):
+    with caplog.at_level(logging.WARNING, logger="core.runtime.transport"):
         server, endpoint = await start_ipc_server(socket_path, handler, limit=64 * 1024)
 
     try:

@@ -1,11 +1,11 @@
-## [ACTION-RULE] Memory write destination
+## [ACTION-RULE] Memory Storage Locations
 trigger_tools: write_memory_file, create_skill
-keywords: memory, write, knowledge, procedures, skills, action-rule, current_state
+keywords: memory, writing, knowledge, procedures, skills, action-rule, current_state
 ---
-- `knowledge/`: Facts, preferences, policies, decisions, lessons, and failure records
-- `procedures/`: Repeatable task procedures
+- `knowledge/`: Facts, preferences, policies, judgments, lessons learned, and failure records
+- `procedures/`: Reusable work procedures
 - `skills/{name}/SKILL.md`: Reusable capabilities, tool workflows, and playbooks
-- `knowledge/action-rule-*.md`: Rules checked immediately before side-effecting actions
+- `knowledge/action-rule-*.md`: Rules to check immediately before operations with side effects
 - `state/current_state.md`: Working memory for temporary observations, plans, and blockers only
 
-Read `read_memory_file(path="reference/operations/memory-writing-guide.md")` for details.
+For details, read `read_memory_file(path="reference/operations/memory-writing-guide.md")`.

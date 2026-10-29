@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture()
@@ -35,7 +35,7 @@ def observe_pending_publish(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
             published.append(destination)
         real_replace(src, dst)
 
-    monkeypatch.setattr("core.memory._io.os.replace", checked_replace)
+    monkeypatch.setattr("core.platform.atomic_io.os.replace", checked_replace)
     return published
 
 
@@ -48,7 +48,6 @@ def test_submit_tasks_atomically_publishes_pending_json(
     handler = object.__new__(SkillsToolsMixin)
     handler._anima_dir = tmp_path / "animas" / "sakura"
     handler._anima_name = "sakura"
-    handler._pending_executor_wake = None
 
     result = handler._handle_submit_tasks(
         {
@@ -99,10 +98,6 @@ def test_delegate_task_atomically_publishes_pending_json(
     handler._check_subordinate = lambda _name: None
 
     monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
-    monkeypatch.setattr(
-        "core.tooling.handler_delegation._record_taskboard_delegation",
-        lambda **_kwargs: None,
-    )
 
     handler._handle_delegate_task(
         {

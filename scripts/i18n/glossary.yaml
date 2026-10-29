@@ -1,0 +1,257 @@
+- ja: 記憶統合
+  en: consolidation
+  ko: 기억 통합
+  note: Memory consolidation process
+- ja: エピソード
+  en: episode
+  ko: 에피소드
+- ja: 手続き記憶
+  en: procedural memory
+  ko: 절차 기억
+- ja: 手続き
+  en: procedure
+  ko: 절차
+- ja: 知識
+  en: knowledge
+  ko: 지식
+- ja: 上司
+  en: supervisor
+  ko: 상급자
+- ja: 部下
+  en: subordinate
+  ko: 부하
+- ja: 委任
+  en: delegation
+  ko: 위임
+- ja: ハートビート
+  en: heartbeat
+  ko: 하트비트
+- ja: プライミング
+  en: priming
+  ko: 프라이밍
+- ja: チャネル
+  en: channel
+  ko: 채널
+- ja: 短期記憶
+  en: short-term memory
+  ko: 단기 기억
+- ja: 作業記憶
+  en: working memory
+  ko: 작업 기억
+- ja: 長期記憶
+  en: long-term memory
+  ko: 장기 기억
+- ja: 会話履歴
+  en: conversation history
+  ko: 대화 기록
+- ja: セッション
+  en: session
+  ko: 세션
+- ja: 要約
+  en: summary
+  ko: 요약
+- ja: 圧縮
+  en: compression
+  ko: 압축
+- ja: 検索
+  en: search
+  ko: 검색
+- ja: 類似度
+  en: similarity
+  ko: 유사도
+- ja: 埋め込み
+  en: embedding
+  ko: 임베딩
+- ja: ベクトル
+  en: vector
+  ko: 벡터
+- ja: ナレッジグラフ
+  en: knowledge graph
+  ko: 지식 그래프
+- ja: 階層
+  en: hierarchy
+  ko: 계층
+- ja: 組織
+  en: organization
+  ko: 조직
+- ja: チーム
+  en: team
+  ko: 팀
+- ja: タスク
+  en: task
+  ko: 작업
+- ja: 背景タスク
+  en: background task
+  ko: 백그라운드 작업
+- ja: 期限
+  en: deadline
+  ko: 마감일
+- ja: 進捗
+  en: progress
+  ko: 진행 상황
+- ja: 状態
+  en: status
+  ko: 상태
+- ja: 完了
+  en: completion
+  ko: 완료
+- ja: 失敗
+  en: failure
+  ko: 실패
+- ja: 再試行
+  en: retry
+  ko: 재시도
+- ja: 委任先
+  en: delegate
+  ko: 위임 대상
+- ja: メッセージ
+  en: message
+  ko: 메시지
+- ja: 通知
+  en: notification
+  ko: 알림
+- ja: 送信
+  en: send
+  ko: 전송
+- ja: 受信
+  en: receive
+  ko: 수신
+- ja: 外部ツール
+  en: external tool
+  ko: 외부 도구
+- ja: 権限
+  en: permission
+  ko: 권한
+- ja: 認証
+  en: authentication
+  ko: 인증
+- ja: 認可
+  en: authorization
+  ko: 인가
+- ja: 資格情報
+  en: credentials
+  ko: 자격 증명
+- ja: 設定
+  en: configuration
+  ko: 설정
+- ja: 設定ファイル
+  en: configuration file
+  ko: 설정 파일
+- ja: 環境変数
+  en: environment variable
+  ko: 환경 변수
+- ja: テンプレート
+  en: template
+  ko: 템플릿
+- ja: プロンプト
+  en: prompt
+  ko: 프롬프트
+- ja: 指示
+  en: instruction
+  ko: 지침
+- ja: 構造化
+  en: structured
+  ko: 구조화
+- ja: 検証
+  en: validation
+  ko: 검증
+- ja: 安全性
+  en: safety
+  ko: 안전성
+- ja: 信頼性
+  en: reliability
+  ko: 신뢰성
+- ja: エラー
+  en: error
+  ko: 오류
+- ja: 例外
+  en: exception
+  ko: 예외
+- ja: ログ
+  en: log
+  ko: 로그
+- ja: 監視
+  en: monitoring
+  ko: 모니터링
+- ja: ブラウザ
+  en: browser
+  ko: 브라우저
+- ja: スクリーンショット
+  en: screenshot
+  ko: 스크린샷
+- ja: ワークスペース
+  en: workspace
+  ko: 작업 공간
+- ja: 作業ディレクトリ
+  en: working directory
+  ko: 작업 디렉터리
+- ja: リファレンス
+  en: reference
+  ko: 참조
+- ja: ドキュメント
+  en: documentation
+  ko: 문서
+- ja: 見出し
+  en: heading
+  ko: 제목
+- ja: 表
+  en: table
+  ko: 표
+- ja: 箇条書き
+  en: bullet list
+  ko: 글머리 기호 목록
+- ja: リンク
+  en: link
+  ko: 링크
+- ja: 差分
+  en: diff
+  ko: 차이
+- ja: 更新
+  en: update
+  ko: 업데이트
+- ja: 同期
+  en: synchronization
+  ko: 동기화
+- ja: 再同期
+  en: resynchronization
+  ko: 재동기화
+- ja: 実行時
+  en: runtime
+  ko: 런타임
+- ja: 起動
+  en: startup
+  ko: 시작
+- ja: 停止
+  en: shutdown
+  ko: 종료
+- ja: 固有名
+  en: proper name
+  ko: 고유명사
+- ja: Anima
+  en: Anima
+  ko: Anima
+  keep: true
+- ja: AnimaWorks
+  en: AnimaWorks
+  ko: AnimaWorks
+  keep: true
+- ja: Heartbeat
+  en: Heartbeat
+  ko: Heartbeat
+  keep: true
+- ja: TaskBoard
+  en: TaskBoard
+  ko: TaskBoard
+  keep: true
+- ja: Mode S
+  en: Mode S
+  ko: Mode S
+  keep: true
+- ja: phase3
+  en: phase3
+  ko: phase3
+  keep: true
+- ja: RAG
+  en: RAG
+  ko: RAG
+  keep: true

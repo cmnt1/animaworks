@@ -25,7 +25,7 @@ def mock_sentence_transformers_cross_encoder():
 
 @pytest.fixture(autouse=True)
 def _reset_gpu_state():
-    from core.gpu import reset_gpu_status_for_testing
+    from core.infra.gpu import reset_gpu_status_for_testing
 
     reset_gpu_status_for_testing()
     yield
@@ -60,9 +60,9 @@ def test_reranker_cuda_inference_failure_falls_back_to_cpu_and_records_status(
 
     with (
         patch("core.config.load_config", return_value=config),
-        patch("core.gpu._cuda_available_safely", return_value=True),
+        patch("core.infra.gpu._cuda_available_safely", return_value=True),
     ):
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
         from core.memory.retrieval.reranker import CrossEncoderReranker
 
         reranker = CrossEncoderReranker("test-reranker")
@@ -123,8 +123,7 @@ def test_get_reranker_returns_same_instance_across_threads(
 
         reranker_mod._reranker = None
         threads = [
-            threading.Thread(target=lambda: results.append(reranker_mod.get_reranker("test-r")))
-            for _ in range(8)
+            threading.Thread(target=lambda: results.append(reranker_mod.get_reranker("test-r"))) for _ in range(8)
         ]
         for t in threads:
             t.start()

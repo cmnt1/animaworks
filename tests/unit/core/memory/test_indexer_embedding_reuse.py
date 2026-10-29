@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.memory.rag.indexer import MemoryIndexer
 from core.memory.rag.store import Document, SearchResult
 
@@ -23,7 +24,7 @@ class Store:
     def create_collection(self, collection):
         return True
 
-    def list_collections_checked(self):
+    def list_collections(self):
         return ["test_episodes", "shared_common_knowledge"]
 
     def get_by_metadata(self, collection, where, limit=20):
@@ -66,7 +67,6 @@ def make_indexer(tmp_path, monkeypatch, *, shared=False):
         "test",
         tmp_path,
         collection_prefix="shared" if shared else "test",
-        embedding_model=object(),
         upsert_quarantine_failure_threshold=3,
     )
     indexer._generate_embeddings = MagicMock(side_effect=lambda texts: [[float(len(text)), 1.0] for text in texts])
@@ -75,6 +75,21 @@ def make_indexer(tmp_path, monkeypatch, *, shared=False):
     path = tmp_path / memory_type / "2026-09-08.md"
     path.parent.mkdir()
     return indexer, store, path, memory_type
+
+
+def test_indexer_creation_does_not_load_embedding_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+    from core.memory.rag import embedding
+
+    get_embedding_model = MagicMock()
+    monkeypatch.setattr(embedding, "get_embedding_model", get_embedding_model)
+    monkeypatch.setattr(embedding, "get_embedding_model", get_embedding_model)
+
+    indexer = MemoryIndexer(Store(), "test", tmp_path)
+
+    get_embedding_model.assert_not_called()
+    assert not hasattr(indexer, "embedding_model")
 
 
 def body(count):
@@ -197,9 +212,8 @@ def test_real_owner_metadata_update_keeps_embedding_and_refreshes_hash(tmp_path,
     pytest.importorskip("chromadb")
     from core.memory.rag.store import ChromaVectorStore
 
-    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     idx, _, path, kind = make_indexer(tmp_path, monkeypatch)
-    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors")
+    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors", allow_direct=OWNER_CAPABILITY)
     idx.vector_store = store
     try:
         path.write_text(body(2))
@@ -270,7 +284,7 @@ def test_signature_tracks_actual_encoder_policy(monkeypatch, changed):
     from types import SimpleNamespace
 
     from core import config
-    from core.memory.rag import singleton
+    from core.memory.rag import embedding
 
     rag = SimpleNamespace(
         embedding_e5_prefix_enabled=True,
@@ -279,11 +293,11 @@ def test_signature_tracks_actual_encoder_policy(monkeypatch, changed):
         embedding_max_seq_length=512,
     )
     monkeypatch.setattr(config, "load_config", lambda: SimpleNamespace(rag=rag))
-    monkeypatch.setattr(singleton, "get_embedding_model_name", lambda: "model-a")
+    monkeypatch.setattr(embedding, "get_embedding_model_name", lambda: "model-a")
     initial = MemoryIndexer._document_embedding_signature()
     assert initial is not None
     if changed == "model":
-        monkeypatch.setattr(singleton, "get_embedding_model_name", lambda: "model-b")
+        monkeypatch.setattr(embedding, "get_embedding_model_name", lambda: "model-b")
     elif changed == "enabled":
         rag.embedding_e5_prefix_enabled = False
     elif changed == "max_seq_length":

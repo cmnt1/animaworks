@@ -166,7 +166,7 @@ uv run animaworks demo --reset
 - **フルインストール** — リポジトリルートで `uv run animaworks start` を実行し、自分のチーム用にセットアップウィザードを起動
 - **自分のエージェントを作る** — Markdownでキャラクターシートを書くだけで、フレームワークが残りを処理
 - **他のLLMを追加** — AnimaWorksはClaude、GPT、Gemini、ローカルモデル等に対応
-- **ドキュメント** — [設計思想](../docs/vision.ja.md) · [記憶システム](../docs/memory.ja.md) · [セキュリティ](../docs/security.ja.md)
+- **ドキュメント** — [設計思想](../docs/ja/vision.md) · [記憶システム](../docs/ja/memory/index.md) · [セキュリティ](../docs/ja/security.md)
 
 ---
 

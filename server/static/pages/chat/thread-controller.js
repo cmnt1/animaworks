@@ -31,6 +31,8 @@ export function createThreadController(ctx) {
       streamingThreadId: streamCtx?.thread || null,
     });
 
+    ctx.controllers.head?.decorateThreadTabs();
+
     container.querySelectorAll(".thread-tab").forEach(btn => {
       btn.addEventListener("click", e => {
         const tid = e.target.dataset.thread;
@@ -105,6 +107,7 @@ export function createThreadController(ctx) {
     syncModelSelect(ctx);
 
     if (!name) return;
+    void ctx.controllers.anima.refreshSessions(name);
 
     if (input) {
       input.value = loadDraft(name, threadId);
@@ -116,11 +119,11 @@ export function createThreadController(ctx) {
 
     const mgr = state.manager;
     const hs = mgr.getHistoryState(name, threadId);
-    const needLoad = !hs || hs.sessions.length === 0;
+    const needLoad = !hs || (hs.isFeed ? (hs.feedItems || []).length === 0 : hs.sessions.length === 0);
     ctx.controllers.renderer.renderChat();
 
     if (needLoad) {
-      await mgr.loadHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE);
+      await mgr.loadHistory(name, threadId, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
     }
     ctx.controllers.renderer.renderChat();
     scheduleSaveChatUiState(ctx);
@@ -158,6 +161,7 @@ export function createThreadController(ctx) {
     renderThreadTabs();
     ctx.controllers.renderer.renderChat();
     scheduleSaveChatUiState(ctx);
+    void ctx.controllers.anima.refreshSessions(state.selectedAnima);
   }
 
   function restoreThread(threadId) {

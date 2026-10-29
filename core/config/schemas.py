@@ -16,7 +16,9 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from core.enclave.config import EnclaveClientConfig, EnclaveConfig
 
 logger = logging.getLogger("animaworks.config")
 
@@ -25,30 +27,9 @@ logger = logging.getLogger("animaworks.config")
 # ---------------------------------------------------------------------------
 
 
-class GatewaySystemConfig(BaseModel):
-    """Deprecated: Gateway configuration retained for config.json compatibility."""
-
-    host: str = "0.0.0.0"
-    port: int = 18500
-    redis_url: str | None = None
-    worker_heartbeat_timeout: int = 45
-
-
-class WorkerSystemConfig(BaseModel):
-    """Deprecated: Worker configuration retained for config.json compatibility."""
-
-    gateway_url: str = "http://localhost:18500"
-    redis_url: str | None = None
-    listen_port: int = 18501
-    heartbeat_interval: int = 15
-
-
 class SystemConfig(BaseModel):
     mode: str = "server"
-    log_level: str = "INFO"
     timezone: str = ""  # IANA TZ name; empty = auto-detect from system
-    gateway: GatewaySystemConfig = GatewaySystemConfig()
-    worker: WorkerSystemConfig = WorkerSystemConfig()
 
 
 class CredentialConfig(BaseModel):
@@ -66,45 +47,14 @@ class AnimaModelConfig(BaseModel):
     speciality: str | None = None
     model: str | None = None
     heartbeat_enabled: bool | None = None
+    background_review_enabled: bool | None = None
     token_budget_monthly: int | None = None
     aliases: list[str] = []
     """Alternative names (e.g. Japanese) that resolve to this anima's canonical name."""
 
 
-ProcessModel = Literal["legacy", "phase2", "phase3"]
-
-
-class TaskProcessIsolationConfig(BaseModel):
-    """Strict Phase 2 lane isolation flags stored in ``status.json``."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    cron: StrictBool = False
-    heartbeat: StrictBool = False
-    task: StrictBool = False
-    background: StrictBool = False
-
-
-def _phase3_isolation() -> TaskProcessIsolationConfig:
-    return TaskProcessIsolationConfig(cron=True, heartbeat=True, task=True, background=True)
-
-
-class ResolvedProcessModelConfig(BaseModel):
-    """Validated process topology resolution result.
-
-    The default topology is ``phase3`` (task-runner isolation + root DB
-    ownership); ``legacy``/``phase2`` remain available as explicit opt-outs.
-    """
-
-    process_model: ProcessModel = "phase3"
-    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=_phase3_isolation)
-    valid: bool = True
-    error: str | None = None
-    warnings: tuple[str, ...] = ()
-
-
 # ── Default model names (single source of truth) ─────────────────────────────
-DEFAULT_ANIMA_MODEL: str = "claude-sonnet-4-6"
+DEFAULT_ANIMA_MODEL: str = "claude-sonnet-5-5"
 DEFAULT_CONSOLIDATION_MODEL: str = DEFAULT_ANIMA_MODEL
 
 
@@ -122,8 +72,9 @@ class AnimaDefaults(BaseModel):
     credential: str = "anthropic"
     context_threshold: float = 0.50
     context_absolute_ceiling: float = 0.75
+    task_compaction_tokens: int = 0
+    task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
-    max_chains: int = 2
     conversation_history_threshold: float = 0.30
     execution_mode: str | None = None  # None = auto-detect from model
     supervisor: str | None = None
@@ -131,11 +82,7 @@ class AnimaDefaults(BaseModel):
     extra_mcp_servers: dict[str, dict] = Field(default_factory=dict)
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
-    llm_timeout: int = 600  # default LLM API timeout (seconds)
     mode_s_auth: str | None = None  # Mode S auth: "max"|"api"|"bedrock"|"vertex"|None(=max)
-    max_outbound_per_hour: int | None = None
-    max_outbound_per_day: int | None = None
-    max_recipients_per_run: int | None = None
     default_workspace: str = ""
     consolidation_enabled: bool = True
     heartbeat_enabled: bool = True  # 既定true。falseで定期heartbeatのみ無効化。メッセージ起因HB・cronは影響なし
@@ -196,63 +143,6 @@ class LocalLLMConfig(BaseModel):
         return self
 
 
-# ── Outbound budget defaults per role ─────────────────────────────────────────
-ROLE_OUTBOUND_DEFAULTS: dict[str, dict[str, int]] = {
-    "manager": {"max_outbound_per_hour": 60, "max_outbound_per_day": 300, "max_recipients_per_run": 10},
-    "engineer": {"max_outbound_per_hour": 40, "max_outbound_per_day": 200, "max_recipients_per_run": 5},
-    "writer": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
-    "researcher": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
-    "ops": {"max_outbound_per_hour": 20, "max_outbound_per_day": 80, "max_recipients_per_run": 2},
-    "general": {"max_outbound_per_hour": 15, "max_outbound_per_day": 50, "max_recipients_per_run": 2},
-}
-
-
-def resolve_outbound_limits(
-    anima_name: str,
-    anima_dir: Path | None = None,
-) -> dict[str, int]:
-    """Resolve outbound limits for an Anima.
-
-    Resolution order:
-      1. status.json (per-Anima override)
-      2. Role defaults from ROLE_OUTBOUND_DEFAULTS (based on status.json "role")
-      3. "general" role as final fallback
-    """
-    _FIELDS = ("max_outbound_per_hour", "max_outbound_per_day", "max_recipients_per_run")
-    fallback = ROLE_OUTBOUND_DEFAULTS["general"]
-
-    if anima_dir is None:
-        return dict(fallback)
-
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return dict(fallback)
-
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return dict(fallback)
-
-    role = data.get("role", "general")
-    role_defaults = ROLE_OUTBOUND_DEFAULTS.get(role, fallback)
-    if role not in ROLE_OUTBOUND_DEFAULTS:
-        logger.warning(
-            "Unknown role %r for anima %s; falling back to general outbound limits",
-            role,
-            anima_name,
-        )
-
-    result: dict[str, int] = {}
-    for field in _FIELDS:
-        val = data.get(field)
-        if isinstance(val, int) and val > 0:
-            result[field] = val
-        else:
-            result[field] = role_defaults.get(field, fallback[field])
-
-    return result
-
-
 class RAGConfig(BaseModel):
     """Configuration for RAG (Retrieval-Augmented Generation) system."""
 
@@ -279,32 +169,6 @@ class RAGConfig(BaseModel):
         ),
     )
     use_gpu: bool = False
-    enable_spreading_activation: bool = True
-    max_graph_hops: int = 2
-    enable_file_watcher: bool = Field(
-        default=True,
-        description="Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility.",
-    )
-    graph_cache_enabled: bool = True
-    implicit_link_threshold: float = 0.75
-    spreading_memory_types: list[str] = ["knowledge", "episodes"]
-    entity_aware_graph_enabled: bool = Field(
-        default=False,
-        description="Enable Legacy NetworkX graph nodes/edges for facts and entities.",
-    )
-    graph_entity_edge_cap: int = Field(
-        default=8,
-        ge=1,
-        description="Maximum co-mentioned memory/fact carriers connected per entity.",
-    )
-    graph_inverse_fan_enabled: bool = Field(
-        default=True,
-        description="Reduce graph edge weights for high-fanout entity nodes.",
-    )
-    graph_recency_weight_enabled: bool = Field(
-        default=True,
-        description="Apply a conservative recency multiplier to graph edge weights.",
-    )
     min_retrieval_score: float = 0.3
     skill_match_min_score: float = 0.75
     repair_enabled: bool = True
@@ -314,35 +178,17 @@ class RAGConfig(BaseModel):
     repair_max_consecutive_failures: int = 2
     repair_timeout_seconds: int = 1800
     repair_poll_interval_seconds: int = 5
-    repair_stop_anima: bool = False
-    # Max RAG repairs allowed to run at once. The vector worker is single-threaded;
-    # running many rebuilds concurrently saturates it, makes reindex upserts fail,
-    # and leaves schema-less stub DBs that re-trigger repair — a destructive loop.
-    # Serialize repairs (1) by default so each rebuild runs in isolation.
+    # Root staging rebuilds are CPU/IO-heavy; limit concurrent rebuilds.
     repair_max_concurrent: int = 1
     upsert_quarantine_failure_threshold: int = Field(default=3, ge=1)
     shared_check_ttl_seconds: float = Field(default=30.0, ge=0)
     shared_check_backoff_initial_seconds: float = Field(default=5.0, ge=0)
     shared_check_backoff_max_seconds: float = Field(default=300.0, ge=0)
-    startup_repair_preflight_enabled: bool = True
-    startup_repair_window_minutes: int = 1440
-    quick_check_timeout_seconds: float = 10.0
-    vector_worker_enabled: bool = True
-    vector_worker_host: str = "127.0.0.1"
-    vector_worker_port: int = 0
-    vector_worker_startup_timeout_seconds: float = 10.0
-    vector_worker_request_timeout_seconds: float = 30.0
-    vector_worker_restart_backoff_seconds: float = 2.0
-    vector_worker_shutdown_timeout_seconds: float = 30.0
-    vector_worker_fallback_direct: bool = False
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-    abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
-    iterative_retrieval_enabled: bool = True
-    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
@@ -351,6 +197,15 @@ class RAGConfig(BaseModel):
             "Default timeout in seconds for LLM calls used by legacy atomic fact extraction; "
             "per-Anima status.json extraction_timeout overrides this value."
         ),
+    )
+    fact_extraction_max_tokens: int = Field(
+        default=8192,
+        ge=1024,
+        description="Maximum output tokens for legacy atomic fact extraction LLM calls.",
+    )
+    facts_extraction_single_call: bool = Field(
+        default=True,
+        description="Extract legacy atomic facts and their entities in one LLM call when supported.",
     )
     facts_reconcile_enabled: bool = Field(
         default=True,
@@ -365,17 +220,6 @@ class RAGConfig(BaseModel):
         description="Maximum similar active facts considered during legacy fact reconciliation.",
     )
     entity_registry_enabled: bool = True
-    entity_boost_enabled: bool = True
-    entity_boost: float = 0.20
-    entity_boost_cap: float = 0.80
-    temporal_boost_enabled: bool = True
-    temporal_boost: float = 0.05
-    temporal_boost_max: float = 0.10
-    temporal_half_life_days: float = 7.0
-    access_boost_enabled: bool = True
-    access_boost_weight: float = 0.05
-    access_boost_cap: float = 0.25
-    access_boost_half_life_days: float = 30.0
 
 
 class GPUConfig(BaseModel):
@@ -391,22 +235,8 @@ class GPUConfig(BaseModel):
     )
 
 
-class Neo4jConfig(BaseModel):
-    """Neo4j connection settings."""
-
-    uri: str = "bolt://localhost:7687"
-    user: str = "neo4j"
-    password: str = "animaworks"
-    database: str = "neo4j"
-
-
-class Neo4jEdgeTypeConfig(BaseModel):
-    """Configurable semantic Neo4j edge type.
-
-    Neo4j stores facts with the physical relationship type ``RELATES_TO``.
-    This model controls the semantic ``edge_type`` property exposed to the
-    extraction prompt and preserved on the relationship.
-    """
+class FactEdgeTypeConfig(BaseModel):
+    """Configurable semantic edge type for extracted facts."""
 
     name: str = Field(..., description="Upper snake case semantic edge type name")
     description: str = Field(..., description="Short explanation shown in extraction prompts")
@@ -416,9 +246,9 @@ class Neo4jEdgeTypeConfig(BaseModel):
     def _validate_name(cls, value: str) -> str:
         name = value.strip().upper()
         if not name:
-            raise ValueError("Neo4j edge type name must not be empty")
+            raise ValueError("Fact edge type name must not be empty")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
-            raise ValueError("Neo4j edge type name must be upper snake case")
+            raise ValueError("Fact edge type name must be upper snake case")
         return name
 
     @field_validator("description")
@@ -426,23 +256,23 @@ class Neo4jEdgeTypeConfig(BaseModel):
     def _validate_description(cls, value: str) -> str:
         description = value.strip()
         if not description:
-            raise ValueError("Neo4j edge type description must not be empty")
+            raise ValueError("Fact edge type description must not be empty")
         return description
 
 
 class MemoryConfig(BaseModel):
-    """Configuration for memory backend selection."""
+    """Configuration for fact extraction."""
 
-    backend: Literal["legacy", "neo4j"] = "legacy"
-    neo4j: Neo4jConfig = Neo4jConfig()
-    neo4j_realtime_ingest: bool = False
-    neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
+    fact_edge_types: list[FactEdgeTypeConfig] = Field(default_factory=list)
 
 
 class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
+    identity_business_exclude_headings: list[str] = Field(
+        default_factory=lambda: ["外見", "基本プロフィール", "Appearance", "Basic Profile"]
+    )
     system_prompt_target_tokens: int = Field(default=6000, ge=2000)
     system_prompt_ceiling_pct: float = Field(default=0.35, gt=0.0, le=1.0)
     skill_catalog_router_enabled: bool = True
@@ -451,21 +281,47 @@ class PromptConfig(BaseModel):
     skill_catalog_router_include_body: bool = True
     skill_catalog_router_dense_enabled: bool = True
     skill_catalog_router_dense_weight: float = Field(default=8.0, ge=0.0)
+    skill_catalog_max_items: int = Field(default=3, ge=1)
+
+
+class CompactBackgroundRecallConfig(BaseModel):
+    """Per-trigger limits for compact-profile background memory recall."""
+
+    related_knowledge_max_items: int = Field(default=3, ge=0)
+    related_knowledge_max_tokens: int = Field(default=180, ge=0)
+    episodes_max_items: int = Field(default=2, ge=0)
+    episodes_max_tokens: int = Field(default=400, ge=0)
+    recent_activity_max_items: int = Field(default=5, ge=0)
+    recent_activity_max_tokens: int = Field(default=300, ge=0)
 
 
 class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
-    profile: Literal["compact", "full"] = "compact"
     max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
+    recent_facts_enabled: bool = True
+    recent_facts_max_tokens: int = Field(default=500, ge=0)
+    compact_background_recall_enabled: bool = True
+    compact_background_recall: CompactBackgroundRecallConfig = Field(default_factory=CompactBackgroundRecallConfig)
+
+
+class BackgroundReviewConfig(BaseModel):
+    """Limits for asynchronous post-session memory review."""
+
+    enabled: bool = True
+    chat_every_user_turns: int = Field(default=10, ge=1)
+    min_interval_minutes: int = Field(default=10, ge=0)
+    max_per_day: int = Field(default=24, ge=1)
+    max_input_bytes: int = Field(default=60 * 1024, ge=2048)
+    max_writes: int = Field(default=3, ge=0)
+    peer_profile_max_chars: int = Field(default=1500, ge=1)
 
 
 class ConsolidationConfig(BaseModel):
     """Configuration for memory consolidation processes."""
 
     daily_enabled: bool = True
-    knowledge_mutation_enabled: bool = False
     weekly_distillation_enabled: bool = True
     synaptic_downscaling_enabled: bool = True
     skill_autolearn_enabled: bool = True
@@ -474,23 +330,110 @@ class ConsolidationConfig(BaseModel):
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
+    weekly_llm_model: str | None = None
+    weekly_llm_credential: str | None = None
+    llm_fallback_model: str | None = None
+    llm_fallback_credential: str | None = None
+    fact_reconcile_model: str | None = None
+    fact_reconcile_credential: str | None = None
+    episode_summary_max_input_bytes: int = Field(
+        default=200 * 1024,
+        ge=1024,
+        description="Maximum UTF-8 prompt size for each daily episode-summary LLM call.",
+    )
+    episode_summary_backfill_days: int = Field(
+        default=7,
+        ge=1,
+        description="Look back this many local days for unprocessed daily episode activity.",
+    )
+    episode_summary_backfill_max_days_per_run: int = Field(
+        default=1,
+        ge=0,
+        description="Maximum older days to backfill during one daily consolidation (yesterday is separate).",
+    )
+    episode_summary_exclude_noop_cron: bool = Field(
+        default=True,
+        description="Exclude 'did nothing' cron executions from daily episode-summary input.",
+    )
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
-    ipc_timeout_per_carryover_item_seconds: float = Field(default=600.0, ge=0.0)
     ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
+    max_concurrent_animas: int = Field(
+        default=3,
+        description="Maximum number of Anima daily/weekly consolidations to run concurrently.",
+    )
     weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
-    duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
     knowledge_self_correction_enabled: bool = True
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
+    fact_extraction_chunk_chars: int = Field(
+        default=12000,
+        ge=0,
+        description="Maximum characters per atomic-fact-extraction chunk during "
+        "consolidation. 0 (or negative) disables splitting.",
+    )
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
     inactivity_skip_enabled: bool = True
     inactivity_days: int = Field(default=7, ge=1)
+    episode_summary_input_profile: Literal["full", "compact"] = "compact"
+    episode_summary_cron_digest_min_runs: int = Field(default=6, ge=1)
+    episode_summary_cron_digest_max_notable_runs: int = Field(default=5, ge=0)
+    episode_summary_tool_use_max_bytes: int = Field(default=300, ge=0)
+    # Bash tool_use bodies are cut further for dates summarised with compact_v2.
+    episode_summary_bash_tool_use_max_bytes: int = Field(default=120, ge=0)
+    episode_summary_error_tail_bytes: int = Field(default=300, ge=0)
+    episode_summary_max_output_tokens: int = Field(default=4096, ge=1)
+    live_fact_extraction_enabled: bool = True
+    live_fact_model: str | None = None
+    live_fact_credential: str | None = None
+    live_fact_min_input_chars: int = Field(default=200, ge=0)
+    live_fact_max_input_chars: int = Field(default=24000, ge=0)
+    live_fact_debounce_seconds: int = Field(default=120, ge=0)
+
+
+class HelperModelFallback(BaseModel):
+    """A fallback model and its optional named credential for one helper role."""
+
+    model: str = Field(..., min_length=1, description="Fallback model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the fallback model.")
+
+
+class HelperModelRole(BaseModel):
+    """Model selection and one-shot policy for a single helper role."""
+
+    model: str | None = Field(default=None, description="Primary helper model identifier.")
+    credential: str | None = Field(default=None, description="Credential name for the primary model.")
+    fallbacks: list[HelperModelFallback] = Field(default_factory=list, description="Ordered explicit fallback models.")
+    allow_agent_sdk_fallback: bool = Field(
+        default=False,
+        description="Allow one-shot calls for this role to fall back to the Claude Agent SDK.",
+    )
+    max_output_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum output tokens for one-shot calls made by this role.",
+    )
+
+
+class HelperModelsConfig(BaseModel):
+    """Named helper-model roles plus a shared fallback role configuration."""
+
+    episode_summary: HelperModelRole | None = None
+    fact_extraction: HelperModelRole | None = None
+    fact_reconcile: HelperModelRole | None = None
+    weekly_consolidation: HelperModelRole | None = None
+    project_consolidation: HelperModelRole | None = None
+    conversation_compression: HelperModelRole | None = None
+    distillation: HelperModelRole | None = None
+    reconsolidation: HelperModelRole | None = None
+    asset_reconcile: HelperModelRole | None = None
+    meeting_summary: HelperModelRole | None = None
+    default: HelperModelRole = Field(default_factory=HelperModelRole)
 
 
 class ImageGenConfig(BaseModel):
@@ -506,6 +449,8 @@ class ImageGenConfig(BaseModel):
     vibe_strength: float = 0.6  # Vibe Transfer strength (0.0-1.0)
     vibe_info_extracted: float = 0.8  # Vibe Transfer information extraction (0.0-1.0)
     enable_3d: bool = True  # Enable 3D model generation (Meshy API)
+    pixel_base_sheet: str | None = None  # Base pixel sheet; None uses the bundled sample_01.png
+    pixel_concurrency: int = 4  # Parallel codex image_gen calls for pixel sheet rows
     diffusers_text2img_model: str = "auto"
     diffusers_img2img_model: str = "auto"
     diffusers_text2img_model_realistic: str = ""  # Override for realistic style
@@ -537,6 +482,7 @@ class HumanNotificationConfig(BaseModel):
 
     enabled: bool = False
     channels: list[NotificationChannelConfig] = []
+    web_ui: bool = True  # built-in channel: push call_human into the Web UI chat
 
 
 class InteractionConfig(BaseModel):
@@ -546,7 +492,6 @@ class InteractionConfig(BaseModel):
         default_factory=list,
         description="Default Slack user IDs merged with per-call call_human allowed_users.",
     )
-    ttl_days: int = 7
     web_base_url: str = ""
 
     @field_validator("default_approver_ids", mode="before")
@@ -635,6 +580,11 @@ class GitHubWebhookConfig(BaseModel):
     # Treated like bot_login for comment exclusion.
     reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
+    # Thin out auto-detected bot noise (logins ending in "[bot]"): drop
+    # notifications whose body is empty or is only a "Review thread
+    # resolved" auto-reply, while still delivering bots with a real body.
+    # Independent of bot_login/reviewer_login (those are filtered outright).
+    drop_bot_noise: bool = True
 
 
 class EventExportConfig(BaseModel):
@@ -703,28 +653,26 @@ class MediaProxyConfig(BaseModel):
     rate_limit_window_s: int = 60
 
 
-class UsageGovernorConfig(BaseModel):
-    """Usage Governor settings (server-side quota enforcement)."""
-
-    enabled: bool = False
-
-
 class ServerConfig(BaseModel):
     """Server runtime configuration."""
 
     session_ttl_days: int | None = 90  # None = unlimited
-    usage_governor: UsageGovernorConfig = UsageGovernorConfig()
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
-    max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)
-    busy_hang_threshold: int = 900  # no-progress timeout for busy processes (seconds)
+    runner_liveness_timeout: int = Field(default=900, ge=1)
+    chat_max_concurrency: int = Field(default=1, ge=1, le=10)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
+    # Matches the 600-second TaskExec drain; 0 skips waiting for active work.
+    restart_drain_timeout_seconds: int = Field(default=600, ge=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)
-    supervisor_respawn_max_retries: int = Field(default=3, ge=1)
-    supervisor_respawn_retry_interval_seconds: float = Field(default=30.0, ge=0.0)
+    supervisor_respawn_max_retries: int = Field(
+        default=3, ge=1
+    )  # consecutive failures before FAILED display; auto-recovery continues after
+    supervisor_respawn_retry_interval_seconds: float = Field(default=30.0, ge=0.0)  # base backoff interval (seconds)
+    supervisor_respawn_backoff_max_seconds: float = Field(default=1800.0, ge=0.0)  # max backoff (seconds)
     stream_checkpoint_enabled: bool = True  # save tool results during streaming
     stream_retry_max: int = 3  # max automatic retries on stream disconnect
     stream_retry_delay_s: float = 5.0  # delay between retries (seconds)
@@ -735,6 +683,7 @@ class ServerConfig(BaseModel):
     ollama_total_timeout: int = 0  # Hard upper bound (seconds) on a single Ollama generation call; 0 = unlimited
     media_proxy: MediaProxyConfig = MediaProxyConfig()
     base_path: str = ""  # Reverse proxy sub-path (e.g. "/app"); empty = root deploy
+    internal_api_auth: Literal["off", "log", "enforce"] = "log"  # /api/internal/* caller verification
 
     @model_validator(mode="after")
     def _validate_intervals(self) -> ServerConfig:
@@ -754,6 +703,16 @@ class LlmRateGuardConfig(BaseModel):
     max_block_seconds: int = Field(default=600, ge=0)
     quota_block_seconds: int = Field(default=1800, ge=0)
     max_quota_block_seconds: int = Field(default=14400, ge=0)
+
+
+class MCPConfig(BaseModel):
+    """Configuration for the Mode S aw MCP server tool exposure."""
+
+    # Limit the advertised aw MCP tool set by trigger: interactive triggers
+    # (chat / inbox / cron / task) skip the skill-management tools, while
+    # heartbeat / consolidation still receive the full set.  Set False to
+    # always expose every tool (previous behaviour).
+    trigger_scoped_tools: bool = True
 
 
 class BackgroundToolConfig(BaseModel):
@@ -779,10 +738,8 @@ class BackgroundTaskConfig(BaseModel):
         "local_llm": BackgroundToolConfig(threshold_s=60),
         "run_command": BackgroundToolConfig(threshold_s=60),
     }
-    result_retention_hours: int = 24  # disk cleanup retention (cleanup is explicitly invoked)
     result_memory_retention_minutes: int = Field(default=60, ge=0)  # in-process result cache
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
-    max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
     # The task-control keys retired with the teardown are deliberately absent.
     # This model ignores unknown keys, so an older config.json that still
@@ -837,6 +794,53 @@ def resolve_background_worker_pool_size(
     return default
 
 
+def resolve_chat_max_concurrency(
+    anima_dir: Path,
+    default: int | None = None,
+) -> int:
+    """Resolve the isolated chat limit, including a per-Anima status override.
+
+    ``status.json`` may set ``chat_max_concurrency`` to allow concurrent chat
+    jobs for different threads. Invalid or unreadable overrides are ignored.
+    """
+    if default is None:
+        try:
+            from core.config.io import load_config
+
+            default = load_config().server.chat_max_concurrency
+        except Exception:
+            logger.debug(
+                "Failed to load chat max concurrency default for %s",
+                anima_dir.name,
+                exc_info=True,
+            )
+            default = 1
+
+    if isinstance(default, bool) or not isinstance(default, int) or not 1 <= default <= 10:
+        default = 1
+
+    status_path = anima_dir / "status.json"
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+    if not isinstance(status, dict) or "chat_max_concurrency" not in status:
+        return default
+
+    override = status["chat_max_concurrency"]
+    if isinstance(override, int) and not isinstance(override, bool) and 1 <= override <= 10:
+        return override
+
+    logger.warning(
+        "Ignoring invalid chat_max_concurrency=%r for anima %s; using %d",
+        override,
+        anima_dir.name,
+        default,
+    )
+    return default
+
+
 class ActivityLogConfig(BaseModel):
     """Configuration for activity log rotation."""
 
@@ -872,29 +876,46 @@ class HousekeepingConfig(BaseModel):
     shortterm_archive_retention_days: int = Field(default=30, ge=1)
     shortterm_thread_gc_days: int = Field(default=30, ge=1)
     facts_lock_stale_hours: int = Field(default=24, ge=1)
+    curator_report_retention_days: int = Field(default=30, ge=1)
     task_results_retention_days: int = 7
-    pending_failed_retention_days: int = 14
     corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)
     tmp_retention_days: int = Field(default=14, ge=1)
     backup_retention_days: int = Field(default=90, ge=1)
     codex_log_max_size_mb: int = Field(default=200, ge=1)
     codex_tmp_retention_hours: int = Field(default=12, ge=1)
+    codex_sessions_retention_days: int = Field(default=7, ge=1)
+    anima_scratch_retention_hours: int = Field(default=24, ge=1)
+    shared_worktrees_idle_hours: int = Field(default=24, ge=1)
+    workspace_sweep_enabled: bool = True
     anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
     anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)
     background_running_stale_hours: int = Field(default=48, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)
-    taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
-    taskboard_orphan_metadata_stale_hours: int = Field(default=24, ge=1)
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
+    sdk_bash_injection_max_size_mb: int = Field(default=10, ge=1)
     archive_superseded_retention_days: int = Field(default=7, ge=1)
-    hygiene_grace_days: int = Field(default=21, ge=1)
+    archive_versions_keep_per_file: int = Field(default=5, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _preserve_legacy_sdk_log_limit(cls, values: Any) -> Any:
+        """Carry forward old configs until they set the dedicated SDK limit."""
+        if (
+            isinstance(values, dict)
+            and "sdk_bash_injection_max_size_mb" not in values
+            and "suppressed_messages_max_size_mb" in values
+        ):
+            return {**values, "sdk_bash_injection_max_size_mb": values["suppressed_messages_max_size_mb"]}
+        return values
 
 
 class InboxConfig(BaseModel):
-    """Configuration for shared inbox stale-file hygiene."""
+    """Configuration for shared inbox processing and stale-file hygiene."""
 
+    inbox_quiet_seconds: float = Field(default=90.0, ge=0)
+    inbox_quiet_max_wait_seconds: float = Field(default=300.0, ge=0)
     ttl_hours: float = Field(default=24.0, gt=0)
     expired_retention_days: int = Field(default=7, ge=1)
     processed_retention_days: int = Field(default=30, ge=1)
@@ -902,38 +923,35 @@ class InboxConfig(BaseModel):
 
 
 class HeartbeatConfig(BaseModel):
-    """Heartbeat scheduling and cascade prevention settings."""
+    """Heartbeat scheduling settings."""
 
     interval_minutes: int = Field(
         default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
-    # Orphan reaper: grace period before a descriptor-less pending row is
-    # cancelled. Must always be longer than this anima's heartbeat so a run
-    # that ended without a completion declaration can be re-submitted by the
-    # anima's own heartbeat before it gets reaped. grace = heartbeat interval
-    # (minutes) * orphan_grace_multiplier, floored at orphan_grace_min_seconds.
-    orphan_grace_multiplier: float = Field(
-        default=3.0,
-        ge=1.0,
-        le=24.0,
-        description="Orphan reaper grace = heartbeat interval (min) * this multiplier",
-    )
-    orphan_grace_min_seconds: int = Field(
-        default=1800,
-        ge=60,
-        description="Lower bound for the orphan reaper grace, in seconds",
-    )
     current_state_max_chars: int = Field(
         default=8000,
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
     )
+    current_state_cleanup_chars: int = Field(
+        default=2000,
+        ge=0,
+        description="Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars",
+    )
     heartbeat_md_max_bytes: int = Field(
-        default=20000,
+        default=8000,
         ge=0,
         description=(
             "Max bytes of heartbeat.md before a compaction instruction is "
             "injected into the heartbeat prompt; 0 = disabled"
+        ),
+    )
+    recent_dialogue_max_age_hours: int = Field(
+        default=6,
+        ge=0,
+        description=(
+            "Include recent chat dialogue in heartbeat context only when the "
+            "last turn is younger than this many hours; 0 = always include"
         ),
     )
     soft_timeout_seconds: int = Field(
@@ -948,6 +966,14 @@ class HeartbeatConfig(BaseModel):
         le=7200,
         description="Seconds before forcefully terminating the HB session; 0 = disabled",
     )
+    cron_followup_repeat_suppress_hours: float = Field(
+        default=6.0,
+        ge=0,
+        description=(
+            "Suppress a command cron's LLM follow-up when its output is identical to the "
+            "previous follow-up for this many hours; 0 disables suppression"
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_soft_lt_hard(self) -> HeartbeatConfig:
@@ -959,16 +985,9 @@ class HeartbeatConfig(BaseModel):
         return self
 
     default_model: str | None = None  # global background model for heartbeat/cron (None = use main model)
-    msg_heartbeat_cooldown_s: int = 300  # message-triggered heartbeat cooldown
-    cascade_window_s: int = 1800  # sliding window for cascade detection
-    cascade_threshold: int = 3  # max round-trips per pair within window
-    depth_window_s: int = 600  # bilateral depth limiter window
-    max_depth: int = 6  # max bilateral exchange depth
-    actionable_intents: list[str] = ["report", "question"]
     enable_read_ack: bool = (
         False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
     )
-    channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
     delegation_dm_enabled: bool = Field(
         default=True,
         description=(
@@ -976,8 +995,6 @@ class HeartbeatConfig(BaseModel):
             "the DM only wakes an extra inbox run. Set false to skip it."
         ),
     )
-    outbound_limit_enabled: bool = True  # False disables the global hourly/daily outbound message caps
-
     idle_compaction_minutes: float = Field(
         default=10.0,
         ge=1.0,
@@ -993,16 +1010,30 @@ class HeartbeatConfig(BaseModel):
     )
 
 
-class CronGuardConfig(BaseModel):
-    """Detection and optional auto-disable thresholds for cron tasks."""
-
-    mode: Literal["off", "warn", "disable"] = "warn"
-    max_fires_per_window: int = Field(default=60, ge=1)
-    window_minutes: int = Field(default=60, ge=1)
-    max_consecutive_failures: int = Field(default=5, ge=1)
-
-
 # ── Voice Chat Config ───────────────────────────────────────────────────────
+
+
+class PhoneConfig(BaseModel):
+    """Twilio-backed phone channel for one Anima."""
+
+    enabled: bool = False
+    anima: str = "aoi"
+    public_base_url: str = "https://zoomhook.kk-a.jp"
+    from_number: str = "+16073257655"
+    owner_numbers: list[str] = Field(default_factory=lambda: ["+819060943763"])
+    from_person: str = "human"
+    thread_id: str = "phone"
+    pin_vault_key: str = "AOI_PHONE_PIN"
+    account_sid_vault_key: str = "TWILIO_ACCOUNT_SID"
+    auth_token_vault_key: str = "TWILIO_AUTH_TOKEN"
+    alert_max_attempts: int = Field(default=3, ge=1)
+    alert_retry_interval_sec: float = Field(default=120, ge=0)
+    turn_timeout_sec: float = Field(
+        default=300,
+        gt=0,
+        description="Legacy Gather/poll timeout; unused by the Media Streams phone conversation.",
+    )
+    turn_end_silence_ms: int = Field(default=1200, ge=300, le=5000)
 
 
 class VoicevoxConfig(BaseModel):
@@ -1048,7 +1079,6 @@ class VoiceConfig(BaseModel):
     stt_language: str | None = None
     stt_refine_enabled: bool = False
     default_tts_provider: str = "voicevox"
-    audio_format: str = "wav"
     front_model: str | None = None
     """voice front lane model (e.g. ``openai/qwen3.6-35b-a3b``). None = legacy path."""
     front_api_base: str | None = None
@@ -1060,6 +1090,8 @@ class VoiceConfig(BaseModel):
     proactive_lead_sec: float = 5.0
     """Start the next monologue this many seconds before the current playback ends
     (so speech is continuous but never more than one utterance is queued)."""
+    notify_delegations_on_web_disconnect: bool = False
+    """Send pending voice-front delegation results to humans when a Web voice session closes."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
@@ -1075,6 +1107,14 @@ class UIConfig(BaseModel):
 
     theme: str = "default"
     demo_mode: bool = False
+
+
+class CLIConfig(BaseModel):
+    """Command-line client settings."""
+
+    # Anima opened by a bare ``animaworks`` / ``animaworks chat``.
+    # Empty = the single enabled top-level anima, if there is exactly one.
+    default_anima: str = ""
 
 
 # ── Activity Schedule ───────────────────────────────────────────────────────
@@ -1210,12 +1250,13 @@ class PermissionsConfig(BaseModel):
         return normalized
 
 
-def load_permissions(anima_dir: Path) -> PermissionsConfig:
-    """Load permissions from permissions.json, with migration fallback.
+def load_permissions(anima_dir: Path, *, read_only: bool = False) -> PermissionsConfig:
+    """Load permissions from permissions.json, with a read-only legacy fallback.
 
     Resolution order:
       1. permissions.json exists -> load and validate
-      2. permissions.md only -> auto-migrate, return config
+      2. permissions.md only -> parse without writes for read-only/worker calls;
+         root and offline CLI calls migrate and return config
       3. Neither exists -> return default (open)
       4. Existing but unreadable/invalid permissions.json -> raise (fail closed)
 
@@ -1254,16 +1295,25 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
             raise
 
     if md_path.is_file():
-        from core.config.migrate import migrate_permissions_md_to_json
+        from core.config.migrate import migrate_permissions_md_to_json, parse_permissions_md
+        from core.platform.pid import is_server_running
+        from core.platform.process_role import get_process_role
 
+        role = get_process_role()
+        if (
+            read_only
+            or role in {"anima", "task_runner", "mcp"}
+            or (role == "cli" and is_server_running(anima_dir.parent.parent))
+        ):
+            return parse_permissions_md(anima_dir)
         return migrate_permissions_md_to_json(anima_dir)
 
     return PermissionsConfig()
 
 
 def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -> str:
-    """Convert PermissionsConfig to a human/LLM-readable text block."""
-    lines = [f"## Permissions: {anima_name}"]
+    """Render only permission constraints that differ from open defaults."""
+    lines: list[str] = []
     if sys.platform == "win32":
         lines.extend(
             [
@@ -1272,38 +1322,37 @@ def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -
                 "- Command execution runs through a PowerShell-compatible shell via execute_command; do not assume Bash-only behavior unless a command actually fails",
             ]
         )
-    if config.file_roots == ["/"]:
-        lines.append("- File access: unrestricted")
-    elif not config.file_roots and not config.file_roots_readonly:
-        lines.append("- File access: own directory and shared framework directories only")
-    else:
-        if config.file_roots:
-            lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
-        if config.file_roots_readonly:
-            lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
+    if config.file_roots != ["/"]:
+        if not config.file_roots and not config.file_roots_readonly:
+            lines.append("- File access: own directory and shared framework directories only")
+        else:
+            if config.file_roots:
+                lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
+            if config.file_roots_readonly:
+                lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
     if config.file_roots_denied:
         lines.append(f"- Denied file access (read/write; overrides all grants): {', '.join(config.file_roots_denied)}")
-    if config.commands.allow_all:
-        lines.append("- Commands: all allowed (global permission blocks still apply)")
-    else:
+    if not config.commands.allow_all:
         if config.commands.allow:
             lines.append(f"- Allowed commands: {', '.join(config.commands.allow)}")
         else:
             lines.append("- Commands: none allowed")
     if config.commands.deny:
         lines.append(f"- Additionally denied commands: {', '.join(config.commands.deny)}")
-    if config.external_tools.allow_all:
-        lines.append("- External tools: all allowed")
-    else:
+    if not config.external_tools.allow_all:
         if config.external_tools.allow:
             lines.append(f"- Allowed external tools: {', '.join(config.external_tools.allow)}")
         else:
             lines.append("- External tools: none allowed")
     if config.external_tools.deny:
         lines.append(f"- Denied external tools: {', '.join(config.external_tools.deny)}")
-    tc = config.tool_creation
-    lines.append(f"- Tool creation: personal={'yes' if tc.personal else 'no'}, shared={'yes' if tc.shared else 'no'}")
-    return "\n".join(lines)
+    if not config.tool_creation.personal:
+        lines.append("- Personal tool creation: not allowed")
+    if config.tool_creation.shared:
+        lines.append("- Shared tool creation: allowed")
+    if not lines:
+        return ""
+    return f"## Permissions: {anima_name}\n" + "\n".join(lines)
 
 
 # ── Main Config ─────────────────────────────────────────────────────────────
@@ -1370,12 +1419,17 @@ class AnimaWorksConfig(BaseModel):
     locale: str = "ja"
     system: SystemConfig = SystemConfig()
     credentials: dict[str, CredentialConfig] = {"anthropic": CredentialConfig()}
-    model_modes: dict[str, str] = {}  # モデル名 → "S"/"C"/"D"/"G"/"X"/"A"/"B" (legacy: "A1"/"A2" も可)
+    model_modes: dict[str, str] = {}  # Model-name pattern to canonical mode (legacy: "A1"/"A2" also accepted).
     model_context_windows: dict[str, int] = {}  # DEPRECATED: use models.json instead. Kept for backward compat only.
     model_max_tokens: dict[str, int] = {}  # モデル名パターン → デフォルト max_tokens
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
+    helper_models: HelperModelsConfig = Field(
+        default_factory=HelperModelsConfig,
+        description="Resolved model, credential, fallbacks, and one-shot policy for each helper role.",
+    )
+    background_review: BackgroundReviewConfig = BackgroundReviewConfig()
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
@@ -1388,6 +1442,7 @@ class AnimaWorksConfig(BaseModel):
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
+    mcp: MCPConfig = MCPConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     external_tasks: ExternalTasksConfig = Field(default_factory=ExternalTasksConfig)
     github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
@@ -1396,8 +1451,8 @@ class AnimaWorksConfig(BaseModel):
     activity_log: ActivityLogConfig = ActivityLogConfig()
     logging: LoggingConfig = LoggingConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
-    cron_guard: CronGuardConfig = CronGuardConfig()
     voice: VoiceConfig = VoiceConfig()
+    phone: PhoneConfig = PhoneConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
@@ -1405,8 +1460,6 @@ class AnimaWorksConfig(BaseModel):
     # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
     # Used by executors to inject GH_TOKEN and pin push identity.
     github_identities: dict[str, str] = Field(default_factory=dict)
-    # channel name → company name for open-channel company attribution migration
-    channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
         default=100,
         ge=10,
@@ -1419,6 +1472,9 @@ class AnimaWorksConfig(BaseModel):
     )
     icon_url_template: str = ""
     ui: UIConfig = UIConfig()
+    cli: CLIConfig = CLIConfig()
+    enclave: EnclaveConfig = EnclaveConfig()
+    enclaves: dict[str, EnclaveClientConfig] = Field(default_factory=dict)
 
 
 __all__ = [
@@ -1427,11 +1483,13 @@ __all__ = [
     "AnimaDefaults",
     "AnimaModelConfig",
     "AnimaWorksConfig",
+    "BackgroundReviewConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
+    "CLIConfig",
     "ChatworkToolConfig",
     "ConsolidationConfig",
-    "CronGuardConfig",
+    "CompactBackgroundRecallConfig",
     "CredentialConfig",
     "DEFAULT_ANIMA_MODEL",
     "DEFAULT_CONSOLIDATION_MODEL",
@@ -1445,10 +1503,12 @@ __all__ = [
     "ExternalMessagingConfig",
     "ExternalTasksConfig",
     "ExternalTasksSourcesConfig",
-    "GatewaySystemConfig",
     "GitHubWebhookConfig",
     "GPUConfig",
     "HeartbeatConfig",
+    "HelperModelFallback",
+    "HelperModelRole",
+    "HelperModelsConfig",
     "HousekeepingConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
@@ -1459,15 +1519,15 @@ __all__ = [
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
+    "MCPConfig",
     "MediaProxyConfig",
     "MemoryConfig",
-    "Neo4jConfig",
-    "Neo4jEdgeTypeConfig",
+    "FactEdgeTypeConfig",
     "NotificationChannelConfig",
+    "PhoneConfig",
     "PrimingConfig",
     "PromptConfig",
     "RAGConfig",
-    "ROLE_OUTBOUND_DEFAULTS",
     "ServerConfig",
     "SkillPromotionConfig",
     "SkillsConfig",
@@ -1477,6 +1537,4 @@ __all__ = [
     "UserAliasConfig",
     "VoiceConfig",
     "VoicevoxConfig",
-    "WorkerSystemConfig",
-    "resolve_outbound_limits",
 ]

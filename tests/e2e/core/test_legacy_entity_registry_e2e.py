@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from core.memory.facts.entity_index import load_entity_registry, match_query_entities
+from core.memory.facts.extraction import extract_and_store_facts_with_outcome
+from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
+
+
+class DeterministicExtractor:
+    async def extract_entities(self, content: str):
+        assert "Caroline" in content
+        return [
+            ExtractedEntity(name="Caroline", entity_type="Person"),
+            ExtractedEntity(name="Becoming Nicole", entity_type="Object"),
+        ]
+
+    async def extract_facts(self, content: str, entities, *, reference_time: str | None = None):
+        return [
+            ExtractedFact(
+                source_entity="Caroline",
+                target_entity="Becoming Nicole",
+                fact="Caroline recommended Becoming Nicole.",
+                valid_at=reference_time,
+                edge_type="RECOMMENDED",
+            )
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.e2e
+async def test_fact_ingest_updates_entity_registry_for_entity_features(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "alice"
+    for subdir in ("facts", "state", "knowledge", "episodes", "procedures"):
+        (anima_dir / subdir).mkdir(parents=True)
+
+    def add_without_reconciliation(anima_dir, fact, **kwargs):
+        return ReconcileResult(
+            action=ReconcileAction.ADD,
+            fact=fact,
+            should_append=True,
+            reason="test_no_candidates",
+        )
+
+    monkeypatch.setattr("core.memory.facts.extraction.reconcile_new_fact", add_without_reconciliation)
+    monkeypatch.setattr("core.memory.facts.extraction._index_fact_records", lambda *args, **kwargs: None)
+
+    outcome = await extract_and_store_facts_with_outcome(
+        anima_dir,
+        "Caroline recommended the book Becoming Nicole.",
+        source_episode="episodes/2026-06-03.md",
+        source_session_id="session-entity",
+        reference_time="2026-06-03T10:00:00+09:00",
+        extractor=DeterministicExtractor(),
+        enabled=True,
+    )
+
+    registry = load_entity_registry(anima_dir)
+    assert len(outcome.records) == 1
+    assert (anima_dir / "facts" / "2026-06-03.jsonl").is_file()
+    assert registry["entities"]["caroline"]["mention_count"] == 1
+    assert registry["entities"]["becoming nicole"]["source_fact_ids"] == [outcome.records[0].fact_id]
+    assert match_query_entities(anima_dir, "What did Caroline recommend?") == {"caroline"}

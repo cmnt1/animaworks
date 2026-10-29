@@ -13,7 +13,6 @@ import pytest
 
 from core.tooling.handler import ToolHandler
 
-
 # Test flow:
 # 1. Create a anima_dir with tools/ containing a custom Python tool
 # 2. Verify discover_personal_tools finds it
@@ -41,7 +40,7 @@ class TestToolHotReload:
         tools_dir = anima_dir / "tools"
         tools_dir.mkdir()
         (tools_dir / "greet.py").write_text(
-            '''def get_tool_schemas():
+            """def get_tool_schemas():
     return [{
         "name": "greet",
         "description": "Greet someone",
@@ -52,21 +51,19 @@ def dispatch(name, args):
     if name == "greet":
         return f"Hello, {args['name']}!"
     raise ValueError(f"Unknown: {name}")
-''',
+""",
             encoding="utf-8",
         )
 
         # Discover and verify
-        from core.tools import discover_personal_tools
+        from core.integrations import discover_personal_tools
 
         personal = discover_personal_tools(anima_dir)
         assert "greet" in personal
 
         # Create handler and test refresh + use
         memory = MagicMock()
-        memory.read_permissions.return_value = (
-            "## ツール作成\n- 個人ツール: yes\n- 共有ツール: yes"
-        )
+        memory.read_permissions.return_value = "## ツール作成\n- 個人ツール: yes\n- 共有ツール: yes"
         memory.search_memory_text.return_value = []
 
         handler = ToolHandler(
@@ -102,6 +99,7 @@ def dispatch(name, args):
 
         # Initially no personal tools (patch get_data_dir to isolate from real ~/.animaworks/)
         from unittest.mock import patch
+
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             result = handler.handle("refresh_tools", {})
         assert "No personal or common tools found" in result
@@ -110,12 +108,12 @@ def dispatch(name, args):
         tools_dir = anima_dir / "tools"
         tools_dir.mkdir()
         (tools_dir / "calc.py").write_text(
-            '''def get_tool_schemas():
+            """def get_tool_schemas():
     return [{"name": "calc_add", "description": "Add", "parameters": {"type": "object"}}]
 
 def dispatch(name, args):
     return "42"
-''',
+""",
             encoding="utf-8",
         )
 
@@ -160,15 +158,10 @@ def dispatch(name, args):
 
         assert "Shared tool" in result
         assert (common_dir / "helper.py").exists()
-        assert (
-            (common_dir / "helper.py").read_text(encoding="utf-8")
-            == "# helper tool"
-        )
+        assert (common_dir / "helper.py").read_text(encoding="utf-8") == "# helper tool"
 
     # Test 4: tool creation blocked without permission
-    def test_tool_creation_blocked_without_permission(
-        self, tmp_path: Path
-    ) -> None:
+    def test_tool_creation_blocked_without_permission(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "permissions.json").write_text(
@@ -200,12 +193,10 @@ def dispatch(name, args):
     def test_discover_common_tools_finds_shared(self, tmp_path: Path) -> None:
         common_dir = tmp_path / "common_tools"
         common_dir.mkdir()
-        (common_dir / "shared_calc.py").write_text(
-            "# shared", encoding="utf-8"
-        )
+        (common_dir / "shared_calc.py").write_text("# shared", encoding="utf-8")
         (common_dir / "_internal.py").write_text("# skip", encoding="utf-8")
 
-        from core.tools import discover_common_tools
+        from core.integrations import discover_common_tools
 
         result = discover_common_tools(data_dir=tmp_path)
         assert "shared_calc" in result

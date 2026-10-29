@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._sanitize import (
+from core.trust import (
     ORIGIN_ANIMA,
     ORIGIN_CONSOLIDATION,
     ORIGIN_EXTERNAL_PLATFORM,
@@ -46,7 +46,6 @@ class TestIndexerOriginMetadata:
             mock_store,
             "test-anima",
             anima_dir,
-            embedding_model=MagicMock(),
         )
         indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **_kwargs: [[0.1] * 384 for _ in texts])
         return indexer
@@ -114,8 +113,8 @@ class TestIndexerOriginMetadata:
         for doc in documents:
             assert doc.metadata.get("origin") == "consolidation"
 
-    def test_index_file_no_origin_no_metadata_key(self, indexer, anima_dir: Path) -> None:
-        """index_file without origin does not add origin to metadata."""
+    def test_index_file_knowledge_without_origin_defaults_to_consolidation(self, indexer, anima_dir: Path) -> None:
+        """Knowledge indexed without an explicit origin is treated as consolidation output."""
         test_file = anima_dir / "knowledge" / "test2.md"
         test_file.write_text(
             "# Test Knowledge 2\n\nThis is knowledge content without origin.",
@@ -129,8 +128,40 @@ class TestIndexerOriginMetadata:
 
         call_args = indexer.vector_store.upsert.call_args
         documents = call_args[0][1]
+        assert documents
         for doc in documents:
-            assert "origin" not in doc.metadata
+            assert doc.metadata["origin"] == "consolidation"
+
+    def test_index_file_uses_knowledge_frontmatter_origin(self, indexer, anima_dir: Path) -> None:
+        test_file = anima_dir / "knowledge" / "external.md"
+        test_file.write_text(
+            "---\norigin: external_web\n---\n\n# External source\n\nThis knowledge was gathered from an external web source for verification.",
+            encoding="utf-8",
+        )
+        indexer.vector_store.create_collection = MagicMock()
+        indexer.vector_store.upsert = MagicMock()
+
+        indexer.index_file(test_file, "knowledge", force=True)
+
+        documents = indexer.vector_store.upsert.call_args[0][1]
+        assert documents
+        assert all(document.metadata["origin"] == "external_web" for document in documents)
+        assert all(resolve_trust(document.metadata["origin"]) == "untrusted" for document in documents)
+
+    def test_index_file_non_knowledge_without_origin_remains_originless(self, indexer, anima_dir: Path) -> None:
+        test_file = anima_dir / "episodes" / "2026-02-28.md"
+        test_file.write_text(
+            "# Episode\n\nThis is an episode that has enough body text to create a vector index chunk.",
+            encoding="utf-8",
+        )
+        indexer.vector_store.create_collection = MagicMock()
+        indexer.vector_store.upsert = MagicMock()
+
+        indexer.index_file(test_file, "episodes", force=True)
+
+        documents = indexer.vector_store.upsert.call_args[0][1]
+        assert documents
+        assert all("origin" not in document.metadata for document in documents)
 
     def test_chunk_by_time_headings_with_origin(self, indexer, anima_dir: Path) -> None:
         """Episode chunking by time headings preserves origin."""
@@ -206,18 +237,6 @@ class TestMemoryManagerOrigin:
         _, kwargs = mm._rag.index_file.call_args
         assert kwargs["origin"] == "external_platform"
 
-    def test_write_knowledge_with_origin(self, mm) -> None:
-        mm.write_knowledge("test-topic", "# Test\n\nKnowledge content.", origin="consolidation")
-        mm._rag.index_file.assert_called_once()
-        _, kwargs = mm._rag.index_file.call_args
-        assert kwargs["origin"] == "consolidation"
-
-    def test_write_knowledge_without_origin(self, mm) -> None:
-        mm.write_knowledge("test-topic", "# Test\n\nKnowledge content.")
-        mm._rag.index_file.assert_called_once()
-        _, kwargs = mm._rag.index_file.call_args
-        assert kwargs.get("origin", "") == ""
-
 
 # ── RAGMemorySearch.index_file with origin ────────────────────
 
@@ -226,7 +245,7 @@ class TestRAGSearchOriginProxy:
     """RAGMemorySearch.index_file passes origin to underlying indexer."""
 
     def test_index_file_passes_origin(self, tmp_path: Path) -> None:
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag = RAGMemorySearch(tmp_path, tmp_path / "ck", tmp_path / "cs")
         mock_indexer = MagicMock()
@@ -245,7 +264,7 @@ class TestRAGSearchOriginProxy:
         )
 
     def test_index_file_no_origin(self, tmp_path: Path) -> None:
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag = RAGMemorySearch(tmp_path, tmp_path / "ck", tmp_path / "cs")
         mock_indexer = MagicMock()
@@ -356,64 +375,6 @@ class TestFormatPrimingSectionTrustSeparation:
         assert output == ""
 
 
-# ── Consolidation origin propagation ──────────────────────────
-
-
-class TestConsolidationOrigin:
-    """ConsolidationEngine passes origin=consolidation to RAG index."""
-
-    @pytest.fixture
-    def engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
-
-        anima_dir = tmp_path / "animas" / "test-anima"
-        (anima_dir / "episodes").mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir(parents=True)
-        return ConsolidationEngine(anima_dir, "test-anima")
-
-    def test_update_rag_index_default_origin(self, engine, tmp_path: Path) -> None:
-        """_update_rag_index defaults to origin='consolidation'."""
-        test_file = engine.knowledge_dir / "test.md"
-        test_file.write_text("# Test\n\nContent.", encoding="utf-8")
-
-        mock_indexer = MagicMock()
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store"),
-        ):
-            engine._update_rag_index(["test.md"])
-
-        mock_indexer.index_file.assert_called_once()
-        call_kwargs = mock_indexer.index_file.call_args
-        assert call_kwargs[1]["origin"] == "consolidation"
-
-    def test_rebuild_rag_index_knowledge_has_consolidation_origin(
-        self,
-        engine,
-        tmp_path: Path,
-    ) -> None:
-        """_rebuild_rag_index passes origin='consolidation' for knowledge files."""
-        test_file = engine.knowledge_dir / "test.md"
-        test_file.write_text("# Test\n\nContent.", encoding="utf-8")
-
-        mock_indexer = MagicMock()
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store"),
-        ):
-            engine._rebuild_rag_index()
-
-        # Find the knowledge index_file call
-        knowledge_calls = [
-            c
-            for c in mock_indexer.index_file.call_args_list
-            if c[1].get("memory_type") == "knowledge" or (len(c[0]) > 1 and c[0][1] == "knowledge")
-        ]
-        assert len(knowledge_calls) >= 1
-        for call in knowledge_calls:
-            assert call[1].get("origin") == "consolidation"
-
-
 # ── resolve_trust integration with origin values ──────────────
 
 
@@ -429,6 +390,7 @@ class TestResolveTrustOrigins:
             (ORIGIN_EXTERNAL_PLATFORM, "untrusted"),
             (ORIGIN_EXTERNAL_WEB, "untrusted"),
             (ORIGIN_CONSOLIDATION, "medium"),
+            ("consolidation_external", "untrusted"),
             (ORIGIN_UNKNOWN, "untrusted"),
             ("", "untrusted"),
             (None, "untrusted"),
@@ -448,7 +410,7 @@ class TestInboxEpisodeOrigin:
     """_anima_inbox passes origin to append_episode."""
 
     def test_source_to_origin_mapping_exists(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["slack"] == ORIGIN_EXTERNAL_PLATFORM
         assert _SOURCE_TO_ORIGIN["chatwork"] == ORIGIN_EXTERNAL_PLATFORM

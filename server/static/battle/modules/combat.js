@@ -7,7 +7,7 @@ export const SKILLS = {
   support: ['rally', 'heal', 'stars', 'chain'],
   guard: ['barrier', 'parry', 'focus', 'ward'],
 };
-export const ENEMY_SKILLS = [
+const ENEMY_SKILLS = [
   ['acid', 'bounce'], ['gaze', 'nightbolt'], ['quake', 'rockfall'], ['breath', 'dive'],
 ];
 const PALETTE = { crescent:'#ffdea2', rush:'#f7b688', skyfall:'#fff0c2', crosscut:'#ffc995',
@@ -41,7 +41,7 @@ export function timings(action) {
   const pace = action?.pace || 1;
   return [0.5, 1.0, 1.65, 2.5, 3.2, 4.1].map(n => n * pace);
 }
-export const PHASES = ['command', 'target', 'cast', 'attack', 'damage', 'message'];
+const PHASES = ['command', 'target', 'cast', 'attack', 'damage', 'message'];
 export function phaseAt(elapsed, action) {
   return PHASES[timings(action).findIndex(t => elapsed < t)] || 'done';
 }

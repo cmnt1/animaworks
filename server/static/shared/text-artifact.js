@@ -10,7 +10,7 @@ let _idCounter = 0;
 /**
  * Register a large content entry, returning a store key.
  */
-export function registerArtifactContent(content) {
+function registerArtifactContent(content) {
   const id = `artifact-${++_idCounter}`;
   _contentStore.set(id, content);
   return id;

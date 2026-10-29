@@ -128,7 +128,7 @@ class TestDiscordComponents:
                 "core.notification.interactive.update_interaction_message_ts_resilient",
             ) as mock_update_ts,
             patch(
-                "core.tools._anima_icon_url.resolve_anima_icon_url",
+                "core.integrations._anima_icon_url.resolve_anima_icon_url",
                 return_value="",
             ),
         ):
@@ -168,7 +168,7 @@ class TestTextFallbackChannels:
                 "core.config.models.load_config",
                 return_value=_mock_config_with_web_base("https://app.example.com"),
             ),
-            patch("core.tools.chatwork.md_to_chatwork", side_effect=lambda x: x),
+            patch("core.integrations.chatwork.md_to_chatwork", side_effect=lambda x: x),
         ):
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()

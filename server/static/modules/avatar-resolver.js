@@ -5,6 +5,7 @@
  * If the asset doesn't exist, callers should show the initial placeholder.
  */
 
+import { api } from "./api.js";
 import { invalidateCache } from "./image-cache.js";
 import { basePath } from "/shared/base-path.js";
 
@@ -48,10 +49,12 @@ export function bustupExpressionCandidates(expression) {
 }
 
 /**
- * Build the asset URL for a given anima name and filename.
+ * Build the asset URL for a given anima name and filename. Optional server
+ * thumbnail sizes keep full-body bustups within their display bounds.
  */
-export function assetUrl(animaName, filename) {
-  return `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+export function assetUrl(animaName, filename, size = "") {
+  const url = `${basePath}/api/animas/${encodeURIComponent(animaName)}/assets/${encodeURIComponent(filename)}`;
+  return size ? `${url}?size=${encodeURIComponent(size)}` : url;
 }
 
 /**
@@ -61,13 +64,20 @@ export function assetUrl(animaName, filename) {
  * @param {string[]} candidates - list of filenames to try
  * @returns {Promise<string|null>}
  */
-export async function resolveAvatar(animaName, candidates) {
+async function resolveAvatar(animaName, candidates) {
   if (_headProbeCache.has(animaName)) return _headProbeCache.get(animaName);
 
   for (const filename of candidates) {
     const url = assetUrl(animaName, filename);
     try {
-      const resp = await fetch(url, { method: "HEAD" });
+      const resp = await api(url, {
+        method: "HEAD",
+        cache: "default",
+        rawResponse: true,
+        redirectOnUnauthorized: false,
+        throwOnHttpError: false,
+        logErrors: false,
+      });
       if (resp.ok) {
         _headProbeCache.set(animaName, url);
         const validator = resp.headers.get("etag") || resp.headers.get("last-modified") || "";
@@ -87,7 +97,7 @@ export async function resolveAvatar(animaName, candidates) {
  * Server generates WebP thumbs at S=96 / M=192 / L=400 via ?size=.
  * @param {string} animaName
  * @param {string[]} candidates
- * @param {"S"|"M"|"L"} size
+ * @param {"S"|"M"|"L"|"P"|"C"} size
  * @returns {Promise<string|null>}
  */
 export async function resolveCachedAvatar(animaName, candidates, size = "S") {

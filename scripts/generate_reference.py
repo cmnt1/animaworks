@@ -45,9 +45,23 @@ _MARKER_RE = re.compile(
 # ── Generators ─────────────────────────────────────────────
 
 
+
+def _resolve_default(finfo):
+    """Return a field's default, evaluating default_factory when present."""
+    from pydantic_core import PydanticUndefined
+
+    if finfo.default_factory is not None:
+        try:
+            return finfo.default_factory()
+        except Exception:
+            return "<factory>"
+    if finfo.default is PydanticUndefined:
+        return "—"
+    return finfo.default
+
 def _generate_tool_parameters() -> str:
     """Generate tool parameter reference from core/tooling/schemas.py."""
-    from core.tooling.schemas import MEMORY_TOOLS
+    from core.tooling.policy.schemas import MEMORY_TOOLS
 
     lines: list[str] = ["### ツールパラメータリファレンス（自動生成）", ""]
 
@@ -68,7 +82,7 @@ def _generate_tool_parameters() -> str:
         for pname, pschema in props.items():
             ptype = pschema.get("type", "string")
             if "enum" in pschema:
-                ptype = " \\| ".join(f'`{v}`' for v in pschema["enum"])
+                ptype = " \\| ".join(f"`{v}`" for v in pschema["enum"])
             pdesc = pschema.get("description", "")
             req = "Yes" if pname in required else "No"
             lines.append(f"| `{pname}` | {ptype} | {req} | {pdesc} |")
@@ -80,7 +94,7 @@ def _generate_tool_parameters() -> str:
 
 def _generate_config_fields() -> str:
     """Generate config field reference from core/config/models.py."""
-    from core.config.models import AnimaWorksConfig, AnimaDefaults, AnimaModelConfig
+    from core.config.models import AnimaDefaults, AnimaModelConfig, AnimaWorksConfig
 
     lines: list[str] = ["### 設定項目リファレンス（自動生成）", ""]
 
@@ -95,7 +109,7 @@ def _generate_config_fields() -> str:
 
         for fname, finfo in cls.model_fields.items():
             ftype = _format_type(finfo.annotation)
-            default = finfo.default
+            default = _resolve_default(finfo)
             if default is None:
                 default_str = "None"
             elif isinstance(default, str):
@@ -154,7 +168,7 @@ def _generate_cron_fields() -> str:
 
     for fname, finfo in CronTask.model_fields.items():
         ftype = _format_type(finfo.annotation)
-        default = finfo.default
+        default = _resolve_default(finfo)
         if default is None:
             default_str = "None"
         elif isinstance(default, str):
@@ -207,13 +221,17 @@ def inject_auto_generated(file_path: Path, *, dry_run: bool = False) -> bool:
         if generator is None:
             logger.warning(
                 "Unknown AUTO-GENERATED section '%s' in %s",
-                section_name, file_path,
+                section_name,
+                file_path,
             )
             return match.group(0)
 
         generated = generator()
-        modified = True
-        return f"{start_marker}\n{generated}\n{end_marker}"
+        replacement = f"{start_marker}\n{generated}\n{end_marker}"
+        if replacement != match.group(0):
+            modified = True
+            return replacement
+        return match.group(0)
 
     new_content = _MARKER_RE.sub(_replacer, content)
 
@@ -264,7 +282,7 @@ def main() -> None:
     parser.add_argument(
         "--templates",
         action="store_true",
-        help="Process templates/common_knowledge/ instead of runtime directory",
+        help="Process templates/ja/ instead of runtime directory",
     )
     parser.add_argument(
         "--dry-run",
@@ -272,7 +290,8 @@ def main() -> None:
         help="Show what would be changed without writing files",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable verbose output",
     )
@@ -284,11 +303,12 @@ def main() -> None:
     )
 
     if args.templates:
-        target_dir = PROJECT_DIR / "templates" / "common_knowledge"
+        target_dir = PROJECT_DIR / "templates" / "ja"
     elif args.data_dir:
         target_dir = args.data_dir / "common_knowledge"
     else:
         from core.paths import get_data_dir
+
         target_dir = get_data_dir() / "common_knowledge"
 
     if not target_dir.exists():

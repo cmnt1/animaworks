@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # AnimaWorks - Digital Anima Framework
-"""Reciprocal Rank Fusion — unified Legacy + Neo4j result merging."""
+"""Reciprocal Rank Fusion for merging ranked memory search results."""
 
 import hashlib
 import logging
@@ -45,11 +45,11 @@ def rrf_merge(
     k: int = 60,
     top_k: int = 30,
 ) -> list[dict[str, Any]]:
-    """Merge ranked lists using RRF (Neo4j graph rows or generic dicts).
+    """Merge ranked lists using RRF.
 
     Args:
         result_lists: Each inner list is ranked best-first.
-        key_field: Field for dedup when *key_fn* is None (Neo4j rows).
+        key_field: Field for dedup when *key_fn* is None.
         key_fn: Optional custom key extractor (Legacy dicts).
         k: RRF smoothing constant.
         top_k: Maximum merged results.

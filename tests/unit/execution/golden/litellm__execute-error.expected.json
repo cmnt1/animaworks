@@ -1,0 +1,13 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "error",
+  "events": null,
+  "result": null,
+  "raised": {
+    "type": "LLMAPIError",
+    "message": "LiteLLM API error: litellm.AuthenticationError: invalid api key"
+  },
+  "activity": []
+}

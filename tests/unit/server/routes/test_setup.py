@@ -169,6 +169,10 @@ class TestGetEnvironment:
         with (
             patch("core.config.load_config", return_value=mock_config),
             patch("core.platform.claude_code.is_claude_code_available", return_value=True),
+            patch(
+                "server.routes.setup.get_claude_auth_status",
+                return_value={"installed": True, "logged_in": True, "subscription_type": "max"},
+            ),
             patch("server.routes.setup.is_codex_cli_available", return_value=True),
             patch("server.routes.setup.is_codex_login_available", return_value=True),
         ):
@@ -178,6 +182,8 @@ class TestGetEnvironment:
         assert resp.status_code == 200
         data = resp.json()
         assert data["claude_code_available"] is True
+        assert data["claude_code_authenticated"] is True
+        assert data["claude_subscription_type"] == "max"
         assert data["codex_cli_available"] is True
         assert data["codex_login_available"] is True
         assert data["locale"] == "ja"
@@ -194,6 +200,10 @@ class TestGetEnvironment:
         with (
             patch("core.config.load_config", return_value=mock_config),
             patch("core.platform.claude_code.is_claude_code_available", return_value=False),
+            patch(
+                "server.routes.setup.get_claude_auth_status",
+                return_value={"installed": False, "logged_in": False, "subscription_type": None},
+            ),
             patch("server.routes.setup.is_codex_cli_available", return_value=False),
             patch("server.routes.setup.is_codex_login_available", return_value=False),
         ):
@@ -217,6 +227,10 @@ class TestGetEnvironment:
         with (
             patch("core.config.load_config", return_value=mock_config),
             patch("core.platform.claude_code.is_claude_code_available", return_value=False),
+            patch(
+                "server.routes.setup.get_claude_auth_status",
+                return_value={"installed": False, "logged_in": False, "subscription_type": None},
+            ),
             patch("server.routes.setup.is_codex_cli_available", return_value=False),
             patch("server.routes.setup.is_codex_login_available", return_value=False),
             patch("server.routes.setup.is_cursor_agent_available", return_value=True),
@@ -293,6 +307,40 @@ class TestValidateKey:
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True
+
+    async def test_claude_code_login_validation_not_logged_in(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("core.platform.claude_code.is_claude_code_available", return_value=True),
+            patch(
+                "server.routes.setup.get_claude_auth_status",
+                return_value={"installed": True, "logged_in": False, "subscription_type": None},
+            ),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/setup/validate-key", json={"provider": "claude_code"})
+
+        assert resp.json()["valid"] is False
+        assert resp.json()["code"] == "not_logged_in"
+
+    async def test_claude_code_login_validation_ready(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("core.platform.claude_code.is_claude_code_available", return_value=True),
+            patch(
+                "server.routes.setup.get_claude_auth_status",
+                return_value={"installed": True, "logged_in": True, "subscription_type": "max"},
+            ),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/setup/validate-key", json={"provider": "claude_code"})
+
+        assert resp.json()["valid"] is True
+        assert resp.json()["code"] == "ready"
 
     async def test_anthropic_invalid(self):
         app = _make_test_app()
@@ -540,8 +588,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config") as mock_save,
-            patch("core.config.invalidate_cache") as mock_invalidate,
+            patch(
+                "core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config
+            ) as mock_update,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -554,8 +603,7 @@ class TestCompleteSetup:
         assert data["status"] == "ok"
         assert mock_config.locale == "en"
         assert mock_config.setup_complete is True
-        mock_save.assert_called_once_with(mock_config)
-        mock_invalidate.assert_called_once()
+        mock_update.assert_called_once()
 
     async def test_complete_with_credentials(self):
         mock_config = MagicMock()
@@ -568,8 +616,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -596,8 +643,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -614,6 +660,35 @@ class TestCompleteSetup:
         assert mock_config.credentials["openai"].type == "codex_login"
         assert mock_config.credentials["openai"].api_key == ""
 
+    async def test_complete_with_codex_provider(self):
+        mock_config = MagicMock()
+        mock_config.locale = "ja"
+        mock_config.credentials = {}
+        mock_config.animas = {}
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/complete",
+                    json={
+                        "locale": "ja",
+                        "provider": "codex",
+                        "credentials": {"openai": {"type": "codex_login"}},
+                    },
+                )
+
+        assert resp.status_code == 200
+        assert mock_config.credentials["openai"].type == "codex_login"
+        assert mock_config.credentials["openai"].api_key == ""
+        assert mock_config.anima_defaults.credential == "openai"
+        assert mock_config.anima_defaults.model == "codex/test-account-default"
+
     async def test_complete_with_blank_anima(self, tmp_path: Path):
         mock_config = MagicMock()
         mock_config.locale = "ja"
@@ -628,10 +703,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-            patch("core.anima_factory.create_blank", return_value=anima_dir),
+            patch("core.anima.factory.create_blank", return_value=anima_dir),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -658,8 +732,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -681,10 +754,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank", side_effect=FileExistsError("already exists")),
+            patch("core.anima.factory.create_blank", side_effect=FileExistsError("already exists")),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -712,10 +784,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank", side_effect=RuntimeError("disk error")),
+            patch("core.anima.factory.create_blank", side_effect=RuntimeError("disk error")),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -743,10 +814,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank") as mock_create,
+            patch("core.anima.factory.create_blank") as mock_create,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -775,8 +845,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth") as mock_save_auth,
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -817,8 +886,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth"),
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -856,8 +924,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth"),
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -902,10 +969,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.anima_factory.create_blank"),
+            patch("core.anima.factory.create_blank"),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -932,8 +998,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config") as mock_save,
-            patch("core.config.invalidate_cache"),
+            patch(
+                "core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config
+            ) as mock_update,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -944,6 +1011,6 @@ class TestCompleteSetup:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        mock_save.assert_called_once()
+        mock_update.assert_called_once()
         # save_auth should NOT have been called (no user field)
         assert mock_config.setup_complete is True

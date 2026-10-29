@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.discord_webhooks import (
+from core.messaging.discord_webhooks import (
     DISCORD_MESSAGE_LIMIT,
     DiscordWebhookManager,
     _split_message,
@@ -61,7 +61,7 @@ class TestSplitMessage:
 class TestDiscordWebhookManager:
     @pytest.fixture
     def mgr(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DiscordWebhookManager:
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
         return DiscordWebhookManager()
 
     def test_thread_map_ttl_expiry(self, mgr: DiscordWebhookManager):
@@ -91,7 +91,7 @@ class TestDiscordWebhookManager:
         assert persisted["source-message"]["anima"] == "target"
 
     def test_persistence_round_trip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
 
         mgr1 = DiscordWebhookManager()
         mgr1._webhooks["ch1"] = {"id": "wh1", "token": "tok1"}
@@ -101,7 +101,7 @@ class TestDiscordWebhookManager:
         assert mgr2._webhooks.get("ch1") == {"id": "wh1", "token": "tok1"}
 
     def test_persistence_thread_map_prunes_expired(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("core.messaging.discord_webhooks.get_data_dir", lambda: tmp_path)
 
         run_dir = tmp_path / "run"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -116,8 +116,8 @@ class TestDiscordWebhookManager:
         assert "fresh" in mgr._thread_map
         assert "stale" not in mgr._thread_map
 
-    @patch("core.discord_webhooks.get_credential", return_value="test-token")
-    @patch("core.discord_webhooks.DiscordClient")
+    @patch("core.messaging.discord_webhooks.get_credential", return_value="test-token")
+    @patch("core.messaging.discord_webhooks.DiscordClient")
     def test_send_as_anima_basic(self, MockClient, _mock_cred, mgr: DiscordWebhookManager):
         mock_client = MockClient.return_value
         mock_client.list_webhooks.return_value = [

@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-
 from core.time_utils import now_jst
 
 
@@ -15,11 +14,14 @@ class TestLogToolResult:
     """Test the _log_tool_result() helper function."""
 
     def test_writes_tool_result_entry(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         _log_tool_result(
-            tmp_path, "web_search", "tu_abc123",
-            "search result content", is_error=False,
+            tmp_path,
+            "web_search",
+            "tu_abc123",
+            "search result content",
+            is_error=False,
         )
 
         today = now_jst().strftime("%Y-%m-%d")
@@ -37,11 +39,14 @@ class TestLogToolResult:
         assert raw["meta"]["is_error"] is False
 
     def test_writes_error_flag(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         _log_tool_result(
-            tmp_path, "Bash", "tu_err456",
-            "command not found", is_error=True,
+            tmp_path,
+            "Bash",
+            "tu_err456",
+            "command not found",
+            is_error=True,
         )
 
         today = now_jst().strftime("%Y-%m-%d")
@@ -51,13 +56,15 @@ class TestLogToolResult:
 
     def test_never_raises(self, tmp_path: Path) -> None:
         """_log_tool_result should silently swallow errors."""
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         # Use a path that will cause an error (e.g., read-only or missing dir)
-        with patch("core.memory.activity.ActivityLogger.log", side_effect=RuntimeError("disk full")):
+        with patch("core.activity.logger.ActivityLogger.log", side_effect=RuntimeError("disk full")):
             # Should not raise
             _log_tool_result(
-                tmp_path, "Read", "tu_xyz",
+                tmp_path,
+                "Read",
+                "tu_xyz",
                 "some content",
             )
 
@@ -78,8 +85,8 @@ class TestHandleToolResultBlockWithAnimaDir:
         )
 
     def test_logs_to_activity_with_anima_dir(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _handle_tool_result_block
         from core.execution.base import ToolCallRecord
+        from core.execution.engines.claude.executor import _handle_tool_result_block
 
         pending = {
             "tu_test": ToolCallRecord(
@@ -93,7 +100,10 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(content="grep results here")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-6",
+            block,
+            pending,
+            None,
+            "claude-sonnet-4-6",
             anima_dir=tmp_path,
         )
 
@@ -106,8 +116,8 @@ class TestHandleToolResultBlockWithAnimaDir:
         assert raw["tool"] == "Grep"
 
     def test_no_activity_log_without_anima_dir(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _handle_tool_result_block
         from core.execution.base import ToolCallRecord
+        from core.execution.engines.claude.executor import _handle_tool_result_block
 
         pending = {
             "tu_test2": ToolCallRecord(
@@ -121,7 +131,10 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(tool_use_id="tu_test2")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-6",
+            block,
+            pending,
+            None,
+            "claude-sonnet-4-6",
             # anima_dir not passed (default None)
         )
 

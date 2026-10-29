@@ -29,11 +29,7 @@ async def _settle(pilot, rounds=8):
 
 
 def _rendered_plain(widget) -> str:
-    return "".join(
-        segment.text
-        for y in range(widget.size.height)
-        for segment in widget.render_line(y)
-    )
+    return "".join(segment.text for y in range(widget.size.height) for segment in widget.render_line(y))
 
 
 def _history(*pairs):

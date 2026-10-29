@@ -6,7 +6,23 @@
  * @returns {{ sessions: Array, hasMore: boolean, nextBefore: string|null, loading: boolean }}
  */
 export function createHistoryState() {
-  return { sessions: [], hasMore: false, nextBefore: null, loading: false };
+  return { sessions: [], feedItems: [], isFeed: false, hasMore: false, nextBefore: null, loading: false };
+}
+
+function _feedItemTs(item, isEnd = false) {
+  if (item?.kind === "bg_group") return isEnd ? item.to_ts || item.from_ts || "" : item.from_ts || item.to_ts || "";
+  return item?.message?.ts || "";
+}
+
+function _feedSessions(items) {
+  return (items || [])
+    .filter(item => item?.kind === "message" && item.message)
+    .map(item => ({
+      session_start: item.message.ts || "",
+      session_end: item.message.ts || "",
+      trigger: "chat",
+      messages: [item.message],
+    }));
 }
 
 /**
@@ -20,6 +36,21 @@ export function createHistoryState() {
  */
 export function applyHistoryData(hs, data, options) {
   const prepend = options?.prepend || false;
+
+  if (Array.isArray(data?.items)) {
+    if (data.items.length > 0 || !prepend) {
+      hs.feedItems = prepend ? [...data.items, ...(hs.feedItems || [])] : data.items;
+    }
+    hs.isFeed = true;
+    hs.sessions = _feedSessions(hs.feedItems);
+    hs.hasMore = Boolean(data.has_more);
+    hs.nextBefore = data.next_before || null;
+    hs.loading = false;
+    return hs;
+  }
+
+  hs.isFeed = false;
+  hs.feedItems = [];
 
   if (!data || !data.sessions || data.sessions.length === 0) {
     if (!prepend) {
@@ -68,6 +99,51 @@ function _sessionsEqual(a, b) {
 }
 
 export function mergePolledHistory(prev, pollData) {
+  if (pollData && Array.isArray(pollData.items)) {
+    if (prev?.loading) return { changed: false, merged: prev };
+    const previousItems = prev?.isFeed ? (prev.feedItems || []) : [];
+    if (previousItems.length === 0) {
+      return {
+        changed: true,
+        merged: {
+          ...createHistoryState(),
+          feedItems: pollData.items,
+          sessions: _feedSessions(pollData.items),
+          isFeed: true,
+          hasMore: Boolean(pollData.has_more),
+          nextBefore: pollData.next_before || null,
+        },
+      };
+    }
+
+    if (pollData.items.length === 0 && previousItems.length > 0) {
+      return { changed: false, merged: prev };
+    }
+
+    const pollOldestTs = _feedItemTs(pollData.items[0]);
+    const olderItems = pollOldestTs
+      ? previousItems.filter(item => _feedItemTs(item, true) && _feedItemTs(item, true) < pollOldestTs)
+      : [];
+    const currentItems = pollOldestTs
+      ? previousItems.filter(item => !_feedItemTs(item, true) || _feedItemTs(item, true) >= pollOldestTs)
+      : previousItems;
+    const changed = JSON.stringify(currentItems) !== JSON.stringify(pollData.items);
+    if (!changed) return { changed: false, merged: prev };
+
+    const feedItems = [...olderItems, ...pollData.items];
+    const merged = {
+      ...prev,
+      feedItems,
+      sessions: _feedSessions(feedItems),
+      isFeed: true,
+    };
+    if (olderItems.length === 0) {
+      merged.hasMore = Boolean(pollData.has_more);
+      merged.nextBefore = pollData.next_before || null;
+    }
+    return { changed: true, merged };
+  }
+
   if (!pollData || !Array.isArray(pollData.sessions)) {
     return { changed: false, merged: prev };
   }

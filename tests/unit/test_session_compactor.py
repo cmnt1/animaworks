@@ -13,20 +13,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.config.models import HeartbeatConfig
-from core.execution._sdk_session import _load_session_id
-from core.execution.codex_sdk import CodexSDKExecutor
-from core.memory.conversation_compression import CompressionResult
-from core.schemas import ModelConfig
-from core.session_compactor import (
+from core.agent.session_compactor import (
     SessionCompactor,
-    _compact_mode_a,
-    _compact_mode_b,
-    _compact_mode_c,
+    _compact_conversation,
     _compact_mode_s,
     _extract_recent_chat_context,
     run_idle_compaction,
 )
+from core.config.models import HeartbeatConfig
+from core.execution.engines.claude._sdk_session import _load_session_id
+from core.memory.conversation.compression import CompressionResult
+from core.schemas import ModelConfig
 
 # ── SessionCompactor ──────────────────────────────────────────────────────
 
@@ -136,7 +133,7 @@ class TestSessionCompactor:
     @pytest.mark.asyncio
     async def test_lru_eviction(self) -> None:
         """When _MAX_TIMERS exceeded, oldest timer is evicted."""
-        with patch("core.session_compactor._MAX_TIMERS", 3):
+        with patch("core.agent.session_compactor._MAX_TIMERS", 3):
             compactor = SessionCompactor(idle_minutes=5.0)
             callback = MagicMock()
 
@@ -246,12 +243,12 @@ class TestCompactTimeoutSec:
     """COMPACT_TIMEOUT_SEC is independent from RESUME_TIMEOUT_SEC."""
 
     def test_compact_timeout_defined(self) -> None:
-        from core.execution._sdk_session import COMPACT_TIMEOUT_SEC
+        from core.execution.engines.claude._sdk_session import COMPACT_TIMEOUT_SEC
 
         assert COMPACT_TIMEOUT_SEC == 300.0
 
     def test_compact_timeout_independent_from_resume(self) -> None:
-        from core.execution._sdk_session import COMPACT_TIMEOUT_SEC, RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude._sdk_session import COMPACT_TIMEOUT_SEC, RESUME_TIMEOUT_SEC
 
         assert COMPACT_TIMEOUT_SEC != RESUME_TIMEOUT_SEC
         assert COMPACT_TIMEOUT_SEC > RESUME_TIMEOUT_SEC
@@ -260,7 +257,7 @@ class TestCompactTimeoutSec:
         """compact_sdk_session source references COMPACT_TIMEOUT_SEC, not RESUME_TIMEOUT_SEC."""
         import inspect
 
-        from core.execution._sdk_session import compact_sdk_session
+        from core.execution.engines.claude._sdk_session import compact_sdk_session
 
         src = inspect.getsource(compact_sdk_session)
         assert "COMPACT_TIMEOUT_SEC" in src
@@ -275,7 +272,7 @@ class TestCompactSdkSessionLogLevel:
         import ast
         import inspect
 
-        from core.execution._sdk_session import compact_sdk_session
+        from core.execution.engines.claude._sdk_session import compact_sdk_session
 
         src = inspect.getsource(compact_sdk_session)
         tree = ast.parse(src)
@@ -287,61 +284,6 @@ class TestCompactSdkSessionLogLevel:
                         if isinstance(stmt, ast.Attribute) and stmt.attr == "error":
                             return
         pytest.fail("Expected logger.error in except Exception block of compact_sdk_session")
-
-
-# ── CodexSDKExecutor.discard_thread ───────────────────────────────────────────
-
-
-class TestCodexSDKExecutorDiscardThread:
-    """CodexSDKExecutor.discard_thread deletes thread file."""
-
-    @pytest.fixture
-    def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "test-codex"
-        d.mkdir(parents=True)
-        (d / "shortterm" / "chat").mkdir(parents=True)
-        (d / "shortterm" / "heartbeat").mkdir(parents=True)
-        return d
-
-    @pytest.fixture
-    def model_config(self) -> ModelConfig:
-        return ModelConfig(
-            model="codex/o4-mini",
-            max_tokens=4096,
-            credential="openai",
-            api_key="test-key",
-        )
-
-    def test_discard_thread_deletes_file(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """discard_thread() removes the thread ID file."""
-        thread_file = anima_dir / "shortterm" / "chat" / "codex_thread_id.txt"
-        thread_file.parent.mkdir(parents=True, exist_ok=True)
-        thread_file.write_text("thread-abc-123", encoding="utf-8")
-        assert thread_file.exists()
-
-        executor = CodexSDKExecutor(
-            model_config=model_config,
-            anima_dir=anima_dir,
-        )
-        executor.discard_thread(session_type="chat")
-
-        assert not thread_file.exists()
-
-    def test_discard_thread_with_custom_thread_id(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """discard_thread() with chat_thread_id deletes per-thread file."""
-        thread_dir = anima_dir / "shortterm" / "chat" / "my-thread"
-        thread_dir.mkdir(parents=True)
-        thread_file = thread_dir / "codex_thread_id.txt"
-        thread_file.write_text("thread-xyz", encoding="utf-8")
-        assert thread_file.exists()
-
-        executor = CodexSDKExecutor(
-            model_config=model_config,
-            anima_dir=anima_dir,
-        )
-        executor.discard_thread(session_type="chat", chat_thread_id="my-thread")
-
-        assert not thread_file.exists()
 
 
 # ── Mode-specific compaction ─────────────────────────────────────────────────────
@@ -372,9 +314,11 @@ class TestModeSpecificCompaction:
         )
 
     @pytest.mark.asyncio
-    async def test_compact_mode_a_calls_compress_and_finalize(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """_compact_mode_a calls compress_if_needed and finalize_if_session_ended."""
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+    async def test_compact_conversation_calls_compress_and_finalize(
+        self, anima_dir: Path, model_config: ModelConfig
+    ) -> None:
+        """Conversation compaction compresses history and finalizes the conversation."""
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
             mock_conv.finalize_if_session_ended = AsyncMock()
@@ -385,7 +329,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            result = await _compact_mode_a(anima, "default")
+            result = await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_conv.finalize_if_session_ended.assert_awaited_once()
@@ -396,14 +340,14 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_saves_shortterm_when_state_has_content(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a saves shortterm when conversation state has content."""
+        """Conversation compaction saves shortterm when conversation state has content."""
         mock_turn = MagicMock()
         mock_turn.role = "assistant"
         mock_turn.content = "I completed the task."
 
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -421,7 +365,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_stm_cls.assert_called_once_with(anima_dir, session_type="chat", thread_id="default")
             mock_stm.save.assert_called_once()
@@ -434,10 +378,10 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_skips_shortterm_when_state_empty(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a skips shortterm save when conversation state is empty."""
+        """Conversation compaction skips shortterm save when conversation state is empty."""
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -449,7 +393,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_stm_cls.assert_not_called()
 
@@ -457,7 +401,7 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_shortterm_includes_last_3_turns(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a includes up to last 3 turns in shortterm."""
+        """Conversation compaction includes up to the last 3 turns in shortterm."""
         turns = []
         for i in range(5):
             t = MagicMock()
@@ -466,8 +410,8 @@ class TestModeSpecificCompaction:
             turns.append(t)
 
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -482,7 +426,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             saved_state = mock_stm.save.call_args[0][0]
             assert "Turn 2" in saved_state.accumulated_response
@@ -492,29 +436,14 @@ class TestModeSpecificCompaction:
             assert "Turn 1" not in saved_state.accumulated_response
 
     @pytest.mark.asyncio
-    async def test_compact_mode_b_delegates_to_mode_a(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """_compact_mode_b delegates to _compact_mode_a."""
-        with patch("core.session_compactor._compact_mode_a", new_callable=AsyncMock) as mock_a:
-            mock_a.return_value = {"compression_performed": False}
-
-            anima = MagicMock()
-            anima.anima_dir = anima_dir
-            anima.agent.model_config = model_config
-
-            result = await _compact_mode_b(anima, "default")
-
-            mock_a.assert_awaited_once_with(anima, "default")
-            assert result == {"compression_performed": False}
-
-    @pytest.mark.asyncio
-    async def test_compact_mode_c_calls_compress_shortterm_clear_finalize(
+    async def test_compact_conversation_clears_engine_session_when_requested(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_c calls compress, shortterm save, clear_thread_id, finalize."""
+        """Conversation compaction clears the selected engine session."""
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.execution.codex_sdk._clear_thread_id") as mock_clear,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.agent.session_compactor.clear_engine_session") as mock_clear,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
@@ -532,14 +461,15 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            result = await _compact_mode_c(anima, "default")
+            result = await _compact_conversation(anima, "default", clear_engine="codex")
 
             mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_stm.save.assert_called_once()
-            mock_clear.assert_called_once_with(anima_dir, "chat", "default")
+            mock_clear.assert_called_once_with(anima_dir, "codex", "chat", "default")
             mock_conv.finalize_if_session_ended.assert_awaited_once()
             assert result["compression_performed"] is True
-            assert result["codex_thread_cleared"] is True
+            assert result["engine_session_cleared"] is True
+            assert result["engine"] == "codex"
 
     @pytest.mark.asyncio
     async def test_compact_mode_s_saves_shortterm_and_clears_session(self, anima_dir: Path) -> None:
@@ -551,10 +481,31 @@ class TestModeSpecificCompaction:
         log_file = log_dir / f"{now_local().date().isoformat()}.jsonl"
 
         entries = [
-            {"ts": "2026-04-13T12:00:00+09:00", "type": "message_received", "content": "Hello", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T12:00:10+09:00", "type": "tool_use", "tool": "Read", "content": "/tmp/test.md", "meta": {"args": {"path": "/tmp/test.md"}, "tool_use_id": "tu1"}},
-            {"ts": "2026-04-13T12:00:11+09:00", "type": "tool_result", "content": "file contents here", "meta": {"tool_use_id": "tu1", "is_error": False}},
-            {"ts": "2026-04-13T12:00:30+09:00", "type": "response_sent", "content": "I read the file for you.", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T12:00:00+09:00",
+                "type": "message_received",
+                "content": "Hello",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T12:00:10+09:00",
+                "type": "tool_use",
+                "tool": "Read",
+                "content": "/tmp/test.md",
+                "meta": {"args": {"path": "/tmp/test.md"}, "tool_use_id": "tu1"},
+            },
+            {
+                "ts": "2026-04-13T12:00:11+09:00",
+                "type": "tool_result",
+                "content": "file contents here",
+                "meta": {"tool_use_id": "tu1", "is_error": False},
+            },
+            {
+                "ts": "2026-04-13T12:00:30+09:00",
+                "type": "response_sent",
+                "content": "I read the file for you.",
+                "meta": {"thread_id": "default"},
+            },
         ]
         log_file.write_text(
             "\n".join(json.dumps(e, ensure_ascii=False) for e in entries),
@@ -651,10 +602,30 @@ class TestExtractRecentChatContext:
     def test_extracts_user_assistant_rounds(self, anima_dir: Path) -> None:
         """Extracts user/assistant message pairs in chronological order."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Question 1", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Answer 1", "meta": {"thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Question 2", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Answer 2", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Question 1",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Answer 1",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Question 2",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Answer 2",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -670,8 +641,22 @@ class TestExtractRecentChatContext:
         """Only the most recent 3 user/assistant rounds are kept."""
         entries = []
         for i in range(5):
-            entries.append({"ts": f"2026-04-13T10:{i:02d}:00+09:00", "type": "message_received", "content": f"Q{i}", "meta": {"from_type": "human", "thread_id": "default"}})
-            entries.append({"ts": f"2026-04-13T10:{i:02d}:30+09:00", "type": "response_sent", "content": f"A{i}", "meta": {"thread_id": "default"}})
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:{i:02d}:00+09:00",
+                    "type": "message_received",
+                    "content": f"Q{i}",
+                    "meta": {"from_type": "human", "thread_id": "default"},
+                }
+            )
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:{i:02d}:30+09:00",
+                    "type": "response_sent",
+                    "content": f"A{i}",
+                    "meta": {"thread_id": "default"},
+                }
+            )
         self._write_log(anima_dir, entries)
 
         result = _extract_recent_chat_context(anima_dir)
@@ -685,10 +670,31 @@ class TestExtractRecentChatContext:
     def test_extracts_tool_use_and_result_paired(self, anima_dir: Path) -> None:
         """Extracts tool_use and tool_result entries with correct pairing."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Read file", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Read", "content": "/tmp/f.md", "meta": {"args": {"path": "/tmp/f.md"}, "tool_use_id": "tu1", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_result", "content": "file content here", "meta": {"tool_use_id": "tu1", "is_error": False, "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Read file",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Read",
+                "content": "/tmp/f.md",
+                "meta": {"args": {"path": "/tmp/f.md"}, "tool_use_id": "tu1", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_result",
+                "content": "file content here",
+                "meta": {"tool_use_id": "tu1", "is_error": False, "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -703,11 +709,31 @@ class TestExtractRecentChatContext:
     def test_limits_to_10_tool_entries(self, anima_dir: Path) -> None:
         """Only the most recent 10 tool entries are kept."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
         ]
         for i in range(15):
-            entries.append({"ts": f"2026-04-13T10:00:{i+1:02d}+09:00", "type": "tool_use", "tool": f"Tool{i}", "content": f"arg{i}", "meta": {"args": {}, "tool_use_id": f"tu{i}", "thread_id": "default"}})
-        entries.append({"ts": "2026-04-13T10:01:00+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}})
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:00:{i + 1:02d}+09:00",
+                    "type": "tool_use",
+                    "tool": f"Tool{i}",
+                    "content": f"arg{i}",
+                    "meta": {"args": {}, "tool_use_id": f"tu{i}", "thread_id": "default"},
+                }
+            )
+        entries.append(
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            }
+        )
         self._write_log(anima_dir, entries)
 
         result = _extract_recent_chat_context(anima_dir)
@@ -717,9 +743,24 @@ class TestExtractRecentChatContext:
     def test_skips_non_human_messages(self, anima_dir: Path) -> None:
         """Skips message_received entries that are not from humans (e.g. inbox)."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "From another anima", "meta": {"from_type": "anima", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "From human", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Reply", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "From another anima",
+                "meta": {"from_type": "anima", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "From human",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Reply",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -773,8 +814,18 @@ class TestExtractRecentChatContext:
         entries = [
             {"ts": "2026-04-13T10:00:00+09:00", "type": "heartbeat_start", "content": "HB start", "meta": {}},
             {"ts": "2026-04-13T10:00:30+09:00", "type": "heartbeat_end", "content": "HB end", "meta": {}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Hello", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Hi", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Hello",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Hi",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -786,8 +837,18 @@ class TestExtractRecentChatContext:
     def test_trigger_and_notes_fields(self, anima_dir: Path) -> None:
         """Result includes idle_compaction trigger and notes."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Hi", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Hello", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Hi",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Hello",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -796,13 +857,125 @@ class TestExtractRecentChatContext:
         assert result["trigger"] == "idle_compaction"
         assert "activity_log" in result["notes"]
 
+    def test_excludes_background_tools_from_chat_handover(self, anima_dir: Path) -> None:
+        """Cron/heartbeat tools (no thread_id) never masquerade as chat tools."""
+        entries = [
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Fix calendar",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "ChatTool",
+                "content": "cal",
+                "ctx": "chat",
+                "meta": {"args": {}, "tool_use_id": "c1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_use",
+                "tool": "CronDuringTurn",
+                "content": "cw",
+                "ctx": "cron:Chatwork監視",
+                "meta": {"args": {}, "tool_use_id": "x1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "ctx": "chat",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:05:00+09:00",
+                "type": "tool_use",
+                "tool": "CronAfterTurn",
+                "content": "cw",
+                "ctx": "cron:Chatwork監視",
+                "meta": {"args": {}, "tool_use_id": "x2"},
+            },
+            {
+                "ts": "2026-04-13T10:06:00+09:00",
+                "type": "tool_use",
+                "tool": "HeartbeatTool",
+                "content": "hb",
+                "ctx": "heartbeat",
+                "meta": {"args": {}, "tool_use_id": "x3"},
+            },
+            {
+                "ts": "2026-04-13T10:07:00+09:00",
+                "type": "tool_use",
+                "tool": "NoCtxOutsideTurn",
+                "content": "n",
+                "meta": {"args": {}, "tool_use_id": "x4"},
+            },
+        ]
+        self._write_log(anima_dir, entries)
+
+        result = _extract_recent_chat_context(anima_dir)
+
+        names = [t["name"] for t in result["tool_uses"]]
+        assert names == ["ChatTool"]
+
+    def test_keeps_ctxless_tools_inside_turn(self, anima_dir: Path) -> None:
+        """Modes that log no ctx still hand over tools used during the turn."""
+        entries = [
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Bash",
+                "content": "ls",
+                "meta": {"args": {}, "tool_use_id": "t1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
+        ]
+        self._write_log(anima_dir, entries)
+
+        result = _extract_recent_chat_context(anima_dir)
+
+        assert [t["name"] for t in result["tool_uses"]] == ["Bash"]
+
     def test_filters_by_thread_id(self, anima_dir: Path) -> None:
         """Only entries matching the specified thread_id are included."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Thread1 Q", "meta": {"from_type": "human", "thread_id": "thread-1"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Thread1 A", "meta": {"thread_id": "thread-1"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Default Q", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Default A", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Thread1 Q",
+                "meta": {"from_type": "human", "thread_id": "thread-1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Thread1 A",
+                "meta": {"thread_id": "thread-1"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Default Q",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Default A",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -818,8 +991,18 @@ class TestExtractRecentChatContext:
 
         yesterday = (now_local().date() - timedelta(days=1)).isoformat()
         entries = [
-            {"ts": f"{yesterday}T23:55:00+09:00", "type": "message_received", "content": "Late night Q", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": f"{yesterday}T23:55:30+09:00", "type": "response_sent", "content": "Late night A", "meta": {"thread_id": "default"}},
+            {
+                "ts": f"{yesterday}T23:55:00+09:00",
+                "type": "message_received",
+                "content": "Late night Q",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": f"{yesterday}T23:55:30+09:00",
+                "type": "response_sent",
+                "content": "Late night A",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries, date_str=yesterday)
 
@@ -831,10 +1014,31 @@ class TestExtractRecentChatContext:
     def test_tool_use_id_not_leaked_to_output(self, anima_dir: Path) -> None:
         """tool_use_id is used for pairing but not included in output dict."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Write", "content": "f.txt", "meta": {"args": {"path": "f.txt"}, "tool_use_id": "tu99", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_result", "content": "ok", "meta": {"tool_use_id": "tu99", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Write",
+                "content": "f.txt",
+                "meta": {"args": {"path": "f.txt"}, "tool_use_id": "tu99", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_result",
+                "content": "ok",
+                "meta": {"tool_use_id": "tu99", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -868,7 +1072,7 @@ class TestRunIdleCompaction:
 
     @pytest.mark.asyncio
     async def test_dispatches_to_mode_a(self) -> None:
-        """run_idle_compaction dispatches to _compact_mode_a for mode 'a'."""
+        """run_idle_compaction dispatches to conversation compaction for mode 'a'."""
         anima = MagicMock()
         anima.name = "alice"
         anima.agent.execution_mode = "a"
@@ -878,20 +1082,74 @@ class TestRunIdleCompaction:
         anima._get_thread_lock = MagicMock(return_value=mock_lock)
 
         with patch(
-            "core.session_compactor._compact_mode_a",
+            "core.agent.session_compactor._compact_conversation",
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.ActivityLogger"):
+            with patch("core.activity.logger.ActivityLogger") as mock_activity:
+                mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
-            mock_compact.assert_awaited_once_with(anima, "thread-1")
+            mock_compact.assert_awaited_once_with(anima, "thread-1", clear_engine=None)
+
+    @pytest.mark.parametrize(
+        ("mode", "engine", "storage_engine", "should_clear"),
+        [
+            ("x", "grok", "grok", True),
+            ("d", "cursor", "cursor", True),
+            ("c", "codex", "codex", True),
+            ("g", None, "grok", False),
+            ("a", None, "grok", False),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_mode_compaction_clears_only_selected_engine_session(
+        self,
+        tmp_path: Path,
+        mode: str,
+        engine: str | None,
+        storage_engine: str,
+        should_clear: bool,
+    ) -> None:
+        from core.execution.session.session_store import SessionRecord, SessionStore
+
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        model_config = ModelConfig(model="test/model", max_tokens=4096, context_threshold=0.5)
+        path = SessionStore.path_for(storage_engine, anima_dir, "chat", "thread-1")
+        SessionStore(path).write_text_record(SessionRecord("session-id", 1), with_turn_count=True)
+
+        with (
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
+        ):
+            mock_activity.return_value.alog = AsyncMock()
+            mock_conv = MagicMock()
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
+            mock_conv.load.return_value = MagicMock(compressed_summary="", turns=[])
+            mock_conv.finalize_if_session_ended = AsyncMock(return_value=False)
+            mock_conv_cls.return_value = mock_conv
+
+            anima = MagicMock()
+            anima.name = "alice"
+            anima.anima_dir = anima_dir
+            anima.agent.execution_mode = mode
+            anima.agent.model_config = model_config
+            anima.agent._executor = MagicMock(session_engine=engine)
+            lock = MagicMock()
+            lock.acquire = AsyncMock(return_value=True)
+            lock.release = MagicMock()
+            anima._get_thread_lock = MagicMock(return_value=lock)
+
+            assert await run_idle_compaction(anima, "thread-1") is True
+
+        assert path.exists() is (not should_clear)
 
     @pytest.mark.asyncio
     async def test_mode_s_fallback_to_mode_a_when_compact_returns_false(
         self,
     ) -> None:
-        """When mode S and _compact_mode_s returns False, falls back to _compact_mode_a."""
+        """When mode S compaction returns False, it falls back to conversation compaction."""
         anima = MagicMock()
         anima.name = "alice"
         anima.agent.execution_mode = "s"
@@ -902,21 +1160,22 @@ class TestRunIdleCompaction:
 
         with (
             patch(
-                "core.session_compactor._compact_mode_s",
+                "core.agent.session_compactor._compact_mode_s",
                 new_callable=AsyncMock,
                 return_value=False,
             ) as mock_s,
             patch(
-                "core.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_conversation",
                 new_callable=AsyncMock,
             ) as mock_a,
         ):
             mock_a.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.ActivityLogger"):
+            with patch("core.activity.logger.ActivityLogger") as mock_activity:
+                mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
             mock_s.assert_awaited_once()
-            mock_a.assert_awaited_once_with(anima, "thread-1")
+            mock_a.assert_awaited_once_with(anima, "thread-1", clear_engine=None)
 
     @pytest.mark.asyncio
     async def test_exception_caught_and_logged(self) -> None:
@@ -931,12 +1190,13 @@ class TestRunIdleCompaction:
 
         with (
             patch(
-                "core.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_conversation",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
         ):
+            mock_activity.return_value.alog = AsyncMock()
             await run_idle_compaction(anima, "thread-1")
 
         mock_lock.release.assert_called_once()
@@ -951,7 +1211,7 @@ class TestModeABlockingShorttermClear:
     @pytest.mark.asyncio
     async def test_shortterm_preserved_when_threshold_exceeded(self, tmp_path: Path) -> None:
         """When tracker.threshold_exceeded is True, shortterm.clear() is NOT called."""
-        from core.memory.shortterm import SessionState, ShortTermMemory
+        from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
         anima_dir = tmp_path / "animas" / "test-mode-a"
         (anima_dir / "shortterm" / "chat").mkdir(parents=True)
@@ -962,7 +1222,7 @@ class TestModeABlockingShorttermClear:
                 session_id="test-session",
                 accumulated_response="Important conversation context",
                 trigger="chat",
-                notes="Saved by handle_session_chaining",
+                notes="Saved after context threshold",
             )
         )
         assert shortterm.has_pending()
@@ -978,7 +1238,7 @@ class TestModeABlockingShorttermClear:
     @pytest.mark.asyncio
     async def test_shortterm_cleared_when_threshold_not_exceeded(self, tmp_path: Path) -> None:
         """When tracker.threshold_exceeded is False, shortterm.clear() IS called."""
-        from core.memory.shortterm import SessionState, ShortTermMemory
+        from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
         anima_dir = tmp_path / "animas" / "test-mode-a"
         (anima_dir / "shortterm" / "chat").mkdir(parents=True)
@@ -1027,8 +1287,8 @@ class TestAnimaIntegration:
         )
 
         with (
-            patch("core.anima.AgentCore") as mock_agent_cls,
-            patch("core.anima.MemoryManager"),
+            patch("core.anima.digital_anima.AgentCore") as mock_agent_cls,
+            patch("core.anima.digital_anima.MemoryManager"),
             patch("core.config.models.load_config") as mock_load_config,
         ):
             mock_agent = MagicMock()
@@ -1040,7 +1300,7 @@ class TestAnimaIntegration:
             mock_config.heartbeat.idle_compaction_minutes = 15.0
             mock_load_config.return_value = mock_config
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
 

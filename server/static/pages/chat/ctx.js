@@ -1,7 +1,7 @@
 // ── Chat Context Factory ──────────────────────
 import { t } from "/shared/i18n.js";
 import { api } from "../../modules/api.js";
-import { escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp } from "../../modules/state.js";
+import { state as appState, escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp } from "../../modules/state.js";
 import { streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress } from "../../shared/chat-stream.js";
 import { createLogger } from "../../shared/logger.js";
 import { createImageInput, initLightbox, renderChatImages } from "../../shared/image-input.js";
@@ -31,27 +31,31 @@ export const CONSTANTS = Object.freeze({
 
 export function createChatContext() {
   const mgr = ChatSessionManager.getInstance();
+  const fetchChatFeedHistory = async (animaName, limit, before, threadId) => {
+    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/feed?min_user_items=10`;
+    if (before) url += `&before=${encodeURIComponent(before)}`;
+    url += `&thread_id=${encodeURIComponent(threadId)}`;
+    if (threadId !== "default") url += `&strict_thread=1`;
+    return await api(url);
+  };
   mgr.configure({
     streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress,
     getUser: () => document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "human",
-    fetchHistory: async (animaName, limit, before, threadId) => {
-      let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
-      if (before) url += `&before=${encodeURIComponent(before)}`;
-      url += `&thread_id=${encodeURIComponent(threadId)}`;
-      if (threadId !== "default") url += `&strict_thread=1`;
-      return await api(url);
-    },
+    fetchHistory: fetchChatFeedHistory,
   });
 
   const state = {
     container: null,
+    // Demo mode is detected once at dashboard start (modules/app.js).
+    get demoMode() { return appState.demoMode === true; },
     animas: [],
+    fetchChatFeedHistory,
     users: [],
     selectedAnima: null,
     animaDetail: null,
+    animaDetailLoadedFor: null,
+    animaSummary: null,
     animaTabs: [],
-    activeRightTab: "state",
-    activeMemoryTab: "episodes",
     intervals: [],
     boundListeners: [],
     chatObserver: null,
@@ -61,11 +65,14 @@ export function createChatContext() {
     animaLastAccess: {},
     imageInputManager: null,
     bustupUrl: null,
+    replyTarget: null,
     chatUiStateSaveTimer: null,
     animaTabAvatarUrls: {},
     animaTabAvatarLoading: {},
     chatPollingInFlight: false,
-    rightPaneVisible: true,
+    firstMeetingRequested: new Set(),
+    firstMeetingResponses: new Map(),
+    firstMeetingFailed: new Set(),
     paneIdx: 0,
     modelByThread: {},
     /** @type {ChatSessionManager} */
@@ -118,7 +125,7 @@ export function clearDraft(animaName, threadId) {
 }
 
 // ── Tab / Thread Helpers ──
-export function getTabEntry(ctx, animaName) {
+function getTabEntry(ctx, animaName) {
   return ctx.state.animaTabs.find(tab => tab.name === animaName) || null;
 }
 
@@ -151,7 +158,7 @@ export function clearUnreadForActiveThread(ctx, animaName, threadId) {
   refreshAnimaUnread(ctx, animaName);
 }
 
-export function isBusinessTheme() {
+function isBusinessTheme() {
   return document.body.classList.contains("mode-realistic");
 }
 
@@ -168,7 +175,7 @@ export function mergeThreadsFromSessions(ctx, animaName, sessionsData) {
 }
 
 // ── Chat UI State Persistence ──
-export function serializeChatUiState(ctx) {
+function serializeChatUiState(ctx) {
   const { animaTabs, threads, activeThreadByAnima, selectedAnima, animaLastAccess } = ctx.state;
   const threadState = {};
   for (const tab of animaTabs) {
@@ -194,7 +201,7 @@ export function serializeChatUiState(ctx) {
   };
 }
 
-export async function saveChatUiStateNow(ctx) {
+async function saveChatUiStateNow(ctx) {
   try {
     await ctx.deps.api("/api/chat/ui-state", {
       method: "PUT",
@@ -241,4 +248,11 @@ export function syncModelSelect(ctx) {
     ? (modelByThread[modelKey(selectedAnima, selectedThreadId)] || "")
     : "";
   select.value = value;
+  updateModelSelectTitle(select);
+}
+
+// The select is narrow in the composer, so expose the full model name on hover.
+export function updateModelSelectTitle(select) {
+  const label = select.selectedOptions?.[0]?.textContent || "";
+  select.title = label ? `${t("chat.model_selector")}: ${label}` : t("chat.model_selector");
 }

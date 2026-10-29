@@ -1,14 +1,14 @@
 // ── Activity Feed ──────────────────────
 // Extracted from app.js: addActivity + loadActivityHistory
 
-import { escapeHtml } from "./utils.js";
+import { escapeHtml, nowTimeStr, timeStr } from "./utils.js";
 import { getIcon } from "../../shared/activity-types.js";
 import {
   createContextBadge,
   decorateContextElement,
   updateLiveParallelIndicators,
 } from "../../shared/activity-context.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { createLogger } from "../../shared/logger.js";
 import { t } from "/shared/i18n.js";
 
@@ -25,7 +25,7 @@ export function addActivity(type, animaName, summary, isoTs, ctx = "") {
   if (!_paneActivity) return;
 
   const d = isoTs ? new Date(isoTs) : new Date();
-  const ts = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const ts = isoTs ? timeStr(d) : nowTimeStr();
   const icon = getIcon(type);
 
   const entry = document.createElement("div");
@@ -55,9 +55,7 @@ export async function loadActivityHistory() {
   _activityHistoryLoaded = true;
 
   try {
-    const res = await fetch(`${basePath}/api/activity/recent?hours=24&limit=50&offset=0`);
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await api("/api/activity/recent?hours=24&limit=50&offset=0");
     const events = data.events || [];
 
     for (const evt of events) {
@@ -72,6 +70,6 @@ export async function loadActivityHistory() {
   }
 }
 
-export function resetActivityHistory() {
+function resetActivityHistory() {
   _activityHistoryLoaded = false;
 }

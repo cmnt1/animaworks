@@ -20,7 +20,7 @@ from httpx import ASGITransport, AsyncClient
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset singletons before/after each test."""
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield
@@ -49,13 +49,15 @@ class TestEmbedCentralizationE2E:
         app = _make_embed_app()
 
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([
-            [0.1, 0.2, 0.3],
-            [0.4, 0.5, 0.6],
-        ])
+        mock_model.encode.return_value = np.array(
+            [
+                [0.1, 0.2, 0.3],
+                [0.4, 0.5, 0.6],
+            ]
+        )
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
             async with AsyncClient(
@@ -86,10 +88,10 @@ class TestEmbedCentralizationE2E:
         mock_client = MagicMock()
         mock_client.post = MagicMock(return_value=mock_response)
         with patch(
-            "core.memory.rag.singleton._shared_http_client",
+            "core.memory.rag.embedding._shared_http_client",
             return_value=mock_client,
         ):
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             result = generate_embeddings(["test text"])
 
@@ -107,10 +109,10 @@ class TestEmbedCentralizationE2E:
         mock_model.encode.return_value = np.array([[7.0, 8.0]])
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             result = generate_embeddings(["local test"])
 
@@ -129,19 +131,17 @@ class TestEmbedCentralizationE2E:
             call_count += 1
             texts = kwargs.get("json", {}).get("texts", [])
             resp = MagicMock()
-            resp.json.return_value = {
-                "embeddings": [[float(call_count)] * 3] * len(texts)
-            }
+            resp.json.return_value = {"embeddings": [[float(call_count)] * 3] * len(texts)}
             resp.raise_for_status = MagicMock()
             return resp
 
         mock_client = MagicMock()
         mock_client.post = MagicMock(side_effect=mock_post)
         with patch(
-            "core.memory.rag.singleton._shared_http_client",
+            "core.memory.rag.embedding._shared_http_client",
             return_value=mock_client,
         ):
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             texts = [f"text_{i}" for i in range(1500)]
             result = generate_embeddings(texts)
@@ -153,7 +153,6 @@ class TestEmbedCentralizationE2E:
     async def test_indexer_uses_generate_embeddings(self, tmp_path):
         """MemoryIndexer._generate_embeddings() delegates to generate_embeddings()."""
         mock_store = MagicMock()
-        mock_model = MagicMock()
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir(parents=True)
@@ -161,7 +160,7 @@ class TestEmbedCentralizationE2E:
         expected = [[0.1, 0.2], [0.3, 0.4]]
 
         with patch(
-            "core.memory.rag.singleton.generate_embeddings",
+            "core.memory.rag.embedding.generate_embeddings",
             return_value=expected,
         ) as mock_gen:
             from core.memory.rag.indexer import MemoryIndexer
@@ -170,7 +169,6 @@ class TestEmbedCentralizationE2E:
                 vector_store=mock_store,
                 anima_name="test-anima",
                 anima_dir=anima_dir,
-                embedding_model=mock_model,
             )
             result = indexer._generate_embeddings(["a", "b"])
 
@@ -183,13 +181,13 @@ class TestEmbedCentralizationE2E:
         (server process behavior)."""
         monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
 
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[1.0]])
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
             result = generate_embeddings(["server-side"])

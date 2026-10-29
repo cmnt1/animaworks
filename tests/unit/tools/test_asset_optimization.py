@@ -10,8 +10,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
-
 # ── _ensure_fbx2gltf ────────────────────────────────────────────
 
 
@@ -20,13 +18,14 @@ class TestEnsureFbx2gltf:
 
     def _reset_cache(self):
         """Reset module-level _FBX2GLTF_PATH cache between tests."""
-        import core.tools.image_gen as mod
+        import core.integrations.image_gen as mod
+
         mod._FBX2GLTF_PATH = None
 
     def test_returns_cached_path(self, tmp_path):
         """Should return immediately when _FBX2GLTF_PATH is set and exists."""
-        import core.tools.image_gen as mod
-        from core.tools.image_gen import _ensure_fbx2gltf
+        import core.integrations.image_gen as mod
+        from core.integrations.image_gen import _ensure_fbx2gltf
 
         cached = tmp_path / "fbx2gltf"
         cached.touch()
@@ -39,7 +38,7 @@ class TestEnsureFbx2gltf:
 
     def test_finds_system_binary(self):
         """Should use system binary when shutil.which('FBX2glTF') returns a path."""
-        from core.tools.image_gen import _ensure_fbx2gltf
+        from core.integrations.image_gen import _ensure_fbx2gltf
 
         self._reset_cache()
         try:
@@ -51,7 +50,7 @@ class TestEnsureFbx2gltf:
 
     def test_installs_via_npm(self, tmp_path):
         """Should run npm install and return bin path when not found elsewhere."""
-        from core.tools.image_gen import _ensure_fbx2gltf
+        from core.integrations.image_gen import _ensure_fbx2gltf
 
         self._reset_cache()
         # Prepare path but do NOT create the candidate yet — it should only
@@ -82,7 +81,7 @@ class TestEnsureFbx2gltf:
 
     def test_returns_none_on_install_failure(self, tmp_path):
         """Should return None when npm install fails."""
-        from core.tools.image_gen import _ensure_fbx2gltf
+        from core.integrations.image_gen import _ensure_fbx2gltf
 
         self._reset_cache()
         try:
@@ -103,15 +102,15 @@ class TestConvertFbxToGlb:
 
     def test_returns_false_when_fbx2gltf_not_found(self):
         """Should return False when _ensure_fbx2gltf() returns None."""
-        from core.tools.image_gen import _convert_fbx_to_glb
+        from core.integrations.image_gen import _convert_fbx_to_glb
 
-        with patch("core.tools.image_gen._ensure_fbx2gltf", return_value=None):
+        with patch("core.integrations.image_gen._ensure_fbx2gltf", return_value=None):
             result = _convert_fbx_to_glb(Path("/tmp/test.fbx"), Path("/tmp/test.glb"))
             assert result is False
 
     def test_calls_fbx2gltf_binary(self, tmp_path):
         """Should call fbx2gltf binary with correct arguments."""
-        from core.tools.image_gen import _convert_fbx_to_glb
+        from core.integrations.image_gen import _convert_fbx_to_glb
 
         fbx_path = tmp_path / "test.fbx"
         glb_path = tmp_path / "test.glb"
@@ -119,7 +118,7 @@ class TestConvertFbxToGlb:
         # Simulate fbx2gltf creating the output file
         glb_path.write_bytes(b"fake-glb")
 
-        with patch("core.tools.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
+        with patch("core.integrations.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
                 result = _convert_fbx_to_glb(fbx_path, glb_path)
@@ -137,9 +136,10 @@ class TestConvertFbxToGlb:
     def test_returns_false_on_subprocess_error(self):
         """Should return False when subprocess raises CalledProcessError."""
         import subprocess
-        from core.tools.image_gen import _convert_fbx_to_glb
 
-        with patch("core.tools.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
+        from core.integrations.image_gen import _convert_fbx_to_glb
+
+        with patch("core.integrations.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
             with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "fbx2gltf")):
                 result = _convert_fbx_to_glb(Path("/tmp/test.fbx"), Path("/tmp/test.glb"))
                 assert result is False
@@ -147,9 +147,10 @@ class TestConvertFbxToGlb:
     def test_returns_false_on_timeout(self):
         """Should return False when subprocess times out."""
         import subprocess
-        from core.tools.image_gen import _convert_fbx_to_glb
 
-        with patch("core.tools.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
+        from core.integrations.image_gen import _convert_fbx_to_glb
+
+        with patch("core.integrations.image_gen._ensure_fbx2gltf", return_value=Path("/usr/bin/fbx2gltf")):
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("fbx2gltf", 120)):
                 result = _convert_fbx_to_glb(Path("/tmp/test.fbx"), Path("/tmp/test.glb"))
                 assert result is False
@@ -163,7 +164,7 @@ class TestDownloadArmatureAnimation:
 
     def test_downloads_armature_fbx_and_converts(self, tmp_path):
         """Happy path: armature URL present, FBX downloaded, conversion succeeds."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         glb_path = tmp_path / "anim_idle.glb"
         task = {
@@ -178,7 +179,7 @@ class TestDownloadArmatureAnimation:
         mock_resp.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=mock_resp) as mock_get:
-            with patch("core.tools.image_gen._convert_fbx_to_glb", return_value=True) as mock_convert:
+            with patch("core.integrations.image_gen._convert_fbx_to_glb", return_value=True) as mock_convert:
                 # Simulate the glb_path existing after conversion for stat()
                 glb_path.write_bytes(b"converted-glb")
                 result = _download_armature_animation(task, glb_path)
@@ -197,7 +198,7 @@ class TestDownloadArmatureAnimation:
 
     def test_falls_back_when_no_armature_url(self, tmp_path):
         """Should fall back to full GLB + strip when no armature URL present."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         glb_path = tmp_path / "anim_idle.glb"
         task = {
@@ -211,7 +212,7 @@ class TestDownloadArmatureAnimation:
         mock_resp.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=mock_resp) as mock_get:
-            with patch("core.tools.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
+            with patch("core.integrations.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
                 result = _download_armature_animation(task, glb_path)
 
                 assert result is True
@@ -226,7 +227,7 @@ class TestDownloadArmatureAnimation:
 
     def test_falls_back_when_conversion_fails(self, tmp_path):
         """Should fall back to full GLB + strip when fbx2gltf conversion fails."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         glb_path = tmp_path / "anim_idle.glb"
         task = {
@@ -250,8 +251,8 @@ class TestDownloadArmatureAnimation:
             return resp
 
         with patch("httpx.get", side_effect=mock_get_side_effect):
-            with patch("core.tools.image_gen._convert_fbx_to_glb", return_value=False):
-                with patch("core.tools.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
+            with patch("core.integrations.image_gen._convert_fbx_to_glb", return_value=False):
+                with patch("core.integrations.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
                     result = _download_armature_animation(task, glb_path)
 
                     assert result is True
@@ -261,7 +262,7 @@ class TestDownloadArmatureAnimation:
 
     def test_falls_back_when_download_fails(self, tmp_path):
         """Should fall back when armature FBX download raises an exception."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         glb_path = tmp_path / "anim_idle.glb"
         task = {
@@ -278,7 +279,9 @@ class TestDownloadArmatureAnimation:
             call_count += 1
             if "armature" in url:
                 raise httpx.HTTPStatusError(
-                    "404 Not Found", request=MagicMock(), response=MagicMock(),
+                    "404 Not Found",
+                    request=MagicMock(),
+                    response=MagicMock(),
                 )
             resp = MagicMock()
             resp.content = b"full-glb-data"
@@ -288,7 +291,7 @@ class TestDownloadArmatureAnimation:
         import httpx
 
         with patch("httpx.get", side_effect=mock_get_side_effect):
-            with patch("core.tools.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
+            with patch("core.integrations.image_gen.strip_mesh_from_glb", return_value=True) as mock_strip:
                 result = _download_armature_animation(task, glb_path)
 
                 assert result is True
@@ -297,7 +300,7 @@ class TestDownloadArmatureAnimation:
 
     def test_returns_false_when_no_urls(self):
         """Should return False when neither armature nor GLB URL is available."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         task = {"result": {}}
         result = _download_armature_animation(task, Path("/tmp/anim.glb"))
@@ -305,7 +308,7 @@ class TestDownloadArmatureAnimation:
 
     def test_cleans_up_temp_fbx(self, tmp_path):
         """Should delete the temporary FBX file even on conversion failure."""
-        from core.tools.image_gen import _download_armature_animation
+        from core.integrations.image_gen import _download_armature_animation
 
         glb_path = tmp_path / "anim_idle.glb"
         task = {
@@ -343,8 +346,8 @@ class TestDownloadArmatureAnimation:
             return fallback_resp
 
         with patch("httpx.get", side_effect=mock_get_side_effect):
-            with patch("core.tools.image_gen._convert_fbx_to_glb", return_value=False):
-                with patch("core.tools.image_gen.strip_mesh_from_glb", return_value=True):
+            with patch("core.integrations.image_gen._convert_fbx_to_glb", return_value=False):
+                with patch("core.integrations.image_gen.strip_mesh_from_glb", return_value=True):
                     with patch("tempfile.NamedTemporaryFile", side_effect=tracking_temp):
                         result = _download_armature_animation(task, glb_path)
 
@@ -361,8 +364,9 @@ class TestCreateAnimationTaskPostProcess:
     """Tests for create_animation_task extract_armature post_process parameter."""
 
     def _make_client(self):
-        with patch("core.tools.image.meshy.get_credential", return_value="test-key"):
-            from core.tools.image_gen import MeshyClient
+        with patch("core.integrations.image.meshy.get_credential", return_value="test-key"):
+            from core.integrations.image_gen import MeshyClient
+
             return MeshyClient()
 
     def test_includes_extract_armature(self):
@@ -380,7 +384,11 @@ class TestCreateAnimationTaskPostProcess:
             assert result == "task-123"
             mock_post.assert_called_once()
             call_kwargs = mock_post.call_args
-            body = call_kwargs.kwargs.get("json") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else call_kwargs.kwargs["json"]
+            body = (
+                call_kwargs.kwargs.get("json") or call_kwargs.args[1]
+                if len(call_kwargs.args) > 1
+                else call_kwargs.kwargs["json"]
+            )
             assert "post_process" in body
             assert body["post_process"] == {"operation_type": "extract_armature"}
             assert body["rig_task_id"] == "rig-001"
@@ -394,13 +402,13 @@ class TestCreateRiggingTaskFromGlb:
     """Tests for MeshyClient.create_rigging_task_from_glb (GLB data URI → rigging)."""
 
     def _make_client(self):
-        with patch("core.tools.image.meshy.get_credential", return_value="test-key"):
-            from core.tools.image_gen import MeshyClient
+        with patch("core.integrations.image.meshy.get_credential", return_value="test-key"):
+            from core.integrations.image_gen import MeshyClient
 
             return MeshyClient()
 
     def test_posts_model_url_and_height_meters(self):
-        from core.tools.image.constants import MESHY_RIGGING_URL
+        from core.integrations.image.constants import MESHY_RIGGING_URL
 
         client = self._make_client()
         glb = b"glTF" * 20
@@ -428,8 +436,9 @@ class TestDownloadRiggingAnimations:
     """Tests for MeshyClient.download_rigging_animations armature preference."""
 
     def _make_client(self):
-        with patch("core.tools.image.meshy.get_credential", return_value="test-key"):
-            from core.tools.image_gen import MeshyClient
+        with patch("core.integrations.image.meshy.get_credential", return_value="test-key"):
+            from core.integrations.image_gen import MeshyClient
+
             return MeshyClient()
 
     def test_prefers_armature_glb_url(self):
@@ -497,7 +506,7 @@ class TestStripMeshFromGlb:
 
     def test_returns_false_when_node_not_found(self):
         """Should return False and log warning when node is not installed."""
-        from core.tools.image_gen import strip_mesh_from_glb
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         with patch("shutil.which", return_value=None):
             result = strip_mesh_from_glb(Path("/tmp/test.glb"))
@@ -506,10 +515,13 @@ class TestStripMeshFromGlb:
     def test_returns_false_on_subprocess_error(self):
         """Should return False when subprocess fails."""
         import subprocess
-        from core.tools.image_gen import strip_mesh_from_glb
+
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         with patch("shutil.which", return_value="/usr/bin/node"):
-            with patch("core.tools.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")):
+            with patch(
+                "core.integrations.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")
+            ):
                 with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "node")):
                     result = strip_mesh_from_glb(Path("/tmp/test.glb"))
                     assert result is False
@@ -517,23 +529,26 @@ class TestStripMeshFromGlb:
     def test_returns_false_on_timeout(self):
         """Should return False when subprocess times out."""
         import subprocess
-        from core.tools.image_gen import strip_mesh_from_glb
+
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         with patch("shutil.which", return_value="/usr/bin/node"):
-            with patch("core.tools.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")):
+            with patch(
+                "core.integrations.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")
+            ):
                 with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("node", 120)):
                     result = strip_mesh_from_glb(Path("/tmp/test.glb"))
                     assert result is False
 
     def test_uses_node_path_with_temp_script(self, tmp_path):
         """Should write script to temp file and set NODE_PATH for module resolution."""
-        from core.tools.image_gen import strip_mesh_from_glb
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         glb_path = tmp_path / "test.glb"
         glb_path.write_bytes(b"fake-glb")
         fake_modules = Path("/fake/node_modules")
         with patch("shutil.which", return_value="/usr/bin/node"):
-            with patch("core.tools.image_gen._ensure_gltf_transform_modules", return_value=fake_modules):
+            with patch("core.integrations.image_gen._ensure_gltf_transform_modules", return_value=fake_modules):
                 with patch("subprocess.run") as mock_run:
                     mock_run.return_value = MagicMock(returncode=0)
                     result = strip_mesh_from_glb(glb_path)
@@ -551,10 +566,13 @@ class TestStripMeshFromGlb:
         """Should clean up temp script file even when subprocess fails."""
         import subprocess
         import tempfile
-        from core.tools.image_gen import strip_mesh_from_glb
+
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         with patch("shutil.which", return_value="/usr/bin/node"):
-            with patch("core.tools.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")):
+            with patch(
+                "core.integrations.image_gen._ensure_gltf_transform_modules", return_value=Path("/fake/node_modules")
+            ):
                 with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "node")):
                     result = strip_mesh_from_glb(Path("/tmp/test.glb"))
                     assert result is False
@@ -572,7 +590,7 @@ class TestOptimizeGlb:
 
     def test_returns_false_when_npx_not_found(self):
         """Should return False when npx is not installed."""
-        from core.tools.image_gen import optimize_glb
+        from core.integrations.image_gen import optimize_glb
 
         with patch("shutil.which", return_value=None):
             result = optimize_glb(Path("/tmp/test.glb"))
@@ -580,21 +598,21 @@ class TestOptimizeGlb:
 
     def test_calls_optimize_then_draco(self):
         """Should call gltf-transform optimize then draco."""
-        from core.tools.image_gen import _run_gltf_transform
+        from core.integrations.image_gen import _run_gltf_transform
 
-        with patch("shutil.which", return_value="/usr/bin/npx"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                result = _run_gltf_transform(["optimize", "in.glb", "out.glb"], Path("in.glb"))
-                assert result is True
-                cmd = mock_run.call_args.args[0]
-                assert "@gltf-transform/cli" in cmd
-                assert "optimize" in cmd
+        with patch("shutil.which", return_value="/usr/bin/npx"), patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = _run_gltf_transform(["optimize", "in.glb", "out.glb"], Path("in.glb"))
+            assert result is True
+            cmd = mock_run.call_args.args[0]
+            assert "@gltf-transform/cli" in cmd
+            assert "optimize" in cmd
 
     def test_returns_false_on_subprocess_error(self):
         """Should return False when gltf-transform fails."""
         import subprocess
-        from core.tools.image_gen import _run_gltf_transform
+
+        from core.integrations.image_gen import _run_gltf_transform
 
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "npx", stderr=b"error")):
@@ -610,7 +628,7 @@ class TestSimplifyGlb:
 
     def test_returns_false_when_npx_not_found(self):
         """Should return False when npx is not installed."""
-        from core.tools.image_gen import simplify_glb
+        from core.integrations.image_gen import simplify_glb
 
         with patch("shutil.which", return_value=None):
             result = simplify_glb(Path("/tmp/test.glb"))
@@ -618,32 +636,31 @@ class TestSimplifyGlb:
 
     def test_calls_gltf_transform_simplify(self):
         """Should call gltf-transform simplify with correct args."""
-        from core.tools.image_gen import simplify_glb
+        from core.integrations.image_gen import simplify_glb
 
         glb_path = Path("/tmp/test.glb")
         simp_path = glb_path.with_suffix(".simp.glb")
 
-        with patch("shutil.which", return_value="/usr/bin/npx"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                # Mock rename and stat
-                with patch.object(Path, "rename") as mock_rename:
-                    with patch.object(Path, "stat") as mock_stat:
-                        mock_stat.return_value.st_size = 5000
-                        with patch.object(Path, "unlink"):
-                            result = simplify_glb(glb_path, target_ratio=0.27, error_threshold=0.01)
+        with patch("shutil.which", return_value="/usr/bin/npx"), patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            # Mock rename and stat
+            with patch.object(Path, "rename") as mock_rename, patch.object(Path, "stat") as mock_stat:
+                mock_stat.return_value.st_size = 5000
+                with patch.object(Path, "unlink"):
+                    result = simplify_glb(glb_path, target_ratio=0.27, error_threshold=0.01)
 
-                            assert result is True
-                            cmd = mock_run.call_args.args[0]
-                            assert "simplify" in cmd
-                            assert "--ratio" in cmd
-                            assert "0.27" in cmd
-                            assert "--error" in cmd
+                    assert result is True
+                    cmd = mock_run.call_args.args[0]
+                    assert "simplify" in cmd
+                    assert "--ratio" in cmd
+                    assert "0.27" in cmd
+                    assert "--error" in cmd
 
     def test_cleans_up_temp_file_on_failure(self):
         """Should clean up .simp.glb temp file on failure."""
         import subprocess
-        from core.tools.image_gen import simplify_glb
+
+        from core.integrations.image_gen import simplify_glb
 
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "npx", stderr=b"err")):
@@ -654,19 +671,17 @@ class TestSimplifyGlb:
 
     def test_custom_ratio(self):
         """Should pass custom ratio and error values."""
-        from core.tools.image_gen import simplify_glb
+        from core.integrations.image_gen import simplify_glb
 
-        with patch("shutil.which", return_value="/usr/bin/npx"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                with patch.object(Path, "rename"):
-                    with patch.object(Path, "stat") as mock_stat:
-                        mock_stat.return_value.st_size = 3000
-                        with patch.object(Path, "unlink"):
-                            simplify_glb(Path("/tmp/test.glb"), target_ratio=0.5, error_threshold=0.02)
-                            cmd = mock_run.call_args.args[0]
-                            assert "0.5" in cmd
-                            assert "0.02" in cmd
+        with patch("shutil.which", return_value="/usr/bin/npx"), patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with patch.object(Path, "rename"), patch.object(Path, "stat") as mock_stat:
+                mock_stat.return_value.st_size = 3000
+                with patch.object(Path, "unlink"):
+                    simplify_glb(Path("/tmp/test.glb"), target_ratio=0.5, error_threshold=0.02)
+                    cmd = mock_run.call_args.args[0]
+                    assert "0.5" in cmd
+                    assert "0.02" in cmd
 
 
 # ── compress_textures ────────────────────────────────────────────
@@ -677,7 +692,7 @@ class TestCompressTextures:
 
     def test_returns_false_when_npx_not_found(self):
         """Should return False when npx is not installed."""
-        from core.tools.image_gen import compress_textures
+        from core.integrations.image_gen import compress_textures
 
         with patch("shutil.which", return_value=None):
             result = compress_textures(Path("/tmp/test.glb"))
@@ -685,30 +700,29 @@ class TestCompressTextures:
 
     def test_calls_resize_then_webp(self):
         """Should call gltf-transform resize then webp."""
-        from core.tools.image_gen import compress_textures
+        from core.integrations.image_gen import compress_textures
 
-        with patch("shutil.which", return_value="/usr/bin/npx"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
-                with patch.object(Path, "unlink"):
-                    with patch.object(Path, "stat") as mock_stat:
-                        mock_stat.return_value.st_size = 2000
-                        with patch.object(Path, "rename"):
-                            result = compress_textures(Path("/tmp/test.glb"), resolution=1024)
+        with patch("shutil.which", return_value="/usr/bin/npx"), patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with patch.object(Path, "unlink"), patch.object(Path, "stat") as mock_stat:
+                mock_stat.return_value.st_size = 2000
+                with patch.object(Path, "rename"):
+                    result = compress_textures(Path("/tmp/test.glb"), resolution=1024)
 
-                            assert result is True
-                            calls = mock_run.call_args_list
-                            assert len(calls) >= 2
-                            # First call should be resize
-                            assert "resize" in calls[0].args[0]
-                            assert "1024" in calls[0].args[0]
-                            # Second call should be webp
-                            assert "webp" in calls[1].args[0]
+                    assert result is True
+                    calls = mock_run.call_args_list
+                    assert len(calls) >= 2
+                    # First call should be resize
+                    assert "resize" in calls[0].args[0]
+                    assert "1024" in calls[0].args[0]
+                    # Second call should be webp
+                    assert "webp" in calls[1].args[0]
 
     def test_returns_true_if_resize_succeeds_but_webp_fails(self):
         """Should keep resized version if webp conversion fails."""
         import subprocess
-        from core.tools.image_gen import compress_textures
+
+        from core.integrations.image_gen import compress_textures
 
         call_count = 0
 
@@ -731,7 +745,8 @@ class TestCompressTextures:
     def test_returns_false_if_resize_fails(self):
         """Should return False if resize step fails."""
         import subprocess
-        from core.tools.image_gen import compress_textures
+
+        from core.integrations.image_gen import compress_textures
 
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "npx", stderr=b"err")):

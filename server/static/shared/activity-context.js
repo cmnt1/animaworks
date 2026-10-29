@@ -434,39 +434,77 @@ export function normalizeRunningTasks(payload) {
   return result;
 }
 
-/** Render the shared running-task strip into an existing container. */
+const BUSY_ACTIVITY_CONTEXTS = {
+  chat: "chat",
+  inbox: "inbox",
+  heartbeat: "heartbeat",
+  cron: "cron:",
+  background: "background",
+};
+
+/** Flatten non-TaskExec busy lanes (chat, inbox, heartbeat, cron) with the Anima name. */
+export function normalizeBusyActivities(payload) {
+  const result = [];
+  for (const anima of payload?.animas || []) {
+    for (const activity of anima?.activities || []) {
+      if (activity?.kind) result.push({ ...activity, anima: anima.name || "" });
+    }
+  }
+  return result;
+}
+
+function _createBusyChip(documentRef, ctx, anima, text, tooltip) {
+  const chip = documentRef.createElement("span");
+  chip.className = "running-task-chip";
+  decorateContextElement(chip, ctx);
+
+  const name = documentRef.createElement("span");
+  name.className = "running-task-anima";
+  name.textContent = anima;
+
+  const title = documentRef.createElement("span");
+  title.className = "running-task-title";
+  title.textContent = text;
+  title.title = tooltip;
+
+  if (anima) chip.appendChild(name);
+  chip.appendChild(title);
+  return chip;
+}
+
+/** Render the shared running-task strip (TaskExec workers plus other busy lanes). */
 export function renderRunningTasksStrip(container, payload, translate, documentRef = document) {
   if (!container) return [];
   const tasks = normalizeRunningTasks(payload);
+  const activities = normalizeBusyActivities(payload);
   container.replaceChildren();
-  container.hidden = tasks.length === 0;
-  if (tasks.length === 0) return tasks;
+  const count = tasks.length + activities.length;
+  container.hidden = count === 0;
+  if (count === 0) return tasks;
 
   const heading = documentRef.createElement("span");
   heading.className = "running-tasks-heading";
-  heading.textContent = translate("activity.running_tasks", { count: tasks.length });
+  heading.textContent = translate("activity.running_tasks", { count });
   container.appendChild(heading);
 
-  for (const task of tasks) {
-    const chip = documentRef.createElement("span");
-    chip.className = "running-task-chip";
-    chip.dataset.slotId = String(task.slot_id ?? "");
-    chip.dataset.taskId = String(task.task_id || "");
-    decorateContextElement(chip, `task:${task.task_id || ""}`);
-
-    const slot = documentRef.createElement("span");
-    slot.className = "running-task-slot";
-    slot.textContent = translate("activity.running_task_slot", { slot: task.slot_id ?? "?" });
-
-    const title = documentRef.createElement("span");
-    title.className = "running-task-title";
-    const taskTitle = task.title || task.task_id || "";
-    title.textContent = task.anima ? `${task.anima} · ${taskTitle}` : taskTitle;
-    title.title = taskTitle;
-
-    chip.appendChild(slot);
-    chip.appendChild(title);
-    container.appendChild(chip);
+  // Group chips by Anima so one Anima's parallel work reads as a single run.
+  for (const anima of payload?.animas || []) {
+    const name = anima?.name || "";
+    for (const task of anima?.tasks || []) {
+      const taskTitle = task.title || task.task_id || "";
+      const chip = _createBusyChip(documentRef, `task:${task.task_id || ""}`, name, taskTitle, taskTitle);
+      chip.dataset.slotId = String(task.slot_id ?? "");
+      chip.dataset.taskId = String(task.task_id || "");
+      container.appendChild(chip);
+    }
+    for (const activity of anima?.activities || []) {
+      if (!activity?.kind) continue;
+      const label = translate(`activity.busy_${activity.kind}`);
+      const ctx = BUSY_ACTIVITY_CONTEXTS[activity.kind] || activity.kind;
+      const chip = _createBusyChip(documentRef, ctx, name, label, label);
+      chip.dataset.busyKind = activity.kind;
+      container.appendChild(chip);
+    }
   }
 
   return tasks;

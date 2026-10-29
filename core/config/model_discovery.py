@@ -432,12 +432,21 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
     if not result:
         result = _dedupe_and_sort(_static_fallback(config))
     else:
-        from core.config.model_catalog import _configured_model_entries
+        from core.config.model_catalog import _configured_model_entries, model_credential_available
 
+        # When a CLI listed its own models (Codex / Grok), that list is the
+        # source of truth; static catalog names for that mode are stale.
+        cli_listed_modes = {model.mode for model in result if model.mode in {"c", "x"}}
         configured = []
         for entry in _configured_model_entries(config):
             model = entry["id"]
             mode = resolve_execution_mode(config, model, entry.get("mode") or None).lower()
+            # models.json lists every routable model; only offer the ones this
+            # install can run. Models an Anima is configured with always stay.
+            if entry.get("origin") == "catalog" and (
+                mode in cli_listed_modes or not model_credential_available(model, mode, config)
+            ):
+                continue
             configured.append(
                 DiscoveredModel(
                     id=f"{mode}:{model}",

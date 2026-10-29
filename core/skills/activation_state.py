@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
@@ -52,10 +53,7 @@ def write_thread_refs(anima_dir: Path, thread_id: str, refs: list[str]) -> None:
     else:
         threads.pop(thread_id, None)
     path = _state_path(anima_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    atomic_write_json(path, state)
 
 
 def dedupe_refs(skill_refs: list[str]) -> list[str]:

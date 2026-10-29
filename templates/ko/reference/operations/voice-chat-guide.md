@@ -48,9 +48,9 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 
 ## 설정
 
-### 글로벌 설정 (config.json의 `voice` 섹션)
+### 글로벌 설정(config.json의 `voice` 섹션)
 
-전체 Anima 공통의 기본 설정입니다:
+모든 Anima에 공통으로 적용되는 기본 설정:
 
 ```json
 {
@@ -61,7 +61,6 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
     "stt_language": null,
     "stt_refine_enabled": false,
     "default_tts_provider": "voicevox",
-    "audio_format": "wav",
     "voicevox": { "base_url": "http://localhost:50021" },
     "elevenlabs": { "api_key_env": "ELEVENLABS_API_KEY", "model_id": "eleven_flash_v2_5" },
     "style_bert_vits2": { "base_url": "http://localhost:5000" }
@@ -70,14 +69,13 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 ```
 
 | 필드 | 기본값 | 설명 |
-|------|--------|------|
-| `stt_model` | `large-v3-turbo` | Whisper 모델 이름. 선택지: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
-| `stt_device` | `auto` | `auto` (GPU 우선) / `cpu` / `cuda` |
+|-----------|-----------|------|
+| `stt_model` | `large-v3-turbo` | Whisper 모델 이름. 선택 항목: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
+| `stt_device` | `auto` | `auto`(GPU 우선) / `cpu` / `cuda` |
 | `stt_compute_type` | `default` | CTranslate2 양자화 유형: `default`, `int8`, `float16` |
-| `stt_language` | `null` | 언어 코드 (`ja`, `en` 등). `null`이면 자동 감지 |
-| `stt_refine_enabled` | `false` | STT 결과의 LLM 후처리 (활성화 시 레이턴시 1-3초 추가) |
-| `default_tts_provider` | `voicevox` | 기본 TTS 프로바이더: `voicevox` / `style_bert_vits2` / `elevenlabs` |
-| `audio_format` | `wav` | TTS 출력 오디오 형식 |
+| `stt_language` | `null` | 언어 코드(`ja`, `en` 등). `null`에서 자동 감지 |
+| `stt_refine_enabled` | `false` | STT 결과의 LLM 후처리(활성화하면 지연 시간 1~3초 추가) |
+| `default_tts_provider` | `voicevox` | 기본 TTS 제공자: `voicevox` / `style_bert_vits2` / `elevenlabs` |
 
 ### Per-Anima 음성 설정 (status.json의 `voice` 섹션)
 
@@ -106,12 +104,12 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 #### voice_id 지정 방법
 
 | 프로바이더 | voice_id 형식 | 확인 방법 |
-|-----------|---------------|----------|
-| VOICEVOX | 화자 ID (숫자 문자열), 예: `"3"` = 즌다몬 | `curl http://localhost:50021/speakers`로 목록 확인 |
-| Style-BERT-VITS2 | `model_id:speaker_id` 또는 `model_id:speaker_id:style`. 예: `0:0` | `curl http://localhost:5000/models/info`로 목록 확인 |
-| ElevenLabs | voice_id 문자열 | ElevenLabs 대시보드 또는 API로 확인 |
+|-----------|----------------|---------|
+| VOICEVOX | 화자 ID(숫자 문자열) 예: `"3"` = 즌다몬 | `curl http://localhost:50021/speakers` 에서 목록 확인 |
+| Style-BERT-VITS2 | `model_id:speaker_id` 또는 `model_id:speaker_id:style`. 예: `0:0` | `curl http://localhost:5000/models/info` 에서 목록 확인 |
+| ElevenLabs | voice_id 문자열 | ElevenLabs 대시보드 또는 API에서 확인 |
 
-미설정이거나 `voice_id`가 비어 있으면 프로바이더의 기본 목소리가 사용됩니다.
+설정이 없거나 `voice_id` 이 비어 있는 경우, 프로바이더의 기본 음성이 사용된다.
 
 ---
 
@@ -237,12 +235,12 @@ UI의 토글로 전환 가능합니다.
 - `stt_refine_enabled: false`를 확인 (LLM 후처리는 레이턴시 증가)
 - VOICEVOX/SBV2를 GPU 모드로 기동
 
-### voice_id가 잘못되어 오디오가 나오지 않음
+### voice_id가 올바르지 않아 음성이 나오지 않음
 
-- 지정한 `voice_id`가 프로바이더에 존재하는지 확인
-- 잘못된 경우 프로바이더의 기본 목소리로 폴백 + 경고 로그
-- VOICEVOX: `curl http://localhost:50021/speakers | jq`로 유효한 ID 확인
-- SBV2: `curl http://localhost:5000/models/info`로 모델 목록을 확인하고 `model_id:speaker_id` 형식으로 지정
+- 지정한 `voice_id` 이 프로바이더에 존재하는지 확인
+- 올바르지 않은 경우 프로바이더의 기본 음성으로 대체 + 경고 로그
+- VOICEVOX: `curl http://localhost:50021/speakers | jq` 에서 유효한 ID 확인
+- SBV2: `curl http://localhost:5000/models/info` 에서 모델 목록을 확인하고, `model_id:speaker_id` 형식으로 지정
 
 ---
 

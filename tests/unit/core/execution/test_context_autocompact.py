@@ -1,4 +1,4 @@
-"""Unit tests for A1 mid-session context auto-compact (core.execution.agent_sdk)."""
+"""Unit tests for A1 mid-session context auto-compact (core.execution.engines.claude.executor)."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -41,13 +41,10 @@ except ModuleNotFoundError:
     sys.modules["claude_agent_sdk"] = _mock_sdk
     sys.modules["claude_agent_sdk.types"] = _mock_types
 
-from core.execution.agent_sdk import (  # noqa: E402
-    _CONTEXT_AUTOCOMPACT_SAFETY,
-    _build_pre_tool_hook,
-    _tool_result_content_len,
-)
 from core.execution.base import ExecutionResult  # noqa: E402
-
+from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook  # noqa: E402
+from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY  # noqa: E402
+from core.execution.engines.claude._sdk_stream import _tool_result_content_len  # noqa: E402
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -56,8 +53,7 @@ from core.execution.base import ExecutionResult  # noqa: E402
 def anima_dir(tmp_path: Path) -> Path:
     """Create a minimal anima directory for hook construction."""
     d = tmp_path / "animas" / "test-autocompact"
-    for sub in ("state", "episodes", "knowledge", "procedures",
-                "skills", "shortterm", "activity_log"):
+    for sub in ("state", "episodes", "knowledge", "procedures", "skills", "shortterm", "activity_log"):
         (d / sub).mkdir(parents=True)
     (d / "identity.md").write_text("# Test", encoding="utf-8")
     (d / "injection.md").write_text("", encoding="utf-8")
@@ -73,10 +69,12 @@ class TestToolResultContentLen:
 
     def test_list_content_multiple_text_items(self):
         """List content with multiple text dicts sums their text lengths."""
-        block = SimpleNamespace(content=[
-            {"text": "hello"},
-            {"text": "world!"},
-        ])
+        block = SimpleNamespace(
+            content=[
+                {"text": "hello"},
+                {"text": "world!"},
+            ]
+        )
         assert _tool_result_content_len(block) == len("hello") + len("world!")
 
     def test_list_content_single_item(self):
@@ -86,20 +84,24 @@ class TestToolResultContentLen:
 
     def test_list_content_with_non_dict_items(self):
         """Non-dict items in the list are ignored."""
-        block = SimpleNamespace(content=[
-            {"text": "valid"},
-            "not a dict",
-            42,
-            {"text": "also valid"},
-        ])
+        block = SimpleNamespace(
+            content=[
+                {"text": "valid"},
+                "not a dict",
+                42,
+                {"text": "also valid"},
+            ]
+        )
         assert _tool_result_content_len(block) == len("valid") + len("also valid")
 
     def test_list_content_with_missing_text_key(self):
         """Dict items without a 'text' key contribute zero length."""
-        block = SimpleNamespace(content=[
-            {"text": "ok"},
-            {"data": "no text key"},
-        ])
+        block = SimpleNamespace(
+            content=[
+                {"text": "ok"},
+                {"data": "no text key"},
+            ]
+        )
         # Second item: str(dict.get("text", "")) == "" -> len 0
         assert _tool_result_content_len(block) == 2
 
@@ -215,6 +217,7 @@ class TestPreToolHookContextBudget:
         max_tokens = 4096
         context_window = 200_000
         budget = max_tokens * _CONTEXT_AUTOCOMPACT_SAFETY  # 8192
+        assert budget == 8192
 
         # Set total_result_bytes large enough to trigger
         # estimated = 1000 + total_result_bytes // 4
@@ -377,21 +380,25 @@ class TestToolResultContentLenVariousBlocks:
 
     def test_list_with_unicode_text(self):
         """List items with unicode text sum character lengths."""
-        block = SimpleNamespace(content=[
-            {"text": "Hello"},
-            {"text": "日本語"},
-        ])
+        block = SimpleNamespace(
+            content=[
+                {"text": "Hello"},
+                {"text": "日本語"},
+            ]
+        )
         assert _tool_result_content_len(block) == len("Hello") + len("日本語")
 
     def test_mixed_content_types_in_list(self):
         """Mixed dict/non-dict items in list only counts dict items."""
-        block = SimpleNamespace(content=[
-            {"text": "abc"},
-            None,
-            {"text": "def"},
-            123,
-            {"image": "base64data"},  # dict but no "text" key -> len("")=0
-        ])
+        block = SimpleNamespace(
+            content=[
+                {"text": "abc"},
+                None,
+                {"text": "def"},
+                123,
+                {"image": "base64data"},  # dict but no "text" key -> len("")=0
+            ]
+        )
         assert _tool_result_content_len(block) == 3 + 3 + 0
 
     def test_boolean_content(self):

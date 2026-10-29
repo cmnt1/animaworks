@@ -12,30 +12,11 @@ import {
   decorateContextElement,
 } from "../../shared/activity-context.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
-import { renderSimpleMarkdown } from "./utils.js";
+import { renderSimpleMarkdown, timeStr } from "./utils.js";
 import { t } from "/shared/i18n.js";
 import { resolveEventPersons } from "./activity-normalize.js";
 
 const _avatarUrlPromises = new Map();
-
-// ── Time formatting ────────────────────────────────
-
-/**
- * Format an ISO timestamp to HH:MM for display.
- * @param {string} isoString
- * @returns {string}
- */
-export function formatTime(isoString) {
-  if (!isoString) return "--:--";
-  try {
-    const d = new Date(isoString);
-    const h = d.getHours().toString().padStart(2, "0");
-    const m = d.getMinutes().toString().padStart(2, "0");
-    return `${h}:${m}`;
-  } catch {
-    return "--:--";
-  }
-}
 
 /**
  * Extract from/to person names and text from an event,
@@ -332,7 +313,7 @@ export function createEventElement(evt, opts) {
   // Time
   const timeEl = document.createElement("span");
   timeEl.className = "tl-event-time";
-  timeEl.textContent = formatTime(evt.ts);
+  timeEl.textContent = timeStr(evt.ts);
   timeEl.style.cssText = "flex-shrink:0; color:var(--aw-color-text-muted, #aaa); font-size:0.75rem; min-width:45px;";
 
   // Icon

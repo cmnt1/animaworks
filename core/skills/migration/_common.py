@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import now_iso
 
 _SECRET_PATTERNS = [
@@ -108,7 +109,7 @@ def write_backup_manifest(path: Path, *, data_dir: Path, targets: list[Path], ba
         "batch_id": batch_id,
         "items": items,
     }
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_json(path, manifest, indent=2, ensure_ascii=False, sort_keys=True)
     return path
 
 

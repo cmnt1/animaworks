@@ -62,7 +62,7 @@ def collect_reference_rewrite_changes(
 ) -> list[ReferenceRewriteChange]:
     """Return proposed text changes without modifying source files."""
     changes: list[ReferenceRewriteChange] = []
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     store = TaskQueueManager(anima_dir).store
     for task_id, record in store.reference_records(anima_dir.name).items():
@@ -93,7 +93,7 @@ def apply_skill_pointer_rewrites(anima_dir: Path, pointer_map: dict[str, str]) -
         return []
 
     changes: list[ReferenceRewriteChange] = []
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     def transform(record: dict[str, Any]) -> dict[str, Any]:
         rewritten = json.loads(rewrite_skill_pointers_in_text(json.dumps(record, ensure_ascii=False), normalized))

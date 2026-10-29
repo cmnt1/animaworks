@@ -17,6 +17,8 @@ class VoicePlayback {
   }
   destroy() {}
   stop() { this.isPlaying = false; this.queueLength = 0; }
+  pause() { this.paused = true; }
+  resume() { this.paused = false; }
   enqueue() {}
   setVolume() {}
 }`;
@@ -315,7 +317,7 @@ describe('VoiceManager native AEC', () => {
     assert.equal(manager._mediaStream, null);
   });
 
-  it('holds TTS-time PCM until real speech, then interrupts before flushing it', async () => {
+  it('holds TTS-time PCM through speech start, then probes barge-in instead of interrupting', async () => {
     const allStream = new FakeStream({ echoCancellation: 'all' });
     navigator.mediaDevices.getUserMedia = async () => allStream;
     const allManager = newManager();
@@ -328,9 +330,17 @@ describe('VoiceManager native AEC', () => {
     allManager._workletNode.port.onmessage({ data: pcm });
     assert.deepEqual(allManager._ws.sent, []);
     assert.equal(allManager.isRecording, true);
+    // During playback, vad-web's "real start" alone must not interrupt (echo).
     allManager._vad.options.onSpeechRealStart();
-    assert.deepEqual(allManager._ws.sent, [JSON.stringify({ type: 'interrupt' }), pcm]);
+    assert.deepEqual(allManager._ws.sent, []);
+    assert.equal(allManager._holdPcm, true);
+    // Sustained high-probability frames (>= 600ms) open a barge probe.
+    for (let i = 0; i < 19; i++) allManager._vad.options.onFrameProcessed({ isSpeech: 0.9 });
+    assert.deepEqual(allManager._ws.sent, [JSON.stringify({ type: 'barge_probe' }), pcm]);
+    assert.equal(allManager._playback.paused, true);
     assert.equal(allManager._holdPcm, false);
+    allManager._resolveBargeProbe(false);
+    assert.equal(allManager._playback.paused, false);
   });
 
   it('keeps TTS half-duplex until playback AEC is active', async () => {

@@ -12,7 +12,6 @@ import pytest
 
 from core.schemas import ModelConfig
 
-
 # ── Helper to construct AgentCore with mocked dependencies ─────
 
 
@@ -29,15 +28,15 @@ def _make_agent(anima_dir: Path):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -89,25 +88,27 @@ class TestPrimingEngineCache:
         original_prime = AsyncMock()
         original_prime.return_value = MagicMock(is_empty=MagicMock(return_value=True))
 
-        with patch(
-            "core.memory.priming.PrimingEngine.__init__",
-            return_value=None,
-        ) as mock_init:
-            with patch(
+        with (
+            patch(
+                "core.memory.priming.PrimingEngine.__init__",
+                return_value=None,
+            ) as mock_init,
+            patch(
                 "core.memory.priming.PrimingEngine.prime_memories",
                 original_prime,
-            ):
-                await agent._run_priming("hello", "message:user")
-                engine_1 = agent._priming_engine
-                engines_seen.append(engine_1)
+            ),
+        ):
+            await agent._run_priming("hello", "message:user")
+            engine_1 = agent._priming_engine
+            engines_seen.append(engine_1)
 
-                await agent._run_priming("world", "message:user")
-                engine_2 = agent._priming_engine
-                engines_seen.append(engine_2)
+            await agent._run_priming("world", "message:user")
+            engine_2 = agent._priming_engine
+            engines_seen.append(engine_2)
 
-                await agent._run_priming("test", "message:user")
-                engine_3 = agent._priming_engine
-                engines_seen.append(engine_3)
+            await agent._run_priming("test", "message:user")
+            engine_3 = agent._priming_engine
+            engines_seen.append(engine_3)
 
         # PrimingEngine.__init__ should only be called once
         mock_init.assert_called_once()

@@ -6,14 +6,13 @@ from __future__ import annotations
 
 """Unit tests for recursive directory indexing (Issue #20).
 
-Verifies that index_directory uses rglob for all memory types,
-skills/common_skills only index SKILL.md, and graph node IDs
-handle subdirectory paths correctly.
+Verifies that index_directory uses rglob for all memory types and
+skills/common_skills only index SKILL.md.
 """
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -105,17 +104,16 @@ def test_index_directory_finds_subdirectory_files(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            temp_anima_dir["base"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        temp_anima_dir["base"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
+    chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
     assert chunks > 0, "Should index files from subdirectories"
     upsert_calls = mock_store.upsert.call_args_list
@@ -140,14 +138,13 @@ def test_index_directory_excludes_archive_subtree(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(mock_store, "test", temp_anima_dir["anima_dir"])
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
-        index_file = MagicMock(side_effect=indexer.index_file)
-        indexer.index_file = index_file
-        result = indexer.index_directory(knowledge_dir, "knowledge")
+    indexer = MemoryIndexer(mock_store, "test", temp_anima_dir["anima_dir"])
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    index_file = MagicMock(side_effect=indexer.index_file)
+    indexer.index_file = index_file
+    result = indexer.index_directory(knowledge_dir, "knowledge")
 
     assert result.files_indexed == 1
     index_file.assert_called_once_with(knowledge_dir / "topic-a.md", "knowledge", force=False)
@@ -164,17 +161,16 @@ def test_index_directory_skills_only_skill_md(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "test",
-            temp_anima_dir["anima_dir"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "test",
+        temp_anima_dir["anima_dir"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(sdir, "skills").chunks_indexed
+    chunks = indexer.index_directory(sdir, "skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md files"
 
@@ -197,17 +193,16 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            temp_anima_dir["base"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        temp_anima_dir["base"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
+    chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md in common_skills"
 
@@ -233,134 +228,15 @@ def test_index_directory_shared_users_finds_nested(temp_anima_dir):
     mock_store.upsert = MagicMock()
 
     shared_base = temp_anima_dir["base"] / "shared"
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            shared_base,
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        shared_base,
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
+    chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
 
     assert chunks > 0, "Should index nested user profile files"
-
-
-# ── Test: graph node ID with subdirectories ─────────────────────
-
-
-def test_graph_build_with_subdirectories():
-    """Graph build_graph handles subdirectory files with unique node IDs."""
-    from core.memory.rag.graph import KnowledgeGraph
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        kdir = Path(tmpdir) / "knowledge"
-        kdir.mkdir()
-        (kdir / "topic.md").write_text("# Topic\n\nFlat file.\n")
-
-        sub = kdir / "advanced"
-        sub.mkdir()
-        (sub / "topic.md").write_text("# Advanced Topic\n\nNested file.\n")
-
-        mock_store = MagicMock()
-        mock_store.query = MagicMock(return_value=[])
-
-        mock_indexer = MagicMock()
-        mock_indexer.anima_name = "test"
-        mock_indexer._generate_embeddings = MagicMock(return_value=[[0.1] * 384])
-
-        graph_builder = KnowledgeGraph(mock_store, mock_indexer)
-        graph = graph_builder.build_graph(
-            "test",
-            kdir,
-            implicit_link_threshold=999.0,
-        )
-
-        # Both files should be nodes with distinct IDs
-        assert graph.number_of_nodes() == 2
-        assert "topic" in graph, "Flat file node should exist"
-        assert "advanced/topic" in graph, "Nested file node should exist"
-
-        # Verify rel_key attribute
-        assert graph.nodes["advanced/topic"]["rel_key"] == "advanced/topic"
-        assert graph.nodes["topic"]["rel_key"] == "topic"
-
-
-# ── Test: _match_result_to_node with subdirectory doc_ids ───────
-
-
-def test_match_result_to_node_subdirectory():
-    """_match_result_to_node handles multi-segment doc_ids."""
-    import networkx as nx
-
-    from core.memory.rag.graph import KnowledgeGraph
-
-    graph = nx.DiGraph()
-    graph.add_node(
-        "organization/structure",
-        path="/tmp/knowledge/organization/structure.md",
-        memory_type="knowledge",
-        stem="structure",
-        rel_key="organization/structure",
-    )
-    graph.add_node(
-        "structure",
-        path="/tmp/knowledge/structure.md",
-        memory_type="knowledge",
-        stem="structure",
-        rel_key="structure",
-    )
-
-    # Subdirectory doc_id should match the nested node
-    result = KnowledgeGraph._match_result_to_node(
-        graph,
-        "shared/knowledge/organization/structure.md#0",
-        0.9,
-    )
-    assert result == "organization/structure"
-
-    # Flat doc_id should match the flat node
-    result_flat = KnowledgeGraph._match_result_to_node(
-        graph,
-        "shared/knowledge/structure.md#0",
-        0.9,
-    )
-    assert result_flat == "structure"
-
-
-def test_match_result_to_node_episodes_prefix():
-    """_match_result_to_node works for non-knowledge types with subdirs."""
-    import networkx as nx
-
-    from core.memory.rag.graph import KnowledgeGraph
-
-    graph = nx.DiGraph()
-    graph.add_node(
-        "episodes:2026-03-01",
-        path="/tmp/episodes/2026-03-01.md",
-        memory_type="episodes",
-        stem="2026-03-01",
-        rel_key="2026-03-01",
-    )
-
-    result = KnowledgeGraph._match_result_to_node(
-        graph,
-        "test/episodes/2026-03-01.md#0",
-        0.8,
-    )
-    assert result == "episodes:2026-03-01"
-
-
-# ── Test: _make_node_id ─────────────────────────────────────────
-
-
-def test_make_node_id_with_subdirectory():
-    """_make_node_id creates correct IDs for subdirectory paths."""
-    from core.memory.rag.graph import KnowledgeGraph
-
-    assert KnowledgeGraph._make_node_id("topic", "knowledge") == "topic"
-    assert KnowledgeGraph._make_node_id("org/topic", "knowledge") == "org/topic"
-    assert KnowledgeGraph._make_node_id("2026-03-01", "episodes") == "episodes:2026-03-01"
-    assert KnowledgeGraph._make_node_id("sub/item", "common_knowledge") == "common_knowledge:sub/item"

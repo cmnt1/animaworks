@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.tools.chatwork import md_to_chatwork
+from core.integrations.chatwork import md_to_chatwork
 
 
 class TestMdToChatworkEmpty:

@@ -12,6 +12,7 @@
  *   - nextMouthState(state, rms, now): 口パクのヒステリシス+最短保持
  */
 
+import { api } from "../../modules/api.js";
 import {
   assetUrl,
   bustupExpressionCandidates,
@@ -25,9 +26,9 @@ const VALID_EXPRESSIONS = new Set([
 const FRAME_KEYS = ["neutral", "blink", "half", "open", "blinkhalf"];
 const KEY_SUFFIX = { neutral: "base", blink: "blink", half: "half", open: "open", blinkhalf: "blinkhalf" };
 
-// ---- timing / motion constants (docs_demo_reference.html と同一) ----
-const BLINK_MIN_MS = 2500;         // まばたき最小間隔
-const BLINK_RANGE_MS = 4000;       // まばたき間隔ランダム幅
+// ---- timing / motion constants ----
+const BLINK_MIN_MS = 2600;         // まばたき最小間隔
+const BLINK_RANGE_MS = 2600;       // まばたき間隔ランダム幅
 const BLINK_CLOSED_MS = 130;       // 一回目の閉眼時間
 const BLINK_CLOSED_MS2 = 110;      // 二連まばたきの二回目閉眼時間
 const DOUBLE_BLINK_GAP_MS = 140;   // 二連まばたき内のギャップ
@@ -97,8 +98,8 @@ function frameFileFor(expr, key) {
   return `avatar_bustup_${expr}_frame_${KEY_SUFFIX[key]}.png`;
 }
 
-function frameSetCacheKey(animaName, expr) {
-  return `${animaName}::${expr}`;
+function frameSetCacheKey(animaName, expr, size) {
+  return `${animaName}::${expr}::${size}`;
 }
 
 /**
@@ -106,18 +107,26 @@ function frameSetCacheKey(animaName, expr) {
  * (animaName, expr) 単位でキャッシュ。
  * @param {string} animaName
  * @param {string} expr
+ * @param {string} size
  * @returns {Promise<boolean>}
  */
-async function hasFrameSet(animaName, expr) {
+async function hasFrameSet(animaName, expr, size) {
   // フレームはアニメ調のみ。realistic表示モードでは静的bustupに任せる
   if (isRealisticMode()) return false;
-  const key = frameSetCacheKey(animaName, expr);
+  const key = frameSetCacheKey(animaName, expr, size);
   if (_frameSetCache.has(key)) return _frameSetCache.get(key);
 
-  const url = assetUrl(animaName, frameFileFor(expr, "neutral"));
+  const url = assetUrl(animaName, frameFileFor(expr, "neutral"), size);
   let exists = false;
   try {
-    const resp = await fetch(url, { method: "HEAD" });
+    const resp = await api(url, {
+      method: "HEAD",
+      cache: "default",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     exists = resp.ok;
   } catch {
     exists = false;
@@ -152,10 +161,12 @@ export class BustupAnimator {
   /**
    * @param {HTMLElement} container アニメーションを注入するコンテナ要素
    * @param {string} animaName 対象anima名
+   * @param {"P"|"C"|"L"} [size="L"] 配信するWebP縮小サイズ
    */
-  constructor(container, animaName) {
+  constructor(container, animaName, size = "L") {
     this._container = container;
     this._animaName = animaName;
+    this._size = size;
     this._reduceMotion =
       typeof window !== "undefined" &&
       !!window.matchMedia &&
@@ -259,7 +270,7 @@ export class BustupAnimator {
 
     const gen = ++this._gen;
 
-    const hasFrames = await hasFrameSet(this._animaName, expr);
+    const hasFrames = await hasFrameSet(this._animaName, expr, this._size);
     if (this._destroyed || gen !== this._gen) return;
 
     const target = this._flipLayer;
@@ -293,7 +304,7 @@ export class BustupAnimator {
   async _preloadFrames(layer, expr) {
     const results = await Promise.all(
       FRAME_KEYS.map((key) =>
-        loadImage(layer.frames[key], assetUrl(this._animaName, frameFileFor(expr, key))),
+        loadImage(layer.frames[key], assetUrl(this._animaName, frameFileFor(expr, key), this._size)),
       ),
     );
     return results.every(Boolean);
@@ -306,7 +317,7 @@ export class BustupAnimator {
     const candidates = [...bustupExpressionCandidates(expr)];
     if (expr !== "neutral") candidates.push(...bustupExpressionCandidates("neutral"));
     for (const filename of candidates) {
-      const ok = await loadImage(img, assetUrl(this._animaName, filename));
+      const ok = await loadImage(img, assetUrl(this._animaName, filename, this._size));
       if (ok) return true;
     }
     img.removeAttribute("src");
@@ -343,7 +354,7 @@ export class BustupAnimator {
 
   // ---- まばたき ----
   _scheduleBlink() {
-    if (this._destroyed) return;
+    if (this._destroyed || this._paused) return;
     clearTimeout(this._blinkTimer);
     this._blinkTimer = setTimeout(
       () => this._doBlink(),
@@ -392,7 +403,7 @@ export class BustupAnimator {
   }
 
   _loop() {
-    if (this._destroyed) return;
+    if (this._destroyed || this._paused) return;
     // 口パク: RMS を読み closed/half/open を判定
     if (this._lipsyncOn && this._getRMS) {
       const prev = this._state;
@@ -407,6 +418,26 @@ export class BustupAnimator {
         `rotateY(${this._cx * ROTATE_Y}deg) rotateX(${-this._cy * ROTATE_X}deg) ` +
         `translate(${this._cx * TRANS_X}px, ${this._cy * TRANS_Y}px)`;
     }
+    this._raf = requestAnimationFrame(this._loop);
+  }
+
+  // ---- 一時停止（画面はそのまま、瞬き・視線追従だけ止める） ----
+  pause() {
+    if (this._destroyed || this._paused) return;
+    this._paused = true;
+    clearTimeout(this._blinkTimer);
+    if (this._blinking) {
+      this._blinking = false;
+      this._render();
+    }
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = null;
+  }
+
+  resume() {
+    if (this._destroyed || !this._paused) return;
+    this._paused = false;
+    this._scheduleBlink();
     this._raf = requestAnimationFrame(this._loop);
   }
 

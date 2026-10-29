@@ -4,7 +4,7 @@ import { state, dom, escapeHtml } from "./state.js";
 import { api } from "./api.js";
 import { t } from "/shared/i18n.js";
 
-export function activateMemoryTab(tab) {
+function activateMemoryTab(tab) {
   state.activeMemoryTab = tab;
   document.querySelectorAll(".memory-tab").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tab);

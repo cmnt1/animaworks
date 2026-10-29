@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.models import AnimaModelConfig, AnimaWorksConfig
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_config(animas: dict[str, dict]) -> AnimaWorksConfig:

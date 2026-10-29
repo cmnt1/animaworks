@@ -18,7 +18,7 @@ import json
 import pytest
 
 from core.memory import MemoryManager
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 
@@ -105,7 +105,7 @@ class TestCliTaskAdd:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         import cli.commands.task_cmd as task_cmd
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         original_submit = TaskStore.submit
 
@@ -147,11 +147,11 @@ class TestInProgressRejection:
                     "source": "human",
                     "original_instruction": "test",
                     "assignee": "aoi",
-                    "summary": "s",
                 },
             )
         )
         task_id = add["task_id"]
+        assert add["summary"] == "test"
 
         res = json.loads(handler.handle("update_task", {"task_id": task_id, "status": "in_progress"}))
         assert res["status"] == "error"
@@ -161,22 +161,29 @@ class TestInProgressRejection:
         manager = TaskQueueManager(anima_dir)
         assert manager.get_task_by_id(task_id).status == "pending"
 
-    def test_cli_task_update_rejects_in_progress(self, tmp_path, monkeypatch):
-        anima_dir = tmp_path / "testanima"
-        (anima_dir / "state").mkdir(parents=True)
-        monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-
+    def test_cli_task_update_delegates_in_progress_validation(self, monkeypatch, capsys):
         from types import SimpleNamespace
 
         from cli.commands.task_cmd import _cmd_update
 
-        # Build the Namespace directly so the flow reaches _cmd_update's own
-        # in_progress guard rather than argparse's choices check.
-        args = SimpleNamespace(task_id="abc", status="in_progress", summary=None)
-        manager = TaskQueueManager(anima_dir)
+        error = json.dumps(
+            {
+                "status": "error",
+                "error_type": "InvalidArguments",
+                "message": "status 'in_progress' is written only by the running TaskExec",
+            }
+        )
+        calls = []
+        monkeypatch.setattr(
+            "cli._anima_tool.run_anima_tool", lambda name, args: calls.append((name, args)) or error
+        )
+
         with pytest.raises(SystemExit) as exc:
-            _cmd_update(args, manager)
-        assert exc.value.code == 2
+            _cmd_update(SimpleNamespace(task_id="abc", status="in_progress", summary=None))
+
+        assert exc.value.code == 1
+        assert calls == [("update_task", {"task_id": "abc", "status": "in_progress"})]
+        assert json.loads(capsys.readouterr().out)["status"] == "error"
 
 
 class TestListTasksExecutability:
@@ -207,7 +214,7 @@ class TestListTasksExecutability:
 
     def test_mark_executability_queries_canonical_input_ids_once(self, tmp_path, monkeypatch):
         """One canonical input lookup serves the whole listing, without file scans."""
-        import core.memory.task_queue as tq
+        import core.tasks.queue as tq
 
         anima_dir = tmp_path / "aoi"
         (anima_dir / "state" / "pending").mkdir(parents=True)
@@ -235,15 +242,17 @@ class TestListTasksExecutability:
         handler = _make_handler(anima_dir)
         manager = TaskQueueManager(anima_dir)
 
-        delegated = manager.add_delegated_task(
-            original_instruction="handed off",
-            assignee="rin",
-            summary="delegated",
+        rin_dir = anima_dir.parent / "rin"
+        (rin_dir / "state").mkdir(parents=True)
+        child = TaskQueueManager(rin_dir).submit(
+            {"task_id": "delegated-child", "title": "delegated", "description": "handed off"}
         )
+        manager.store.alias(anima_dir.name, "delegated-tracking", rin_dir.name, child.task_id)
+        delegated_id = "delegated-tracking"
 
         data = json.loads(handler.handle("list_tasks", {}))
         by_id = {item["task_id"]: item for item in data}
-        item = by_id[delegated.task_id]
+        item = by_id[delegated_id]
         assert "executable" not in item
         assert "executable_note" not in item
 
@@ -269,7 +278,7 @@ class TestSubmitTasksInvariant:
             assert stored[field] == task[field]
 
     def test_batch_failure_never_leaves_partial_work_or_compensating_cancel(self, tmp_path, monkeypatch):
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         anima_dir = tmp_path / "aoi"
         handler = _make_handler(anima_dir)

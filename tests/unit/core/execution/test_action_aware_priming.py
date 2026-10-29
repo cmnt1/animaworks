@@ -27,9 +27,11 @@ class TestPostToolUseActionAttachment:
     """PostToolUse attaches relevant ACTION-RULE bodies via additionalContext."""
 
     @pytest.mark.asyncio
-    async def test_action_tool_attaches_rule_body(self, anima_dir, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
-        from core.memory import action_gate
+    async def test_mcp_tool_rule_attached_only_handler_side(self, anima_dir, monkeypatch):
+        """MCP aw tools attach ACTION-RULE bodies handler-side, so PostToolUse
+        must NOT add them again (single attachment)."""
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
+        from core.tooling.policy import action_gate
 
         monkeypatch.setattr(
             action_gate,
@@ -50,16 +52,12 @@ class TestPostToolUseActionAttachment:
             {"signal": None},
         )
 
-        assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        additional = result["hookSpecificOutput"]["additionalContext"]
-        assert "## [ACTION-RULE] Send check" in additional
-        assert "<action-rule path=" in additional
-        assert "Confirm first." in additional
+        assert result == {}
 
     @pytest.mark.asyncio
     async def test_action_tool_with_no_rules_returns_empty(self, anima_dir, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
-        from core.memory import action_gate
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
+        from core.tooling.policy import action_gate
 
         monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [])
         hook = _build_post_tool_hook(anima_dir)
@@ -73,7 +71,7 @@ class TestPostToolUseActionAttachment:
 
     @pytest.mark.asyncio
     async def test_non_action_tool_returns_empty(self, anima_dir):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         hook = _build_post_tool_hook(anima_dir)
         result = await hook(
@@ -85,8 +83,8 @@ class TestPostToolUseActionAttachment:
 
     @pytest.mark.asyncio
     async def test_search_error_fails_open_to_empty(self, anima_dir, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
-        from core.memory import action_gate
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
+        from core.tooling.policy import action_gate
 
         def raise_search(*args, **kwargs):
             raise RuntimeError("boom")
@@ -104,7 +102,7 @@ class TestPostToolUseActionAttachment:
     @pytest.mark.asyncio
     async def test_write_edit_still_runs(self, anima_dir):
         """The original Write/Edit frontmatter path still fires for knowledge files."""
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         (anima_dir / "knowledge" / "topic.md").write_text("# H1", encoding="utf-8")
         hook = _build_post_tool_hook(anima_dir)

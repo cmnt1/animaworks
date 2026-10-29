@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import _CommsToolsHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """CommsToolsMixin — messaging, channel, DM history, and human notification handlers."""
 
+import inspect
 import json as _json
 import logging
-import re
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from core.i18n import t
 from core.time_utils import now_iso
@@ -25,11 +28,36 @@ from core.tooling.handler_base import (
 )
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
-    from core.messenger import Messenger
+    from core.activity.logger import ActivityLogger
+    from core.messaging.messenger import Messenger
     from core.notification.notifier import HumanNotifier
 
 logger = logging.getLogger("animaworks.tool_handler")
+
+
+def _notify_message_sent(
+    callback: OnMessageSentFn | None,
+    from_person: str,
+    to_person: str,
+    content: str,
+    *,
+    message_id: str = "",
+) -> None:
+    """Invoke message callbacks, passing an ID when their signature accepts it."""
+    if callback is None:
+        return
+    try:
+        parameters = inspect.signature(callback).parameters.values()
+        accepts_message_id = any(
+            parameter.name == "message_id" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+    except (TypeError, ValueError):
+        accepts_message_id = False
+    if accepts_message_id:
+        cast(Any, callback)(from_person, to_person, content, message_id=message_id)
+    else:
+        callback(from_person, to_person, content)
 
 
 def _company_boundary_error(
@@ -39,7 +67,7 @@ def _company_boundary_error(
     animas_dir: Any,
 ) -> str | None:
     """Return a stable user-facing error when a company boundary blocks access."""
-    from core.company import check_company_boundary
+    from core.org.company import check_company_boundary
 
     boundary = check_company_boundary(from_anima, to_anima, animas_dir=animas_dir)
     if not boundary.cross_company:
@@ -72,7 +100,7 @@ class CommsToolsMixin:
         participant_map = {str(name).lower(): str(name) for name in participants if str(name)}
         return participant_map.get(to.lower(), "")
 
-    def _handle_send_message(self, args: dict[str, Any]) -> str:
+    def _handle_send_message(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
 
@@ -139,19 +167,10 @@ class CommsToolsMixin:
                 logger.warning("Activity logging failed for meeting redirect to %s", meeting_target)
             return t("handler.meeting_dm_redirected", to=meeting_target)
 
-        from core.config.models import resolve_outbound_limits
-        from core.paths import get_animas_dir as _get_animas_dir
-
-        _anima_dir = _get_animas_dir() / self._anima_name if _get_animas_dir().exists() else None
-        limits = resolve_outbound_limits(self._anima_name, _anima_dir)
-        max_recipients = limits["max_recipients_per_run"]
-        if len(current_replied) >= max_recipients and effective_to not in current_replied:
-            return t("handler.dm_max_recipients", limit=max_recipients)
-
         # ── Resolve recipient ──
         try:
             from core.config.models import load_config
-            from core.outbound import resolve_recipient, send_external
+            from core.messaging.outbound import resolve_recipient, send_external
             from core.paths import get_animas_dir
 
             config = load_config()
@@ -223,17 +242,17 @@ class CommsToolsMixin:
             except Exception:
                 logger.warning("Activity logging failed for external send to %s", to)
 
-            if self._on_message_sent:
-                try:
-                    self._on_message_sent(
-                        self._messenger.anima_name,
-                        to,
-                        content,
-                    )
-                except Exception:
-                    logger.exception("on_message_sent callback failed")
+            try:
+                _notify_message_sent(
+                    self._on_message_sent,
+                    self._messenger.anima_name,
+                    to,
+                    content,
+                )
+            except Exception:
+                logger.exception("on_message_sent callback failed")
 
-            from core.outbound import send_external
+            from core.messaging.outbound import send_external
 
             result = send_external(
                 resolved,
@@ -264,23 +283,55 @@ class CommsToolsMixin:
         self._replied_to.setdefault(active_session_type.get(), set()).add(internal_to)
         self._persist_replied_to(internal_to, success=True)
 
-        if self._on_message_sent:
-            try:
-                self._on_message_sent(
-                    self._messenger.anima_name,
-                    internal_to,
-                    content,
-                )
-            except Exception:
-                logger.exception("on_message_sent callback failed")
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                internal_to,
+                content,
+                message_id=msg.id,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed")
 
         base = f"Message sent to {internal_to} (id: {msg.id}, thread: {msg.thread_id})"
-        feedback = self._build_send_feedback(internal_to)
-        if feedback:
-            return f"{base}\n{feedback}"
+        extras = [
+            line
+            for line in (self._build_recipient_busy_notice(internal_to), self._build_send_feedback(internal_to))
+            if line
+        ]
+        if extras:
+            return "\n".join([base, *extras])
         return base
 
-    def _build_send_feedback(self, to: str) -> str:
+    def _build_recipient_busy_notice(self: _CommsToolsHost, to: str) -> str:
+        """Tell the sender when *to* is stuck in a long inbox run and will read later."""
+        try:
+            from core.messaging.recipient_status import read_recipient_inbox_busy
+            from core.time_utils import now_local
+
+            busy = read_recipient_inbox_busy(Path(self._messenger.shared_dir), to)
+            if busy is None:
+                return ""
+            minutes = int((now_local() - busy.since).total_seconds() // 60)
+            notice = t(
+                "handler.send_recipient_inbox_busy",
+                to=to,
+                since=busy.since.strftime("%H:%M"),
+                elapsed=f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m",
+                count=busy.unread_count,
+            )
+            if busy.oldest_unread_at is not None:
+                notice += t(
+                    "handler.send_recipient_inbox_oldest",
+                    oldest=busy.oldest_unread_at.strftime("%H:%M"),
+                )
+            return notice
+        except Exception:
+            logger.debug("Recipient busy notice failed for %s", to, exc_info=True)
+            return ""
+
+    def _build_send_feedback(self: _CommsToolsHost, to: str) -> str:
         """Build behavioral feedback showing recent send history to the same recipient.
 
         Returns a short summary of how many messages were sent to *to* in the
@@ -290,7 +341,7 @@ class CommsToolsMixin:
         try:
             from datetime import datetime, timedelta
 
-            from core.memory.activity import ActivityLogger
+            from core.activity.logger import ActivityLogger
             from core.time_utils import ensure_aware, now_local
 
             activity = ActivityLogger(self._anima_dir)
@@ -328,7 +379,7 @@ class CommsToolsMixin:
             logger.debug("Failed to build send feedback for %s", to, exc_info=True)
             return ""
 
-    def _cross_company_communication_error(self, peers: list[str]) -> str | None:
+    def _cross_company_communication_error(self: _CommsToolsHost, peers: list[str]) -> str | None:
         """Return the standard DM boundary error for the first cross-company peer."""
         animas_dir = self._anima_dir.parent
         for peer in sorted(set(peers)):
@@ -341,7 +392,7 @@ class CommsToolsMixin:
                 return company_error
         return None
 
-    def _channel_company_boundary_error(self, channel: str) -> str | None:
+    def _channel_company_boundary_error(self: _CommsToolsHost, channel: str) -> str | None:
         """Enforce company scope for channel post/read access.
 
         Decision order:
@@ -354,8 +405,8 @@ class CommsToolsMixin:
         if not self._messenger:
             return None
 
-        from core.company import get_company, get_company_display_name
-        from core.messenger import load_channel_meta
+        from core.messaging.messenger import load_channel_meta
+        from core.org.company import get_company, get_company_display_name
 
         meta = load_channel_meta(self._messenger.shared_dir, channel)
         animas_dir = self._anima_dir.parent
@@ -388,7 +439,7 @@ class CommsToolsMixin:
 
     # ── Channel tool handlers ────────────────────────────────
 
-    def _handle_post_channel(self, args: dict[str, Any]) -> str:
+    def _handle_post_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         channel = args.get("channel", "")
@@ -397,7 +448,7 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "channel and text are required")
 
         # ── ACL gate ──
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         if not is_channel_member(self._messenger.shared_dir, channel, self._anima_name):
             return t("handler.channel_acl_denied", channel=channel)
@@ -405,7 +456,8 @@ class CommsToolsMixin:
         if company_error is not None:
             return company_error
 
-        current_posted = self.posted_channels_for(active_session_type.get())
+        session_type = active_session_type.get()
+        current_posted = self.posted_channels_for(session_type)
         if channel in current_posted:
             alt_channels = {"general", "ops"} - {channel} - current_posted
             alt_hint = ""
@@ -420,44 +472,6 @@ class CommsToolsMixin:
                 alt_hint=alt_hint,
             )
 
-        # ── Unified outbound budget check (DM + Board share the same pool) ──
-        from core.cascade_limiter import get_depth_limiter
-        from core.paths import get_animas_dir as _get_animas_dir
-
-        _limiter = get_depth_limiter()
-        _anima_dir_for_budget = getattr(self, "_anima_dir", None) or (_get_animas_dir() / self._anima_name)
-        outbound_check = _limiter.check_global_outbound(self._anima_name, _anima_dir_for_budget)
-        if outbound_check is not True:
-            return str(outbound_check)
-
-        # ── Cross-run guard: file-based cooldown check ──
-        try:
-            from core.config.models import load_config
-
-            cooldown = load_config().heartbeat.channel_post_cooldown_s
-        except Exception:
-            cooldown = 300
-        if cooldown > 0:
-            last = self._messenger.last_post_by(self._anima_name, channel)
-            if last:
-                from datetime import datetime
-
-                from core.time_utils import ensure_aware, now_local
-
-                try:
-                    ts = ensure_aware(datetime.fromisoformat(last["ts"]))
-                    elapsed = (now_local() - ts).total_seconds()
-                    if elapsed < cooldown:
-                        return t(
-                            "handler.post_cooldown",
-                            channel=channel,
-                            ts=last["ts"][11:16],
-                            elapsed=int(elapsed),
-                            cooldown=cooldown,
-                        )
-                except (ValueError, TypeError):
-                    pass
-
         from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 
         try:
@@ -467,7 +481,7 @@ class CommsToolsMixin:
         except ChannelAccessDeniedError:
             return t("handler.channel_acl_denied", channel=channel)
 
-        self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
+        self._posted_channels.setdefault(session_type, set()).add(channel)
         logger.info("post_channel channel=%s anima=%s", channel, self._anima_name)
 
         if not suppress_board_fanout.get():
@@ -482,77 +496,38 @@ class CommsToolsMixin:
         # Sync board post to mapped Slack channel (fire-and-forget)
         self._fire_board_slack_sync(channel, text)
 
+        try:
+            _notify_message_sent(
+                self._on_message_sent,
+                self._messenger.anima_name,
+                f"#channel:{channel}",
+                text,
+            )
+        except Exception:
+            logger.exception("on_message_sent callback failed for board post")
+
         return f"Posted to #{channel}"
 
-    def _fanout_board_mentions(self, channel: str, text: str) -> None:
-        """Send DM notifications to mentioned Animas when posting to a board channel."""
+    def _fanout_board_mentions(self: _CommsToolsHost, channel: str, text: str) -> None:
+        """Delegate mention delivery to the shared Board fan-out implementation."""
         if not self._messenger:
             return
 
-        mentions = re.findall(r"@(\w+)", text)
-        if not mentions:
-            return
+        from core.messaging.board_fanout import fanout_board_mentions
 
-        is_all = "all" in mentions
-
-        from core.paths import get_data_dir
-
-        sockets_dir = get_data_dir() / "run" / "sockets"
-        if sockets_dir.exists():
-            running = {p.stem for p in sockets_dir.glob("*.sock")}
-        else:
-            running = set()
-
-        if is_all:
-            targets = running - {self._anima_name}
-        else:
-            named = {m for m in mentions if m != "all"}
-            targets = (named & running) - {self._anima_name}
-
-        # ── ACL filter: only notify channel members ──
-        from core.messenger import is_channel_member
-
-        targets = {t for t in targets if is_channel_member(self._messenger.shared_dir, channel, t)}
-
-        # Defense in depth: the post gate rejects mixed-company channels, but
-        # membership may change before mention fan-out is delivered.
-        targets = {target for target in targets if self._cross_company_communication_error([target]) is None}
-
-        if not targets:
-            return
-
-        from_name = self._anima_name
-        fanout_content = f"[board_reply:channel={channel},from={from_name}]\n" + t(
-            "handler.board_mention_content", from_name=from_name, channel=channel, text=text
+        fanout_board_mentions(
+            self._messenger,
+            self._anima_name,
+            channel,
+            text,
+            origin_chain=build_outgoing_origin_chain(
+                self._session_origin,
+                self._session_origin_chain,
+            ),
+            animas_dir=Path(self._anima_dir).parent,
         )
 
-        outgoing_chain = build_outgoing_origin_chain(
-            self._session_origin,
-            self._session_origin_chain,
-        )
-
-        for target in sorted(targets):
-            try:
-                self._messenger.send(
-                    to=target,
-                    content=fanout_content,
-                    msg_type="board_mention",
-                    origin_chain=outgoing_chain,
-                )
-                logger.info(
-                    "board_mention fanout: %s -> %s (channel=%s)",
-                    from_name,
-                    target,
-                    channel,
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to fanout board_mention to %s",
-                    target,
-                    exc_info=True,
-                )
-
-    def _fire_board_slack_sync(self, channel: str, text: str) -> None:
+    def _fire_board_slack_sync(self: _CommsToolsHost, channel: str, text: str) -> None:
         """Sync a board post to the mapped Slack channel.
 
         The MCP tool handler dispatches ``handle()`` via
@@ -565,7 +540,7 @@ class CommsToolsMixin:
         try:
             import asyncio
 
-            from core.outbound_auto import BoardSlackSync
+            from core.messaging.outbound_auto import BoardSlackSync
 
             sync = BoardSlackSync()
             coro = sync.sync_board_post(
@@ -594,7 +569,7 @@ class CommsToolsMixin:
         except Exception:
             logger.warning("Board→Slack sync failed for #%s", channel, exc_info=True)
 
-    def _handle_read_channel(self, args: dict[str, Any]) -> str:
+    def _handle_read_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         channel = args.get("channel", "")
@@ -610,7 +585,7 @@ class CommsToolsMixin:
 
         # ── ACL gate ──
         from core.exceptions import RecipientNotFoundError
-        from core.messenger import _validate_name, is_channel_member
+        from core.messaging.messenger import _validate_name, is_channel_member
 
         try:
             _validate_name(channel, "channel name")
@@ -629,7 +604,7 @@ class CommsToolsMixin:
             return f"No messages in #{channel}"
         return _json.dumps(messages, ensure_ascii=False, indent=2)
 
-    def _handle_read_dm_history(self, args: dict[str, Any]) -> str:
+    def _handle_read_dm_history(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         peer = args.get("peer", "")
@@ -655,7 +630,7 @@ class CommsToolsMixin:
 
     # ── Channel management handler ────────────────────────────
 
-    def _handle_manage_channel(self, args: dict[str, Any]) -> str:
+    def _handle_manage_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
 
@@ -665,12 +640,13 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "action and channel are required")
 
         from core.exceptions import RecipientNotFoundError
-        from core.messenger import (
+        from core.messaging.messenger import (
             ChannelMeta,
             _validate_name,
             is_channel_member,
             load_channel_meta,
             save_channel_meta,
+            update_channel_meta,
         )
 
         try:
@@ -690,7 +666,7 @@ class CommsToolsMixin:
             company_error = self._cross_company_communication_error(members)
             if company_error is not None:
                 return company_error
-            from core.company import get_company
+            from core.org.company import get_company
 
             creator_company = get_company(self._anima_name, animas_dir=self._anima_dir.parent) or ""
             meta = ChannelMeta(
@@ -702,7 +678,7 @@ class CommsToolsMixin:
             )
             channels_dir = shared_dir / "channels"
             channels_dir.mkdir(parents=True, exist_ok=True)
-            channel_file.write_text("", encoding="utf-8")
+            channel_file.touch(exist_ok=True)
             save_channel_meta(shared_dir, channel, meta)
             members_str = ", ".join(members) if members else "open"
             logger.info("manage_channel create: #%s by %s", channel, self._anima_name)
@@ -725,10 +701,16 @@ class CommsToolsMixin:
             company_error = self._cross_company_communication_error(new_members)
             if company_error is not None:
                 return company_error
-            for m in new_members:
-                if m not in meta.members:
-                    meta.members.append(m)
-            save_channel_meta(shared_dir, channel, meta)
+
+            def _add_members(current: ChannelMeta | None) -> ChannelMeta | None:
+                if current is None:
+                    return None
+                current.members.extend(member for member in new_members if member not in current.members)
+                return current
+
+            updated_meta = update_channel_meta(shared_dir, channel, _add_members)
+            if updated_meta is None:
+                return t("handler.channel_not_found", channel=channel)
             logger.info("manage_channel add_member: #%s += %s", channel, new_members)
             return t("handler.channel_members_added", channel=channel, members=", ".join(new_members))
 
@@ -745,10 +727,87 @@ class CommsToolsMixin:
             remove_members = args.get("members", [])
             if not remove_members:
                 return _error_result("InvalidArguments", "members list is required for remove_member")
-            meta.members = [m for m in meta.members if m not in remove_members]
-            save_channel_meta(shared_dir, channel, meta)
+
+            def _remove_members(current: ChannelMeta | None) -> ChannelMeta | None:
+                if current is None:
+                    return None
+                current.members = [member for member in current.members if member not in remove_members]
+                return current
+
+            updated_meta = update_channel_meta(shared_dir, channel, _remove_members)
+            if updated_meta is None:
+                return t("handler.channel_not_found", channel=channel)
             logger.info("manage_channel remove_member: #%s -= %s", channel, remove_members)
             return t("handler.channel_members_removed", channel=channel, members=", ".join(remove_members))
+
+        elif action == "archive":
+            channel_file = shared_dir / "channels" / f"{channel}.jsonl"
+            meta = load_channel_meta(shared_dir, channel)
+            if not channel_file.exists() and meta is None:
+                return t("handler.channel_not_found", channel=channel)
+            company_error = self._channel_company_boundary_error(channel)
+            if company_error is not None:
+                return company_error
+            if meta is not None and meta.members and self._anima_name not in meta.members:
+                return t("handler.channel_acl_not_member", channel=channel)
+            if meta is not None and meta.closed and not channel_file.exists():
+                return _json.dumps(
+                    {
+                        "action": "archive",
+                        "channel": channel,
+                        "archived": False,
+                        "already_archived": True,
+                        "closed": True,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            def _close_channel(current: ChannelMeta | None) -> ChannelMeta:
+                if current is None:
+                    from core.org.company import get_company
+
+                    return ChannelMeta(
+                        members=[],
+                        created_by=self._anima_name,
+                        created_at=now_iso(),
+                        closed=True,
+                        company=get_company(self._anima_name, animas_dir=self._anima_dir.parent) or "",
+                    )
+                current.closed = True
+                return current
+
+            try:
+                closed_meta = update_channel_meta(shared_dir, channel, _close_channel, create_if_missing=True)
+                if closed_meta is None:
+                    return _error_result("ArchiveFailed", f"Could not write channel tombstone for #{channel}")
+
+                archived_path = None
+                if channel_file.exists():
+                    archive_dir = shared_dir / "channels" / "archive"
+                    archive_dir.mkdir(parents=True, exist_ok=True)
+                    archived_path = archive_dir / channel_file.name
+                    if archived_path.exists():
+                        stem, suffix = channel_file.stem, channel_file.suffix
+                        counter = 1
+                        while archived_path.exists():
+                            archived_path = archive_dir / f"{stem}_{counter}{suffix}"
+                            counter += 1
+                    channel_file.rename(archived_path)
+            except OSError as exc:
+                logger.warning("manage_channel archive failed: #%s: %s", channel, exc)
+                return _error_result("ArchiveFailed", f"Failed to archive channel #{channel}: {exc}")
+
+            result: dict[str, Any] = {
+                "action": "archive",
+                "channel": channel,
+                "archived": True,
+                "closed": True,
+            }
+            if archived_path is not None:
+                result["to"] = str(archived_path.relative_to(shared_dir))
+            logger.info("manage_channel archive: #%s by %s", channel, self._anima_name)
+            return _json.dumps(result, ensure_ascii=False, indent=2)
 
         elif action == "info":
             channel_file = shared_dir / "channels" / f"{channel}.jsonl"
@@ -770,22 +829,35 @@ class CommsToolsMixin:
         else:
             return _error_result(
                 "InvalidArguments",
-                f"Unknown action: {action!r}. Use create, add_member, remove_member, or info.",
+                f"Unknown action: {action!r}. Use create, archive, add_member, remove_member, or info.",
             )
 
     # ── Human notification handler ────────────────────────────
 
-    def _handle_call_human(self, args: dict[str, Any]) -> str:
+    def _urgent_phone_context(self: _CommsToolsHost, args: dict[str, Any]) -> dict[str, Any] | None:
+        """Still ring the phone for urgent calls when the other channels fail."""
+        subject = args.get("subject", "")
+        body = args.get("body", "")
+        if args.get("priority") != "urgent" or not subject or not body:
+            return None
+        from core.phone.urgent import request_phone_alert
+
+        return {"phone": request_phone_alert(subject, body, self._anima_name)}
+
+    def _handle_call_human(self: _CommsToolsHost, args: dict[str, Any]) -> str:
+        self._last_call_human_denied = False
         if not self._human_notifier:
             return _error_result(
                 "NotConfigured",
                 "Human notification is not configured",
+                context=self._urgent_phone_context(args),
                 suggestion="Enable human_notification in config.json",
             )
         if self._human_notifier.channel_count == 0:
             return _error_result(
                 "NotConfigured",
                 "No notification channels configured",
+                context=self._urgent_phone_context(args),
                 suggestion="Add channels to human_notification.channels in config.json",
             )
 
@@ -814,6 +886,55 @@ class CommsToolsMixin:
                 "subject and body are required",
             )
 
+        # The confirm step asks the Anima to check Slack/Chatwork first; with only
+        # the built-in Web UI channel there is nothing outside to check. CLI
+        # subprocesses share the server's per-session key store so confirmation
+        # remains usable across separate invocations.
+        if getattr(self._human_notifier, "has_external_channels", True) is False:
+            issued_key = None
+        else:
+            from core.platform.env import get_env
+
+            cli_session_id = get_env("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+            if cli_session_id:
+                from core.internal_api import host_api
+
+                try:
+                    response = host_api.post(
+                        "/api/internal/call-human/confirm",
+                        json={
+                            "anima_name": self._anima_name,
+                            "session_id": cli_session_id,
+                            "sha": args.get("sha", ""),
+                        },
+                        timeout=10.0,
+                    )
+                    response.raise_for_status()
+                    confirmation = response.json()
+                    if (
+                        not isinstance(confirmation, dict)
+                        or not isinstance(confirmation.get("ok"), bool)
+                        or not isinstance(confirmation.get("sha"), str)
+                        or (not confirmation["ok"] and not confirmation["sha"])
+                    ):
+                        raise ValueError("Invalid call_human confirmation response")
+                    issued_key = confirmation["sha"] or None
+                except Exception:
+                    logger.warning("Could not verify call_human confirmation with the server", exc_info=True)
+                    self._last_call_human_denied = True
+                    return _error_result(
+                        "ConfirmationUnavailable",
+                        t("handler.call_human_confirm_unavailable"),
+                    )
+            else:
+                issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
+        self._last_call_human_denied = issued_key is not None
+        if issued_key is not None:
+            return _error_result(
+                "ConfirmationRequired",
+                t("handler.call_human_confirm_required", sha=issued_key),
+            )
+
         interaction_req = None
         self._last_call_human_callback_id = None
         if interactive:
@@ -840,6 +961,7 @@ class CommsToolsMixin:
                     category,
                     opts_list,
                     allowed_users=aud or None,
+                    callback_id=str(args.get("callback_id") or ""),
                 )
             except ValueError as ve:
                 return _error_result("InvalidArguments", str(ve))
@@ -874,16 +996,28 @@ class CommsToolsMixin:
             else:
                 results = asyncio.run(coro)
         except Exception as e:
-            return _error_result("NotificationError", f"Failed to send notification: {e}")
+            return _error_result(
+                "NotificationError",
+                f"Failed to send notification: {e}",
+                context=self._urgent_phone_context(args),
+            )
 
-        notif_data = {
-            "anima": self._anima_name,
-            "subject": subject,
-            "body": body,
-            "priority": priority,
-            "timestamp": now_iso(),
-        }
-        self._pending_notifications.append(notif_data)
+        if priority == "urgent":
+            from core.phone.urgent import request_phone_alert
+
+            results = [*results, request_phone_alert(subject, body, self._anima_name)]
+
+        # The Web UI channel already pushed it to the browser; queuing it for the
+        # chat stream as well would show the same notification twice.
+        if getattr(self._human_notifier, "delivers_to_web", False) is not True:
+            notif_data = {
+                "anima": self._anima_name,
+                "subject": subject,
+                "body": body,
+                "priority": priority,
+                "timestamp": now_iso(),
+            }
+            self._pending_notifications.append(notif_data)
 
         payload: dict[str, Any] = {"status": "sent", "results": results}
         if interactive and interaction_req is not None:

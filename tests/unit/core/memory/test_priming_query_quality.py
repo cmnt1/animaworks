@@ -5,20 +5,13 @@
 
 from __future__ import annotations
 
-import pytest
+from core.memory.priming.utils import _build_context_query, build_queries
 
-from core.memory.priming.utils import (
-    _build_context_query,
-    build_dual_queries,
-    build_queries,
-)
-
-
-# ── build_queries: no conversation context (identical to old build_dual_queries) ──
+# ── build_queries: no conversation context ──
 
 
 class TestBuildQueriesNoContext:
-    """build_queries with no recent_human_messages behaves like old build_dual_queries."""
+    """build_queries without recent_human_messages."""
 
     def test_message_only_one_query(self):
         """Message only → 1 query."""
@@ -115,31 +108,6 @@ class TestBuildContextQueryTruncation:
         result = _build_context_query([long_msg], max_chars=500)
         assert len(result) == 500
         assert result == "x" * 500
-
-
-# ── build_dual_queries backward compatibility ──
-
-
-class TestBuildDualQueriesBackwardCompatibility:
-    """build_dual_queries is alias for build_queries(message, keywords)."""
-
-    def test_same_as_build_queries_no_context(self):
-        """Same results as build_queries without recent_human_messages."""
-        msg = "test message"
-        kw = ["test", "message"]
-        dual = build_dual_queries(msg, kw)
-        full = build_queries(msg, kw)
-        assert dual == full
-
-    def test_message_only(self):
-        """Message only: both return 1 query."""
-        assert build_dual_queries("hello", []) == build_queries("hello", [])
-
-    def test_message_and_keywords(self):
-        """Message + keywords: both return 2 queries."""
-        assert build_dual_queries("foo bar", ["foo", "bar"]) == build_queries(
-            "foo bar", ["foo", "bar"]
-        )
 
 
 class TestBuildQueriesEdgeCases:

@@ -59,7 +59,7 @@ def test_submit_tasks_sets_reply_to(tmp_path: Path) -> None:
     assert parsed.get("batch_id") == "test-batch-1"
     assert set(parsed.get("task_ids", [])) == {"task-a", "task-b"}
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     manager = TaskQueueManager(anima_dir)
     assert not list((anima_dir / "state" / "pending").glob("*.json"))

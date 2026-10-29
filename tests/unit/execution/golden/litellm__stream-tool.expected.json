@@ -1,0 +1,94 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "tool",
+  "events": [
+    {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_tool_1"
+    },
+    {
+      "type": "context_update",
+      "context_usage_ratio": 0.0001015625,
+      "input_tokens": 13,
+      "context_window": 128000,
+      "threshold": 0.6728
+    },
+    {
+      "type": "tool_detail",
+      "tool_id": "call_tool_1",
+      "tool_name": "search_memory",
+      "detail": "golden tool scenario"
+    },
+    {
+      "type": "tool_end",
+      "tool_id": "call_tool_1",
+      "tool_name": "search_memory",
+      "record": {
+        "tool_name": "search_memory",
+        "tool_id": "call_tool_1",
+        "input_summary": "{'query': 'golden tool scenario'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'golden tool scenario'\n</tool_result>",
+        "is_error": false
+      }
+    },
+    {
+      "type": "text_delta",
+      "text": "Tool-assisted answer"
+    },
+    {
+      "type": "context_update",
+      "context_usage_ratio": 0.0001328125,
+      "input_tokens": 17,
+      "context_window": 128000,
+      "threshold": 0.6728
+    },
+    {
+      "type": "done",
+      "full_text": "Tool-assisted answer",
+      "result_message": null,
+      "tool_call_records": [
+        {
+          "tool_name": "search_memory",
+          "tool_id": "call_tool_1",
+          "input_summary": "{'query': 'golden tool scenario'}",
+          "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'golden tool scenario'\n</tool_result>",
+          "is_error": false
+        }
+      ],
+      "usage": {
+        "input_tokens": 30,
+        "output_tokens": 8,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "stop_kind": "normal",
+      "truncated": false
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'golden tool scenario'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_tool_1"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'golden tool scenario'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_tool_1",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 37
+      }
+    }
+  ]
+}

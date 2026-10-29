@@ -1,20 +1,21 @@
 ---
 name: transcribe-tool
 description: >-
-  Audio transcription tool. Converts audio files to text with Whisper and optional LLM post-processing.
-  Use when: transcribing meetings, podcasts, or extracting text from recorded audio files.
+  Audio transcription tool. Converts audio files to text using Whisper, with optional LLM post-processing as needed.
+  Use when: Use when: transcribing meeting recordings, podcast transcripts, or when text extraction from audio files is required.
 tags: [audio, transcription, whisper, external]
 ---
 
+
 # Transcribe Tool
 
-External tool for speech-to-text using Whisper (faster-whisper).
+Audio transcription tool using Whisper (faster-whisper).
 
-## Invocation via Bash
+## Invocation
 
-Use **Bash** with `animaworks-tool transcribe <subcommand> [args]`:
+**Bash**: Run with `animaworks-tool transcribe transcribe <音声ファイル> [オプション]`
 
-### audio — Transcribe audio file
+### audio — Audio Transcription
 ```bash
 animaworks-tool transcribe transcribe audio_file.wav [-l ja] [-m large-v3-turbo]
 ```
@@ -22,13 +23,13 @@ animaworks-tool transcribe transcribe audio_file.wav [-l ja] [-m large-v3-turbo]
 ## Parameters
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|--------------|
-| audio_path | string | (required) | Path to audio file |
-| language | string | null | Language code (ja, en, etc.). null for auto-detect |
+|-----------|------|---------|-------------|
+| audio_path | string | (required) | Path to the audio file |
+| language | string | null | Language code (e.g., ja, en). Auto-detected if null |
 | model | string | "large-v3-turbo" | Whisper model name |
-| raw | boolean | false | If true, skip LLM post-processing |
+| raw | boolean | false | If true, skips LLM post-processing |
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool transcribe transcribe audio_file.wav [-l ja] [-m large-v3-turbo]
@@ -37,5 +38,5 @@ animaworks-tool transcribe transcribe audio_file.wav [-l ja] [-m large-v3-turbo]
 ## Notes
 
 - faster-whisper must be installed
-- CUDA-compatible ctranslate2 required for GPU acceleration
-- Model is auto-downloaded on first run
+- When using GPU, CUDA-compatible ctranslate2 is required
+- The model is automatically downloaded on first run

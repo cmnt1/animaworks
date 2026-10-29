@@ -12,7 +12,7 @@ from cli.commands.rag_repair_status import (
     rag_repair_status_command,
     setup_rag_repair_status_command,
 )
-from core.memory.rag.repair_utils import iso, utc_now
+from core.memory.rag.repair.state import iso, utc_now
 
 
 def _write_state(animas_dir: Path, name: str, state: dict[str, object]) -> None:
@@ -104,7 +104,9 @@ def test_rag_repair_status_healthy_table_returns_success(
     assert "LAST SIGNAL" in output
 
 
-def test_rag_repair_status_json_exits_one_for_stale_repair(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_rag_repair_status_json_exits_one_for_stale_repair(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     now = utc_now()
     animas_dir = tmp_path / "animas"
     _write_state(

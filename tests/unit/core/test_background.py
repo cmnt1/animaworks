@@ -1,4 +1,4 @@
-"""Tests for core/background.py — BackgroundTaskManager."""
+"""Tests for core/tasks/background.py — BackgroundTaskManager."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,13 +13,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.background import (
+from core.tasks.background import (
+    _DEFAULT_ELIGIBLE_TOOLS,
     BackgroundTask,
     BackgroundTaskManager,
     TaskStatus,
-    _DEFAULT_ELIGIBLE_TOOLS,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -56,7 +55,9 @@ class TestEligibility:
         """Custom eligible tools passed to constructor are used."""
         custom = {"my_tool": 10, "another_tool": 20}
         mgr = BackgroundTaskManager(
-            anima_dir, anima_name="test-anima", eligible_tools=custom,
+            anima_dir,
+            anima_name="test-anima",
+            eligible_tools=custom,
         )
         assert mgr.is_eligible("my_tool") is True
         assert mgr.is_eligible("another_tool") is True
@@ -91,7 +92,9 @@ class TestSubmit:
         assert task.anima_name == "test-anima"
 
     async def test_submit_saves_to_disk(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """Task JSON file is created in state/background_tasks/."""
         execute_fn = MagicMock(return_value="done")
@@ -106,9 +109,11 @@ class TestSubmit:
         assert data["status"] == "running"
 
     async def test_task_completes_successfully(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """Submit with a mock execute_fn, await the async task, verify COMPLETED."""
+
         def execute_fn(name: str, args: dict) -> str:
             return "result text"
 
@@ -127,9 +132,11 @@ class TestSubmit:
         assert task.error is None
 
     async def test_task_fails_on_exception(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """Submit with a failing execute_fn, verify FAILED status."""
+
         def execute_fn(name: str, args: dict) -> str:
             raise ValueError("something broke")
 
@@ -148,7 +155,8 @@ class TestSubmit:
         assert task.result is None
 
     async def test_on_complete_callback_called(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """Verify the on_complete callback is called after completion."""
         callback = AsyncMock()
@@ -181,7 +189,9 @@ class TestGetTask:
         assert task.task_id == task_id
 
     def test_get_task_from_disk(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """get_task loads from disk when not in memory."""
         # Manually write a task file to disk
@@ -199,7 +209,8 @@ class TestGetTask:
         storage_dir = anima_dir / "state" / "background_tasks"
         storage_dir.mkdir(parents=True, exist_ok=True)
         (storage_dir / "diskonly12345.json").write_text(
-            json.dumps(task_data, ensure_ascii=False), encoding="utf-8",
+            json.dumps(task_data, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         # Ensure it's not in memory
@@ -229,9 +240,11 @@ class TestListTasks:
         assert id2 in ids
 
     async def test_list_tasks_filtered_by_status(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """list_tasks with status filter returns only matching tasks."""
+
         def succeed(name: str, args: dict) -> str:
             return "ok"
 
@@ -269,6 +282,7 @@ class TestActiveCount:
             # This runs in a thread executor. We need a way to block it
             # long enough to check active_count. Use a short sleep.
             import time as _time
+
             _time.sleep(0.2)
             return "done"
 
@@ -289,7 +303,9 @@ class TestActiveCount:
 
 class TestCleanup:
     def test_cleanup_old_tasks(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """cleanup_old_tasks removes old completed tasks."""
         storage_dir = anima_dir / "state" / "background_tasks"
@@ -309,7 +325,8 @@ class TestCleanup:
             "error": None,
         }
         (storage_dir / "old_task_001.json").write_text(
-            json.dumps(old_data), encoding="utf-8",
+            json.dumps(old_data),
+            encoding="utf-8",
         )
 
         # Create a recent completed task (1 hour ago)
@@ -326,7 +343,8 @@ class TestCleanup:
             "error": None,
         }
         (storage_dir / "new_task_001.json").write_text(
-            json.dumps(recent_data), encoding="utf-8",
+            json.dumps(recent_data),
+            encoding="utf-8",
         )
 
         removed = manager.cleanup_old_tasks(max_age_hours=24)
@@ -560,8 +578,13 @@ class TestDefaultEligibleTools:
         """_DEFAULT_ELIGIBLE_TOOLS contains expected tools with timeouts."""
         # Image gen schema names (all threshold 30)
         for name in (
-            "generate_character_assets", "generate_fullbody", "generate_bustup",
-            "generate_icon", "generate_chibi", "generate_3d_model", "generate_rigged_model",
+            "generate_character_assets",
+            "generate_fullbody",
+            "generate_bustup",
+            "generate_icon",
+            "generate_chibi",
+            "generate_3d_model",
+            "generate_rigged_model",
             "generate_animations",
         ):
             assert name in _DEFAULT_ELIGIBLE_TOOLS, f"{name} missing"
@@ -582,15 +605,19 @@ class TestDefaultEligibleTools:
 
 class TestSubmitAsync:
     async def test_submit_async_creates_task(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """submit_async() returns a task_id and the task status is RUNNING."""
+
         async def execute_fn(name: str, args: dict) -> str:
             await asyncio.sleep(5)
             return "async done"
 
         task_id = await manager.submit_async(
-            "image_generation", {"prompt": "cat"}, execute_fn,
+            "image_generation",
+            {"prompt": "cat"},
+            execute_fn,
         )
 
         assert isinstance(task_id, str)
@@ -613,14 +640,18 @@ class TestSubmitAsync:
                 pass
 
     async def test_submit_async_completes_successfully(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """submit_async with a succeeding async execute_fn transitions to COMPLETED."""
+
         async def execute_fn(name: str, args: dict) -> str:
             return "async result"
 
         task_id = await manager.submit_async(
-            "image_generation", {"prompt": "dog"}, execute_fn,
+            "image_generation",
+            {"prompt": "dog"},
+            execute_fn,
         )
 
         # Wait for the background asyncio.Task to finish
@@ -636,14 +667,18 @@ class TestSubmitAsync:
         assert task.error is None
 
     async def test_submit_async_fails_on_exception(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """submit_async with a failing async execute_fn sets FAILED status."""
+
         async def execute_fn(name: str, args: dict) -> str:
             raise RuntimeError("async kaboom")
 
         task_id = await manager.submit_async(
-            "run_command", {"cmd": "fail"}, execute_fn,
+            "run_command",
+            {"cmd": "fail"},
+            execute_fn,
         )
 
         async_task = manager._async_tasks.get(task_id)
@@ -659,7 +694,8 @@ class TestSubmitAsync:
         assert task.result is None
 
     async def test_submit_async_on_complete_callback_called(
-        self, manager: BackgroundTaskManager,
+        self,
+        manager: BackgroundTaskManager,
     ):
         """Verify the on_complete callback fires after async task completion."""
         callback = AsyncMock()
@@ -669,7 +705,9 @@ class TestSubmitAsync:
             return "callback test"
 
         task_id = await manager.submit_async(
-            "local_llm", {"q": "hello"}, execute_fn,
+            "local_llm",
+            {"q": "hello"},
+            execute_fn,
         )
         async_task = manager._async_tasks.get(task_id)
         await async_task
@@ -685,7 +723,9 @@ class TestSubmitAsync:
 
 class TestLoadTaskErrors:
     def test_load_task_handles_corrupt_json(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """get_task returns None when the task file contains invalid JSON."""
         storage_dir = anima_dir / "state" / "background_tasks"
@@ -693,13 +733,16 @@ class TestLoadTaskErrors:
 
         # Write corrupt (non-parseable) JSON
         (storage_dir / "corrupt001.json").write_text(
-            "{{not valid json!!", encoding="utf-8",
+            "{{not valid json!!",
+            encoding="utf-8",
         )
 
         assert manager.get_task("corrupt001") is None
 
     def test_load_task_handles_missing_keys(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """get_task returns None when required keys are missing from JSON."""
         storage_dir = anima_dir / "state" / "background_tasks"
@@ -707,13 +750,16 @@ class TestLoadTaskErrors:
 
         # Valid JSON but missing required keys (e.g. task_id, anima_name)
         (storage_dir / "badkeys001.json").write_text(
-            json.dumps({"some_field": "value"}), encoding="utf-8",
+            json.dumps({"some_field": "value"}),
+            encoding="utf-8",
         )
 
         assert manager.get_task("badkeys001") is None
 
     def test_load_task_handles_invalid_status(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """get_task returns None when status value is not a valid TaskStatus."""
         storage_dir = anima_dir / "state" / "background_tasks"
@@ -728,7 +774,8 @@ class TestLoadTaskErrors:
             "created_at": time.time(),
         }
         (storage_dir / "badstat001.json").write_text(
-            json.dumps(bad_data), encoding="utf-8",
+            json.dumps(bad_data),
+            encoding="utf-8",
         )
 
         assert manager.get_task("badstat001") is None
@@ -739,7 +786,9 @@ class TestLoadTaskErrors:
 
 class TestCleanupEdgeCases:
     def test_cleanup_skips_corrupt_json(
-        self, manager: BackgroundTaskManager, anima_dir: Path,
+        self,
+        manager: BackgroundTaskManager,
+        anima_dir: Path,
     ):
         """cleanup_old_tasks skips files with corrupt JSON gracefully."""
         storage_dir = anima_dir / "state" / "background_tasks"
@@ -747,7 +796,8 @@ class TestCleanupEdgeCases:
 
         # Write a corrupt JSON file
         (storage_dir / "corrupt_cleanup.json").write_text(
-            "not json at all", encoding="utf-8",
+            "not json at all",
+            encoding="utf-8",
         )
 
         # Should not raise, should return 0 removed

@@ -1,6 +1,6 @@
 /* ── Step 1: Language Selection ────────────── */
 
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { t, setLocale, getLocale } from "../setup.js";
 
 let container = null;
@@ -8,7 +8,7 @@ let selectedLang = "ja";
 let dropdownOpen = false;
 let filterText = "";
 
-const LANGUAGES = [
+export const LANGUAGES = [
   { code: "en", native: "English" },
   { code: "ja", native: "日本語" },
   { code: "zh-CN", native: "简体中文" },
@@ -65,14 +65,11 @@ export function initLanguageStep(el) {
 
 async function detectLocale() {
   try {
-    const res = await fetch(`${basePath}/api/setup/detect-locale`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.detected && LANGUAGES.some((l) => l.code === data.detected)) {
-        selectedLang = data.detected;
-        await setLocale(selectedLang);
-        render();
-      }
+    const data = await api("/api/setup/detect-locale");
+    if (data.detected && LANGUAGES.some((l) => l.code === data.detected)) {
+      selectedLang = data.detected;
+      await setLocale(selectedLang);
+      render();
     }
   } catch {
     // Use default

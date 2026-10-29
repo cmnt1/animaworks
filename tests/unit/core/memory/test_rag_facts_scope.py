@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records
 
 
 def _make_indexer(anima_dir: Path):
     from core.memory.rag.indexer import MemoryIndexer
 
-    with patch.object(MemoryIndexer, "_init_embedding_model"):
-        return MemoryIndexer(
-            MagicMock(),
-            anima_name=anima_dir.name,
-            anima_dir=anima_dir,
-        )
+    return MemoryIndexer(
+        MagicMock(),
+        anima_name=anima_dir.name,
+        anima_dir=anima_dir,
+    )
 
 
 @pytest.mark.unit
 def test_rag_resolves_facts_scope() -> None:
-    from core.memory.rag_search import RAGMemorySearch
+    from core.memory.retrieval.rag_search import RAGMemorySearch
 
     assert RAGMemorySearch._resolve_search_types("facts") == ["facts"]
     assert "facts" in RAGMemorySearch._resolve_search_types("all")
@@ -63,7 +62,7 @@ def test_indexer_chunks_facts_jsonl(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_keyword_fallback_searches_active_facts_only(tmp_path: Path) -> None:
-    from core.memory.rag_search import RAGMemorySearch
+    from core.memory.retrieval.rag_search import RAGMemorySearch
 
     anima_dir = tmp_path / "alice"
     for subdir in ("knowledge", "episodes", "procedures", "facts"):

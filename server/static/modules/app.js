@@ -3,6 +3,7 @@
    ============================================ */
 
 import { initI18n, applyTranslations, t } from "/shared/i18n.js";
+import { api } from "./api.js";
 import { basePath } from "/shared/base-path.js";
 import { state } from "./state.js";
 import { connectWebSocket } from "./websocket.js";
@@ -83,12 +84,9 @@ async function initTheme() {
 
   let serverTheme = "default";
   try {
-    const resp = await fetch(`${basePath}/api/system/config`);
-    if (resp.ok) {
-      const cfg = await resp.json();
-      if (cfg?.ui?.theme) {
-        serverTheme = cfg.ui.theme;
-      }
+    const cfg = await api("/api/system/config", { redirectOnUnauthorized: false });
+    if (cfg?.ui?.theme) {
+      serverTheme = cfg.ui.theme;
     }
   } catch { /* ignore */ }
 
@@ -105,13 +103,8 @@ import { initRouter } from "./router.js";
 
 async function initDemoMode() {
   try {
-    const resp = await fetch(`${basePath}/api/system/config`);
-    if (resp.ok) {
-      const cfg = await resp.json();
-      state.demoMode = cfg?.ui?.demo_mode === true;
-    } else {
-      state.demoMode = false;
-    }
+    const cfg = await api("/api/system/config");
+    state.demoMode = cfg?.ui?.demo_mode === true;
   } catch {
     state.demoMode = false;
   }
@@ -134,6 +127,11 @@ function showAuthBannerIfNeeded() {
   if (existing) existing.remove();
 
   if (state.authMode !== "local_trust") return;
+  // The demo runs on a throwaway data dir; a closed banner stays closed.
+  if (state.demoMode) return;
+  try {
+    if (localStorage.getItem("aw-auth-banner-dismissed")) return;
+  } catch { /* storage unavailable: show the banner */ }
 
   const banner = document.createElement("div");
   banner.id = "authBanner";
@@ -142,7 +140,10 @@ function showAuthBannerIfNeeded() {
     <span>${t("app.auth_banner")}</span>
     <button class="auth-banner-close" aria-label="${t("common.aria_close")}">&times;</button>
   `;
-  banner.querySelector(".auth-banner-close").addEventListener("click", () => banner.remove());
+  banner.querySelector(".auth-banner-close").addEventListener("click", () => {
+    banner.remove();
+    try { localStorage.setItem("aw-auth-banner-dismissed", "1"); } catch { /* ignore */ }
+  });
 
   const shell = document.querySelector(".app-shell");
   if (shell) shell.parentElement.insertBefore(banner, shell);

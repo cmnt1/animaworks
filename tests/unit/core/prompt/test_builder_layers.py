@@ -25,7 +25,6 @@ def _memory(anima_dir: Path, *, vision: str = "") -> MagicMock:
     memory.read_resolutions.return_value = []
     memory.list_knowledge_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 
@@ -82,7 +81,7 @@ def test_environment_is_l1_and_points_to_reference(data_dir: Path, monkeypatch: 
 
 @pytest.mark.parametrize("trigger", ["chat", "heartbeat", "task:fixture", "inbox:peer"])
 def test_framework_resident_prompt_budget(data_dir: Path, monkeypatch: pytest.MonkeyPatch, trigger: str) -> None:
-    from core.prompt.tokens import estimate_tokens
+    from core.text.tokens import estimate_tokens
 
     prompt = _build(data_dir, monkeypatch, trigger)
     count = estimate_tokens(prompt)
@@ -164,7 +163,7 @@ def test_action_rule_priming_source_is_protected(data_dir: Path, monkeypatch):
 def test_modest_recall_pointers_survive_full_framework_prompt(data_dir: Path, monkeypatch, execution_mode):
     from core.memory.priming.format import format_priming_section
     from core.memory.priming.result import PrimingResult
-    from core.prompt.tokens import estimate_tokens
+    from core.text.tokens import estimate_tokens
 
     memory = _memory(data_dir / "animas" / "fixture")
     monkeypatch.setattr(builder, "get_data_dir", lambda: data_dir)
@@ -244,8 +243,27 @@ def test_substantive_vision_is_injected() -> None:
     memory = MagicMock()
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = vision
+    memory.read_company_vision_summary.return_value = None
     memory.read_specialty_prompt.return_value = ""
 
     sections = builder._build_group2(memory, "", False, False, {})
 
     assert next(section.content for section in sections if section.id == "vision") == vision
+
+
+def test_company_vision_summary_includes_full_vision_pointer() -> None:
+    memory = MagicMock()
+    memory.read_bootstrap.return_value = ""
+    memory.read_company_vision_summary.return_value = (
+        "  Build reliable systems every day.  ",
+        "companies/alpha/vision.md",
+    )
+    memory.read_specialty_prompt.return_value = ""
+
+    sections = builder._build_group2(memory, "", False, False, {})
+
+    content = next(section.content for section in sections if section.id == "vision")
+    assert content == (
+        "Build reliable systems every day.\n"
+        + builder.t("memory.company_vision_summary_reference", path="companies/alpha/vision.md")
+    )

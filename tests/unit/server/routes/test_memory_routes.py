@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
 
 def _make_test_app(animas_dir: Path | None = None):
     from fastapi import FastAPI
+
     from server.routes.memory_routes import create_memory_router
 
     app = FastAPI()
@@ -253,20 +254,21 @@ class TestConversation:
 
         import core.config.models as config_mod
 
-        with patch(
-            "server.routes.memory_routes.ConversationMemory",
-            return_value=mock_conv,
-        ), patch.object(
-            config_mod,
-            "load_model_config",
-            create=True,
-            return_value=MagicMock(),
+        with (
+            patch(
+                "server.routes.memory_routes.ConversationMemory",
+                return_value=mock_conv,
+            ),
+            patch.object(
+                config_mod,
+                "load_model_config",
+                create=True,
+                return_value=MagicMock(),
+            ),
         ):
             app = _make_test_app(animas_dir=animas_dir)
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/animas/alice/conversation")
 
         assert resp.status_code == 200
@@ -280,6 +282,61 @@ class TestConversation:
             resp = await client.delete("/api/animas/nobody/conversation")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Anima not found: nobody"
+
+    async def test_delete_conversation_uses_running_anima_ipc(self, tmp_path):
+        from server.supervisor.process_handle import ProcessState
+
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        handle = MagicMock()
+        handle.state = ProcessState.RUNNING
+        handle.is_alive.return_value = True
+        supervisor = MagicMock()
+        supervisor.processes = {"alice": handle}
+        supervisor.send_request = AsyncMock(return_value={"status": "cleared", "anima": "alice"})
+
+        app = _make_test_app(animas_dir=animas_dir)
+        app.state.supervisor = supervisor
+        with (
+            patch("core.config.models.load_model_config", return_value=MagicMock()),
+            patch("server.routes.memory_routes.ConversationMemory") as conversation_cls,
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.delete("/api/animas/alice/conversation")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "cleared", "anima": "alice"}
+        supervisor.send_request.assert_awaited_once_with("alice", "clear_conversation", {})
+        conversation_cls.assert_not_called()
+
+    async def test_compress_conversation_uses_running_anima_ipc(self, tmp_path):
+        from server.supervisor.process_handle import ProcessState
+
+        animas_dir = tmp_path / "animas"
+        (animas_dir / "alice").mkdir(parents=True)
+        handle = MagicMock()
+        handle.state = ProcessState.RUNNING
+        handle.is_alive.return_value = True
+        supervisor = MagicMock()
+        supervisor.processes = {"alice": handle}
+        expected = {"compressed": True, "anima": "alice", "total_turn_count": 4, "total_token_estimate": 12}
+        supervisor.send_request = AsyncMock(return_value=expected)
+
+        app = _make_test_app(animas_dir=animas_dir)
+        app.state.supervisor = supervisor
+        with (
+            patch("core.config.models.load_model_config", return_value=MagicMock()),
+            patch("server.routes.memory_routes.ConversationMemory") as conversation_cls,
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post("/api/animas/alice/conversation/compress")
+
+        assert response.status_code == 200
+        assert response.json() == expected
+        supervisor.send_request.assert_awaited_once_with("alice", "compress_conversation", {})
+        conversation_cls.assert_not_called()
 
     async def test_compress_conversation_anima_not_found(self):
         app = _make_test_app()
@@ -310,18 +367,12 @@ class TestMemoryStats:
         # Create memory directories with .md files
         episodes_dir = anima_dir / "episodes"
         episodes_dir.mkdir()
-        (episodes_dir / "2026-01-01.md").write_text(
-            "Episode 1 content", encoding="utf-8"
-        )
-        (episodes_dir / "2026-01-02.md").write_text(
-            "Episode 2 content here", encoding="utf-8"
-        )
+        (episodes_dir / "2026-01-01.md").write_text("Episode 1 content", encoding="utf-8")
+        (episodes_dir / "2026-01-02.md").write_text("Episode 2 content here", encoding="utf-8")
 
         knowledge_dir = anima_dir / "knowledge"
         knowledge_dir.mkdir()
-        (knowledge_dir / "python.md").write_text(
-            "Python knowledge", encoding="utf-8"
-        )
+        (knowledge_dir / "python.md").write_text("Python knowledge", encoding="utf-8")
 
         procedures_dir = anima_dir / "procedures"
         procedures_dir.mkdir()
@@ -335,9 +386,7 @@ class TestMemoryStats:
 
             app = _make_test_app(animas_dir=animas_dir)
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/animas/alice/memory/stats")
 
         assert resp.status_code == 200
@@ -371,9 +420,7 @@ class TestMemoryStats:
 
             app = _make_test_app(animas_dir=animas_dir)
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/animas/alice/memory/stats")
 
         assert resp.status_code == 200
@@ -400,9 +447,7 @@ class TestMemoryStats:
 
             app = _make_test_app(animas_dir=animas_dir)
             transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/animas/alice/memory/stats")
 
         assert resp.status_code == 200

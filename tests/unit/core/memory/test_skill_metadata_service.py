@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 from core.memory.skill_metadata import SkillMetadataService
-
 
 # ── extract_skill_meta ─────────────────────────────────────
 
@@ -60,11 +58,7 @@ class TestExtractSkillMetaWithFrontmatter:
         """Leading/trailing whitespace in description is stripped."""
         skill_file = tmp_path / "ws.md"
         skill_file.write_text(
-            "---\n"
-            "name: ws-skill\n"
-            "description: '  spaced out  '\n"
-            "---\n"
-            "\nContent.\n",
+            "---\nname: ws-skill\ndescription: '  spaced out  '\n---\n\nContent.\n",
             encoding="utf-8",
         )
 
@@ -118,15 +112,7 @@ class TestExtractSkillMetaLegacyFormat:
     def test_legacy_overview_section(self, tmp_path: Path) -> None:
         skill_file = tmp_path / "legacy.md"
         skill_file.write_text(
-            "# レガシースキル\n"
-            "\n"
-            "## 概要\n"
-            "\n"
-            "cronジョブの設定と管理を行うスキル\n"
-            "\n"
-            "## 手順\n"
-            "\n"
-            "1. 手順内容\n",
+            "# レガシースキル\n\n## 概要\n\ncronジョブの設定と管理を行うスキル\n\n## 手順\n\n1. 手順内容\n",
             encoding="utf-8",
         )
 
@@ -139,12 +125,7 @@ class TestExtractSkillMetaLegacyFormat:
         """Only the first non-empty line after ## 概要 is used."""
         skill_file = tmp_path / "multi.md"
         skill_file.write_text(
-            "# Skill\n"
-            "## 概要\n"
-            "First line is the description\n"
-            "Second line is ignored\n"
-            "## 手順\n"
-            "Steps here\n",
+            "# Skill\n## 概要\nFirst line is the description\nSecond line is ignored\n## 手順\nSteps here\n",
             encoding="utf-8",
         )
 
@@ -156,10 +137,7 @@ class TestExtractSkillMetaLegacyFormat:
         """Empty ## 概要 section yields empty description."""
         skill_file = tmp_path / "empty-overview.md"
         skill_file.write_text(
-            "# Skill\n"
-            "## 概要\n"
-            "## 手順\n"
-            "Steps here\n",
+            "# Skill\n## 概要\n## 手順\nSteps here\n",
             encoding="utf-8",
         )
 
@@ -315,86 +293,3 @@ class TestListCommonSkillMetas:
         assert len(metas) == 1
         assert metas[0].name == "shared-tool"
         assert metas[0].is_common is True
-
-
-# ── list_skill_summaries ───────────────────────────────────
-
-
-class TestListSkillSummaries:
-    """Tests for (name, description) tuple output."""
-
-    def test_returns_name_description_tuples(self, tmp_path: Path) -> None:
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        common_dir = tmp_path / "common_skills"
-        common_dir.mkdir()
-
-        (skills_dir / "coding" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (skills_dir / "coding" / "SKILL.md").write_text(
-            "---\nname: coding\ndescription: Write code efficiently\n---\n\n# Coding\n",
-            encoding="utf-8",
-        )
-        (skills_dir / "review" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (skills_dir / "review" / "SKILL.md").write_text(
-            "---\nname: review\ndescription: Code review process\n---\n\n# Review\n",
-            encoding="utf-8",
-        )
-
-        service = SkillMetadataService(skills_dir, common_dir)
-        summaries = service.list_skill_summaries()
-
-        assert len(summaries) == 2
-        assert all(isinstance(s, tuple) and len(s) == 2 for s in summaries)
-        names = [s[0] for s in summaries]
-        assert "coding" in names
-        assert "review" in names
-        # Check description values
-        descs = {s[0]: s[1] for s in summaries}
-        assert descs["coding"] == "Write code efficiently"
-        assert descs["review"] == "Code review process"
-
-    def test_empty_dir_returns_empty_list(self, tmp_path: Path) -> None:
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        common_dir = tmp_path / "common_skills"
-        common_dir.mkdir()
-
-        service = SkillMetadataService(skills_dir, common_dir)
-        summaries = service.list_skill_summaries()
-
-        assert summaries == []
-
-
-# ── list_common_skill_summaries ────────────────────────────
-
-
-class TestListCommonSkillSummaries:
-    """Tests for common skill (name, description) tuple output."""
-
-    def test_returns_common_summaries(self, tmp_path: Path) -> None:
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        common_dir = tmp_path / "common_skills"
-        common_dir.mkdir()
-
-        (common_dir / "cron-management" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (common_dir / "cron-management" / "SKILL.md").write_text(
-            "---\nname: cron-management\ndescription: Manage cron tasks\n---\n\n# Cron\n",
-            encoding="utf-8",
-        )
-
-        service = SkillMetadataService(skills_dir, common_dir)
-        summaries = service.list_common_skill_summaries()
-
-        assert len(summaries) == 1
-        assert summaries[0] == ("cron-management", "Manage cron tasks")
-
-    def test_nonexistent_common_dir_returns_empty(self, tmp_path: Path) -> None:
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        common_dir = tmp_path / "nonexistent"
-
-        service = SkillMetadataService(skills_dir, common_dir)
-        summaries = service.list_common_skill_summaries()
-
-        assert summaries == []

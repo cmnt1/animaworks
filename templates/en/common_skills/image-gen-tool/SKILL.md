@@ -1,57 +1,59 @@
 ---
 name: image-gen-tool
 description: >-
-  Image and 3D model generation tool using NovelAI, Flux, and Meshy for illustrations and 3D output.
-  Use when: generating character art, bust or chibi images, avatars, or running image pipelines.
+  Image and 3D model generation tool. Generates full-body illustrations, bust-up portraits, chibi characters, and 3D models using NovelAI, Flux, and Meshy.
+  Use when: Use when: illustration generation, character image creation, 3D model/Meshy output, or image pipeline execution is needed.
 tags: [image, 3d, generation, external]
 ---
 
+
 # Image Gen Tool
 
-External tool for character image and 3D model generation.
+An external tool for generating character images and 3D models.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool image_gen <subcommand> [args]`. For long-running pipelines, use `animaworks-tool submit image_gen pipeline ...`.
+**Bash**: Run with `animaworks-tool image_gen <サブコマンド> [引数]`. For long-running processes, execute in the background with `animaworks-tool submit image_gen pipeline ...`.
 
-## Actions
+## List of Actions
 
-### character_assets — Full pipeline generation
-```json
-{"tool_name": "image_gen", "action": "character_assets", "args": {"prompt": "1girl, ...", "anima_dir": "$ANIMAWORKS_ANIMA_DIR"}}
+### character_assets — Batch Pipeline Generation
+```bash
+animaworks-tool image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 ```
 
-### fullbody — Full-body illustration
-```json
-{"tool_name": "image_gen", "action": "fullbody", "args": {"prompt": "1girl, standing, ...", "width": 832, "height": 1216}}
+### fullbody — Full-Body Standing Illustration
+```bash
+animaworks-tool image_gen fullbody "1girl, standing, ..."
 ```
 
-### bustup — Bust-up illustration
-```json
-{"tool_name": "image_gen", "action": "bustup", "args": {"reference": "source image path", "prompt": "additional prompt (optional)"}}
+### bustup — Bust-Up Portrait
+```bash
+animaworks-tool image_gen bustup reference.png
 ```
 
-### chibi — Chibi illustration
-```json
-{"tool_name": "image_gen", "action": "chibi", "args": {"reference": "source image path"}}
+### chibi — Chibi Character
+```bash
+animaworks-tool image_gen chibi reference.png
 ```
 
-### 3d_model — 3D model generation
-```json
-{"tool_name": "image_gen", "action": "3d_model", "args": {"image": "image path"}}
+### 3d_model — 3D Model Generation
+```bash
+animaworks-tool image_gen 3d image.png
 ```
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 animaworks-tool image_gen fullbody "1girl, standing, ..."
 animaworks-tool image_gen bustup reference.png
+animaworks-tool image_gen chibi reference.png
 animaworks-tool image_gen 3d image.png
 ```
 
 ## Notes
 
-- Long-running; use `animaworks-tool submit image_gen pipeline ...` for background execution
-- NovelAI or fal.ai API key required for image generation
-- Meshy API key required for 3D generation
+- Recommended to run in the background with `animaworks-tool submit image_gen pipeline ...` due to long processing times
+- Requires a NovelAI API key or fal.ai API key
+- A Meshy API key is required for 3D generation

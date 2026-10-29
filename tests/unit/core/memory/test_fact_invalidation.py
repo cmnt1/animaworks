@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from core.memory import fact_invalidation as fact_invalidation_module
-from core.memory import fact_invalidation_llm
-from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
-from core.memory.fact_invalidation import (
+from core.memory.facts import invalidation as fact_invalidation_module
+from core.memory.facts import invalidation_llm as fact_invalidation_llm
+from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
+from core.memory.facts.invalidation import (
     FactCandidate,
     ReconcileAction,
     ReconcileConfig,
     reconcile_new_fact,
 )
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
 from core.memory.rag.store import Document, SearchResult
 
 
@@ -238,12 +237,14 @@ def test_reconcile_complement_updates_best_candidate_without_append(tmp_path: Pa
         config=ReconcileConfig(enabled=True),
     )
 
-    updated_records = read_fact_records(path_best, include_expired=True)
-    assert result.action == ReconcileAction.UPDATE
-    assert result.should_append is False
-    assert "score deltas" in updated_records[0].text.lower()
-    assert updated_records[0].entities == ["Alice", "LoCoMo", "Score Deltas"]
-    assert updated_records[0].confidence == 0.9
+    stored_records = read_fact_records(path_best, include_expired=True)
+    assert result.action == ReconcileAction.ADD
+    assert result.should_append is True
+    assert result.label == "COMPLEMENT"
+    assert result.reason == "complement_kept_separate"
+    assert result.affected_fact_ids == (old_best.fact_id,)
+    assert stored_records[0].text == old_best.text
+    assert stored_records[0].entities == old_best.entities
 
 
 @pytest.mark.unit
@@ -284,7 +285,7 @@ def test_reconcile_invalidation_write_failure_skips_new_append(
     new = FactRecord(text="Alice uses rubric B.", recorded_at="2026-06-03T10:00:00+09:00")
 
     monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_records_and_append",
+        "core.memory.facts.invalidation.update_fact_records_and_append",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("rewrite failed")),
     )
 
@@ -342,7 +343,7 @@ def test_reconcile_invalidation_append_failure_rolls_back_old_update(
 
 
 @pytest.mark.unit
-def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
+def test_reconcile_invalidation_incomplete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -352,7 +353,7 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     new = FactRecord(text="Alice uses rubric B.", recorded_at="2026-06-03T10:00:00+09:00")
 
     monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_records_and_append", lambda *_args, **_kwargs: ([], [])
+        "core.memory.facts.invalidation.update_fact_records_and_append", lambda *_args, **_kwargs: ([], [])
     )
     incomplete = reconcile_new_fact(
         anima_dir,
@@ -363,32 +364,6 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     )
     assert incomplete.action == ReconcileAction.SKIP
     assert incomplete.reason == "invalidate_incomplete"
-
-    monkeypatch.setattr("core.memory.fact_invalidation.update_fact_record_by_id", lambda *_args, **_kwargs: None)
-    missing_target = reconcile_new_fact(
-        anima_dir,
-        new,
-        classifier=lambda *_args: "COMPLEMENT",
-        candidate_search=lambda *_args: [_candidate(old, path)],
-        config=ReconcileConfig(enabled=True),
-    )
-    assert missing_target.action == ReconcileAction.ADD
-    assert missing_target.reason == "complement_target_missing"
-
-    monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_record_by_id",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("update failed")),
-    )
-    update_failed = reconcile_new_fact(
-        anima_dir,
-        new,
-        classifier=lambda *_args: "COMPLEMENT",
-        candidate_search=lambda *_args: [_candidate(old, path)],
-        config=ReconcileConfig(enabled=True),
-    )
-    assert update_failed.action == ReconcileAction.ADD
-    assert update_failed.reason == "complement_update_failed"
-    assert update_failed.error == "update failed"
 
 
 @pytest.mark.unit
@@ -436,8 +411,8 @@ def test_reconcile_config_and_vector_candidate_search(
                 SearchResult(Document(id="unknown", content="", metadata={"fact_id": "fact_unknown"}), 0.95),
             ]
 
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name: FakeVectorStore())
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", lambda anima_name: FakeVectorStore())
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
 
     candidates = fact_invalidation_module._search_fact_candidates(anima_dir, new, 5)
 
@@ -447,29 +422,42 @@ def test_reconcile_config_and_vector_candidate_search(
 
 
 @pytest.mark.unit
-def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
+def test_reconcile_uses_consolidation_model_and_credential_not_status_background_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
+    # A status.json background_model with no credential must not become the
+    # independent first choice for fact reconciliation (T3).
     (anima_dir / "status.json").write_text(
-        '{"background_model": "status-model", "extraction_timeout": 7}',
+        '{"background_model": "claude-opus-5-5"}',
         encoding="utf-8",
     )
     old = FactRecord(text="Alice's LoCoMo score is 70.", recorded_at="2026-06-03T09:00:00+09:00")
     new = FactRecord(text="Alice's LoCoMo score is 85.", recorded_at="2026-06-03T10:00:00+09:00")
     captured: dict[str, object] = {}
 
-    def fake_completion(**kwargs):
+    def fake_completion(prompt: str, **kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="CONTRADICT"))])
+        captured["prompt"] = prompt
+        return "CONTRADICT"
 
-    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=fake_completion))
-    monkeypatch.setattr(
-        "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
-        lambda model, extra: {"model": model, "timeout": 3, **extra},
+    consolidation = SimpleNamespace(
+        llm_model="openai/deepseek-v4-flash",
+        llm_credential="gpu40-direct",
+        fact_reconcile_model=None,
+        fact_reconcile_credential=None,
     )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=11, fact_extraction_max_tokens=8192)
+    defs = SimpleNamespace(
+        consolidation=consolidation,
+        rag=rag,
+        anima_defaults=SimpleNamespace(background_model="", model="", background_credential="", credential=""),
+        locale="ja",
+    )
+    monkeypatch.setattr("core.config.load_config", lambda: defs)
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion_sync", fake_completion)
 
     label = fact_invalidation_llm.classify_fact_relation(
         new,
@@ -478,31 +466,91 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
     )
 
     assert label == "CONTRADICT"
-    assert captured["model"] == "status-model"
-    assert captured["timeout"] == 3
-    messages = captured["messages"]
-    assert messages[0]["role"] == "system"
-    assert "Return exactly one label" in messages[0]["content"]
-    assert "DUPLICATE" in messages[1]["content"]
-    assert old.fact_id in messages[1]["content"]
+    assert captured["model"] == "openai/deepseek-v4-flash"
+    assert captured["credential"] == "gpu40-direct"
+    assert captured["timeout"] == 11
+    assert captured["max_tokens"] == 16
+    assert captured["temperature"] == 0.0
+    assert captured["allow_agent_sdk_fallback"] is False
+    assert "Return exactly one label" in captured["system_prompt"]
+    assert "DUPLICATE" in captured["prompt"]
+    assert old.fact_id in captured["prompt"]
+
+
+@pytest.mark.unit
+def test_default_batch_classifier_parses_labels_and_sizes_tokens(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "alice"
+    old_a = FactRecord(text="Alice tracks score A.", recorded_at="2026-06-03T09:00:00+09:00")
+    old_b = FactRecord(text="Alice tracks score B.", recorded_at="2026-06-03T09:05:00+09:00")
+    new = FactRecord(text="Alice tracks score C.", recorded_at="2026-06-03T10:00:00+09:00")
+    path = _store(anima_dir, old_a)
+    _store(anima_dir, old_b)
+    candidates = [
+        FactCandidate(record=old_a, score=0.98, path=path),
+        FactCandidate(record=old_b, score=0.97, path=path),
+    ]
+    captured: dict[str, object] = {}
+    consolidation = SimpleNamespace(
+        fact_reconcile_model="test-reconcile-model",
+        fact_reconcile_credential="test-credential",
+    )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=11)
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(consolidation=consolidation, rag=rag),
+    )
+
+    def fake_completion(prompt: str, **kwargs):
+        captured.update(kwargs)
+        captured["prompt"] = prompt
+        return f'```json\n{{"labels":{{"{old_a.fact_id}":"ADD","{old_b.fact_id}":"COMPLEMENT"}}}}\n```'
+
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion_sync", fake_completion)
+    result = reconcile_new_fact(
+        anima_dir,
+        new,
+        candidate_search=lambda *_args: candidates,
+        config=ReconcileConfig(enabled=True),
+    )
+
+    assert result.action == ReconcileAction.ADD
+    assert result.reconcile_llm_calls == 1
+    assert captured["max_tokens"] == 32 + 40 * 2
+    assert captured["model"] == "test-reconcile-model"
+    assert "- DUPLICATE: same meaning, no new durable information." in captured["prompt"]
+    assert old_a.fact_id in captured["prompt"]
+    assert captured["allow_agent_sdk_fallback"] is False
 
 
 @pytest.mark.unit
 def test_llm_helper_config_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    defaults = SimpleNamespace(anima_defaults=SimpleNamespace(background_model="", model="config-model"))
-    monkeypatch.setattr("core.config.models.load_config", lambda: defaults)
-    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
-        "config-model",
-        {},
-        DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+    consolidation = SimpleNamespace(
+        llm_model="",
+        llm_credential="",
+        fact_reconcile_model=None,
+        fact_reconcile_credential=None,
     )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=5, fact_extraction_max_tokens=8192)
+    defs = SimpleNamespace(
+        consolidation=consolidation,
+        rag=rag,
+        anima_defaults=SimpleNamespace(
+            background_model="", model="config-model", background_credential="", credential=""
+        ),
+        locale="ja",
+    )
+    monkeypatch.setattr("core.config.load_config", lambda: defs)
+    resolved = fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice")
+    assert resolved[0] == "claude-sonnet-5-5"
+    assert resolved[-1] == "anthropic"
 
-    monkeypatch.setattr(
-        "core.config.models.load_config",
-        lambda: (_ for _ in ()).throw(RuntimeError("config failed")),
-    )
+    monkeypatch.setattr("core.config.load_config", lambda: (_ for _ in ()).throw(RuntimeError("config failed")))
     assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
-        "claude-sonnet-4-6",
+        "claude-sonnet-5-5",
         {},
         DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+        "anthropic",
     )

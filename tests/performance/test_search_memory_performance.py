@@ -8,7 +8,7 @@ from pathlib import Path
 import orjson
 import pytest
 
-from core.memory.bm25 import LONGTERM_BM25_SCHEMA_VERSION, longterm_bm25_index_path
+from core.memory.retrieval.bm25 import LONGTERM_BM25_SCHEMA_VERSION, longterm_bm25_index_path
 
 
 @pytest.mark.performance
@@ -53,7 +53,7 @@ def test_longterm_bm25_cold_call_p95_under_one_second(tmp_path: Path) -> None:
     index_path.write_bytes(orjson.dumps(payload))
     script = (
         "from pathlib import Path; from time import perf_counter; "
-        "from core.memory.bm25 import search_longterm_memory_bm25; "
+        "from core.memory.retrieval.bm25 import search_longterm_memory_bm25; "
         f"p=Path({str(anima_dir)!r}); t=perf_counter(); "
         "r=search_longterm_memory_bm25(p,'needle19999',memory_types=('knowledge',)); "
         "assert r and r[0]['chunk_index']==19999; print(perf_counter()-t)"

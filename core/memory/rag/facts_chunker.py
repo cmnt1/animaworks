@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.memory.facts import FactRecord
+from core.memory.facts.store import FactRecord
 from core.time_utils import ensure_aware
 
 logger = logging.getLogger("animaworks.rag.facts_chunker")

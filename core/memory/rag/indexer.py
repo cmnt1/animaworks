@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from core.memory.rag import indexer_delete
 from core.memory.rag.contextual_header import apply_contextual_header
@@ -30,10 +30,8 @@ from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.exclusion import is_archive_path, is_rag_excluded
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.memory.rag.store import CollectionExistence
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import ensure_aware, now_iso
-
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger("animaworks.rag.indexer")
 
@@ -182,10 +180,8 @@ class MemoryIndexer:
         vector_store,  # VectorStore instance
         anima_name: str,
         anima_dir: Path,
-        embedding_model_name: str | None = None,
         *,
         collection_prefix: str | None = None,
-        embedding_model: SentenceTransformer | None = None,
         upsert_quarantine_failure_threshold: int | None = None,
         source_data_dir: Path | None = None,
         source_file_stats: dict[str, os.stat_result] | None = None,
@@ -196,14 +192,10 @@ class MemoryIndexer:
             vector_store: VectorStore instance (e.g., ChromaVectorStore)
             anima_name: Anima name (for collection naming)
             anima_dir: Path to anima's memory directory
-            embedding_model_name: Sentence-transformers model name
             collection_prefix: Override for collection name prefix.
                 Defaults to anima_name.  Use ``"shared"`` for
                 common_knowledge indexing so collection becomes
                 ``shared_common_knowledge``.
-            embedding_model: Pre-initialized SentenceTransformer instance.
-                When provided, ``_init_embedding_model()`` is skipped,
-                avoiding redundant model loading.
             source_data_dir: Private full-rebuild input root, or None for the
                 ordinary live indexing path. Preserves snapshot exclusion policy.
             source_file_stats: Original source stats keyed by copied absolute
@@ -229,7 +221,6 @@ class MemoryIndexer:
                 else []
             )
         self.collection_prefix = collection_prefix or anima_name
-        self._embedding_model_name_override = embedding_model_name
         if upsert_quarantine_failure_threshold is None:
             try:
                 from core.config import load_config
@@ -241,18 +232,6 @@ class MemoryIndexer:
                 upsert_quarantine_failure_threshold = RAGConfig().upsert_quarantine_failure_threshold
         self.upsert_quarantine_failure_threshold = max(1, upsert_quarantine_failure_threshold)
         self.upsert_failure_state_path = anima_dir / "state" / UPSERT_FAILURE_STATE_FILE
-
-        # Use injected embedding model or initialize via singleton.
-        # When ANIMAWORKS_EMBED_URL is set (child processes), skip local
-        # model loading — generate_embeddings() handles HTTP delegation.
-        import os
-
-        if embedding_model is not None:
-            self.embedding_model = embedding_model
-        elif os.environ.get("ANIMAWORKS_EMBED_URL"):
-            self.embedding_model = None  # type: ignore[assignment]
-        else:
-            self._init_embedding_model()
 
         # Load index metadata
         self.meta_path = anima_dir / INDEX_META_FILE
@@ -270,14 +249,14 @@ class MemoryIndexer:
         """Return the checked existence state for *name*.
 
         Lazily populates ``self._known_collections`` from
-        ``vector_store.list_collections_checked()`` on first access.  Subsequent
+        ``vector_store.list_collections()`` on first access. Subsequent
         calls reuse the cache; callers add to the cache after successful
         ``create_collection()`` / ``upsert()`` to avoid repeated listing.
 
         An unavailable result is not cached so a later check can recover.
         """
         if self._known_collections is None:
-            collections = self.vector_store.list_collections_checked()
+            collections = self.vector_store.list_collections()
             if collections is None:
                 return CollectionExistence.UNAVAILABLE
             self._known_collections = set(collections)
@@ -293,17 +272,11 @@ class MemoryIndexer:
         re-list collections.
         """
         if self._known_collections is None:
-            collections = self.vector_store.list_collections_checked()
+            collections = self.vector_store.list_collections()
             if collections is None:
                 return
             self._known_collections = set(collections)
         self._known_collections.add(name)
-
-    def _init_embedding_model(self) -> None:
-        """Initialize sentence-transformers model via process-level singleton."""
-        from core.memory.rag.singleton import get_embedding_model
-
-        self.embedding_model = get_embedding_model(self._embedding_model_name_override)
 
     def _load_index_meta(self) -> dict[str, dict[str, str | int]]:
         """Load index metadata (file hashes and timestamps)."""
@@ -358,8 +331,7 @@ class MemoryIndexer:
     def _save_index_meta(self) -> None:
         """Save index metadata."""
         try:
-            with open(self.meta_path, "w", encoding="utf-8") as f:
-                json.dump(self.index_meta, f, ensure_ascii=False, indent=2)
+            atomic_write_json(self.meta_path, self.index_meta, indent=2, ensure_ascii=False, trailing_newline=False)
         except Exception as e:
             logger.warning("Failed to save index metadata: %s", e)
 
@@ -400,10 +372,7 @@ class MemoryIndexer:
             self.anima_dir / "state" / UPSERT_FAILURE_STATE_FILE,
         )
         try:
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = state_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-            temporary.replace(state_path)
+            atomic_write_json(state_path, state, indent=2, ensure_ascii=False, trailing_newline=False)
         except OSError:
             logger.warning("Failed to save RAG upsert failure state", exc_info=True)
 
@@ -510,7 +479,7 @@ class MemoryIndexer:
 
         Args:
             file_path: Path to the memory file
-            memory_type: Memory type (knowledge, episodes, procedures, skills, shared_users)
+            memory_type: Memory type (knowledge, episodes, procedures, skills)
             force: Force re-indexing even if file hasn't changed
             origin: Provenance origin category (e.g. "consolidation", "external_platform").
                 Stored in chunk metadata for trust-level resolution at retrieval time.
@@ -518,7 +487,7 @@ class MemoryIndexer:
         Returns:
             Number of chunks indexed
         """
-        from core import startup_progress
+        from core.infra import startup_progress
 
         self._last_index_file_outcome = _IndexFileOutcome(status="failed")
         startup_progress.raise_if_cancelled()
@@ -545,6 +514,8 @@ class MemoryIndexer:
             return self._finish_index_file(0, "skipped")
 
         if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
+            allowed = False
+            reason = "curator evaluation failed"
             try:
                 from core.skills.curator import curator_allows_access, replay_curator_state
                 from core.skills.loader import load_skill_metadata
@@ -559,12 +530,13 @@ class MemoryIndexer:
                     self._skill_curator_replay = replay_curator_state(self.anima_dir)
                     self._skill_curator_state_marker = state_marker
                 allowed, reason = curator_allows_access(meta, replay=self._skill_curator_replay)
-                if not allowed:
-                    logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
-                    self.delete_indexed_file(file_path, memory_type)
-                    return self._finish_index_file(0, "skipped")
             except Exception:
-                logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
+                logger.warning("Failed to evaluate skill curator access for %s; skipping", file_path, exc_info=True)
+
+            if not allowed:
+                logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
+                self.delete_indexed_file(file_path, memory_type)
+                return self._finish_index_file(0, "skipped")
 
         # Check if file has changed
         source_stat = file_path.stat()
@@ -602,6 +574,15 @@ class MemoryIndexer:
         except Exception as e:
             logger.error("Failed to read file %s: %s", file_path, e)
             return self._finish_index_file(0, "failed")
+
+        if memory_type == "knowledge" and not origin:
+            from core.memory.frontmatter import parse_frontmatter
+
+            metadata, _ = parse_frontmatter(content)
+            frontmatter_origin = metadata.get("origin")
+            origin = (
+                frontmatter_origin if isinstance(frontmatter_origin, str) and frontmatter_origin else "consolidation"
+            )
 
         # Chunk the content
         chunks = self._chunk_file(file_path, content, memory_type, origin=origin)
@@ -728,7 +709,7 @@ class MemoryIndexer:
     def _document_embedding_signature() -> str | None:
         """Fingerprint the same model and input-prefix policy as the encoder."""
         from core.config import load_config
-        from core.memory.rag.singleton import get_embedding_model_name
+        from core.memory.rag.embedding import get_embedding_model_name
 
         try:
             rag = load_config().rag
@@ -792,7 +773,7 @@ class MemoryIndexer:
         transient_failures = 0
         failed_sources: list[str] = []
         try:
-            from core import startup_progress
+            from core.infra import startup_progress
 
             track_startup = startup_progress.is_active()
         except Exception:
@@ -1168,7 +1149,7 @@ class MemoryIndexer:
             if time_chunks:
                 return time_chunks
             return self._chunk_by_markdown_headings(file_path, content, memory_type, origin=origin)
-        # procedures, skills, shared_users
+        # procedures, skills
         return self._chunk_whole_file(file_path, content, memory_type, origin=origin)
 
     def _chunk_by_markdown_headings(
@@ -1597,7 +1578,7 @@ class MemoryIndexer:
             return []
 
         logger.debug("Generating embeddings for %d texts", len(texts))
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         resolved_priority = priority or ("interactive" if purpose == "query" else "bulk")
         return generate_embeddings(texts, purpose=purpose, priority=resolved_priority)

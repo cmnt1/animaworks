@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from core.schemas import CronTask, CycleResult
-from core.supervisor.scheduler_manager import SchedulerManager
-from core.supervisor.task_runner import execute_cron_contract
+from core.runtime.task_runner import execute_cron_contract, execute_cron_followup_contract
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("isolated", [False, True])
 @pytest.mark.parametrize(
     "stdout,stderr,exit_code,pattern,enabled,expected",
     [
@@ -30,9 +26,7 @@ from core.supervisor.task_runner import execute_cron_contract
         ("", "failure", 1, None, False, False),
     ],
 )
-async def test_legacy_and_isolated_followup_contract(
-    tmp_path: Path,
-    isolated: bool,
+async def test_execute_cron_contract_followup(
     stdout: str,
     stderr: str,
     exit_code: int,
@@ -52,19 +46,44 @@ async def test_legacy_and_isolated_followup_contract(
         skip_pattern=pattern,
         trigger_heartbeat=enabled,
     )
-    if isolated:
-        outcome = await execute_cron_contract(anima, task)
-        assert outcome["success"] == (exit_code == 0)
-        assert outcome["result"] == result
-    else:
-        (tmp_path / "status.json").write_text(json.dumps({"process_model": "legacy"}))
-        emit = MagicMock()
-        manager = SchedulerManager(anima=anima, anima_name="sensor", anima_dir=tmp_path, emit_event=emit)
-        manager._record_cron_result = MagicMock()
-        await manager._run_cron_task(task)
-        assert manager._record_cron_result.call_args.kwargs["success"] == (exit_code == 0)
-        assert emit.call_args.args[1]["result"] == result
+
+    outcome = await execute_cron_contract(anima, task)
+
+    assert outcome["success"] == (exit_code == 0)
+    assert outcome["result"] == result
     assert anima.run_cron_command.await_count == 1
     assert anima.run_cron_task.await_count == int(expected)
     if expected and stderr:
         assert stderr in anima.run_cron_task.call_args.kwargs["command_output"]
+
+
+@pytest.mark.asyncio
+async def test_execute_cron_followup_contract_does_not_run_the_command() -> None:
+    anima = MagicMock()
+    anima.run_cron_command = AsyncMock()
+    result = CycleResult(trigger="cron:sensor", action="completed", summary="reviewed")
+    anima.run_cron_task = AsyncMock(return_value=result)
+    task = CronTask(
+        name="sensor",
+        schedule="*/10 * * * *",
+        type="command",
+        command="sensor",
+        description="Review sensor output",
+        skills=["monitoring"],
+    )
+
+    outcome = await execute_cron_followup_contract(anima, task, '{"exit_code": 1}')
+
+    anima.run_cron_command.assert_not_awaited()
+    anima.run_cron_task.assert_awaited_once_with(
+        "sensor",
+        "Review sensor output",
+        command_output='{"exit_code": 1}',
+        skills=["monitoring"],
+    )
+    assert outcome == {
+        "task_type": "command_followup",
+        "result": result.model_dump(mode="json"),
+        "success": True,
+        "usage": result.usage,
+    }

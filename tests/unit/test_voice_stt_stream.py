@@ -25,6 +25,7 @@ from core.voice.stt_stream import (
     common_prefix,
     local_agreement,
 )
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 
 class _ScriptedDecoder:
@@ -294,7 +295,7 @@ class TestVoiceSessionStreaming:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
         session = VoiceSession(
-            "test", ws, stt, tts, TTSConfig(provider="voicevox"), supervisor, voice_config
+            "test", MockVoiceTransport(ws), stt, tts, TTSConfig(provider="voicevox"), supervisor, voice_config
         )
         # Small feed (< decode-min) so no async streaming task starts here;
         # we only assert the audio reached the transcriber.

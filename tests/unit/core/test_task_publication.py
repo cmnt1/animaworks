@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import errno
+import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.tasks_dispatch import is_task_permission_error, publish_delegation, publish_tasks
+from core.tasks.dispatch import is_task_permission_error, publish_delegation, publish_tasks
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture
@@ -40,7 +41,7 @@ def test_full_input_and_model_are_published_once(anima_dir):
 
 def test_all_workspace_validation_precedes_writes(anima_dir):
     with (
-        patch("core.workspace.resolve_workspace", side_effect=ValueError("unknown workspace")),
+        patch("core.org.workspace.resolve_workspace", side_effect=ValueError("unknown workspace")),
         pytest.raises(ValueError, match="workspace"),
     ):
         publish_tasks(anima_dir, [payload(), payload("second", workspace="missing")])
@@ -86,7 +87,7 @@ def test_database_errors_do_not_proxy_to_host(anima_dir, message):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=sqlite3.OperationalError(message)
         ),
-        patch("httpx.post") as post,
+        patch("core.host_api.host_api.post") as post,
         pytest.raises(sqlite3.OperationalError),
     ):
         publish_tasks(anima_dir, [payload()])
@@ -113,7 +114,7 @@ def test_readonly_sandbox_publishes_through_host(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         entries = publish_tasks(anima_dir, [payload()])
     assert entries[0].task_id == "task-one"
@@ -137,7 +138,7 @@ def test_readonly_single_lookup_passes_task_id_to_host(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.get", return_value=response) as get,
+        patch("core.host_api.host_api.get", return_value=response) as get,
     ):
         assert queue.get_task_by_id(entry.task_id) == entry
     assert get.call_args.kwargs["params"]["task_id"] == entry.task_id
@@ -188,13 +189,19 @@ def test_submit_tool_accepts_id_only_resume(anima_dir):
     handler = object.__new__(SkillsToolsMixin)
     handler._anima_dir = anima_dir
     handler._anima_name = "worker"
-    handler._pending_executor_wake = MagicMock()
-    result = handler._handle_submit_tasks(
-        {"batch_id": "resume-event", "tasks": [{"task_id": "task-one", "resume": True}]}
-    )
-    assert json.loads(result)["status"] == "submitted"
-    assert manager.store.pending("worker") == [payload()]
-    handler._pending_executor_wake.assert_called_once()
+    from core.tasks.wake import register_wake, unregister_wake
+
+    wake_called = []
+    register_wake("worker", lambda: wake_called.append(True))
+    try:
+        result = handler._handle_submit_tasks(
+            {"batch_id": "resume-event", "tasks": [{"task_id": "task-one", "resume": True}]}
+        )
+        assert json.loads(result)["status"] == "submitted"
+        assert manager.store.pending("worker") == [payload()]
+        assert wake_called == [True]  # submit fanned out to the registered wake
+    finally:
+        unregister_wake("worker")
 
 
 def test_dependency_can_reference_an_existing_canonical_task(anima_dir):
@@ -212,7 +219,7 @@ def test_command_tasks_are_not_accepted_at_llm_publication_boundary(anima_dir):
 def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
     import json
 
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
     from core.tooling.handler_skills import SkillsToolsMixin
 
     entry = publish_tasks(anima_dir, [payload()])[0]
@@ -228,7 +235,7 @@ def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         result = handler._handle_update_task(
             {"task_id": "task-one", "status": "done", "attempt_identity": {"token": "model-invented"}}
@@ -238,7 +245,7 @@ def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
 
 
 def test_host_publication_propagates_execution_attempt_identity(anima_dir):
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
 
     entry = publish_tasks(anima_dir, [payload()])[0]
     response = MagicMock()
@@ -249,8 +256,48 @@ def test_host_publication_propagates_execution_attempt_identity(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         publish_tasks(anima_dir, [{"task_id": "task-one", "resume": True}])
     assert post.call_args.kwargs["json"]["attempt_identity"] == identity
     assert post.call_args.kwargs["json"]["tasks"] == [{"task_id": "task-one", "resume": True}]
+
+
+def test_submit_tasks_records_human_source_from_conversation(anima_dir):
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    handler = object.__new__(SkillsToolsMixin)
+    handler._anima_dir = anima_dir
+    handler._anima_name = "worker"
+    handler._session_origin = "human"
+    result = handler._handle_submit_tasks(
+        {"batch_id": "b", "tasks": [{"task_id": "t1", "title": "T", "description": "d"}]}
+    )
+    assert json.loads(result)["status"] == "submitted"
+    entry = TaskQueueManager(anima_dir).store.read("worker")["t1"]
+    assert entry.source == "human"
+
+
+def test_submit_tasks_defaults_to_anima_source(anima_dir):
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    handler = object.__new__(SkillsToolsMixin)
+    handler._anima_dir = anima_dir
+    handler._anima_name = "worker"
+    handler._session_origin = ""
+    result = handler._handle_submit_tasks(
+        {"batch_id": "b", "tasks": [{"task_id": "t2", "title": "T", "description": "d"}]}
+    )
+    assert json.loads(result)["status"] == "submitted"
+    entry = TaskQueueManager(anima_dir).store.read("worker")["t2"]
+    assert entry.source == "anima"
+
+
+def test_pending_orders_human_before_anima_within_same_batch(anima_dir):
+    from core.tasks.dispatch import publish_tasks
+
+    publish_tasks(anima_dir, [payload("A"), payload("C")], source="anima")
+    publish_tasks(anima_dir, [payload("B")], source="human")
+    store = TaskQueueManager(anima_dir).store
+    ordered = [row["task_id"] for row in store.pending("worker")]
+    assert ordered == ["B", "A", "C"]

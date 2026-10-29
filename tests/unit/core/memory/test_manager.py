@@ -83,17 +83,15 @@ class TestReadInjection:
 
 class TestReadPermissions:
     def test_no_file(self, mm):
-        """When no permissions file exists, returns formatted default config."""
-        result = mm.read_permissions()
-        assert "Permissions:" in result
-        assert "File access" in result or "Commands" in result
+        """The default open policy adds no prompt section."""
+        assert mm.read_permissions() == ""
 
     def test_with_file(self, mm, anima_dir):
-        """When permissions.md exists, migrates to JSON and returns formatted config."""
+        """Legacy open permissions migrate but add no default-only prompt section."""
         (anima_dir / "permissions.md").write_text("- web_search: OK", encoding="utf-8")
         result = mm.read_permissions()
-        assert "Permissions:" in result
-        assert "web_search" in result or "External tools" in result
+        assert result == ""
+        assert (anima_dir / "permissions.json").is_file()
 
 
 class TestReadCurrentState:
@@ -143,19 +141,6 @@ class TestCurrentStateMigration:
         assert mm.read_current_state() == "status: idle"
 
 
-class TestReadPending:
-    """read_pending is deprecated (Issue #114); always returns empty."""
-
-    def test_no_file(self, mm):
-        assert mm.read_pending() == ""
-
-    def test_deprecated_returns_empty(self, mm, anima_dir):
-        """Deprecated read_pending always returns '' regardless of file."""
-        (anima_dir / "state").mkdir(parents=True, exist_ok=True)
-        (anima_dir / "state" / "pending.md").write_text("- task 1", encoding="utf-8")
-        assert mm.read_pending() == ""
-
-
 class TestReadHeartbeatConfig:
     def test_no_file(self, mm):
         assert mm.read_heartbeat_config() == ""
@@ -179,18 +164,18 @@ class TestReadBootstrap:
         assert mm.read_bootstrap() == "Bootstrap"
 
 
-class TestReadFile:
-    def test_read_relative(self, mm, anima_dir):
-        (anima_dir / "custom.md").write_text("custom content", encoding="utf-8")
-        assert mm.read_file("custom.md") == "custom content"
-
-    def test_read_nonexistent_relative(self, mm):
-        assert mm.read_file("nonexistent.md") == ""
-
-
 class TestReadCompanyVision:
     def test_reads_vision(self, mm, data_dir):
         assert "Company Vision" in mm.read_company_vision() or mm.read_company_vision() == ""
+
+    def test_reads_company_vision_summary_and_memory_pointer(self, mm, anima_dir, data_dir):
+        (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+        company_dir = data_dir / "companies" / "alpha"
+        company_dir.mkdir(parents=True)
+        (company_dir / "vision.md").write_text("Full company vision", encoding="utf-8")
+        (company_dir / "vision_summary.md").write_text("  One-line summary.  \n", encoding="utf-8")
+
+        assert mm.read_company_vision_summary() == ("One-line summary.", str(company_dir / "vision.md"))
 
     def test_prefers_assigned_company_vision_then_falls_back(self, mm, anima_dir, data_dir):
         (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
@@ -214,6 +199,41 @@ class TestReadCompanyVision:
 # ── List helpers ──────────────────────────────────────────
 
 
+class TestResolutionCompanyBoundary:
+    def test_keeps_same_company_and_unassigned_resolvers_only(self, mm, anima_dir, tmp_path):
+        (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+        root = anima_dir.parent
+        for name, company in (("colleague", "alpha"), ("outsider", "beta")):
+            anima = root / name
+            anima.mkdir()
+            (anima / "status.json").write_text(json.dumps({"company": company}), encoding="utf-8")
+        (root / "unassigned").mkdir()
+
+        resolutions = [
+            {"resolver": "colleague", "issue": "same company"},
+            {"resolver": "outsider", "issue": "other company"},
+            {"resolver": "unassigned", "issue": "unassigned resolver"},
+            {"resolver": "human operator", "issue": "human resolver"},
+        ]
+
+        assert mm.filter_resolutions_by_company(resolutions) == [resolutions[0]]
+
+    def test_unassigned_anima_keeps_only_unassigned_resolvers(self, mm, anima_dir, tmp_path):
+        root = anima_dir.parent
+        (root / "unassigned").mkdir()
+        company_anima = root / "assigned"
+        company_anima.mkdir()
+        (company_anima / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+
+        resolutions = [
+            {"resolver": "unassigned", "issue": "no company"},
+            {"resolver": "assigned", "issue": "company assigned"},
+            {"resolver": "unknown", "issue": "unknown resolver"},
+        ]
+
+        assert mm.filter_resolutions_by_company(resolutions) == [resolutions[0], resolutions[2]]
+
+
 class TestListFiles:
     def test_list_knowledge_files(self, mm, anima_dir):
         (anima_dir / "knowledge" / "topic1.md").write_text("k1", encoding="utf-8")
@@ -234,79 +254,6 @@ class TestListFiles:
         (anima_dir / "procedures" / "deploy.md").write_text("proc", encoding="utf-8")
         result = mm.list_procedure_files()
         assert "deploy" in result
-
-    def test_list_skill_files(self, mm, anima_dir):
-        (anima_dir / "skills" / "coding" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (anima_dir / "skills" / "coding" / "SKILL.md").write_text("skill", encoding="utf-8")
-        result = mm.list_skill_files()
-        assert "coding" in result
-
-
-class TestExtractSkillSummary:
-    def test_extracts_summary(self, tmp_path):
-        skill = tmp_path / "skill.md"
-        skill.write_text("# Skill\n## 概要\nFirst line summary\nSecond line", encoding="utf-8")
-        meta = MemoryManager._extract_skill_meta(skill)
-        assert meta.description == "First line summary"
-
-    def test_empty_overview(self, tmp_path):
-        skill = tmp_path / "skill.md"
-        skill.write_text("# Skill\n## 概要\n## 手順", encoding="utf-8")
-        meta = MemoryManager._extract_skill_meta(skill)
-        assert meta.description == ""
-
-    def test_no_overview_section(self, tmp_path):
-        skill = tmp_path / "skill.md"
-        skill.write_text("# Skill\nJust content", encoding="utf-8")
-        meta = MemoryManager._extract_skill_meta(skill)
-        assert meta.description == ""
-
-
-class TestListSkillSummaries:
-    def test_summaries(self, mm, anima_dir):
-        (anima_dir / "skills" / "coding" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (anima_dir / "skills" / "coding" / "SKILL.md").write_text(
-            "# Coding\n## 概要\nWrite code efficiently\n## 手順\n1. Plan",
-            encoding="utf-8",
-        )
-        result = mm.list_skill_summaries()
-        assert len(result) == 1
-        assert result[0][0] == "coding"
-        assert result[0][1] == "Write code efficiently"
-
-
-class TestListCommonSkillSummaries:
-    def test_summaries(self, mm, data_dir):
-        common_dir = data_dir / "common_skills"
-        common_dir.mkdir(exist_ok=True)
-        (common_dir / "cron-management" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (common_dir / "cron-management" / "SKILL.md").write_text(
-            "# cron-management\n## 概要\nManage cron.md format\n## 手順\n1. Read",
-            encoding="utf-8",
-        )
-        result = mm.list_common_skill_summaries()
-        assert len(result) >= 1
-        names = [r[0] for r in result]
-        assert "cron-management" in names
-
-    def test_empty_common_skills(self, mm):
-        result = mm.list_common_skill_summaries()
-        assert isinstance(result, list)
-
-
-class TestListSharedUsers:
-    def test_no_users(self, mm, data_dir):
-        result = mm.list_shared_users()
-        assert isinstance(result, list)
-
-    def test_with_users(self, mm, data_dir):
-        users_dir = data_dir / "shared" / "users"
-        users_dir.mkdir(parents=True, exist_ok=True)
-        (users_dir / "john").mkdir()
-        (users_dir / "jane").mkdir()
-        result = mm.list_shared_users()
-        assert "john" in result
-        assert "jane" in result
 
 
 # ── Write helpers ─────────────────────────────────────────
@@ -335,29 +282,6 @@ class TestUpdateState:
         mm.update_state("status: busy\ntask: writing tests")
         content = mm.read_current_state()
         assert "busy" in content
-
-
-class TestUpdatePending:
-    """update_pending is deprecated (Issue #114); does not write."""
-
-    def test_deprecated_no_write(self, mm, anima_dir):
-        """Deprecated update_pending does not write to pending.md."""
-        mm.update_pending("- task 1\n- task 2")
-        # read_pending is also deprecated and returns ""; pending.md is abolished
-        assert mm.read_pending() == ""
-
-
-class TestWriteKnowledge:
-    def test_writes_knowledge(self, mm):
-        mm.write_knowledge("python", "Python is a programming language")
-        result = mm.list_knowledge_files()
-        assert "python" in result
-
-    def test_sanitizes_filename(self, mm):
-        mm.write_knowledge("topic/with:special chars", "content")
-        # Should create file with sanitized name
-        files = list(mm.knowledge_dir.glob("*.md"))
-        assert len(files) == 1
 
 
 class TestSearchMemoryText:
@@ -444,21 +368,6 @@ class TestSearchMemoryTextCommonKnowledge:
         assert mm.common_knowledge_dir == expected
 
 
-class TestSearchKnowledge:
-    def test_search(self, mm, anima_dir):
-        (anima_dir / "knowledge" / "topic.md").write_text("Important info here", encoding="utf-8")
-        results = mm.search_knowledge("important")
-        assert len(results) == 1
-        assert "topic.md" in results[0][0]
-
-
-class TestSearchProcedures:
-    def test_search(self, mm, anima_dir):
-        (anima_dir / "procedures" / "deploy.md").write_text("Deploy to production", encoding="utf-8")
-        results = mm.search_procedures("deploy")
-        assert len(results) == 1
-
-
 # ── read_model_config ─────────────────────────────────────
 
 
@@ -470,88 +379,13 @@ class TestReadModelConfig:
         assert isinstance(mc, ModelConfig)
         assert mc.model == "gpt-4o"
 
-    def test_legacy_fallback(self, tmp_path, monkeypatch):
-        # Set up isolated environment where config.json does NOT exist
-        fake_data = tmp_path / "fake_data"
-        fake_data.mkdir()
-        anima_dir = tmp_path / "anima_legacy"
-        anima_dir.mkdir()
-        (anima_dir / "config.md").write_text(
-            "- model: custom-model\n- max_tokens: 2048\n",
-            encoding="utf-8",
-        )
-        # Redirect ANIMAWORKS_DATA_DIR to a dir without config.json
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(fake_data))
-        with (
-            patch("core.memory.manager.get_company_dir", return_value=fake_data / "co"),
-            patch("core.memory.manager.get_common_skills_dir", return_value=fake_data / "cs"),
-            patch("core.memory.manager.get_shared_dir", return_value=fake_data / "sh"),
-        ):
-            from core.config.models import invalidate_cache
+    def test_missing_config_returns_default(self, anima_dir, data_dir, tmp_path):
+        from core.config.models import invalidate_cache
 
+        config_path = tmp_path / "missing-config.json"
+        with patch("core.config.models.get_config_path", return_value=config_path):
             invalidate_cache()
-            mm = MemoryManager(anima_dir)
-            mc = mm.read_model_config()
+            mc = MemoryManager(anima_dir).read_model_config()
             invalidate_cache()
-            assert mc.model == "custom-model"
-            assert mc.max_tokens == 2048
 
-
-class TestResolveApiKey:
-    def test_direct_key(self, data_dir, make_anima):
-        anima_dir = make_anima("test-anima", api_key="sk-direct")
-        mm = MemoryManager(anima_dir)
-        mc = mm.read_model_config()
-        assert mm.resolve_api_key(mc) == "sk-direct"
-
-    def test_env_fallback(self, data_dir, make_anima):
-        anima_dir = make_anima("test-anima")
-        mm = MemoryManager(anima_dir)
-        mc = mm.read_model_config()
-        mc.api_key = None
-        mc.api_key_env = "TEST_API_KEY_RESOLVE"
-        with patch.dict("os.environ", {"TEST_API_KEY_RESOLVE": "sk-env"}):
-            assert mm.resolve_api_key(mc) == "sk-env"
-
-
-# ── _read_model_config_from_md ────────────────────────────
-
-
-class TestReadModelConfigFromMd:
-    def test_empty(self, anima_dir, data_dir):
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert isinstance(mc, ModelConfig)
-        assert mc.model == "claude-sonnet-4-6"
-
-    def test_parses_fields(self, anima_dir, data_dir):
-        (anima_dir / "config.md").write_text(
-            "# Config\n- model: gpt-4o\n- max_tokens: 8192\n- max_turns: 10\n- api_base_url: http://localhost:8000\n",
-            encoding="utf-8",
-        )
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert mc.model == "gpt-4o"
-        assert mc.max_tokens == 8192
-        assert not hasattr(mc, "max_turns")
-        assert mc.api_base_url == "http://localhost:8000"
-
-    def test_ignores_biko_section(self, anima_dir, data_dir):
-        (anima_dir / "config.md").write_text(
-            "- model: real\n\n## 備考\n- model: fake\n",
-            encoding="utf-8",
-        )
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert mc.model == "real"
-
-
-class TestReadTodayEpisodes:
-    def test_reads_today(self, mm):
-        today = today_local().isoformat()
-        (mm.episodes_dir / f"{today}.md").write_text("Today's log", encoding="utf-8")
-        result = mm.read_today_episodes()
-        assert "Today's log" in result
-
-    def test_empty_when_no_today(self, mm):
-        assert mm.read_today_episodes() == ""
+        assert mc == ModelConfig()

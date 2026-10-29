@@ -9,16 +9,17 @@ and duplicate name handling.  External APIs are mocked but internal
 components (anima_factory, MemoryManager, ToolHandler) are exercised
 as-is.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.anima.factory import create_from_md
 from core.memory import MemoryManager
-from core.anima_factory import create_from_md
 from core.tooling.handler import ToolHandler
 
 # ── Sample character sheets ──────────────────────────────────
@@ -36,7 +37,7 @@ FULL_CHARACTER_SHEET = """\
 | 上司 | sakura |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | credential | anthropic |
 
 ## 人格
@@ -61,7 +62,7 @@ MINIMAL_CHARACTER_SHEET = """\
 | 上司 | (なし) |
 | 役割 | worker |
 | 実行モード | autonomous |
-| モデル | claude-sonnet-4-6 |
+| モデル | claude-sonnet-5-5 |
 | credential | anthropic |
 
 ## 人格
@@ -82,6 +83,14 @@ def _write_character_sheet(directory: Path, content: str, filename: str = "sheet
     path = directory / filename
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _root_api_response(anima_dir: Path, *, status_code: int = 200, detail: str = "") -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = {"anima_dir": str(anima_dir)} if status_code < 400 else {"detail": detail}
+    response.text = detail
+    return response
 
 
 # ── Tests ────────────────────────────────────────────────────
@@ -119,18 +128,16 @@ class TestCreateFromMdFullFlow:
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "sakura"
         assert status["role"] == "general"
-        assert status["execution_mode"] == "autonomous"
-        assert status["model"] == "claude-sonnet-4-6"
+        # "autonomous" is the sheet's prose label, not a mode; pinning it would
+        # force Mode A (API key) on Claude subscription hires.
+        assert "execution_mode" not in status
+        assert status["model"] == "claude-sonnet-5-5"
         assert status["credential"] == "anthropic"
 
-    def test_identity_md_populated_from_personality_section(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_identity_md_populated_from_personality_section(self, data_dir: Path, tmp_path: Path):
         """identity.md should contain the content from the character sheet's personality section."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
@@ -141,9 +148,7 @@ class TestCreateFromMdFullFlow:
         assert "テスト用の人格設定です" in identity
         assert "明るく元気な性格" in identity
 
-    def test_injection_md_populated_from_role_section(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_injection_md_populated_from_role_section(self, data_dir: Path, tmp_path: Path):
         """injection.md should contain the content from the role/behavior section."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
@@ -223,9 +228,7 @@ class TestCreateFromMdFullFlow:
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == ""
 
 
@@ -269,9 +272,7 @@ class TestCreateFromMdOmittedSections:
 class TestDuplicateAnimaNameError:
     """Test that creating an anima with an existing name raises FileExistsError."""
 
-    def test_duplicate_name_raises_file_exists_error(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_duplicate_name_raises_file_exists_error(self, data_dir: Path, tmp_path: Path):
         """Creating two animas with the same name should raise FileExistsError."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
@@ -280,25 +281,19 @@ class TestDuplicateAnimaNameError:
         create_from_md(animas_dir, sheet_path)
 
         # Re-write the sheet (same content) and try again
-        sheet_path2 = _write_character_sheet(
-            tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md"
-        )
+        sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
 
         with pytest.raises(FileExistsError, match="testanima"):
             create_from_md(animas_dir, sheet_path2)
 
-    def test_duplicate_name_with_explicit_name(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_duplicate_name_with_explicit_name(self, data_dir: Path, tmp_path: Path):
         """Duplicate explicit name should also raise FileExistsError."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         create_from_md(animas_dir, sheet_path, name="dupname")
 
-        sheet_path2 = _write_character_sheet(
-            tmp_path, MINIMAL_CHARACTER_SHEET, filename="sheet2.md"
-        )
+        sheet_path2 = _write_character_sheet(tmp_path, MINIMAL_CHARACTER_SHEET, filename="sheet2.md")
 
         with pytest.raises(FileExistsError, match="dupname"):
             create_from_md(animas_dir, sheet_path2, name="dupname")
@@ -307,36 +302,36 @@ class TestDuplicateAnimaNameError:
 class TestRollbackOnFailure:
     """Test that partial directories are cleaned up when creation fails."""
 
-    def test_rollback_removes_directory_on_status_json_failure(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_rollback_removes_directory_on_status_json_failure(self, data_dir: Path, tmp_path: Path):
         """If _create_status_json fails, the anima directory should be removed."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch(
-            "core.anima_factory._create_status_json",
-            side_effect=RuntimeError("Simulated status.json failure"),
+        with (
+            patch(
+                "core.anima.factory._create_status_json",
+                side_effect=RuntimeError("Simulated status.json failure"),
+            ),
+            pytest.raises(RuntimeError, match="Simulated status.json failure"),
         ):
-            with pytest.raises(RuntimeError, match="Simulated status.json failure"):
-                create_from_md(animas_dir, sheet_path)
+            create_from_md(animas_dir, sheet_path)
 
         # Anima directory should have been rolled back
         assert not (animas_dir / "testanima").exists()
 
-    def test_rollback_removes_directory_on_apply_defaults_failure(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_rollback_removes_directory_on_apply_defaults_failure(self, data_dir: Path, tmp_path: Path):
         """If _apply_defaults_from_sheet fails, the directory should be removed."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch(
-            "core.anima_factory._apply_defaults_from_sheet",
-            side_effect=OSError("Simulated write failure"),
+        with (
+            patch(
+                "core.anima.factory._apply_defaults_from_sheet",
+                side_effect=OSError("Simulated write failure"),
+            ),
+            pytest.raises(OSError, match="Simulated write failure"),
         ):
-            with pytest.raises(OSError, match="Simulated write failure"):
-                create_from_md(animas_dir, sheet_path)
+            create_from_md(animas_dir, sheet_path)
 
         assert not (animas_dir / "testanima").exists()
 
@@ -346,12 +341,14 @@ class TestRollbackOnFailure:
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         # First attempt fails
-        with patch(
-            "core.anima_factory._create_status_json",
-            side_effect=RuntimeError("fail"),
+        with (
+            patch(
+                "core.anima.factory._create_status_json",
+                side_effect=RuntimeError("fail"),
+            ),
+            pytest.raises(RuntimeError),
         ):
-            with pytest.raises(RuntimeError):
-                create_from_md(animas_dir, sheet_path)
+            create_from_md(animas_dir, sheet_path)
 
         # Second attempt should succeed (no leftover directory)
         anima_dir = create_from_md(animas_dir, sheet_path)
@@ -360,7 +357,9 @@ class TestRollbackOnFailure:
 
 
 class TestCreateAnimaToolHandler:
-    """Test create_anima through the ToolHandler dispatch (tool integration)."""
+    """Test the ToolHandler's root-API create_anima contract."""
+
+    # Anima creation became root-owned with S2b (72e47cf4).
 
     def test_create_anima_via_tool_handler(self, data_dir: Path, tmp_path: Path):
         """ToolHandler.handle('create_anima', ...) should create an anima."""
@@ -369,14 +368,9 @@ class TestCreateAnimaToolHandler:
         # Set up a caller anima directory (the anima invoking create_anima)
         caller_dir = animas_dir / "caller"
         caller_dir.mkdir(parents=True)
-        (caller_dir / "identity.md").write_text(
-            "# Caller\nI am the caller.", encoding="utf-8"
-        )
-        (caller_dir / "permissions.md").write_text(
-            "# Permissions\nAll tools allowed.", encoding="utf-8"
-        )
-        for sub in ["episodes", "knowledge", "procedures", "skills", "state",
-                     "shortterm", "shortterm/archive"]:
+        (caller_dir / "identity.md").write_text("# Caller\nI am the caller.", encoding="utf-8")
+        (caller_dir / "permissions.md").write_text("# Permissions\nAll tools allowed.", encoding="utf-8")
+        for sub in ["episodes", "knowledge", "procedures", "skills", "state", "shortterm", "shortterm/archive"]:
             (caller_dir / sub).mkdir(parents=True, exist_ok=True)
 
         memory = MemoryManager(caller_dir)
@@ -385,8 +379,11 @@ class TestCreateAnimaToolHandler:
         # Write the character sheet file
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        # Mock the config registration (imported inline in the handler method)
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        expected_anima_dir = animas_dir / "testanima"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -394,13 +391,16 @@ class TestCreateAnimaToolHandler:
 
         assert "testanima" in result
         assert "created successfully" in result
-
-        # Verify the anima was actually created
-        new_anima_dir = animas_dir / "testanima"
-        assert new_anima_dir.exists()
-        assert (new_anima_dir / "character_sheet.md").exists()
-        assert (new_anima_dir / "status.json").exists()
-        assert (new_anima_dir / "identity.md").exists()
+        mock_post.assert_called_once_with(
+            "/api/internal/anima/create",
+            json={
+                "calling_anima": "caller",
+                "character_sheet_content": FULL_CHARACTER_SHEET,
+            },
+            timeout=60.0,
+        )
+        # The worker sends creation to the root; it must not write the anima locally.
+        assert not expected_anima_dir.exists()
 
     def test_create_anima_tool_missing_sheet(self, data_dir: Path, tmp_path: Path):
         """ToolHandler should return error when character sheet path doesn't exist."""
@@ -410,8 +410,7 @@ class TestCreateAnimaToolHandler:
         caller_dir.mkdir(parents=True)
         (caller_dir / "identity.md").write_text("# Caller", encoding="utf-8")
         (caller_dir / "permissions.md").write_text("# Perms", encoding="utf-8")
-        for sub in ["episodes", "knowledge", "procedures", "skills", "state",
-                     "shortterm", "shortterm/archive"]:
+        for sub in ["episodes", "knowledge", "procedures", "skills", "state", "shortterm", "shortterm/archive"]:
             (caller_dir / sub).mkdir(parents=True, exist_ok=True)
 
         memory = MemoryManager(caller_dir)
@@ -424,9 +423,7 @@ class TestCreateAnimaToolHandler:
 
         assert "FileNotFound" in result or "not found" in result.lower()
 
-    def test_create_anima_tool_duplicate_returns_error(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_create_anima_tool_duplicate_returns_error(self, data_dir: Path, tmp_path: Path):
         """ToolHandler should return error (not raise) for duplicate anima name."""
         animas_dir = data_dir / "animas"
 
@@ -434,8 +431,7 @@ class TestCreateAnimaToolHandler:
         caller_dir.mkdir(parents=True)
         (caller_dir / "identity.md").write_text("# Caller", encoding="utf-8")
         (caller_dir / "permissions.md").write_text("# Perms", encoding="utf-8")
-        for sub in ["episodes", "knowledge", "procedures", "skills", "state",
-                     "shortterm", "shortterm/archive"]:
+        for sub in ["episodes", "knowledge", "procedures", "skills", "state", "shortterm", "shortterm/archive"]:
             (caller_dir / sub).mkdir(parents=True, exist_ok=True)
 
         memory = MemoryManager(caller_dir)
@@ -443,28 +439,30 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        # First creation succeeds
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        expected_anima_dir = animas_dir / "testanima"
+        responses = [
+            _root_api_response(expected_anima_dir),
+            _root_api_response(expected_anima_dir, status_code=409, detail="Anima already exists"),
+        ]
+        with patch("core.host_api.host_api.post", side_effect=responses) as mock_post:
             result1 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
             )
-        assert "created successfully" in result1
+            assert "created successfully" in result1
 
-        # Second creation should return an error string, not raise
-        sheet_path2 = _write_character_sheet(
-            tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md"
-        )
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+            # A root-side duplicate is translated to an AnimaExists tool error.
+            sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
             result2 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path2)},
             )
-        assert "AnimaExists" in result2 or "already exists" in result2.lower()
 
-    def test_create_anima_tool_with_explicit_name(
-        self, data_dir: Path, tmp_path: Path
-    ):
+        assert "AnimaExists" in result2 or "already exists" in result2.lower()
+        assert mock_post.call_count == 2
+        assert not expected_anima_dir.exists()
+
+    def test_create_anima_tool_with_explicit_name(self, data_dir: Path, tmp_path: Path):
         """ToolHandler should support the optional 'name' parameter."""
         animas_dir = data_dir / "animas"
 
@@ -472,8 +470,7 @@ class TestCreateAnimaToolHandler:
         caller_dir.mkdir(parents=True)
         (caller_dir / "identity.md").write_text("# Caller", encoding="utf-8")
         (caller_dir / "permissions.md").write_text("# Perms", encoding="utf-8")
-        for sub in ["episodes", "knowledge", "procedures", "skills", "state",
-                     "shortterm", "shortterm/archive"]:
+        for sub in ["episodes", "knowledge", "procedures", "skills", "state", "shortterm", "shortterm/archive"]:
             (caller_dir / sub).mkdir(parents=True, exist_ok=True)
 
         memory = MemoryManager(caller_dir)
@@ -481,18 +478,21 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        expected_anima_dir = animas_dir / "custom-worker"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path), "name": "custom-worker"},
             )
 
         assert "custom-worker" in result
-        assert (animas_dir / "custom-worker").exists()
+        assert mock_post.call_args.kwargs["json"]["name"] == "custom-worker"
+        assert not expected_anima_dir.exists()
 
-    def test_create_anima_tool_relative_path_resolved(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_create_anima_tool_relative_path_resolved(self, data_dir: Path, tmp_path: Path):
         """Relative character_sheet_path should be resolved relative to anima_dir."""
         animas_dir = data_dir / "animas"
 
@@ -500,8 +500,7 @@ class TestCreateAnimaToolHandler:
         caller_dir.mkdir(parents=True)
         (caller_dir / "identity.md").write_text("# Caller", encoding="utf-8")
         (caller_dir / "permissions.md").write_text("# Perms", encoding="utf-8")
-        for sub in ["episodes", "knowledge", "procedures", "skills", "state",
-                     "shortterm", "shortterm/archive"]:
+        for sub in ["episodes", "knowledge", "procedures", "skills", "state", "shortterm", "shortterm/archive"]:
             (caller_dir / sub).mkdir(parents=True, exist_ok=True)
 
         # Write the character sheet inside the caller's directory
@@ -511,7 +510,11 @@ class TestCreateAnimaToolHandler:
         memory = MemoryManager(caller_dir)
         handler = ToolHandler(anima_dir=caller_dir, memory=memory)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        expected_anima_dir = animas_dir / "minimal"
+        with patch(
+            "core.host_api.host_api.post",
+            return_value=_root_api_response(expected_anima_dir),
+        ) as mock_post:
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": "new_hire.md"},
@@ -519,7 +522,11 @@ class TestCreateAnimaToolHandler:
 
         assert "minimal" in result
         assert "created successfully" in result
-        assert (animas_dir / "minimal").exists()
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["character_sheet_content"] == MINIMAL_CHARACTER_SHEET
+        assert payload["calling_anima"] == "caller"
+        assert "character_sheet_path" not in payload
+        assert not expected_anima_dir.exists()
 
 
 class TestCharacterSheetValidation:
@@ -586,9 +593,7 @@ class TestCharacterSheetValidation:
         with pytest.raises(ValueError, match="役割・行動方針"):
             create_from_md(animas_dir, sheet_path)
 
-    def test_validation_prevents_directory_creation(
-        self, data_dir: Path, tmp_path: Path
-    ):
+    def test_validation_prevents_directory_creation(self, data_dir: Path, tmp_path: Path):
         """An invalid sheet should not create any directory at all."""
         animas_dir = data_dir / "animas"
         bad_sheet = "# Just a heading, nothing valid"

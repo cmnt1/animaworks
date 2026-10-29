@@ -144,7 +144,7 @@ pytest tests/test_priming.py tests/test_consolidation.py tests/integration/test_
 このテストスイートは、以下のコンポーネントをカバーしています:
 
 - `core.memory.priming.PrimingEngine` - 4チャネル並列プライミング
-- `core.memory.consolidation.ConsolidationEngine` - 日次固定化・週次統合
+- `core.memory.maintenance.consolidation.ConsolidationEngine` - 日次固定化・週次統合
 - `core.memory.priming.format_priming_section` - プライミング結果フォーマット
 
 ## 設計ドキュメント

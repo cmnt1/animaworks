@@ -7,14 +7,12 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Unit tests for Phase 2: 3-tier matching + auto-injection for procedures."""
+"""Unit tests for procedure behavior in system prompt construction."""
 
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
-from core.schemas import SkillMeta
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -44,80 +42,19 @@ def memory(anima_dir: Path, monkeypatch: pytest.MonkeyPatch):
     return MemoryManager(anima_dir)
 
 
-# ── 2-1: match_skills_by_description with procedures ─────
-
-
-class TestProcedureSkillMatching:
-    """Test that procedures can be matched via the existing 3-tier engine."""
-
-    def test_procedure_meta_matches_tier1(self, anima_dir: Path) -> None:
-        """Procedure with bracket keywords should match Tier 1."""
-        from core.memory.manager import match_skills_by_description
-
-        procedure_meta = SkillMeta(
-            name="deploy",
-            description="「デプロイ」手順、「リリース」時に使用",
-            path=anima_dir / "procedures" / "deploy.md",
-            is_common=False,
-        )
-        matched = match_skills_by_description(
-            "デプロイをお願いします", [procedure_meta],
-        )
-        assert len(matched) == 1
-        assert matched[0].name == "deploy"
-
-    def test_procedure_meta_matches_tier2(self, anima_dir: Path) -> None:
-        """Procedure with vocabulary keywords should match Tier 2."""
-        from core.memory.manager import match_skills_by_description
-
-        procedure_meta = SkillMeta(
-            name="backup",
-            description="database backup procedure with verification steps",
-            path=anima_dir / "procedures" / "backup.md",
-            is_common=False,
-        )
-        matched = match_skills_by_description(
-            "I need to run the database backup and verify it",
-            [procedure_meta],
-        )
-        assert len(matched) == 1
-        assert matched[0].name == "backup"
-
-    def test_mixed_skills_and_procedures(self, anima_dir: Path) -> None:
-        """Skills and procedures can both be matched in a single call."""
-        from core.memory.manager import match_skills_by_description
-
-        skill = SkillMeta(
-            name="git-flow",
-            description="「git」ブランチ戦略、「マージ」手順",
-            path=anima_dir / "skills" / "git-flow.md",
-            is_common=False,
-        )
-        procedure = SkillMeta(
-            name="release-checklist",
-            description="「リリース」前のチェックリスト、「デプロイ」手順",
-            path=anima_dir / "procedures" / "release-checklist.md",
-            is_common=False,
-        )
-        matched = match_skills_by_description(
-            "リリースの準備をお願いします",
-            [skill, procedure],
-        )
-        assert len(matched) == 1
-        assert matched[0].name == "release-checklist"
-
-
 # ── 2-2: builder.py procedures injection ─────────────────
 
 
 class TestBuilderProcedureInjection:
     """Test that build_system_prompt includes procedure matching."""
 
-    def test_procedure_not_in_system_prompt_table(self, memory, anima_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_procedure_not_in_system_prompt_table(
+        self, memory, anima_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Procedures must NOT appear as table rows in the system prompt (table removed)."""
         # Write a procedure
         (anima_dir / "procedures" / "deploy.md").write_text(
-            "---\ndescription: \"「デプロイ」手順\"\n---\n\n# Deploy Steps\n\n1. Pull\n2. Build\n3. Deploy",
+            '---\ndescription: "「デプロイ」手順"\n---\n\n# Deploy Steps\n\n1. Pull\n2. Build\n3. Deploy',
             encoding="utf-8",
         )
 
@@ -143,7 +80,9 @@ class TestBuilderProcedureInjection:
         assert "| deploy | 手順 |" not in prompt
         assert "| 名前 | 種別 | 概要 |" not in prompt
 
-    def test_procedures_not_in_system_prompt_regardless_of_message(self, memory, anima_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_procedures_not_in_system_prompt_regardless_of_message(
+        self, memory, anima_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Procedures must NOT appear in the system prompt table regardless of message content."""
         (anima_dir / "procedures" / "backup.md").write_text(
             "---\ndescription: backup procedure\n---\n\n# Backup",
@@ -180,7 +119,7 @@ class TestBuilderProcedureInjection:
     ) -> None:
         """BuildResult no longer exposes DK procedure injection metadata."""
         (anima_dir / "procedures" / "deploy.md").write_text(
-            "---\ndescription: \"「デプロイ」手順\"\n---\n\n# Deploy",
+            '---\ndescription: "「デプロイ」手順"\n---\n\n# Deploy',
             encoding="utf-8",
         )
 

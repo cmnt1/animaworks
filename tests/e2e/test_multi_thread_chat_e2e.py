@@ -16,12 +16,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.conversation import ConversationMemory
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
-
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -44,9 +42,7 @@ def model_config() -> ModelConfig:
 class TestMultiThreadConversationE2E:
     """End-to-end test: multiple threads maintain isolated conversation state."""
 
-    def test_concurrent_thread_conversations(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_concurrent_thread_conversations(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Simulate two concurrent conversations on different threads.
 
         Verifies:
@@ -95,9 +91,7 @@ class TestMultiThreadConversationE2E:
         assert len(state_default.turns) == 2
         assert "Hello" in state_default.turns[0].content
 
-    def test_thread_listing_from_conversations_dir(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_thread_listing_from_conversations_dir(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Simulate what the sessions API would do: list threads from filesystem."""
         # Create conversations in multiple threads
         for tid in ["thread-1", "thread-2", "thread-3"]:
@@ -113,9 +107,7 @@ class TestMultiThreadConversationE2E:
         assert thread_ids == ["thread-1", "thread-2", "thread-3"]
 
     @pytest.mark.asyncio
-    async def test_concurrent_thread_processing(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    async def test_concurrent_thread_processing(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Two threads can be written concurrently without blocking each other."""
         results: list[str] = []
 
@@ -162,9 +154,7 @@ class TestMultiThreadStreamingJournalE2E:
         """Simulate crash recovery: orphaned journals in thread directories."""
         # Create orphaned journals in two threads
         for tid in ["crash-thread-1", "crash-thread-2"]:
-            journal = StreamingJournal(
-                anima_dir, session_type="chat", thread_id=tid
-            )
+            journal = StreamingJournal(anima_dir, session_type="chat", thread_id=tid)
             journal.open(trigger=f"message:user-{tid}", from_person="user")
             journal.write_text(f"Partial response for {tid}")
             journal.close()  # Close without finalize = orphan
@@ -178,9 +168,7 @@ class TestMultiThreadStreamingJournalE2E:
 
         # Recover each
         for tid in ["crash-thread-1", "crash-thread-2"]:
-            recovery = StreamingJournal.recover(
-                anima_dir, "chat", thread_id=tid
-            )
+            recovery = StreamingJournal.recover(anima_dir, "chat", thread_id=tid)
             assert recovery is not None
             assert f"Partial response for {tid}" in recovery.recovered_text
             StreamingJournal.confirm_recovery(anima_dir, "chat", thread_id=tid)

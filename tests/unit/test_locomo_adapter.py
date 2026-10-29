@@ -16,10 +16,7 @@ from benchmarks.locomo.adapter import (
     _latest_session_reference_time,
     _session_indices,
     load_dataset,
-    locomo_entity_aware_graph_enabled,
-    locomo_entity_boost_enabled,
     locomo_fact_index_enabled,
-    locomo_temporal_boost_enabled,
 )
 
 # ── load_dataset ──────────
@@ -173,9 +170,7 @@ class TestLatestSessionReferenceTime:
 
 class TestSearchModes:
     def test_modes_tuple(self):
-        assert "vector" in SEARCH_MODES
-        assert "vector_graph" in SEARCH_MODES
-        assert "scope_all" in SEARCH_MODES
+        assert SEARCH_MODES == ("vector", "scope_all")
 
     def test_invalid_mode_raises(self):
         from benchmarks.locomo.adapter import AnimaWorksLoCoMoAdapter
@@ -249,22 +244,12 @@ class TestEventMetadataPropagation:
             "search_method": "cross_encoder",
             "event_time_iso": "2023-08-17T13:50:00+09:00",
             "session_index": 2,
-            "base_score": 0.8,
-            "temporal_boost": 0.1,
-            "entity_boost": 0.08,
-            "entity_overlap": ["book", "suggestion"],
-            "query_entities": ["book", "suggestion"],
-            "candidate_entities": ["becoming nicole", "book", "suggestion"],
         }
 
         hit = adapter._adapter_hit_from_pipeline_item(item)
 
         assert hit["metadata"]["event_time_iso"] == "2023-08-17T13:50:00+09:00"
         assert hit["metadata"]["session_index"] == 2
-        assert hit["metadata"]["base_score"] == 0.8
-        assert hit["metadata"]["temporal_boost"] == 0.1
-        assert hit["metadata"]["entity_boost"] == 0.08
-        assert hit["metadata"]["entity_overlap"] == ["book", "suggestion"]
 
     def test_adapter_hit_restores_memory_type(self):
         adapter = self._adapter_without_init()
@@ -477,36 +462,6 @@ class TestAnswerCompletionKnobs:
             adapter._complete_sync([{"role": "user", "content": "Q"}], "gpt-test")
 
         assert calls == 1
-
-
-class TestTemporalBoostEnv:
-    def test_temporal_boost_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("LOCOMO_TEMPORAL_BOOST", raising=False)
-        assert locomo_temporal_boost_enabled() is False
-
-    def test_temporal_boost_enabled_by_explicit_env(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("LOCOMO_TEMPORAL_BOOST", "1")
-        assert locomo_temporal_boost_enabled() is True
-
-
-class TestEntityBoostEnv:
-    def test_entity_boost_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("LOCOMO_ENTITY_BOOST", raising=False)
-        assert locomo_entity_boost_enabled() is False
-
-    def test_entity_boost_enabled_by_explicit_env(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("LOCOMO_ENTITY_BOOST", "1")
-        assert locomo_entity_boost_enabled() is True
-
-
-class TestEntityAwareGraphEnv:
-    def test_entity_aware_graph_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("LOCOMO_ENTITY_AWARE_GRAPH", raising=False)
-        assert locomo_entity_aware_graph_enabled() is False
-
-    def test_entity_aware_graph_enabled_by_explicit_env(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setenv("LOCOMO_ENTITY_AWARE_GRAPH", "1")
-        assert locomo_entity_aware_graph_enabled() is True
 
 
 class TestFactIndexEnv:

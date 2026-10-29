@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core._anima_heartbeat import HeartbeatMixin
+from core.anima.heartbeat import HeartbeatMixin
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
 
 
@@ -40,6 +40,8 @@ def mixin(anima_dir):
     m.anima_dir = anima_dir
     m.memory = MagicMock()
     m._get_heartbeat_md_max_bytes = MagicMock(return_value=0)
+    m._get_current_state_cleanup_chars = MagicMock(return_value=0)
+    m._archive_heartbeat_md_before_cleanup = lambda: HeartbeatMixin._archive_heartbeat_md_before_cleanup(m)
     m._build_heartbeat_md_cleanup_instruction = lambda hb: HeartbeatMixin._build_heartbeat_md_cleanup_instruction(m, hb)
     return m
 
@@ -92,7 +94,7 @@ class TestHeartbeatPromptCleanupInstruction:
         mixin.memory.read_heartbeat_config.return_value = None
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
-        with patch("core._anima_heartbeat.load_prompt", return_value="hb"):
+        with patch("core.anima.heartbeat.load_prompt", return_value="hb"):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mixin)
 
         assert parts == ["hb"]
@@ -105,7 +107,7 @@ class TestHeartbeatPromptCleanupInstruction:
         mixin.memory.read_heartbeat_config.return_value = None
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
-        with patch("core._anima_heartbeat.load_prompt", return_value="hb"):
+        with patch("core.anima.heartbeat.load_prompt", return_value="hb"):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mixin)
 
         assert len(parts) == 2
@@ -152,13 +154,31 @@ class TestStateCleanupInstruction:
 
         assert HeartbeatMixin._build_state_cleanup_instruction(mixin) is None
 
+    def test_configured_cleanup_threshold_fires_independently_of_hard_limit(self, mixin):
+        mixin._get_current_state_max_chars = MagicMock(return_value=8000)
+        mixin._get_current_state_cleanup_chars = MagicMock(return_value=2000)
+        mixin.memory.read_current_state.return_value = "x" * 2001
+
+        result = HeartbeatMixin._build_state_cleanup_instruction(mixin)
+
+        assert result is not None
+        assert "2001" in result
+        assert "1000" in result
+
+    def test_configured_cleanup_threshold_does_not_fire_below_limit(self, mixin):
+        mixin._get_current_state_max_chars = MagicMock(return_value=8000)
+        mixin._get_current_state_cleanup_chars = MagicMock(return_value=2000)
+        mixin.memory.read_current_state.return_value = "x" * 2000
+
+        assert HeartbeatMixin._build_state_cleanup_instruction(mixin) is None
+
     def test_cron_prompt_includes_cleanup(self, mixin):
         mixin._get_current_state_max_chars = MagicMock(return_value=100)
         mixin.memory.read_current_state.return_value = "x" * 200
         mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
-        with patch("core._anima_heartbeat.load_prompt", return_value="cron"):
+        with patch("core.anima.heartbeat.load_prompt", return_value="cron"):
             prompt = HeartbeatMixin._build_cron_prompt(mixin, "task", "desc")
 
         assert "current_state.md" in prompt
@@ -197,22 +217,41 @@ class TestHeartbeatMdCleanupInstruction:
         assert "heartbeat.md" in result
         assert result != "heartbeat.heartbeat_md_cleanup_required"
 
-    def test_default_limit_is_20kb(self, data_dir):
+    def test_default_limits(self, data_dir):
         from core.config.schemas import HeartbeatConfig
 
-        assert HeartbeatConfig().heartbeat_md_max_bytes == 20000
+        config = HeartbeatConfig()
+        assert config.current_state_cleanup_chars == 2000
+        assert config.heartbeat_md_max_bytes == 8000
+
+    def test_archives_before_cleanup_once_per_day(self, mixin):
+        from core.time_utils import now_local
+
+        source = mixin.anima_dir / "heartbeat.md"
+        source.write_text("original heartbeat content", encoding="utf-8")
+        mixin._get_heartbeat_md_max_bytes = MagicMock(return_value=10)
+
+        first = HeartbeatMixin._build_heartbeat_md_cleanup_instruction(mixin, "x" * 20)
+        archive = mixin.anima_dir / "archive" / "heartbeat" / f"heartbeat.md.{now_local().strftime('%Y%m%d')}"
+        assert first is not None
+        assert "archive/heartbeat/" in first
+        assert archive.read_text(encoding="utf-8") == "original heartbeat content"
+
+        source.write_text("updated heartbeat content", encoding="utf-8")
+        HeartbeatMixin._build_heartbeat_md_cleanup_instruction(mixin, "x" * 20)
+        assert archive.read_text(encoding="utf-8") == "original heartbeat content"
 
     @pytest.mark.asyncio
     async def test_heartbeat_prompt_includes_instruction(self, mixin):
         mixin.memory.read_heartbeat_config.return_value = "x" * 30000
-        mixin._get_heartbeat_md_max_bytes = MagicMock(return_value=20000)
+        mixin._get_heartbeat_md_max_bytes = MagicMock(return_value=8000)
         mixin._build_state_cleanup_instruction = MagicMock(return_value=None)
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
         with (
-            patch("core._anima_heartbeat._build_cron_rejected_notice", return_value=None),
-            patch("core._anima_heartbeat._build_stale_task_scoreboard", return_value=None),
-            patch("core._anima_heartbeat._build_curator_review_part", return_value=None),
+            patch("core.anima.heartbeat._build_cron_rejected_notice", return_value=None),
+            patch("core.anima.heartbeat._build_stale_task_scoreboard", return_value=None),
+            patch("core.anima.heartbeat._build_curator_review_part", return_value=None),
         ):
             parts = await HeartbeatMixin._build_heartbeat_prompt(mixin)
 

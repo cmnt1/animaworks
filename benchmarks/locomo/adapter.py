@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────
 
 ANIMA_NAME = "locomo_bench"
-SEARCH_MODES: tuple[str, ...] = ("vector", "vector_graph", "scope_all")
+SEARCH_MODES: tuple[str, ...] = ("vector", "scope_all")
 _SESSION_RE = re.compile(r"^session_(\d+)$")
 
 # ── Dependency checks ──────────
@@ -65,7 +65,7 @@ def _ensure_rag_stack() -> None:
 
 # Defer to core (same tokenizer rules as activity BM25) when available
 try:
-    from core.memory.bm25 import tokenize as _bm25_tokenize
+    from core.memory.retrieval.bm25 import tokenize as _bm25_tokenize
 except ImportError:
 
     def _bm25_tokenize(text: str) -> list[str]:
@@ -96,12 +96,6 @@ _EVENT_METADATA_FIELDS: tuple[str, ...] = (
     "event_time_parse_error",
     "entities",
     "confidence",
-    "base_score",
-    "temporal_boost",
-    "entity_boost",
-    "entity_overlap",
-    "query_entities",
-    "candidate_entities",
     *MULTIHOP_METADATA_FIELDS,
 )
 _ENV_TRUE = {"1", "true", "yes", "on"}
@@ -111,24 +105,9 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _ENV_TRUE
 
 
-def locomo_temporal_boost_enabled() -> bool:
-    """Return True when LoCoMo temporal boost ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_TEMPORAL_BOOST")
-
-
-def locomo_entity_boost_enabled() -> bool:
-    """Return True when LoCoMo entity boost ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_ENTITY_BOOST")
-
-
 def locomo_fact_index_enabled() -> bool:
     """Return True when LoCoMo fact dual-index ablation is explicitly enabled."""
     return _env_flag("LOCOMO_FACT_INDEX")
-
-
-def locomo_entity_aware_graph_enabled() -> bool:
-    """Return True when LoCoMo entity-aware graph ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_ENTITY_AWARE_GRAPH")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -296,7 +275,7 @@ class AnimaWorksLoCoMoAdapter:
     ) -> None:
         """
         Args:
-            search_mode: ``vector`` | ``vector_graph`` | ``scope_all``
+            search_mode: ``vector`` | ``scope_all``
             top_k: Number of hits to return from retrieval
             answer_timeout: Optional LiteLLM timeout for answer generation.
             answer_max_retries: Number of retries after the first answer attempt.
@@ -354,10 +333,9 @@ class AnimaWorksLoCoMoAdapter:
 
     def _init_isolated_rag(self) -> None:
         """Create temp data dir, env override, and RAG components."""
+        from core.memory.rag.cli_access import open_vector_access  # noqa: PLC0415
         from core.memory.rag.indexer import MemoryIndexer  # noqa: PLC0415
         from core.memory.rag.retriever import MemoryRetriever  # noqa: PLC0415
-        from core.memory.rag.singleton import get_embedding_model, get_vector_store  # noqa: PLC0415
-        from core.memory.rag.vector_worker_client import start_temporary_vector_worker  # noqa: PLC0415
 
         self._previous_animaworks_data = os.environ.get("ANIMAWORKS_DATA_DIR")
         real_data_dir = Path(os.environ.get("ANIMAWORKS_DATA_DIR", "~/.animaworks")).expanduser().resolve()
@@ -384,23 +362,17 @@ class AnimaWorksLoCoMoAdapter:
 
         (self._anima_dir / "vectordb").mkdir(parents=True, exist_ok=True)
         try:
-            self._temp_worker = start_temporary_vector_worker(log_dir=Path(self._temp_dir) / "logs")
-            self._vector_store = get_vector_store(ANIMA_NAME)
+            self._temp_worker = open_vector_access(ANIMA_NAME, self._anima_dir, purpose="locomo")
+            self._vector_store = self._temp_worker.__enter__().store
             if self._vector_store is None:
-                raise RuntimeError("vector worker unavailable")
+                raise RuntimeError("vector store unavailable")
         except Exception as e:
-            logger.error("Vector worker store init failed: %s", e)
-            raise
-        try:
-            emb = get_embedding_model()
-        except Exception as e:
-            logger.error("Embedding model load failed: %s", e)
+            logger.error("Vector store init failed: %s", e)
             raise
         self._indexer = MemoryIndexer(
             self._vector_store,
             ANIMA_NAME,
             self._anima_dir,
-            embedding_model=emb,
         )
         self._retriever = MemoryRetriever(
             self._vector_store,
@@ -457,15 +429,6 @@ class AnimaWorksLoCoMoAdapter:
         self._last_fact_count = 0
         self._query_reference_time = ""
         self._last_multihop_meta = empty_multihop_meta()
-        if self._retriever is not None:
-            self._retriever._knowledge_graph = None
-            self._retriever._knowledge_graph_signature = None
-        graph_cache = self._anima_dir / "vectordb" / "knowledge_graph.json"
-        if graph_cache.exists():
-            try:
-                graph_cache.unlink()
-            except OSError as e:
-                logger.warning("Failed to remove %s: %s", graph_cache, e)
         meta = self._index_meta_path
         if meta.exists():
             try:
@@ -650,10 +613,6 @@ class AnimaWorksLoCoMoAdapter:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
-            "access_boost_enabled": True,
-            "access_boost_weight": 0.05,
-            "access_boost_cap": 0.25,
-            "access_boost_half_life_days": 30.0,
         }
         try:
             cfg_path = Path("~/.animaworks/config.json").expanduser()
@@ -683,22 +642,6 @@ class AnimaWorksLoCoMoAdapter:
                             "rrf_confidence_threshold",
                             defaults["rrf_confidence_threshold"],
                         ),
-                        "access_boost_enabled": rag.get(
-                            "access_boost_enabled",
-                            defaults["access_boost_enabled"],
-                        ),
-                        "access_boost_weight": rag.get(
-                            "access_boost_weight",
-                            defaults["access_boost_weight"],
-                        ),
-                        "access_boost_cap": rag.get(
-                            "access_boost_cap",
-                            defaults["access_boost_cap"],
-                        ),
-                        "access_boost_half_life_days": rag.get(
-                            "access_boost_half_life_days",
-                            defaults["access_boost_half_life_days"],
-                        ),
                     },
                 )
         except Exception:
@@ -723,18 +666,6 @@ class AnimaWorksLoCoMoAdapter:
                 anima_name=ANIMA_NAME,
                 memory_type="episodes",
                 top_k=self._top_k,
-                enable_spreading_activation=False,
-            )
-            items = self._retrieval_to_dicts(res)
-            self._remember_retrieval_diagnostics(items)
-            return items
-        if self._search_mode == "vector_graph":
-            res = self._retriever.search(
-                query=question,
-                anima_name=ANIMA_NAME,
-                memory_type="episodes",
-                top_k=self._top_k,
-                enable_spreading_activation=True,
             )
             items = self._retrieval_to_dicts(res)
             self._remember_retrieval_diagnostics(items)
@@ -745,7 +676,6 @@ class AnimaWorksLoCoMoAdapter:
 
     def _retrieve_scope_all(self, question: str, *, category: int | None) -> list[dict[str, Any]]:
         """Production-compatible Legacy unified search with benchmark ablations."""
-        from core.memory.retrieval.temporal import TemporalBoostConfig  # noqa: PLC0415
         from core.memory.retrieval.unified_search import UnifiedMemorySearch  # noqa: PLC0415
 
         assert self._anima_dir is not None
@@ -770,11 +700,6 @@ class AnimaWorksLoCoMoAdapter:
             trigger="chat",
             scope_override=scope_override,
             pipeline_settings=search_settings,
-            temporal_boost=TemporalBoostConfig(
-                enabled=locomo_temporal_boost_enabled(),
-                category=category,
-            ),
-            entity_boost=self._entity_boost_config(category),
             reference_time=self._query_reference_time or None,
         )
         meta = searcher.last_search_meta
@@ -852,7 +777,6 @@ class AnimaWorksLoCoMoAdapter:
                 anima_name=ANIMA_NAME,
                 memory_type="facts",
                 top_k=top_k,
-                enable_spreading_activation=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("LoCoMo fact vector retrieval skipped after failure: %s", e)
@@ -944,18 +868,6 @@ class AnimaWorksLoCoMoAdapter:
             row["metadata"]["search_method"] = "rrf"
             merged.append(row)
         return merged
-
-    def _entity_boost_config(self, category: int | None) -> Any:
-        from core.memory.retrieval.entity import EntityBoostConfig  # noqa: PLC0415
-
-        stricter_multi_hop = category == 1
-        return EntityBoostConfig(
-            enabled=locomo_entity_boost_enabled(),
-            category=category,
-            ignored_entities=self._entity_ignored_entities,
-            use_content_tokens=not stricter_multi_hop,
-            require_multi_token_overlap=stricter_multi_hop,
-        )
 
     def _complete_sync(
         self,
@@ -1063,9 +975,9 @@ class AnimaWorksLoCoMoAdapter:
         temp_worker = getattr(self, "_temp_worker", None)
         if temp_worker is not None:
             try:
-                temp_worker.stop()
+                temp_worker.__exit__(None, None, None)
             except Exception as e:
-                logger.warning("Failed to stop temporary vector worker: %s", e)
+                logger.warning("Failed to close temporary vector store: %s", e)
             self._temp_worker = None
         if self._temp_dir and Path(self._temp_dir).exists():
             try:

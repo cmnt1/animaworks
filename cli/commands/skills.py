@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+from core.paths import get_data_dir
 from core.skills.hub import SkillHub, result_json
+from core.skills.ledger import SkillLedger, ledger_files, rollback_skill_change
 
 
 def register_skills_command(subparsers: argparse._SubParsersAction) -> None:
@@ -45,6 +47,16 @@ def register_skills_command(subparsers: argparse._SubParsersAction) -> None:
     remove.add_argument("skill_name", help="Skill name")
     _target_args(remove, require_source=False)
     remove.set_defaults(func=cmd_skills_remove)
+
+    ledger = sub.add_parser("ledger", help="List skill content changes")
+    ledger.add_argument("skill_name", nargs="?", default=None, help="Filter by skill name")
+    ledger.add_argument("--anima", default=None, help="Filter personal history to one Anima")
+    ledger.set_defaults(func=cmd_skills_ledger)
+
+    rollback = sub.add_parser("rollback", help="Rollback one skill content change by ledger ID")
+    rollback.add_argument("id", help="Ledger entry ID")
+    rollback.add_argument("--anima", required=True, help="Anima context/owner for the rollback")
+    rollback.set_defaults(func=cmd_skills_rollback)
 
     quarantine = sub.add_parser("quarantine", help="Manage quarantined skills")
     quarantine_sub = quarantine.add_subparsers(dest="quarantine_command")
@@ -129,6 +141,50 @@ def cmd_skills_remove(args: argparse.Namespace) -> None:
 
 def _cmd_skills_remove(args: argparse.Namespace) -> None:
     _print_json(_hub(args).remove(args.skill_name, target=args.target, anima=args.anima))
+
+
+def cmd_skills_ledger(args: argparse.Namespace) -> None:
+    _handle_errors(_cmd_skills_ledger, args)
+
+
+def _cmd_skills_ledger(args: argparse.Namespace) -> None:
+    data_dir = get_data_dir()
+    entries = []
+    for path, owner_dir in ledger_files(data_dir, anima=args.anima):
+        ledger = SkillLedger(owner_dir, data_dir=data_dir)
+        entries.extend(ledger.read_entries(ledger_path=path))
+    if args.skill_name:
+        entries = [entry for entry in entries if entry.get("skill_name") == args.skill_name]
+    entries.sort(key=lambda entry: str(entry.get("timestamp", "")), reverse=True)
+    _print_json({"count": len(entries), "entries": entries})
+
+
+def cmd_skills_rollback(args: argparse.Namespace) -> None:
+    _handle_errors(_cmd_skills_rollback, args)
+
+
+def _cmd_skills_rollback(args: argparse.Namespace) -> None:
+    data_dir = get_data_dir()
+    owner_dir = data_dir / "animas" / args.anima
+    entry = None
+    selected_owner = owner_dir if owner_dir.is_dir() else None
+    for path, candidate_owner in ledger_files(data_dir, anima=args.anima):
+        rows = SkillLedger(candidate_owner, data_dir=data_dir).read_entries(ledger_path=path)
+        entry = next((row for row in rows if row.get("id") == args.id), None)
+        if entry is not None:
+            selected_owner = candidate_owner or owner_dir
+            break
+    if entry is None:
+        raise FileNotFoundError(f"Skill ledger entry not found: {args.id}")
+    succeeded, message = rollback_skill_change(
+        entry,
+        data_dir=data_dir,
+        anima_dir=selected_owner,
+        actor="cli",
+    )
+    if not succeeded:
+        raise ValueError(message)
+    _print_json({"status": "rolled_back", "id": args.id, "message": message})
 
 
 def cmd_skills_quarantine_list(args: argparse.Namespace) -> None:

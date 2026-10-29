@@ -8,8 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
-from core.schemas import SkillMeta
+from core.memory.io import atomic_write_text
 from core.time_utils import get_app_timezone, now_iso
 
 logger = logging.getLogger("animaworks.memory")
@@ -229,14 +228,6 @@ class FrontmatterService:
             meta["valid_until"] = meta.pop("superseded_at")
         return meta
 
-    def update_knowledge_metadata(self, path: Path, updates: dict) -> None:
-        """Partially update YAML frontmatter metadata of a knowledge file."""
-        target = path if path.is_absolute() else self._knowledge_dir / path
-        current = self.read_knowledge_metadata(target)
-        current.update(updates)
-        content = self.read_knowledge_content(target)
-        self.write_knowledge_with_meta(target, content, current)
-
     # ── Procedure frontmatter ─────────────────────────────
 
     def write_procedure_with_meta(
@@ -274,10 +265,6 @@ class FrontmatterService:
         text = target.read_text(encoding="utf-8")
         meta, _ = parse_frontmatter(text)
         return meta
-
-    def list_procedure_metas(self, extract_skill_meta_fn) -> list[SkillMeta]:
-        """Return SkillMeta for each procedure file."""
-        return [extract_skill_meta_fn(f, is_common=False) for f in sorted(self._procedures_dir.glob("*.md"))]
 
     @staticmethod
     def _extract_description(text: str, fallback_name: str) -> str:

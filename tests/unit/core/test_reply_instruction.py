@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for _build_reply_instruction() in core._anima_inbox.
+"""Tests for _build_reply_instruction() in core.anima.inbox.
 
 Covers:
 - Slack: full metadata (channel, ts, user_id)
@@ -18,7 +18,7 @@ Covers:
 from dataclasses import dataclass
 from unittest.mock import patch
 
-from core._anima_inbox import _build_reply_instruction
+from core.anima.inbox import _build_reply_instruction
 
 
 @dataclass
@@ -32,8 +32,8 @@ class _FakeMsg:
     external_thread_ts: str = ""
 
 
-_MOCK_AUTO_OFF = patch("core._anima_inbox._is_auto_response_enabled", return_value=False)
-_MOCK_AUTO_ON = patch("core._anima_inbox._is_auto_response_enabled", return_value=True)
+_MOCK_AUTO_OFF = patch("core.anima.inbox._is_auto_response_enabled", return_value=False)
+_MOCK_AUTO_ON = patch("core.anima.inbox._is_auto_response_enabled", return_value=True)
 
 
 class TestBuildReplyInstructionSlack:
@@ -50,10 +50,8 @@ class TestBuildReplyInstructionSlack:
         with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
         assert "[reply_instruction:" in result
-        assert "use tool slack_channel_post" in result
-        assert 'channel_id="C12345"' in result
-        assert 'text="<@U99999> {返信内容}"' in result
-        assert 'thread_ts="1234567890.123456"' in result
+        assert "animaworks-tool slack send C12345 '<@U99999> {返信内容}'" in result
+        assert "--thread 1234567890.123456" in result
 
     def test_missing_user_id(self):
         """Slack without external_user_id omits @mention."""
@@ -66,8 +64,8 @@ class TestBuildReplyInstructionSlack:
         with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
         assert "<@" not in result
-        assert 'thread_ts="1234567890.123456"' in result
-        assert 'channel_id="C12345"' in result
+        assert "--thread 1234567890.123456" in result
+        assert "animaworks-tool slack send C12345 '{返信内容}'" in result
 
     def test_missing_source_message_id(self):
         """Slack without source_message_id omits thread_ts."""
@@ -79,9 +77,8 @@ class TestBuildReplyInstructionSlack:
         )
         with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
-        assert "thread_ts=" not in result
-        assert 'text="<@U99999> {返信内容}"' in result
-        assert 'channel_id="C12345"' in result
+        assert "--thread" not in result
+        assert "animaworks-tool slack send C12345 '<@U99999> {返信内容}'" in result
 
     def test_missing_both_optional_fields(self):
         """Slack with only channel_id: no @mention and no thread_ts."""
@@ -94,9 +91,9 @@ class TestBuildReplyInstructionSlack:
         with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
         assert "[reply_instruction:" in result
-        assert 'channel_id="C12345"' in result
+        assert "animaworks-tool slack send C12345 '{返信内容}'" in result
         assert "<@" not in result
-        assert "thread_ts=" not in result
+        assert "--thread" not in result
 
     def test_auto_response_enabled(self):
         """When auto_response is enabled, returns auto_reply annotation."""
@@ -153,7 +150,7 @@ class TestBuildReplyInstructionEdgeCases:
         with _MOCK_AUTO_OFF:
             result = _build_reply_instruction(msg)
         assert "[reply_instruction:" in result
-        assert "slack_channel_post" in result
+        assert "animaworks-tool slack send" in result
 
     def test_reply_instruction_format(self):
         """Verify exact format: '  [reply_instruction: CMD]'."""

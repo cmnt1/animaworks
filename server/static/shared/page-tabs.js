@@ -1,3 +1,5 @@
+import { escapeAttr as _escapeAttr } from "./html-utils.js";
+
 /* ── Generic Page Tabs ─────────────────────────
  * Reusable tab bar using existing .page-tabs / .page-tab CSS.
  *
@@ -87,12 +89,4 @@ export function createPageTabs({ tabs, container, onChange, activeId } = {}) {
   container.appendChild(el);
 
   return { el, setActive, getActive, destroy };
-}
-
-function _escapeAttr(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }

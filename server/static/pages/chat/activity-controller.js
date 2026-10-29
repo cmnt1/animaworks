@@ -1,8 +1,10 @@
 // ── Activity Feed / Anima State Controller ────
+import { nowTimeStr } from "../../shared/html-utils.js";
 export function createActivityController(ctx) {
   const $root = ctx.$root;
   const { state, deps } = ctx;
   const { api, t, escapeHtml, timeStr, getIcon, getDisplaySummary } = deps;
+  const _animaStateLoads = new Map();
 
   function addLocalActivity(type, animaName, summary) {
     const feed = $root("chatActivityFeed");
@@ -12,7 +14,7 @@ export function createActivityController(ctx) {
     if (empty) empty.remove();
 
     const icon = getIcon(type);
-    const ts = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const ts = nowTimeStr();
 
     const entry = document.createElement("div");
     entry.className = "activity-entry";
@@ -29,34 +31,34 @@ export function createActivityController(ctx) {
     while (feed.children.length > 200) feed.removeChild(feed.firstChild);
   }
 
-  async function loadActivity() {
-    if (!state.selectedAnima) return;
+  function renderActivity(events, feed = $root("chatActivityFeed")) {
+    if (!feed) return;
+    if (!events.length) {
+      feed.innerHTML = '<div class="activity-empty">' + t("activity.empty") + "</div>";
+      return;
+    }
+    feed.innerHTML = events.slice(0, 50).map(evt => {
+      const icon = getIcon(evt.type);
+      const ts = timeStr(evt.ts);
+      const summary = getDisplaySummary(evt);
+      return '<div class="activity-entry">' +
+        '<span class="activity-icon">' + icon + '</span>' +
+        '<span class="activity-time">' + escapeHtml(ts) + '</span>' +
+        '<div class="activity-body"><span class="activity-anima">' + escapeHtml(evt.anima || "") + '</span>' +
+        '<span class="activity-summary"> ' + escapeHtml(summary) + '</span></div></div>';
+    }).join("");
+  }
+
+  async function loadActivity({ target = $root("chatActivityFeed"), animaName = state.selectedAnima } = {}) {
+    if (!animaName) return [];
     try {
-      const data = await api(`/api/activity/recent?hours=6&limit=50&anima=${encodeURIComponent(state.selectedAnima)}`);
+      const data = await api("/api/activity/recent?hours=6&limit=50&anima=" + encodeURIComponent(animaName));
       const events = data.events || [];
-      const feed = $root("chatActivityFeed");
-      if (!feed) return;
-
-      if (events.length === 0) {
-        feed.innerHTML = `<div class="activity-empty">${t("activity.empty")}</div>`;
-        return;
-      }
-
-      feed.innerHTML = events.slice(0, 50).map(evt => {
-        const icon = getIcon(evt.type);
-        const ts = timeStr(evt.ts);
-        const summary = getDisplaySummary(evt);
-        return `
-          <div class="activity-entry">
-            <span class="activity-icon">${icon}</span>
-            <span class="activity-time">${escapeHtml(ts)}</span>
-            <div class="activity-body">
-              <span class="activity-anima">${escapeHtml(evt.anima || "")}</span>
-              <span class="activity-summary"> ${escapeHtml(summary)}</span>
-            </div>
-          </div>`;
-      }).join("");
-    } catch { /* keep existing */ }
+      renderActivity(events, target);
+      return events;
+    } catch {
+      return null;
+    }
   }
 
   function renderAnimaState() {
@@ -64,7 +66,44 @@ export function createActivityController(ctx) {
     if (!el) return;
     const d = state.animaDetail;
     if (!d || !d.state) { el.textContent = t("animas.no_state"); return; }
-    el.textContent = typeof d.state === "string" ? d.state : JSON.stringify(d.state, null, 2);
+    if (typeof d.state === "string") {
+      el.innerHTML = deps.renderMarkdown(d.state, state.selectedAnima);
+    } else {
+      el.textContent = JSON.stringify(d.state, null, 2);
+    }
+  }
+
+  function loadAnimaState() {
+    const name = state.selectedAnima;
+    const el = $root("chatAnimaState");
+    if (!name) {
+      state.animaDetail = null;
+      state.animaDetailLoadedFor = null;
+      if (el) el.textContent = t("chat.anima_select_first");
+      return Promise.resolve(null);
+    }
+    if (state.animaDetailLoadedFor === name && state.animaDetail?.state !== undefined) {
+      renderAnimaState();
+      return Promise.resolve(state.animaDetail);
+    }
+    if (_animaStateLoads.has(name)) return _animaStateLoads.get(name);
+
+    if (el) el.textContent = t("common.loading");
+    const request = api(`/api/animas/${encodeURIComponent(name)}/state`)
+      .then((detail) => {
+        if (state.selectedAnima !== name) return detail;
+        state.animaDetail = detail;
+        state.animaDetailLoadedFor = name;
+        renderAnimaState();
+        return detail;
+      })
+      .catch(() => {
+        if (state.selectedAnima === name && el) el.textContent = t("animas.detail_load_failed");
+        return null;
+      })
+      .finally(() => _animaStateLoads.delete(name));
+    _animaStateLoads.set(name, request);
+    return request;
   }
 
   async function loadHeartbeatConfig() {
@@ -109,5 +148,5 @@ export function createActivityController(ctx) {
     }
   }
 
-  return { addLocalActivity, loadActivity, renderAnimaState, loadHeartbeatConfig, loadCronConfig };
+  return { addLocalActivity, loadActivity, renderActivity, renderAnimaState, loadAnimaState, loadHeartbeatConfig, loadCronConfig };
 }

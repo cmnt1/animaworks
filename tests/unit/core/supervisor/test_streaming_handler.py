@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.ipc import IPCRequest, IPCResponse
-from core.supervisor.streaming_handler import StreamingIPCHandler
+from core.runtime.ipc import IPCRequest, IPCResponse
+from core.runtime.streaming_handler import StreamingIPCHandler
 
 
 def _make_handler() -> StreamingIPCHandler:

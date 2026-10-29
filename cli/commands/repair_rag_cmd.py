@@ -7,8 +7,8 @@ from __future__ import annotations
 """RAG repair command."""
 
 import argparse
-import os
 import sys
+from typing import Any
 
 
 def setup_repair_rag_command(subparsers: argparse._SubParsersAction) -> None:
@@ -16,7 +16,7 @@ def setup_repair_rag_command(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "repair-rag",
         help="Quarantine and rebuild RAG vectordb data",
-        description="Stop target animas before running this command in production.",
+        description="Rebuild RAG through the active phase3 vector owner.",
     )
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--anima", help="Anima name to repair")
@@ -31,7 +31,7 @@ def setup_repair_rag_command(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--shared",
         action="store_true",
-        help="Reindex shared common_knowledge and common_skills into this anima DB",
+        help="Accepted for compatibility; phase3 always rebuilds shared collections too",
     )
     parser.add_argument(
         "--window-minutes",
@@ -39,16 +39,12 @@ def setup_repair_rag_command(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Lookback window for --suspect-only/--list-suspects (default: repair config window)",
     )
-    parser.add_argument(
-        "--reason",
-        default="manual_repair_rag_cli",
-        help=argparse.SUPPRESS,
-    )
+    parser.add_argument("--reason", default="manual_repair_rag_cli", help=argparse.SUPPRESS)
     parser.set_defaults(func=repair_rag_command)
 
 
 def repair_rag_command(args: argparse.Namespace) -> None:
-    """Run synchronous RAG repair."""
+    """Request server repair or rebuild directly as temporary vector owner."""
     list_suspects = bool(getattr(args, "list_suspects", False))
     if not list_suspects and not args.full:
         print("repair-rag requires --full for destructive quarantine and rebuild", file=sys.stderr)
@@ -76,79 +72,64 @@ def repair_rag_command(args: argparse.Namespace) -> None:
         print("repair-rag requires one of --anima, --all, --suspect-only, or --list-suspects", file=sys.stderr)
         raise SystemExit(2)
 
-    temp_worker = None
-    if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
-        from core.memory.rag.vector_worker_client import start_temporary_vector_worker
+    if anima:
+        targets = [anima]
+    elif all_animas:
+        targets = service.list_repairable_animas()
+    else:
+        targets = service.discover_suspect_animas(window_minutes=window_minutes)
 
-        temp_worker = start_temporary_vector_worker()
-
-    from core.memory.rag.repair_utils import rag_repair_nonce_env
-
-    reason = str(getattr(args, "reason", "manual_repair_rag_cli"))
-    try:
-        with rag_repair_nonce_env():
-            if anima:
-                result = service.repair_anima_if_allowed(
-                    anima,
-                    reason=reason,
-                    collection=None,
-                    source="cli",
-                    include_shared=bool(args.shared),
-                )
-                _print_single_result(result)
-                return
-
-            if all_animas:
-                targets = service.list_repairable_animas()
-            else:
-                targets = service.discover_suspect_animas(window_minutes=window_minutes)
-
-            if not targets:
-                print("No RAG repair targets found.")
-                return
-
-            results = service.repair_animas_if_allowed(
-                targets,
-                reason=reason,
-                source="cli",
-                include_shared=bool(args.shared),
-            )
-            failed = False
-            for result in results.values():
-                failed = failed or not result.ok
-                _print_result_line(result)
-            if failed:
-                raise SystemExit(1)
-    finally:
-        if temp_worker is not None:
-            temp_worker.stop()
-
-
-def _print_single_result(result) -> None:
-    if result.ok:
-        print(
-            "RAG repair succeeded: "
-            f"anima={result.anima_name} chunks={result.chunks_indexed} quarantine={result.quarantine_path}"
-        )
+    if not targets:
+        print("No RAG repair targets found.")
         return
 
+    from core.memory.rag.cli_access import open_vector_access
+    from core.memory.rag.owner_lock import VectorOwnerBusy
+    from core.paths import get_animas_dir
+
+    animas_dir = get_animas_dir()
+    reason = str(getattr(args, "reason", "manual_repair_rag_cli"))
+    failed = False
+    for name in targets:
+        anima_dir = animas_dir / name
+        if not anima_dir.is_dir():
+            print(f"RAG repair failed: anima={name} error=Anima directory not found", file=sys.stderr)
+            failed = True
+            continue
+        try:
+            with open_vector_access(name, anima_dir, purpose=reason) as access:
+                result = access.repair(include_shared=True)
+        except VectorOwnerBusy as exc:
+            print(f"RAG repair failed: anima={name} error={exc}", file=sys.stderr)
+            failed = True
+            continue
+        except Exception as exc:
+            print(f"RAG repair failed: anima={name} error={exc}", file=sys.stderr)
+            failed = True
+            continue
+
+        _print_result(name, result)
+        failed = failed or not bool(result.get("ok", result.get("status") in {"success", "healthy"}))
+
+    if failed:
+        raise SystemExit(1)
+
+
+def _print_result(anima_name: str, result: dict[str, Any]) -> None:
+    ok = bool(result.get("ok", result.get("status") in {"success", "healthy"}))
+    chunks = result.get("chunks_indexed", result.get("last_chunks_indexed", 0))
+    archive = result.get("archive_path", result.get("last_quarantine_path"))
+    if ok:
+        print(f"RAG repair succeeded: anima={anima_name} chunks={chunks} quarantine={archive}")
+        return
+
+    error = result.get("error", result.get("last_error"))
+    if result.get("status") == "timeout":
+        from core.i18n import t
+
+        error = t("rag.cli_repair_timeout", anima=anima_name)
     print(
-        "RAG repair failed: "
-        f"anima={result.anima_name} status={result.status} stage={result.stage} error={result.error}",
+        f"RAG repair failed: anima={anima_name} status={result.get('status')} "
+        f"stage={result.get('stage')} error={error}",
         file=sys.stderr,
     )
-    raise SystemExit(1)
-
-
-def _print_result_line(result) -> None:
-    if result.ok:
-        print(
-            "RAG repair succeeded: "
-            f"anima={result.anima_name} chunks={result.chunks_indexed} quarantine={result.quarantine_path}"
-        )
-    else:
-        print(
-            "RAG repair failed: "
-            f"anima={result.anima_name} status={result.status} stage={result.stage} error={result.error}",
-            file=sys.stderr,
-        )

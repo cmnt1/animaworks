@@ -9,11 +9,15 @@ import inspect
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.schemas import ModelConfig
+
+if TYPE_CHECKING:
+    from core.execution.engines.claude.executor import AgentSDKExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -24,7 +28,7 @@ def _make_executor(
     extra_mcp_servers: dict[str, dict] | None = None,
 ) -> AgentSDKExecutor:
     """Create an AgentSDKExecutor with minimal config."""
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.executor import AgentSDKExecutor
 
     mc = ModelConfig(model=model, api_key="test-key", extra_mcp_servers=extra_mcp_servers or {})
     return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
@@ -73,6 +77,14 @@ class TestBuildMcpEnv:
         with patch.dict(os.environ, env_copy, clear=True):
             env = executor._build_mcp_env()
         assert env["PATH"] == "/usr/bin:/bin"
+
+    def test_passes_server_url_from_current_environment(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://server.example:18601/")
+        executor = _make_executor(tmp_path / "animas" / "test-anima")
+
+        env = executor._build_mcp_env()
+
+        assert env["ANIMAWORKS_SERVER_URL"] == "http://server.example:18601"
 
     def test_passes_embed_and_vector_urls(self, tmp_path: Path) -> None:
         """Embed/vector/rerank URLs propagate so the MCP server delegates over HTTP."""
@@ -194,6 +206,7 @@ class TestMcpServerConfig:
 
         # Types sub-module
         mock_types = MagicMock()
+        mock_types.StreamEvent = type("StreamEvent", (), {})
         mock_types.HookContext = MagicMock()
         mock_types.HookInput = MagicMock()
         mock_types.PostToolUseHookSpecificOutput = MagicMock()
@@ -396,19 +409,19 @@ class TestBashSendRemoved:
 
     def test_bash_send_re_not_on_module(self) -> None:
         """_BASH_SEND_RE attribute does NOT exist on the module."""
-        import core.execution.agent_sdk as mod
+        import core.execution.engines.claude.executor as mod
 
         assert not hasattr(mod, "_BASH_SEND_RE")
 
     def test_check_unconfirmed_sends_not_on_class(self) -> None:
         """_check_unconfirmed_sends method does NOT exist on AgentSDKExecutor."""
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         assert not hasattr(AgentSDKExecutor, "_check_unconfirmed_sends")
 
     def test_pending_sends_not_in_pre_tool_hook_signature(self) -> None:
         """pending_sends is NOT in the _build_pre_tool_hook signature."""
-        from core.execution.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         sig = inspect.signature(_build_pre_tool_hook)
         assert "pending_sends" not in sig.parameters
@@ -459,6 +472,7 @@ class TestMcpStatusLogging:
         mock_module.ClaudeAgentOptions = FakeClaudeAgentOptions
 
         mock_types = MagicMock()
+        mock_types.StreamEvent = type("StreamEvent", (), {})
         mock_types.SyncHookJSONOutput = MagicMock(return_value=MagicMock())
         mock_types.PreToolUseHookSpecificOutput = MagicMock()
 
@@ -494,7 +508,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -510,7 +524,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -552,7 +566,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -568,7 +582,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             result = await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -608,7 +622,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -624,7 +638,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 

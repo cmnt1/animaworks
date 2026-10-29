@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import Message
 from server.routes.internal import create_internal_router
 

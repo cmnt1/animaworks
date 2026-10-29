@@ -14,16 +14,36 @@ def cmd_init(args: argparse.Namespace) -> None:
     """Initialize the runtime data directory from templates."""
     from pathlib import Path
 
-    from core.anima_factory import (
+    from core.anima.factory import (
         create_blank,
         create_from_md,
         create_from_template,
         validate_anima_name,
     )
-    from core.init import ensure_runtime_dir, merge_templates
+    from core.config import register_anima_in_config
+    from core.infra.runtime_init import ensure_runtime_dir, merge_templates
     from core.paths import get_data_dir
 
     data_dir = get_data_dir()
+    from core.platform.pid import is_server_running
+
+    if is_server_running(data_dir) and any(getattr(args, option, None) for option in ("template", "from_md", "blank")):
+        from cli.commands.anima import cmd_create_anima
+
+        cmd_create_anima(
+            argparse.Namespace(
+                from_md=getattr(args, "from_md", None),
+                template=getattr(args, "template", None),
+                name=getattr(args, "name", None) or getattr(args, "blank", None),
+                supervisor=getattr(args, "supervisor", None),
+                role=getattr(args, "role", None),
+            )
+        )
+        return
+
+    if is_server_running(data_dir) and getattr(args, "skip_anima", False):
+        print(f"Runtime directory already exists: {data_dir}")
+        return
 
     # --force: safe merge (add missing files only)
     if getattr(args, "force", False):
@@ -49,7 +69,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         ensure_runtime_dir(skip_animas=True)
         animas_dir.mkdir(parents=True, exist_ok=True)
         anima_dir = create_from_template(animas_dir, args.template)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from template '{args.template}'")
         return
 
@@ -58,7 +78,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         animas_dir.mkdir(parents=True, exist_ok=True)
         md_path = Path(args.from_md).resolve()
         anima_dir = create_from_md(animas_dir, md_path, name=getattr(args, "name", None))
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from {md_path.name}")
         return
 
@@ -70,7 +90,7 @@ def cmd_init(args: argparse.Namespace) -> None:
             print(f"Error: {err}")
             sys.exit(1)
         anima_dir = create_blank(animas_dir, args.blank)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created blank anima '{anima_dir.name}'")
         return
 
@@ -94,21 +114,17 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_reset(args: argparse.Namespace) -> None:
     """Delete runtime directory and re-initialize infrastructure."""
-    from cli.commands.server import (
-        _clear_pycache,
-        _is_process_alive,
-        _read_pid,
-        _stop_server,
-        cmd_start,
-    )
-    from core.init import reset_runtime_dir
+    from cli.commands.server import _clear_pycache, _stop_server, cmd_start
+    from core.infra.runtime_init import reset_runtime_dir
     from core.paths import get_data_dir
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
     data_dir = get_data_dir()
 
     # Always stop the server first
-    pid = _read_pid()
-    if pid is not None and _is_process_alive(pid):
+    pid = read_server_pid()
+    if pid is not None and is_process_alive(pid):
         print("Stopping running server...")
         if not _stop_server():
             print("Error: Cannot reset — failed to stop the running server.")
@@ -137,14 +153,3 @@ def cmd_reset(args: argparse.Namespace) -> None:
         cmd_start(start_args)
     else:
         print("Run 'animaworks start' to launch the server and configure via the web UI.")
-
-
-def _register_anima_in_config(data_dir, anima_name: str) -> None:
-    """Register a newly created anima in config.json.
-
-    Delegates to :func:`core.config.register_anima_in_config` which
-    reads status.json / identity.md to sync the supervisor field.
-    """
-    from core.config import register_anima_in_config
-
-    register_anima_in_config(data_dir, anima_name)

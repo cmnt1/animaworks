@@ -54,6 +54,20 @@ class TestFormatPointerResult:
         before_dash = result.split("—")[1]
         assert len(before_dash.strip()) <= 60
 
+    def test_low_confidence_marker_omitted_by_default(self) -> None:
+        result = format_pointer_result(content="# X", metadata={}, path="knowledge/a.md", score=0.3)
+        assert "[low-confidence]" not in result
+
+    def test_low_confidence_marker_appended(self) -> None:
+        result = format_pointer_result(
+            content="# X",
+            metadata={},
+            path="knowledge/a.md",
+            score=0.3,
+            low_confidence=True,
+        )
+        assert result == "📌 [0.30] knowledge/a.md — X [low-confidence]"
+
 
 class TestChannelCTrustSeparation:
     """_channel_c_related_knowledge separates pointer cues by trust."""
@@ -339,6 +353,6 @@ class TestChannelCTrustSeparation:
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
         assert 'Bad "heading"' in medium
-        assert "knowledge/weird\"name.md" in medium
+        assert 'knowledge/weird"name.md' in medium
         assert "\nbody should not leak" not in medium
         assert untrusted == ""

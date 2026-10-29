@@ -1,38 +1,16 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for core.tooling.permissions — parse_permitted_tools and is_action_gated."""
+"""Unit tests for core.tooling.permissions — tool access evaluation and is_action_gated."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-
 from core.tooling.permissions import (
     _load_execution_profile,
     is_action_gated,
-    parse_permitted_tools,
 )
-
-
-# ── parse_permitted_tools: action-level entries ────────────────────────────
-
-
-def test_parse_permitted_tools_includes_action_level_entries() -> None:
-    """parse_permitted_tools includes action-level entries like gmail_send."""
-    text = "## 外部ツール\n- gmail: yes\n- gmail_send: yes\n"
-    result = parse_permitted_tools(text)
-    assert "gmail" in result
-    assert "gmail_send" in result
-
-
-def test_parse_permitted_tools_action_only_whitelist() -> None:
-    """Action-level only (no tool) in whitelist mode."""
-    text = "## 外部ツール\n- gmail_send: yes\n"
-    result = parse_permitted_tools(text)
-    assert "gmail_send" in result
-    assert "gmail" not in result  # gmail not explicitly allowed
-
 
 # ── is_action_gated ────────────────────────────────────────────────────────
 
@@ -71,13 +49,13 @@ def test_is_action_gated_false_when_non_gated() -> None:
         assert is_action_gated("gmail", "read", {"gmail"}) is False
 
 
-def test_is_action_gated_false_when_tool_module_not_found() -> None:
-    """is_action_gated returns False when tool module not found."""
+def test_is_action_gated_true_when_tool_profile_not_found() -> None:
+    """is_action_gated returns True (fail-closed) when the tool profile is missing."""
     with patch(
         "core.tooling.permissions._load_execution_profile",
         return_value=None,
     ):
-        assert is_action_gated("nonexistent_tool", "send", set()) is False
+        assert is_action_gated("nonexistent_tool", "send", set()) is True
 
 
 def test_is_action_gated_respects_gated_as() -> None:
@@ -101,47 +79,7 @@ def test_is_action_gated_false_when_action_not_in_profile() -> None:
         assert is_action_gated("gmail", "send", {"gmail"}) is False
 
 
-# ── all: yes does NOT auto-allow gated actions ─────────────────────────────
-
-
-def test_all_yes_does_not_auto_allow_gated_actions() -> None:
-    """all: yes does NOT automatically allow gated actions."""
-    text = "## 外部ツール\n- all: yes\n"
-    result = parse_permitted_tools(text)
-    # gmail_send is not in result — all: yes only grants tool-level, not action-level
-    assert "gmail_send" not in result
-    assert "gmail" in result  # gmail is a tool, so it's in all_tools
-
-
-def test_all_yes_with_explicit_gated_permit() -> None:
-    """all: yes + explicit gmail_send: yes includes gmail_send."""
-    text = "## 外部ツール\n- all: yes\n- gmail_send: yes\n"
-    result = parse_permitted_tools(text)
-    assert "gmail_send" in result
-    assert "gmail" in result
-
-
-# ── Action-level deny ───────────────────────────────────────────────────────
-
-
-def test_action_level_deny_entries_work() -> None:
-    """Action-level deny entries exclude from permitted."""
-    text = "## 外部ツール\n- gmail: yes\n- gmail_send: yes\n- gmail_send: no\n"
-    result = parse_permitted_tools(text)
-    # Deny overrides allow
-    assert "gmail_send" not in result
-    assert "gmail" in result
-
-
-def test_action_level_deny_with_all_yes() -> None:
-    """Action-level deny with all: yes excludes that action."""
-    text = "## 外部ツール\n- all: yes\n- gmail_send: no\n"
-    result = parse_permitted_tools(text)
-    assert "gmail_send" not in result
-    assert "gmail" in result
-
-
-# ── _load_execution_profile ─────────────────────────────────────────────────
+# ── all: yes does NOT auto-allow gated actions (moved to test_tool_access) ─
 
 
 def test_load_execution_profile_returns_profile_for_gmail() -> None:

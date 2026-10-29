@@ -18,12 +18,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.i18n import t
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
-from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
+from core.memory.priming.utils import (
+    build_queries,
+    build_unified_searcher,
+    get_min_retrieval_score,
+    normalize_trigger,
+)
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -81,16 +87,6 @@ def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
     return (title, body)
 
 
-def _usable_summary_body(body: str) -> str:
-    """Reject structural Markdown lines that do not summarize a document."""
-    stripped = body.strip()
-    if stripped.startswith("|") or re.fullmatch(r"[-|:\s]+", stripped):
-        return ""
-    if re.fullmatch(r"#+", stripped):
-        return ""
-    return stripped
-
-
 def _timestamp_rank(value: str) -> float:
     """Convert an ISO timestamp into a sortable numeric rank."""
     if not value:
@@ -137,16 +133,19 @@ def format_pointer_result(
     metadata: dict,
     path: str,
     score: float,
+    low_confidence: bool = False,
 ) -> str:
     """Format a retrieval result as a pointer cue instead of raw payload.
 
     One line per item: ``📌 [score] path — summary`` where ``path`` is a
-    relative path that can be handed to ``read_memory_file`` directly.
+    relative path that can be handed to ``read_memory_file`` directly.  When
+    ``low_confidence`` is set the pointer is suffixed with ``[low-confidence]``.
     """
     title, _ = extract_summary(content, metadata)
     summary = title or Path(path).stem.replace("-", " ").replace("_", " ")
     summary = _single_line(summary, 60)
-    return f"📌 [{score:.2f}] {path} — {summary}"
+    marker = " [low-confidence]" if low_confidence else ""
+    return f"📌 [{score:.2f}] {path} — {summary}{marker}"
 
 
 def _is_action_rule(path: str, content: str) -> bool:
@@ -171,13 +170,15 @@ def _item_from_chunk(
     metadata: dict,
     path: str,
     rank: float,
+    low_confidence: bool = False,
 ) -> MemoryItem:
     title, _ = extract_summary(content, metadata)
     summary = _single_line(title or Path(path).stem.replace("-", " ").replace("_", " "), 60)
+    marker = " [low-confidence]" if low_confidence else ""
     return MemoryItem(
         source="important_knowledge",
         key=path,
-        text=f"📌 [{rank:.2f}] {path} — {summary}",
+        text=f"📌 [{rank:.2f}] {path} — {summary}{marker}",
         ref=path,
         updated=_updated_from_metadata(metadata),
         rank=rank,
@@ -245,14 +246,14 @@ def _static_c0_chunks(
     min_score: float,
     resident_only: bool = False,
     search_cache: KnowledgeSearchCache | None = None,
-) -> tuple[list, list[dict]]:
+) -> tuple[list, list[dict], bool]:
     """Load all C0 sources in one worker-thread transaction."""
     retriever = get_retriever()
     if retriever is None:
-        return [], []
+        return [], [], False
     always = _always_prime_chunks(retriever, anima_name)
     if resident_only:
-        return always, []
+        return always, [], False
     if not include_fallback:
         searcher, relevant = _search_related_knowledge(
             anima_dir,
@@ -262,9 +263,11 @@ def _static_c0_chunks(
             min_score=min_score,
             search_cache=search_cache,
         )
+        low_confidence = bool(searcher.last_search_meta.get("low_confidence", False))
         if bool(searcher.last_search_meta.get("abstain", False)):
             relevant = []
-        return always, relevant
+            low_confidence = False
+        return always, relevant, low_confidence
 
     fallback = retriever.get_important_chunks(anima_name, include_shared=True)
     relevant = [
@@ -277,7 +280,7 @@ def _static_c0_chunks(
         }
         for r in fallback
     ]
-    return always, relevant
+    return always, relevant, False
 
 
 def _unknown_origin_is_internal(anima_dir: Path, path: str) -> bool:
@@ -288,7 +291,7 @@ def _unknown_origin_is_internal(anima_dir: Path, path: str) -> bool:
     if len(parts) < 3 or parts[0] != "companies" or parts[2] not in {"knowledge", "procedures"}:
         return False
     try:
-        from core.company import get_company
+        from core.org.company import get_company
 
         company = get_company(anima_dir.name, animas_dir=anima_dir.parent)
     except Exception:
@@ -352,7 +355,7 @@ async def channel_c0_important_knowledge(
     search_cache: KnowledgeSearchCache | None = None,
 ) -> str:
     """Channel C0: opt-in resident and query-relevant important pointers."""
-    if not knowledge_dir.is_dir():
+    if not await asyncio.to_thread(knowledge_dir.is_dir):
         return ""
     try:
         denied_roots = load_denied_roots(anima_dir)
@@ -360,14 +363,8 @@ async def channel_c0_important_knowledge(
         # Explicit residency is opt-in and bounded; [IMPORTANT] by itself only
         # protects retention and must not inject unrelated recent knowledge.
         effective_queries = [query for query in (queries or []) if str(query).strip()]
-        _min_score: float | None = None
-        try:
-            from core.config.models import load_config as _load_cfg
-
-            _min_score = _load_cfg().rag.min_retrieval_score
-        except Exception:
-            logger.debug("Failed to load rag.min_retrieval_score from config, using default")
-        always_results, relevant_rows = await asyncio.to_thread(
+        min_score = get_min_retrieval_score()
+        always_results, relevant_rows, low_confidence = await asyncio.to_thread(
             _static_c0_chunks,
             get_retriever,
             anima_name,
@@ -375,7 +372,7 @@ async def channel_c0_important_knowledge(
             anima_dir=anima_dir,
             queries=effective_queries,
             trigger=trigger,
-            min_score=float(_min_score) if _min_score is not None else 0.0,
+            min_score=min_score,
             resident_only=resident_only,
             search_cache=search_cache,
         )
@@ -428,7 +425,13 @@ async def channel_c0_important_knowledge(
                 )
                 continue
             score = float(row.get("score", 0.0) or 0.0)
-            item = _item_from_chunk(content=content, metadata=metadata, path=rel_path, rank=score)
+            item = _item_from_chunk(
+                content=content,
+                metadata=metadata,
+                path=rel_path,
+                rank=score,
+                low_confidence=low_confidence,
+            )
             previous = relevant_by_path.get(rel_path)
             if previous is None or score > previous[1]:
                 relevant_by_path[rel_path] = (item, score)
@@ -450,7 +453,7 @@ async def channel_c0_important_knowledge(
             _replace_item_rank(item, len(ordered_items) - index) for index, item in enumerate(ordered_items)
         ]
 
-        header = "### [IMPORTANT] Knowledge (summary pointers)"
+        header = t("priming.important_knowledge_header")
         available = _BUDGET_IMPORTANT_KNOWLEDGE - estimate_tokens(header)
         if available <= 0:
             return ""
@@ -498,7 +501,7 @@ async def channel_c_related_knowledge(
     Returns a ``(medium, untrusted)`` tuple whose string-compatible values
     retain one indivisible item per readable source path.
     """
-    if not knowledge_dir.is_dir():
+    if not await asyncio.to_thread(knowledge_dir.is_dir):
         logger.debug("Channel C: No knowledge dir")
         return (ItemizedMemory(""), ItemizedMemory(""))
 
@@ -509,14 +512,7 @@ async def channel_c_related_knowledge(
             logger.debug("Channel C: No keywords and no message")
             return (ItemizedMemory(""), ItemizedMemory(""))
         anima_name = anima_dir.name
-
-        _min_score: float | None = None
-        try:
-            from core.config.models import load_config as _load_cfg
-
-            _min_score = _load_cfg().rag.min_retrieval_score
-        except Exception:
-            logger.debug("Failed to load rag.min_retrieval_score from config, using default")
+        min_score = get_min_retrieval_score()
 
         searcher, results = await asyncio.to_thread(
             _search_related_knowledge,
@@ -524,7 +520,7 @@ async def channel_c_related_knowledge(
             get_retriever,
             queries,
             trigger=normalize_trigger(trigger),
-            min_score=float(_min_score) if _min_score is not None else 0.0,
+            min_score=min_score,
             search_cache=search_cache,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):
@@ -532,7 +528,7 @@ async def channel_c_related_knowledge(
             return (ItemizedMemory(""), ItemizedMemory(""))
 
         if results:
-            from core.execution._sanitize import ORIGIN_UNKNOWN, resolve_trust
+            from core.trust import ORIGIN_UNKNOWN, resolve_trust
 
             medium_by_path: dict[str, MemoryItem] = {}
             untrusted_by_path: dict[str, MemoryItem] = {}
@@ -552,6 +548,7 @@ async def channel_c_related_knowledge(
                     metadata=metadata,
                     path=rel_path,
                     score=float(result.get("score", 0.0) or 0.0),
+                    low_confidence=bool(searcher.last_search_meta.get("low_confidence", False)),
                 )
                 item_kwargs = {
                     "key": rel_path,

@@ -1,0 +1,2 @@
+{"kind":"assistant","blocks":[{"type":"text","text":"Plain answer"}]}
+{"kind":"result","usage":{"input_tokens":11,"output_tokens":7},"num_turns":1,"session_id":"ses-text"}

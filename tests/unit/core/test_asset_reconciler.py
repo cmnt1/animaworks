@@ -1,4 +1,4 @@
-"""Unit tests for core.asset_reconciler module."""
+"""Unit tests for core.anima.asset_reconciler module."""
 
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -13,13 +13,21 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _clear_failure_cooldowns():
-    """Isolate the module-level cooldown registry between tests."""
-    from core.asset_reconciler import _failure_cooldowns
+def _clear_asset_failure_records():
+    """Isolate the module-level failure registry between tests."""
+    from core.anima.asset_reconciler import _asset_failure_records
 
-    _failure_cooldowns.clear()
+    _asset_failure_records.clear()
     yield
-    _failure_cooldowns.clear()
+    _asset_failure_records.clear()
+
+
+@pytest.fixture(autouse=True)
+def _assume_pixel_generator_available(monkeypatch):
+    """Keep required-asset counts deterministic regardless of the host's codex install."""
+    from core.anima import asset_reconciler
+
+    monkeypatch.setattr(asset_reconciler, "_pixel_generation_available", lambda: True)
 
 
 # ── check_anima_assets ──────────────────────────────────────────
@@ -30,7 +38,7 @@ class TestCheckAnimaAssets:
 
     def test_no_assets_dir(self, tmp_path: Path) -> None:
         """Anima with no assets/ directory reports all missing."""
-        from core.asset_reconciler import REALISTIC_REQUIRED_ASSETS, check_anima_assets
+        from core.anima.asset_reconciler import REALISTIC_REQUIRED_ASSETS, check_anima_assets
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -43,7 +51,7 @@ class TestCheckAnimaAssets:
 
     def test_empty_assets_dir(self, tmp_path: Path) -> None:
         """Anima with empty assets/ directory reports all missing."""
-        from core.asset_reconciler import REQUIRED_ASSETS, check_anima_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, check_anima_assets
 
         anima_dir = tmp_path / "anima"
         (anima_dir / "assets").mkdir(parents=True)
@@ -55,7 +63,7 @@ class TestCheckAnimaAssets:
 
     def test_all_assets_present(self, tmp_path: Path) -> None:
         """Anima with all required assets reports complete."""
-        from core.asset_reconciler import REQUIRED_ASSETS, check_anima_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, check_anima_assets
 
         anima_dir = tmp_path / "anima"
         assets_dir = anima_dir / "assets"
@@ -70,7 +78,7 @@ class TestCheckAnimaAssets:
 
     def test_partial_assets(self, tmp_path: Path) -> None:
         """Anima with some assets reports the correct missing ones."""
-        from core.asset_reconciler import check_anima_assets
+        from core.anima.asset_reconciler import check_anima_assets
 
         anima_dir = tmp_path / "anima"
         assets_dir = anima_dir / "assets"
@@ -95,14 +103,14 @@ class TestFindAnimasWithMissingAssets:
 
     def test_no_animas_dir(self, tmp_path: Path) -> None:
         """Non-existent animas_dir returns empty."""
-        from core.asset_reconciler import find_animas_with_missing_assets
+        from core.anima.asset_reconciler import find_animas_with_missing_assets
 
         result = find_animas_with_missing_assets(tmp_path / "nonexistent")
         assert result == []
 
     def test_all_complete(self, tmp_path: Path) -> None:
         """All animas with complete assets returns empty."""
-        from core.asset_reconciler import REQUIRED_ASSETS, find_animas_with_missing_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, find_animas_with_missing_assets
 
         animas_dir = tmp_path / "animas"
         for name in ("alice", "bob"):
@@ -118,7 +126,7 @@ class TestFindAnimasWithMissingAssets:
 
     def test_mixed(self, tmp_path: Path) -> None:
         """Mix of complete and incomplete animas returns only incomplete."""
-        from core.asset_reconciler import REQUIRED_ASSETS, find_animas_with_missing_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, find_animas_with_missing_assets
 
         animas_dir = tmp_path / "animas"
 
@@ -141,7 +149,7 @@ class TestFindAnimasWithMissingAssets:
 
     def test_skips_dirs_without_identity(self, tmp_path: Path) -> None:
         """Directories without identity.md are ignored."""
-        from core.asset_reconciler import find_animas_with_missing_assets
+        from core.anima.asset_reconciler import find_animas_with_missing_assets
 
         animas_dir = tmp_path / "animas"
         (animas_dir / "notananima").mkdir(parents=True)
@@ -159,7 +167,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_extracts_image_prompt(self, tmp_path: Path) -> None:
         """Extracts prompt from image_prompt field."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -173,7 +181,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_extracts_japanese_prompt(self, tmp_path: Path) -> None:
         """Extracts prompt from 外見 field."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -187,7 +195,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_returns_none_no_prompt(self, tmp_path: Path) -> None:
         """Returns None when no prompt field and no appearance table found."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -195,14 +203,14 @@ class TestExtractPrompt:
             "# Alice\nJust an anima.\n",
             encoding="utf-8",
         )
-        with patch("core.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
+        with patch("core.anima.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
             result = await _extract_prompt(anima_dir)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_no_identity(self, tmp_path: Path) -> None:
         """Returns None when identity.md doesn't exist."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -212,7 +220,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_reads_cached_prompt_txt(self, tmp_path: Path) -> None:
         """Reads prompt from assets/prompt.txt when no regex match."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -232,7 +240,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_synthesizes_via_llm(self, tmp_path: Path) -> None:
         """Calls LLM when no regex match and no cache, with appearance table."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -263,7 +271,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_saves_to_prompt_txt(self, tmp_path: Path) -> None:
         """LLM synthesis result is saved to assets/prompt.txt."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -296,7 +304,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_llm_failure_returns_none(self, tmp_path: Path) -> None:
         """Returns None when LLM call fails (graceful degradation)."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -315,7 +323,7 @@ class TestExtractPrompt:
             patch("core.config.models.load_model_config", return_value=mock_model_config),
             patch("litellm.acompletion", new_callable=AsyncMock, side_effect=RuntimeError("API error")),
             patch(
-                "core.memory._llm_utils._try_agent_sdk",
+                "core.llm.oneshot._try_agent_sdk",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent SDK error"),
             ),
@@ -327,7 +335,7 @@ class TestExtractPrompt:
     @pytest.mark.asyncio
     async def test_no_appearance_table_returns_none(self, tmp_path: Path) -> None:
         """Returns None when identity.md has no appearance table."""
-        from core.asset_reconciler import _extract_prompt
+        from core.anima.asset_reconciler import _extract_prompt
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -335,75 +343,58 @@ class TestExtractPrompt:
             "# Test\n\nJust personality description, no table.\n",
             encoding="utf-8",
         )
-        with patch("core.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
+        with patch("core.anima.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
             result = await _extract_prompt(anima_dir)
         assert result is None
 
-    def test_prompt_synthesis_model_prefers_local_llm(self, tmp_path: Path) -> None:
-        from core.asset_reconciler import _resolve_prompt_synthesis_model
+    def test_prompt_synthesis_model_ignores_local_and_anima_models(self, tmp_path: Path) -> None:
+        from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate(
+            {
+                "anima_defaults": {
+                    "model": "codex/gpt-5.4-mini",
+                    "credential": "openai",
+                },
+                "local_llm": {"default_model": "ollama/qwen2.5-coder:14b"},
+            }
+        )
 
-        cfg = MagicMock()
-        cfg.anima_defaults.credential = "ollama"
-        cfg.local_llm.default_model = "ollama/qwen2.5-coder:14b"
-        cfg.local_llm.base_url = "http://127.0.0.1:11434"
-        cfg.local_llm.credential = ""
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("ollama/qwen2.5-coder:14b", "")
+        assert result == ("claude-sonnet-5-5", "anthropic")
 
-    def test_prompt_synthesis_model_uses_gateway_credential(self, tmp_path: Path) -> None:
-        """A LiteLLM/vLLM gateway model resolves only via its named credential.
-
-        Without one the ``openai/`` prefix would send local-GPU traffic to the
-        real OpenAI API (or fail for lack of a key).
-        """
-        from core.asset_reconciler import _resolve_prompt_synthesis_model
+    def test_prompt_synthesis_model_uses_legacy_helper_model_and_credential(self, tmp_path: Path) -> None:
+        from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate(
+            {"consolidation": {"llm_model": "openai/qwen3.6-35b-a3b", "llm_credential": "vllm-lb"}}
+        )
 
-        cfg = MagicMock()
-        cfg.local_llm.default_model = "openai/qwen3.6-35b-a3b"
-        cfg.local_llm.base_url = ""
-        cfg.local_llm.credential = "vllm-lb"
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
         assert result == ("openai/qwen3.6-35b-a3b", "vllm-lb")
 
-    def test_prompt_synthesis_model_falls_back_to_anima_model(self, tmp_path: Path) -> None:
-        from core.asset_reconciler import _resolve_prompt_synthesis_model
+    def test_prompt_synthesis_model_falls_back_to_registry_code_default(self, tmp_path: Path) -> None:
+        from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
+        from core.config.schemas import AnimaWorksConfig
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
+        config = AnimaWorksConfig.model_validate({"anima_defaults": {"model": "codex/gpt-5.4-mini"}})
 
-        cfg = MagicMock()
-        cfg.local_llm.default_model = ""
-        cfg.local_llm.base_url = ""
-        cfg.local_llm.credential = ""
-        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
-
-        with (
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.load_model_config", return_value=model_cfg),
-        ):
+        with patch("core.config.io.load_config", return_value=config):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == ("codex/gpt-5.4-mini", "")
+        assert result == ("claude-sonnet-5-5", "anthropic")
 
 
 # ── reconcile_anima_assets ──────────────────────────────────────
@@ -415,7 +406,7 @@ class TestReconcileAnimaAssets:
     @pytest.mark.asyncio
     async def test_skips_complete_anima(self, tmp_path: Path) -> None:
         """Skips generation if all assets are present."""
-        from core.asset_reconciler import REQUIRED_ASSETS, reconcile_anima_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, reconcile_anima_assets
 
         anima_dir = tmp_path / "anima"
         assets_dir = anima_dir / "assets"
@@ -429,9 +420,13 @@ class TestReconcileAnimaAssets:
         assert result["reason"] == "complete"
 
     @pytest.mark.asyncio
-    async def test_skips_no_prompt(self, tmp_path: Path) -> None:
-        """Skips generation if no prompt can be extracted."""
-        from core.asset_reconciler import reconcile_anima_assets
+    async def test_no_prompt_is_logged_once_and_not_retried(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A missing prompt is informational and unchanged inputs are not retried."""
+        import logging
+
+        from core.anima.asset_reconciler import reconcile_anima_assets
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir(parents=True)
@@ -439,16 +434,29 @@ class TestReconcileAnimaAssets:
             "# Test\nNo prompt here.",
             encoding="utf-8",
         )
+        caplog.set_level(logging.INFO, logger="animaworks.asset_reconciler")
 
-        with patch("core.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
-            result = await reconcile_anima_assets(anima_dir)
-        assert result["skipped"] is True
-        assert result["reason"] == "no_prompt"
+        with patch(
+            "core.anima.asset_reconciler._synthesize_prompt_via_llm",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as synthesize:
+            first_result = await reconcile_anima_assets(anima_dir)
+            second_result = await reconcile_anima_assets(anima_dir)
+
+        assert first_result["skipped"] is True
+        assert first_result["reason"] == "no_prompt"
+        assert second_result["skipped"] is True
+        assert second_result["reason"] == "previous_failure"
+        synthesize.assert_awaited_once()
+        messages = [record.message for record in caplog.records if "No prompt available" in record.message]
+        assert len(messages) == 1
+        assert not any(record.levelno >= logging.WARNING for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_uses_provided_prompt(self, tmp_path: Path) -> None:
         """Uses the explicitly provided prompt instead of extracting."""
-        from core.asset_reconciler import reconcile_anima_assets
+        from core.anima.asset_reconciler import reconcile_anima_assets
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir(parents=True)
@@ -464,7 +472,7 @@ class TestReconcileAnimaAssets:
         mock_result.errors = []
         mock_result.skipped = []
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -484,7 +492,7 @@ class TestReconcileAnimaAssets:
     @pytest.mark.asyncio
     async def test_handles_generation_error(self, tmp_path: Path) -> None:
         """Returns error info when generation fails."""
-        from core.asset_reconciler import reconcile_anima_assets
+        from core.anima.asset_reconciler import reconcile_anima_assets
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir(parents=True)
@@ -494,7 +502,7 @@ class TestReconcileAnimaAssets:
         )
 
         with patch(
-            "core.tools.image_gen.ImageGenPipeline",
+            "core.integrations.image_gen.ImageGenPipeline",
             side_effect=RuntimeError("API down"),
         ):
             result = await reconcile_anima_assets(anima_dir)
@@ -504,9 +512,34 @@ class TestReconcileAnimaAssets:
         assert "API down" in result["error"]
 
     @pytest.mark.asyncio
+    async def test_generation_failure_is_not_retried_for_unchanged_inputs(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from core.anima.asset_reconciler import reconcile_anima_assets
+
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("# Test\nimage_prompt: 1girl\n", encoding="utf-8")
+        caplog.set_level(logging.WARNING, logger="animaworks.asset_reconciler")
+
+        with patch("core.integrations.image_gen.ImageGenPipeline", side_effect=RuntimeError("API down")) as pipeline:
+            first_result = await reconcile_anima_assets(anima_dir)
+            second_result = await reconcile_anima_assets(anima_dir)
+
+        assert first_result["skipped"] is False
+        assert "API down" in first_result["error"]
+        assert second_result["skipped"] is True
+        assert second_result["reason"] == "previous_failure"
+        pipeline.assert_called_once()
+        failures = [record for record in caplog.records if "Asset generation failed" in record.message]
+        assert len(failures) == 1
+
+    @pytest.mark.asyncio
     async def test_lock_prevents_concurrent(self, tmp_path: Path) -> None:
         """Lock mechanism prevents concurrent generation for the same anima."""
-        from core.asset_reconciler import _get_lock, reconcile_anima_assets
+        from core.anima.asset_reconciler import _get_lock, reconcile_anima_assets
 
         anima_dir = tmp_path / "concurrent-test"
         anima_dir.mkdir(parents=True)
@@ -534,7 +567,7 @@ class TestReconcileAllAssets:
     @pytest.mark.asyncio
     async def test_empty_returns_empty(self, tmp_path: Path) -> None:
         """No incomplete animas returns empty list."""
-        from core.asset_reconciler import REQUIRED_ASSETS, reconcile_all_assets
+        from core.anima.asset_reconciler import REQUIRED_ASSETS, reconcile_all_assets
 
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
@@ -550,7 +583,7 @@ class TestReconcileAllAssets:
     @pytest.mark.asyncio
     async def test_processes_incomplete_sequentially(self, tmp_path: Path) -> None:
         """Processes each incomplete anima and returns results."""
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
 
         animas_dir = tmp_path / "animas"
         for name in ("aoi", "rin"):
@@ -571,7 +604,7 @@ class TestReconcileAllAssets:
         mock_result.errors = []
         mock_result.skipped = []
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -584,7 +617,7 @@ class TestReconcileAllAssets:
     @pytest.mark.asyncio
     async def test_broadcasts_on_generation(self, tmp_path: Path) -> None:
         """Broadcasts WebSocket event when assets are generated."""
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
 
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "aoi"
@@ -606,7 +639,7 @@ class TestReconcileAllAssets:
 
         ws_manager = AsyncMock()
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -626,32 +659,32 @@ class TestExtractAppearanceField:
     """Bold-marker tolerance and multi-line bullet sections (yoru regression)."""
 
     def test_bold_label_inline_value(self) -> None:
-        from core.asset_reconciler import _extract_appearance_field
+        from core.anima.asset_reconciler import _extract_appearance_field
 
         assert _extract_appearance_field("- **外見**: 銀髪ショート") == "銀髪ショート"
 
     def test_bold_label_multiline_bullets(self) -> None:
-        from core.asset_reconciler import _extract_appearance_field
+        from core.anima.asset_reconciler import _extract_appearance_field
 
         text = "- **性格**: 大人びている\n- **外見**:\n  - 髪: 漆黒のロング\n  - 瞳: ガーネット\n- **口調**: 丁寧語\n"
         result = _extract_appearance_field(text)
         assert result == "髪: 漆黒のロング、瞳: ガーネット"
 
     def test_multiline_stops_at_blank_line(self) -> None:
-        from core.asset_reconciler import _extract_appearance_field
+        from core.anima.asset_reconciler import _extract_appearance_field
 
         text = "外見:\n  - 銀髪\n\n  - これは別セクション\n"
         assert _extract_appearance_field(text) == "銀髪"
 
     def test_no_label_returns_none(self) -> None:
-        from core.asset_reconciler import _extract_appearance_field
+        from core.anima.asset_reconciler import _extract_appearance_field
 
         assert _extract_appearance_field("性格: 優しい\n") is None
 
 
-async def test_first_profile_wait_does_not_start_image_failure_cooldown(tmp_path):
-    from core.asset_reconciler import _failure_cooldowns, reconcile_anima_assets
-    from core.bootstrap_state import get_bootstrap_status
+async def test_first_profile_wait_does_not_record_asset_failure(tmp_path):
+    from core.anima.asset_reconciler import _asset_failure_records, reconcile_anima_assets
+    from core.anima.bootstrap_state import get_bootstrap_status
 
     anima_dir = tmp_path / "newcomer"
     anima_dir.mkdir()
@@ -659,25 +692,19 @@ async def test_first_profile_wait_does_not_start_image_failure_cooldown(tmp_path
     (anima_dir / "injection.md").write_text("未定義\n", encoding="utf-8")
     (anima_dir / "bootstrap.md").write_text("First conversation", encoding="utf-8")
     assert get_bootstrap_status(anima_dir)["needs_user_input"]
-    with patch("core.asset_reconciler._extract_prompt", new_callable=AsyncMock) as extract:
+    with patch("core.anima.asset_reconciler._extract_prompt", new_callable=AsyncMock) as extract:
         result = await reconcile_anima_assets(anima_dir)
         assert result["reason"] == "awaiting_profile"
         extract.assert_not_awaited()
-    assert "newcomer" not in _failure_cooldowns
+    assert _asset_failure_records == {}
 
 
-def test_unconfigured_ollama_does_not_override_codex_image_prompt_model(tmp_path, monkeypatch):
-    from core.asset_reconciler import _resolve_prompt_synthesis_model
+def test_asset_helper_ignores_codex_anima_model(tmp_path):
+    from core.anima.asset_reconciler import _resolve_prompt_synthesis_model
     from core.config import AnimaWorksConfig
-    from core.schemas import ModelConfig
 
-    monkeypatch.delenv("OLLAMA_SERVERS", raising=False)
     config = AnimaWorksConfig()
     config.anima_defaults.model = "codex/account-model"
     config.anima_defaults.credential = "openai"
-    resolved = ModelConfig(model="codex/account-model", credential="openai")
-    with (
-        patch("core.config.models.load_config", return_value=config),
-        patch("core.config.models.load_model_config", return_value=resolved),
-    ):
-        assert _resolve_prompt_synthesis_model(tmp_path) == ("codex/account-model", "openai")
+    with patch("core.config.io.load_config", return_value=config):
+        assert _resolve_prompt_synthesis_model(tmp_path) == ("claude-sonnet-5-5", "anthropic")

@@ -13,20 +13,14 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
-from core.time_utils import now_jst
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import (
-    IPCClient,
-    IPCEvent,
-    IPCRequest,
-    IPCResponse,
-    IPCServer,
-)
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.time_utils import now_jst
 
 
 @pytest.mark.asyncio
@@ -49,7 +43,6 @@ async def test_streaming_with_cycle_result_datetime():
             summary="Hello from IPC",
             duration_ms=250,
             context_usage_ratio=0.3,
-            session_chained=False,
             total_turns=1,
         ).model_dump()  # Note: mode="json" NOT used here to test defensive serialization
 
@@ -117,8 +110,6 @@ async def test_streaming_with_cycle_result_datetime():
             # timestamp should be a string (serialized by default=str)
             assert isinstance(final_result["cycle_result"]["timestamp"], str)
 
-            await client.close()
-
         finally:
             await server.stop()
 
@@ -185,8 +176,6 @@ async def test_streaming_with_model_dump_json_mode():
             # Should be a valid ISO 8601 datetime
             datetime.fromisoformat(ts)
 
-            await client.close()
-
         finally:
             await server.stop()
 
@@ -225,31 +214,5 @@ async def test_non_streaming_response_with_datetime():
             assert response.result["response"] == "done"
             assert isinstance(response.result["completed_at"], str)
 
-            await client.close()
-
         finally:
             await server.stop()
-
-
-@pytest.mark.asyncio
-async def test_event_with_datetime():
-    """E2E: IPCEvent.to_json() with datetime in data should serialize correctly."""
-    now = now_jst()
-    event = IPCEvent(
-        event="anima_activity",
-        data={
-            "anima": "sakura",
-            "last_activity": now,
-            "status": "active",
-        },
-    )
-
-    # Serialize and deserialize
-    json_str = event.to_json()
-    data = json.loads(json_str)
-
-    assert data["event"] == "anima_activity"
-    assert data["data"]["anima"] == "sakura"
-    assert data["data"]["status"] == "active"
-    assert isinstance(data["data"]["last_activity"], str)
-    assert str(now) == data["data"]["last_activity"]

@@ -22,10 +22,6 @@ AnimaWorks の操作は全て `animaworks` コマンドで行う。
 ## 非推奨・互換エイリアス
 
 ```bash
-# トップレベル（警告が出る）
-animaworks list                          # → animaworks anima list を使用
-animaworks create-anima ...              # → animaworks anima create を使用
-
 # --local（deprecated: ProcessSupervisor をバイパスする直接実行。HTTP API 経由が推奨）
 animaworks chat {名前} "..." --local
 animaworks heartbeat {名前} --local
@@ -71,10 +67,8 @@ animaworks anima permissions {名前}      # ツール許可を表示（load_per
 ```
 
 `anima info` の出力項目:
-- Anima名、Enabled、Role、Model、Execution Mode（組み込みラベルは主に S/C/A/B。D・G 等は解決値がそのまま表示されうる）
-- Credential、Fallback Model、Max Turns、Max Chains
-- Context Threshold、Max Tokens、LLM Timeout
-- Thinking / Thinking Effort、Supervisor、Mode S Auth
+- Anima名、Enabled、Role、Model、Execution Mode（組み込みラベルは S/C/D/G/X/A）
+- Credential、Fallback Model、Context Threshold、Max Tokens、Thinking / Thinking Effort、Supervisor、Mode S Auth
 - Voice設定（tts_provider、voice_id、speed、pitch 等、status.json の voice 辞書を列挙）
 
 ### 作成
@@ -133,14 +127,6 @@ animaworks anima set-background-model --all --clear     # 有効な全Animaの b
 animaworks anima set-background-model --all {モデル名}   # 有効な全Anima一括（モデルは位置引数でも可: `{モデル} --all`）
 ```
 
-### アウトバウンド制限
-
-```bash
-animaworks anima set-outbound-limit {名前} --per-hour 30 --per-day 100   # 送信レート制限
-animaworks anima set-outbound-limit {名前} --per-run 5                  # 1 runあたりの宛先数
-animaworks anima set-outbound-limit {名前} --clear                      # ロールデフォルトに戻す
-```
-
 ### 名前変更
 
 ```bash
@@ -162,7 +148,7 @@ animaworks anima set-role {名前} {role} --no-restart
 ```
 
 set-role で自動更新されるファイル（`--status-only` 以外）:
-- `status.json` — role およびロール `defaults.json` 由来の model / max_turns 等をマージ
+- `status.json` — role およびロール `defaults.json` 由来の model / context_threshold / conversation_history_threshold 等をマージ
 - `specialty_prompt.md` — ロールテンプレートから上書き
 - `permissions.json` — ロールテンプレートから上書き（従来の `permissions.md` は読み込み時に JSON へ移行されうる）
 
@@ -203,11 +189,11 @@ animaworks chat {名前} "メッセージ"
 animaworks chat {名前} "メッセージ" --from {送信者名}
 animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Anima間メッセージ送信
-animaworks send {送信者} {受信者} "メッセージ"
-animaworks send {送信者} {受信者} "メッセージ" --intent report   # report / delegation / question または省略（空）
-animaworks send {送信者} {受信者} "メッセージ" --reply-to {メッセージID}
-animaworks send {送信者} {受信者} "メッセージ" --thread-id {スレッドID}
+# Anima間メッセージ送信（Animaコンテキストでは送信者は自分のAnima名、intentは必須）
+animaworks send {自分} {受信者} "メッセージ" --intent report   # report または question。委譲には delegate_task を使う
+animaworks send {自分} {受信者} "メッセージ" --intent question
+animaworks send {自分} {受信者} "メッセージ" --intent report --reply-to {メッセージID}
+animaworks send {自分} {受信者} "メッセージ" --intent report --thread-id {スレッドID}
 
 # ハートビート手動起動
 animaworks heartbeat {名前}
@@ -223,8 +209,9 @@ animaworks board read {チャネル名}                      # チャネル読�
 animaworks board read {チャネル名} --limit 50           # 最大件数
 animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
 animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
-animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20）
+animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20、direction both）
 animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
+animaworks board dm-history {自分} {相手} --direction sent --hours 24 --keyword deploy
 ```
 
 ---
@@ -237,11 +224,9 @@ animaworks config -i                     # 対話式ウィザード（credential
 animaworks config list                   # 全設定値の一覧表示
 animaworks config list --section system  # セクションでフィルタ（例: system, credentials）
 animaworks config list --show-secrets    # API keyを表示
-animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.log_level）
+animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.mode）
 animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
-animaworks config export-sections        # tool_prompts.sqlite3 → ロケール別 templates/{ja|en}/prompts/
-animaworks config export-sections --dry-run
 ```
 
 **注意**: Animaのモデル・credential等は `status.json` がSSoT。`animas.{名前}.model` 等の直接設定は非推奨。`animaworks anima set-model` を使用すること。
@@ -297,10 +282,11 @@ animaworks cost --json                   # JSON出力
 ```bash
 animaworks task list                     # タスク一覧（JSON）
 animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
-animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima
+animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima。実行入力を登録しTaskExecが実行
 animaworks task add --assignee {名前} --instruction "内容" --source human
 animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
 animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+# task add は実行可能タスク。追跡専用の backlog_task ツールとは用途が異なる
 animaworks task update --task-id {ID} --status done
 animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
@@ -335,7 +321,6 @@ animaworks migrate --dry-run             # 変更プレビュー
 animaworks migrate --verbose             # ファイル単位の詳細
 animaworks migrate --list                # ステップ一覧と適用済みフラグ
 animaworks migrate --force               # 状態に関わらず再適用
-animaworks migrate --resync-db          # SQLite プロンプト DB の再同期のみ
 ```
 
 実行中サーバーがあると警告が出る。`~/.animaworks/config.json` が無い場合は失敗する。
@@ -397,7 +382,7 @@ animaworks-tool submit {ツール名} {サブコマンド} [引数...]
 
 ```bash
 animaworks-tool web_search query "AnimaWorks framework"
-animaworks slack send --channel "#general" --text "おはようございます"   # 上記ショートカット可
+animaworks-tool slack send "#general" "おはようございます"   # gated: 明示的な許可が必要
 animaworks-tool github issues --repo owner/repo
 animaworks-tool submit image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 ```
@@ -406,7 +391,7 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 
 **ディレクトリの整理**
 
-- **`state/background_tasks/`** — `submit` 由来の非同期タスク記述子（`pending` / `done` 等）。`internal list-background-tasks` / `check-background-task` はここを読む。
+- **`state/background_tasks/`** — BackgroundTaskManager が保存する実行結果 JSON（`running` / `completed` / `failed`）。`animaworks-tool submit` の投入内容と試行は TaskStore に保存し、`internal list-background-tasks` / `check-background-task` はこの結果 JSON を読む。
 - **`state/background_notifications/`** — ツール完了通知などを heartbeat が吸い上げる用途（MCP・スケジューラ等が書き込む経路あり）。CLI の `list-background-tasks` とは別。
 
 ### 子プロセス向けサブコマンド（internal / vault / supervisor）
@@ -416,31 +401,32 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 **internal**
 
 ```bash
-animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
+animaworks-tool internal archive-memory {相対パス} [--reason "理由"]  # knowledge/ procedures/ state/overflow_inbox/ のみ。episodes/ は対象外
+# --reason の既定値は "archived via CLI"。パス権限・保護ファイル検査と索引更新は archive_memory_file ツールが行う
 animaworks-tool internal check-permissions {ツール名} [アクション]
-# ※実装は permissions.md が存在する場合はそのパース結果を使用（permissions.json は未参照）
-animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
-animaworks-tool internal manage-channel create|archive {チャネル名}
-animaworks-tool internal list-background-tasks
+# ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
+animaworks-tool internal create-skill {名前} [--content ...] [--location personal|common]  # 省略時は標準入力
+animaworks-tool internal manage-channel create|archive|add_member|remove_member|info {チャネル名} [--member 名前] [--description 説明]
+animaworks-tool internal list-background-tasks [--status running|completed|failed|pending]
 animaworks-tool internal check-background-task {task_id}
 ```
 
 **vault**（Anima 名前空間付き KV）
 
-保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。`shared` はツールのクレデンシャル解決（`get_credential`）が読む場所で、`--shared` を付けて書く。`get` / `list` は無指定なら自分の名前空間 → `shared` の順で両方を見る。
+保存先は「自分の Anima 名前空間」と「`shared` セクション」の2つ。Anima は自分の名前空間と `shared` を読めますが、書き込み・削除できるのは自分の名前空間だけです。`shared` への書き込み・削除は `ANIMAWORKS_ANIMA_DIR` を設定していないオペレーター専用です。`get` は無指定なら自分の名前空間 → `shared` の順で検索し、`list` はこの2つだけを表示します。
 
 ```bash
 animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
 animaworks-tool vault get {キー} --shared     # shared のみ
 animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
-printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
-animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
+printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # オペレーター専用（stdin 経由のみ）
+animaworks-tool vault list                    # {"sections":{"自分の名前空間":[...], "shared":[...]}}
 animaworks-tool vault list --shared           # shared のみ
 animaworks-tool vault delete {キー}           # 自分の名前空間から削除
-animaworks-tool vault delete {キー} --shared  # shared から削除
+animaworks-tool vault delete {キー} --shared  # オペレーター専用
 ```
 
-`delete` だけはカスケードしない（`--shared` 無しで shared のクレデンシャルを巻き込まないため）。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
+Anima は `--shared` による書き込み・削除を実行できません。単回使用トークンのように「有効な複製が同時に1つしか存在し得ない」値は、保管先を1箇所に決めて分散させない。
 
 **supervisor**（`ANIMAWORKS_ANIMA_DIR` の Anima 名を起点に、status.json の supervisor 関係で配下を解決）
 
@@ -468,10 +454,10 @@ animaworks init --template {名前}       # テンプレートからAnimaを非�
 animaworks init --from-md {PATH}         # MDファイルからAnimaを非対話で作成
 animaworks init --blank {名前}           # ブランクAnimaを非対話で作成
 animaworks init --from-md {PATH} --name {名前}  # 作成時の名前を上書き
-animaworks migrate-cron                  # cron.md を日本語形式→標準cron式に変換
+旧形式の cron.md はサーバ起動時と `animaworks migrate` で自動変換される。
 ```
 
-スキーマ移行・DB再同期は `animaworks migrate`（上記）を参照。
+スキーマ移行は `animaworks migrate`（上記）を参照。
 
 ---
 
