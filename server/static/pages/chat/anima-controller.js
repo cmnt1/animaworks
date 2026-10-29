@@ -287,7 +287,7 @@ export function createAnimaController(ctx) {
         const anima = e.currentTarget?.dataset?.anima;
         if (!anima) return;
         if (anima === state.selectedAnima) {
-          ctx.controllers.avatar.showBustupOverlay();
+          ctx.controllers.memoryPopover.open(e.currentTarget);
           return;
         }
         openOrSelectAnima(anima);
@@ -325,7 +325,6 @@ export function createAnimaController(ctx) {
     state.animaSummary = null;
     state.animaDetail = null;
     state.animaDetailLoadedFor = null;
-    if (state.activeRightTab === "state") void ctx.controllers.activity.loadAnimaState();
     state.animaLastAccess[name] = Date.now();
     state.bustupUrl = null;
     state.selectedThreadId = state.activeThreadByAnima[name] || "default";
@@ -423,15 +422,6 @@ export function createAnimaController(ctx) {
       presence.setWorking(name, busy, "status", summary.status?.active_label || "");
       ctx.controllers.anima.renderAnimaTabs();
     }
-    if (state.activeRightTab === "activity") {
-      void ctx.controllers.activity.loadActivity();
-    } else if (state.activeRightTab === "history") {
-      void ctx.controllers.history.loadSessionList();
-    }
-    if (state.activeRightTab === "state") {
-      void ctx.controllers.memory.loadMemoryTab();
-    }
-
     ctx.controllers.streaming.resumeActiveStream(name);
     scheduleSaveChatUiState(ctx);
     state.paneHost?.savePaneStates?.();

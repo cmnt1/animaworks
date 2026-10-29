@@ -45,9 +45,11 @@ describe("chat session refresh", () => {
     assert.match(threadSource, /ctx\.controllers\.anima\.refreshSessions\(name\)/);
     assert.match(animaSource, /\/summary`/);
     assert.doesNotMatch(animaSource, /api\(`\/api\/animas\/\$\{encodeURIComponent\(name\)\}`\)/);
-    assert.match(animaSource, /if \(state\.activeRightTab === "state"\) \{\s*void ctx\.controllers\.memory\.loadMemoryTab\(\);\s*\}/);
+    assert.match(animaSource, /ctx\.controllers\.memoryPopover\.open\(e\.currentTarget\)/);
+    assert.doesNotMatch(animaSource, /activeRightTab|controllers\.memory\./);
     assert.match(activitySource, /\/api\/animas\/\$\{encodeURIComponent\(name\)\}\/state`/);
     assert.doesNotMatch(activitySource, /\/api\/animas\/\$\{encodeURIComponent\(name\)\}`/);
-    assert.match(paneSource, /if \(ctx\.state\.activeRightTab === "state"\) \{\s*ctx\.controllers\.activity\.loadAnimaState\(\);\s*ctx\.controllers\.memory\.loadMemoryTab\(\);\s*\}/);
+    assert.match(paneSource, /ctx\.controllers\.memoryPopover = createMemoryPopover\(ctx\)/);
+    assert.doesNotMatch(paneSource, /activeRightTab|controllers\.memory\./);
   });
 });
