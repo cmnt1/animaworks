@@ -4298,3 +4298,14 @@ button.chat-file-card-open {
   padding: 0;
   border-radius: 50%;
 }
+
+.chat-file-viewer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.1rem;
+}

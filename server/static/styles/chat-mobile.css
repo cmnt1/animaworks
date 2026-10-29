@@ -161,9 +161,6 @@
     padding-right: calc(12px + env(safe-area-inset-right));
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
-  .chat-file-viewer-close {
-    padding: 4px 8px;
-  }
   .chat-file-card {
     max-width: 100%;
   }
