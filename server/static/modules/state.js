@@ -138,8 +138,11 @@ const _markedOptions = { breaks: true, renderer: _markedRenderer };
 // the browser to auto-close every tag, producing well-formed HTML.
 const _sanitizerEl = document.createElement("div");
 
+// An unclosed <select>, <div> or <details> breaks the surrounding structure the same way.
+const _UNCLOSED_RISK_RE = /<(?:table|select|div|details)\b/i;
+
 function _ensureClosedTags(html) {
-  if (!html || !html.includes("<table")) return html;
+  if (!html || !_UNCLOSED_RISK_RE.test(html)) return html;
   _sanitizerEl.innerHTML = html;
   return _sanitizerEl.innerHTML;
 }
