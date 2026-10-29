@@ -437,12 +437,13 @@ def create_memory_router() -> APIRouter:
         anima_dir = animas_dir / name
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
-        anima_names, user_names = _connection_name_sets(request, animas_dir)
+        anima_names, user_names, primary_user = _connection_name_sets(request, animas_dir)
         return await asyncio.to_thread(
             build_connections,
             anima_dir,
             anima_names=anima_names,
             user_names=user_names,
+            primary_user=primary_user,
             days=days,
             limit=limit,
         )
@@ -458,13 +459,14 @@ def create_memory_router() -> APIRouter:
         anima_dir = animas_dir / name
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
-        anima_names, user_names = _connection_name_sets(request, animas_dir)
+        anima_names, user_names, primary_user = _connection_name_sets(request, animas_dir)
         return await asyncio.to_thread(
             entity_detail,
             anima_dir,
             entity,
             anima_names=anima_names,
             user_names=user_names,
+            primary_user=primary_user,
         )
 
     @router.get("/animas/{name}/memory/stats")
@@ -496,7 +498,7 @@ def create_memory_router() -> APIRouter:
     return router
 
 
-def _connection_name_sets(request: Request, animas_dir: Path) -> tuple[set[str], set[str]]:
+def _connection_name_sets(request: Request, animas_dir: Path) -> tuple[set[str], set[str], str | None]:
     """Load disk-backed Anima/user names plus configured external user aliases."""
     anima_names = (
         {
@@ -510,6 +512,7 @@ def _connection_name_sets(request: Request, animas_dir: Path) -> tuple[set[str],
 
     shared_dir_value = getattr(request.app.state, "shared_dir", None)
     user_names: set[str] = set()
+    primary_user: str | None = None
     if shared_dir_value is not None:
         users_dir = Path(shared_dir_value) / "users"
         if users_dir.is_dir():
@@ -519,7 +522,10 @@ def _connection_name_sets(request: Request, animas_dir: Path) -> tuple[set[str],
             from core.config.io import load_config
 
             aliases = load_config(config_path).external_messaging.user_aliases
+            # Keys are the people the external IDs stand for; the first one is the owner ("代表").
             user_names.update(str(alias) for alias in aliases)
+            primary_user = next((str(alias) for alias in aliases if str(alias).strip()), None)
         except Exception:
             logger.debug("Failed to load external user aliases for memory connections", exc_info=True)
-    return anima_names, user_names
+    user_names -= anima_names
+    return anima_names, user_names, primary_user

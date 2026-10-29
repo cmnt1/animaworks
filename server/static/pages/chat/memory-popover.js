@@ -51,6 +51,20 @@ export function splitStateSections(markdown) {
   return sections;
 }
 
+export function graphBounds(nodes, maxCount) {
+  const box = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+  for (const node of nodes) {
+    if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+    const r = node.kind === "center" ? 44 : bubbleRadius(node.count, maxCount);
+    box.left = Math.min(box.left, node.x - r - 40);
+    box.right = Math.max(box.right, node.x + r + 40);
+    box.top = Math.min(box.top, node.y - r - 8);
+    box.bottom = Math.max(box.bottom, node.y + r + 22);
+  }
+  if (!Number.isFinite(box.left)) return { left: -1, right: 1, top: -1, bottom: 1 };
+  return box;
+}
+
 export function tailLeft(anchorRect, popRect) {
   const anchorCenter = Number(anchorRect?.left || 0) + Number(anchorRect?.width || 0) / 2;
   const left = Number(popRect?.left || 0);
@@ -148,6 +162,7 @@ export function createMemoryPopover(ctx) {
   let activeEntity = null;
   let activeGraph = null;
   let simulation = null;
+  let graphFit = null;
   let activityTimer = null;
   let fileObserver = null;
   let listenersBound = false;
@@ -758,6 +773,24 @@ export function createMemoryPopover(ctx) {
     return namedUser?.avatar_url || namedUser?.avatar || "";
   }
 
+  // Zoom out (never in) so every bubble and its label stays inside the stage, below the toolbar.
+  function fitGraph(svg, nodes, maxCount, fallbackWidth, fallbackHeight) {
+    // The stage narrows when the detail drawer opens, so measure it every time.
+    const size = svg.node()?.getBoundingClientRect?.();
+    const width = size?.width > 0 ? size.width : fallbackWidth;
+    const height = size?.height > 0 ? size.height : fallbackHeight;
+    graphFit = () => fitGraph(svg, nodes, maxCount, fallbackWidth, fallbackHeight);
+    const box = graphBounds(nodes, maxCount);
+    const top = 48;
+    // Keep the anima (fixed at 0,0) in the middle of the stage.
+    const halfW = Math.max(-box.left, box.right);
+    const halfH = Math.max(-box.top, box.bottom);
+    const scale = Math.max(1, (2 * halfW) / width, (2 * halfH) / (height - top));
+    const w = width * scale;
+    const h = (height - top) * scale;
+    svg.attr("viewBox", [-w / 2, -h / 2 - top * scale, w, h + top * scale]);
+  }
+
   function drawGraph(d3, name, data, entityNodes, svgEl) {
     const stage = q(".aw-memory-stage");
     const rect = stage?.getBoundingClientRect() || { width: 560, height: 520 };
@@ -820,6 +853,7 @@ export function createMemoryPopover(ctx) {
           .attr("x2", (link) => link.target.x).attr("y2", (link) => link.target.y);
         nodeSelection.attr("transform", (node) => "translate(" + node.x + "," + node.y + ")");
         paintGraphFilters();
+        fitGraph(svg, nodes, maxCount, width, height);
       });
     nodeSelection.call(d3.drag()
       .on("start", (event, node) => {
@@ -891,6 +925,7 @@ export function createMemoryPopover(ctx) {
     if (!drawer) return;
     drawer.hidden = false;
     q(".aw-memory-graph-layout")?.classList.add("has-detail");
+    win.requestAnimationFrame?.(() => graphFit?.());
     drawer.innerHTML = '<div class="aw-memory-detail-loading">' + html(t("chat.memory.loading")) + "</div>";
     if (simulation && q(".aw-memory-svg") && win?.d3) {
       win.d3.select(q(".aw-memory-svg")).selectAll(".aw-memory-node").classed("is-selected", (item) => item.id === id);
@@ -978,6 +1013,21 @@ export function createMemoryPopover(ctx) {
     }
     const popWidth = Math.min(960, width - 24);
     const popHeight = Math.min(670, height - 32);
+    // An anima in the left rail: open to its right, with the tail on the left edge.
+    const beside = rect.right < width * 0.3 && rect.right + 14 + Math.min(popWidth, 480) <= width;
+    dialog.classList.toggle("is-beside-anchor", beside);
+    if (beside) {
+      const sideWidth = Math.min(popWidth, width - rect.right - 26);
+      const sideTop = Math.max(12, Math.min(height - popHeight - 12, rect.top + rect.height / 2 - 48));
+      dialog.style.left = (rect.right + 14) + "px";
+      dialog.style.top = sideTop + "px";
+      dialog.style.width = sideWidth + "px";
+      dialog.style.height = popHeight + "px";
+      const tailY = Math.max(24, Math.min(popHeight - 24, rect.top + rect.height / 2 - sideTop));
+      dialog.style.setProperty("--aw-memory-tail-y", tailY + "px");
+      dialog.classList.remove("is-above-anchor");
+      return;
+    }
     const left = Math.max(12, Math.min(width - popWidth - 12, rect.left + rect.width / 2 - popWidth / 2));
     let top = rect.bottom + 14;
     if (top + popHeight > height - 12) top = Math.max(12, rect.top - popHeight - 14);
@@ -1021,6 +1071,7 @@ export function createMemoryPopover(ctx) {
     q(".aw-memory-days").hidden = false;
     q(".aw-memory-detail-entity").hidden = true;
     q(".aw-memory-graph-layout").classList.remove("has-detail");
+    win.requestAnimationFrame?.(() => graphFit?.());
     q(".aw-memory-period").value = "";
     q(".aw-memory-search").value = "";
     qa("[data-memory-kind]").forEach((button) => {

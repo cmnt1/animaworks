@@ -25,7 +25,7 @@ def _write_fact(
     timestamp = (now_local() - timedelta(days=days_ago)).isoformat()
     record = {
         "fact_id": fact_id,
-        "text": text or f"Fact {fact_id}",
+        "text": text or f"Fact {fact_id} about " + "、".join(entities),
         "entities": entities,
         "recorded_at": timestamp,
         "valid_at": timestamp,
@@ -102,7 +102,7 @@ def test_entity_detail_returns_recent_facts_related_entities_and_memory_files(tm
     anima_dir.mkdir()
     _write_fact(anima_dir, "older", ["Alpha", "Beta"], days_ago=2)
     _write_fact(anima_dir, "other", ["Alpha", "Gamma"])
-    _write_fact(anima_dir, "newer", ["Alpha", "Beta"], text="Newest alpha fact")
+    _write_fact(anima_dir, "newer", ["Alpha", "Beta"], text="Newest Alpha fact with Beta")
 
     knowledge = anima_dir / "knowledge"
     procedures = anima_dir / "procedures"
@@ -126,7 +126,7 @@ def test_entity_detail_returns_recent_facts_related_entities_and_memory_files(tm
     assert detail["kind"] == "topic"
     assert detail["count"] == 3
     assert [fact["fact_id"] for fact in detail["facts"]] == ["newer", "other", "older"]
-    assert detail["facts"][0]["text"] == "Newest alpha fact"
+    assert detail["facts"][0]["text"] == "Newest Alpha fact with Beta"
     assert {(item["id"], item["weight"]) for item in detail["related"]} == {("Beta", 2), ("Gamma", 1)}
     assert {item["file"] for item in detail["files"]} == {"knowledge/profile.md", "procedures/alpha-process.md"}
     assert next(item for item in detail["files"] if item["file"] == "knowledge/profile.md")["title"] == "Alpha profile"
@@ -204,3 +204,16 @@ def test_entity_registry_aliases_are_merged_into_canonical_name(tmp_path: Path) 
     assert [(node["label"], node["count"]) for node in data["nodes"]] == [("Acme Corporation", 1)]
     assert detail["entity"] == "Acme Corporation"
     assert detail["count"] == 1
+
+
+def test_batch_entities_not_in_the_fact_are_not_counted(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "mei"
+    # The extractor attaches the whole batch's entities to every fact; only the mentioned ones count.
+    _write_fact(anima_dir, "f1", ["Kraken", "Chatwork", "Zoom"], text="Kraken の残高が 0 になった")
+    _write_fact(anima_dir, "f2", ["Kraken", "Chatwork", "Zoom"], text="Chatwork で報告した")
+
+    result = build_connections(anima_dir, anima_names={"mei"}, user_names=set(), days=None)
+
+    counts = {node["id"]: node["count"] for node in result["nodes"]}
+    assert counts == {"Kraken": 1, "Chatwork": 1}
+    assert result["links"] == []

@@ -97,6 +97,25 @@ class _FactRow:
     recorded_at: str
 
 
+def _fact_own_entities(record: FactRecord) -> list[str]:
+    """Entities this fact is really about.
+
+    ``entities`` is filled per extraction batch, so it also lists names from the
+    neighbouring facts. Keep the source/target and the names the text mentions.
+    """
+    text = record.text.casefold()
+    ends = {record.source_entity.strip(), record.target_entity.strip()}
+    own = []
+    for name in fact_entity_names(record):
+        clean = name.strip()
+        if not clean:
+            continue
+        base = _before_parenthesis(clean) or clean
+        if clean in ends or clean.casefold() in text or base.casefold() in text:
+            own.append(name)
+    return own
+
+
 def classify_entity(name: str, anima_names: set[str], user_names: set[str]) -> str:
     """Classify a canonical entity name without reading external state."""
     folded = name.strip().casefold()
@@ -122,6 +141,7 @@ def build_connections(
     user_names: set[str],
     days: int | None,
     limit: int = 40,
+    primary_user: str | None = None,
 ) -> dict[str, Any]:
     """Return the most common entities and their fact co-occurrences."""
     rows, aliases = _cached_fact_rows(Path(anima_dir))
@@ -133,11 +153,12 @@ def build_connections(
         now_local().date().isoformat(),
         frozenset(anima_names),
         frozenset(user_names),
+        primary_user,
     )
     return _memo(
         key,
         rows,
-        lambda: _build_connections(Path(anima_dir), rows, aliases, anima_names, user_names, days, limit),
+        lambda: _build_connections(Path(anima_dir), rows, aliases, anima_names, user_names, days, limit, primary_user),
     )
 
 
@@ -149,6 +170,7 @@ def _build_connections(
     user_names: set[str],
     days: int | None,
     limit: int,
+    primary_user: str | None = None,
 ) -> dict[str, Any]:
     facts = _selected_rows(rows, days=days)
     names = _name_lookup(anima_names | user_names)
@@ -162,7 +184,7 @@ def _build_connections(
         canonical_entities = {
             key: display
             for raw_name in row.entities
-            if (display := _canonical_entity(raw_name, aliases, names, user_names))
+            if (display := _canonical_entity(raw_name, aliases, names, user_names, primary_user))
             and not _same_name(display, self_name)
             and not _looks_like_filename(display)
             and (key := _entity_key(display))
@@ -217,6 +239,7 @@ def entity_detail(
     anima_names: set[str],
     user_names: set[str],
     limit_facts: int = 20,
+    primary_user: str | None = None,
 ) -> dict[str, Any]:
     """Return facts, co-occurring entities, and memory files for one entity."""
     anima_dir = Path(anima_dir)
@@ -230,11 +253,12 @@ def entity_detail(
         int(time.time() // 60),
         frozenset(anima_names),
         frozenset(user_names),
+        primary_user,
     )
     return _memo(
         key,
         rows,
-        lambda: _entity_detail(anima_dir, rows, aliases, entity, anima_names, user_names, limit_facts),
+        lambda: _entity_detail(anima_dir, rows, aliases, entity, anima_names, user_names, limit_facts, primary_user),
     )
 
 
@@ -246,9 +270,10 @@ def _entity_detail(
     anima_names: set[str],
     user_names: set[str],
     limit_facts: int,
+    primary_user: str | None = None,
 ) -> dict[str, Any]:
     names = _name_lookup(anima_names | user_names)
-    query_name = _canonical_entity(entity, aliases, names, user_names)
+    query_name = _canonical_entity(entity, aliases, names, user_names, primary_user)
     query_key = _entity_key(query_name) if query_name else ""
     self_name = anima_dir.name
 
@@ -259,7 +284,7 @@ def _entity_detail(
         canonical_entities = {
             key: display
             for raw_name in row.entities
-            if (display := _canonical_entity(raw_name, aliases, names, user_names))
+            if (display := _canonical_entity(raw_name, aliases, names, user_names, primary_user))
             and not _same_name(display, self_name)
             and not _looks_like_filename(display)
             and (key := _entity_key(display))
@@ -353,7 +378,7 @@ def _cached_fact_rows(anima_dir: Path) -> tuple[tuple[_FactRow, ...], dict[str, 
                 occurred_at_text = str(raw.get("recorded_at") or raw.get("valid_at") or "").strip()
                 occurred_at = _parse_timestamp(occurred_at_text)
                 normalized_entities = tuple(
-                    dict.fromkeys(_registry_canonical(name, aliases) for name in fact_entity_names(record))
+                    dict.fromkeys(_registry_canonical(name, aliases) for name in _fact_own_entities(record))
                 )
                 rows.append(
                     _FactRow(
@@ -405,12 +430,13 @@ def _canonical_entity(
     aliases: dict[str, str],
     names: dict[str, str],
     user_names: set[str],
+    primary_user: str | None = None,
 ) -> str:
     clean = _registry_canonical(str(name), aliases).strip()
     if not clean:
         return ""
     if clean == "代表":
-        return min(user_names, key=str.casefold) if user_names else clean
+        return primary_user or (min(user_names, key=str.casefold) if user_names else clean)
 
     base = _before_parenthesis(clean)
     if base and base.casefold() in names:
