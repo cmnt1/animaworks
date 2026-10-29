@@ -24,7 +24,7 @@ description: "ツール体系の全体像と使い方ガイド"
 全体の許可リスト `MCP_TOOL_NAMES` は `core/tooling/surface.py` に定義されています。`resolve_tool_surface(ctx, trigger, mode)` がトリガーと役割に応じた最終一覧を返し、MCP サーバーがそのスキーマを公開します。
 
 - **記憶**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
-- **メッセージ**: `send_message`, `post_channel`
+- **メッセージ**: `send_message`, `post_channel`, `attach_file`
 - **通知**: `call_human`
 - **タスク**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
 - **ワークスペース**: `grant_workspace_access`
@@ -105,6 +105,7 @@ Mode A のスキーマでは **PascalCase 名**です。`ToolHandler` 内部で�
 |--------|------|
 | **send_message** | 他 Anima または人間エイリアスへ DM。`intent` は **`report` / `question` のみ**（`delegation` は非推奨・委譲は `delegate_task`）。1 ランあたりの人数・回数制限あり |
 | **post_channel** | 共有 Board へ投稿。パラメータ名は **`channel`**, **`text`** |
+| **attach_file** | Web チャットの返信にファイルを添付。`path` は必須、`name` で表示名を指定可能。`message:*` トリガーでのみ利用できる |
 | **read_channel** | Board の読み取り |
 | **read_dm_history** | DM 履歴の参照 |
 | **manage_channel** | チャネルの作成・メンバー管理など |

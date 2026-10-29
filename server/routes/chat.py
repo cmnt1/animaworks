@@ -181,7 +181,10 @@ def create_chat_router() -> APIRouter:
             cycle_result = result.get("cycle_result") or {}
             if not images and isinstance(cycle_result, dict):
                 images = cycle_result.get("images") or cycle_result.get("artifacts") or []
-            return ChatResponse(response=clean_response, anima=name, images=images)
+            files = result.get("files") or []
+            if not files and isinstance(cycle_result, dict):
+                files = cycle_result.get("files") or []
+            return ChatResponse(response=clean_response, anima=name, images=images, files=files)
 
         except (KeyError, AnimaNotFoundError):
             from fastapi import HTTPException

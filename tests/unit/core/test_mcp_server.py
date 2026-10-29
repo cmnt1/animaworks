@@ -148,7 +148,7 @@ class TestListToolsHandler:
 
         result_names = {t.name for t in result}
         assert "submit_tasks" not in result_names
-        assert result_names == {t.name for t in MCP_TOOLS if t.name != "submit_tasks"}
+        assert result_names == {t.name for t in MCP_TOOLS if t.name not in {"submit_tasks", "attach_file"}}
 
     async def test_background_session_can_list_submit_tasks(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """submit_tasks is listed only for explicit background task-authoring sessions.
@@ -173,6 +173,21 @@ class TestListToolsHandler:
 
         assert not result_names & SKILL_MANAGEMENT_TOOL_NAMES
 
+    async def test_message_reply_lists_attach_file(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """attach_file is listed only for triggers that reply to a chat message."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "message:user")
+        with (
+            patch.object(mcp_mod, "_is_supervisor", True),
+            patch.object(mcp_mod, "_has_newstaff", True),
+            patch.object(mcp_mod, "_has_notification_channels_for_anima", return_value=True),
+        ):
+            result = await list_tools()
+
+        assert "attach_file" in {tool.name for tool in result}
+
     async def test_filters_supervisor_tools_when_non_supervisor(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """list_tools() excludes delegate_task when Anima has no subordinates."""
         import core.mcp.server as mcp_mod
@@ -189,7 +204,7 @@ class TestListToolsHandler:
         result_names = {t.name for t in result}
         assert "delegate_task" not in result_names
         assert result_names == {
-            t.name for t in MCP_TOOLS if t.name not in {"delegate_task", "submit_tasks", "call_human"}
+            t.name for t in MCP_TOOLS if t.name not in {"delegate_task", "submit_tasks", "call_human", "attach_file"}
         }
 
     async def test_includes_create_anima_when_newstaff_skill(self) -> None:
@@ -315,6 +330,19 @@ class TestCallToolHandler:
         payload = json.loads(result[0].text)
         assert payload["status"] == "error"
         assert payload["error_type"] == "ToolBlocked"
+
+    async def test_blocks_attach_file_outside_message_reply(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """call_tool() blocks attach_file when the trigger is not a chat reply."""
+        import core.mcp.server as mcp_mod
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "heartbeat")
+        result = await mcp_mod.call_tool("attach_file", {"path": "/tmp/x"})
+
+        assert len(result) == 1
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+        assert payload["error_type"] == "ToolBlocked"
+        assert "attach_file" in payload["message"]
 
     async def test_blocks_workspace_access_during_consolidation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import core.mcp.server as mcp_mod
@@ -534,7 +562,7 @@ class TestTriggerScopedTools:
         from core.tooling.policy.surface import MCP_TOOL_NAMES, ToolSurfaceContext, resolve_tool_surface
 
         context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
-        assert set(resolve_tool_surface(context, "", "S")) == set(MCP_TOOL_NAMES) - {"submit_tasks"}
+        assert set(resolve_tool_surface(context, "", "S")) == set(MCP_TOOL_NAMES) - {"submit_tasks", "attach_file"}
 
     def test_mcp_tools_env_for_trigger_scoped(self) -> None:
         """A scoped trigger pins an explicit reduced ANIMAWORKS_MCP_TOOLS value."""
@@ -545,6 +573,15 @@ class TestTriggerScopedTools:
         names = set(value.split(","))
         assert not names & self.SKILL_MANAGEMENT
         assert "search_memory" in names
+        assert "attach_file" not in names
+
+    def test_mcp_tools_env_for_message_reply_includes_attach_file(self) -> None:
+        """A web-chat reply trigger advertises attach_file to the MCP subprocess."""
+        from core.mcp.server import _mcp_tools_env_for_trigger
+
+        value = _mcp_tools_env_for_trigger("message:user", enabled=True)
+        assert value is not None
+        assert "attach_file" in set(value.split(","))
 
     def test_mcp_tools_env_for_trigger_full_returns_none(self) -> None:
         """heartbeat and disabled config leave the env var unset (full tool set)."""

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import base64
 import binascii
-import unicodedata
 from typing import Any
 
+from core.anima.chat_attachments import MAX_CHAT_FILENAME_LENGTH as MAX_CHAT_FILENAME_LENGTH
+from core.anima.chat_attachments import _sanitize_filename
 from core.i18n import t
 from core.time_utils import now_local
 from server.routes.chat_models import FileAttachment
@@ -17,7 +18,6 @@ from server.routes.chat_models import FileAttachment
 MAX_CHAT_FILE_SIZE = 25 * 1024 * 1024
 MAX_CHAT_FILE_COUNT = 10
 MAX_CHAT_FILES_SIZE = 50 * 1024 * 1024
-MAX_CHAT_FILENAME_LENGTH = 120
 
 
 def _validate_files(files: list[FileAttachment]) -> tuple[str, int] | None:
@@ -40,23 +40,6 @@ def _validate_files(files: list[FileAttachment]) -> tuple[str, int] | None:
     if total_size > MAX_CHAT_FILES_SIZE:
         return t("chat.attach.total_too_large", size_mb=50), 413
     return None
-
-
-def _sanitize_filename(name: str) -> str:
-    """Remove path/control characters and cap the name while retaining suffix."""
-    safe = "".join(char for char in str(name) if char not in "/\\" and unicodedata.category(char) != "Cc")
-    safe = safe.lstrip(".")
-    if not safe:
-        return "file"
-
-    if len(safe) > MAX_CHAT_FILENAME_LENGTH:
-        stem, dot, suffix = safe.rpartition(".")
-        extension = f".{suffix}" if dot else ""
-        if extension and len(extension) < MAX_CHAT_FILENAME_LENGTH:
-            safe = stem[: MAX_CHAT_FILENAME_LENGTH - len(extension)] + extension
-        else:
-            safe = safe[:MAX_CHAT_FILENAME_LENGTH]
-    return safe or "file"
 
 
 def save_files(anima_name: str, files: list[FileAttachment]) -> list[dict[str, Any]]:

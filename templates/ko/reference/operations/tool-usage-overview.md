@@ -25,7 +25,7 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 전체 허가 목록 `MCP_TOOL_NAMES`은 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 그 스키마를 공개합니다.
 
 - **기억**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
-- **메시지**: `send_message`, `post_channel`
+- **메시지**: `send_message`, `post_channel`, `attach_file`
 - **알림**: `call_human`
 - **작업**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
 - **작업 공간**: `grant_workspace_access`
@@ -106,6 +106,7 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 |--------|------|
 | **send_message** | 다른 Anima 또는 인간 별칭으로 DM. `intent`은 **`report` / `question`만**(`delegation`은 비권장·위임은 `delegate_task`). 1런당 인원·횟수 제한 있음 |
 | **post_channel** | 공유 Board에 게시. 파라미터 이름은 **`channel`**, **`text`** |
+| **attach_file** | 웹 채팅 답장에 파일을 첨부. `path`는 필수이며 `name`으로 표시 이름을 지정할 수 있습니다. `message:*` 트리거에서만 사용할 수 있습니다 |
 | **read_channel** | Board 읽기 |
 | **read_dm_history** | DM 이력 참조 |
 | **manage_channel** | 채널 생성·멤버 관리 등 |

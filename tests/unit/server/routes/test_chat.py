@@ -6,8 +6,7 @@
 from __future__ import annotations
 
 import base64
-from unittest.mock import AsyncMock, MagicMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
@@ -142,6 +141,43 @@ class TestChat:
         data = resp.json()
         assert len(data["images"]) == 1
         assert data["images"][0]["path"] == "assets/a.png"
+
+    async def test_chat_includes_files_from_cycle_result(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "ok",
+                "replied_to": [],
+                "cycle_result": {
+                    "summary": "ok",
+                    "files": [
+                        {
+                            "name": "summary.md",
+                            "path": "attachments/20261029_101500_a1_summary.md",
+                            "size": 128,
+                            "media_type": "text/markdown",
+                        }
+                    ],
+                },
+            }
+        )
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/chat",
+                json={"message": "Hi"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["files"] == [
+            {
+                "name": "summary.md",
+                "path": "attachments/20261029_101500_a1_summary.md",
+                "size": 128,
+                "media_type": "text/markdown",
+            }
+        ]
 
     async def test_chat_file_upload_passes_saved_paths_and_prompt_list_to_ipc(self):
         saved_files = [
@@ -389,6 +425,35 @@ class TestChatStream:
             )
         assert resp.status_code == 200
         assert '"images": [{"type": "image", "source": "generated", "path": "assets/avatar.png"}]' in resp.text
+
+    async def test_stream_done_contains_files(self):
+        alice = _make_mock_anima("alice")
+        files = [
+            {
+                "name": "summary.md",
+                "path": "attachments/20261029_101500_a1_summary.md",
+                "size": 128,
+                "media_type": "text/markdown",
+            }
+        ]
+
+        async def mock_stream(msg, from_person="human", intent=""):
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "Hello", "files": files},
+            }
+
+        alice.process_message_stream = mock_stream
+        app = _make_test_app({"alice": alice})
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/animas/alice/chat/stream",
+                json={"message": "Hi"},
+            )
+        assert resp.status_code == 200
+        assert '"files": [' in resp.text
+        assert '"summary.md"' in resp.text
 
     async def test_stream_forwards_intent_to_supervisor(self):
         supervisor = MagicMock()

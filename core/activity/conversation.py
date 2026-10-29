@@ -658,6 +658,9 @@ class ConversationMixin:
                 images = e.meta.get("images") or e.meta.get("artifacts") or []
                 if isinstance(images, list) and images:
                     msg["images"] = images
+                files = e.meta.get("files") or []
+                if isinstance(files, list) and files:
+                    msg["files"] = files
                 messages.append(msg)
                 if pending_tool_calls:
                     msg["tool_calls"].extend(pending_tool_calls)

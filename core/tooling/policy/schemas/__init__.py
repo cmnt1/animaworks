@@ -13,6 +13,7 @@ from __future__ import annotations
 from core.tooling.policy.schemas.admin import ADMIN_TOOLS, CC_TOOLS
 from core.tooling.policy.schemas.builder import build_unified_tool_list
 from core.tooling.policy.schemas.channel import _channel_tools
+from core.tooling.policy.schemas.chat_files import CHAT_FILE_TOOLS, _chat_file_tools
 from core.tooling.policy.schemas.converters import to_litellm_format
 from core.tooling.policy.schemas.loader import (
     _normalise_schema,
@@ -44,6 +45,7 @@ from core.tooling.policy.tool_content import apply_prompt_descriptions
 __all__ = [
     "ADMIN_TOOLS",
     "CC_TOOLS",
+    "CHAT_FILE_TOOLS",
     "KNOWLEDGE_TOOLS",
     "MEMORY_TOOLS",
     "PROCEDURE_TOOLS",
@@ -52,6 +54,7 @@ __all__ = [
     "WORKSPACE_TOOLS",
     "_background_task_tools",
     "_channel_tools",
+    "_chat_file_tools",
     "_check_permissions_tools",
     "_notification_tools",
     "_normalise_schema",

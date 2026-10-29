@@ -53,7 +53,9 @@ def test_feed_finds_minimum_user_items_across_many_background_entries(tmp_path: 
         start = now - timedelta(minutes=(14 - turn) * 3)
         for work in range(8):
             ts = (start + timedelta(seconds=work * 10)).isoformat()
-            entries.append(_event(ts, "cron_executed", f"private cron body {turn}-{work}", meta={"task_name": "nightly"}))
+            entries.append(
+                _event(ts, "cron_executed", f"private cron body {turn}-{work}", meta={"task_name": "nightly"})
+            )
         user_ts = (start + timedelta(seconds=90)).isoformat()
         entries.append(
             _event(
@@ -110,6 +112,41 @@ def test_file_metadata_is_exposed_by_feed_and_conversation_history(tmp_path: Pat
 
     assert history_messages[0]["files"] == files
     assert feed_messages[0]["files"] == files
+
+
+def test_assistant_file_metadata_is_exposed_by_feed_and_conversation_history(tmp_path: Path) -> None:
+    anima_dir, activity = _test_activity(tmp_path)
+    now = now_local().replace(microsecond=0)
+    files = [
+        {
+            "name": "summary.md",
+            "path": "attachments/20261029_101500_a1_summary.md",
+            "size": 128,
+            "media_type": "text/markdown",
+        }
+    ]
+    _write_entries(
+        anima_dir,
+        [
+            _event(
+                now.isoformat(),
+                "response_sent",
+                "Here is the summary",
+                to_person="human",
+                channel="chat",
+                meta={"thread_id": "default", "files": files},
+            )
+        ],
+    )
+
+    history = activity.get_conversation_view(thread_id="default")
+    history_messages = [message for session in history["sessions"] for message in session["messages"]]
+    feed = activity.get_conversation_feed(min_user_items=1, _schedule_prefetch=False)
+    feed_messages = [item["message"] for item in feed["items"] if item["kind"] == "message"]
+
+    assert history_messages[-1]["role"] == "assistant"
+    assert history_messages[-1]["files"] == files
+    assert feed_messages[-1]["files"] == files
 
 
 def test_feed_coalesces_cron_dm_and_self_notice_without_leaking_bodies(tmp_path: Path) -> None:
@@ -223,11 +260,7 @@ def test_user_item_rules_cover_external_humans_notifications_calls_and_direct_re
     _write_entries(anima_dir, entries)
 
     feed = activity.get_conversation_feed(min_user_items=10, _schedule_prefetch=False)
-    user_texts = [
-        item["message"].get("content")
-        for item in feed["items"]
-        if item["kind"] == "message"
-    ]
+    user_texts = [item["message"].get("content") for item in feed["items"] if item["kind"] == "message"]
 
     assert user_texts == ["Slack from a person", "A direct reply", "Approval needed", "Approved", "Call summary"]
     bg_groups = [item for item in feed["items"] if item["kind"] == "bg_group"]
@@ -300,8 +333,7 @@ def test_background_endpoint_limits_results_to_newest_200_items(tmp_path: Path) 
     anima_dir, activity = _test_activity(tmp_path)
     start = now_local().replace(microsecond=0) - timedelta(minutes=10)
     entries = [
-        _event((start + timedelta(seconds=index)).isoformat(), "cron_executed", f"cron {index}")
-        for index in range(205)
+        _event((start + timedelta(seconds=index)).isoformat(), "cron_executed", f"cron {index}") for index in range(205)
     ]
     _write_entries(anima_dir, entries)
 

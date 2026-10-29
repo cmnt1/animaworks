@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator
 from contextlib import nullcontext
 from typing import Any
 
+from core.anima.chat_attachments import collect_outbound_files
 from core.anima.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.anima.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.anima.response_normalize import normalize_user_facing_response_text
@@ -1140,6 +1141,14 @@ class MessagingMixin:
                             remaining = max(0, 5 - len(response_artifacts))
                             response_artifacts.extend(local_artifacts[:remaining])
                             cycle_result["images"] = response_artifacts
+                            response_files = collect_outbound_files(
+                                self.anima_dir,
+                                str(cycle_result.get("request_id") or ""),
+                                thread_id=thread_id,
+                                since=live_session_started_at,
+                            )
+                            if response_files:
+                                cycle_result["files"] = response_files
                             display_summary = summary
                             resp_meta: dict[str, Any] = {"thread_id": thread_id}
                             if interim_texts:
@@ -1179,6 +1188,8 @@ class MessagingMixin:
                                 resp_meta["thinking_text"] = thinking_text
                             if response_artifacts:
                                 resp_meta["images"] = response_artifacts
+                            if response_files:
+                                resp_meta["files"] = response_files
                             await self._activity.alog(
                                 "response_sent",
                                 content=display_summary,

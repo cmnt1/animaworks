@@ -25,7 +25,7 @@ The tools are structured in three layers:
 The overall permission list `MCP_TOOL_NAMES` is defined in `core/tooling/surface.py`. `resolve_tool_surface(ctx, trigger, mode)` returns the final list based on triggers and roles, and the MCP server exposes those schemas.
 
 - **Memory**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
-- **Message**: `send_message`, `post_channel`
+- **Message**: `send_message`, `post_channel`, `attach_file`
 - **Notification**: `call_human`
 - **Task**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
 - **Workspace**: `grant_workspace_access`
@@ -106,6 +106,7 @@ The following is a summary of tools processed directly by `ToolHandler` (some ar
 |--------|------|
 | **send_message** | Sends a DM to another Anima or human alias. `intent` is **only `report` / `question`** (`delegation` is deprecated; use `delegate_task` for delegation). There are limits on the number of people and messages per run |
 | **post_channel** | Posts to a shared Board. Parameter names are **`channel`**, **`text`** |
+| **attach_file** | Attaches a file to a web-chat reply. `path` is required; `name` sets the display name. Available only for `message:*` triggers |
 | **read_channel** | Reads the Board |
 | **read_dm_history** | References DM history |
 | **manage_channel** | Channel creation, member management, etc. |
