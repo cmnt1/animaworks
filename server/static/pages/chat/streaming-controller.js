@@ -641,7 +641,7 @@ export function createStreamingController(ctx) {
           }
           finalizeStreamError(streamingMsg, errorMsg);
         },
-        onDone: ({ summary, emotion, images: doneImages, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
+        onDone: ({ summary, emotion, images: doneImages, files: doneFiles, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
           if (_textAnimator) _textAnimator.flush();
           if (_thinkingAnimator) { _thinkingAnimator.flush(); _thinkingAnimator = null; }
           if (!streamingMsg) return;
@@ -658,6 +658,7 @@ export function createStreamingController(ctx) {
           delete streamingMsg._displayText;
           delete streamingMsg._displayThinkingText;
           streamingMsg.images = doneImages || [];
+          streamingMsg.files = doneFiles || [];
           if (!streamingMsg.thinkingText && thinkingSummary) {
             streamingMsg.thinkingText = thinkingSummary;
           }
@@ -1030,7 +1031,7 @@ export function createStreamingController(ctx) {
           ctx.controllers.workIndicator?.onStreamSettled();
         },
         onContextUpdate: (ctxData) => { updateContextRing(ctxData, animaName); },
-        onDone: ({ summary, emotion, images, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
+        onDone: ({ summary, emotion, images, files: doneFiles, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
           if (_resumeAnimator) _resumeAnimator.flush();
           if (_resumeThinkingAnimator) { _resumeThinkingAnimator.flush(); _resumeThinkingAnimator = null; }
           if (streamingMsg) {
@@ -1040,6 +1041,7 @@ export function createStreamingController(ctx) {
             delete streamingMsg._displayText;
             delete streamingMsg._displayThinkingText;
             streamingMsg.images = images || [];
+            streamingMsg.files = doneFiles || [];
             if (!streamingMsg.thinkingText && thinkingSummary) {
               streamingMsg.thinkingText = thinkingSummary;
             }

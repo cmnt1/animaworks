@@ -1741,7 +1741,7 @@ export function bindChatLineHandlers(container, { onReply, onFaceClick } = {}) {
 
     // Touch screens have no hover: a tap on a bubble shows its actions, a tap elsewhere hides them.
     const tappedRow = event.target.closest(".chat-line-bubble")
-      && !event.target.closest("a, button, summary, details, input, textarea, select, img")
+      && !event.target.closest("a, button, summary, details, input, textarea, select, img, audio, video, .chat-file-card, .chat-files")
       ? event.target.closest(".chat-line") : null;
     container.querySelectorAll(".chat-line.actions-open").forEach((row) => {
       if (row !== tappedRow && !row.contains(event.target)) row.classList.remove("actions-open");

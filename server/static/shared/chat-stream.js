@@ -309,6 +309,7 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
               summary: data.summary || null,
               emotion: data.emotion || "neutral",
               images: data.images || data.artifacts || [],
+              files: data.files || [],
               thinkingSummary: data.thinking_summary || null,
               contextUsageRatio: data.context_usage_ratio || 0,
               inputTokens: data.input_tokens || 0,
