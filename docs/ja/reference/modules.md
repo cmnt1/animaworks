@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 38365f7185e7a4723750587382b2f4071754a3ab9e14de038368cb78416fdb86 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: d93a406a7e26ce31152e2a00554dacbe32010426f00b2f0204b64bcf04e13103 -->
 
 # モジュール一覧
 
@@ -550,7 +550,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.chunking` | 91 | — |
 | `core.memory.facts.config` | 85 | — |
-| `core.memory.facts.connections` | 448 | — |
+| `core.memory.facts.connections` | 544 | — |
 | `core.memory.facts.entity_index` | 452 | — |
 | `core.memory.facts.extraction` | 529 | — |
 | `core.memory.facts.extractor` | 431 | LLM-based entity and fact extraction pipeline. |
@@ -1127,7 +1127,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.internal` | 1537 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
-| `server.routes.memory_routes` | 525 | — |
+| `server.routes.memory_routes` | 531 | — |
 | `server.routes.phone` | 404 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
