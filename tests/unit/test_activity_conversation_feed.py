@@ -78,6 +78,40 @@ def test_feed_finds_minimum_user_items_across_many_background_entries(tmp_path: 
     assert feed["next_before"]
 
 
+def test_file_metadata_is_exposed_by_feed_and_conversation_history(tmp_path: Path) -> None:
+    anima_dir, activity = _test_activity(tmp_path)
+    now = now_local().replace(microsecond=0)
+    files = [
+        {
+            "name": "estimate.pdf",
+            "path": "attachments/20261029_101500_0_estimate.pdf",
+            "size": 42,
+            "media_type": "application/pdf",
+        }
+    ]
+    _write_entries(
+        anima_dir,
+        [
+            _event(
+                now.isoformat(),
+                "message_received",
+                "Please review",
+                from_person="human",
+                channel="chat",
+                meta={"from_type": "human", "thread_id": "default", "files": files},
+            )
+        ],
+    )
+
+    history = activity.get_conversation_view(thread_id="default")
+    history_messages = [message for session in history["sessions"] for message in session["messages"]]
+    feed = activity.get_conversation_feed(min_user_items=1, _schedule_prefetch=False)
+    feed_messages = [item["message"] for item in feed["items"] if item["kind"] == "message"]
+
+    assert history_messages[0]["files"] == files
+    assert feed_messages[0]["files"] == files
+
+
 def test_feed_coalesces_cron_dm_and_self_notice_without_leaking_bodies(tmp_path: Path) -> None:
     anima_dir, activity = _test_activity(tmp_path)
     (anima_dir.parent / "rin").mkdir()

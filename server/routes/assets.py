@@ -9,6 +9,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -80,6 +81,16 @@ _ASSET_CONTENT_TYPES = {
     ".webp": "image/webp",
     ".glb": "model/gltf-binary",
     ".gltf": "model/gltf+json",
+}
+
+_ATTACHMENT_CONTENT_TYPES = {
+    **_ASSET_CONTENT_TYPES,
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
 }
 
 # Server-side avatar thumbnail sizes (matches client image-cache.js)
@@ -692,7 +703,7 @@ def create_assets_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         safe_name = Path(filename).name
-        if safe_name != filename or ".." in filename:
+        if safe_name != filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
             raise HTTPException(status_code=400, detail="Invalid filename")
 
         file_path = anima_dir / "attachments" / safe_name
@@ -704,12 +715,18 @@ def create_assets_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="Attachment not found")
 
         suffix = file_path.suffix.lower()
-        content_type = _ASSET_CONTENT_TYPES.get(suffix, "application/octet-stream")
+        content_type = _ATTACHMENT_CONTENT_TYPES.get(suffix, "application/octet-stream")
+        headers = {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        }
+        if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+            headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(file_path.name, safe='')}"
 
         return FileResponse(
             file_path,
             media_type=content_type,
-            headers={"Cache-Control": "no-store"},
+            headers=headers,
         )
 
     @router.get("/media/proxy")

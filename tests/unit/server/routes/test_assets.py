@@ -177,6 +177,33 @@ class TestGetAsset:
         assert resp.status_code == 200
         assert "image/png" in resp.headers.get("content-type", "")
 
+    async def test_attachment_content_disposition_and_nosniff(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        for filename in ("document.pdf", "page.html", "vector.svg", "preview.png", "notes..txt"):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            responses = {
+                filename: await client.get(f"/api/animas/alice/attachments/{filename}")
+                for filename in ("document.pdf", "page.html", "vector.svg", "preview.png", "notes..txt")
+            }
+
+        for filename in ("document.pdf", "page.html", "vector.svg", "preview.png"):
+            assert responses[filename].status_code == 200
+            assert responses[filename].headers.get("x-content-type-options") == "nosniff"
+        for filename in ("document.pdf", "page.html", "vector.svg"):
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("attachment; filename*=UTF-8''")
+            assert filename in disposition
+        assert "content-disposition" not in responses["preview.png"].headers
+        assert "image/png" in responses["preview.png"].headers.get("content-type", "")
+        assert responses["notes..txt"].status_code == 200
+        assert responses["notes..txt"].headers.get("content-disposition", "").startswith("attachment;")
+
     async def test_serve_glb(self, tmp_path):
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"

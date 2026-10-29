@@ -139,6 +139,13 @@ class StreamingIPCHandler:
         intent = request.params.get("intent") or ""
         images = request.params.get("images") or None
         attachment_paths = request.params.get("attachment_paths") or None
+        display_message = request.params.get("display_message")
+        files = request.params.get("files") or None
+        attachment_kwargs: dict[str, Any] = {}
+        if display_message is not None:
+            attachment_kwargs["display_message"] = display_message
+        if files:
+            attachment_kwargs["files"] = files
         thread_id = request.params.get("thread_id", "default")
         source = request.params.get("source", "")
         voice_mode = request.params.get("voice_mode") is True
@@ -192,6 +199,7 @@ class StreamingIPCHandler:
                     meeting_room_id=meeting_room_id,
                     meeting_participants=meeting_participants,
                     model=model,
+                    **attachment_kwargs,
                 ):
                     event_type = chunk.get("type", "unknown")
 

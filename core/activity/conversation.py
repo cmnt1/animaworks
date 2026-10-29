@@ -607,17 +607,19 @@ class ConversationMixin:
         for e in entries:
             if e.type == "message_received":
                 self._flush_tool_calls(messages, pending_tool_calls)
-                messages.append(
-                    {
-                        "ts": e.ts,
-                        "role": "human",
-                        "content": e.content,
-                        "from_person": user_aliases.get(e.from_person, e.from_person),
-                        "to_person": e.to_person,
-                        "source_key": _source_key_for_entry(e),
-                        "tool_calls": [],
-                    }
-                )
+                msg = {
+                    "ts": e.ts,
+                    "role": "human",
+                    "content": e.content,
+                    "from_person": user_aliases.get(e.from_person, e.from_person),
+                    "to_person": e.to_person,
+                    "source_key": _source_key_for_entry(e),
+                    "tool_calls": [],
+                }
+                files = e.meta.get("files") or []
+                if isinstance(files, list) and files:
+                    msg["files"] = files
+                messages.append(msg)
 
             elif e.type == "message_sent":
                 self._flush_tool_calls(messages, pending_tool_calls)

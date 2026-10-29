@@ -2288,6 +2288,8 @@
 
 .image-preview-bar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding: 8px 12px;
   overflow-x: auto;
@@ -2331,6 +2333,51 @@
 
 .image-preview-remove:hover {
   background: rgba(0, 0, 0, 0.75);
+}
+
+.attachment-preview-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 260px;
+  min-width: 150px;
+  height: 48px;
+  padding: 0 30px 0 9px;
+  border: 1px solid var(--aw-color-border-medium);
+  border-radius: 8px;
+  background: var(--aw-color-bg-secondary);
+  color: var(--aw-color-text-primary);
+  font-size: .76rem;
+}
+
+.attachment-file-icon {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+}
+
+.attachment-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file-size {
+  flex: 0 0 auto;
+  color: var(--aw-color-text-muted);
+  font-size: .68rem;
+}
+
+.attachment-preview-remove {
+  top: 1px;
+  right: 1px;
+}
+
+.attachment-preview-error {
+  flex: 0 0 100%;
+  color: var(--aw-color-danger, #b42318);
+  font-size: .78rem;
 }
 
 .chat-attach-btn {
@@ -2428,6 +2475,56 @@
     rgba(255, 255, 255, 0.02) 16px
   );
   border: 1px dashed var(--aw-color-border, #666);
+}
+
+.chat-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(100%, 360px);
+  padding: 6px 9px;
+  border: 1px solid var(--aw-line-line, rgba(27, 36, 48, .14));
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .06);
+  color: inherit;
+  text-decoration: none;
+  font-size: .78rem;
+  line-height: 1.3;
+}
+
+a.chat-file-chip:hover,
+a.chat-file-chip:active {
+  background: rgba(0, 0, 0, .11);
+  text-decoration: none;
+}
+
+.chat-file-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-file-chip-size {
+  flex: 0 0 auto;
+  color: var(--aw-line-ink-soft, #607080);
+  font-size: .68rem;
+}
+
+.chat-line--me .chat-file-chip {
+  background: rgba(255, 255, 255, .38);
+}
+
+.chat-line--me a.chat-file-chip:hover,
+.chat-line--me a.chat-file-chip:active {
+  background: rgba(255, 255, 255, .55);
 }
 
 .chat-bubble.user .chat-text:empty {

@@ -432,6 +432,7 @@ function _voiceCallInner(msg, opts) {
 function _lineMessage(msg, opts, { live = false } = {}) {
   const { escapeHtml, renderMarkdown } = opts;
   const renderImages = opts.renderChatImages || (() => "");
+  const renderFiles = opts.renderChatFiles || (() => "");
   const nameFrom = msg.from_person || msg.speaker || opts.animaName || "";
   const knownAnimas = _knownAnimaNames(opts);
   const isOtherAnima = msg.role !== "assistant" && Boolean(nameFrom && knownAnimas.has(nameFrom) && nameFrom !== opts.animaName);
@@ -472,6 +473,7 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const imagesHtml = live
     ? renderImages(msg.images, { animaName: opts.animaName })
     : renderImages(msg.images, { animaName: opts.animaName });
+  const filesHtml = renderFiles(msg.files, { animaName: opts.animaName });
   let toolHtml = "";
   const think = isAnima && opts.think && msg.think ? opts.think : null;
   const thinkingNow = Boolean(live && think && msg.streaming && think.isThinking(msg));
@@ -527,7 +529,7 @@ function _lineMessage(msg, opts, { live = false } = {}) {
   const callClass = msg.type === "voice_call" ? " chat-call-record" : "";
   const bubbleClass = `chat-line-bubble chat-bubble ${bubbleRole}${streamingClass}${thinkClass}${callClass}`;
   const cursor = live && msg.streaming && !thinkingNow ? '<span class="streaming-cursor">▌</span>' : "";
-  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${toolHtml}${callbackHtml}${cursor}</div>`;
+  const bubble = `<div class="${bubbleClass}"${dataRawText}${streamId}${notificationId}${replyData}${timestampData}>${quoteHtml}${contentHtml}${imagesHtml}${filesHtml}${toolHtml}${callbackHtml}${cursor}</div>`;
   const faceEmotion = live && think
     ? (msg.streaming ? "thinking" : (msg.emotion || msg.think.emotion || "neutral"))
     : emotion;

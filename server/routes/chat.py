@@ -19,6 +19,14 @@ from core.i18n import t
 from server.events import emit, emit_notification
 from server.routes.chat_chunk_handler import _chunk_to_event, _format_sse, _handle_chunk
 from server.routes.chat_emotion import _EMOTION_PATTERN, extract_emotion
+from server.routes.chat_files import (
+    MAX_CHAT_FILE_COUNT,
+    MAX_CHAT_FILE_SIZE,
+    MAX_CHAT_FILES_SIZE,
+    _validate_files,
+    build_file_message,
+    save_files,
+)
 from server.routes.chat_images import _validate_images, build_content_blocks, save_images
 from server.routes.chat_models import (
     MAX_CHAT_MESSAGE_SIZE,
@@ -27,6 +35,7 @@ from server.routes.chat_models import (
     SUPPORTED_IMAGE_TYPES,
     ChatRequest,
     ChatResponse,
+    FileAttachment,
     ImageAttachment,
     _to_image_data,
 )
@@ -51,11 +60,15 @@ __all__ = [
     "AnimaNotFoundError",
     "ChatRequest",
     "ChatResponse",
+    "FileAttachment",
     "CompactRequest",
     "GreetRequest",
     "ImageAttachment",
     "MAX_CHAT_MESSAGE_SIZE",
     "MAX_IMAGE_PAYLOAD_SIZE",
+    "MAX_CHAT_FILE_COUNT",
+    "MAX_CHAT_FILE_SIZE",
+    "MAX_CHAT_FILES_SIZE",
     "MIME_TO_EXT",
     "SUPPORTED_IMAGE_TYPES",
     "_EMOTION_PATTERN",
@@ -65,12 +78,15 @@ __all__ = [
     "_handle_resume",
     "_to_image_data",
     "_validate_images",
+    "_validate_files",
     "_emit_ws_side_effects",
     "_run_producer",
     "build_content_blocks",
     "create_chat_router",
     "extract_emotion",
     "save_images",
+    "save_files",
+    "build_file_message",
 ]
 
 
@@ -115,25 +131,37 @@ def create_chat_router() -> APIRouter:
             if img_error:
                 return JSONResponse({"error": img_error}, status_code=413)
 
-        # Save images to disk and build IPC params
+        if body.files:
+            file_error = _validate_files(body.files)
+            if file_error:
+                message, status_code = file_error
+                return JSONResponse({"error": message}, status_code=status_code)
+
+        # Save image and file attachments to disk and build IPC params
         saved_paths = save_images(name, body.images) if body.images else []
+        saved_files = save_files(name, body.files) if body.files else []
+        saved_paths.extend(file["path"] for file in saved_files)
 
         await emit(request, "anima.status", {"name": name, "status": "thinking"})
 
         try:
             # Send IPC request to Anima process
+            ipc_params = {
+                "message": build_file_message(body.message, saved_files),
+                "from_person": body.from_person,
+                "intent": body.intent,
+                "images": _to_image_data(body.images),
+                "attachment_paths": saved_paths,
+                "thread_id": body.thread_id,
+                "model": body.model,
+            }
+            if saved_files:
+                ipc_params["display_message"] = body.message
+                ipc_params["files"] = saved_files
             result = await supervisor.send_request(
                 anima_name=name,
                 method="process_message",
-                params={
-                    "message": body.message,
-                    "from_person": body.from_person,
-                    "intent": body.intent,
-                    "images": _to_image_data(body.images),
-                    "attachment_paths": saved_paths,
-                    "thread_id": body.thread_id,
-                    "model": body.model,
-                },
+                params=ipc_params,
                 timeout=float(
                     __import__("core.config", fromlist=["load_config"]).load_config().server.ipc_stream_timeout
                 ),
@@ -278,8 +306,16 @@ def create_chat_router() -> APIRouter:
 
                 raise HTTPException(status_code=413, detail=img_error)
 
-        # Save images to disk
+        if body.files:
+            file_error = _validate_files(body.files)
+            if file_error:
+                message, status_code = file_error
+                return JSONResponse({"error": message}, status_code=status_code)
+
+        # Save image and file attachments to disk
         saved_paths = save_images(name, body.images) if body.images else []
+        saved_files = save_files(name, body.files) if body.files and not body.resume else []
+        saved_paths.extend(file["path"] for file in saved_files)
 
         # Guard: return immediately if anima is bootstrapping
         if supervisor.is_bootstrapping(name):
@@ -328,6 +364,7 @@ def create_chat_router() -> APIRouter:
                 name=name,
                 body=body,
                 saved_paths=saved_paths,
+                saved_files=saved_files,
             ),
             name=f"producer-{stream.response_id}",
         )

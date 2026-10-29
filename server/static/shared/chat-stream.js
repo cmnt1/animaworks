@@ -264,6 +264,7 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
         switch (event) {
           case "stream_start":
             if (data.response_id) setResponseId(data.response_id);
+            callbacks.onStreamStart?.(data);
             logger.info(`[SSE-FE] EVENT stream_start response_id=${data.response_id} id=${id}`);
             break;
 

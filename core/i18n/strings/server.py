@@ -157,6 +157,56 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "画像データが大きすぎます（{size_mb}MB / 上限20MB）",
         "en": "Image data too large ({size_mb}MB / max 20MB)",
     },
+    "chat.attach.too_many_files": {
+        "ja": "添付ファイルは{count}個までです",
+        "en": "You can attach up to {count} files",
+        "ko": "파일은 최대 {count}개까지 첨부할 수 있습니다",
+    },
+    "chat.attach.invalid_base64": {
+        "ja": "ファイル「{name}」のデータを読み取れませんでした",
+        "en": "Could not read file data for “{name}”",
+        "ko": "파일 “{name}” 데이터를 읽을 수 없습니다",
+    },
+    "chat.attach.empty_file": {
+        "ja": "空のファイル「{name}」は添付できません",
+        "en": "The empty file “{name}” cannot be attached",
+        "ko": "빈 파일 “{name}”은 첨부할 수 없습니다",
+    },
+    "chat.attach.file_too_large": {
+        "ja": "ファイル「{name}」が大きすぎます（上限{size_mb}MB）",
+        "en": "File “{name}” is too large (max {size_mb} MB)",
+        "ko": "파일 “{name}”이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.total_too_large": {
+        "ja": "添付ファイルの合計が大きすぎます（上限{size_mb}MB）",
+        "en": "The combined files are too large (max {size_mb} MB)",
+        "ko": "첨부 파일 총 용량이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.prompt_header": {
+        "ja": "[添付ファイル]",
+        "en": "[Attached files]",
+        "ko": "[첨부 파일]",
+    },
+    "chat.attach.prompt_item": {
+        "ja": "- {name}（{media_type}, {size}）: {path}",
+        "en": "- {name} ({media_type}, {size}): {path}",
+        "ko": "- {name}（{media_type}, {size}）: {path}",
+    },
+    "chat.attach.prompt_size_bytes": {
+        "ja": "{size} B",
+        "en": "{size} B",
+        "ko": "{size} B",
+    },
+    "chat.attach.prompt_size_kb": {
+        "ja": "{size} KB",
+        "en": "{size} KB",
+        "ko": "{size} KB",
+    },
+    "chat.attach.prompt_size_mb": {
+        "ja": "{size} MB",
+        "en": "{size} MB",
+        "ko": "{size} MB",
+    },
     "chat.internal_error": {
         "ja": "内部エラーが発生しました。再試行してください。",
         "en": "An internal error occurred. Please retry.",

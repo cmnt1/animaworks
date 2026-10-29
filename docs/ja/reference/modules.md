@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: d93a406a7e26ce31152e2a00554dacbe32010426f00b2f0204b64bcf04e13103 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 33a412baea604b1d29d4029eefca7c76b421c7ef8bee2bf83cbd362709b8fb06 -->
 
 # モジュール一覧
 
@@ -114,7 +114,7 @@
 |---|---:|---|
 | `core.activity` | 24 | — |
 | `core.activity.audit` | 290 | — |
-| `core.activity.conversation` | 1286 | — |
+| `core.activity.conversation` | 1288 | — |
 | `core.activity.event_export` | 33 | — |
 | `core.activity.format` | 568 | — |
 | `core.activity.logger` | 583 | — |
@@ -157,7 +157,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.inbox` | 1001 | — |
 | `core.anima.inbox_overflow` | 100 | — |
 | `core.anima.lifecycle` | 1662 | — |
-| `core.anima.messaging` | 1392 | — |
+| `core.anima.messaging` | 1415 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.settings_store` | 98 | — |
@@ -388,7 +388,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 251 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 301 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 130 | Domain-specific i18n strings (tool prompts and tooling). |
@@ -840,8 +840,8 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.runtime.schedule_parser` | 484 | — |
 | `core.runtime.scheduler_manager` | 1058 | APScheduler management for heartbeat and cron tasks. |
 | `core.runtime.state_writer` | 27 | — |
-| `core.runtime.streaming_handler` | 441 | Streaming IPC message handler. |
-| `core.runtime.task_runner` | 1049 | Disposable task runner entry point. |
+| `core.runtime.streaming_handler` | 449 | Streaming IPC message handler. |
+| `core.runtime.task_runner` | 1055 | Disposable task runner entry point. |
 | `core.runtime.task_runner_supervisor` | 1446 | Anima-main-side lifecycle manager for disposable task runner processes. |
 | `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
@@ -1110,15 +1110,16 @@ LLM 利用量とコストの記録・集計。
 | `server.routes` | 63 | — |
 | `server.routes.animas` | 1268 | — |
 | `server.routes.approve` | 89 | — |
-| `server.routes.assets` | 1607 | — |
+| `server.routes.assets` | 1624 | — |
 | `server.routes.auth` | 133 | — |
 | `server.routes.channels` | 496 | — |
-| `server.routes.chat` | 419 | — |
+| `server.routes.chat` | 456 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
+| `server.routes.chat_files` | 116 | — |
 | `server.routes.chat_images` | 80 | — |
-| `server.routes.chat_models` | 50 | — |
-| `server.routes.chat_producer` | 335 | — |
+| `server.routes.chat_models` | 59 | — |
+| `server.routes.chat_producer` | 346 | — |
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
