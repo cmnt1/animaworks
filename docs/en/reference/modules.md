@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=9a370327f9fc836ee244064c6831f4e65cee3d7b00ddf1de264d6b17dde0d4dc generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=435896428157d1c62cb8a209f4dccc12d560f50f8654ae2b2494928f09de252c generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -24,11 +24,11 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 
 —
 
-| モジュール | 行数 | docstring 1行目 |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
-| `cli.commands.anima_mgmt` | 1172 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1173 | CLI commands for anima process management. |
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
 | `cli.commands.config_cmd` | 238 | CLI handlers and interactive wizard for ``animaworks config``. |
@@ -43,7 +43,7 @@ The Python files tracked in `git ls-files core cli server` are listed here. Priv
 | `cli.commands.memory_cmd` | 56 | — |
 | `cli.commands.messaging` | 86 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
-| `cli.commands.models_cmd` | 303 | CLI commands for model information and management. |
+| `cli.commands.models_cmd` | 304 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
@@ -133,8 +133,8 @@ LLM agent execution, conversation control, and engine integration.
 |---|---:|---|
 | `core.agent` | 23 | — |
 | `core.agent.agent_core` | 325 | — |
-| `core.agent.cycle` | 1523 | — |
-| `core.agent.executor_factory` | 176 | — |
+| `core.agent.cycle` | 1524 | — |
+| `core.agent.executor_factory` | 180 | — |
 | `core.agent.priming` | 504 | — |
 | `core.agent.prompt_log` | 151 | — |
 | `core.agent.session_compactor` | 566 | Per-Anima × per-thread_id idle compaction timer management. |
@@ -189,23 +189,23 @@ Shared send clients and token resolution for Slack, Discord, and Chatwork.
 
 ## `core.config`
 
-Schema, loading, validation, and migration for application configuration.
+Application configuration schemas, loading, validation, and migration.
 
-| モジュール | 行数 | docstring 1行目 |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.config` | 42 | — |
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
-| `core.config.helper_models` | 498 | — |
+| `core.config.helper_models` | 499 | — |
 | `core.config.io` | 317 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 201 | — |
-| `core.config.model_catalog` | 194 | Static model catalog and per-request model override validation. |
-| `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
-| `core.config.model_discovery` | 530 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
-| `core.config.model_mode` | 448 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
+| `core.config.model_catalog` | 197 | Static model catalog and per-request model override validation. |
+| `core.config.model_config` | 885 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_discovery` | 581 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
+| `core.config.model_mode` | 458 | Model execution mode resolution for canonical S/C/D/G/X/Y/A modes. |
 | `core.config.models` | 100 | Central configuration module — facade re-exporting split modules. |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 160 | Configuration resolution: status.json merge with anima_defaults. |
@@ -262,7 +262,7 @@ Tool execution, command execution, and safety controls.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
-| `core.execution` | 57 | — |
+| `core.execution` | 60 | — |
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 99 | — |
@@ -270,6 +270,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
+| `core.execution.engines.agy.executor` | 792 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 567 | — |
@@ -298,7 +299,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.session.engine_session` | 160 | — |
 | `core.execution.session.session_context` | 114 | — |
 | `core.execution.session.session_ids` | 116 | — |
-| `core.execution.session.session_store` | 137 | — |
+| `core.execution.session.session_store` | 139 | — |
 | `core.execution.session.session_types` | 73 | — |
 | `core.execution.tool_evidence` | 182 | — |
 | `core.execution.watchdog` | 139 | — |
@@ -311,6 +312,14 @@ Tool execution, command execution, and safety controls.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.execution.engines` | 6 | — |
+
+## `core.execution.engines.agy`
+
+—
+
+| Module | Lines | First line of docstring |
+|---|---:|---|
+| `core.execution.engines.agy` | 6 | — |
 
 ## `core.execution.engines.claude`
 
@@ -370,7 +379,7 @@ Tool execution, command execution, and safety controls.
 
 ## `core.i18n`
 
-Translation catalog and language selection.
+Translation catalogs and language selection.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -379,7 +388,7 @@ Translation catalog and language selection.
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
 | `core.i18n.strings.config` | 836 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
+| `core.i18n.strings.execution` | 221 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
@@ -393,7 +402,7 @@ Translation catalog and language selection.
 | `core.i18n.strings.server` | 341 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 140 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 170 | Domain-specific i18n strings (tool prompts and tooling). |
+| `core.i18n.strings.tooling` | 175 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 540 | Domain-specific i18n strings (schema.*). |
 | `core.i18n.strings.tooling_schema_ext` | 167 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
@@ -785,11 +794,12 @@ Speech synthesis, call status, and webhook management for the Twilio phone chann
 
 ## `core.platform`
 
-An integration layer that abstracts differences between execution engines and operating systems.
+Integration layer that abstracts differences between execution engines and operating systems.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.platform` | 4 | — |
+| `core.platform.agy` | 32 | — |
 | `core.platform.atomic_io` | 207 | — |
 | `core.platform.claude_code` | 194 | — |
 | `core.platform.codex` | 245 | — |
@@ -804,21 +814,21 @@ An integration layer that abstracts differences between execution engines and op
 | `core.platform.process_role` | 66 | Low-level environment access for process-role metadata. |
 | `core.platform.processing_lease` | 344 | — |
 | `core.platform.scratch` | 99 | — |
-| `core.platform.state_writer` | 1012 | — |
+| `core.platform.state_writer` | 1014 | — |
 | `core.platform.status_store` | 54 | — |
 | `core.platform.subprocess_entries` | 23 | — |
 | `core.platform.tasks` | 35 | — |
 
 ## `core.prompt`
 
-System prompt and context construction.
+Constructing system prompts and contexts.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1287 | — |
-| `core.prompt.context` | 486 | Context window usage tracker. |
+| `core.prompt.builder` | 1289 | — |
+| `core.prompt.context` | 490 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |

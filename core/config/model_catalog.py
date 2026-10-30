@@ -14,12 +14,12 @@ stays cheap and deterministic.
 
 from __future__ import annotations
 
-import importlib
 import logging
 from typing import Any
 
 from core.config.model_discovery import discovered_model_ids
 from core.config.models import KNOWN_MODELS, load_config
+from core.platform.agy import is_agy_cli_available
 from core.platform.codex import is_codex_login_available
 from core.platform.grok import is_grok_authenticated
 
@@ -58,20 +58,6 @@ def _configured_model_entries(config: Any) -> list[dict[str, str]]:
                 mode, model = parsed
                 entries.append({"id": model, "label": model, "credential": "", "mode": mode.upper(), "origin": "anima"})
     return entries
-
-
-def is_agy_cli_available() -> bool:
-    """Return True when the ``agy`` CLI is installed.
-
-    The platform helper lives in ``core.platform.agy`` (Part A).  Resolving it
-    with ``importlib`` keeps this module importable on branches where the agy
-    engine has not landed yet; in that case Mode Y simply has no usable models.
-    """
-    try:
-        platform_agy = importlib.import_module("core.platform.agy")
-    except ModuleNotFoundError:
-        return False
-    return bool(platform_agy.is_agy_cli_available())
 
 
 def model_credential_available(

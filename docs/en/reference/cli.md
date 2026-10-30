@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=589ed7c1db084499255a8ebbb890d65b4cfa2e5d8732afde7945519e3168d719 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=edd56b9e67c756fec1b4eeecac5494f1c0ef7cc4efff2cf7ee64a7501baa0b9f generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -730,11 +730,12 @@ Show resolved mode and context for a model
 
 List known models
 
-`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
+`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,Y,a,c,d,g,s,x,y}]
+                              [--json]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --mode | option | — | A, C, D, G, S, X, a, c, d, g, s, x | Filter by execution mode |
+| --mode | option | — | A, C, D, G, S, X, Y, a, c, d, g, s, x, y | Filter by execution mode |
 | --json | flag | false | — | Output as JSON |
 
 ## `models show`

@@ -269,6 +269,9 @@ class TestCompatibilitySurface:
         assert "run_command" in _AGY_BUILTIN_TOOLS
         assert "view_file" in _AGY_BUILTIN_TOOLS
         assert "write_to_file" in _AGY_BUILTIN_TOOLS
+        # agy rejects the whole agent definition when one name is unknown to its
+        # custom-agent registry ("sed_file" is listed by init but not accepted).
+        assert "sed_file" not in _AGY_BUILTIN_TOOLS
 
     def test_build_env_injects_api_key_only_when_configured(
         self,
@@ -557,6 +560,33 @@ class TestStreaming:
         assert record is not None
         assert record.session_id == "conv-new"
         assert record.turn_count == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_fresh_turn_does_not_persist_conversation(
+        self,
+        executor: AgyCLIExecutor,
+        anima_dir: Path,
+    ) -> None:
+        failed = _FakeProc(
+            [
+                {"event": "init", "conversation_id": "conv-broken", "init": {"model": "gemini-4-argon"}},
+                {
+                    "event": "result",
+                    "result": {
+                        "status": "ERROR",
+                        "response": "",
+                        "error": "failed to construct executor",
+                        "conversation_id": "conv-broken",
+                    },
+                },
+            ]
+        )
+
+        events, commands, _bodies = await _stream(executor, [failed], trigger="chat")
+
+        assert len(commands) == 1
+        assert _event(events, "done")["error"] is True
+        assert _AGY_SESSION_IDS.load(anima_dir, "chat") is None
 
     @pytest.mark.asyncio
     async def test_pre_interrupted_turn_does_not_spawn(

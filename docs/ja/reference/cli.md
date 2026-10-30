@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: d869cafe398f90412f4789ee8a6ad4230673b9950281da50649a56b944e9221a -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: a16a2592e97533d7d3e9e84e0bca5219e53cc20f44ec8974514da0e9115a3be9 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -730,11 +730,12 @@ Show resolved mode and context for a model
 
 List known models
 
-`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
+`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,Y,a,c,d,g,s,x,y}]
+                              [--json]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| --mode | option | — | A, C, D, G, S, X, a, c, d, g, s, x | Filter by execution mode |
+| --mode | option | — | A, C, D, G, S, X, Y, a, c, d, g, s, x, y | Filter by execution mode |
 | --json | flag | false | — | Output as JSON |
 
 ## `models show`

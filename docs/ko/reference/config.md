@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=956f1a283b830c7239931f546e57fdc6ed453e7ba9979b63422a7befe880fd35 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=71df71d680b7c8f23a8433b00630604dfaf1d63b5effec714b2a4f94807181b3 generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 설정 참조
 
@@ -915,10 +915,11 @@
 
 ## `models.json`
 
-모델 이름 패턴별 실행 모드와 컨텍스트 윈도우입니다.
+모델명 패턴별 실행 모드와 컨텍스트 윈도우입니다.
 
-| 모델 이름 패턴 | 모드 | 컨텍스트 윈도우 |
+| 모델명 패턴 | 모드 | 컨텍스트 윈도우 |
 |---|---|---:|
+| `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |

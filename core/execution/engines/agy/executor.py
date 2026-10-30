@@ -82,7 +82,6 @@ _AGY_BUILTIN_TOOLS = (
     "write_to_file",
     "replace_file_content",
     "multi_replace_file_content",
-    "sed_file",
     "read_url_content",
     "search_web",
     "wait",
@@ -460,7 +459,7 @@ class AgyCLIExecutor(CLIStreamExecutor):
                 resumed=resume_id is not None,
                 rotated_during_run=retried,
             )
-            if outcome.session_id and decision.resumable:
+            if outcome.session_id and decision.resumable and not outcome.failed:
                 await _AGY_SESSION_IDS.asave(
                     self._anima_dir,
                     outcome.session_id,

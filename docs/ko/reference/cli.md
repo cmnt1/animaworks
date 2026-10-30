@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=589ed7c1db084499255a8ebbb890d65b4cfa2e5d8732afde7945519e3168d719 generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=edd56b9e67c756fec1b4eeecac5494f1c0ef7cc4efff2cf7ee64a7501baa0b9f generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -728,14 +728,15 @@ anima용 stdio MCP 서버 실행
 
 ## `models list`
 
-알려진 모델 목록 표시
+List known models
 
-`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
+`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,Y,a,c,d,g,s,x,y}]
+                              [--json]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --mode | 옵션 | — | A, C, D, G, S, X, a, c, d, g, s, x | 실행 모드로 필터링 |
-| --json | 플래그 | false | — | JSON으로 출력 |
+| --mode | option | — | A, C, D, G, S, X, Y, a, c, d, g, s, x, y | Filter by execution mode |
+| --json | flag | false | — | Output as JSON |
 
 ## `models show`
 
