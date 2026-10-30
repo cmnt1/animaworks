@@ -385,7 +385,7 @@ class TestKnownModels:
         models = self._get_known_models()
         assert len(models) > 0, "KNOWN_MODELS must not be empty"
 
-        valid_modes = {"S", "C", "D", "G", "X", "A", "B"}
+        valid_modes = {"S", "C", "D", "G", "X", "Y", "A", "B"}
         for entry in models:
             assert "name" in entry, f"Missing 'name' in entry: {entry}"
             assert "mode" in entry, f"Missing 'mode' in entry: {entry}"

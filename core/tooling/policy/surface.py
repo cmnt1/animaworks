@@ -141,7 +141,7 @@ _BUILDER_SKILL_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
-_MCP_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X"})
+_MCP_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X", "Y"})
 _BUILDER_MODES: frozenset[str] = frozenset({"A", "B"})
 _SUBMIT_TASKS_ALLOWED_TRIGGERS: frozenset[str] = frozenset({"background", "submit_tasks", "heartbeat"})
 _SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:")

@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.config.model_mode import CANONICAL_MODES
 from core.config.models import (
     DEFAULT_LOCAL_LLM_MODEL,
     AnimaDefaults,
@@ -149,21 +150,27 @@ class TestAnimaWorksConfig:
 
         serialized = config.model_dump(mode="json")
         assert config.heartbeat.interval_minutes == 30
-        assert not {
-            "msg_heartbeat_cooldown_s",
-            "cascade_window_s",
-            "cascade_threshold",
-            "depth_window_s",
-            "max_depth",
-            "actionable_intents",
-            "channel_post_cooldown_s",
-            "outbound_limit_enabled",
-        } & serialized["heartbeat"].keys()
-        assert not {
-            "max_outbound_per_hour",
-            "max_outbound_per_day",
-            "max_recipients_per_run",
-        } & serialized["anima_defaults"].keys()
+        assert (
+            not {
+                "msg_heartbeat_cooldown_s",
+                "cascade_window_s",
+                "cascade_threshold",
+                "depth_window_s",
+                "max_depth",
+                "actionable_intents",
+                "channel_post_cooldown_s",
+                "outbound_limit_enabled",
+            }
+            & serialized["heartbeat"].keys()
+        )
+        assert (
+            not {
+                "max_outbound_per_hour",
+                "max_outbound_per_day",
+                "max_recipients_per_run",
+            }
+            & serialized["anima_defaults"].keys()
+        )
 
 
 class TestLocalLLMConfig:
@@ -940,6 +947,22 @@ class TestResolveExecutionModeWildcard:
 
     def test_normalise_lowercase_x(self):
         assert _normalise_mode("x") == "X"
+
+    def test_agy_model_routes_to_y(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "agy/gemini-4-argon") == "Y"
+
+    def test_agy_wildcard_routes_future_models_to_y(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "agy/whatever") == "Y"
+
+    def test_explicit_y_override_takes_priority(self):
+        config = AnimaWorksConfig(model_modes={"agy/*": "A"})
+        assert resolve_execution_mode(config, "agy/gemini-4-argon", "Y") == "Y"
+
+    def test_canonical_modes_include_y(self):
+        assert "Y" in CANONICAL_MODES
+        assert _normalise_mode("y") == "Y"
 
     def test_ollama_a_models(self):
         config = AnimaWorksConfig()

@@ -57,7 +57,7 @@ from core.voice.emotion_style import EmotionStyle, VoiceChannel, front_prompt_em
 logger = logging.getLogger("animaworks.prompt_builder")
 
 # Re-exported constants
-_MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
+_MCP_MODES = frozenset({"s", "c", "d", "g", "x", "y"})
 _CURRENT_STATE_MAX_CHARS = 3000
 _IDENTITY_H2_RE = re.compile(r"^ {0,3}##(?!#)[ \t]+(?P<heading>.+?)\s*#*\s*$")
 _PRIMING_TAG_RE = re.compile(r"</?priming\b[^>]*>", re.IGNORECASE)
@@ -782,12 +782,14 @@ def _host_tool_line(execution_mode: str) -> str:
     """Return the host built-in tool line for the given execution mode.
 
     d (Cursor) and g (Gemini) are unused, so they reuse the 's' wording.
+    y (Antigravity CLI) has its own wording because agy exposes a distinct
+    built-in tool set and calls AnimaWorks tools through ``call_mcp_tool``.
     Unknown modes return an empty string (no injection).
     """
     mode = (execution_mode or "").lower()
     if mode in ("d", "g"):
         mode = "s"
-    if mode not in ("s", "c", "x", "a"):
+    if mode not in ("s", "c", "x", "y", "a"):
         return ""
     return t(f"tool_guide.host_tools.{mode}")
 

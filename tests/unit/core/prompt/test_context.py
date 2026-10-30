@@ -52,6 +52,15 @@ class TestResolveContextWindowSSoT:
         with patch(_PATCH_TARGET, return_value=entry):
             assert resolve_context_window("grok/grok-4.5") == 500_000
 
+    def test_models_json_agy_wildcard(self):
+        from core.paths import TEMPLATES_DIR
+
+        models_path = TEMPLATES_DIR / "_shared" / "config_defaults" / "models.json"
+        entry = json.loads(models_path.read_text(encoding="utf-8"))["agy/*"]
+        with patch(_PATCH_TARGET, return_value=entry):
+            assert resolve_context_window("agy/gemini-4-argon") == 1_000_000
+            assert resolve_context_window("agy/gemini-3.8-flash-medium") == 1_000_000
+
     def test_models_json_mistral(self):
         entry = {"mode": "A", "context_window": 256_000}
         with patch(_PATCH_TARGET, return_value=entry):
@@ -107,6 +116,13 @@ class TestResolveContextWindowFallback:
     def test_gemini_flash_hardcoded(self):
         with patch(_PATCH_TARGET, return_value=None):
             assert _resolve_context_window("gemini-2.0-flash") == 1_048_576
+
+    def test_agy_models_hardcoded_prefix_match(self):
+        with patch(_PATCH_TARGET, return_value=None):
+            assert _resolve_context_window("agy/gemini-4-argon") == 1_048_576
+            assert _resolve_context_window("agy/gemini-4-argon-high") == 1_048_576
+            assert _resolve_context_window("agy/gemini-3.8-flash") == 1_048_576
+            assert _resolve_context_window("agy/gemini-3.8-flash-medium") == 1_048_576
 
     def test_unknown_model(self):
         with patch(_PATCH_TARGET, return_value=None):

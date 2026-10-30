@@ -13,6 +13,7 @@ _MODE_LABELS: dict[str, str] = {
     "D": "D (Cursor Agent CLI)",
     "G": "G (Gemini CLI)",
     "X": "X (Grok Build CLI)",
+    "Y": "Y (Antigravity CLI)",
     "A": "A (Autonomous)",
 }
 

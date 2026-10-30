@@ -90,10 +90,10 @@ class ModelConfig(BaseModel):
     task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
     conversation_history_threshold: float = 0.30  # conversation compression trigger
-    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A) or None for auto-resolve
+    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/Y/A) or None for auto-resolve
     supervisor: str | None = None  # supervisor Anima name
     speciality: str | None = None  # free-text specialisation
-    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"A" — resolved from config
+    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"Y"/"A" — resolved from config
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think param)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
     background_model: str | None = None  # heartbeat/cron override model
