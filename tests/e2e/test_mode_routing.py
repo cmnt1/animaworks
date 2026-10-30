@@ -4,11 +4,14 @@
 """Tests for execution mode routing logic.
 
 Verifies that AgentCore._resolve_execution_mode() correctly routes
-to S, C, D, G, X, or A based on model name, SDK availability, and config.
+to S, C, D, G, X, Y, or A based on model name, SDK availability, and config.
 No API calls are made in these tests.
 """
 
 from __future__ import annotations
+
+import sys
+import types
 
 import pytest
 
@@ -20,6 +23,13 @@ _OPTIONAL_ADAPTERS = (
     ("core.execution.engines.gemini.executor.is_gemini_cli_available", "gemini/gemini-2.5-pro"),
     ("core.execution.engines.grok.executor.is_grok_cli_available", "grok/grok-4.5"),
 )
+
+
+class _FakeAgyExecutor:
+    """Stand-in for Part A's AgyCLIExecutor when its module is absent."""
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
 
 
 class TestModeRouting:
@@ -80,6 +90,22 @@ class TestModeRouting:
             model="grok/grok-4.5",
         )
         assert agent._resolve_execution_mode() == "x"
+
+    def test_agy_model_routes_to_y_without_part_a_module(self, make_agent_core, monkeypatch):
+        """agy/* → Mode Y and creates the AgyCLIExecutor even before Part A lands."""
+        fake_module = types.SimpleNamespace(
+            is_agy_cli_available=lambda: True,
+            AgyCLIExecutor=_FakeAgyExecutor,
+        )
+        monkeypatch.setitem(sys.modules, "core.execution.engines.agy.executor", fake_module)
+
+        agent = make_agent_core(
+            name="agy-y",
+            model="agy/gemini-4-argon",
+        )
+
+        assert agent._resolve_execution_mode() == "y"
+        assert isinstance(agent._executor, _FakeAgyExecutor)
 
     def test_ollama_model_routes_to_a(self, make_agent_core):
         """Ollama model with tool_use support → Mode A."""

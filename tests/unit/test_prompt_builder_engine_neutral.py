@@ -5,8 +5,8 @@
 """Engine-neutral system prompt tests.
 
 Verifies that the prompt builder:
-- prepends the per-mode host built-in tool line (tool_guide.host_tools.{s,c,x,a})
-- does not emit Claude-specific tool names for non-S modes (c/x/a)
+- prepends the per-mode host built-in tool line (tool_guide.host_tools.{s,c,x,y,a})
+- does not emit Claude-specific tool names for non-S modes (c/x/y/a)
 - no longer includes the retired "タスク期限" section or the AI-speed table
 Implemented per issue 20260829_prompt-deadline-and-engine-neutral;
 task deadlines removed per the A1 task-model teardown plan (2026-09).
@@ -22,12 +22,13 @@ from core.prompt.builder import build_system_prompt
 
 _NEUTRAL_GUIDE = "### Tools\nUser guide content."  # intentionally free of Claude tool names
 
-_MODES = ["s", "c", "x", "a"]
+_MODES = ["s", "c", "x", "y", "a"]
 
 _HOST_LINE_MARKERS = {
     "s": "Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
     "c": "exec_command",  # host built-in tools for Codex
     "x": "Grok CLI",  # host built-in tools for Grok
+    "y": "call_mcp_tool",  # host built-in tools for Antigravity CLI
     "a": "Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",  # A exposes Claude-compatible names
 }
 
@@ -82,9 +83,9 @@ def test_host_tool_line_present(mode: str, prompt_factory) -> None:
     assert _HOST_LINE_MARKERS[mode] in prompt
 
 
-@pytest.mark.parametrize("mode", ["c", "x"])
+@pytest.mark.parametrize("mode", ["c", "x", "y"])
 def test_non_s_modes_are_engine_neutral(mode: str, prompt_factory) -> None:
-    """Codex/Grok modes must not leak Claude-specific tool names."""
+    """Codex/Grok/Antigravity modes must not leak Claude-specific tool names."""
     prompt = prompt_factory(mode)
     assert "Read / Write / Edit" not in prompt
     assert "Glob" not in prompt

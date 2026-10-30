@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=9a370327f9fc836ee244064c6831f4e65cee3d7b00ddf1de264d6b17dde0d4dc generated=2026-10-29 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=435896428157d1c62cb8a209f4dccc12d560f50f8654ae2b2494928f09de252c generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -28,22 +28,22 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 303 | — |
-| `cli.commands.anima_mgmt` | 1172 | Anima 프로세스 관리를 위한 CLI 명령. |
+| `cli.commands.anima_mgmt` | 1173 | 애니마 프로세스 관리를 위한 CLI 명령어. |
 | `cli.commands.board` | 144 | — |
 | `cli.commands.company_cmd` | 272 | — |
-| `cli.commands.config_cmd` | 238 | ``animaworks config``용 CLI 핸들러와 대화형 마법사. |
+| `cli.commands.config_cmd` | 238 | ``animaworks config``용 CLI 처리기와 대화형 마법사. |
 | `cli.commands.cost_cmd` | 326 | — |
-| `cli.commands.enclave_cmd` | 323 | 엔클레이브 런타임 운영 명령. |
+| `cli.commands.enclave_cmd` | 323 | 엔클레이브 런타임을 위한 운영 명령어. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 155 | — |
 | `cli.commands.internal_cmd` | 156 | — |
-| `cli.commands.logs` | 209 | Anima 로그 조회를 위한 CLI 명령. |
+| `cli.commands.logs` | 209 | 애니마 로그를 보기 위한 CLI 명령어. |
 | `cli.commands.mcp_cmd` | 66 | — |
 | `cli.commands.memory_cmd` | 56 | — |
 | `cli.commands.messaging` | 86 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
-| `cli.commands.models_cmd` | 303 | 모델 정보 및 관리를 위한 CLI 명령. |
+| `cli.commands.models_cmd` | 304 | 모델 정보를 확인하고 관리하기 위한 CLI 명령어. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 147 | 영구 RAG 복구 상태 보고. |
@@ -53,7 +53,7 @@
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 91 | — |
 | `cli.commands.task_cmd` | 667 | — |
-| `cli.commands.task_store_cmd` | 258 | 운영자 전용 코호트 범위 작업 마이그레이션 및 현재 상태 내보내기. |
+| `cli.commands.task_store_cmd` | 258 | 운영자 전용, 코호트 범위 작업 마이그레이션 및 현재 상태 내보내기. |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 309 | — |
 
@@ -127,17 +127,17 @@
 
 ## `core.agent`
 
-LLM 에이전트 실행, 대화 제어 및 엔진 연동.
+LLM 에이전트 실행, 대화 제어, 엔진 연동.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.agent` | 23 | — |
 | `core.agent.agent_core` | 325 | — |
-| `core.agent.cycle` | 1523 | — |
-| `core.agent.executor_factory` | 176 | — |
+| `core.agent.cycle` | 1524 | — |
+| `core.agent.executor_factory` | 180 | — |
 | `core.agent.priming` | 504 | — |
 | `core.agent.prompt_log` | 151 | — |
-| `core.agent.session_compactor` | 566 | Anima별 × thread_id별 유휴 압축 타이머 관리. |
+| `core.agent.session_compactor` | 566 | 애니마별 × thread_id별 유휴 압축 타이머 관리. |
 
 ## `core.anima`
 
@@ -189,7 +189,7 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.config`
 
-애플리케이션 설정의 스키마, 로드, 검증, 마이그레이션.
+애플리케이션 설정 스키마, 로드, 검증, 마이그레이션.
 
 | 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
@@ -198,15 +198,15 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 569 | — |
 | `core.config.global_permissions` | 259 | — |
-| `core.config.helper_models` | 498 | — |
-| `core.config.io` | 317 | 설정 I/O: 싱글톤 캐시, 로드 및 저장. |
+| `core.config.helper_models` | 499 | — |
+| `core.config.io` | 317 | 설정 I/O: 싱글턴 캐시, 로드 및 저장. |
 | `core.config.local_llm` | 69 | 로컬 Ollama 기반 모델 기본값 및 역할 프리셋을 위한 헬퍼. |
 | `core.config.migrate` | 201 | — |
-| `core.config.model_catalog` | 194 | 정적 모델 카탈로그 및 요청별 모델 오버라이드 검증. |
-| `core.config.model_config` | 879 | 모델 설정 해석: load_model_config, penalties, max_tokens. |
-| `core.config.model_discovery` | 530 | 설치된 CLI에서 "모드 + 모델" 카탈로그를 동적으로 탐색. |
-| `core.config.model_mode` | 448 | 표준 S/C/D/G/X/A 모드에 대한 모델 실행 모드 해석. |
-| `core.config.models` | 100 | 중앙 설정 모듈 — 분할 모듈을 재내보내는 파사드. |
+| `core.config.model_catalog` | 197 | 정적 모델 카탈로그 및 요청별 모델 재정의 검증. |
+| `core.config.model_config` | 885 | 모델 설정 해석: load_model_config, 패널티, max_tokens. |
+| `core.config.model_discovery` | 581 | 설치된 CLI에서 “모드 + 모델” 카탈로그 동적 탐색. |
+| `core.config.model_mode` | 458 | 표준 S/C/D/G/X/Y/A 모드에 대한 모델 실행 모드 해석. |
+| `core.config.models` | 100 | 중앙 설정 모듈 — 분할된 모듈을 다시 내보내는 파사드. |
 | `core.config.ops` | 203 | AnimaWorks 설정을 읽고 업데이트하는 애플리케이션 작업. |
 | `core.config.resolver` | 160 | 설정 해석: status.json와 anima_defaults 병합. |
 | `core.config.schemas` | 1540 | AnimaWorks용 Pydantic 설정 스키마. |
@@ -260,16 +260,17 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 도구 실행, 명령 실행, 안전 제어.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
-| `core.execution` | 57 | — |
+| `core.execution` | 60 | — |
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 99 | — |
 | `core.execution.base` | 915 | — |
-| `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
+| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델의 혼잡도 탐침 (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
+| `core.execution.engines.agy.executor` | 792 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 567 | — |
@@ -289,16 +290,16 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
 | `core.execution.engines.litellm.executor` | 1068 | — |
 | `core.execution.events` | 255 | — |
-| `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
-| `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
-| `core.execution.loop_guards` | 411 | In-loop guard mechanisms for the self-hosted execution loops (Mode A/B). |
+| `core.execution.fallback_activity` | 290 | 임시 런타임 모델 대체를 위한 활동 로그 통합. |
+| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub ID 확인. |
+| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)의 루프 내부 가드 메커니즘. |
 | `core.execution.mcp_env` | 39 | — |
 | `core.execution.process_runner` | 184 | — |
 | `core.execution.reminder` | 128 | — |
 | `core.execution.session.engine_session` | 160 | — |
 | `core.execution.session.session_context` | 114 | — |
 | `core.execution.session.session_ids` | 116 | — |
-| `core.execution.session.session_store` | 137 | — |
+| `core.execution.session.session_store` | 139 | — |
 | `core.execution.session.session_types` | 73 | — |
 | `core.execution.tool_evidence` | 182 | — |
 | `core.execution.watchdog` | 139 | — |
@@ -311,6 +312,14 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.execution.engines` | 6 | — |
+
+## `core.execution.engines.agy`
+
+—
+
+| 모듈 | 행 수 | 독스트링 첫 줄 |
+|---|---:|---|
+| `core.execution.engines.agy` | 6 | — |
 
 ## `core.execution.engines.claude`
 
@@ -370,32 +379,32 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 ## `core.i18n`
 
-번역 카탈로그와 언어 선택.
+번역 카탈로그 및 언어 선택.
 
 | 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원. |
 | `core.i18n.strings.communication` | 46 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화된 문자열. |
+| `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화 문자열. |
 | `core.i18n.strings.config` | 836 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.handler` | 416 | 도메인별 i18n 문자열(핸들러 1부). |
-| `core.i18n.strings.handler_ext` | 393 | 도메인별 i18n 문자열(핸들러 2부). |
+| `core.i18n.strings.execution` | 221 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.handler` | 416 | 도메인별 i18n 문자열 (처리기 파트 1). |
+| `core.i18n.strings.handler_ext` | 393 | 도메인별 i18n 문자열 (처리기 파트 2). |
 | `core.i18n.strings.lifecycle` | 104 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.memory` | 418 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.migrate` | 99 | — |
 | `core.i18n.strings.misc` | 527 | 도메인별 i18n 문자열. |
-| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열(레거시 라우트 모듈). |
+| `core.i18n.strings.misc_routes` | 21 | 도메인별 i18n 문자열 (레거시 라우트 모듈). |
 | `core.i18n.strings.models` | 70 | 모델 검사를 위한 현지화된 CLI 메시지. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 29 | 회의실 관리자를 위한 i18n 문자열. |
 | `core.i18n.strings.server` | 341 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.supervisor` | 140 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.tmp` | 74 | — |
-| `core.i18n.strings.tooling` | 170 | 도메인별 i18n 문자열(도구 프롬프트 및 도구 기능). |
-| `core.i18n.strings.tooling_schema` | 540 | 도메인별 i18n 문자열(schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 i18n 문자열(schema.* 2부). |
+| `core.i18n.strings.tooling` | 175 | 도메인별 i18n 문자열 (도구 프롬프트 및 도구 관련 기능). |
+| `core.i18n.strings.tooling_schema` | 540 | 도메인별 i18n 문자열 (schema.*). |
+| `core.i18n.strings.tooling_schema_ext` | 167 | 도메인별 i18n 문자열 (schema.* 파트 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -785,11 +794,12 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 
 ## `core.platform`
 
-실행 엔진 및 운영체제별 차이를 흡수하는 연계 계층.
+실행 엔진과 OS별 차이를 흡수하는 연동 계층.
 
-| 모듈 | 행 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | 독스트링 첫 줄 |
 |---|---:|---|
 | `core.platform` | 4 | — |
+| `core.platform.agy` | 32 | — |
 | `core.platform.atomic_io` | 207 | — |
 | `core.platform.claude_code` | 194 | — |
 | `core.platform.codex` | 245 | — |
@@ -801,24 +811,24 @@ Twilio 전화 채널의 음성 합성, 통화 상태 및 웹훅 관리.
 | `core.platform.locks` | 125 | — |
 | `core.platform.pid` | 42 | — |
 | `core.platform.process` | 327 | — |
-| `core.platform.process_role` | 66 | Low-level environment access for process-role metadata. |
+| `core.platform.process_role` | 66 | 프로세스 역할 메타데이터를 위한 저수준 환경 접근. |
 | `core.platform.processing_lease` | 344 | — |
 | `core.platform.scratch` | 99 | — |
-| `core.platform.state_writer` | 1012 | — |
+| `core.platform.state_writer` | 1014 | — |
 | `core.platform.status_store` | 54 | — |
 | `core.platform.subprocess_entries` | 23 | — |
 | `core.platform.tasks` | 35 | — |
 
 ## `core.prompt`
 
-시스템 프롬프트와 컨텍스트 구축.
+시스템 프롬프트와 컨텍스트 구성.
 
-| 모듈 | 줄 수 | docstring 첫 줄 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.prompt` | 1 | Prompt construction package; import specific modules directly. |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1287 | — |
-| `core.prompt.context` | 486 | Context window usage tracker. |
+| `core.prompt.builder` | 1289 | — |
+| `core.prompt.context` | 490 | Context window usage tracker. |
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |

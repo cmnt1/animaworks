@@ -59,6 +59,10 @@
     "mode": "G",
     "context_window": 1000000
   },
+  "agy/*": {
+    "mode": "Y",
+    "context_window": 1000000
+  },
   "openai/gpt-5.4*": {
     "mode": "A",
     "context_window": 272000

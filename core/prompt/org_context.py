@@ -21,7 +21,7 @@ from core.prompt.sections import _load_fallback_strings, _load_section_strings
 logger = logging.getLogger(__name__)
 
 # Modes that use MCP-style tool access (built-in + mcp__aw__*).
-_MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
+_MCP_MODES = frozenset({"s", "c", "d", "g", "x", "y"})
 
 
 def _resolved_visible_path(path: Path, denied_roots: tuple[Path, ...]) -> Path | None:
@@ -36,7 +36,7 @@ def _resolved_visible_path(path: Path, denied_roots: tuple[Path, ...]) -> Path |
 
 
 def _is_mcp_mode(execution_mode: str) -> bool:
-    """Return True for modes using built-in tools + MCP (S, C, D, G, and X)."""
+    """Return True for modes using built-in tools + MCP (S, C, D, G, X, and Y)."""
     return execution_mode in _MCP_MODES
 
 

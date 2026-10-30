@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 065ca0c486d2a2e2a1a681e579bfc71f60f9b8c6241f1b34321eee7ea686c7c1 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: e89f04ed0e7c2dfaab7189d664720b279a2fcfc9ee5ea096101bab46e851f949 -->
 
 # 設定リファレンス
 
@@ -919,6 +919,7 @@
 
 | モデル名パターン | モード | コンテキストウィンドウ |
 |---|---|---:|
+| `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |

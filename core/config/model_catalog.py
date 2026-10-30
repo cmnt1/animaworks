@@ -19,6 +19,7 @@ from typing import Any
 
 from core.config.model_discovery import discovered_model_ids
 from core.config.models import KNOWN_MODELS, load_config
+from core.platform.agy import is_agy_cli_available
 from core.platform.codex import is_codex_login_available
 from core.platform.grok import is_grok_authenticated
 
@@ -78,6 +79,8 @@ def model_credential_available(
             return True
     if mode == "X":
         return is_grok_authenticated() if grok_login is None else grok_login
+    if mode == "Y":
+        return is_agy_cli_available()
     provider = _FAMILY_CREDENTIAL_MAP.get(_model_family(model), _model_family(model))
     if provider == "gemini" and provider not in config.credentials and "google" in config.credentials:
         provider = "google"

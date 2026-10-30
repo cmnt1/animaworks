@@ -122,6 +122,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Host built-in tools: Grok CLI's file read/write, shell, and search tools",
         "ko": "호스트 내장 도구: Grok CLI의 파일 읽기·쓰기, 셸, 검색 도구",
     },
+    "tool_guide.host_tools.y": {
+        "ja": "ホストの組込みツール: run_command（シェル）/ view_file・write_to_file・replace_file_content（ファイル）/ grep_search・find_by_name（検索）/ search_web・read_url_content（Web）。AnimaWorks のツールは call_mcp_tool で呼ぶ（ServerName は aw- で始まるサーバ）",
+        "en": "Host built-in tools: run_command (shell) / view_file, write_to_file, replace_file_content (files) / grep_search, find_by_name (search) / search_web, read_url_content (web). Call AnimaWorks tools via call_mcp_tool (ServerName is a server starting with aw-)",
+        "ko": "호스트 내장 도구: run_command(셸) / view_file·write_to_file·replace_file_content(파일) / grep_search·find_by_name(검색) / search_web·read_url_content(웹). AnimaWorks 도구는 call_mcp_tool로 호출합니다(ServerName은 aw-로 시작하는 서버)",
+    },
     "tool_guide.host_tools.a": {
         "ja": "ホストの組込みツール: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
         "en": "Host built-in tools: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",

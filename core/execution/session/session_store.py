@@ -17,7 +17,7 @@ from typing import Any, Literal
 from core.platform.atomic_io import atomic_write_json
 from core.platform.state_writer import StateWriterError, is_task_runner_process
 
-SessionEngine = Literal["agent_sdk", "codex", "cursor", "grok"]
+SessionEngine = Literal["agent_sdk", "codex", "cursor", "grok", "agy"]
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,8 @@ class SessionStore:
             return base / filename
         if engine == "grok":
             return base / thread_id / "grok_session_id.txt"
+        if engine == "agy":
+            return base / thread_id / "agy_session_id.txt"
         raise ValueError(f"unsupported session engine: {engine}")
 
     @staticmethod

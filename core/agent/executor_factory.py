@@ -52,6 +52,10 @@ ENGINE_ADAPTERS: dict[str, EngineAdapter] = {
         "core.execution.engines.grok.executor:GrokCLIExecutor",
         availability_path="core.execution.engines.grok.executor:is_grok_cli_available",
     ),
+    "y": EngineAdapter(
+        "core.execution.engines.agy.executor:AgyCLIExecutor",
+        availability_path="core.execution.engines.agy.executor:is_agy_cli_available",
+    ),
     "a": EngineAdapter(
         "core.execution.engines.litellm.executor:LiteLLMExecutor",
         extra_kwargs=("tool_handler", "memory"),

@@ -52,7 +52,7 @@ def test_resumable_triggers() -> None:
         assert is_resumable_trigger(trigger) is False
 
 
-@pytest.mark.parametrize("engine", ["agent_sdk", "codex", "cursor", "grok"])
+@pytest.mark.parametrize("engine", ["agent_sdk", "codex", "cursor", "grok", "agy"])
 def test_clear_engine_session_uses_engine_store(tmp_path: Path, engine: SessionEngine) -> None:
     path = SessionStore.path_for(engine, tmp_path, "chat", "thread-a")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +66,7 @@ def test_clear_engine_session_uses_engine_store(tmp_path: Path, engine: SessionE
 def test_clear_all_engine_sessions_clears_all_engines(tmp_path: Path) -> None:
     paths = [
         SessionStore.path_for(engine, tmp_path, "task", "thread-a")
-        for engine in ("agent_sdk", "codex", "cursor", "grok")
+        for engine in ("agent_sdk", "codex", "cursor", "grok", "agy")
     ]
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +77,7 @@ def test_clear_all_engine_sessions_clears_all_engines(tmp_path: Path) -> None:
     assert all(not path.exists() for path in paths)
 
 
-@pytest.mark.parametrize("engine", ["cursor", "grok"])
+@pytest.mark.parametrize("engine", ["cursor", "grok", "agy"])
 def test_load_turn_limited_session_rotates_at_limit(tmp_path: Path, engine: SessionEngine) -> None:
     path = SessionStore.path_for(engine, tmp_path, "chat", "thread-a")
     SessionStore(path).write_text_record(SessionRecord("session-id", MAX_RESUME_TURNS), with_turn_count=True)
