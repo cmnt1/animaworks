@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=435896428157d1c62cb8a209f4dccc12d560f50f8654ae2b2494928f09de252c generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=ecbe85c694dd700552a749695864a44617ae256c67b98918b6270017b31a83a9 generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # 모듈 목록
 
@@ -260,17 +260,17 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 
 도구 실행, 명령 실행, 안전 제어.
 
-| 모듈 | 행 수 | 독스트링 첫 줄 |
+| 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.execution` | 60 | — |
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 99 | — |
 | `core.execution.base` | 915 | — |
-| `core.execution.busy_probe` | 68 | 자체 호스팅 대체 모델의 혼잡도 탐침 (vLLM ``/metrics``). |
+| `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
-| `core.execution.engines.agy.executor` | 792 | — |
+| `core.execution.engines.agy.executor` | 795 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 567 | — |
@@ -290,9 +290,9 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
 | `core.execution.engines.litellm.executor` | 1068 | — |
 | `core.execution.events` | 255 | — |
-| `core.execution.fallback_activity` | 290 | 임시 런타임 모델 대체를 위한 활동 로그 통합. |
-| `core.execution.github_identity` | 162 | 실행기 환경을 위한 GitHub ID 확인. |
-| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)의 루프 내부 가드 메커니즘. |
+| `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
+| `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
+| `core.execution.loop_guards` | 411 | In-loop guard mechanisms for the self-hosted execution loops (Mode A/B). |
 | `core.execution.mcp_env` | 39 | — |
 | `core.execution.process_runner` | 184 | — |
 | `core.execution.reminder` | 128 | — |

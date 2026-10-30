@@ -290,6 +290,17 @@ class TestCompatibilitySurface:
         configured = AgyCLIExecutor(config, anima_dir)
         assert configured._build_env()["GEMINI_API_KEY"] == "test-key"
 
+    def test_build_env_ignores_non_google_key_env(self, anima_dir: Path) -> None:
+        # An Anima switched from Mode S keeps api_key_env=ANTHROPIC_API_KEY.
+        config = ModelConfig(model="agy/gemini-4-argon", api_key_env="ANTHROPIC_API_KEY")
+        switched = AgyCLIExecutor(config, anima_dir)
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test", "GEMINI_API_KEY": ""}, clear=False):
+            assert not switched._build_env().get("GEMINI_API_KEY")
+
+        google = AgyCLIExecutor(ModelConfig(model="agy/gemini-4-argon", api_key_env="GOOGLE_API_KEY"), anima_dir)
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "g-test"}, clear=False):
+            assert google._build_env()["GEMINI_API_KEY"] == "g-test"
+
 
 class TestCommandConstruction:
     def test_command_has_effort_and_terminal_prompt_flag(self, executor: AgyCLIExecutor) -> None:
