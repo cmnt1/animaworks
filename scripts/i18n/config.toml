@@ -37,11 +37,3 @@ dst = "templates/{lang}"
 include = ["**/*.md"]
 copy = ["**/*.json", "**/*.py"]
 header = "none"
-
-[[targets]]
-name = "readme"
-src = "README_ja.md"
-dst = { en = "README.md", ko = "README_ko.md", zh = "README_zh.md" }
-include = ["README_ja.md"]
-header = "html_comment"
-link_rewrite = [["docs/ja/", "docs/{lang}/"], ["README_ja.md", "{readme}"]]
