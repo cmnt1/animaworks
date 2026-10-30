@@ -4,7 +4,7 @@
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 import { escapeHtml } from "/shared/html-utils.js";
-import { renderSafeMarkdown } from "/modules/state.js";
+import { renderSafeMarkdown } from "../modules/state.js";
 import { CHAT_FILE_DOWNLOAD_ICON, chatFileBadge, formatChatFileSize } from "/shared/image-input.js";
 
 const MAX_TEXT_CHARS = 2 * 1024 * 1024;
