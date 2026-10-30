@@ -267,8 +267,11 @@ class AgyCLIExecutor(CLIStreamExecutor):
         update_workspace_env(env, self._anima_dir)
         env.update(resolve_github_token_env(self._anima_dir))
         api_key = self._model_config.api_key
-        if not api_key and self._model_config.api_key_env:
-            api_key = os.environ.get(self._model_config.api_key_env)
+        # A switched Anima keeps its old credential's env name (e.g.
+        # ANTHROPIC_API_KEY); only a Gemini/Google key may become GEMINI_API_KEY.
+        env_name = self._model_config.api_key_env or ""
+        if not api_key and env_name.upper().startswith(("GEMINI", "GOOGLE")):
+            api_key = os.environ.get(env_name)
         if api_key:
             env["GEMINI_API_KEY"] = api_key
         return env

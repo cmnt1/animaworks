@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=435896428157d1c62cb8a209f4dccc12d560f50f8654ae2b2494928f09de252c generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=ecbe85c694dd700552a749695864a44617ae256c67b98918b6270017b31a83a9 generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # Module List
 
@@ -270,7 +270,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
-| `core.execution.engines.agy.executor` | 792 | — |
+| `core.execution.engines.agy.executor` | 795 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 652 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 112 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 567 | — |
