@@ -34,8 +34,8 @@ class EngineSessionIds:
         if self.engine == "agent_sdk":
             raise ValueError("Mode S uses load_state() for its metadata-bearing JSON file")
         return SessionStore(self.path_for(anima_dir, session_type, thread_id)).read_text_record(
-            with_turn_count=self.engine in {"cursor", "grok"},
-            ignore_read_errors=self.engine in {"cursor", "grok"},
+            with_turn_count=self.engine in {"cursor", "grok", "agy"},
+            ignore_read_errors=self.engine in {"cursor", "grok", "agy"},
         )
 
     async def asave(

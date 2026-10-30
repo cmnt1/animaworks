@@ -53,7 +53,7 @@ _SHORTTERM_ARCHIVE_MAX_FILES = 100
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 _SAFE_THREAD_ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 _SAFE_SESSION_TYPES = frozenset({"chat", "heartbeat", "cron", "task", "background", "inbox", "task_exec"})
-_SAFE_SESSION_ENGINES = frozenset({"agent_sdk", "codex", "cursor", "grok"})
+_SAFE_SESSION_ENGINES = frozenset({"agent_sdk", "codex", "cursor", "grok", "agy"})
 _PROMPT_ROTATION_DATE: str | None = None
 
 
@@ -298,6 +298,8 @@ class LocalStateWriter:
         if engine == "cursor":
             directory = base if thread_id == "default" else base / thread_id
             return directory / "cursor_chat_id.txt"
+        if engine == "agy":
+            return base / thread_id / "agy_session_id.txt"
         return base / thread_id / "grok_session_id.txt"
 
     async def save_session_record(
@@ -318,7 +320,7 @@ class LocalStateWriter:
                 atomic_write_json(path, record, indent=None)
             else:
                 contents = session_id
-                if engine in {"cursor", "grok"}:
+                if engine in {"cursor", "grok", "agy"}:
                     turn_count = record.get("turn_count", 1)
                     if not isinstance(turn_count, int) or isinstance(turn_count, bool):
                         raise ValueError("session turn_count must be an integer")

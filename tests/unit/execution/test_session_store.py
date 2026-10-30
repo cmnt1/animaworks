@@ -18,6 +18,8 @@ def test_engine_session_paths_keep_existing_layouts(tmp_path: Path) -> None:
         ("cursor", "chat", "thread-a", tmp_path / "shortterm/chat/thread-a/cursor_chat_id.txt"),
         ("grok", "chat", "default", tmp_path / "shortterm/chat/default/grok_session_id.txt"),
         ("grok", "chat", "thread-a", tmp_path / "shortterm/chat/thread-a/grok_session_id.txt"),
+        ("agy", "chat", "default", tmp_path / "shortterm/chat/default/agy_session_id.txt"),
+        ("agy", "chat", "thread-a", tmp_path / "shortterm/chat/thread-a/agy_session_id.txt"),
     ]
 
     for engine, session_type, thread_id, expected in cases:
@@ -52,7 +54,18 @@ def test_engine_session_ids_keep_established_file_formats(tmp_path: Path) -> Non
     assert grok_path.read_text(encoding="utf-8") == "grok-session\n4"
     assert grok_ids.load(tmp_path, "chat") == SessionRecord("grok-session", 4)
 
-    for ids, path in ((codex_ids, codex_path), (cursor_ids, cursor_path), (grok_ids, grok_path)):
+    agy_ids = EngineSessionIds("agy")
+    agy_ids.save(tmp_path, "agy-session", "chat", turn_count=5)
+    agy_path = agy_ids.path_for(tmp_path, "chat")
+    assert agy_path.read_text(encoding="utf-8") == "agy-session\n5"
+    assert agy_ids.load(tmp_path, "chat") == SessionRecord("agy-session", 5)
+
+    for ids, path in (
+        (codex_ids, codex_path),
+        (cursor_ids, cursor_path),
+        (grok_ids, grok_path),
+        (agy_ids, agy_path),
+    ):
         ids.clear(tmp_path, "chat")
         assert not path.exists()
 

@@ -125,6 +125,22 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "[Gemini CLI タイムアウト: {timeout}秒以内に完了しませんでした]",
         "en": "[Gemini CLI timeout: did not complete within {timeout} seconds]",
     },
+    "agy_cli.not_installed": {
+        "ja": "`agy` が見つかりません。Antigravity CLI をインストールし、`agy` を一度起動してログインしてください。",
+        "en": "`agy` not found. Install the Antigravity CLI and run `agy` once to sign in.",
+    },
+    "agy_cli.not_authenticated": {
+        "ja": "`agy` が未認証です。`agy` を実行してGoogleアカウントにログインしてください。",
+        "en": "`agy` is not authenticated. Run `agy` to sign in to your Google account.",
+    },
+    "agy_cli.timeout": {
+        "ja": "[agy タイムアウト: {timeout}秒以内に完了しませんでした]",
+        "en": "[agy timeout: did not complete within {timeout} seconds]",
+    },
+    "agy_cli.image_attachment": {
+        "ja": "添付画像: {path}（view_file で見られる）",
+        "en": "Attached image: {path} (viewable with view_file)",
+    },
     "grok_cli.not_installed": {
         "ja": "Grok CLIが見つかりません。`curl -fsSL https://x.ai/cli/install.sh | bash` でインストールし、`grok login` でログインしてください。",
         "en": "Grok CLI not found. Install with `curl -fsSL https://x.ai/cli/install.sh | bash` and run `grok login`.",

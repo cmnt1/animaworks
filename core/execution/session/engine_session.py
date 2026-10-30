@@ -18,7 +18,7 @@ from core.execution.session.session_types import is_resumable_trigger, resolve_r
 logger = logging.getLogger(__name__)
 
 MAX_RESUME_TURNS = 10
-_ENGINE_SESSIONS: tuple[SessionEngine, ...] = ("agent_sdk", "codex", "cursor", "grok")
+_ENGINE_SESSIONS: tuple[SessionEngine, ...] = ("agent_sdk", "codex", "cursor", "grok", "agy")
 
 
 @dataclass(frozen=True)
