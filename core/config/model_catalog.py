@@ -14,6 +14,7 @@ stays cheap and deterministic.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any
 
@@ -59,6 +60,20 @@ def _configured_model_entries(config: Any) -> list[dict[str, str]]:
     return entries
 
 
+def is_agy_cli_available() -> bool:
+    """Return True when the ``agy`` CLI is installed.
+
+    The platform helper lives in ``core.platform.agy`` (Part A).  Resolving it
+    with ``importlib`` keeps this module importable on branches where the agy
+    engine has not landed yet; in that case Mode Y simply has no usable models.
+    """
+    try:
+        platform_agy = importlib.import_module("core.platform.agy")
+    except ModuleNotFoundError:
+        return False
+    return bool(platform_agy.is_agy_cli_available())
+
+
 def model_credential_available(
     model: str,
     mode: str,
@@ -78,6 +93,8 @@ def model_credential_available(
             return True
     if mode == "X":
         return is_grok_authenticated() if grok_login is None else grok_login
+    if mode == "Y":
+        return is_agy_cli_available()
     provider = _FAMILY_CREDENTIAL_MAP.get(_model_family(model), _model_family(model))
     if provider == "gemini" and provider not in config.credentials and "google" in config.credentials:
         provider = "google"

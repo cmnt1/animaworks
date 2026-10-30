@@ -52,7 +52,7 @@ CLI_TIMEOUT = 10.0
 HTTP_TIMEOUT = 5.0
 
 # Preferred group order for the UI dropdown; anything else sorts alphabetically.
-_GROUP_ORDER = {"Claude": 0, "Codex": 1, "Grok": 2, "Ollama": 3}
+_GROUP_ORDER = {"Claude": 0, "Codex": 1, "Grok": 2, "Antigravity": 3, "Ollama": 4}
 
 
 @dataclass(frozen=True)
@@ -146,6 +146,26 @@ def _parse_grok_models(text: str) -> list[str]:
             seen.add(name)
             result.append(name)
     return result
+
+
+def _parse_agy_models(text: str) -> list[str]:
+    """Extract model IDs from ``agy models`` output.
+
+    ``agy`` may print a bullet list, a table, or descriptive text, so this
+    scans tokens instead of relying on one layout.  Only IDs from the known
+    Antigravity model families are accepted.
+    """
+    prefixes = ("gemini-", "claude-", "gpt-oss-")
+    models: list[str] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        for raw_token in line.replace("|", " ").split():
+            token = raw_token.strip("`'\"*,;:()[].")
+            if not token.startswith(prefixes) or token in seen:
+                continue
+            seen.add(token)
+            models.append(token)
+    return models
 
 
 def _parse_claude_help(help_text: str) -> list[str]:
@@ -289,6 +309,35 @@ def _probe_grok() -> list[DiscoveredModel]:
     ]
 
 
+def _probe_agy() -> list[DiscoveredModel]:
+    executable = shutil.which("agy")
+    if executable is None:
+        return []
+    try:
+        result = subprocess.run(
+            [executable, "models"],
+            capture_output=True,
+            text=True,
+            timeout=CLI_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        logger.debug("agy models failed")
+        return []
+    names = _parse_agy_models((result.stdout or "") + (result.stderr or ""))
+    return [
+        DiscoveredModel(
+            id=f"y:agy/{name}",
+            mode="y",
+            model=f"agy/{name}",
+            label=name,
+            group="Antigravity",
+            source="agy-cli",
+        )
+        for name in names
+    ]
+
+
 def _probe_claude() -> list[DiscoveredModel]:
     if shutil.which("claude") is None:
         return []
@@ -414,6 +463,7 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
     probes: list[Callable[[], list[DiscoveredModel]]] = [
         _probe_codex,
         _probe_grok,
+        _probe_agy,
         _probe_claude,
         lambda: _probe_openai_compatible(config),
         lambda: _probe_ollama(config),
@@ -434,9 +484,10 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
     else:
         from core.config.model_catalog import _configured_model_entries, model_credential_available
 
-        # When a CLI listed its own models (Codex / Grok), that list is the
-        # source of truth; static catalog names for that mode are stale.
-        cli_listed_modes = {model.mode for model in result if model.mode in {"c", "x"}}
+        # When a CLI listed its own models (Codex / Grok / Antigravity), that
+        # list is the source of truth; static catalog names for that mode are
+        # stale.
+        cli_listed_modes = {model.mode for model in result if model.mode in {"c", "x", "y"}}
         configured = []
         for entry in _configured_model_entries(config):
             model = entry["id"]

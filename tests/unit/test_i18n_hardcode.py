@@ -89,7 +89,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # permissions.md section headers used by the legacy permissions fallback
     "core/config/migrate.py": 2,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
-    "core/config/model_mode.py": 31,
+    "core/config/model_mode.py": 33,
     # cron instruction prompt to Anima
     "core/prompt/messaging.py": 0,
     "core/prompt/org_context.py": 3,

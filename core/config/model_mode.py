@@ -5,7 +5,7 @@
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Model execution mode resolution for canonical S/C/D/G/X/A modes."""
+"""Model execution mode resolution for canonical S/C/D/G/X/Y/A modes."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from core.config.schemas import AnimaWorksConfig
 
 logger = logging.getLogger("animaworks.config")
 
-CANONICAL_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X", "A"})
+CANONICAL_MODES: frozenset[str] = frozenset({"S", "C", "D", "G", "X", "Y", "A"})
 _CANONICAL_MODES_LOWER = frozenset(mode.lower() for mode in CANONICAL_MODES)
 
 # Default model_modes with wildcard pattern support.
@@ -27,6 +27,7 @@ _CANONICAL_MODES_LOWER = frozenset(mode.lower() for mode in CANONICAL_MODES)
 #
 # Mode values: S = SDK (Agent SDK / Claude Code), C = Codex (Codex CLI wrapper),
 #              D = Cursor Agent CLI, G = Gemini CLI, X = Grok Build CLI,
+#              Y = Antigravity CLI (agy),
 #              A = LiteLLM tool_use loop
 #
 # IMPORTANT: When status.json omits "execution_mode", resolve_execution_mode()
@@ -42,6 +43,8 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "openai-codex/*": "C",
     # ── X: Grok Build CLI ────────────────────────────────
     "grok/*": "X",
+    # ── Y: Antigravity CLI (agy) ─────────────────────────
+    "agy/*": "Y",
     # ── D: Cursor Agent CLI ──────────────────────────────
     "cursor/*": "D",
     # ── G: Gemini CLI ────────────────────────────────────
@@ -151,6 +154,13 @@ KNOWN_MODELS: list[dict[str, str]] = [
     # ── Grok Build (Mode X) ─────────────────────────────────────────────────
     {"name": "grok/grok-4.5", "mode": "X", "note": "Grok Build CLI経由・500Kコンテキスト"},
     {"name": "grok/grok-composer-2.5-fast", "mode": "X", "note": "Grok Build CLI経由・高速"},
+    # ── Antigravity (Mode Y) ────────────────────────────────────────────────
+    {
+        "name": "agy/gemini-4-argon",
+        "mode": "Y",
+        "note": "Antigravity CLI経由・Gemini 4 Argon（effortはreasoning_effortで指定）",
+    },
+    {"name": "agy/gemini-3.8-flash-medium", "mode": "Y", "note": "Antigravity CLI経由・高速"},
     # ── Ollama Local (tool_use 非対応も A で実行) ────────────────────────────────
     {"name": "ollama/gemma3:4b", "mode": "A", "note": "軽量ローカル"},
     {"name": "ollama/gemma3:12b", "mode": "A", "note": "中型ローカル"},
@@ -291,7 +301,7 @@ def _match_pattern_table(
 
 
 def _normalise_mode(raw: str) -> str:
-    """Normalize legacy and canonical mode values to one of the six modes.
+    """Normalize legacy and canonical mode values to one of the seven modes.
 
     Retired and otherwise unknown values safely map to Mode A.
     """
@@ -360,7 +370,7 @@ def resolve_execution_mode(
     Returns:
         One of ``"S"`` (SDK), ``"C"`` (Codex), ``"D"`` (Cursor Agent),
         ``"G"`` (Gemini CLI), ``"X"`` (Grok Build CLI),
-        ``"A"`` (Autonomous).
+        ``"Y"`` (Antigravity CLI), ``"A"`` (Autonomous).
     """
     # 1. Per-anima explicit override
     if explicit_override:

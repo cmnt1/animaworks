@@ -15,6 +15,7 @@ Each engine implements one execution mode:
   - ``CursorAgentExecutor`` (D): Cursor Agent CLI -- cursor-agent subprocess
   - ``GeminiCLIExecutor`` (G): Gemini CLI -- gemini subprocess with stream-json
   - ``GrokCLIExecutor`` (X): Grok Build CLI -- ACP subprocess over stdio
+  - ``AgyCLIExecutor``    (Y): Antigravity CLI -- agy subprocess
   - ``LiteLLMExecutor``   (A): LiteLLM + tool_use loop -- any model with tool support
 
 Engine classes are resolved on first access so importing shared execution
@@ -32,6 +33,7 @@ _LAZY = {
     "CursorAgentExecutor": "core.execution.engines.cursor.executor",
     "GeminiCLIExecutor": "core.execution.engines.gemini.executor",
     "GrokCLIExecutor": "core.execution.engines.grok.executor",
+    "AgyCLIExecutor": "core.execution.engines.agy.executor",
     "LiteLLMExecutor": "core.execution.engines.litellm.executor",
 }
 
@@ -47,6 +49,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "AgentSDKExecutor",
+    "AgyCLIExecutor",
     "BaseExecutor",
     "CodexSDKExecutor",
     "CursorAgentExecutor",

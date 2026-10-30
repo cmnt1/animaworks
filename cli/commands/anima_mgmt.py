@@ -265,6 +265,7 @@ def cmd_anima_info(args: argparse.Namespace) -> None:
         "D": "D (Cursor Agent CLI)",
         "G": "G (Gemini CLI)",
         "X": "X (Grok Build CLI)",
+        "Y": "Y (Antigravity CLI)",
         "A": "A (Autonomous)",
     }
 

@@ -436,6 +436,7 @@ class CycleMixin:
           - Mode D (cursor):     ``CursorAgentExecutor`` -- Cursor Agent CLI
           - Mode G (gemini):     ``GeminiCLIExecutor`` -- Gemini CLI
           - Mode X (grok):       ``GrokCLIExecutor`` -- Grok Build CLI
+          - Mode Y (agy):        ``AgyCLIExecutor`` -- Antigravity CLI
           - Mode S (SDK):        ``AgentSDKExecutor`` -- Claude Agent SDK
 
         If the context threshold is crossed (A mode only), the session is

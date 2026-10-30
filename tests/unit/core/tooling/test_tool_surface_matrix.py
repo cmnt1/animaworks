@@ -17,7 +17,7 @@ TRIGGER_CASES = (
     ("submit_tasks:manual", "background", "background"),
     ("consolidation:daily", "consolidation", "consolidation"),
 )
-MCP_MODES = ("S", "C", "D", "G", "X")
+MCP_MODES = ("S", "C", "D", "G", "X", "Y")
 BUILDER_MODES = ("A", "B")  # B is the legacy alias normalized to the A tool-use path.
 
 # Expected names for a normal Anima without notification channels, subordinates,
