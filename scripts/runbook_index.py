@@ -18,7 +18,7 @@ Fix (consumption wiring, pattern B+C):
   * This script emits a tiny **awareness manifest** `runbooks/_index.md` per
     project: each runbook = name + a one-line "when to use" trigger. `critical`
     runbooks are surfaced at the top with "read in full first".
-  * `CLAUDE.md` and each anima `injection.md` `@import` that single `_index.md`,
+  * `CLAUDE.md` and each anima `AGENTS.md` (formerly `injection.md`) `@import` that single `_index.md`,
     so every session/heartbeat *knows what exists and when to open it*.
   * The index is regenerated deterministically by apply_inbox_decision.py after
     each adopt, so adoption => awareness with no LLM drift.

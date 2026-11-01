@@ -273,7 +273,7 @@ class TestAgentCoreDrainNotifications:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.AgentCore"),
             patch("core.anima.digital_anima.MemoryManager") as MockMM,
             patch("core.anima.digital_anima.Messenger"),
         ):
@@ -302,7 +302,7 @@ class TestDigitalAnimaDrainNotifications:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.AgentCore"),
             patch("core.anima.digital_anima.MemoryManager") as MockMM,
             patch("core.anima.digital_anima.Messenger"),
         ):

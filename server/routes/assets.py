@@ -19,10 +19,11 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.anima.workspace_files import IDENTITY_FILE, SOUL_FILE
 from core.i18n import t
 from core.integrations.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
 from core.integrations.image.openai import OPENAI_IMAGE_MODELS, OPENAI_IMG2IMG_MODELS
-from core.paths import get_data_dir
+from core.paths import _resolve_at_imports, get_data_dir
 from core.platform.tasks import spawn
 from server.events import emit
 from server.routes.attachment_preview import AttachmentPreviewError, preview_attachment
@@ -632,12 +633,13 @@ def _clean_appearance_text(text: str) -> str:
 
 def _read_identity_texts(anima_dir: Path) -> list[str]:
     texts: list[str] = []
-    for filename in ("identity.md", "character_sheet.md"):
+    for filename in (IDENTITY_FILE, SOUL_FILE, "character_sheet.md"):
         path = anima_dir / filename
         if not path.is_file():
             continue
         try:
-            text = path.read_text(encoding="utf-8")
+            # IDENTITY.md / SOUL.md may be 1-line @import shims into the Obsidian vault.
+            text = _resolve_at_imports(path.read_text(encoding="utf-8"))
         except OSError:
             logger.debug("Failed to read appearance source: %s", path, exc_info=True)
             continue
@@ -1096,8 +1098,8 @@ def create_assets_router() -> APIRouter:
                         "size": st.st_size,
                     }
 
-        # Extract image_color from identity.md
-        identity_path = anima_dir / "identity.md"
+        # Extract image_color from IDENTITY.md
+        identity_path = anima_dir / IDENTITY_FILE
         if identity_path.exists():
             try:
                 text = identity_path.read_text(encoding="utf-8")
@@ -1678,7 +1680,7 @@ def create_assets_router() -> APIRouter:
             if not prompt:
                 prompt = _resolve_prompt(anima_dir, style=prompt_style)
             if not prompt:
-                # Slow path: extract from identity.md / character_sheet.md via LLM
+                # Slow path: extract from IDENTITY.md / character_sheet.md via LLM
                 logger.info("No cached prompt for '%s', attempting LLM synthesis…", name)
                 try:
                     import asyncio as _asyncio

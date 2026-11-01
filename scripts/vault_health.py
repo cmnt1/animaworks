@@ -8,7 +8,7 @@ Categories (5):
   - broken_tools_shim   (Critical) — Tools\<Project>\CLAUDE.md / AGENTS.md shim target missing
   - missing_frontmatter (Warning)  — Base-eligible .md without role/scope frontmatter
   - stale_updated       (Info)     — `updated` field older than 180 days (excludes role:principle)
-  - orphan_persona      (Warning)  — Anima identity.md or injection.md shim missing/broken (15 personas pair check)
+  - orphan_persona      (Warning)  — Anima IDENTITY.md / SOUL.md / AGENTS.md shim missing/broken
 
 Usage:
   python vault_health.py             # human-readable report + log append
@@ -212,9 +212,12 @@ def check_orphan_persona(report: Report) -> None:
     for anima_dir in ANIMAS_ROOT.iterdir():
         if not anima_dir.is_dir():
             continue
-        identity = anima_dir / "identity.md"
-        injection = anima_dir / "injection.md"
-        for f, kind in ((identity, "identity"), (injection, "injection")):
+        shims = (
+            (anima_dir / "IDENTITY.md", "identity"),
+            (anima_dir / "SOUL.md", "soul"),
+            (anima_dir / "AGENTS.md", "agents"),
+        )
+        for f, kind in shims:
             if not f.exists():
                 continue
             try:

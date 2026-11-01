@@ -137,6 +137,8 @@ def test_full_v015_migration_preserves_governor_and_anima_content(tmp_path, monk
         assert not report.errors
         assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["server"]["usage_governor"]["enabled"]
         assert "process_model" not in json.loads((anima / "status.json").read_text(encoding="utf-8"))
-        assert (anima / "identity.md").read_text(encoding="utf-8") == identity
+        # The standard-files migration splits identity.md into IDENTITY.md + SOUL.md.
+        assert (anima / "IDENTITY.md").read_text(encoding="utf-8").startswith("# Alice")
+        assert "User-managed identity remains intact." in (anima / "SOUL.md").read_text(encoding="utf-8")
         for name, content in governor_files.items():
             assert (tmp_path / name).read_text(encoding="utf-8") == content

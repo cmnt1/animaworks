@@ -405,7 +405,7 @@ class TestParseSchedule:
 
 
 class TestParseHeartbeatConfig:
-    """Tests for heartbeat.md parsing (unchanged from previous format)."""
+    """Tests for HEARTBEAT.md parsing (unchanged from previous format)."""
 
     def test_basic_active_hours(self):
         """Parse active hours from heartbeat content."""

@@ -65,7 +65,7 @@ class TestListAnimas:
         animas_dir = tmp_path / "animas"
         alice_dir = animas_dir / "alice"
         alice_dir.mkdir(parents=True)
-        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "IDENTITY.md").write_text("# Alice", encoding="utf-8")
         (alice_dir / "status.json").write_text(
             json.dumps(
                 {

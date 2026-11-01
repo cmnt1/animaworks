@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from core.anima.workspace_files import HEARTBEAT_FILE, IDENTITY_FILE
 from core.config.models import load_config, resolve_anima_config
 from core.i18n import t
 from core.runtime.scheduler_manager import (
@@ -91,8 +92,8 @@ def create_animas_router() -> APIRouter:
         for name in list(anima_names):
             anima_dir = animas_dir / name
 
-            # Skip animas whose identity.md no longer exists on disk
-            if not (anima_dir / "identity.md").exists():
+            # Skip animas whose IDENTITY.md no longer exists on disk
+            if not (anima_dir / IDENTITY_FILE).exists():
                 continue
 
             # Get process status
@@ -196,8 +197,9 @@ def create_animas_router() -> APIRouter:
 
         memory = MemoryManager(anima_dir, read_only=True)
 
-        identity, injection, cur_state, k_files, e_files, p_files = await asyncio.gather(
+        identity, soul, injection, cur_state, k_files, e_files, p_files = await asyncio.gather(
             asyncio.to_thread(memory.read_identity),
+            asyncio.to_thread(memory.read_soul),
             asyncio.to_thread(memory.read_injection),
             asyncio.to_thread(memory.read_current_state),
             asyncio.to_thread(memory.list_knowledge_files),
@@ -208,6 +210,7 @@ def create_animas_router() -> APIRouter:
         return {
             "status": proc_status,
             "identity": identity,
+            "soul": soul,
             "injection": injection,
             "state": cur_state,
             "knowledge_files": k_files,
@@ -322,13 +325,13 @@ def create_animas_router() -> APIRouter:
 
     @router.get("/animas/{name}/heartbeat")
     async def get_anima_heartbeat(name: str, request: Request):
-        """Return the raw heartbeat.md content for an anima."""
+        """Return the raw HEARTBEAT.md content for an anima."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        hb_path = anima_dir / "heartbeat.md"
+        hb_path = anima_dir / HEARTBEAT_FILE
         content = ""
         if hb_path.exists():
             content = await asyncio.to_thread(hb_path.read_text, "utf-8")
@@ -379,7 +382,7 @@ def create_animas_router() -> APIRouter:
         """Return permissions.json for an anima."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         perm_path = anima_dir / "permissions.json"
@@ -397,7 +400,7 @@ def create_animas_router() -> APIRouter:
         _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -416,11 +419,11 @@ def create_animas_router() -> APIRouter:
 
     @router.put("/animas/{name}/identity")
     async def update_anima_identity(name: str, request: Request):
-        """Update the identity.md content for an anima."""
+        """Update the IDENTITY.md content for an anima."""
         _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -431,16 +434,16 @@ def create_animas_router() -> APIRouter:
         from core.anima.settings_store import write_identity
 
         await asyncio.to_thread(write_identity, anima_dir, content)
-        logger.info("Updated identity.md for anima '%s' (%d chars)", name, len(content))
+        logger.info("Updated IDENTITY.md for anima '%s' (%d chars)", name, len(content))
         return {"status": "ok", "name": name, "field": "identity", "length": len(content)}
 
     @router.put("/animas/{name}/injection")
     async def update_anima_injection(name: str, request: Request):
-        """Update the injection.md content for an anima."""
+        """Update the AGENTS.md content for an anima."""
         _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -451,7 +454,7 @@ def create_animas_router() -> APIRouter:
         from core.anima.settings_store import write_injection
 
         await asyncio.to_thread(write_injection, anima_dir, content)
-        logger.info("Updated injection.md for anima '%s' (%d chars)", name, len(content))
+        logger.info("Updated AGENTS.md for anima '%s' (%d chars)", name, len(content))
         return {"status": "ok", "name": name, "field": "injection", "length": len(content)}
 
     @router.put("/animas/{name}/model")
@@ -462,7 +465,7 @@ def create_animas_router() -> APIRouter:
         _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -513,7 +516,7 @@ def create_animas_router() -> APIRouter:
         """Update heartbeat/cron model settings in root-owned status.json."""
         _validate_anima_name(name)
         anima_dir = request.app.state.animas_dir / name
-        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+        if not anima_dir.is_dir() or not (anima_dir / IDENTITY_FILE).is_file():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
         data = await request.json()
         model = data.get("model", "") if isinstance(data, dict) else None
@@ -544,7 +547,7 @@ def create_animas_router() -> APIRouter:
         """Update role settings and role permission template through root writers."""
         _validate_anima_name(name)
         anima_dir = request.app.state.animas_dir / name
-        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+        if not anima_dir.is_dir() or not (anima_dir / IDENTITY_FILE).is_file():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
         data = await request.json()
         if not isinstance(data, dict):
@@ -594,7 +597,7 @@ def create_animas_router() -> APIRouter:
         """Return aliases for an anima from config.json."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         config = load_config()
@@ -608,7 +611,7 @@ def create_animas_router() -> APIRouter:
         _validate_anima_name(name)
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -637,7 +640,7 @@ def create_animas_router() -> APIRouter:
         """Enable an Anima (set status.json to enabled: true)."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
         from core.anima.settings_store import update_status
@@ -664,7 +667,7 @@ def create_animas_router() -> APIRouter:
         """Disable an Anima (set status.json to enabled: false and stop process)."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
         from core.anima.settings_store import update_status
@@ -710,7 +713,7 @@ def create_animas_router() -> APIRouter:
         animas_dir = request.app.state.animas_dir
         old_dir = animas_dir / name
         new_dir = animas_dir / new_name
-        if not old_dir.is_dir() or not (old_dir / "identity.md").is_file():
+        if not old_dir.is_dir() or not (old_dir / IDENTITY_FILE).is_file():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
         if new_dir.exists():
             raise HTTPException(status_code=409, detail=f"Anima already exists: {new_name}")
@@ -876,7 +879,7 @@ def create_animas_router() -> APIRouter:
         anima_dir = animas_dir / name
 
         # Disk existence (same style as enable/disable), not anima_names list.
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         # Refuse start while disabled; enable API writes enabled=true then starts.
@@ -953,7 +956,7 @@ def create_animas_router() -> APIRouter:
 
         _validate_anima_name(name)
         anima_dir = request.app.state.animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+        if not anima_dir.exists() or not (anima_dir / IDENTITY_FILE).exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
@@ -1067,7 +1070,7 @@ def create_animas_router() -> APIRouter:
         animas_dir: Path = request.app.state.animas_dir
         anima_names: list[str] = request.app.state.anima_names
         anima_dir = animas_dir / name
-        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+        if not anima_dir.is_dir() or not (anima_dir / IDENTITY_FILE).is_file():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         stop_error: Exception | None = None
@@ -1174,7 +1177,7 @@ def create_animas_router() -> APIRouter:
         # Optionally include disabled animas
         if include_disabled and animas_dir.exists():
             for anima_dir in sorted(animas_dir.iterdir()):
-                if anima_dir.is_dir() and (anima_dir / "identity.md").exists() and anima_dir.name not in anima_names:
+                if anima_dir.is_dir() and (anima_dir / IDENTITY_FILE).exists() and anima_dir.name not in anima_names:
                     anima_names.append(anima_dir.name)
 
         # Build flat lookup: name -> {speciality, supervisor, model, status}

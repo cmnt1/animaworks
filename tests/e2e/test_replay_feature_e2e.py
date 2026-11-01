@@ -69,7 +69,7 @@ def _setup_anima(animas_dir: Path, name: str) -> Path:
     """Create a minimal anima directory."""
     anima_dir = animas_dir / name
     anima_dir.mkdir(parents=True, exist_ok=True)
-    (anima_dir / "identity.md").write_text(f"# {name}", encoding="utf-8")
+    (anima_dir / "IDENTITY.md").write_text(f"# {name}", encoding="utf-8")
     return anima_dir
 
 

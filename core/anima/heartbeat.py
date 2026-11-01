@@ -650,7 +650,7 @@ class HeartbeatMixin:
         if current_bytes <= max_bytes:
             return None
         logger.info(
-            "[%s] heartbeat.md exceeds limit (%d > %d bytes), injecting compaction instruction",
+            "[%s] HEARTBEAT.md exceeds limit (%d > %d bytes), injecting compaction instruction",
             self.name,
             current_bytes,
             max_bytes,
@@ -676,7 +676,7 @@ class HeartbeatMixin:
         if current_bytes <= max_bytes:
             return None
         logger.info(
-            "[%s] heartbeat.md exceeds limit (%d > %d bytes), injecting compaction instruction",
+            "[%s] HEARTBEAT.md exceeds limit (%d > %d bytes), injecting compaction instruction",
             self.name,
             current_bytes,
             max_bytes,

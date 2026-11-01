@@ -101,7 +101,7 @@ class TestIdentityAppearancePrompt:
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir(parents=True)
         (assets_dir / "prompt_realistic.txt").write_text("generic cached office portrait\n", encoding="utf-8")
-        (anima_dir / "identity.md").write_text(
+        (anima_dir / "IDENTITY.md").write_text(
             "# Alice\n\n"
             "## \u5916\u898b\n"
             "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair, soft cardigan\n",
@@ -115,12 +115,32 @@ class TestIdentityAppearancePrompt:
         assert "half-up black hair" in prompt
         assert "generic cached" not in prompt
 
+    def test_resolves_identity_import_shim(self, tmp_path):
+        from server.routes.assets import _identity_appearance_prompt
+
+        vault_identity = tmp_path / "vault" / "alice_identity.md"
+        vault_identity.parent.mkdir()
+        vault_identity.write_text(
+            "---\nanima: alice\n---\n\n# Identity: alice\n\n"
+            "## 外見\n"
+            "外見: realistic, young Japanese woman, thin-framed glasses, half-up black hair\n",
+            encoding="utf-8",
+        )
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+        (anima_dir / "IDENTITY.md").write_text(f"@{vault_identity}\n", encoding="utf-8")
+
+        prompt = _identity_appearance_prompt(anima_dir, name="alice", style="realistic")
+
+        assert prompt is not None
+        assert "thin-framed glasses" in prompt
+
     def test_openai_identity_appearance_can_use_bustup_composition(self, tmp_path):
         from server.routes.assets import _identity_appearance_prompt
 
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
-        (anima_dir / "identity.md").write_text(
+        (anima_dir / "IDENTITY.md").write_text(
             "# Alice\n\n"
             "## \u5916\u898b\n"
             "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair\n",
@@ -139,7 +159,7 @@ class TestIdentityAppearancePrompt:
 
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
-        (anima_dir / "identity.md").write_text(
+        (anima_dir / "IDENTITY.md").write_text(
             "# Alice\n\n"
             "## \u5916\u898b\n"
             "\u77e5\u7684\u3067\u843d\u3061\u7740\u3044\u305f\u96f0\u56f2\u6c17\u306e\u5973\u6027\u3002\n"
@@ -209,7 +229,7 @@ class TestGetAssetMetadata:
     async def test_metadata_no_assets(self, tmp_path):
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
-        (anima_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (anima_dir / "IDENTITY.md").write_text("# Alice", encoding="utf-8")
 
         app = _make_test_app(animas_dir=tmp_path)
         transport = ASGITransport(app=app)
@@ -223,7 +243,7 @@ class TestGetAssetMetadata:
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text("# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8")
+        (anima_dir / "IDENTITY.md").write_text("# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8")
         (anima_dir / "assets").mkdir()
 
         app = _make_test_app(animas_dir=animas_dir)
@@ -237,7 +257,7 @@ class TestGetAssetMetadata:
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (anima_dir / "IDENTITY.md").write_text("# Alice", encoding="utf-8")
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir()
         (assets_dir / "avatar_fullbody.png").write_bytes(b"\x89PNG")
@@ -840,7 +860,7 @@ class TestRemakePreview:
         anima_dir = animas_dir / "alice"
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text("# Alice\n", encoding="utf-8")
+        (anima_dir / "IDENTITY.md").write_text("# Alice\n", encoding="utf-8")
         (assets_dir / "avatar_fullbody_realistic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
         global_style_ref = tmp_path / "global-style.png"
@@ -890,7 +910,7 @@ class TestRemakePreview:
         anima_dir = animas_dir / "alice"
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text(
+        (anima_dir / "IDENTITY.md").write_text(
             "# Alice\n\n"
             "## \u5916\u898b\n"
             "\u5916\u898b: realistic, young Japanese woman, thin-framed glasses, half-up black hair\n",
