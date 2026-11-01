@@ -13,6 +13,8 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip("fcntl", reason="SSM tunnel management uses POSIX file locks")
+
 from core.config import invalidate_cache
 from core.enclave import ssm_tunnel
 from core.enclave.config import EnclaveSsmTunnelConfig
