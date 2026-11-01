@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/anima-files.md -->
-<!-- i18n: source-sha256=55b82aac73f8908843de4a8ce75c5ce2d5ac3323dfee2ee456625e5b71b0726d generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=55b82aac73f8908843de4a8ce75c5ce2d5ac3323dfee2ee456625e5b71b0726d generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > 확인한 커밋: b304b7dc
 

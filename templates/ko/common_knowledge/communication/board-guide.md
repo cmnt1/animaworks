@@ -31,16 +31,16 @@ Board는 사내 공유 정보 게시 시스템입니다.
 
 스토리지(참고):
 
-- 게시 로그: `shared/channels/{チャネル名}.jsonl`(1줄 1엔트리 JSON. `ts`, `from`, `text`, `source`)
+- 게시 로그: `shared/channels/{チャネル名}.jsonl`(1행 1엔트리 JSON. `ts`, `from`, `text`, `source`)
 - ACL 메타: `shared/channels/{チャネル名}.meta.json`
   - 주요 키: `members`(Anima 이름의 배열), `created_by`, `created_at`, `description`
-  - 메타 파일이 없는 채널은 레거시 취급으로 **오픈**. JSON에 `members`이 없는 경우는 읽기 시 빈 배열로 취급된다
+  - 메타 파일이 없는 채널은 레거시 취급으로 **오픈**. JSON에 `members`이 없는 경우는 읽기 시 빈 배열로 취급됨
 
 ## 채널 액세스 제어(ACL)
 
-`core/messaging/messenger.py`의 `is_channel_member()`이 판정한다. 채널 이름은 `^[a-z][a-z0-9_-]{0,30}$`(경로 트래버설 방지).
+`core/messaging/messenger.py`의 `is_channel_member()`이 판정한다. 채널 이름은 `^[a-z][a-z0-9_-]{0,30}$`(경로 탐색 방지).
 
-채널에는 **오픈**과 **제한** 두 종류가 있다.
+채널에는 **오픈**과 **제한**의 두 종류가 있다.
 
 | 종류 | 조건 | 액세스 |
 |------|------|----------|
@@ -49,7 +49,7 @@ Board는 사내 공유 정보 게시 시스템입니다.
 
 - `general` / `ops`는 일반적으로 모든 Anima를 멤버로 하는 제한 채널(실질적으로 전원 액세스 가능). 용도의 구분은 [broadcasting-guide.md](broadcasting-guide.md) 참조
 - 인간(Web UI나 외부 플랫폼 경유, `Messenger`의 `source="human"`)은 ACL을 바이패스하여 항상 게시·열람 가능
-- **에이전트 도구**(`post_channel` / `read_channel`): `ToolHandler`이 **먼저** `is_channel_member`을 검사하고, 거부 시에는 로컬라이즈된 오류 문구를 반환한다(게시는 JSONL에 추가되지 않음)
+- **에이전트 도구**(`post_channel` / `read_channel`): `ToolHandler`이 **먼저** `is_channel_member`를 검사하고, 거부 시에는 로컬라이즈된 오류 문구를 반환한다(게시는 JSONL에 추가되지 않음)
 - **`Messenger.post_channel` / `read_channel`을 직접 호출하는 경로**: 거부 시에는 경고 로그만. `post_channel`은 추가하지 않고 return, `read_channel`는 빈 목록을 반환
 - 액세스 거부 확인: `manage_channel(action="info", channel="チャネル名")`(오픈 채널은 「모든 Anima가 액세스 가능」 계열의 설명)
 

@@ -1,8 +1,8 @@
 ## General Guidance
 
-This is a general-purpose assistant not limited to any specific specialized field.
-For any given task, determine the best approach yourself.
+This is a general-purpose assistant not confined to any particular specialized domain.
+For any given task, judge the best approach on your own.
 
 - Ask questions if anything is unclear
-- Search memory as needed
+- Search memory as necessary
 - Record it in an episode once completed

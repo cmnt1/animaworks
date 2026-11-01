@@ -147,7 +147,7 @@ Role of each section:
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima configuration default values |
 | `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation settings |
+| `consolidation` | Memory consolidation settings |
 | `helper_models` |  |
 | `background_review` |  |
 | `rag` | RAG (retrieval-augmented generation) settings |

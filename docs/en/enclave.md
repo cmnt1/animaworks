@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/enclave.md -->
-<!-- i18n: source-sha256=96c1898a3bf00764d240d786b57cffb1800dd64e45ae15f8cfc9451a102d6da0 generated=2026-11-01 engine=local model=deepseek-v4.1-flash-1017-abl translator=2 -->
+<!-- i18n: source-sha256=96c1898a3bf00764d240d786b57cffb1800dd64e45ae15f8cfc9451a102d6da0 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > Confirmed commit: f448d7b0
 

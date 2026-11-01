@@ -1,21 +1,21 @@
-# Task Management Methods
+# How to Manage Tasks
 
-## There is only one source of truth
+## There Is Only One Source of Truth
 
-Use `list_tasks(detail=true)` or `animaworks-tool task list` for confirmation. Persist instructions, dependencies, execution attempts, results, and delegation aliases in the host-managed TaskStore. Direct database edits, fabricating execution permissions, and repairing queues by writing files are prohibited. The old `state/task_queue.jsonl` and `state/pending/` are evidence for migration and export, not active submission targets. They are kept for operator-driven migration.
+Use `list_tasks(detail=true)` or `animaworks-tool task list` for confirmation. Persist instructions, dependencies, execution attempts, results, and delegation aliases in the host-managed TaskStore. Directly editing the database, fabricating execution rights, and repairing the queue by writing files are prohibited. The old `state/task_queue.jsonl` and `state/pending/` are evidence for migration and export, and are not active submission destinations. They are retained for migration by the operator.
 
-Requests that can be handled in normal chat may be addressed directly. Register a task only when background execution, parallelization, or continuous tracking is needed. Prioritize human-originated requests; among equal priorities, prioritize supervisor requests over colleague requests. In handovers, preserve the original instruction, completion conditions, constraints, and necessary context.
+Requests that can be handled in normal chat may be handled directly. Register a task only when background execution, parallelization, or continuous tracking is required. Human-originated requests have the highest priority, and when priorities are equal, prioritize a supervisor's request over a colleague's. In handoffs, preserve the original instruction, completion conditions, constraints, and necessary context.
 
-## Choose the execution path
+## Choose the Execution Path
 
-- Inbox handles messages and lightweight replies.
-- Heartbeat checks for meaningful changes and decides how to respond. Do not engage in long coding sessions or heavy tool use; use `submit_tasks` for your own TaskExec and `delegate_task` for direct subordinates.
-- TaskExec executes persisted tasks with tools. The host manages permission acquisition, parallelism, dependencies, cancellation, and recovery of attempts, and does not rely on periodic Heartbeat.
-- The subagent startup tool in Agent/Task is disabled. Use the submission and delegation tools above.
+- Inbox processes messages and lightweight replies.
+- Heartbeat checks for meaningful changes and decides how to respond. Do not perform long coding sessions or large numbers of tool executions, and use `submit_tasks` for your own TaskExec and `delegate_task` for direct subordinates.
+- TaskExec executes persisted tasks with tools. The host manages acquisition of execution rights, parallelism, dependencies, cancellation, and recovery of attempts, and it does not depend on periodic Heartbeat.
+- The subagent startup tool for Agent/Task is disabled. Use the submission and delegation tools above.
 
-## Submission and confirmation
+## Submission and Confirmation
 
-The executor of `submit_tasks` is **your own TaskExec**, not a subordinate.
+The executor of `submit_tasks` is not a subordinate but **your own TaskExec**.
 
 ```
 submit_tasks(batch_id="report-build", tasks=[
@@ -25,11 +25,11 @@ submit_tasks(batch_id="report-build", tasks=[
 list_tasks(detail=true)
 ```
 
-New tasks require `task_id`, `title`, and `description`. Optional fields are `context`, `acceptance_criteria`, `constraints`, `file_paths`, `workspace`, `parallel`, `depends_on`, `reply_to`, and `model`. `workspace` is an alias for a registered workspace. Model selection follows the usual runtime configuration. Do not replace a long original instruction with a short summary.
+A new task requires `task_id`, `title`, and `description`. Optional items are `context`, `acceptance_criteria`, `constraints`, `file_paths`, `workspace`, `parallel`, `depends_on`, `reply_to`, and `model`. `workspace` is an alias for a registered workspace. Model selection follows normal runtime configuration. Do not replace a long original instruction with a short summary.
 
-Validate the batch at submission and finalize tasks and execution inputs together. Redelivery of the same submission is idempotent, not a retry. Dependents are not executed until the dependency completes successfully. Do not judge executability based solely on file absence or the `pending` display.
+Validate the batch at submission time and finalize the task and execution input all at once. Redelivery of the same submission is idempotent and is not a retry. Subsequent tasks are not executed until the dependency completes successfully. Do not judge that execution is possible based only on the absence of a file or the display of `pending`.
 
-## Result declaration and explicit resumption
+## Result Declaration and Explicit Resumption
 
 ```
 update_task(task_id="TASK_ID", status="done", summary="検証済みの結果", result="根拠と成果物の場所")
@@ -37,37 +37,37 @@ update_task(task_id="TASK_ID", status="pending", summary="指定した入力を�
 update_task(task_id="TASK_ID", status="cancelled", summary="不要になった理由")
 ```
 
-`in_progress` is a read-only status set by the host when execution permission is acquired. It is not set via `update_task`. Tasks whose attempts ended without a completion declaration may become pending with a reason requiring action. Pending is not a promise of automatic retry. Do not duplicate under a different ID to resume.
+`in_progress` is a viewing status set by the host when execution rights are acquired. Do not set it with `update_task`. A task whose attempt ended without a completion declaration may become pending with a reason requiring action. Pending is not a promise of automatic retry. Do not duplicate it with a different ID in order to resume it.
 
-After resolving the interruption reason, explicitly resume the same unfinished task.
+After resolving the reason for the interruption, explicitly resume the same unfinished task.
 
 ```
 submit_tasks(batch_id="resume-report", tasks=[{"task_id": "TASK_ID", "resume": true}])
 ```
 
-Reuse saved inputs and preserve history. Active attempts cannot be resumed, and completed or canceled tasks cannot be resumed this way. If a dependency is canceled or requires action, check the details, confirm with the requester, or cancel work that is no longer needed. Do not fabricate success.
+Reuse the saved input and preserve the history. An active attempt cannot be resumed, and completed or canceled tasks cannot be resumed this way either. If a dependency is canceled or requires action, check the details and either confirm with the requester or cancel the work that is no longer needed. Do not fabricate success.
 
-When you cannot proceed, report the facts, what you tried, missing permissions or information, and the next step to the requester, and do not repeat the same failure. Search related knowledge only when necessary; do not ritualize it. While waiting, you may work on other permitted tasks. Report completion of delegated work to the requester, and avoid duplicate notifications or unnecessary acknowledgment replies.
+When you cannot proceed, tell the requester the facts, what you tried, the missing permissions or information, and the next step, and do not repeat the same failure. Search related knowledge when necessary, and do not turn it into a ritual. While waiting, you may work on other permitted work. Report completion of delegated work to the requester, and avoid duplicate notifications and unnecessary acknowledgment replies.
 
-## Delegation to subordinates
+## Delegation to Subordinates
 
 ```
 delegate_task(name="dave", instruction="API テストを実施し検証した結果を報告する", summary="API テスト")
 task_tracker()
 ```
 
-Create one task owned by the subordinate and an alias visible to the supervisor. The same latest state is immediately reflected on both sides; no separate ledger or Heartbeat synchronization is needed. `task_tracker(status="all")` includes completed items, and `status="completed"` displays done/cancelled. If instructions are unclear, confirm with the delegator, and report results upon completion.
+Create one task owned by the subordinate and an alias visible to the supervisor. The same latest status is immediately reflected for both, and separate ledgers or Heartbeat synchronization are unnecessary. `task_tracker(status="all")` includes completed ones, and `status="completed"` displays done/cancelled. If the instruction is unclear, confirm with the delegation source, and report the result upon completion.
 
-## Work context and results
+## Work Context and Results
 
-Record observations, context, plans, and blockers concisely in `state/current_state.md`. Do not place copies of task lists or permanent procedures there. If there is no work context, use `status: idle`. It is preserved across normal session boundaries; display limits and disk cleanup limits are separate (`anatomy/working-memory.md`).
+In `state/current_state.md`, briefly leave observations, context, plans, and blockers. Do not place duplicates of the task list or permanent procedures there. If there is no work context, `status: idle`. It is retained across normal session boundaries, and display limits and disk cleanup limits are separate (`anatomy/working-memory.md`).
 
-The result summary of TaskExec is stored in `state/task_results/{task_id}/{attempt_token}.md`. Pass the results of host-accepted attempts to dependents, and do not arbitrarily adopt old files. Fabricating result files or declaring completion based solely on existence is prohibited. Activity logs and episodes remain as evidence; there is no obligation to manually double-record each state transition.
+The result summary of TaskExec is saved in `state/task_results/{task_id}/{attempt_token}.md`. Pass the result of the attempt accepted by the host to subsequent steps, and do not arbitrarily adopt old files. Fabricating result files and determining completion based only on their existence are prohibited. Activity logs and episodes remain as evidence, and there is no obligation to manually double-record each status transition.
 
-## Long-running command tools use a separate path
+## Long-Running Command Tools Use a Separate Path
 
-For long-running external tools such as image generation and run_command, use `animaworks-tool submit TOOL ...`. They are registered as `task_type="command"` in the same TaskStore as the `submit_tasks` LLM tasks, and are executed by BackgroundTaskManager. Execution attempts are recorded in TaskStore, and for compatibility, `state/background_tasks/{task_id}.json` and completion notifications are also maintained. Check results with `list_background_tasks` / `check_background_task`. For details, see `operations/background-tasks.md`.
+For long-running external tools such as image generation and run_command, use `animaworks-tool submit TOOL ...`. They are registered as `task_type="command"` in the same TaskStore as the LLM tasks of `submit_tasks`, and are executed by BackgroundTaskManager. Execution attempts are recorded in the TaskStore, and for compatibility `state/background_tasks/{task_id}.json` and completion notifications are also maintained. Check results with `list_background_tasks` / `check_background_task`. For details, see `operations/background-tasks.md`.
 
-## Source of truth for business outcomes
+## Source of Truth for Business Deliverables
 
-The source of truth for business outcomes and case management is placed in the Obsidian Vault. In accordance with `common_skills/obsidian-product/SKILL.md`, the TaskStore inside Anima manages execution status and dependencies. Preserve the roles of both, and do not write a duplicate of the execution queue into the Vault.
+Place the source of truth for business deliverables and case management in the Obsidian Vault. Follow `common_skills/obsidian-product/SKILL.md`, and Anima's internal TaskStore manages execution status and dependencies. Preserve the roles of both, and do not write a duplicate of the execution queue into the Vault.

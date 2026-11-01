@@ -1,11 +1,11 @@
 # Heartbeat Observe Guide
 
-Heartbeat Observe is a lightweight observation phase for status checks and planning decisions. It does not perform normal actual work, long investigations, arbitrary file exploration, or status checks via shell.
+Heartbeat Observe is a lightweight observation phase for status checking and planning decisions. It does not perform normal actual work, long investigations, arbitrary file exploration, or status checking via shell.
 
 ## Principles
 
-- MUST: If `status: ok` has `Current Pre-Observed Heartbeat Snapshot`, use it and do not call tools redundantly. If there is no prior observation, call `heartbeat_observe_snapshot` at the start of Observe as a fallback.
-- MUST: For Inbox, task_queue, current_state, and state/pending、state/task_results、background_notifications、peer_activity、recent_own_files, use the results of `heartbeat_observe_snapshot` as the primary basis.
+- MUST: If there is a `Current Pre-Observed Heartbeat Snapshot` for `status: ok`, use it and do not call tools redundantly. If there is no prior observation, call `heartbeat_observe_snapshot` at the beginning of Observe as a fallback.
+- MUST: For Inbox, task_queue, current_state, and state/pending、state/task_results、background_notifications、peer_activity、recent_own_files, use the result of `heartbeat_observe_snapshot` as the primary basis.
 - MUST NOT: Do not use Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` for the fixed-scope checks above.
 - MUST NOT: Do not use Heartbeat observation values, times, counts, or decision logs as TaskBoard task names. If necessary, attach them to the context / task_results / activity_log of an existing task.
 - MUST: Only when `status: ok` cannot be obtained from either prior observation or a direct call, do not repeat the same blocked path; record it as a blocker in `state/current_state.md` or report it as needed.
@@ -16,4 +16,4 @@ Heartbeat Observe is a lightweight observation phase for status checks and plann
 
 ## Additional Checks
 
-Only when it is necessary to check external services, Board, Slack, GitHub, Web, etc. outside the snapshot, use the relevant dedicated tool. Do not use shell as a substitute for the fixed scope.
+Only when it is necessary to check external services, Board, Slack, GitHub, Web, etc. outside the snapshot, use the corresponding dedicated tool. Do not use shell as a substitute for the fixed scope.

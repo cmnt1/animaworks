@@ -1,6 +1,6 @@
 # Heartbeat Observe 가이드
 
-Heartbeat Observe는 상태 확인과 계획 판단을 위한 경량 관측 단계입니다. 일반적인 실작업, 긴 조사, 임의 파일 탐색, shell을 통한 상태 확인은 하지 않습니다.
+Heartbeat Observe는 상태 확인과 계획 판단을 위한 경량 관측 단계입니다. 일반 실작업, 긴 조사, 임의 파일 탐색, shell을 통한 상태 확인은 하지 않습니다.
 
 ## 원칙
 
@@ -12,8 +12,8 @@ Heartbeat Observe는 상태 확인과 계획 판단을 위한 경량 관측 단�
 
 ## HEARTBEAT_OK의 조건
 
-`HEARTBEAT_OK`은 사전 관측 또는 `heartbeat_observe_snapshot`의 직접 호출에 의한 고정 스코프 관측을 완료하고, 미처리 지침, 마감일이 지난 작업, 미실행 pending, 미확인 task_results, 보고해야 할 블로커가 없는 경우에 한한다.
+`HEARTBEAT_OK`은 사전 관측 또는 `heartbeat_observe_snapshot`의 직접 호출에 의한 고정 스코프 관측을 완료하고, 미처리 지침, 마감일을 지난 작업, 미실행 pending, 미확인 task_results, 보고해야 할 블로커가 없는 경우에만 해당한다.
 
 ## 추가 확인
 
-snapshot 밖에 있는 외부 서비스, Board, Slack, GitHub, Web 등을 확인할 필요가 있는 경우에만 해당 전용 도구를 사용한다. 고정 스코프의 대체로서 shell을 사용해서는 안 된다.
+snapshot 밖에 있는 외부 서비스, Board, Slack, GitHub, Web 등을 확인할 필요가 있을 때만 해당 전용 도구를 사용한다. 고정 스코프의 대체로서 shell을 사용해서는 안 된다.

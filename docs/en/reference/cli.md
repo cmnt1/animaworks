@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=d381aa269e104fc13b7413556212b1ae09c5385a36a4e4c9da2af55d9140c099 generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=56531efc9ba7f7a93ae89c823b50b1e811a264db5b4a9d3cf4613f11aadfb2a7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -46,7 +46,7 @@ Create a new anima
 
 `usage: animaworks anima create [-h] [--name NAME] [--template TEMPLATE]
                                [--from-md PATH] [--supervisor SUPERVISOR]
-                               [--role {engineer,researcher,manager,writer,ops,general}]`
+                               [--role {engineer,researcher,manager,writer,ops,administration}]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ Create a new anima
 | --template | option | — | — | Create from a named template |
 | --from-md | option | — | — | Create from an MD file |
 | --supervisor | option | — | — | Supervisor anima name (overrides character sheet) |
-| --role | option | — | engineer, researcher, manager, writer, ops, general | Role template to apply (default: general) |
+| --role | option | — | engineer, researcher, manager, writer, ops, administration | Role template to apply (default: administration) |
 
 ## `anima delete`
 
@@ -169,7 +169,7 @@ Restart an anima process
 Set heartbeat/cron model
 
 `usage: animaworks anima set-background-model [-h] [--credential CREDENTIAL]
-                                             [--all] [--clear]
+                                             [--all] [--clear] [--force]
                                              [anima] [model]`
 
 | Name | Type | Default | Choices | Description |
@@ -179,6 +179,7 @@ Set heartbeat/cron model
 | --credential | option | — | — | Credential name |
 | --all | flag | false | — | Apply to all enabled animas |
 | --clear | flag | false | — | Remove background model override |
+| --force | flag | false | — | Skip the tool_use-capability confirmation prompt (low/none models). |
 
 ## `anima set-model`
 
@@ -653,7 +654,8 @@ Manage a channel and its members
 
 View anima logs
 
-`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [anima]`
+`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [--follow]
+                       [anima]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -661,6 +663,7 @@ View anima logs
 | --all | flag | false | — | Show all logs (server + all animas) |
 | --lines | option | 50 | — | Number of lines to show (default: 50) |
 | --date | option | — | — | Specific date (YYYYMMDD format) |
+| --follow | flag | false | — | Continue streaming new log lines |
 
 ## `mcp`
 

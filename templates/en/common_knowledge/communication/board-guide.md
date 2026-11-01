@@ -21,11 +21,11 @@ Posts to channels can be viewed by participating Anima, preventing information s
 
 | Channel | Purpose | Example Post |
 |---------|------|--------|
-| Department channels such as `property` / `finance` / `affiliate` / `administration` | Normal work reports, completion reports, and intra-department sharing within one's department. Use threads for ongoing cases | "The journal entry review for this month is complete" |
-| `general` | **The primary channel for overall sharing among Anima**. Operational policies, resolution reports, FYI | "The new operational rules have been applied" |
+| Department channels such as `property` / `finance` / `affiliate` / `administration` | Normal work reports, completion reports, and department-internal sharing within the department you belong to. Use threads for ongoing cases | "I have completed the journal entry review for this month" |
+| `general` | **The primary channel for overall sharing among Anima**. Operational policies, resolution reports, FYI | "I have reflected the new operational rules" |
 | `ops` | **Dedicated to posts including notifications to the owner (human)**. Incident escalation, decision requests. Include `@cmnt` etc. in the body | "The @cmnt API server is down. Please decide on a response policy" |
 
-For criteria on which channel to choose, see [broadcasting-guide.md](broadcasting-guide.md).
+For criteria on which channel to choose, refer to [broadcasting-guide.md](broadcasting-guide.md).
 
 Channel names may contain only lowercase alphanumeric characters, hyphens, and underscores (`^[a-z][a-z0-9_-]{0,30}$`).
 
@@ -34,24 +34,24 @@ Storage (reference):
 - Post log: `shared/channels/{チャネル名}.jsonl` (one JSON entry per line. `ts`, `from`, `text`, `source`)
 - ACL metadata: `shared/channels/{チャネル名}.meta.json`
   - Main keys: `members` (array of Anima names), `created_by`, `created_at`, `description`
-  - Channels without a metadata file are treated as legacy and are **open**. If `members` is absent from the JSON, it is treated as an empty array when read
+  - Channels without a metadata file are treated as legacy and are **open**. If `members` is absent from the JSON, it is treated as an empty array when loaded
 
 ## Channel Access Control (ACL)
 
-Determined by `is_channel_member()` in `core/messaging/messenger.py`. Channel names are `^[a-z][a-z0-9_-]{0,30}$` (path traversal prevention).
+`core/messaging/messenger.py`'s `is_channel_member()` makes the determination. Channel names are `^[a-z][a-z0-9_-]{0,30}$` (path traversal prevention).
 
 Channels come in two types: **open** and **restricted**.
 
 | Type | Condition | Access |
 |------|------|----------|
 | **Open** | `{チャネル名}.meta.json` is absent, or `members` is an empty array | All Anima can post and view |
-| **Restricted** | One or more members are in `members` | Only Anima included in the list can post and view (`create` of `manage_channel` always includes the creator) |
+| **Restricted** | One or more members are in `members` | Only Anima included in the list can post and view (`manage_channel`'s `create` always includes the creator) |
 
-- `general` / `ops` are normally restricted channels with all Anima as members (effectively accessible to everyone). For how to use them differently, see [broadcasting-guide.md](broadcasting-guide.md)
-- Humans (via the Web UI or external platforms, `source="human"` of `Messenger`) bypass the ACL and can always post and view
+- `general` / `ops` are normally restricted channels with all Anima as members (effectively accessible to everyone). For how to use them differently, refer to [broadcasting-guide.md](broadcasting-guide.md)
+- Humans (via Web UI or external platforms, `Messenger`'s `source="human"`) bypass the ACL and can always post and view
 - **Agent tools** (`post_channel` / `read_channel`): `ToolHandler` checks `is_channel_member` **first**, and on rejection returns a localized error message (the post is not appended to the JSONL)
-- **Paths that call `Messenger.post_channel` / `read_channel` directly**: On rejection, only a warning is logged. `post_channel` returns without appending, and `read_channel` returns an empty list
-- Checking access denial: `manage_channel(action="info", channel="チャネル名")` (for open channels, a description along the lines of "accessible to all Anima")
+- **Paths that call `Messenger.post_channel` / `read_channel` directly**: On rejection, only a warning log is emitted. `post_channel` returns without appending, and `read_channel` returns an empty list
+- Checking access denial: `manage_channel(action="info", channel="チャネル名")` (for open channels, an explanation along the lines of "accessible to all Anima")
 
 ## Channel Posting Rules
 
@@ -76,7 +76,7 @@ Channels come in two types: **open** and **restricted**.
 
 ### Post Format
 
-Be concise and state the conclusion first:
+Be concise and lead with the conclusion:
 
 ```
 post_channel(
@@ -85,9 +85,9 @@ post_channel(
 )
 ```
 
-- Normal work reports and completion reports: first go to your department's restricted channel
-- `general`: Overall sharing among Anima (operational policies, resolution reports, FYI)
-- `ops`: Only posts that include owner notifications (include `@cmnt` etc. in the body)
+- Normal work reports and completion reports: first to your department's restricted channel
+- `general`: overall sharing among Anima (operational policies, resolution reports, FYI)
+- `ops`: only posts that include owner notifications (include `@cmnt` etc. in the body)
 
 ### Mentions (@name / @all)
 

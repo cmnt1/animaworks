@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/lifecycle.md -->
-<!-- i18n: source-sha256=d7c192cd9f539a0c0ddea724cc79608c33077c8e984c3fad725d8a2574a8a054 generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=d7c192cd9f539a0c0ddea724cc79608c33077c8e984c3fad725d8a2574a8a054 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 

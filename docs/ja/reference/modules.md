@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4ff0005f1ed05adc897d88ce69915192f4d536ce392a18bc4e1a5f8d4a08aa41 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 903ea4cc92d03c41c82d37b9bd416ca6581b7ba0607e96a4923611eee84e57df -->
 
 # モジュール一覧
 
@@ -1047,7 +1047,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.handler_chat_files` | 87 | — |
 | `core.tooling.handler_comms` | 1233 | — |
 | `core.tooling.handler_create_anima` | 101 | — |
-| `core.tooling.handler_delegation` | 318 | — |
+| `core.tooling.handler_delegation` | 320 | — |
 | `core.tooling.handler_exec` | 374 | — |
 | `core.tooling.handler_files` | 899 | — |
 | `core.tooling.handler_memory` | 1516 | — |
@@ -1147,7 +1147,7 @@ LLM 利用量とコストの記録・集計。
 |---|---:|---|
 | `server` | 7 | — |
 | `server.app` | 1470 | — |
-| `server.avatar_upload` | 105 | — |
+| `server.avatar_upload` | 116 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |

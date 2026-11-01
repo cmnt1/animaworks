@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/prompt.md -->
-<!-- i18n: source-sha256=4efd5e6044c341500cee440726a5e0ae86fc499c7ff7c73f6109d91d97138208 generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=4efd5e6044c341500cee440726a5e0ae86fc499c7ff7c73f6109d91d97138208 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 

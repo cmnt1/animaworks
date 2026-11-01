@@ -1,18 +1,18 @@
 # Knowledge Promotion Review — Obsidian `_inbox/` Decision Flow
 
 Of the knowledge each Anima accumulates in `procedures/` `knowledge/`, `promote_knowledge.py` (weekly cron)
-stages it into the Obsidian `_ai_rules/_inbox/<Project>/`. This documentation defines a
-common framework for deciding **whether to promote that staging to
-the canonical source (`_ai_rules/projects/<Project>/runbooks/`) or discard it**.
+stages it into the Obsidian `_ai_rules/_inbox/<Project>/`. This documentation is a
+common framework for deciding **whether to promote that staging
+to the source of truth (`_ai_rules/projects/<Project>/runbooks/`) or discard it**.
 
 > Design intent: The Obsidian `_ai_rules/` is the "stock / canonical," and each Anima's per-anima memory is the "flow."
-> Anima is prohibited from writing directly to the Obsidian canonical source. By inserting `_inbox/` as an intermediate step, the quality of the canonical source is maintained.
+> Anima is prohibited from writing directly to the Obsidian source of truth. By inserting `_inbox/` as an intermediate step, the quality of the source of truth is maintained.
 
 ## Stakeholders and Responsibility Allocation
 
 | Category | Target inbox | Decider | Support |
 |---|---|---|---|
-| Company-wide / cross-organization | `_inbox/General/` | **Owner (human)** | sakura organizes review perspectives and calls call_human |
+| Company-wide / cross-organizational | `_inbox/General/` | **Owner (human)** | sakura organizes review perspectives and calls call_human |
 | Department-specific | `_inbox/<部門>/` | **Department GL** | sakura requests via delegate_task, GL decides |
 | Cross-department know-how | Part of `_inbox/<部門>/` | **Department GL → sakura → Owner** | GL flags as "General candidate" and escalates |
 
@@ -21,25 +21,25 @@ Department GLs (project_manager):
 - Affiliate → kanna
 - Finance → ayane
 - Property → hikaru
-- Administration → sora (* `_ai_rules/projects/Administration/` is not yet in place; treated as General for the time being)
+- Administration → sora (* `_ai_rules/projects/Administration/` is not yet in place, treated as General for the time being)
 
 ## Adoption Criteria (Promotion Decision)
 
 Promote to runbooks only those that **satisfy all** of the following:
 
-1. **Reusability**: The same kind of situation may occur again in the future (one-off situation notes are not adopted)
+1. **Reusability**: The same kind of situation may occur again in the future (one-off situation memos are not adopted)
 2. **Reproducibility**: Specific commands, configuration values, and decision points are written
 3. **Non-duplication**: Content does not duplicate existing runbooks / common_knowledge
 4. **Accuracy**: Does not contain outdated information or incorrect speculation
-5. **Appropriate granularity**: Neither too fine (single-command note) nor too coarse (chapter level)
+5. **Appropriate granularity**: Neither too fine-grained (a single-command memo) nor too coarse (chapter level)
 
-## Patterns That Should Not Be Adopted
+## Patterns That Should Be Rejected
 
 - Date-specific snapshots (weekly retrospectives like `weekly-consolidation-2026w20.md`)
 - One-time incident responses that will not recur
 - Content that is nearly identical to existing documentation and adds no value
-- Anima's own impressions/realizations only, not turned into procedures
-- Content that is sufficient to keep in the Anima's per-anima knowledge/
+- Content consisting only of the Anima's own impressions or observations, not turned into procedures
+- Content that is sufficient to keep in that Anima's per-anima knowledge/
 
 ## Decision Flow
 
@@ -79,7 +79,7 @@ content:
   期限: <YYYY-MM-DD HH:MM>
 ```
 
-## Formatting Rules (When Adopting)
+## Formatting Rules (When Adopted)
 
 frontmatter example:
 
@@ -105,8 +105,8 @@ File name:
 - before: `2026-05-18-kanna-sql-server-334-trigger-output-fix.md`
 - after:  `sql-server-334-trigger-output-fix.md`
 
-> Note: The Obsidian view (`AI Rules DB.base`) may filter `_inbox/` by `status: pending_review`,
-> so unless status is removed, it will not be treated as canonical.
+> Note: The Obsidian view (`AI Rules DB.base`) may be filtering `_inbox/` by `status: pending_review`,
+> so unless status is deleted, it will not be treated as the source of truth.
 
 ## Related
 

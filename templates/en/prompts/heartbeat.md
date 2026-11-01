@@ -1,19 +1,16 @@
-Heartbeat: perform the scheduled checks assigned to your role.
+This is a heartbeat. Please perform your regular periodic check.
 
-## Checks
+## Check Items
 {checklist}
 
-When a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` is present, use it as primary evidence and do not call the tool again. Only call `heartbeat_observe_snapshot` as a fallback when the pre-observed snapshot is absent.
-Do not re-read the fixed scope with shell / `rtk proxy` / `read_file` / `list_directory`.
+Choose the necessary response for unprocessed requests, anomalies, and work with deadlines.
+- For actual work, `submit_tasks`; for delegation, `delegate_task`. Link additional information to an existing task to its existing ID, and do not create new work with the same content. For contacting or obtaining approval from humans, use `send_message` / `call_human` to send directly to the party who needs to make a decision or respond, and do not forward the same content to every level of the hierarchy.
+- For instructions received, leave either a response, a delegation, or an explicitly stated reason for waiting.
+- Use `animaworks-tool task board` to take inventory of your own ledger. Whether to close something is judged by the owner based on the current situation, and takes priority over past designations in the task body such as "no cancellation" or "keep pending." For waits you cannot advance yourself, write the reason for waiting and the condition for removing the wait in `task cancel ID --reason 理由` (if there is a hold ledger, put one line there); for items whose premises have changed or that cannot be started for the time being, close them and consolidate later checks into a single summary task, and for items already concluded, use `task done ID --note 結果`. The delegating side should check with `--all`, and for delegations that are not progressing, close them with `task claim ID` → `task cancel`.
+- For notifications of incomplete execution, confirm the completed operations and results before deciding whether to continue; to continue, add `{{"task_id":"既存ID","resume":true}}` to the tasks in `submit_tasks` (the original input is already saved). If unnecessary, use `update_task(status="cancelled", summary="理由")`.
 
-Choose necessary actions for unanswered requests, anomalies, or time-sensitive work.
-- Use `submit_tasks` for your execution and `delegate_task` for delegation. Attach additional context to an existing task ID instead of duplicating work. Use `send_message` / `call_human` for contact or approval; do not relay the same content through every layer.
-- Handle requests, delegate, or leave an explicit waiting reason and condition.
-- Take stock of your ledger with `animaworks-tool task board`. The owner decides whether to close based on the current situation, and this overrides past notes in the task body such as "do not cancel" or "keep pending". Close waits you cannot advance yourself with `task cancel ID --reason REASON` stating the wait and its release condition (add a line to the hold ledger if your org has one); close tasks whose premise changed or that you cannot start soon, gathering later checks into one aggregate task; close concluded ones with `task done ID --note RESULT`. If you delegate, look with `--all` and close stalled delegations with `task claim ID` → `task cancel`.
-- For an incomplete-run notice, check what was already done before deciding to continue; to continue, use `submit_tasks` with `{{"task_id":"existing-id","resume":true}}` (the original input is saved). If no longer needed, `update_task(status="cancelled", summary="reason")`.
+Periodic patrols or bulk resubmission for repair purposes are unnecessary. Refer to the necessary business procedures and approval conditions. If there is nothing to handle, return only HEARTBEAT_OK.
 
-No need to poll for repair or resubmit all pending work. Consult procedures and approval requirements as needed. If nothing needs attention, return only HEARTBEAT_OK.
+## Confirmation of Observation and Communication
 
-## Confirmation of Observations and Communications
-
-If a Current Pre-Observed Heartbeat Snapshot is presented, confirm it first as the observation result for the fixed scope. Do not rescan the same range; investigate further only when external confirmation is required. Communications follow `communication/message-quality-protocol.md`, and delegation follows `operations/task-delegation-guide.md`.
+If the Current Pre-Observed Heartbeat Snapshot is presented, confirm it first as the observation result for the fixed scope. Do not rescan the same range; investigate additionally only when external confirmation is necessary. For communication, follow `communication/message-quality-protocol.md`; for delegation, follow `operations/task-delegation-guide.md`.

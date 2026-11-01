@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=899fabc1640f66a3492295f8b9a3c7bcbe4f287e14d69f0ca78eebaf2197690a generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=be154f29f10935c02684776bf74c452d5b66273fc995bc1ab0b0f990e7c40998 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # 설정 참조
 
@@ -81,17 +81,18 @@
 | `anima_defaults.task_compaction_max` | `int` | `6` | — |
 | `anima_defaults.max_session_age_hours` | `float` | `24.0` | — |
 | `anima_defaults.conversation_history_threshold` | `float` | `0.3` | — |
-| `anima_defaults.execution_mode` | `str \| None` | `null` | None = 모델에서 자동 감지 |
+| `anima_defaults.execution_mode` | `str \| None` | `null` | None = auto-detect from model |
 | `anima_defaults.supervisor` | `str \| None` | `null` | — |
 | `anima_defaults.speciality` | `str \| None` | `null` | — |
 | `anima_defaults.extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
-| `anima_defaults.thinking` | `bool \| None` | `null` | 확장 사고 (Bedrock: reasoning_effort, Ollama: think) |
-| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (기본값: "high") |
+| `anima_defaults.thinking` | `bool \| None` | `null` | Extended thinking (Bedrock: reasoning_effort, Ollama: think) |
+| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (default: "high") |
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S 인증: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
+| `anima_defaults.tool_compression` | `bool` | `true` | Enable RTK-inspired tool result compression |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기반 HB·cron은 영향 없음 |
-| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = 월간 토큰 사용량 무제한 |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기인 HB·cron은 영향 없음 |
+| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
 
 ### `animas`
 
@@ -447,11 +448,14 @@
 |---|---|---|---|
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증, 사용량 제어 설정. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
+| `server.usage_governor` | `UsageGovernorConfig` | `{UsageGovernorConfig}` | — |
+| `server.usage_governor.enabled` | `bool` | `false` | — |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
 | `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
+| `server.anima_socket_create_timeout` | `int` | `30` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
 | `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
@@ -501,8 +505,8 @@
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack 등 외부 메시징 연동. |
-| `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
-| `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | 별칭 → 연락처 정보 |
+| `external_messaging.preferred_channel` | `str` | `"discord"` | "slack" \| "chatwork" \| "discord" |
+| `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
 | `external_messaging.user_aliases.slack_user_id` | `str` | `""` | — |
 | `external_messaging.user_aliases.chatwork_room_id` | `str` | `""` | — |
 | `external_messaging.user_aliases.discord_user_id` | `str` | `""` | — |
@@ -512,47 +516,62 @@
 | `external_messaging.slack.enabled` | `bool` | `false` | — |
 | `external_messaging.slack.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.slack.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 Anima |
-| `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
-| `external_messaging.slack.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
-| `external_messaging.slack.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
-| `external_messaging.slack.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보낼 동기화 대상 보드 이름(허용 목록) |
-| `external_messaging.slack.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있으면 매핑된 모든 보드의 동기화를 허용 |
-| `external_messaging.slack.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
+| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
+| `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
+| `external_messaging.slack.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
+| `external_messaging.slack.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
+| `external_messaging.slack.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
+| `external_messaging.slack.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
+| `external_messaging.slack.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
 | `external_messaging.slack.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.slack.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 귀속 없음) |
+| `external_messaging.slack.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.slack.system_agents.name` | `str` | `""` | — |
+| `external_messaging.slack.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.slack.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.slack.system_agents.route_to_animas` | `bool` | `false` | — |
+| `external_messaging.slack.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
 | `external_messaging.chatwork` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.chatwork.enabled` | `bool` | `false` | — |
 | `external_messaging.chatwork.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.chatwork.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 Anima |
-| `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
-| `external_messaging.chatwork.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
-| `external_messaging.chatwork.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
-| `external_messaging.chatwork.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보낼 동기화 대상 보드 이름(허용 목록) |
-| `external_messaging.chatwork.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있으면 매핑된 모든 보드의 동기화를 허용 |
-| `external_messaging.chatwork.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
+| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
+| `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
+| `external_messaging.chatwork.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
+| `external_messaging.chatwork.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
+| `external_messaging.chatwork.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
+| `external_messaging.chatwork.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
+| `external_messaging.chatwork.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
 | `external_messaging.chatwork.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.chatwork.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 귀속 없음) |
+| `external_messaging.chatwork.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.chatwork.system_agents.name` | `str` | `""` | — |
+| `external_messaging.chatwork.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.chatwork.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.chatwork.system_agents.route_to_animas` | `bool` | `false` | — |
+| `external_messaging.chatwork.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
 | `external_messaging.discord` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.discord.enabled` | `bool` | `false` | — |
 | `external_messaging.discord.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.discord.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 Anima |
-| `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
-| `external_messaging.discord.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
-| `external_messaging.discord.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
-| `external_messaging.discord.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보낼 동기화 대상 보드 이름(허용 목록) |
-| `external_messaging.discord.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있으면 매핑된 모든 보드의 동기화를 허용 |
-| `external_messaging.discord.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
+| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
+| `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
+| `external_messaging.discord.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
+| `external_messaging.discord.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
+| `external_messaging.discord.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
+| `external_messaging.discord.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
+| `external_messaging.discord.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
 | `external_messaging.discord.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.discord.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 귀속 없음) |
+| `external_messaging.discord.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
+| `external_messaging.discord.system_agents.name` | `str` | `""` | — |
+| `external_messaging.discord.system_agents.kind` | `str` | `"system_agent"` | — |
+| `external_messaging.discord.system_agents.board_from` | `str` | `""` | — |
+| `external_messaging.discord.system_agents.route_to_animas` | `bool` | `false` | — |
+| `external_messaging.discord.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
 | `external_messaging.zoom` | `ZoomRTMSConfig` | `{ZoomRTMSConfig}` | — |
 | `external_messaging.zoom.enabled` | `bool` | `false` | — |
-| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의의 대체 Anima |
+| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의의 폴백 anima |
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
-| `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | 버퍼링된 대화록의 플러시 간격 |
-| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (먼저 도달하는 기준으로 플러시) |
+| `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | 버퍼링된 transcript의 flush 간격 |
+| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (둘 중 먼저 도달하는 쪽에서 flush) |
 
 ### `external_tasks`
 
@@ -700,7 +719,7 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | 런타임 데이터 정기 정리. |
+| `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | 런타임 데이터의 정기 정리. |
 | `housekeeping.enabled` | `bool` | `true` | — |
 | `housekeeping.run_time` | `str` | `"05:30"` | — |
 | `housekeeping.prompt_log_retention_days` | `int` | `3` | — |
@@ -725,11 +744,12 @@
 | `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
 | `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
 | `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
-| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | 시간별 및 일별 워크스페이스 정리를 활성화합니다. Linux 프로세스 추적이 없으면 건너뜁니다. |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
 | `housekeeping.background_running_stale_hours` | `int` | `48` | — |
+| `housekeeping.cron_queue_stale_minutes` | `int` | `30` | — |
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
@@ -761,6 +781,18 @@
 | `local_llm.presets` | `dict[str, str]` | `{"coding":"ollama/qwen2.5-coder:14b","general":"ollama/glm4:9b","reasoning":"ollama/deepseek-r1:8b"}` | — |
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 
+### `jev`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `jev` | `JevConfig` | `{JevConfig}` | Jev 프로바이더의 비용 기록 및 예산 설정. |
+| `jev.monthly_budget_usd` | `float \| None` | `null` | 월간 Jev 지출 예산(USD). None이면 예산 표시줄을 숨깁니다. |
+| `jev.balance_usd` | `float \| None` | `null` | TypeSafe 콘솔에서 읽은 크레딧 잔액(USD). |
+| `jev.balance_checked_at` | `str \| None` | `null` | balance_usd 판독값의 ISO 8601 타임스탬프. 이 시점 이후의 원장 행은 여기서 차감됩니다. None은 '현재 기준'을 의미합니다. |
+| `jev.input_usd_per_mtok` | `float` | `0.042` | 1M 토큰당 입력 가격. cost_usd가 없는 원장 행에만 사용됩니다. |
+| `jev.output_usd_per_mtok` | `float` | `0.0` | 1M 토큰당 출력 가격(jev-1.13.0에서는 무료). |
+| `jev.ledger_dir` | `str` | `""` | 지출 원장 디렉터리 재정의. 비어 있으면 <abconfig>/jev_usage.을 사용합니다. |
+
 ### `workspaces`
 
 | 키 | 유형 | 기본값 | 설명 |
@@ -778,6 +810,12 @@
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `activity_level` | `int` | `100` | 전체 활동 빈도를 조정하는 배율. |
+
+### `activity_level_by_provider`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `activity_level_by_provider` | `dict[str, int]` | `{}` | 프로바이더별 활동 빈도 재정의. |
 
 ### `activity_schedule`
 
@@ -917,12 +955,13 @@
 
 ## `models.json`
 
-모델명 패턴별 실행 모드와 컨텍스트 윈도우입니다.
+모델 이름 패턴별 실행 모드와 컨텍스트 윈도우입니다.
 
-| 모델명 패턴 | 모드 | 컨텍스트 윈도우 |
+| 모델 이름 패턴 | 모드 | 컨텍스트 윈도우 |
 |---|---|---:|
 | `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
+| `antigravity/*` | `A` | 1000000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |
 | `bedrock/*` | `A` | 200000 |
@@ -930,6 +969,8 @@
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
+| `claude-opus-4-7` | `S` | 200000 |
+| `claude-opus-4-8` | `S` | 200000 |
 | `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
 | `claude-sonnet-5-5` | `S` | 200000 |
@@ -966,5 +1007,14 @@
 | `openai/qwen3.6-27b*` | `A` | 32768 |
 | `openai/qwen3.6-35b*` | `A` | 32768 |
 | `openai/zai.glm*` | `A` | 131072 |
+| `opencode-go/*` | `A` | 131072 |
+| `opencode-go/deepseek-v4-flash` | `A` | 131072 |
+| `opencode-go/deepseek-v4-pro` | `A` | 131072 |
+| `opencode-go/glm-5` | `A` | 202752 |
+| `opencode-go/glm-5.1` | `A` | 202752 |
+| `opencode-go/kimi-k2.5` | `A` | 262144 |
+| `opencode-go/kimi-k2.6` | `A` | 262144 |
+| `opencode-go/qwen3.5-plus` | `A` | 262144 |
+| `opencode-go/qwen3.6-plus` | `A` | 262144 |
 | `vertex_ai/*` | `A` | 1000000 |
 | `xai/*` | `A` | 256000 |

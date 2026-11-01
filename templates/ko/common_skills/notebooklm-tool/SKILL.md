@@ -2,8 +2,8 @@
 name: notebooklm-tool
 description: >-
   Google NotebookLM 연동 도구. 노트북 관리·소스 추가·본문 가져오기·채팅(Q&A)·
-  아티팩트 생성(음성 개요·보고서 등)을 수행한다.
-  Use when: NotebookLM의 노트북 조작, 소스 내용 확인, 노트북에 대한 질문, 보고서 생성이 필요할 때.
+  아티팩트 생성(음성 개요·리포트 등)을 수행한다.
+  Use when: NotebookLM의 노트북 조작, 소스 내용 확인, 노트북에 대한 질문, 리포트 생성이 필요할 때.
 tags: [research, notebooklm, knowledge, external]
 ---
 
@@ -84,7 +84,7 @@ animaworks-tool notebooklm generate NOTEBOOK_ID --type audio_overview [--languag
 animaworks-tool notebooklm artifacts NOTEBOOK_ID [--type AUDIO]
 ```
 
-## 전형적인 워크플로
+## 일반적인 워크플로
 
 1. `list` 로 노트북 목록 가져오기(ID 확인)
 2. `get NOTEBOOK_ID` 로 요약 확인

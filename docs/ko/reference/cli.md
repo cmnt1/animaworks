@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=d381aa269e104fc13b7413556212b1ae09c5385a36a4e4c9da2af55d9140c099 generated=2026-10-31 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=56531efc9ba7f7a93ae89c823b50b1e811a264db5b4a9d3cf4613f11aadfb2a7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -46,15 +46,15 @@ Anima 프로세스 관리
 
 `usage: animaworks anima create [-h] [--name NAME] [--template TEMPLATE]
                                [--from-md PATH] [--supervisor SUPERVISOR]
-                               [--role {engineer,researcher,manager,writer,ops,general}]`
+                               [--role {engineer,researcher,manager,writer,ops,administration}]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --name | option | — | — | 애니마 이름 (빈칸일 때 필수, template/md일 때 선택) |
-| --template | option | — | — | 이름이 있는 템플릿에서 생성 |
+| --name | option | — | — | Anima 이름 (빈 항목에는 필수, template/md에는 선택) |
+| --template | option | — | — | 이름이 지정된 템플릿에서 생성 |
 | --from-md | option | — | — | MD 파일에서 생성 |
-| --supervisor | option | — | — | 상위 애니마 이름 (캐릭터 시트 재정의) |
-| --role | option | — | engineer, researcher, manager, writer, ops, general | 적용할 역할 템플릿 (기본값: general) |
+| --supervisor | option | — | — | 슈퍼바이저 애니마 이름 (캐릭터 시트를 덮어씀) |
+| --role | option | — | engineer, researcher, manager, writer, ops, administration | 적용할 역할 템플릿 (기본값: administration) |
 
 ## `anima delete`
 
@@ -169,16 +169,17 @@ status.json에서 애니마 설정 핫 리로드
 heartbeat/cron 모델 설정
 
 `usage: animaworks anima set-background-model [-h] [--credential CREDENTIAL]
-                                             [--all] [--clear]
+                                             [--all] [--clear] [--force]
                                              [anima] [model]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 애니마 이름 |
-| model | positional | — | — | 배경 모델 이름 |
+| anima | positional | — | — | Anima 이름 |
+| model | positional | — | — | 백그라운드 모델 이름 |
 | --credential | option | — | — | 자격 증명 이름 |
 | --all | flag | false | — | 활성화된 모든 애니마에 적용 |
-| --clear | flag | false | — | 배경 모델 재정의 제거 |
+| --clear | flag | false | — | 백그라운드 모델 재정의 제거 |
+| --force | flag | false | — | tool_use 기능 확인 프롬프트 건너뛰기 (low/none 모델). |
 
 ## `anima set-model`
 
@@ -651,16 +652,18 @@ Anima 사용을 위한 내부 도구
 
 ## `logs`
 
-anima 로그 보기
+애니마 로그 보기
 
-`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [anima]`
+`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [--follow]
+                       [anima]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | Anima 이름 (--all이 아니면 필수) |
-| --all | 플래그 | false | — | 모든 로그 표시 (서버 + 모든 anima) |
-| --lines | 옵션 | 50 | — | 표시할 줄 수 (기본값: 50) |
-| --date | 옵션 | — | — | 특정 날짜 (YYYYMMDD 형식) |
+| anima | positional | — | — | Anima 이름 (--all이 아니면 필수) |
+| --all | flag | false | — | 모든 로그 표시 (서버 + 모든 애니마) |
+| --lines | option | 50 | — | 표시할 줄 수 (기본값: 50) |
+| --date | option | — | — | 특정 날짜 (YYYYMMDD 형식) |
+| --follow | flag | false | — | 새 로그 줄 계속 스트리밍 |
 
 ## `mcp`
 

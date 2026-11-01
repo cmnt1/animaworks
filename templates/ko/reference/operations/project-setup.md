@@ -103,7 +103,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 
 #### 기본값 (anima_defaults)
 
-| 필드 | 타입 | 기본값 | 설명 |
+| 필드 | 유형 | 기본값 | 설명 |
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-5-5"` |  |
 | `fallback_model` | `str | None` | None |  |
@@ -150,7 +150,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `consolidation` | 기억 통합 설정 |
 | `helper_models` |  |
 | `background_review` |  |
-| `rag` | RAG (검색 확장 생성) 설정 |
+| `rag` | RAG (검색 증강 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
