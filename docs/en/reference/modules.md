@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=b1063b1854e10505d5e1a42a845bbffbc4e4d6259c6f9753622eb80f6c11c21c generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=91042b25adcdedc8ed89d6b0d5e5e6eeeefa4bcd37ca510ae445fbef63ac7cd7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # Module List
 
@@ -581,7 +581,7 @@ Storage, search, and organization of conversation and episodic memory.
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 322 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 497 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
+| `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / working memory) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
 | `core.memory.conversation.shortterm` | 313 | Short-term memory (短期記憶) management. |
@@ -602,6 +602,7 @@ Storage, search, and organization of conversation and episodic memory.
 | `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
+| `core.memory.graph._search_context（非公開）` | 5 | — |
 | `core.memory.io` | 59 | — |
 | `core.memory.maintenance.activity_compaction` | 479 | — |
 | `core.memory.maintenance.background_review` | 565 | — |

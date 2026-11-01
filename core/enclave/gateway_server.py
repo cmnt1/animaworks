@@ -70,7 +70,7 @@ def read_peercred(sock: socket.socket | None) -> dict[str, int] | None:
     offers neither option, or the option cannot be read, which callers must
     treat as an untrusted peer.
     """
-    if sock is None or not hasattr(socket, "SO_PEERCRED"):
+    if sock is None:
         return None
     try:
         if hasattr(socket, "SO_PEERCRED"):
@@ -116,10 +116,10 @@ def prepare_socket(config: EnclaveConfig) -> socket.socket:
     ``socket_group`` is set — changes ownership to that group.  Raises on
     failure so the server can fail closed.
     """
-    if not hasattr(socket, "SO_PEERCRED"):
+    if not (hasattr(socket, "SO_PEERCRED") or hasattr(socket, "LOCAL_PEERCRED")):
         from core.enclave import EnclaveViolationError
 
-        raise EnclaveViolationError("Enclave gateway requires Linux Unix-socket peer credentials.")
+        raise EnclaveViolationError("Enclave gateway requires Unix-socket peer credentials (Linux or macOS).")
     path = Path(config.socket_path)
     parent = path.parent
     if str(parent) != ".":

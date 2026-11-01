@@ -45,8 +45,9 @@ def test_gateway_without_peer_credentials_refuses_before_creating_socket(tmp_pat
     from core.enclave.config import EnclaveConfig
 
     monkeypatch.delattr(gateway_server.socket, "SO_PEERCRED", raising=False)
+    monkeypatch.delattr(gateway_server.socket, "LOCAL_PEERCRED", raising=False)
     config = EnclaveConfig(socket_path=str(tmp_path / "socket-dir" / "enclave.sock"))
-    with pytest.raises(EnclaveViolationError, match="requires Linux"):
+    with pytest.raises(EnclaveViolationError, match="requires Unix-socket peer credentials"):
         gateway_server.prepare_socket(config)
     assert gateway_server.read_peercred(object()) is None
     assert set(tmp_path.iterdir()) == before

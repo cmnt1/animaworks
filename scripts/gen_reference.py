@@ -934,7 +934,9 @@ def _check_or_write(path: Path, expected: str, check: bool, command: str) -> boo
         print(f"Regenerate with: {command}", file=sys.stderr)
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(expected, encoding="utf-8")
+    # LF on every platform: git stores these as eol=lf and the i18n manifest
+    # hashes the bytes, so a CRLF write on Windows would mark them stale in CI.
+    path.write_text(expected, encoding="utf-8", newline="\n")
     logger.info("Wrote %s", path.relative_to(PROJECT_DIR))
     return True
 
