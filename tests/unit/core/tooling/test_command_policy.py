@@ -153,6 +153,31 @@ def test_traversal(tmp_path: Path) -> None:
     d = evaluate_command("cp ../other-anima/report.txt ./a", ctx)
     assert (d.allowed, d.layer) == (False, "traversal")
     assert evaluate_command("cp file1 file2", ctx).allowed is True
+    assert "absolute path" in d.reason
+
+
+@pytest.mark.parametrize(
+    ("cwd_rel", "command", "allowed"),
+    [
+        # climbing out of the anima dir after cd is still caught
+        ("", "cd scratch/t/repo && cat ../../../../other/state/x", False),
+        # .. that stays inside the anima dir, resolved from the cd target
+        ("", "cd scratch/t/repo/sub && cat ../README.md", True),
+        # cwd outside the anima dir (shared worktree): relative paths are not checked
+        ("../../companies/fs/shared/worktrees/x", "bash tools/run.test.sh > ../tests.log 2>&1", True),
+        # remote command for ssh is one quoted argument, not a path
+        ("", "ios-rig-ssh 'cd /Users/main/x/pr; pnpm install > ../pnpm.log'", True),
+        # heredoc body is file content
+        ("", "cat > state/p/a.mjs <<'EOF'\nimport {x} from '../tree/a.js';\nEOF\nnode state/p/a.mjs", True),
+        # absolute paths are not judged by this layer
+        ("", "cat /srv/shared/../common_knowledge/a.md", True),
+        ("", "git diff HEAD^1...HEAD", True),
+    ],
+)
+def test_traversal_resolves_from_cwd(tmp_path: Path, cwd_rel: str, command: str, allowed: bool) -> None:
+    ad = (tmp_path / "animas" / "t-anima").resolve()
+    ctx, _ad, _dd = make_ctx(tmp_path, cwd=(ad / cwd_rel).resolve() if cwd_rel else ad)
+    assert evaluate_command(command, ctx).allowed is allowed
 
 
 def test_other_anima_write(tmp_path: Path) -> None:

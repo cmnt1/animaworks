@@ -18,6 +18,7 @@ from core.i18n import t
 from server.events import emit_direct
 from server.routes.chat_chunk_handler import _chunk_to_event
 from server.routes.chat_emotion import extract_emotion
+from server.routes.chat_files import build_file_message
 from server.routes.chat_models import ChatRequest, _to_image_data
 from server.routes.chat_ws_effects import _emit_ws_side_effects
 from server.stream_registry import StreamRegistry, format_sse_with_id
@@ -34,6 +35,7 @@ async def _run_producer(
     name: str,
     body: ChatRequest,
     saved_paths: list[str],
+    saved_files: list[dict[str, Any]] | None = None,
 ) -> None:
     """Background task: consume IPC stream and write events to StreamRegistry.
 
@@ -41,6 +43,7 @@ async def _run_producer(
     kill this task, allowing the Anima to finish processing.
     """
     stream_done = False
+    saved_files = saved_files or []
     ipc_chunk_count = 0
     keepalive_count = 0
     _start = time.monotonic()
@@ -49,12 +52,29 @@ async def _run_producer(
         await emit_direct(ws_manager, "anima.status", {"name": name, "status": "thinking", "thread_id": body.thread_id})
 
         # Emit stream_start event
-        stream.add_event("stream_start", {"response_id": stream.response_id})
+        start_data: dict[str, Any] = {"response_id": stream.response_id}
+        if saved_files:
+            start_data["files"] = saved_files
+        stream.add_event("stream_start", start_data)
 
         from core.config import load_config
 
         _config = load_config()
         _timeout = float(_config.server.ipc_stream_timeout)
+
+        ipc_params = {
+            "message": build_file_message(body.message, saved_files),
+            "from_person": body.from_person,
+            "intent": body.intent,
+            "stream": True,
+            "images": _to_image_data(body.images),
+            "attachment_paths": saved_paths,
+            "thread_id": body.thread_id,
+            "model": body.model,
+        }
+        if saved_files:
+            ipc_params["display_message"] = body.message
+            ipc_params["files"] = saved_files
 
         logger.info(
             "[PRODUCER] start anima=%s stream=%s user=%s timeout=%.1f",
@@ -67,16 +87,7 @@ async def _run_producer(
         async for ipc_response in supervisor.send_request_stream(
             anima_name=name,
             method="process_message",
-            params={
-                "message": body.message,
-                "from_person": body.from_person,
-                "intent": body.intent,
-                "stream": True,
-                "images": _to_image_data(body.images),
-                "attachment_paths": saved_paths,
-                "thread_id": body.thread_id,
-                "model": body.model,
-            },
+            params=ipc_params,
             timeout=_timeout,
         ):
             ipc_chunk_count += 1

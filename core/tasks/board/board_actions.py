@@ -120,6 +120,27 @@ def _send_task_notice(
     return queue_task_notice(actor, to, task_id, action, detail, owner=owner)
 
 
+def notify_task_scope_note(actor: str, requester: str, task_id: str, title: str, note: str) -> str | None:
+    """Send one report to the requester when the receiver narrows the scope."""
+    from core.i18n import t
+    from core.messaging.messenger import Messenger
+    from core.paths import get_shared_dir
+
+    try:
+        Messenger(get_shared_dir(), actor).send(
+            requester,
+            t("task_update.scope_note_notify", owner=actor, title=title, note=note),
+            msg_type="message",
+            intent="report",
+            meta={"event": "task_scope_note", "task_id": task_id},
+            source="anima",
+        )
+    except Exception as exc:
+        logger.warning("Failed to notify %s about scope note on %s: %s", requester, task_id, exc)
+        return str(exc)
+    return None
+
+
 def run_board_action(
     *,
     actor: str,

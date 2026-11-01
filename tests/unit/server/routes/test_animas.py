@@ -148,6 +148,66 @@ class TestGetAnima:
         assert resp.json()["detail"] == "Anima not found: nonexistent"
 
 
+class TestGetAnimaSummary:
+    async def test_summary_returns_only_lightweight_fields(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        anima_dir.mkdir()
+        (anima_dir / "status.json").write_text(
+            json.dumps({"display_name": "Alice", "model": "test-model", "role": "assistant", "enabled": False}),
+            encoding="utf-8",
+        )
+        app = _make_test_app(animas_dir=tmp_path)
+
+        with (
+            patch("core.memory.manager.MemoryManager") as memory_manager,
+            patch("server.routes.animas._read_busy_sidecar", return_value={"is_busy": True}),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/animas/alice/summary")
+
+        assert response.status_code == 200
+        assert len(response.content) < 10 * 1024
+        data = response.json()
+        assert set(data) == {"name", "display_name", "status", "busy", "model", "role", "enabled"}
+        assert data["name"] == "alice"
+        assert data["display_name"] == "Alice"
+        assert data["model"] == "test-model"
+        assert data["role"] == "assistant"
+        assert data["enabled"] is False
+        assert data["busy"] == {"is_busy": True}
+        assert data["status"]["status"] == "running"
+        assert "identity" not in data and "knowledge_files" not in data
+        memory_manager.assert_not_called()
+
+    async def test_summary_anima_not_found(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/summary")
+        assert response.status_code == 404
+
+    async def test_state_endpoint_reads_current_state_without_listing_memory_files(self, tmp_path):
+        (tmp_path / "alice").mkdir()
+        with patch("core.memory.manager.MemoryManager") as memory_manager:
+            memory = MagicMock()
+            memory.read_current_state.return_value = "Idle"
+            memory_manager.return_value = memory
+            app = _make_test_app(animas_dir=tmp_path)
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/api/animas/alice/state")
+
+        assert response.status_code == 200
+        assert response.json() == {"state": "Idle"}
+        memory.read_current_state.assert_called_once_with()
+        memory.read_identity.assert_not_called()
+        memory.read_injection.assert_not_called()
+        memory.list_knowledge_files.assert_not_called()
+        memory.list_episode_files.assert_not_called()
+        memory.list_procedure_files.assert_not_called()
+
+
 # ── POST /animas/{name}/trigger ─────────────────────────
 
 

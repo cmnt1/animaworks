@@ -10,3 +10,9 @@ def test_is_mcp_mode_includes_d():
     from core.prompt.org_context import _is_mcp_mode
 
     assert _is_mcp_mode("d") is True
+
+
+def test_is_mcp_mode_includes_y():
+    from core.prompt.org_context import _is_mcp_mode
+
+    assert _is_mcp_mode("y") is True

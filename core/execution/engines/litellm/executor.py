@@ -772,6 +772,26 @@ class ToolLoop:
                             )
 
                 empty_final = not full_text.strip()
+                if empty_final and not is_final_iteration and self.empty_responses.should_reprompt():
+                    # Thinking models sometimes stop inside the reasoning block
+                    # and leave no answer; reprompt like execute() does.
+                    if context_event is not None:
+                        yield context_event
+                    for event in post_cleanup_events:
+                        yield event
+                    self.messages.append({"role": "assistant", "content": ""})
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(msg_empty_response()),
+                        }
+                    )
+                    logger.info(
+                        "A stream empty answer at iteration=%d; reprompting (%d used)",
+                        iteration,
+                        self.empty_responses.reprompts_used,
+                    )
+                    continue
                 if empty_final:
                     record_finalization_failure(
                         self.executor._anima_dir,

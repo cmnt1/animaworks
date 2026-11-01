@@ -37,6 +37,10 @@ const source = readFileSync(RENDER_UTILS, "utf8")
   .replace(
     /^import\s+\{\s*api\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
     "const api = async () => ({});",
+  )
+  .replace(
+    /^import\s+\{\s*bustUrl\s*,\s*faceUrl\s*\}\s+from\s+["'][^"']+["'];?\s*$/m,
+    "const bustUrl = () => ''; const faceUrl = () => '';",
   );
 const moduleUrl =
   "data:text/javascript;base64," + Buffer.from(source, "utf8").toString("base64");

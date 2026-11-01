@@ -11,18 +11,12 @@ import pytest
 from core.enclave.egress.config import EgressConfigError, load_egress_config
 
 
-def test_valid_config_with_default_limits() -> None:
-    cfg = load_egress_config({"stages": [{"type": "regex_denylist", "patterns": []}]})
-    assert cfg.max_facts == 50
-    assert cfg.max_fact_chars == 2000
-
-
-def test_custom_limits() -> None:
+def test_legacy_limit_keys_are_ignored() -> None:
     cfg = load_egress_config(
         {"stages": [{"type": "masker", "profile": "default"}], "max_facts": 3, "max_fact_chars": 100}
     )
-    assert cfg.max_facts == 3
-    assert cfg.max_fact_chars == 100
+    assert not hasattr(cfg, "max_facts")
+    assert not hasattr(cfg, "max_fact_chars")
 
 
 def test_all_stage_types_parse() -> None:

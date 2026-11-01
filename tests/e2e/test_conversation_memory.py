@@ -16,7 +16,7 @@ from core.schemas import ModelConfig
 from tests.helpers.mocks import (
     make_litellm_response,
     patch_anthropic_compression,
-    patch_litellm,
+    patch_litellm_streaming,
 )
 
 
@@ -35,14 +35,14 @@ class TestConversationMemory:
         main_resp1 = make_litellm_response(content="Hello, nice to meet you!")
         extract_resp1 = make_litellm_response(content="なし")
 
-        with patch_litellm(main_resp1, extract_resp1):
+        with patch_litellm_streaming(main_resp1, extract_resp1):
             await dp.process_message("Hi there", from_person="human")
 
         # Second message
         main_resp2 = make_litellm_response(content="I'm doing great, thanks!")
         extract_resp2 = make_litellm_response(content="なし")
 
-        with patch_litellm(main_resp2, extract_resp2):
+        with patch_litellm_streaming(main_resp2, extract_resp2):
             await dp.process_message("How are you?", from_person="human")
 
         # Verify conversation.json
@@ -54,6 +54,8 @@ class TestConversationMemory:
 
         # Should have 4 turns: human, assistant, human, assistant
         assert len(turns) == 4
+        assert turns[1]["content"] == "Hello, nice to meet you!"
+        assert turns[3]["content"] == "I'm doing great, thanks!"
         assert turns[0]["role"] == "human"
         assert turns[1]["role"] == "assistant"
         assert turns[2]["role"] == "human"

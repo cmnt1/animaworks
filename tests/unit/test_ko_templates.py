@@ -53,6 +53,8 @@ def test_environment_enforces_worktree_and_credential_resolver(locale: str) -> N
     behavior = (_TEMPLATES_DIR / locale / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
     assert "git worktree" in repo_rules
     assert "main" in repo_rules and "clean" in repo_rules
+    assert "ANIMAWORKS_SCRATCH_DIR" in repo_rules
+    assert "UV_CACHE_DIR" in repo_rules
     assert "secrets.json" in behavior
 
 

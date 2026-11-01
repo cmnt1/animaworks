@@ -1096,6 +1096,7 @@ class TestRunIdleCompaction:
         ("mode", "engine", "storage_engine", "should_clear"),
         [
             ("x", "grok", "grok", True),
+            ("y", "agy", "agy", True),
             ("d", "cursor", "cursor", True),
             ("c", "codex", "codex", True),
             ("g", None, "grok", False),

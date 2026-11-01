@@ -205,6 +205,9 @@ class CursorAgentExecutor(CLIStreamExecutor):
         set in the host environment.
         """
         env = dict(os.environ)
+        from core.execution.workspace_env import update_workspace_env
+
+        update_workspace_env(env, self._anima_dir)  # Includes ANIMAWORKS_SCRATCH_DIR and shared tool caches.
         for key in ("PATH", "HOME", "LANG"):
             if key not in env:
                 val = os.environ.get(key)

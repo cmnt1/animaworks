@@ -25,6 +25,21 @@ At startup the renderer probes
 `GET /api/animas/<name>/assets/pixel_sheet.png`. When it is unavailable, every
 role uses the bundled `sample_01.png` placeholder.
 
+`assets/pixel_sheet.png` is generated automatically as part of Anima asset
+generation whenever the codex CLI is available. The ten rows are produced with
+codex's built-in `image_gen` from the bundled `sample_01.png` (or
+`image_gen.pixel_base_sheet`) plus the Anima's chibi/fullbody and bust-up
+references. Rows are regenerated when bustup or chibi assets change. The sheet
+is written atomically, and a generation that fails mechanical geometry checks
+leaves the previous sheet untouched.
+
+When the codex CLI is unavailable, pixel generation is skipped rather than
+failing asset generation, and the renderer keeps using `sample_01.png`.
+
+The renderer also reloads the sheet in place when an `anima.assets_updated`
+WebSocket event reports `pixel_sheet.png`; changing bustup or chibi assets
+therefore updates the running workspace without a page reload.
+
 The `chars` section of `assets/manifest.json` declares `file`, `frameW`,
 `frameH`, and each animation's `row`, `frames`, and `fps`.
 

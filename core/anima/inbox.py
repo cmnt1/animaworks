@@ -135,6 +135,9 @@ def _is_self_task_completion_notice(msg: Any, anima_name: str) -> bool:
         return False
     if getattr(msg, "from_person", "") != anima_name:
         return False
+    meta = getattr(msg, "meta", None)
+    if isinstance(meta, dict) and "event" in meta:
+        return meta.get("event") == "task_completed"
     body = _extract_user_body(getattr(msg, "content", ""))
     return body.startswith("タスク「") and "が完了しました" in body
 

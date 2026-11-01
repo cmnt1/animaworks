@@ -359,6 +359,7 @@ class TestPipelineInvocation:
         mock_result.model_path = None
         mock_result.rigged_model_path = None
         mock_result.animation_paths = {}
+        mock_result.pixel_sheet_path = None
         mock_result.skipped = []
         mock_result.errors = []
         mock_pipeline.generate_all.return_value = mock_result
@@ -388,7 +389,7 @@ class TestPipelineInvocation:
 
         assert call_kwargs["prompt"] == "1girl, silver hair, red eyes"
         assert call_kwargs["skip_existing"] is False
-        assert call_kwargs["steps"] == ["fullbody", "bustup"]
+        assert call_kwargs["steps"] == ["fullbody", "bustup", "pixel"]
         assert call_kwargs["vibe_image"] == b"PNG_VIBE_IMAGE"
         assert call_kwargs["vibe_strength"] == 0.7
         assert call_kwargs["vibe_info_extracted"] == 0.9

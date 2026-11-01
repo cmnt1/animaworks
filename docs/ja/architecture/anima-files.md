@@ -24,6 +24,7 @@
 | `state/current_state.md` | 進行中の作業、判断、次の手順などを保持する作業状態である。prompt に必要な範囲で取り込まれ、更新は状態ファイル用の lock を介して保護される。 |
 | `state/task_queue.jsonl` | 旧形式のタスクデータが残る場合の移行入力である。現在のタスクの正本は共有 SQLite TaskStore であり、このファイルを実行時の別キューとして扱わない。 |
 | `state/background_tasks/` | `animaworks-tool submit` で開始したバックグラウンド処理の状態と結果を保存する。完了結果は会話や後続の背景実行から通知・参照される。 |
+| `scratch/` | 使い捨ての作業場所である。子プロセスには `ANIMAWORKS_SCRATCH_DIR` としてタスク用の `scratch/task-<id>/` かセッション種類別の `scratch/<種類>/` が渡される。タスク用はタスクの完了・キャンセルで、それ以外は 24 時間放置で housekeeping が削除する。 |
 
 Anima の長期記憶、会話履歴、スキルなどは用途別のサブディレクトリに分かれている。記憶の詳細は `docs/ja/memory/` の各章を参照する。
 

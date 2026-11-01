@@ -178,6 +178,7 @@ describe("streamChat", () => {
     assert.strictEqual(doneData.summary, "Summary text");
     assert.strictEqual(doneData.emotion, "happy");
     assert.deepStrictEqual(doneData.images, []);
+    assert.deepStrictEqual(doneData.files, []);
   });
 
   it("should default emotion to 'neutral' when not provided", async () => {
@@ -214,6 +215,25 @@ describe("streamChat", () => {
 
     assert.strictEqual(doneData.images.length, 1);
     assert.strictEqual(doneData.images[0].path, "assets/avatar_fullbody.png");
+  });
+
+  it("should pass done files payload to callback", async () => {
+    const chunks = [
+      sseEvent("done", {
+        summary: "Summary text",
+        files: [{ name: "report.pdf", path: "attachments/report.pdf", size: 42, media_type: "application/pdf" }],
+      }),
+    ];
+
+    globalThis.fetch = createMockFetch(chunks);
+
+    let doneData = null;
+    await streamChat("test-anima", '{"message":"hello"}', null, {
+      onDone: (data) => { doneData = data; },
+    });
+
+    assert.strictEqual(doneData.files.length, 1);
+    assert.strictEqual(doneData.files[0].path, "attachments/report.pdf");
   });
 
   it("should call onError for error events", async () => {

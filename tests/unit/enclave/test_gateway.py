@@ -72,7 +72,9 @@ class FakeSupervisor:
 
 
 @asynccontextmanager
-async def _running_gateway(tmp_path: Path, supervisor: FakeSupervisor, **config_overrides: object):
+async def _running_gateway(
+    tmp_path: Path, supervisor: FakeSupervisor, *, usage_reader: object = None, **config_overrides: object
+):
     sock_path = tmp_path / "gateway.sock"
     params: dict = {
         "enabled": True,
@@ -86,7 +88,9 @@ async def _running_gateway(tmp_path: Path, supervisor: FakeSupervisor, **config_
     }
     params.update(config_overrides)
     cfg = EnclaveConfig(**params)
-    app = create_gateway_app(get_supervisor=lambda: supervisor, config=cfg, data_dir=tmp_path)
+    app = create_gateway_app(
+        get_supervisor=lambda: supervisor, config=cfg, data_dir=tmp_path, usage_reader=usage_reader
+    )
     sock = prepare_socket(cfg)
     server = uvicorn.Server(
         uvicorn.Config(app, lifespan="off", http=PeerCredHttpProtocol, ws=None, log_level="warning")
@@ -148,7 +152,7 @@ async def _wait_done(
     raise AssertionError(f"job {job_id} did not finish in time")
 
 
-_GOOD_ANSWER = '{"facts": [{"fact": "ping is fine", "evidence": ["record:42"]}]}'
+_GOOD_ANSWER = "ping is fine (record:42)"
 
 
 async def test_health(tmp_path: Path) -> None:
@@ -174,7 +178,7 @@ async def test_ask_success(tmp_path: Path) -> None:
         gate.set()
         done = await _wait_done(client, job_id)
     assert done["status"] == "done"
-    assert done["facts"] == [{"fact": "ping is fine", "evidence": ["record:42"]}]
+    assert done["facts"] == [{"fact": _GOOD_ANSWER, "evidence": []}]
     assert done.get("audit_id")
     # The instruction + progress note + question were forwarded.
     sent = _sup.sent[0]
@@ -182,34 +186,56 @@ async def test_ask_success(tmp_path: Path) -> None:
     assert sent["params"]["from_person"] == "enclave:host"
     assert sent["params"]["thread_id"] == "enclave-case-1"
     assert sent["params"]["intent"] == "question"
-    assert "facts" in sent["params"]["message"]
+    assert "record:" in sent["params"]["message"]
     assert job_id in sent["params"]["message"]
 
 
-async def test_ask_unparseable_answer(tmp_path: Path) -> None:
+async def test_ask_plain_text_answer_is_delivered(tmp_path: Path) -> None:
     sup = FakeSupervisor("the answer is yes, but not valid json")
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
         job_id = resp.json()["job_id"]
         done = await _wait_done(client, job_id)
     assert resp.status_code == 202
-    assert done["status"] == "failed"
-    assert done["error"] == "answer_unparseable"
-    assert done.get("audit_id")
-    # No answer body leaked into the response.
-    assert "answer" not in done
-    assert "yes" not in str(done)
+    assert done["status"] == "done"
+    assert done["facts"] == [{"fact": "the answer is yes, but not valid json", "evidence": []}]
 
 
-async def test_ask_bad_fact_structure(tmp_path: Path) -> None:
-    sup = FakeSupervisor('{"facts": "not-a-list"}')
+async def test_ask_empty_answer(tmp_path: Path) -> None:
+    sup = FakeSupervisor("   ")
     async with _running_gateway(tmp_path, sup) as (client, _sup):
         resp = await client.post("http://enclave/v1/ask", json=_payload())
         job_id = resp.json()["job_id"]
         done = await _wait_done(client, job_id)
     assert resp.status_code == 202
     assert done["status"] == "failed"
-    assert done["error"] == "answer_unparseable"
+    assert done["error"] == "answer_empty"
+    assert done.get("audit_id")
+
+
+async def test_final_response_error_text_matches_engine() -> None:
+    from core.enclave import gateway
+    from core.execution.loop_guards import FINAL_RESPONSE_ERROR_TEXT
+
+    assert gateway._FINAL_RESPONSE_ERROR_TEXT == FINAL_RESPONSE_ERROR_TEXT
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        ("Unable to generate a final response. Please try again.", "answer_unfinished"),
+        ("[Error: prompt too large for azure/responses/gpt-6-luna]", "context_overflow"),
+    ],
+)
+async def test_ask_engine_error_answer_is_failed(tmp_path: Path, answer: str, reason: str) -> None:
+    sup = FakeSupervisor(answer)
+    async with _running_gateway(tmp_path, sup) as (client, _sup):
+        resp = await client.post("http://enclave/v1/ask", json=_payload())
+        job_id = resp.json()["job_id"]
+        done = await _wait_done(client, job_id)
+    assert done["status"] == "failed"
+    assert done["error"] == reason
+    assert not done.get("facts")
 
 
 async def test_ask_egress_blocked(tmp_path: Path) -> None:

@@ -87,6 +87,7 @@ def test_ask_returns_job_id_immediately_and_points_to_status_and_inbox(
     body = json.loads(requests[0].content)
     assert body["from_anima"] == "worker"
     assert body["case_id"] == "case-1"
+    assert "model_profile" not in body
 
 
 def test_ask_wait_polls_until_done_and_formats_facts(
@@ -288,14 +289,45 @@ def test_cli_maps_subcommands_to_tool_schemas(
     monkeypatch.setattr(enclave_mod, "dispatch", lambda name, args: calls.append((name, args)) or "ok")
     monkeypatch.setattr("core.platform.env.anima_dir_env", lambda: "/animas/worker")
 
-    enclave_mod.cli_main(["ask", "--enclave", "data", "--question", "q", "--wait", "15"])
+    enclave_mod.cli_main(["ask", "--enclave", "data", "--question", "q", "--model", "luna-max", "--wait", "15"])
     enclave_mod.cli_main(["status", "--enclave", "data", "--job-id", "job-1"])
     enclave_mod.cli_main(["cancel", "--enclave", "data", "--job-id", "job-2"])
 
     assert calls[0] == (
         "enclave_ask",
-        {"enclave": "data", "anima_dir": "/animas/worker", "question": "q", "case_id": "", "wait_s": 15},
+        {
+            "enclave": "data",
+            "anima_dir": "/animas/worker",
+            "question": "q",
+            "case_id": "",
+            "model": "luna-max",
+            "wait_s": 15,
+        },
     )
     assert calls[1] == ("enclave_status", {"enclave": "data", "anima_dir": "/animas/worker", "job_id": "job-1"})
     assert calls[2] == ("enclave_cancel", {"enclave": "data", "anima_dir": "/animas/worker", "job_id": "job-2"})
     assert capsys.readouterr().out.count("ok") == 3
+
+
+def test_ask_sends_model_profile_and_explains_unknown_one(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        if bodies[-1]["model_profile"] == "luna-max":
+            return httpx.Response(202, json={"job_id": "job-9", "status": "queued"}, request=request)
+        return httpx.Response(
+            400, json={"error": "unknown_model_profile", "available": ["luna-max", "opus-high"]}, request=request
+        )
+
+    _mock_http(monkeypatch, handler)
+    _config(data_dir)
+    args = {"enclave": "data", "question": "q", "anima_dir": "/animas/worker"}
+
+    assert "job-9" in enclave_mod.dispatch("enclave_ask", {**args, "model": "luna-max"})
+    result = enclave_mod.dispatch("enclave_ask", {**args, "model": "fable"})
+    assert "luna-max, opus-high" in result
+    assert [b["model_profile"] for b in bodies] == ["luna-max", "fable"]

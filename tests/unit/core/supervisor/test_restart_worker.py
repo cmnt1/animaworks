@@ -207,7 +207,7 @@ async def test_manual_restart_cancels_worker_waiting_in_backoff(supervisor):
         await s.restart_anima("a")
         assert worker.done()
 
-    stop.assert_awaited_once_with("a")
+    stop.assert_awaited_once_with("a", quiesce=True)
     start.assert_awaited_once_with("a")
     assert "a" not in s._restarting
     assert "a" not in s._restart_worker_tasks

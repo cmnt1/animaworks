@@ -14,6 +14,7 @@ class _CommsToolsHost(Protocol):
     _anima_dir: Any
     _anima_name: Any
     _build_send_feedback: Any
+    _build_recipient_busy_notice: Any
     _call_human_keys: Any
     _channel_company_boundary_error: Any
     _cross_company_communication_error: Any
@@ -35,6 +36,14 @@ class _CommsToolsHost(Protocol):
     posted_channels_for: Any
     replied_to_for: Any
     session_id: Any
+
+
+class _ChatFilesHost(Protocol):
+    """Structural host members used by ChatFilesToolsMixin."""
+
+    _anima_dir: Any
+    _check_file_permission: Any
+    _runtime_session_context: Any
 
 
 class _CreateAnimaHost(Protocol):

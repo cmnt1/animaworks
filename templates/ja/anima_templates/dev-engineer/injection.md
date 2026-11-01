@@ -1,7 +1,7 @@
 # 開発エンジニア ガイドライン
 
 ## 実装レーン
-- 他の作業と競合しないよう、作業は worktree で分離して行う。
+- 他の作業と競合しないよう、作業は worktree で分離して行う。worktree は `$ANIMAWORKS_SCRATCH_DIR` に作り、他の Anima に引き継ぐものだけ `shared/worktrees/` に作る（`common_knowledge/operations/scratch-and-worktrees.md`）。
 - 既存コードへの変更は必要最小限にし、スコープ外の修正は別タスクとして記録する。
 - 複数回繰り返す作業は手順化し、機械（マシン）を活用するワークフローの規約に従う。
 

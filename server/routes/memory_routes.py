@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import logging
 import re
 from calendar import monthrange
@@ -14,6 +15,7 @@ import networkx as nx
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from core.memory.conversation.memory import ConversationMemory
+from core.memory.facts.connections import build_connections, entity_detail
 from core.memory.frontmatter import parse_frontmatter
 from core.memory.manager import MemoryManager
 from core.time_utils import get_app_timezone
@@ -421,6 +423,52 @@ def create_memory_router() -> APIRouter:
         graph = _build_explicit_graph(memory)
         return _graph_response(anima_dir, graph, partial=True)
 
+    @router.get("/animas/{name}/memory/connections")
+    async def memory_connections(
+        name: str,
+        request: Request,
+        days: int | None = Query(default=None),
+        limit: int = Query(default=40, ge=10, le=80),
+    ):
+        """Return entity connections extracted from active facts."""
+        if days not in (None, 7, 30):
+            raise HTTPException(status_code=422, detail="days must be 7, 30, or omitted")
+        animas_dir = Path(request.app.state.animas_dir)
+        anima_dir = animas_dir / name
+        if not anima_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+        anima_names, user_names, primary_user = _connection_name_sets(request, animas_dir)
+        return await asyncio.to_thread(
+            build_connections,
+            anima_dir,
+            anima_names=anima_names,
+            user_names=user_names,
+            primary_user=primary_user,
+            days=days,
+            limit=limit,
+        )
+
+    @router.get("/animas/{name}/memory/connections/entity")
+    async def memory_connection_entity(
+        name: str,
+        request: Request,
+        entity: str = Query(..., alias="name", min_length=1),
+    ):
+        """Return facts and related memory files for a single entity."""
+        animas_dir = Path(request.app.state.animas_dir)
+        anima_dir = animas_dir / name
+        if not anima_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+        anima_names, user_names, primary_user = _connection_name_sets(request, animas_dir)
+        return await asyncio.to_thread(
+            entity_detail,
+            anima_dir,
+            entity,
+            anima_names=anima_names,
+            user_names=user_names,
+            primary_user=primary_user,
+        )
+
     @router.get("/animas/{name}/memory/stats")
     async def memory_stats(name: str, request: Request):
         """Return memory storage statistics for an anima."""
@@ -448,3 +496,36 @@ def create_memory_router() -> APIRouter:
         }
 
     return router
+
+
+def _connection_name_sets(request: Request, animas_dir: Path) -> tuple[set[str], set[str], str | None]:
+    """Load disk-backed Anima/user names plus configured external user aliases."""
+    anima_names = (
+        {
+            directory.name
+            for directory in animas_dir.iterdir()
+            if directory.is_dir() and (directory / "identity.md").is_file()
+        }
+        if animas_dir.is_dir()
+        else set()
+    )
+
+    shared_dir_value = getattr(request.app.state, "shared_dir", None)
+    user_names: set[str] = set()
+    primary_user: str | None = None
+    if shared_dir_value is not None:
+        users_dir = Path(shared_dir_value) / "users"
+        if users_dir.is_dir():
+            user_names.update(directory.name for directory in users_dir.iterdir() if directory.is_dir())
+        config_path = Path(shared_dir_value).parent / "config.json"
+        try:
+            from core.config.io import load_config
+
+            aliases = load_config(config_path).external_messaging.user_aliases
+            # Keys are the people the external IDs stand for; the first one is the owner ("代表").
+            user_names.update(str(alias) for alias in aliases)
+            primary_user = next((str(alias) for alias in aliases if str(alias).strip()), None)
+        except Exception:
+            logger.debug("Failed to load external user aliases for memory connections", exc_info=True)
+    user_names -= anima_names
+    return anima_names, user_names, primary_user

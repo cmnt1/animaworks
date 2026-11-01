@@ -1,46 +1,38 @@
 // ── Bustup Overlay Controller ──────────────────
-import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
+import { bustUrl } from "../../shared/chat/emotion-face.js";
 
 export function createAvatarController(ctx) {
-  const $ = ctx.$;
-  const { state, deps } = ctx;
-  const { escapeHtml } = deps;
+  const { state } = ctx;
 
   async function updateAvatar() {
-    const container = $("chatPageAvatar");
-    if (!container || !state.selectedAnima) {
-      if (container) container.innerHTML = "";
+    if (!state.selectedAnima) {
       state.bustupUrl = null;
       return;
     }
-
-    state.bustupUrl = null;
-    const name = state.selectedAnima;
-    const url = await resolveCachedAvatar(name, bustupCandidates(), "M");
-    if (url) {
-      state.bustupUrl = url;
-      container.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="anima-avatar-img">`;
-      container.style.cursor = "pointer";
-      return;
-    }
-    container.style.cursor = "";
-    container.innerHTML = `<div class="anima-avatar-placeholder">${escapeHtml(name.charAt(0).toUpperCase())}</div>`;
+    // Keep the selected Anima's neutral bustup URL for tab-level callers.
+    state.bustupUrl = bustUrl(state.selectedAnima, "neutral");
   }
 
-  async function showBustupOverlay() {
-    if (!state.selectedAnima) return;
-    // Enlarged overlay: prefer L; fall back to cached M URL from updateAvatar
-    const largeUrl = await resolveCachedAvatar(state.selectedAnima, bustupCandidates(), "L");
-    if (largeUrl) {
-      state.bustupUrl = largeUrl;
-    }
-    if (!state.bustupUrl) return;
+  async function showBustupOverlay(animaName = state.selectedAnima, emotion = "neutral", requestedUrl = "") {
+    if (!animaName) return;
     removeBustupOverlay();
 
     const overlay = document.createElement("div");
     overlay.className = "bustup-overlay";
     overlay.id = "chatBustupOverlay";
-    overlay.innerHTML = `<img class="bustup-overlay-img" src="${escapeHtml(state.bustupUrl)}" alt="${escapeHtml(state.selectedAnima)}">`;
+    const image = document.createElement("img");
+    image.className = "bustup-overlay-img";
+    image.src = requestedUrl || bustUrl(animaName, emotion, "C");
+    image.alt = `${animaName} (${emotion || "neutral"})`;
+    image.addEventListener("error", () => {
+      if (image.dataset.fellBack) {
+        overlay.remove();
+        return;
+      }
+      image.dataset.fellBack = "1";
+      image.src = bustUrl(animaName, "neutral", "C");
+    }, { once: false });
+    overlay.appendChild(image);
     overlay.addEventListener("click", dismissBustupOverlay);
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add("visible"));

@@ -107,7 +107,7 @@ codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
 
 ```bash
 codex exec --full-auto --ephemeral -C /home/user/dev/myproject \
-  -o /tmp/codex_result.txt \
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
   "このプロジェクトのアーキテクチャを分析して改善案を出して。"
 ```
 
@@ -159,7 +159,7 @@ cursor-agent -p --trust --mode ask \
 cursor-agent -p --trust --force \
   --workspace /home/user/dev/myproject \
   --output-format text \
-  "テストカバレッジが低いモジュールを特定して改善して" > /tmp/cursor_result.txt
+  "テストカバレッジが低いモジュールを特定して改善して" > "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt
 ```
 
 ---
@@ -245,9 +245,9 @@ echo "$RESULT"
 
 ```bash
 codex exec --full-auto --ephemeral -C /path \
-  -o /tmp/result.txt "プロンプト"
+  -o "$ANIMAWORKS_SCRATCH_DIR"/result.txt "プロンプト"
 # 結果を読む
-cat /tmp/result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/result.txt
 ```
 
 ### 終了コードで成否判定
@@ -273,8 +273,8 @@ fi
 
 ```bash
 nohup codex exec --full-auto --ephemeral -C /path/to/workspace \
-  -o /tmp/codex_result.txt \
-  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/codex_stdout.log 2>&1 &
 echo "PID: $!"
 ```
 
@@ -283,7 +283,7 @@ cursor-agent の場合:
 ```bash
 nohup cursor-agent -p --trust --force \
   --workspace /path/to/workspace \
-  "プロンプト" > /tmp/cursor_result.txt 2>&1 &
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt 2>&1 &
 echo "PID: $!"
 ```
 
@@ -294,9 +294,9 @@ echo "PID: $!"
 ps -p <PID> > /dev/null 2>&1 && echo "実行中" || echo "完了"
 
 # 結果を読む（完了後）
-cat /tmp/codex_result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt
 # または
-cat /tmp/cursor_result.txt
+cat "$ANIMAWORKS_SCRATCH_DIR"/cursor_result.txt
 ```
 
 ### タイムアウト付き実行
@@ -305,8 +305,8 @@ cat /tmp/cursor_result.txt
 
 ```bash
 nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
-  -o /tmp/codex_result.txt \
-  "プロンプト" > /tmp/codex_stdout.log 2>&1 &
+  -o "$ANIMAWORKS_SCRATCH_DIR"/codex_result.txt \
+  "プロンプト" > "$ANIMAWORKS_SCRATCH_DIR"/codex_stdout.log 2>&1 &
 ```
 
 - 推奨タイムアウト: **30分**（`30m`）

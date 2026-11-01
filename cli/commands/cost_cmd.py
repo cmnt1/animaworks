@@ -9,15 +9,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from core.i18n import t
+
+_BUDGET_FIELDS = ("month", "budget", "consumed", "remaining", "exceeded")
 
 
 def cmd_cost(args: argparse.Namespace) -> None:
     """Show token usage and estimated cost."""
     from core.paths import get_data_dir
+    from core.usage.token_budget import read_budget_fields
     from core.usage.token_usage import TokenUsageLogger
 
     data_dir = get_data_dir()
@@ -28,12 +30,14 @@ def cmd_cost(args: argparse.Namespace) -> None:
     if args.anima:
         anima_dir = animas_dir / args.anima
         if not anima_dir.is_dir():
-            print(f"Error: Anima '{args.anima}' not found at {anima_dir}")
-            sys.exit(1)
+            _cmd_single_enclave(args.anima, anima_dir, days, args.json_output)
+            return
         _show_anima_cost(args.anima, anima_dir, days, args.json_output)
     else:
         anima_dirs = sorted(p for p in animas_dir.iterdir() if p.is_dir() and _has_usage_or_budget(p))
-        if not anima_dirs:
+        enclave_usage, _ = _collect_enclave_usage(days)
+
+        if not anima_dirs and not enclave_usage:
             print("No token usage data found. Start the server and send some messages.")
             return
 
@@ -42,8 +46,10 @@ def cmd_cost(args: argparse.Namespace) -> None:
             for ad in anima_dirs:
                 logger = TokenUsageLogger(ad)
                 summary = logger.summarize(days)
-                summary.update(_read_budget_fields(ad))
+                summary.update(read_budget_fields(ad))
                 result[ad.name] = summary
+            for enclave, name, summary, _budget in enclave_usage:
+                result[f"{name}@{enclave}"] = summary
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             grand_total_cost = 0.0
@@ -57,7 +63,7 @@ def cmd_cost(args: argparse.Namespace) -> None:
             for ad in anima_dirs:
                 logger = TokenUsageLogger(ad)
                 summary = logger.summarize(days)
-                budget_fields = _read_budget_fields(ad)
+                budget_fields = read_budget_fields(ad)
                 if summary["total_sessions"] == 0 and budget_fields["budget"] is None:
                     continue
                 grand_total_cost += summary["total_estimated_cost_usd"]
@@ -68,6 +74,18 @@ def cmd_cost(args: argparse.Namespace) -> None:
                 grand_total_sessions += summary["total_sessions"]
                 grand_total_unknown += summary.get("unknown_pricing_sessions", 0)
                 _print_anima_summary(ad.name, summary, budget_fields)
+
+            for enclave, name, summary, budget_fields in enclave_usage:
+                if summary["total_sessions"] == 0 and budget_fields["budget"] is None:
+                    continue
+                grand_total_cost += summary["total_estimated_cost_usd"]
+                grand_total_input += summary["total_input_tokens"]
+                grand_total_output += summary["total_output_tokens"]
+                grand_total_cache_read += summary.get("total_cache_read_tokens", 0)
+                grand_total_cache_write += summary.get("total_cache_write_tokens", 0)
+                grand_total_sessions += summary["total_sessions"]
+                grand_total_unknown += summary.get("unknown_pricing_sessions", 0)
+                _print_anima_summary(f"{name} (enclave: {enclave})", summary, budget_fields)
 
             if grand_total_sessions > 0:
                 print("=" * 60)
@@ -82,16 +100,108 @@ def cmd_cost(args: argparse.Namespace) -> None:
                 print()
 
 
+def _bucket_summary(summary: dict) -> dict:
+    """Return budget fields extracted from an enclave usage summary."""
+    return {k: summary.get(k) for k in _BUDGET_FIELDS}
+
+
+def _collect_enclave_usage(days: int) -> tuple[list, bool]:
+    """Collect usage from every reachable enclave.
+
+    Returns ``(results, any_reachable)`` where each result is a tuple of
+    ``(enclave, anima, summary, budget_fields)``.  Unreachable enclaves
+    print a single-line notice to stderr and are skipped.
+    """
+    from core.config import load_config
+    from core.integrations.enclave import EnclavePermissionError, EnclaveUnreachable, fetch_enclave_usage
+
+    config = load_config()
+    results: list = []
+    any_reachable = False
+    for enclave_name, client_cfg in config.enclaves.items():
+        try:
+            data = fetch_enclave_usage(enclave_name, client_cfg, days)
+        except EnclavePermissionError:
+            print(
+                f"Note: enclave '{enclave_name}' socket is not readable from this shell; skipping. "
+                'Run with sg animaworks-enclave -c "animaworks cost" or log in again.',
+                file=sys.stderr,
+            )
+            continue
+        except EnclaveUnreachable:
+            print(f"Note: enclave '{enclave_name}' is unreachable; skipping.", file=sys.stderr)
+            continue
+        any_reachable = True
+        if data is None:
+            continue
+        for name, summary in data.get("animas", {}).items():
+            results.append((enclave_name, name, summary, _bucket_summary(summary)))
+    return results, any_reachable
+
+
+def _cmd_single_enclave(name: str, anima_dir: Path, days: int, json_output: bool) -> None:
+    """Show cost for an anima found on an enclave, else fail with exit 1."""
+    from core.config import load_config
+    from core.integrations.enclave import (
+        EnclavePermissionError,
+        EnclaveUnreachable,
+        fetch_enclave_usage,
+    )
+
+    config = load_config()
+    permission_error = False
+    for enclave_name, client_cfg in config.enclaves.items():
+        try:
+            data = fetch_enclave_usage(enclave_name, client_cfg, days, anima=name)
+        except EnclavePermissionError:
+            permission_error = True
+            continue
+        except EnclaveUnreachable:
+            continue
+        if data is None:
+            continue
+        summary = data.get("animas", {}).get(name)
+        if summary is None:
+            continue
+        budget_fields = _bucket_summary(summary)
+        _display_anima_cost(f"{name} (enclave: {enclave_name})", summary, budget_fields, json_output, days)
+        return
+
+    if permission_error:
+        print(
+            f"Error: cannot read '{name}' from enclaves because the animaworks-enclave group "
+            f"is not in the current shell. Run it as "
+            f'sg animaworks-enclave -c "animaworks cost {name}" or log in again.'
+        )
+        sys.exit(1)
+
+    print(f"Error: Anima '{name}' not found at {anima_dir}")
+    sys.exit(1)
+
+
 def _show_anima_cost(name: str, anima_dir: Path, days: int, json_output: bool) -> None:
+    from core.usage.token_budget import read_budget_fields
     from core.usage.token_usage import TokenUsageLogger
 
     logger = TokenUsageLogger(anima_dir)
     summary = logger.summarize(days)
-    budget_fields = _read_budget_fields(anima_dir)
+    budget_fields = read_budget_fields(anima_dir)
+    _display_anima_cost(name, summary, budget_fields, json_output, days)
+
+
+def _display_anima_cost(
+    name: str,
+    summary: dict,
+    budget_fields: dict,
+    json_output: bool,
+    days: int,
+) -> None:
+    """Render one anima's usage summary (shared by local and enclave paths)."""
 
     if json_output:
-        summary.update(budget_fields)
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        payload = dict(summary)
+        payload.update(budget_fields)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if summary["total_sessions"] == 0:
@@ -154,22 +264,6 @@ def _show_anima_cost(name: str, anima_dir: Path, days: int, json_output: bool) -
                 f"{_fmt_cost(data['cost_usd'], data.get('unknown_pricing_sessions', 0), data['sessions'])}"
             )
         print()
-
-
-def _read_budget_fields(anima_dir: Path, *, now: datetime | None = None) -> dict[str, object]:
-    """Return JSON-ready current-month budget fields for one Anima."""
-    from core.time_utils import now_local
-    from core.usage.token_budget import read_token_budget_status
-
-    current = now or now_local()
-    status = read_token_budget_status(anima_dir, now=current)
-    return {
-        "month": current.strftime("%Y-%m"),
-        "budget": status.budget,
-        "consumed": status.consumed,
-        "remaining": status.remaining,
-        "exceeded": status.exceeded,
-    }
 
 
 def _has_usage_or_budget(anima_dir: Path) -> bool:

@@ -537,7 +537,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
         else:
             executor = getattr(getattr(anima, "agent", None), "_executor", None)
             clear_engine = getattr(executor, "session_engine", None)
-            if clear_engine not in {"agent_sdk", "codex", "cursor", "grok"}:
+            if clear_engine not in {"agent_sdk", "codex", "cursor", "grok", "agy"}:
                 clear_engine = None
             _record_result(await _compact_conversation(anima, thread_id, clear_engine=clear_engine))
     except Exception:

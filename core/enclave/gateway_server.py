@@ -10,7 +10,8 @@
 * :func:`prepare_socket` creates and binds the Unix socket with 0660
   permissions (plus an optional group ownership).
 * :class:`PeerCredHttpProtocol` is a uvicorn HTTP protocol that records the
-  connecting process's identity (pid/uid/gid) from ``SO_PEERCRED`` into the
+  connecting process's identity (pid/uid/gid) from ``SO_PEERCRED`` (Linux) or
+  ``LOCAL_PEERCRED`` (macOS) into the
   ASGI scope so the gateway can authorise by uid.
 * :func:`start_gateway` / :func:`stop_gateway` run/stop a uvicorn server
   over that socket inside the app's event loop.
@@ -30,31 +31,59 @@ import uvicorn
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
 from core.enclave.config import EnclaveConfig
-from core.enclave.gateway import create_gateway_app
+from core.enclave.gateway import UsageReader, create_gateway_app
 
 logger = logging.getLogger(__name__)
 
 _SO_PEERCRED_SIZE = struct.calcsize("3i")
 
+# macOS/BSD: getsockopt(SOL_LOCAL, LOCAL_PEERCRED) returns ``struct xucred``
+# (u_int cr_version; uid_t cr_uid; short cr_ngroups; gid_t cr_groups[16]) and
+# LOCAL_PEERPID the peer pid.  SOL_LOCAL is 0 and is not exported by Python.
+_SOL_LOCAL = 0
+_LOCAL_PEERPID = 2
+_XUCRED_FORMAT = "IIh16I"
+_XUCRED_VERSION = 0
+
+
+def _read_peercred_linux(sock: socket.socket) -> dict[str, int]:
+    raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, _SO_PEERCRED_SIZE)
+    pid, uid, gid = struct.unpack("3i", raw)
+    return {"pid": pid, "uid": uid, "gid": gid}
+
+
+def _read_peercred_local(sock: socket.socket) -> dict[str, int]:
+    raw = sock.getsockopt(_SOL_LOCAL, socket.LOCAL_PEERCRED, struct.calcsize(_XUCRED_FORMAT))
+    version, uid, ngroups, *groups = struct.unpack(_XUCRED_FORMAT, raw)
+    if version != _XUCRED_VERSION or ngroups < 1:
+        raise OSError("unexpected xucred layout")
+    pid_raw = sock.getsockopt(_SOL_LOCAL, _LOCAL_PEERPID, struct.calcsize("i"))
+    (pid,) = struct.unpack("i", pid_raw)
+    return {"pid": pid, "uid": uid, "gid": groups[0]}
+
 
 def read_peercred(sock: socket.socket | None) -> dict[str, int] | None:
-    """Read (pid, uid, gid) of the connected peer via ``SO_PEERCRED``.
+    """Read (pid, uid, gid) of the connected peer.
 
-    Returns ``None`` when the socket is unavailable or the option cannot be
-    read, which callers must treat as an untrusted peer.
+    Uses ``SO_PEERCRED`` on Linux and ``LOCAL_PEERCRED``/``LOCAL_PEERPID`` on
+    macOS.  Returns ``None`` when the socket is unavailable, the platform
+    offers neither option, or the option cannot be read, which callers must
+    treat as an untrusted peer.
     """
     if sock is None or not hasattr(socket, "SO_PEERCRED"):
         return None
     try:
-        raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, _SO_PEERCRED_SIZE)
-        pid, uid, gid = struct.unpack("3i", raw)
-        return {"pid": pid, "uid": uid, "gid": gid}
-    except (OSError, TypeError, struct.error):
+        if hasattr(socket, "SO_PEERCRED"):
+            return _read_peercred_linux(sock)
+        if hasattr(socket, "LOCAL_PEERCRED"):
+            return _read_peercred_local(sock)
+    except (OSError, TypeError, ValueError, struct.error):
         return None
+    return None
 
 
 class PeerCredHttpProtocol(H11Protocol):
-    """h11 HTTP protocol that exposes the peer's SO_PEERCRED in the ASGI scope.
+    """h11 HTTP protocol that exposes the peer credentials in the ASGI scope.
 
     Choose this over the ``httptools`` variant because it is pure-Python and
     needs no extra C extension; it is registered via ``Config(http=...)``.
@@ -130,7 +159,7 @@ def _build_server(app: Any, config: EnclaveConfig) -> uvicorn.Server:
     return uvicorn.Server(server_config)
 
 
-async def start_gateway(app: Any) -> None:
+async def start_gateway(app: Any, *, usage_reader: UsageReader | None = None) -> None:
     """Start the enclave gateway in the current event loop, if enabled.
 
     Reads the global config, prepares the Unix socket, and runs a uvicorn
@@ -154,6 +183,7 @@ async def start_gateway(app: Any) -> None:
         get_supervisor=lambda: supervisor,
         config=config.enclave,
         data_dir=data_dir,
+        usage_reader=usage_reader,
     )
     sock = prepare_socket(config.enclave)
     server = _build_server(gateway_app, config.enclave)

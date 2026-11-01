@@ -21,13 +21,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.platform.process import subprocess_session_kwargs
+from core.time_utils import now_jst
 from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
 from server.supervisor.process_handle import ProcessHandle, ProcessState
-from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -494,7 +494,8 @@ class TestRestartCounterReset:
 
         call_order = []
 
-        async def mock_stop(name):
+        async def mock_stop(name, *, quiesce=False):
+            assert quiesce is True
             call_order.append(("stop", name))
             del supervisor.processes[name]
 

@@ -183,7 +183,7 @@ class TestChatRendererBootstrap:
         for i, line in enumerate(lines):
             if 'animaStatus === "bootstrapping"' in line:
                 bootstrap_check_idx = i
-            if "hs.sessions.length === 0 && history.length === 0" in line:
+            if "!hasTimelineHistory && history.length === 0" in line:
                 if empty_check_idx is None:
                     empty_check_idx = i
         assert bootstrap_check_idx is not None, "Bootstrap status check not found"

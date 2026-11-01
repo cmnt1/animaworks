@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=e86300b25bfc210b2aa89a78a6bceb84e2e2fca862aa3a0b917b0dbc8af4c142 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=a4c03b52ba2162ec96ab9ad74c98a9a3b673394395ae37a5d248685cf750d89d generated=2026-10-31 engine=luna model=gpt-6-luna translator=2 -->
 
 # 설정 참조
 
@@ -396,21 +396,23 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 제공업체 및 기본 매개변수. |
+| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 공급자 및 기본 매개변수. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | codex CLI가 있으면 이미지 생성에 최우선으로 사용 |
-| `image_gen.style_reference` | `str \| None` | `null` | 조직 전체에 적용할 스타일 참조 이미지 경로 |
-| `image_gen.style_prefix` | `str` | `""` | 캐릭터 프롬프트 앞에 추가할 공통 스타일 태그 |
-| `image_gen.style_suffix` | `str` | `""` | 캐릭터 프롬프트 뒤에 추가할 공통 스타일 태그 |
-| `image_gen.negative_prompt_extra` | `str` | `""` | 네거티브 프롬프트에 추가할 태그 |
-| `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer 강도 (0.0-1.0) |
-| `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer 정보 추출 (0.0-1.0) |
+| `image_gen.style_reference` | `str \| None` | `null` | 조직 전체에서 사용할 스타일 참조 이미지 경로 |
+| `image_gen.style_prefix` | `str` | `""` | 캐릭터 프롬프트 앞에 추가되는 공통 스타일 태그 |
+| `image_gen.style_suffix` | `str` | `""` | 캐릭터 프롬프트 뒤에 추가되는 공통 스타일 태그 |
+| `image_gen.negative_prompt_extra` | `str` | `""` | 네거티브 프롬프트에 추가되는 태그 |
+| `image_gen.vibe_strength` | `float` | `0.6` | 바이브 전송 강도 (0.0-1.0) |
+| `image_gen.vibe_info_extracted` | `float` | `0.8` | 바이브 전송 정보 추출 (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | 3D 모델 생성 활성화 (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | 기본 픽셀 시트. None이면 번들로 제공되는 sample_01.png 사용 |
+| `image_gen.pixel_concurrency` | `int` | `4` | 픽셀 시트 행별 codex image_gen 호출 병렬 실행 |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
-| `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | 사실적인 스타일에 적용할 재정의 값 |
-| `image_gen.diffusers_text2img_model_anime` | `str` | `""` | 애니메이션 스타일에 적용할 재정의 값 |
+| `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | 사실적인 스타일에 대한 재정의 |
+| `image_gen.diffusers_text2img_model_anime` | `str` | `""` | 애니메이션 스타일에 대한 재정의 |
 | `image_gen.diffusers_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `image_gen.diffusers_torch_dtype` | `Literal['auto', 'float16', 'float32', 'bfloat16']` | `"auto"` | — |
 | `image_gen.diffusers_local_files_only` | `bool` | `true` | — |
@@ -443,25 +445,27 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증 및 사용량 제한 설정. |
-| `server.session_ttl_days` | `int \| None` | `90` | None = 무제한 |
-| `server.ipc_stream_timeout` | `int` | `60` | 청크별 제한 시간(초) |
-| `server.keepalive_interval` | `int` | `30` | 연결 유지 신호 전송 간격(초) |
+| `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증, 사용량 제어 설정. |
+| `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
+| `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
+| `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
+| `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
+| `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
 | `server.supervisor_respawn_max_retries` | `int` | `3` | — |
-| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | 기본 백오프 간격(초) |
-| `server.supervisor_respawn_backoff_max_seconds` | `float` | `1800.0` | 최대 백오프(초) |
-| `server.stream_checkpoint_enabled` | `bool` | `true` | 스트리밍 중 도구 결과 저장 |
-| `server.stream_retry_max` | `int` | `3` | 스트림 연결 끊김 시 자동 재시도 최대 횟수 |
-| `server.stream_retry_delay_s` | `float` | `5.0` | 재시도 간 지연 시간(초) |
-| `server.llm_num_retries` | `int` | `3` | LLM API 호출 재시도 횟수(429/5xx/network) |
+| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | base backoff interval (seconds) |
+| `server.supervisor_respawn_backoff_max_seconds` | `float` | `1800.0` | max backoff (seconds) |
+| `server.stream_checkpoint_enabled` | `bool` | `true` | save tool results during streaming |
+| `server.stream_retry_max` | `int` | `3` | max automatic retries on stream disconnect |
+| `server.stream_retry_delay_s` | `float` | `5.0` | delay between retries (seconds) |
+| `server.llm_num_retries` | `int` | `3` | retries for LLM API calls (429/5xx/network) |
 | `server.ollama_keep_alive` | `str` | `""` | — |
-| `server.ollama_total_timeout` | `int` | `0` | 단일 Ollama 생성 호출의 엄격한 최대 제한 시간(초); 0 = 무제한 |
+| `server.ollama_total_timeout` | `int` | `0` | Hard upper bound (seconds) on a single Ollama generation call; 0 = unlimited |
 | `server.media_proxy` | `MediaProxyConfig` | `{MediaProxyConfig}` | — |
 | `server.media_proxy.mode` | `Literal['allowlist', 'open_with_scan']` | `"open_with_scan"` | — |
 | `server.media_proxy.allowed_domains` | `list[str]` | `["cdn.search.brave.com","images.unsplash.com","images.pexels.com","upload.wikimedia.org"]` | — |
@@ -471,8 +475,8 @@
 | `server.media_proxy.timeout_read_s` | `float` | `10.0` | — |
 | `server.media_proxy.rate_limit_requests` | `int` | `30` | — |
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
-| `server.base_path` | `str` | `""` | 리버스 프록시 하위 경로(예: "/app"); 비어 있으면 루트에 배포 |
-| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* 호출자 확인 |
+| `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
+| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
 
 ### `llm_rate_guard`
 
@@ -633,6 +637,7 @@
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | Include recent chat dialogue in heartbeat context only when the last turn is younger than this many hours; 0 = always include |
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
+| `heartbeat.cron_followup_repeat_suppress_hours` | `float` | `6.0` | Suppress a command cron's LLM follow-up when its output is identical to the previous follow-up for this many hours; 0 disables suppression |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
@@ -717,6 +722,10 @@
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
@@ -732,7 +741,9 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima 수신함 및 알림 표시. |
+| `inbox` | `InboxConfig` | `{InboxConfig}` | anima의 받은 편지함 및 알림 표시. |
+| `inbox.inbox_quiet_seconds` | `float` | `90.0` | — |
+| `inbox.inbox_quiet_max_wait_seconds` | `float` | `300.0` | — |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |
@@ -802,19 +813,21 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 엔클레이브 모드의 서버 설정입니다. 활성화하면 시작 시 보안 가드를 검사합니다. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | 격리된 엔클레이브 모드의 서버 설정. 활성화하면 시작 시 보안 가드를 검사합니다. |
 | `enclave.enabled` | `bool` | `false` | 이 실행 환경을 격리된 엔클레이브로 시작합니다. |
 | `enclave.name` | `str` | `""` | 엔클레이브 게이트웨이가 반환하는 식별 이름입니다. |
 | `enclave.socket_path` | `str` | `""` | 게이트웨이가 수신 대기하는 Unix 도메인 소켓 경로입니다. |
 | `enclave.socket_group` | `str` | `""` | 게이트웨이 소켓에 설정할 OS 그룹입니다. |
-| `enclave.entry_anima` | `str` | `""` | 엔클레이브 내에서 질문을 처리하는 entry anima입니다. |
+| `enclave.entry_anima` | `str` | `""` | 엔클레이브 내에서 질문을 처리하는 엔트리 anima입니다. |
 | `enclave.allowed_peer_uids` | `list[int]` | `[]` | 게이트웨이 연결을 허용할 OS 사용자 UID입니다. |
-| `enclave.max_concurrency` | `int` | `2` | 게이트웨이가 동시에 처리할 수 있는 질문의 최대 개수입니다. |
-| `enclave.request_timeout_s` | `int` | `0` | 질문 처리 및 게이트웨이 응답 시간 제한(초)입니다. |
+| `enclave.max_concurrency` | `int` | `2` | 게이트웨이가 동시에 처리할 질문의 최대 개수입니다. |
+| `enclave.request_timeout_s` | `int` | `0` | 질문 처리 및 게이트웨이 응답의 제한 시간(초)입니다. |
 | `enclave.allowed_llm_credentials` | `list[str]` | `[]` | 엔클레이브 내 anima가 사용할 수 있는 인증 정보 이름입니다. |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | 엔클레이브 내 anima가 참조할 수 있는 JSONL 데이터 세트입니다. |
-| `enclave.datasets.path` | `str` | `"—"` | data directory 내 JSONL 파일의 상대 경로입니다. |
-| `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 검색하기 위한 ID 필드입니다. |
+| `enclave.datasets.path` | `str` | `"—"` | 데이터 디렉터리에 있는 JSONL 파일의 상대 경로입니다. |
+| `enclave.datasets.id_field` | `str` | `"—"` | 레코드를 고유하게 가져오기 위한 ID 필드입니다. |
 | `enclave.datasets.searchable_fields` | `list[str]` | `[]` | 부분 일치 검색을 허용할 필드입니다. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
@@ -824,25 +837,27 @@
 | `enclave.sql_sources.user` | `str` | `"—"` | — |
 | `enclave.sql_sources.password_secret` | `str` | `"—"` | — |
 | `enclave.sql_sources.ssl` | `bool` | `true` | — |
-| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | TLS 검증을 위한 선택적 CA 번들 경로 |
+| `enclave.sql_sources.ssl_ca` | `str \| None` | `null` | TLS 검증에 사용할 선택적 CA 번들 경로 |
 | `enclave.sql_sources.ssl_verify_identity` | `bool` | `false` | — |
 | `enclave.sql_sources.tunnel` | `EnclaveSsmTunnelConfig \| None` | `null` | — |
 | `enclave.sql_sources.tunnel.type` | `Literal['ssm_port_forward']` | `"ssm_port_forward"` | — |
-| `enclave.sql_sources.tunnel.region` | `str` | `"—"` | SSM 및 대상 확인을 위한 AWS 리전 |
+| `enclave.sql_sources.tunnel.region` | `str` | `"—"` | SSM 및 대상 확인에 사용할 AWS 리전 |
 | `enclave.sql_sources.tunnel.target_instance_id` | `str \| None` | `null` | — |
 | `enclave.sql_sources.tunnel.target_tag_name` | `str \| None` | `null` | — |
-| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON을 보관하는 시크릿 이름 |
+| `enclave.sql_sources.tunnel.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON이 저장된 시크릿 이름 |
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
-| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | 터널에 사용할 고정 루프백 포트(호스트 방화벽에서 허용할 수 있음)입니다. 설정하지 않으면 무작위 포트를 사용합니다. |
+| `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | 터널의 고정 루프백 포트(호스트 방화벽에서 허용할 수 있음). 설정하지 않으면 무작위 포트 사용 |
+| `enclave.sql_sources.tunnel.local_port_count` | `int` | `1` | local_port에서 시작하는 연속 루프백 포트 수입니다. 동시 실행 프로세스는 각각 다른 포트를 예약합니다. |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
 | `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.session_variables` | `dict[str, str]` | `{}` | 모든 연결에서 설정되는 사용자 변수(``SET @name = 'value'``)입니다. 예를 들어 세션 변수를 기준으로 필터링하는 행 수준 뷰에 사용할 수 있습니다. |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
-| `enclave.aws_sources.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON을 보관하는 시크릿 이름 |
+| `enclave.aws_sources.aws_secret` | `str` | `"—"` | AWS 인증 정보 JSON이 저장된 시크릿 이름 |
 | `enclave.aws_sources.log_groups` | `list[str]` | `[]` | — |
 | `enclave.aws_sources.pi_resource_id` | `str \| None` | `null` | — |
 | `enclave.aws_sources.rds_instance_id` | `str \| None` | `null` | — |
@@ -851,6 +866,8 @@
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.raw_dir` | `str` | `"raw"` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 외부로 반환할 facts를 처리하는 egress 단계 설정입니다. |
+| `enclave.egress_probe` | `list[str]` | `[]` | — |
+| `enclave.egress_probe_timeout_s` | `float` | `5.0` | — |
 
 ### `enclaves`
 
@@ -900,10 +917,11 @@
 
 ## `models.json`
 
-모델 이름 패턴별 실행 모드와 컨텍스트 윈도우입니다.
+모델명 패턴별 실행 모드와 컨텍스트 윈도우입니다.
 
-| 모델 이름 패턴 | 모드 | 컨텍스트 윈도우 |
+| 모델명 패턴 | 모드 | 컨텍스트 윈도우 |
 |---|---|---:|
+| `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |

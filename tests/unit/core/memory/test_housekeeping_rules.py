@@ -341,6 +341,8 @@ async def test_housekeeping_matches_pre_refactor_file_and_rotation_results(
     before_results = await before_module.run_housekeeping(before_root, housekeeping=config, inbox=inbox_config)
     before_results.pop("pending_failed", None)  # Retired legacy command-descriptor cleanup.
     after_results = await current_housekeeping.run_housekeeping(after_root, housekeeping=config, inbox=inbox_config)
+    for result_key in current_housekeeping._WORKSPACE_SWEEP_RULE_KEYS:
+        after_results.pop(result_key, None)  # These rules are covered against the pre-refactor snapshot separately.
 
     assert before_results == after_results
     before_files = _snapshot_files(before_root)

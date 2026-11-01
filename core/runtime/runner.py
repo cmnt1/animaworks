@@ -97,6 +97,7 @@ class AnimaRunner:
         self._started_at = now_local()
         self._lock_file: Any | None = None
         self._orphan_task_runner_cleanup_done = False
+        self._accepting_work = True
 
         # Delegate instances (created in run() after anima initialization)
         self._scheduler_mgr: SchedulerManager | None = None
@@ -285,6 +286,8 @@ class AnimaRunner:
                 shutdown_event=self.shutdown_event,
                 task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
             )
+            if not self._accepting_work:
+                await self._quiesce_autonomous_work()
             self.anima._pending_executor = self._pending_executor
             from core.tasks.wake import register_wake
 
@@ -997,6 +1000,7 @@ class AnimaRunner:
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "startup_ack": self._handle_startup_ack,
+            "quiesce": self._handle_quiesce,
             "reload_config": self._handle_reload_config,
             "reschedule_heartbeat": self._handle_reschedule_heartbeat,
             "reload_activity_schedule": self._handle_reload_activity_schedule,
@@ -1214,6 +1218,22 @@ class AnimaRunner:
         logger.info("Shutdown requested for %s", self.anima_name)
         self.shutdown_event.set()
         return {"status": "shutting_down"}
+
+    async def _quiesce_autonomous_work(self) -> None:
+        """Stop autonomous work entrances without interrupting active work."""
+        self._accepting_work = False
+        if self._scheduler_mgr is not None:
+            self._scheduler_mgr.quiesce()
+        if self._inbox_limiter is not None:
+            self._inbox_limiter.quiesce()
+        if self._pending_executor is not None:
+            await self._pending_executor.quiesce()
+
+    async def _handle_quiesce(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Stop new scheduled, inbox, and pending-task work before a restart."""
+        logger.info("Quiescing new autonomous work for %s", self.anima_name)
+        await self._quiesce_autonomous_work()
+        return {"status": "quiescing"}
 
     async def _handle_interrupt(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle interrupt request — cancel current LLM session."""

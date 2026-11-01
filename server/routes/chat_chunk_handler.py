@@ -201,9 +201,9 @@ def _chunk_to_event(chunk: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
             "tool_name": chunk["tool_name"],
             "tool_id": chunk["tool_id"],
         }
-        # Engines that already know the arguments at start time (Gemini CLI)
-        # pass them along, so the UI can show them without waiting for
-        # ``tool_detail``.
+        # Engines that already know the arguments at start time (Gemini CLI,
+        # Antigravity CLI) pass them along, so the UI can show them without
+        # waiting for ``tool_detail``.
         raw_input = chunk.get("input")
         if isinstance(raw_input, dict) and raw_input:
             summary = summarize_tool_args(chunk["tool_name"] or "", raw_input)

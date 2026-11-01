@@ -303,6 +303,28 @@ def _load_alias_user_ids() -> set[str]:
         return set()
 
 
+async def _record_inbound_slack_mirror(
+    anima_name: str,
+    *,
+    text: str,
+    slack_user_id: str,
+    channel_id: str,
+    thread_ts: str,
+    source_message_id: str,
+) -> None:
+    """Mirror an alias user's Slack message into the anima's chat log."""
+    from core.activity.slack_mirror import record_inbound_slack_reply
+
+    await record_inbound_slack_reply(
+        anima_name=anima_name,
+        text=text,
+        slack_user_id=slack_user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts,
+        source_message_id=source_message_id,
+    )
+
+
 _THREAD_CTX_SUMMARY_LIMIT = 150
 
 
@@ -772,6 +794,14 @@ class SlackSocketModeManager:
                     external_thread_ts=thread_ts,
                     intent=intent,
                 )
+                await _record_inbound_slack_mirror(
+                    anima_name,
+                    text=text,
+                    slack_user_id=sender,
+                    channel_id=channel_id,
+                    thread_ts=thread_ts,
+                    source_message_id=ts,
+                )
 
                 logger.info(
                     "Per-Anima Socket Mode message routed: channel=%s -> anima=%s (intent=%s, dm=%s, default=%s)",
@@ -811,6 +841,7 @@ class SlackSocketModeManager:
                     text = ctx + text
 
             text = await asyncio.to_thread(resolve_slack_mentions, text, _mention_token)
+            mirror_text = text
             annotation = _build_slack_annotation(channel_id, True, channel_name=ch_name)
             text = annotation + text
 
@@ -824,6 +855,14 @@ class SlackSocketModeManager:
                 external_channel_id=channel_id,
                 external_thread_ts=thread_ts,
                 intent="question",
+            )
+            await _record_inbound_slack_mirror(
+                anima_name,
+                text=mirror_text,
+                slack_user_id=sender,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                source_message_id=ts,
             )
             logger.info(
                 "Per-Anima Socket Mode app_mention routed: channel=%s -> anima=%s",
@@ -948,6 +987,14 @@ class SlackSocketModeManager:
                         external_thread_ts=thread_ts or ts,
                         intent="question",
                     )
+                    await _record_inbound_slack_mirror(
+                        target,
+                        text=text,
+                        slack_user_id=sender,
+                        channel_id=channel_id,
+                        thread_ts=thread_ts,
+                        source_message_id=ts,
+                    )
                 logger.info(
                     "Shared Socket Mode plain-mention routed: channel=%s -> anima(s)=%s",
                     channel_id,
@@ -974,6 +1021,14 @@ class SlackSocketModeManager:
                 external_channel_id=channel_id,
                 external_thread_ts=thread_ts,
                 intent=intent,
+            )
+            await _record_inbound_slack_mirror(
+                anima_name,
+                text=text,
+                slack_user_id=sender,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                source_message_id=ts,
             )
 
             logger.info(
@@ -1012,6 +1067,7 @@ class SlackSocketModeManager:
                     text = ctx + text
 
             text = await asyncio.to_thread(resolve_slack_mentions, text, _shared_tok)
+            mirror_text = text
             annotation = _build_slack_annotation(channel_id, True, channel_name=ch_name)
             text = annotation + text
 
@@ -1025,6 +1081,14 @@ class SlackSocketModeManager:
                 external_channel_id=channel_id,
                 external_thread_ts=thread_ts,
                 intent="question",
+            )
+            await _record_inbound_slack_mirror(
+                anima_name_resolved,
+                text=mirror_text,
+                slack_user_id=event.get("user", ""),
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                source_message_id=ts,
             )
             logger.info(
                 "Shared Socket Mode app_mention routed: channel=%s -> anima=%s",

@@ -326,7 +326,7 @@ class PrimingMixin:
         """Estimate tool definition overhead in tokens based on schema count."""
         registry = getattr(self, "_tool_registry", None) or []
         mode = mode or getattr(self, "_execution_mode", "a")
-        per_schema = self._TOKENS_PER_MCP_SCHEMA if mode in ("s", "c", "x") else self._TOKENS_PER_TOOL_SCHEMA
+        per_schema = self._TOKENS_PER_MCP_SCHEMA if mode in ("s", "c", "x", "y") else self._TOKENS_PER_TOOL_SCHEMA
         return min(max(len(registry) * per_schema, self._MIN_TOOL_OVERHEAD), self._MAX_TOOL_OVERHEAD)
 
     def _fit_prompt_to_context_window(
@@ -446,6 +446,17 @@ class PrimingMixin:
 
         Returns (system_prompt, prompt).
         """
+        # NUL bytes (e.g. a state file truncated by an unclean shutdown) make
+        # CLI engines fail to spawn on every cycle, so drop them here.
+        if "\x00" in system_prompt or "\x00" in prompt:
+            logger.warning(
+                "Stripped NUL bytes from prompt (system=%d, user=%d)",
+                system_prompt.count("\x00"),
+                prompt.count("\x00"),
+            )
+            system_prompt = system_prompt.replace("\x00", "")
+            prompt = prompt.replace("\x00", "")
+
         total = len(system_prompt.encode("utf-8")) + len(prompt.encode("utf-8"))
         logger.info(
             "Pre-flight prompt size: %d bytes (system=%d, user=%d)",

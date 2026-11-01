@@ -149,6 +149,26 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": ("Lines containing 'schedule:' found in cron.md but not recognized by the parser. Please check format."),
     },
+    "scheduler.cron_health_high_frequency_llm": {
+        "ja": (
+            "- 「{task_name}」は高頻度で LLM を起動します。新着の有無などシェルで判定できるなら、"
+            "`type: command` ＋ `skip_pattern` にしてください。"
+        ),
+        "en": (
+            "- '{task_name}' starts an LLM very frequently. If a shell command can detect whether "
+            "there is anything new, use `type: command` + `skip_pattern`."
+        ),
+    },
+    "scheduler.cron_health_command_without_skip": {
+        "ja": (
+            "- 「{task_name}」は command 型で `skip_pattern` が無いため、出力のたびに LLM が起動します。"
+            "通知をスクリプト自身が行うなら `trigger_heartbeat: false` にしてください。"
+        ),
+        "en": (
+            "- '{task_name}' is a command task without `skip_pattern`, so every output starts an LLM. "
+            "If the script notifies by itself, set `trigger_heartbeat: false`."
+        ),
+    },
     "anima.greeting_error": {
         "ja": "[ERROR: 挨拶生成中にエラーが発生しました]",
         "en": "[ERROR: An error occurred during greeting generation]",
@@ -349,22 +369,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "enclave の allowed_peer_uids が空です（少なくとも1つ設定する必要があります）",
         "en": "enclave allowed_peer_uids is empty (at least one must be set)",
     },
+    "enclave.guard.egress_probe_reachable": {
+        "ja": "enclave の egress_probe の宛先 {target} に接続できました（外向き通信の制限が効いていません）",
+        "en": "enclave egress_probe target {target} is reachable (outbound traffic is not restricted)",
+    },
     "enclave.guard.socket_group_missing": {
         "ja": "enclave の socket_group '{group}' が存在しません",
         "en": "enclave socket_group '{group}' does not exist",
     },
     "enclave.gateway.answer_instruction": {
         "ja": (
-            '回答は次の JSON だけで返す: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}。'
-            "根拠ID を必ず付ける。個人を特定できる値は書かない。"
-            "JSON として正しく読めるように、fact と evidence の文字列には改行・二重引用符・バックスラッシュを入れず、"
-            "コードや引用は地の文で言い換える。fact は日本語で、1文ずつ短く分ける"
+            "結論を日本語でそのまま書いて返す（形式は自由）。"
+            "根拠には record: などの ID を添える。個人を特定できる値は書かない。"
+            "回答は伏字処理を通ってから依頼者に届く"
         ),
         "en": (
-            'Answer with the following JSON only: {"facts": [{"fact": "...", "evidence": ["record:..."]}]}. '
-            "Always attach evidence IDs. Do not write values that identify a specific person. "
-            "Keep the JSON valid: no line breaks, double quotes or backslashes inside fact and evidence strings; "
-            "paraphrase code and quotations. Split facts into short single sentences."
+            "Write the conclusion as plain text in any format. "
+            "Cite evidence IDs such as record:. Do not write values that identify a specific person. "
+            "The answer is masked before it reaches the requester."
         ),
     },
     "enclave.gateway.progress_instruction": {
@@ -542,6 +564,18 @@ STRINGS: dict[str, dict[str, str]] = {
     "enclave.tool.schema_question": {
         "ja": "隔離インスタンスに送る質問",
         "en": "the question to send to the isolated instance",
+    },
+    "enclave.tool.schema_model": {
+        "ja": "省略可なモデル指定（enclave 側の model_profiles の名前。例: luna-max / opus-high。省略時は enclave の既定）",
+        "en": "optional model profile name from the enclave's model_profiles (e.g. luna-max / opus-high; defaults to the enclave's default)",
+    },
+    "enclave.tool.unknown_model_profile": {
+        "ja": "エラー: 未知のモデル指定です。使えるもの: {available}",
+        "en": "error: unknown model profile. Available: {available}",
+    },
+    "enclave.tool.model_profile": {
+        "ja": "モデル: {model_profile}",
+        "en": "Model: {model_profile}",
     },
     "enclave.tool.schema_case_id": {
         "ja": "省略可なケース識別子（省略時は anima 名と日付から生成）",

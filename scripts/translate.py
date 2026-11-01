@@ -17,7 +17,7 @@ from scripts.i18n.pipeline import PipelineError, Translator, load_configuration
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate en/ko translations from Japanese source files")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("docs", "templates", "readme", "all"):
+    for command in ("docs", "templates", "all"):
         subparser = subparsers.add_parser(command, help=f"Process {command} translations")
         subparser.add_argument("--check", action="store_true", help="Check generated files and manifest freshness only")
         subparser.add_argument(

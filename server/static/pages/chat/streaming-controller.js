@@ -5,6 +5,12 @@ import {
 } from "./ctx.js";
 import { TextAnimator, stripThinkTags } from "../../shared/chat/render-utils.js";
 import { attachMeetingRound, streamMeetingChat } from "../../shared/chat-stream.js";
+import { clearReplyTarget, getReplyTarget, needsNotificationApi, quoteReplyMessage } from "../../shared/chat/reply-target.js";
+import {
+  ensureThink, restoreThink, thinkOnText, thinkToolStart, thinkToolDetail, thinkToolEnd,
+  thinkDone, thinkError, thinkStop, emitThinkActivity, syncThinkAvatar, bindThinkingHandlers,
+} from "../../shared/chat/thinking-bubble.js";
+import { applyRowEmotion } from "../../shared/chat/emotion-face.js";
 
 const SEND_BTN_ICONS = {
   send: `<svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7" /></svg>`,
@@ -15,7 +21,7 @@ const SEND_BTN_ICONS = {
 export function createStreamingController(ctx) {
   const $ = ctx.$;
   const { state, deps } = ctx;
-  const { t, escapeHtml, logger, fetchActiveStream, fetchStreamProgress } = deps;
+  const { t, api, escapeHtml, logger, fetchActiveStream, fetchStreamProgress } = deps;
   const mgr = state.manager;
 
   mgr.addEventListener("stream-state-changed", () => {
@@ -25,6 +31,25 @@ export function createStreamingController(ctx) {
 
   function isAnimaStreaming(name) { return mgr.isStreamingForAnima(name); }
 
+  // ── Thinking bubble wiring ──────────────────────────────
+  bindThinkingHandlers($("chatPageMessages"), { onStop: () => stopStreaming() });
+
+  function _streamBubble(msg) {
+    if (!msg?.streamId) return null;
+    return $("chatPageMessages")?.querySelector(
+      `.chat-bubble.assistant.streaming[data-stream-id="${CSS.escape(String(msg.streamId))}"]`,
+    ) || null;
+  }
+
+  function _applyDoneEmotion(msg, animaName, emotion) {
+    if (!msg?.think || !emotion) return;
+    const avatar = $("chatPageMessages")?.querySelector(
+      `.think-face[data-think-id="${CSS.escape(msg.think.id)}"]`,
+    );
+    const row = avatar?.closest(".chat-msg-row");
+    if (row) applyRowEmotion(row, animaName, emotion);
+  }
+
   function setSendButtonIcon(sendBtn, mode) {
     sendBtn.innerHTML = SEND_BTN_ICONS[mode] || SEND_BTN_ICONS.send;
   }
@@ -32,6 +57,11 @@ export function createStreamingController(ctx) {
   // ── Context Ring Indicator ──────────────────────────────
   const RING_CIRCUMFERENCE = 97.4; // 2 * PI * 15.5
   const _contextStateByAnima = {};
+
+  function _setRingLabel(ring, pct) {
+    const label = ring.querySelector(".context-ring-label");
+    if (label) label.textContent = `${t("chat.presence.memory_label")} ${pct}%`;
+  }
 
   function _applyRing(ring, ratio, inputTokens, contextWindow) {
     const fg = ring.querySelector(".context-ring-fg");
@@ -47,8 +77,9 @@ export function createStreamingController(ctx) {
     const pct = Math.round(ratio * 100);
     const inK = inputTokens >= 1000 ? `${(inputTokens / 1000).toFixed(0)}k` : String(inputTokens);
     const winK = contextWindow >= 1000 ? `${(contextWindow / 1000).toFixed(0)}k` : String(contextWindow);
-    const usage = contextWindow ? `${pct}%  ${inK} / ${winK}` : `${pct}%`;
+    const usage = contextWindow ? `${pct}% (${inK} / ${winK})` : `${pct}%`;
     ring.title = `${t("chat.context_ring_title")}: ${usage}`;
+    _setRingLabel(ring, pct);
   }
 
   function updateContextRing(data, animaName) {
@@ -76,6 +107,7 @@ export function createStreamingController(ctx) {
       if (fg) fg.style.strokeDashoffset = RING_CIRCUMFERENCE;
       ring.className = "context-ring-wrap";
       ring.title = t("chat.context_ring_title");
+      _setRingLabel(ring, 0);
     }
   }
 
@@ -83,6 +115,9 @@ export function createStreamingController(ctx) {
     const sendBtn = $("chatPageSendBtn");
     const inputVal = $("chatPageInput")?.value?.trim() || "";
     const hasInput = inputVal.length > 0;
+    const attachmentManager = state.imageInputManager;
+    const hasAttachments = Boolean((attachmentManager?.getImageCount() || 0) + (attachmentManager?.getFileCount() || 0));
+    const filesProcessing = attachmentManager?.isProcessingFiles() || false;
     const meetingActive = ctx.controllers.meeting?.isActive?.();
     const meetingMode = state.meetingMode === true;
     const meetingClosed = meetingMode && state.meetingRoom?.closed === true;
@@ -98,13 +133,13 @@ export function createStreamingController(ctx) {
     sendBtn.classList.remove("stop", "interrupt");
     if (meetingMode) {
       setSendButtonIcon(sendBtn, "send");
-      sendBtn.disabled = meetingClosed || !meetingActive || !hasInput || isMeetingStreaming;
+      sendBtn.disabled = meetingClosed || !meetingActive || filesProcessing || (!hasInput && !hasAttachments) || isMeetingStreaming;
     } else if (!isChatStreaming) {
       setSendButtonIcon(sendBtn, "send");
-      sendBtn.disabled = !name || (!hasInput && pendingQueue.length === 0);
-    } else if (hasInput) {
+      sendBtn.disabled = filesProcessing || !name || (!hasInput && !hasAttachments && pendingQueue.length === 0);
+    } else if (hasInput || hasAttachments) {
       setSendButtonIcon(sendBtn, "send");
-      sendBtn.disabled = false;
+      sendBtn.disabled = filesProcessing;
     } else if (pendingQueue.length > 0) {
       setSendButtonIcon(sendBtn, "interrupt");
       sendBtn.classList.add("interrupt");
@@ -129,7 +164,9 @@ export function createStreamingController(ctx) {
     list.innerHTML = pendingQueue.map((p, i) => {
       const txt = escapeHtml(p.text.length > 60 ? p.text.slice(0, 60) + "\u2026" : p.text);
       const img = p.images?.length ? ` <span style="opacity:0.6">(+${p.images.length} images)</span>` : "";
-      return `<div class="pending-queue-item" data-idx="${i}"><span class="pending-queue-item-num">${i + 1}.</span><span class="pending-queue-item-text">${txt || "(images only)"}${img}</span><button class="pending-queue-item-del" data-idx="${i}" type="button">\u2715</button></div>`;
+      const files = p.files?.length ? ` <span style="opacity:0.6">(${t("chat.attach.file_count", { count: p.files.length })})</span>` : "";
+      const fallback = p.files?.length ? t("chat.attach.files_only") : "(images only)";
+      return `<div class="pending-queue-item" data-idx="${i}"><span class="pending-queue-item-num">${i + 1}.</span><span class="pending-queue-item-text">${txt || fallback}${img}${files}</span><button class="pending-queue-item-del" data-idx="${i}" type="button">\u2715</button></div>`;
     }).join("");
     bar.style.display = "";
 
@@ -146,6 +183,9 @@ export function createStreamingController(ctx) {
       if (item) {
         const removed = mgr.removeFromQueue(name, tid, parseInt(item.dataset.idx, 10));
         if (removed) {
+          if (removed.files?.length) {
+            state.imageInputManager?.restoreFiles(removed.files, removed.displayFiles || []);
+          }
           const input = $("chatPageInput");
           if (input) {
             input.value = removed.text;
@@ -170,13 +210,17 @@ export function createStreamingController(ctx) {
     if (!input) return;
     const msg = input.value.trim();
     const hasImages = state.imageInputManager && state.imageInputManager.getImageCount() > 0;
-    if (!msg && !hasImages) return;
+    const hasFiles = state.imageInputManager && state.imageInputManager.getFileCount() > 0;
+    if (!msg && !hasImages && !hasFiles) return;
+    if (state.imageInputManager?.isProcessingFiles()) return;
     const name = state.selectedAnima;
     const tid = state.selectedThreadId;
     mgr.enqueue(name, tid, {
       text: msg,
       images: state.imageInputManager?.getPendingImages() || [],
       displayImages: state.imageInputManager?.getDisplayImages() || [],
+      files: state.imageInputManager?.getPendingFiles() || [],
+      displayFiles: state.imageInputManager?.getDisplayFiles() || [],
     });
     input.value = "";
     input.style.height = "auto";
@@ -218,14 +262,40 @@ export function createStreamingController(ctx) {
   function submitChat() {
     const input = $("chatPageInput");
     if (!input) return;
-    const msg = input.value.trim();
+    const replyTarget = getReplyTarget(state);
+    const targetIsCurrent = (!replyTarget?.animaName || replyTarget.animaName === state.selectedAnima)
+      && (!replyTarget?.threadId || replyTarget.threadId === state.selectedThreadId);
+    if (replyTarget && !targetIsCurrent) {
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+    }
+    const activeReplyTarget = targetIsCurrent ? replyTarget : null;
+    const rawMsg = input.value.trim();
+    // Ordinary notifications are answered in the chat itself, so the Anima replies in the conversation.
+    if (needsNotificationApi(activeReplyTarget) && rawMsg) {
+      sendNotificationReply(rawMsg, activeReplyTarget);
+      return;
+    }
+    const msg = activeReplyTarget && rawMsg ? quoteReplyMessage(rawMsg, activeReplyTarget) : rawMsg;
     const hasImages = state.imageInputManager && state.imageInputManager.getImageCount() > 0;
+    const hasFiles = state.imageInputManager && state.imageInputManager.getFileCount() > 0;
+    if (state.imageInputManager?.isProcessingFiles()) return;
     const meetingActive = ctx.controllers.meeting?.isActive?.();
     const name = state.selectedAnima;
     const tid = state.selectedThreadId;
     const streamCtx = name ? mgr.getStreamingContext(name) : null;
     const isChatStreaming = streamCtx && streamCtx.thread === tid;
     const pendingQueue = name ? mgr.getPendingQueue(name, tid) : [];
+
+    if (activeReplyTarget && (msg || hasImages || hasFiles)) {
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+    }
+
+    if (meetingActive && hasFiles) {
+      state.imageInputManager?.setAttachmentError("chat.attach.meeting_unsupported");
+      return;
+    }
 
     if (meetingActive && (msg || hasImages)) {
       const room = ctx.controllers.meeting?.getRoom?.();
@@ -258,11 +328,13 @@ export function createStreamingController(ctx) {
     }
 
     if (!isChatStreaming) {
-      if (msg || hasImages) {
+      if (msg || hasImages || hasFiles) {
         mgr.enqueue(name, tid, {
           text: msg,
           images: state.imageInputManager?.getPendingImages() || [],
           displayImages: state.imageInputManager?.getDisplayImages() || [],
+          files: state.imageInputManager?.getPendingFiles() || [],
+          displayFiles: state.imageInputManager?.getDisplayFiles() || [],
         });
         input.value = "";
         input.style.height = "auto";
@@ -273,20 +345,23 @@ export function createStreamingController(ctx) {
       const next = mgr.dequeue(name, tid);
       showPendingIndicator();
       if (mgr.getPendingQueue(name, tid).length === 0) hidePendingIndicator();
-      sendChat(next.text, { images: next.images, displayImages: next.displayImages });
+      sendChat(next.text, { images: next.images, displayImages: next.displayImages, files: next.files, displayFiles: next.displayFiles });
       return;
     }
 
-    if (msg || hasImages) {
+    if (msg || hasImages || hasFiles) {
       const images = state.imageInputManager?.getPendingImages() || [];
       const displayImages = state.imageInputManager?.getDisplayImages() || [];
+      const displayFiles = state.imageInputManager?.getDisplayFiles() || [];
       mgr.enqueue(name, tid, {
         text: msg,
         images,
         displayImages,
+        files: state.imageInputManager?.getPendingFiles() || [],
+        displayFiles,
         skipLocalEcho: true,
       });
-      addVisibleQueuedUserMessage(name, tid, msg, displayImages);
+      addVisibleQueuedUserMessage(name, tid, msg, displayImages, displayFiles.length ? { files: displayFiles } : {});
       input.value = "";
       input.style.height = "auto";
       saveDraft(name, "", tid);
@@ -300,8 +375,43 @@ export function createStreamingController(ctx) {
     stopStreaming();
   }
 
+  async function sendNotificationReply(text, target) {
+    const name = target.animaName || state.selectedAnima;
+    const notificationId = target.notificationId || "";
+    const tid = state.selectedThreadId;
+    if (!name || !notificationId) return;
+    const input = $("chatPageInput");
+    try {
+      await api(`/api/animas/${encodeURIComponent(name)}/notifications/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_id: notificationId, text }),
+      });
+      clearReplyTarget(state);
+      ctx.controllers.events?.clearReplyTarget();
+      if (input) {
+        input.value = "";
+        input.style.height = "auto";
+      }
+      saveDraft(name, "", tid);
+      state.imageInputManager?.clearImages();
+      await mgr.loadHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE, state.fetchChatFeedHistory);
+      if (state.selectedAnima === name && state.selectedThreadId === tid) {
+        ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached());
+      }
+      updateSendButton();
+    } catch (error) {
+      logger.warn("Notification reply failed", { anima: name, error: error?.message });
+      ctx.controllers.events?.showReplyError?.(t("chat.line.reply_failed"));
+    }
+  }
+
   async function sendChat(message, overrideImages = null) {
     if (ctx.controllers.meeting?.isActive?.()) {
+      if (overrideImages?.files?.length || state.imageInputManager?.getFileCount()) {
+        state.imageInputManager?.setAttachmentError("chat.attach.meeting_unsupported");
+        return;
+      }
       sendMeetingChat(message, overrideImages);
       return;
     }
@@ -309,8 +419,10 @@ export function createStreamingController(ctx) {
     const name = overrideImages?.targetAnima || state.selectedAnima;
     const images = overrideImages?.images || state.imageInputManager?.getPendingImages() || [];
     const displayImages = overrideImages?.displayImages || state.imageInputManager?.getDisplayImages() || [];
+    const files = overrideImages?.files || state.imageInputManager?.getPendingFiles() || [];
+    const displayFiles = overrideImages?.displayFiles || state.imageInputManager?.getDisplayFiles() || [];
     const tid = overrideImages?.targetThread || state.selectedThreadId;
-    if (!name || (!message.trim() && images.length === 0)) return;
+    if (!name || (!message.trim() && images.length === 0 && files.length === 0)) return;
     if (overrideImages?.skipLocalEcho) {
       markQueuedUserMessageSent(name, tid, message);
     }
@@ -420,15 +532,21 @@ export function createStreamingController(ctx) {
     let streamingMsg = null;
     let _textAnimator = null;
     let _thinkingAnimator = null;
+    const emitThink = (extra = {}) => emitThinkActivity({ anima: name, threadId: tid, msg: streamingMsg, ...extra });
+    const syncAvatar = () => { if (isVisible()) syncThinkAvatar(_streamBubble(streamingMsg), streamingMsg); };
 
     const { success, error } = await mgr.sendChat(name, tid, message, {
       model: state.modelByThread[`${name}|${tid}`] || undefined,
       images,
       displayImages,
       skipUserEcho: !!overrideImages?.skipLocalEcho,
+      files,
+      displayFiles,
       callbacks: {
+        onFilesReady: () => renderFull(),
         onStreamCreated: msg => {
           streamingMsg = msg;
+          ensureThink(msg);
           _textAnimator = new TextAnimator({
             onUpdate: (displayText) => {
               if (!streamingMsg) return;
@@ -439,15 +557,23 @@ export function createStreamingController(ctx) {
           _textAnimator.start();
           renderFull();
           updateSendButton();
+          emitThink();
         },
         onTextDelta: text => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.afterHeartbeatRelay = false;
           streamingMsg.text += text;
           if (_textAnimator) _textAnimator.push(text);
+          if (thinkOnText(streamingMsg)) {
+            renderBubble(streamingMsg, "tools");
+            syncAvatar();
+            emitThink();
+          }
         },
         onToolStart: (toolName, detail) => {
           if (!streamingMsg?.streaming) return;
+          const { moved } = thinkToolStart(streamingMsg, toolName, detail?.tool_id);
+          if (moved && _textAnimator) _textAnimator.start();
           streamingMsg.activeTool = toolName;
           if (!streamingMsg.toolHistory) streamingMsg.toolHistory = [];
           streamingMsg.toolHistory.push({
@@ -455,11 +581,14 @@ export function createStreamingController(ctx) {
             tool_id: detail?.tool_id || "",
             started_at: Date.now(),
           });
-          renderBubble(streamingMsg, "tools");
+          renderBubble(streamingMsg, moved ? "all" : "tools");
+          syncAvatar();
+          emitThink();
           ctx.controllers.workIndicator?.onToolStart(toolName, detail);
         },
         onToolDetail: (_toolName, detailText, info) => {
           if (!streamingMsg?.streaming) return;
+          thinkToolDetail(streamingMsg, info?.tool_id, detailText);
           if (streamingMsg.toolHistory && info?.tool_id) {
             for (let i = streamingMsg.toolHistory.length - 1; i >= 0; i--) {
               const entry = streamingMsg.toolHistory[i];
@@ -475,6 +604,7 @@ export function createStreamingController(ctx) {
         onToolEnd: (detail) => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.activeTool = null;
+          thinkToolEnd(streamingMsg, detail);
           if (streamingMsg.toolHistory && detail?.tool_id) {
             for (let i = streamingMsg.toolHistory.length - 1; i >= 0; i--) {
               const entry = streamingMsg.toolHistory[i];
@@ -489,11 +619,12 @@ export function createStreamingController(ctx) {
             }
           }
           renderBubble(streamingMsg, "tools");
+          emitThink();
           ctx.controllers.workIndicator?.onToolEnd(detail);
         },
         onChainStart: () => {},
-        onCompressionStart: () => { if (!streamingMsg?.streaming) return; streamingMsg.compressing = true; renderBubble(streamingMsg, "text"); },
-        onCompressionEnd: () => { if (!streamingMsg?.streaming) return; streamingMsg.compressing = false; renderBubble(streamingMsg, "text"); },
+        onCompressionStart: () => { if (!streamingMsg?.streaming) return; streamingMsg.compressing = true; renderBubble(streamingMsg, "all"); emitThink(); },
+        onCompressionEnd: () => { if (!streamingMsg?.streaming) return; streamingMsg.compressing = false; renderBubble(streamingMsg, "all"); emitThink(); },
         onHeartbeatRelayStart: ({ message: msg }) => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.heartbeatRelay = true; streamingMsg.heartbeatText = "";
@@ -540,6 +671,8 @@ export function createStreamingController(ctx) {
         onContextUpdate: (ctxData) => { updateContextRing(ctxData, name); },
         onError: ({ message: errorMsg }) => {
           logger.debug(`onError: ${errorMsg}`);
+          thinkError(streamingMsg);
+          emitThink();
           if (!streamingMsg?.text) {
             void (async () => {
               let recoveredText = "";
@@ -558,29 +691,35 @@ export function createStreamingController(ctx) {
           }
           finalizeStreamError(streamingMsg, errorMsg);
         },
-        onDone: ({ summary, images: doneImages, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
+        onDone: ({ summary, emotion, images: doneImages, files: doneFiles, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
           if (_textAnimator) _textAnimator.flush();
           if (_thinkingAnimator) { _thinkingAnimator.flush(); _thinkingAnimator = null; }
           if (!streamingMsg) return;
+          streamingMsg.activeTool = null;
           let text = summary || streamingMsg.text || "";
           const { thinking: strippedThinking, response: cleanResponse } = stripThinkTags(text);
-          streamingMsg.text = cleanResponse || t("chat.empty_response");
+          // Work-in-progress talk before the last tool stays in the steps, not the reply.
+          const reply = thinkDone(streamingMsg, cleanResponse, { aligned: !!summary, emotion });
+          streamingMsg.text = reply || t("chat.empty_response");
+          streamingMsg.emotion = emotion || null;
           if (strippedThinking && !streamingMsg.thinkingText) {
             streamingMsg.thinkingText = strippedThinking;
           }
           delete streamingMsg._displayText;
           delete streamingMsg._displayThinkingText;
           streamingMsg.images = doneImages || [];
+          streamingMsg.files = doneFiles || [];
           if (!streamingMsg.thinkingText && thinkingSummary) {
             streamingMsg.thinkingText = thinkingSummary;
           }
           streamingMsg.streaming = false;
-          streamingMsg.activeTool = null;
           streamingMsg.heartbeatRelay = false; streamingMsg.heartbeatText = ""; streamingMsg.afterHeartbeatRelay = false;
           if (contextUsageRatio || contextWindow) {
             updateContextRing({ contextUsageRatio, inputTokens, contextWindow, threshold: contextThreshold }, name);
           }
           renderFull();
+          _applyDoneEmotion(streamingMsg, name, emotion);
+          emitThink({ emotion });
           ctx.controllers.activity.addLocalActivity("chat", name, `${t("chat.response_prefix")} ${streamingMsg.text.slice(0, 100)}`);
           ctx.controllers.renderer.markResponseComplete(name, tid);
           ctx.controllers.workIndicator?.onStreamSettled();
@@ -600,6 +739,7 @@ export function createStreamingController(ctx) {
           delete streamingMsg._displayText;
           delete streamingMsg._displayThinkingText;
           streamingMsg.streaming = false; streamingMsg.activeTool = null;
+          if (thinkStop(streamingMsg)) emitThink();
           if (!streamingMsg.text) streamingMsg.text = t("chat.interrupted");
           if (isVisible()) ctx.controllers.renderer.renderChat();
           ctx.controllers.workIndicator?.onStreamSettled();
@@ -614,6 +754,7 @@ export function createStreamingController(ctx) {
         try {
           if (streamingMsg && streamingMsg.streaming) {
             streamingMsg.streaming = false;
+            if (thinkStop(streamingMsg)) emitThink();
             delete streamingMsg._displayText;
             if (!streamingMsg.text) {
               streamingMsg.text = streamingMsg.afterHeartbeatRelay ? t("chat.receive_failed") : t("chat.empty_response");
@@ -642,6 +783,8 @@ export function createStreamingController(ctx) {
             setTimeout(() => sendChat(next.text, {
               images: next.images,
               displayImages: next.displayImages,
+              files: next.files,
+              displayFiles: next.displayFiles,
               targetAnima: name,
               targetThread: tid,
               skipLocalEcho: !!next.skipLocalEcho,
@@ -988,12 +1131,17 @@ export function createStreamingController(ctx) {
     let streamingMsg = null;
     let _resumeAnimator = null;
     let _resumeThinkingAnimator = null;
+    let resumeBase = "";
+    const isVisibleR = () => state.selectedAnima === animaName && state.selectedThreadId === tid;
+    const emitThink = (extra = {}) => emitThinkActivity({ anima: animaName, threadId: tid, msg: streamingMsg, ...extra });
+    const syncAvatar = () => { if (isVisibleR()) syncThinkAvatar(_streamBubble(streamingMsg), streamingMsg); };
 
     await mgr.resumeStream(animaName, tid, {
       callbacks: {
         onStreamCreated: msg => {
           streamingMsg = msg;
-          const resumeBase = msg.text || "";
+          restoreThink(msg);
+          resumeBase = msg.text || "";
           _resumeAnimator = new TextAnimator({
             onUpdate: (displayText) => {
               if (!streamingMsg) return;
@@ -1004,26 +1152,43 @@ export function createStreamingController(ctx) {
           _resumeAnimator.start();
           ctx.controllers.renderer.renderChat(smartScroll());
           updateSendButton();
+          emitThink();
         },
         onTextDelta: text => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.text += text;
           if (_resumeAnimator) _resumeAnimator.push(text);
+          if (thinkOnText(streamingMsg)) {
+            renderBubbleR(streamingMsg, "tools");
+            syncAvatar();
+            emitThink();
+          }
         },
         onToolStart: (toolName, detail) => {
           if (!streamingMsg?.streaming) return;
+          const { moved } = thinkToolStart(streamingMsg, toolName, detail?.tool_id);
+          if (moved) {
+            resumeBase = "";
+            if (_resumeAnimator) _resumeAnimator.start();
+          }
           streamingMsg.activeTool = toolName;
-          renderBubbleR(streamingMsg, "tools");
+          renderBubbleR(streamingMsg, moved ? "all" : "tools");
+          syncAvatar();
+          emitThink();
           ctx.controllers.workIndicator?.onToolStart(toolName, detail);
         },
         onToolDetail: (toolName, detailText, info) => {
           if (!streamingMsg?.streaming) return;
+          thinkToolDetail(streamingMsg, info?.tool_id, detailText);
+          renderBubbleR(streamingMsg, "tools");
           ctx.controllers.workIndicator?.onToolDetail(toolName, detailText, info);
         },
         onToolEnd: (detail) => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.activeTool = null;
+          thinkToolEnd(streamingMsg, detail);
           renderBubbleR(streamingMsg, "tools");
+          emitThink();
           ctx.controllers.workIndicator?.onToolEnd(detail);
         },
         onThinkingStart: () => {
@@ -1056,18 +1221,23 @@ export function createStreamingController(ctx) {
         onError: ({ message: errorMsg }) => {
           if (_resumeAnimator) _resumeAnimator.flush();
           if (_resumeThinkingAnimator) { _resumeThinkingAnimator.flush(); _resumeThinkingAnimator = null; }
+          thinkError(streamingMsg);
+          emitThink();
           if (streamingMsg) { streamingMsg.text += `\n${t("chat.error_prefix")} ${errorMsg}`; delete streamingMsg._displayText; delete streamingMsg._displayThinkingText; streamingMsg.streaming = false; if (state.selectedAnima === animaName && state.selectedThreadId === tid) ctx.controllers.renderer.renderChat(smartScroll()); }
           ctx.controllers.workIndicator?.onStreamSettled();
         },
         onContextUpdate: (ctxData) => { updateContextRing(ctxData, animaName); },
-        onDone: ({ summary, images, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
+        onDone: ({ summary, emotion, images, files: doneFiles, thinkingSummary, contextUsageRatio, inputTokens, contextWindow, contextThreshold }) => {
           if (_resumeAnimator) _resumeAnimator.flush();
           if (_resumeThinkingAnimator) { _resumeThinkingAnimator.flush(); _resumeThinkingAnimator = null; }
           if (streamingMsg) {
-            streamingMsg.text = summary || streamingMsg.text || t("chat.empty_response");
+            const reply = thinkDone(streamingMsg, summary || streamingMsg.text || "", { aligned: !!summary, emotion });
+            streamingMsg.text = reply || t("chat.empty_response");
+            streamingMsg.emotion = emotion || null;
             delete streamingMsg._displayText;
             delete streamingMsg._displayThinkingText;
             streamingMsg.images = images || [];
+            streamingMsg.files = doneFiles || [];
             if (!streamingMsg.thinkingText && thinkingSummary) {
               streamingMsg.thinkingText = thinkingSummary;
             }
@@ -1075,7 +1245,9 @@ export function createStreamingController(ctx) {
             if (contextUsageRatio || contextWindow) {
               updateContextRing({ contextUsageRatio, inputTokens, contextWindow, threshold: contextThreshold }, animaName);
             }
-            if (state.selectedAnima === animaName && state.selectedThreadId === tid) ctx.controllers.renderer.renderChat(smartScroll());
+            if (isVisibleR()) ctx.controllers.renderer.renderChat(smartScroll());
+            _applyDoneEmotion(streamingMsg, animaName, emotion);
+            emitThink({ emotion });
             ctx.controllers.renderer.markResponseComplete(animaName, tid);
           }
           ctx.controllers.workIndicator?.onStreamSettled();
@@ -1088,6 +1260,7 @@ export function createStreamingController(ctx) {
         try {
           if (streamingMsg?.streaming) {
             streamingMsg.streaming = false;
+            if (thinkStop(streamingMsg)) emitThink();
             delete streamingMsg._displayText;
             delete streamingMsg._displayThinkingText;
             if (!streamingMsg.text) streamingMsg.text = t("chat.empty_response");
@@ -1101,7 +1274,7 @@ export function createStreamingController(ctx) {
             const next = mgr.dequeue(animaName, tid);
             showPendingIndicator();
             if (mgr.getPendingQueue(animaName, tid).length === 0) hidePendingIndicator();
-            setTimeout(() => sendChat(next.text, { images: next.images, displayImages: next.displayImages, targetAnima: animaName, targetThread: tid }), 150);
+            setTimeout(() => sendChat(next.text, { images: next.images, displayImages: next.displayImages, files: next.files, displayFiles: next.displayFiles, targetAnima: animaName, targetThread: tid }), 150);
           }
         }
       },

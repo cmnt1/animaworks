@@ -192,7 +192,7 @@ class TestProcessSupervisorSystemCronE2E:
         assert sup.is_scheduler_running() is True
         jobs = sup.scheduler.get_jobs()
         # Root-owned activity schedule polling was added in 72e47cf4.
-        assert len(jobs) == 7  # daily + weekly + indexing + activity schedule + activity_log + housekeeping + dm_log
+        assert len(jobs) == 8  # daily + weekly + indexing + activity schedule + activity_log + housekeeping + workspace sweep + dm_log
 
         # Check job details
         daily = sup.scheduler.get_job("system_daily_consolidation")
@@ -206,6 +206,10 @@ class TestProcessSupervisorSystemCronE2E:
         housekeeping = sup.scheduler.get_job("system_housekeeping")
         assert housekeeping is not None
         assert "Housekeeping" in housekeeping.name
+
+        workspace_sweep = sup.scheduler.get_job("system_workspace_sweep")
+        assert workspace_sweep is not None
+        assert "Workspace Sweep" in workspace_sweep.name
 
         indexing = sup.scheduler.get_job("system_daily_indexing")
         assert indexing is not None

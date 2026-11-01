@@ -110,13 +110,15 @@ def test_anima_activity_summaries_match_the_event_contract() -> None:
     assert heartbeat
 
     message_received = [call for call in calls if call.args[0].value == "message_received"]
+    # The chat path logs the text shown in the history (without the attachment list given to the model).
     content_summary = [
         call
         for call in message_received
+        for name in ("content", "history_content")
         if ast.dump(_call_keyword(call, "content"), include_attributes=False)
-        == ast.dump(_expression("content"), include_attributes=False)
+        == ast.dump(_expression(name), include_attributes=False)
         and ast.dump(_call_keyword(call, "summary"), include_attributes=False)
-        == ast.dump(_expression("content[:100]"), include_attributes=False)
+        == ast.dump(_expression(f"{name}[:100]"), include_attributes=False)
     ]
     assert len(content_summary) == 2
 

@@ -95,6 +95,7 @@ class EnclaveJob:
     error: str = ""
     audit_id: str = ""
     delivered: bool = False
+    model_profile: str = ""
 
 
 class EnclaveJobStore:
@@ -136,6 +137,7 @@ class EnclaveJobStore:
                 "error": job.error,
                 "audit_id": job.audit_id,
                 "delivered": job.delivered,
+                "model_profile": job.model_profile,
             },
             mode=0o600,
             ensure_ascii=False,

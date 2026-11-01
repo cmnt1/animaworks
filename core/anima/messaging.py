@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator
 from contextlib import nullcontext
 from typing import Any
 
+from core.anima.chat_attachments import collect_outbound_files
 from core.anima.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.anima.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.anima.response_normalize import normalize_user_facing_response_text
@@ -94,6 +95,14 @@ def _record_chat_user_turn(owner: Any) -> None:
         request_background_review(owner.anima_dir, "", user_turn=True)
     except Exception:
         logger.warning("Could not queue chat background review for %s", getattr(owner, "name", "unknown"))
+
+
+def _chat_received_meta(thread_id: str, files: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Build message_received metadata, retaining persisted file references."""
+    meta: dict[str, Any] = {"from_type": "human", "thread_id": thread_id}
+    if files:
+        meta["files"] = files
+    return meta
 
 
 def _chat_fallback_reason_from_exception(exc: Exception) -> FailoverReason | None:
@@ -408,6 +417,7 @@ async def _inject_chat_message(
     from_person: str,
     thread_id: str,
     attachment_paths: list[str] | None = None,
+    files: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Persist and inject one user turn into the active Mode S stream."""
     conversation = owner._active_chat_conversations.get(thread_id)
@@ -444,7 +454,7 @@ async def _inject_chat_message(
         summary=content[:100],
         from_person=from_person,
         channel="chat",
-        meta={"from_type": "human", "thread_id": thread_id, "steer": True},
+        meta={**_chat_received_meta(thread_id, files), "steer": True},
         origin=ORIGIN_HUMAN,
     )
     _record_chat_user_turn(owner)
@@ -545,15 +555,18 @@ class MessagingMixin:
         from_person: str = "human",
         thread_id: str = "default",
         attachment_paths: list[str] | None = None,
+        files: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Inject and persist a user turn in the active streaming chat."""
         self._validate_thread_id(thread_id)
+        file_kwargs = {"files": files} if files else {}
         return await _inject_chat_message(
             self,
             content,
             from_person=from_person,
             thread_id=thread_id,
             attachment_paths=attachment_paths,
+            **file_kwargs,
         )
 
     async def _sync_interactive_bootstrap_state(self: _MessagingHost) -> None:
@@ -803,9 +816,16 @@ class MessagingMixin:
         meeting_participants: list[str] | None = None,
         voice_mode: bool = False,
         model: str | None = None,
+        display_message: str | None = None,
+        files: list[dict[str, Any]] | None = None,
     ) -> str | dict[str, Any]:
         """Run the streaming chat pipeline and return its completed response."""
         cycle_result: dict[str, Any] | None = None
+        attachment_kwargs: dict[str, Any] = {}
+        if display_message is not None:
+            attachment_kwargs["display_message"] = display_message
+        if files:
+            attachment_kwargs["files"] = files
         async for chunk in self.process_message_stream(
             content,
             from_person=from_person,
@@ -819,6 +839,7 @@ class MessagingMixin:
             voice_mode=voice_mode,
             model=model,
             _sync_compat=True,
+            **attachment_kwargs,
         ):
             if chunk.get("type") == "cycle_done":
                 raw_result = chunk.get("cycle_result")
@@ -844,6 +865,8 @@ class MessagingMixin:
         meeting_participants: list[str] | None = None,
         voice_mode: bool = False,
         model: str | None = None,
+        display_message: str | None = None,
+        files: list[dict[str, Any]] | None = None,
         *,
         _sync_compat: bool = False,
     ) -> AsyncGenerator[dict, None]:
@@ -856,6 +879,7 @@ class MessagingMixin:
         ``process_message`` drains this generator.
         """
         self._validate_thread_id(thread_id)
+        history_content = content if display_message is None else display_message
         lock = self._get_thread_lock(thread_id)
 
         # ── Bootstrap guard: return immediately if bootstrap is running ──
@@ -981,7 +1005,7 @@ class MessagingMixin:
                 # Pre-save: persist user input before agent execution
                 conv_memory.append_turn(
                     "human",
-                    content,
+                    history_content,
                     attachments=attachment_paths or [],
                 )
                 await _persist_conversation(conv_memory)
@@ -990,23 +1014,23 @@ class MessagingMixin:
                 await _write_conversation_transcript(
                     conv_memory,
                     "human",
-                    content,
+                    history_content,
                     from_person=from_person,
                     thread_id=thread_id,
                     attachments=attachment_paths or None,
                 )
 
                 # Shared conversation log: record human message
-                self._log_human_conversation(content, from_person, thread_id)
+                self._log_human_conversation(history_content, from_person, thread_id)
 
                 # Activity log: message received
                 received_activity = await self._activity.alog(
                     "message_received",
-                    content=content,
-                    summary=content[:100],
+                    content=history_content,
+                    summary=history_content[:100],
                     from_person=from_person,
                     channel="chat",
-                    meta={"from_type": "human", "thread_id": thread_id},
+                    meta=_chat_received_meta(thread_id, files),
                     origin=ORIGIN_HUMAN,
                 )
                 live_session_started_at = getattr(received_activity, "ts", None)
@@ -1021,6 +1045,8 @@ class MessagingMixin:
                 # Streaming journal: write-ahead log for crash recovery
                 journal = StreamingJournal(self.anima_dir, thread_id=thread_id)
                 partial_response = ""
+                text_segment = ""
+                interim_texts: list[str] = []
                 cycle_done = False
                 agent_session_acquired = False
                 self._active_chat_conversations[thread_id] = conv_memory
@@ -1052,9 +1078,13 @@ class MessagingMixin:
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")
                             partial_response += delta_text
+                            text_segment += delta_text
                             await asyncio.to_thread(journal.write_text, delta_text)
 
                         if chunk.get("type") == "tool_start":
+                            if text_segment.strip():
+                                interim_texts.append(text_segment.strip()[:2000])
+                            text_segment = ""
                             await asyncio.to_thread(
                                 journal.write_tool_start,
                                 tool=chunk.get("tool_name", ""),
@@ -1117,8 +1147,18 @@ class MessagingMixin:
                             remaining = max(0, 5 - len(response_artifacts))
                             response_artifacts.extend(local_artifacts[:remaining])
                             cycle_result["images"] = response_artifacts
+                            response_files = collect_outbound_files(
+                                self.anima_dir,
+                                str(cycle_result.get("request_id") or ""),
+                                thread_id=thread_id,
+                                since=live_session_started_at,
+                            )
+                            if response_files:
+                                cycle_result["files"] = response_files
                             display_summary = summary
                             resp_meta: dict[str, Any] = {"thread_id": thread_id}
+                            if interim_texts:
+                                resp_meta["interim_texts"] = interim_texts[:20]
                             for _field in ("session_type", "request_id", "tool_session_id"):
                                 _value = cycle_result.get(_field)
                                 if _value:
@@ -1156,6 +1196,8 @@ class MessagingMixin:
                                 resp_meta["thinking_text"] = thinking_text
                             if response_artifacts:
                                 resp_meta["images"] = response_artifacts
+                            if response_files:
+                                resp_meta["files"] = response_files
                             await self._activity.alog(
                                 "response_sent",
                                 content=display_summary,

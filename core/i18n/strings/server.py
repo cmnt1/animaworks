@@ -119,6 +119,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Animaが再起動中です。しばらく待ってから再試行してください。",
         "en": "Anima is restarting. Please wait and retry.",
     },
+    "cli.server_waiting_for_work": {
+        "ja": "実行中の作業を待っています（最大 {seconds} 秒）",
+        "en": "Waiting for active work to finish (up to {seconds} seconds)",
+        "ko": "실행 중인 작업이 끝날 때까지 기다립니다 (최대 {seconds}초)",
+    },
+    "activity.cron_rerun": {
+        "ja": "中断された cron を再実行します: {task_name}",
+        "en": "Rerunning interrupted cron: {task_name}",
+        "ko": "중단된 cron을 다시 실행합니다: {task_name}",
+    },
     "chat.anima_unavailable": {
         "ja": "Animaのプロセスに接続できません。再起動中の可能性があります。",
         "en": "Cannot connect to Anima process. It may be restarting.",
@@ -146,6 +156,96 @@ STRINGS: dict[str, dict[str, str]] = {
     "chat.image_too_large": {
         "ja": "画像データが大きすぎます（{size_mb}MB / 上限20MB）",
         "en": "Image data too large ({size_mb}MB / max 20MB)",
+    },
+    "chat.attach.too_many_files": {
+        "ja": "添付ファイルは{count}個までです",
+        "en": "You can attach up to {count} files",
+        "ko": "파일은 최대 {count}개까지 첨부할 수 있습니다",
+    },
+    "chat.attach.invalid_base64": {
+        "ja": "ファイル「{name}」のデータを読み取れませんでした",
+        "en": "Could not read file data for “{name}”",
+        "ko": "파일 “{name}” 데이터를 읽을 수 없습니다",
+    },
+    "chat.attach.empty_file": {
+        "ja": "空のファイル「{name}」は添付できません",
+        "en": "The empty file “{name}” cannot be attached",
+        "ko": "빈 파일 “{name}”은 첨부할 수 없습니다",
+    },
+    "chat.attach.file_too_large": {
+        "ja": "ファイル「{name}」が大きすぎます（上限{size_mb}MB）",
+        "en": "File “{name}” is too large (max {size_mb} MB)",
+        "ko": "파일 “{name}”이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.total_too_large": {
+        "ja": "添付ファイルの合計が大きすぎます（上限{size_mb}MB）",
+        "en": "The combined files are too large (max {size_mb} MB)",
+        "ko": "첨부 파일 총 용량이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.outbound_missing_request_id": {
+        "ja": "返信のリクエストIDがないため添付できません",
+        "en": "Cannot attach the file because the reply request id is missing",
+        "ko": "답장 요청 ID가 없어 파일을 첨부할 수 없습니다",
+    },
+    "chat.attach.outbound_not_file": {
+        "ja": "ファイルが見つかりません: {path}",
+        "en": "File not found: {path}",
+        "ko": "파일을 찾을 수 없습니다: {path}",
+    },
+    "chat.attach.outbound_empty_file": {
+        "ja": "空のファイル「{name}」は添付できません",
+        "en": "The empty file “{name}” cannot be attached",
+        "ko": "빈 파일 “{name}”은 첨부할 수 없습니다",
+    },
+    "chat.attach.outbound_file_too_large": {
+        "ja": "ファイル「{name}」が大きすぎます（上限{size_mb}MB）",
+        "en": "File “{name}” is too large (max {size_mb} MB)",
+        "ko": "파일 “{name}”이 너무 큽니다 (최대 {size_mb}MB)",
+    },
+    "chat.attach.outbound_too_many_files": {
+        "ja": "1回の返信に添付できるファイルは{count}個までです",
+        "en": "A reply can include up to {count} attached files",
+        "ko": "답장 하나에 최대 {count}개의 파일을 첨부할 수 있습니다",
+    },
+    "chat.attach.preview_unsupported": {
+        "ja": "このファイル形式はプレビューできません",
+        "en": "This file type cannot be previewed",
+        "ko": "이 파일 형식은 미리 볼 수 없습니다",
+    },
+    "chat.attach.preview_too_large": {
+        "ja": "ファイルが大きすぎるためプレビューできません（上限50MB）",
+        "en": "The file is too large to preview (max 50 MB)",
+        "ko": "파일이 너무 커서 미리 볼 수 없습니다 (최대 50MB)",
+    },
+    "chat.attach.preview_unreadable": {
+        "ja": "ファイルを読み取れないか、内容が破損しています",
+        "en": "The file could not be read or is corrupted",
+        "ko": "파일을 읽을 수 없거나 내용이 손상되었습니다",
+    },
+    "chat.attach.prompt_header": {
+        "ja": "[添付ファイル]",
+        "en": "[Attached files]",
+        "ko": "[첨부 파일]",
+    },
+    "chat.attach.prompt_item": {
+        "ja": "- {name}（{media_type}, {size}）: {path}",
+        "en": "- {name} ({media_type}, {size}): {path}",
+        "ko": "- {name}（{media_type}, {size}）: {path}",
+    },
+    "chat.attach.prompt_size_bytes": {
+        "ja": "{size} B",
+        "en": "{size} B",
+        "ko": "{size} B",
+    },
+    "chat.attach.prompt_size_kb": {
+        "ja": "{size} KB",
+        "en": "{size} KB",
+        "ko": "{size} KB",
+    },
+    "chat.attach.prompt_size_mb": {
+        "ja": "{size} MB",
+        "en": "{size} MB",
+        "ko": "{size} MB",
     },
     "chat.internal_error": {
         "ja": "内部エラーが発生しました。再試行してください。",

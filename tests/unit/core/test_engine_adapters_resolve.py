@@ -11,8 +11,7 @@ import pytest
 
 from core.agent.executor_factory import ENGINE_ADAPTERS, _resolve
 
-
-_EXPECTED_ENGINE_MODES = {"s", "c", "d", "g", "x", "a"}
+_EXPECTED_ENGINE_MODES = {"s", "c", "d", "g", "x", "y", "a"}
 
 
 def test_all_engine_adapters_are_registered() -> None:
@@ -24,6 +23,9 @@ def test_engine_adapter_paths_resolve(mode: str) -> None:
     adapter = ENGINE_ADAPTERS[mode]
     if mode == "s":
         pytest.importorskip("claude_agent_sdk")
+    if mode == "y":
+        # Part A ships the agy executor on a parallel branch.
+        pytest.importorskip("core.execution.engines.agy.executor")
     assert isinstance(_resolve(adapter.executor_path), type)
     if adapter.availability_path:
         assert callable(_resolve(adapter.availability_path))

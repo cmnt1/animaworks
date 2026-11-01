@@ -1,0 +1,30 @@
+// Per-pane reply target state and the ordinary-chat quote prefix.
+export function getReplyTarget(state) {
+  return state?.replyTarget || null;
+}
+
+export function setReplyTarget(state, target) {
+  if (!state) return null;
+  state.replyTarget = target && typeof target === "object" ? { ...target } : null;
+  return state.replyTarget;
+}
+
+export function clearReplyTarget(state) {
+  if (!state) return null;
+  const target = state.replyTarget || null;
+  state.replyTarget = null;
+  return target;
+}
+
+/** Approval-style notifications (with a callback) are answered through the notification API. */
+export function needsNotificationApi(target) {
+  return target?.type === "notification" && Boolean(target.callbackId);
+}
+
+export function quoteReplyMessage(text, target) {
+  if (!target || needsNotificationApi(target)) return String(text || "");
+  const quoted = String(target.text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const name = String(target.name || "").replace(/[:\n]/g, " ").trim().slice(0, 30);
+  if (!quoted) return String(text || "");
+  return `> ${name ? `${name}: ` : ""}${quoted}\n\n${String(text || "")}`;
+}

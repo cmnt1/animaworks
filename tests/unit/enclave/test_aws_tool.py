@@ -15,7 +15,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import sys
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Linux enclave raw storage permission checks required")
 
@@ -395,9 +394,7 @@ def test_s3_small_text_is_returned_and_saved_without_byte_truncation(
     assert raw_path.stat().st_mode & 0o777 == 0o600
 
 
-def test_s3_binary_is_saved_under_hashed_contained_mode_0600_path(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_s3_binary_is_saved_once_in_raw_store_with_mode_0600(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     key = "../../outside/voice.wav"
     payload = b"audio bytes"
     body = _S3Body(payload)
@@ -416,17 +413,10 @@ def test_s3_binary_is_saved_under_hashed_contained_mode_0600_path(
 
     assert isinstance(result, dict)
     target = Path(result["saved_path"])
-    expected = (
-        data_dir
-        / "enclave"
-        / "downloads"
-        / "example-placeholder-bucket"
-        / hashlib.sha256(key.encode("utf-8")).hexdigest()
-    )
-    assert target == expected
-    assert target.resolve().is_relative_to(data_dir.resolve())
-    assert target.read_bytes() == payload
-    assert target.stat().st_mode & 0o777 == 0o600
+    assert target == Path(result["raw_path"])
+    assert target.resolve().is_relative_to((data_dir / "raw").resolve())
+    assert result["key_sha256"] == hashlib.sha256(key.encode("utf-8")).hexdigest()
+    assert not (data_dir / "enclave" / "downloads").exists()
     raw_path = Path(result["raw_path"])
     assert raw_path.suffix == ".wav"
     assert raw_path.read_bytes() == payload

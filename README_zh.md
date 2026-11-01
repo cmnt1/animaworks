@@ -1,318 +1,254 @@
-<!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-10-06 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
-
 # AnimaWorks — Organization-as-Code
 
-### 交付软件的 AI organization。
+### 像发微信/LINE一样和团队聊天，幕后24小时自主交付软件的AI组织。
 
-AnimaWorks 是一个将持久运行的 AI 智能体组成“运转中的 organization”的框架。给它一个目标，智能体们就会拆解工作，在并行 worktree 中实现、互相测试和评审、创建 Pull Request、修复 CI failure、解决冲突，并跟进到部署结果。只有确实需要人类参与时，才会向人类寻求确认。
+AnimaWorks 是一个开源框架，它将拥有独立长期记忆、人格、职位与日程表的持久化 AI 智能体（**Digital Anima**）凝聚在一起，作为**“活的组织”**全天候 24 小时自主运转。
+
+人类面对的前台界面，是像 LINE / 微信一样轻快直观的聊天窗口。
+而在幕后，运行在独立操作系统进程中的智能体们会自动拆解目标、在并行的 `git worktree` 沙箱中编写代码、互相执行测试与多模型代码审查、创建 Pull Request、自主修复 CI 故障，甚至在部署后持续观测日志——全程无需人类插手。
 
 ```text
-タスク → エージェントチーム → 並列worktree → 実装 → テスト → レビュー
-     → Pull Request → CI修復 → デプロイ → 観測 → 修復
+人类的一句话 / GitHub 事件 / 定时触发（Heartbeat · Cron）
+   ↓
+主管 Anima 拆解与委派（SQLite TaskStore · 互斥锁键 · 委派契约）
+   ↓
+工程师 Anima 在隔离 worktree 中实现 → 测试 → 多模型 PR 审查 → CI 自愈 → 部署后观测
+   ↓
+仅在遇到需要决策的异常或审批门禁时，通过 LINE 风格聊天、语音通话或通知升级给人类
 ```
 
-AnimaWorks 不会把这条流水线硬编码进去。框架负责将 GitHub 事件转化为 task、按 PR 串行执行，以及编排多模型评审。其余工作都由智能体像人类工程师一样完成——使用 git、测试、CI，以及各角色的工作规范。因此，同一个 organization 也能处理邮件、整理会议记录、发布 Slack 消息。因为它是一个 organization，而不是构建脚本。
+AnimaWorks 并没有硬编码死板的构建流水线。框架提供的是**“组织的基础设施”**：基于脑科学的长期记忆、进程级故障隔离、原子任务看板、权限与隐私隔离（**Enclave**）以及多渠道通信网。正因如此，同一个组织既能交付代码，也能做竞品调研、处理客户工单、整理会议纪要、通过 Slack 或电话沟通。它不是工作流引擎，**它本身就是一个组织**。
 
-## 在生产环境中的成果
+**[English README](README.md)** | **[日本語 README](README_ja.md)** | **[한국어 README](README_ko.md)**
 
-过去 6 个月里，由 8 个 Anima 组成的 AnimaWorks organization 一直负责生产 SaaS 产品的日常开发运营：
+---
 
-| 指标（2026年3月〜8月） | 值 |
+## 生产环境真实运行实绩
+
+这不是概念演示。在过去 6 个月里，由 8 个 Anima 组成的 AnimaWorks 组织一直在真实运营并维护着线上生产级 SaaS 产品的日常研发、运维与支持。
+
+| 指标（2026年3月～8月 · 基于原始执行日志统计） | 真实运行数据 |
 |---|---|
-| 智能体创建的 Pull Request | **302 件**（267 件已合并） |
-| 智能体负责运营的 Pull Request — 评审、CI 修复、冲突解决 | **752 件**（721 件已合并） |
-| organization 自主发起的 task 占比 | **99.7%**（共 31,215 个 task，其中 92 个由人类发起） |
-| 由 GitHub 事件自动转化为 task 的数量（仅 8 月） | **2,508 件** |
-
-这些数字是根据一手执行记录（每个智能体的 activity log、task 队列、工作备忘录）汇总得出的，而不是根据提交的 author 信息统计的。因为在共享凭据下，人类和智能体的 push 会混在一起。无法确认有证据支持的 PR 均已排除。由于目标仓库不公开，因此仅公布汇总值。
-
-AnimaWorks 本身也使用同样的方法开发。定义在这个仓库中的智能体会评审这个仓库的 PR、修复 CI 并发布版本。人类主要负责指明方向和处理例外。
+| 智能体自主创建的 Pull Request | **302 个**（其中 **267 个**已合并） |
+| 智能体运维处理的 Pull Request（审查、CI 修复、冲突解决） | **752 个**（其中 **721 个**已合并） |
+| 组织自发立项并执行的任务占比 | **99.7%**（共 31,215 项任务中，人类发起仅 92 项） |
+| 由 GitHub 事件自动生成的任务数（仅 8 月单月） | **2,508 项** |
 
 <p align="center">
-  <img src="docs/images/workspace-dashboard.gif" alt="AnimaWorks Workspace — リアルタイム組織ツリーとアクティビティフィード" width="720">
-  <br><em>Workspace 仪表板：实时查看每个 Anima 的角色、status 和近期操作。</em>
+  <img src="docs/images/chat-memory.png" alt="AnimaWorks LINE风格聊天界面与记忆弹窗" width="760">
+  <br><em>全新 LINE 风格聊天界面：左侧 Anima 纵列一览成员状态，右侧绿色气泡支持引用回复，左侧白色气泡内嵌审批通知卡与成果文件卡片，右下角常驻半身像随情绪实时变化。</em>
 </p>
 
 <p align="center">
-  <img src="docs/images/pixel-workspace.gif" alt="AnimaWorks ドット絵オフィス — 稼働中の組織のライブビュー" width="720">
-  <br><em>像素风办公室并非模拟场景，而是运行中 organization 的实时视图——每个 status 标签都对应着正在运行的实际 task。</em>
+  <img src="docs/images/workspace-dashboard.gif" alt="AnimaWorks Workspace — 实时组织树与活动流" width="760">
+  <br><em>3D Workspace：实时可视化组织树、各 Anima 状态以及最近执行的动作。</em>
 </p>
 
-**[English README](README.md)** | **[简体中文 README](README_zh.md)** | **[한국어 README](README_ko.md)**
+<p align="center">
+  <img src="docs/images/pixel-workspace.gif" alt="AnimaWorks 像素办公室 — 运行中组织的实时视图" width="760">
+  <br><em>像素办公室（Pixel Workspace）并非单纯的装饰动画——每一个对话框都对应着此时此刻正在后台运行的真实任务。</em>
+</p>
 
 ---
 
-## :rocket: 立即试用
+## :rocket: 60 秒快速体验（演示环境）
 
-**如果已安装 Claude Code CLI，或已登录 Codex，则无需 API 密钥**。
+**如果已安装 Claude Code CLI 或已登录 Codex，甚至无需配置任何 API 密钥。**
 
-首先，通过一行命令克隆并安装：
+一行命令完成克隆与安装，立即启动包含 3 天完整活动历史与 3 人团队（产品经理 `kaito`、主任工程师 `sora`、助理 `hina`）的演示组织。演示环境使用完全隔离的数据目录（`~/.animaworks-demo`），不会污染正式的 `~/.animaworks` 环境。
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
+uv run animaworks demo --preset ja-business
 ```
 
-接下来，启动演示 team：
+打开 **http://localhost:18501**，即可在 LINE 风格界面中与已经在运转的团队开始对话（[演示环境详情 →](demo/README.md)）。
 
-```bash
-uv run animaworks demo
-```
-
-**打开 http://localhost:18501** 即可开始。一个由 3 人组成的 team（经理＋工程师＋助理）将开始运行，并附带 3 天的活动历史记录。首次安装需要下载 Python 3.12+ 和机器学习相关依赖包，因此需要几分钟；之后启动演示只需几秒。[查看演示详情 →](demo/README.ja.md)
-
-> 预设：`en-business`（默认）/ `en-anime` / `ja-business` / `ja-anime` — 例如：`uv run animaworks demo --preset ja-anime`。切换现有演示的预设需要 `--reset`。演示需要克隆后的仓库（不会包含在 pip 软件包中）。
-
-要创建自己的 organization，请运行 `uv run animaworks start` — 下方的设置向导将引导你创建第一个智能体。
+> **4 种内置预设**：`en-business`（英文·写实，默认）/ `en-anime`（英文·动漫）/ `ja-business`（日文·写实）/ `ja-anime`（日文·动漫）。切换预设时请附带 `--reset` 重新运行（例如：`uv run animaworks demo --reset --preset ja-anime`）。
 
 ---
 
-## 快速开始
+## 快速上手（组建你自己的组织）
 
-macOS / Linux / WSL：
+### macOS / Linux / WSL
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
-uv sync --all-extras        # codex/claude実行系のextraを追加
-animaworks start            # サーバー起動 — 初回はセットアップウィザードが開きます
+uv run animaworks start
 ```
 
-> **可在任何目录通过 `animaworks` startup。** `setup.sh` 会将 CLI 符号 link 到 `~/.local/bin`，因此只要该目录在 `PATH` 中，就可以省略 `uv run`（如果不在，请将 `export PATH="$HOME/.local/bin:$PATH"` 添加到 shell 的 rc 文件中）。控制台脚本使用绝对路径指向此仓库的 `.venv` 解释器，因此 `animaworks` 和 `uv run animaworks` 始终在同一环境中运行。手动安装时，请自行创建 link：`ln -sfn "$PWD/.venv/bin/animaworks" ~/.local/bin/animaworks`
-
-Windows（PowerShell）：
+### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/xuiltul/animaworks.git
+irm https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.ps1 | iex
 cd animaworks
-uv sync --all-extras
 uv run animaworks start
 ```
 
-如果要在不使用 API 密钥的情况下使用 OpenAI Codex，请在首次 startup 前运行 `codex login`。
+> **Windows 说明**：AnimaWorks 依赖 Unix 系统接口（`fcntl`、`pty`、`os.killpg` 等），不支持原生 Windows 直接运行。在 PowerShell 中运行 `setup.ps1` 会自动安装 WSL 并在 WSL Linux 环境中完成部署。
 
-**打开 http://localhost:18500/** 后，设置向导会通过 5 个步骤引导你：
+在浏览器中打开 **http://localhost:18500**，按向导完成 3 步设置：
+1. **选择界面语言与主题**（`zh` / `ja` / `en` / `ko`）
+2. **配置 LLM 连接**（支持 Claude Code 订阅登录、Codex 登录、各类 API 密钥或本地 Ollama）
+3. **创建第一位 Anima**（从 `dev-lead`、`full-stack`、`assistant`、`marketer`、`translator` 等模板中选择，或自定义角色）
 
-1. **语言** — 选择 UI 显示语言
-2. **用户信息** — 创建所有者账户
-3. **提供商 authentication** — 输入 API 密钥（OpenAI 也可使用 Codex Login），并选择头像画风
-4. **第一个 Anima** — 为第一个智能体命名
-5. **确认** — 检查内容并完成
-
-无需手动编写 `.env`。向导会自动将其保存到 `config.json`。
-
-安装脚本会帮你安装 [uv](https://docs.astral.sh/uv/)、克隆仓库、安装依赖包，并将 `animaworks` 命令 link 到 `~/.local/bin`。在 **macOS、Linux、WSL** 上，无需预先安装 Python 即可运行。**Windows** 用户请使用上面的 PowerShell 步骤。请注意，Mode S（Claude Agent SDK）无法在 Windows 上使用 — 请使用 Codex / Gemini / API 系列模式。
-
-> **`uv sync` 必须附带 `--all-extras`。** 即使通过 `setup.sh` 运行原生 `uv sync` 也能运行主体程序，但 Mode C（Codex）需要 `codex` extra。此外，之后如果执行不带 extras 的 sync，venv 中的 `codex` / `claude` 可执行包会被删除，导致相应模式下的 Anima 全部无法运行。
-
-> **想使用其他 LLM？** 支持 Claude、GPT、Gemini、本地模型等。你可以在设置向导中输入 API 密钥，也可以在 OpenAI/Codex 中使用 **Codex Login**。之后还可以在仪表板的 **Settings** 中更改。详情请参阅 [API 密钥 reference](#apiキーリファレンス)。
-
-<details>
-<summary><strong>其他方式：先检查脚本，再运行</strong></summary>
-
-如果不想直接运行 `curl | bash`，可以先检查脚本内容：
+也可以完全不使用浏览器，直接通过 CLI 初始化并操控一切：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh -o setup.sh
-cat setup.sh            # スクリプトの中身を確認
-bash setup.sh           # 確認後に実行
-```
-
-</details>
-
-<details>
-<summary><strong>其他方式：使用 uv 手动逐步安装</strong></summary>
-
-```bash
-# uvをインストール（インストール済みならスキップ）
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-
-# クローンとインストール
-git clone https://github.com/xuiltul/animaworks.git && cd animaworks
-uv sync --all-extras    # Python 3.12+と全依存パッケージ（codex/claude extras含む）を自動ダウンロード
-
-# 起動
+uv run animaworks init
 uv run animaworks start
+uv run animaworks chat alice "检查今天的迭代目标，并把任务分配给团队成员"
 ```
 
-</details>
-
 <details>
-<summary><strong>其他方式：Docker</strong></summary>
+<summary><strong>Docker Compose / pip 手动安装步骤</strong></summary>
+
+#### Docker（推荐：零宿主机环境污染）
+
+`docker compose up` 会启动一个预装了 Node.js、GitHub CLI (`gh`)、Playwright、Bubblewrap 以及 Claude Code / Codex / Gemini CLI 的隔离 Linux 容器。
 
 ```bash
 git clone https://github.com/xuiltul/animaworks.git && cd animaworks
-# 資格情報を .env に置く（git管理外）:
-#   ANTHROPIC_API_KEY=...            # APIキー認証
-#   CLAUDE_CODE_OAUTH_TOKEN=...      # またはサブスクリプション認証: `claude setup-token` (要TTY)
-#   GH_TOKEN=...                     # 任意: animaがclone/pushやPR作成を行うために必要
+# 在 .env 中配置认证信息（ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN / GH_TOKEN 等）
 docker compose up -d --build
 ```
 
-无头设置（不使用 browser 向导时）：
+无需浏览器向导的无头初始化示例：
 
 ```bash
 docker exec -it <container> animaworks init --skip-anima
 docker exec -it <container> animaworks anima create --name alice --template dev-lead
 docker exec -it <container> animaworks config set setup_complete true
-docker exec -it <container> animaworks send <your-name> alice "hello"
+docker exec -it <container> animaworks send <your-name> alice "你好"
 ```
 
-- 镜像中包含 git / GitHub CLI / Node.js 22 / Claude Code CLI，并已预装 `IS_SANDBOX=1` 和 `--foreground`。数据保存在命名卷 `animaworks-data`（`/root/.animaworks`）中。
-- 人类通过 `animaworks send` 分派工作。`animaworks-tool task add` 仅用于 anima 的工具上下文。
-- Homebrew 的 docker-compose 必须 link 到 `~/.docker/cli-plugins/docker-compose`，否则无法识别为 `docker compose` 子命令。
-
-</details>
-
-<details>
-<summary><strong>其他方式：使用 pip 手动安装</strong></summary>
-
-> **macOS 用户请注意：** macOS Sonoma 及更早版本的系统 Python（`/usr/bin/python3`）为 3.9 版，不满足 AnimaWorks 的要求（3.12+）。请通过 [Homebrew](https://brew.sh/) 安装 `brew install python@3.13`，或使用上面的 uv 方法（uv 会自动管理 Python）。
-
-请确保系统已安装 Python 3.12+（推荐使用 3.12/3.13）。
+#### 使用 pip 手动安装（推荐 Python 3.12 / 3.13）
 
 ```bash
 git clone https://github.com/xuiltul/animaworks.git && cd animaworks
 python3 -m venv .venv && source .venv/bin/activate
-python3 --version       # 3.12+ であることを確認
-pip install --upgrade pip && pip install -e .
+pip install --upgrade pip && pip install -e ".[all-tools]"
 animaworks start
 ```
-
-注意：原生 `pip install -e .` 不包含 Codex extra。使用 Mode C 时，请添加 `.[codex]`。
 
 </details>
 
 ---
 
-## 循环如何运作
+## 台前体验：对人类而言是“像聊天软件一样好用的团队”
 
-典型的变更会在 organization 中按以下流程推进：
+许多自主智能体框架要求人类盯着枯燥的控制台日志或操作复杂的节点连线图。AnimaWorks 的理念恰恰相反：**日常沟通像 LINE 或微信一样轻快自然，需要深挖时只需轻轻一点即可展开大脑记忆与后台作业**。
 
-1. **收到 task** — 来自人类、其他智能体、计划任务（heartbeat / cron）或 GitHub 事件。Webhook 网关会自动将 CI failure、评审评论、`@bot` 命令和合并冲突转化为智能体 task（`gh-ci-*` / `gh-review-*` / `gh-comment-*`）。支持按 PR 去重，并设有 retry 上限。
-2. **经理拆分工作** — 通过 `delegate_task` 将工作委派给工程师，并附上验收条件、工作位置和排他键。涉及同一 PR 的 task 会通过排他键串行处理，智能体之间不会在同一分支发生冲突。
-3. **工程师在隔离的 worktree 中实现并测试** — 遵循作为共享 knowledge 一部分提供的角色专属工作规范（产品经理 / 工程师 / 评审员 / 测试员）。这种隔离并非固定的流水线阶段，而是智能体通过 git 执行的运营规范——因此能够应对棘手的情况。
-4. **多模型评审** — 每个 PR 都会针对配置的各个模型分别发起一条评审流程，再由综合 task 汇总所有流程的意见并做出判断（批准 / 要求修改）。有新的 push 时，旧的评审 task 会自动取消并重新执行。
-5. **CI failure 会作为工作重新派回** — 失败的 workflow run 会作为修复 task 发送给实现智能体，并与 PR 编号和提交关联（不会重复派发）。实验性的独立循环（`python3 -m swe.ci_autofix`）会反复执行修复→lint/测试门禁→评审→提交，连续失败 3 次后升级给人类处理。
-6. **部署和 runtime 确认也是智能体的工作** — 智能体会将分支部署到隔离环境，读取日志、错误和 UI 状态，找出测试未能发现的问题。生产环境 organization 的活动记录中，保留了数百条部署和 runtime 观察操作。
-7. **人类介入处理例外** — organization 会在遇到阻塞，或需要作出超出权限范围的判断时升级处理（`call_human`）。另有一个监督进程负责监控智能体的存活状态、重启挂起的进程，并修复自身的记忆索引。
+### 1. LINE 风格对话界面、左侧 Anima 纵列与右下角常驻半身像
+- **直观的气泡对话流**：人类发言显示为右侧绿色气泡，Anima 回复显示为左侧白色气泡，流式输出时平滑展示思考预览与工具调用进度。
+- **左侧 Anima 纵列（Anima Rail）**：屏幕最左侧排列着团队成员头像，谁正在工作（蓝圈）、谁在等待你的回复（琥珀色待回复角标）一目了然。可以用 `×` 收起不常联系的成员、用 `+` 重新打开，还能一键切换最多 4 分屏视图或最多 5 名成员参与的**会议模式（带主持人的群组讨论）**。
+- **右下角常驻半身像（Presence Panel）**：对话窗口右下角常驻当前 Anima 的半身立绘，根据回复情绪（`smile` / `thinking` / `troubled` / `surprised` 等）实时切换表情，并在后台工作时用小气泡轻声告诉你“正在做什么”。
 
-人类的角色从“操作智能体”转变为“organization 所有者”：传达意图、评审重要事项，并判断例外情况。
+### 2. 以人类为中心的信息流降噪、“一键审批与引用回复”
+- **无噪音的对话时间线**：在 24 小时运转的组织里，后台会产生数百次 Heartbeat 巡检、Anima 之间的私信（DM）与定时 Cron 任务。新聊天界面会自动将这些后台活动**折叠为不打扰人类对话的单行摘要束**（随时可通过顶部 `后台作业` 开关一键展开）。
+- **审批通知卡与引用回复**：当 Anima 遇到越权操作需要请示人类（`call_human`）时，聊天流中会直接出现带**批准 / 拒绝 / 评论**按钮的通知卡。你还可以对任意历史消息或通知发起**引用回复（Reply Chip）**，让 Anima 准确识别你的指令针对哪一件事。
+
+### 3. 双向文件附件、内嵌全屏预览器与 Slack 镜像同步
+- **拖拽上传任意文件**：不仅支持图片，还可直接将 PDF、Markdown、CSV、代码、Office 文档、音频、视频拖入聊天框发送。
+- **Anima 交付物文件卡片 (`attach_file`)**：Anima 会把生成的调研报告、CSV 表格或图片直接作为附件卡片发回聊天窗口。点击卡片即可唤起浏览器内置的**全屏文件查看器**（安全渲染 Markdown、代码高亮、音视频播放）。
+- **Slack 对话双向镜像**：外出时在 Slack 上与 Anima 交流的内容，会自动同步并呈现在 Web 聊天时间线中。
+
+### 4. 点击头像展开“记忆弹窗”与全屏语音通话
+- **D3 实体关联气泡图**：点击聊天顶部栏的 `记忆` 按钮或头像，即可以气泡弹窗形式打开该 Anima 的大脑。内含可视化人物、服务与话题关联的 **D3 实体关联气泡图（`关联`）**，以及当前状态（`现状`）、积累的知识与流程文档（`记忆文件`）、每日日志（`日记`）、工具活动记录（`活动`）和定时任务（`例行作业`）。
+- **全屏语音通话 (`Call Screen`)**：点击电话图标即可进入低延迟前排模型 + VOICEVOX / Style-BERT-VITS2 / ElevenLabs / Irodori TTS + `faster-whisper` 流式语音识别驱动的全屏通话界面，支持口型同步、眨眼动画与实时字幕。遇到重大线上事故时，结合 Twilio（`core/phone/`），**Anima 甚至能直接拨打人类的手机把你叫醒**。
+
+<p align="center">
+  <img src="docs/images/memory-popover.png" alt="AnimaWorks 记忆弹窗 — D3实体关联气泡图" width="760">
+  <br>
+  <em>从聊天顶部“记忆”按钮或头像一键唤起的记忆弹窗：当场查看事实、知识、流程、日记以及人物·服务·话题的关联气泡图。</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="AnimaWorks 仪表盘 — 实时组织图与任务状态" width="760">
+  <br>
+  <em>Dashboard（首页）：集中总览组织架构图、待办事项、模型配额消耗、进程健康度与近期团队动态。</em>
+</p>
 
 ---
 
-## 与其他框架的区别
+## 幕后引擎：24 小时运转软件与业务的自主组织内核
 
-|  | AnimaWorks | CrewAI | LangGraph | OpenClaw | OpenAI Agents |
-|--|-----------|--------|-----------|----------|---------------|
-| **设计理念** | 自主代理组成的组织 | 基于角色的团队 | 图工作流 | 个人助手 | 轻量级 SDK |
-| **记忆** | 基于脑科学：vector＋BM25＋facts/实体 search，按需进行图扩散、consolidation、主动遗忘和自动回忆 | Cognitive Memory（手动 forget） | 检查点＋cross-thread 存储 | SuperMemory knowledge 图 | 仅限 session 内 |
-| **自主性** | Heartbeat（观察→计划→回顾）+ Cron + TaskExec + GitHub 事件网关 — 24/7运行 | 由人类启动 | 由人类启动 | Cron + heartbeat | 由人类启动 |
-| **组织结构** | Supervisor→subordinate 的 hierarchy、委派、审计和仪表板 | Crew 内部的扁平角色 | — | 单一代理 | 仅支持 Handoff |
-| **进程** | 每个代理均为独立 OS 进程，支持 IPC 和自动重启 | 共享进程 | 共享进程 | 单一进程 | 共享进程 |
-| **多模型** | 7 种引擎：Claude SDK / Codex / Cursor Agent / Gemini CLI / Grok Build / LiteLLM / Assisted — 提供按引擎区分的回退链 | LiteLLM | LangChain 模型 | OpenAI 兼容 | 以 OpenAI 为中心 |
+在亲切的前台界面背后，是一套经过高强度生产验证、可连续数月无故障运行的分布式多进程架构。
 
-> AnimaWorks 不是任务运行器，而是一个会思考、记忆、遗忘并逐渐成长的组织。我在实际经营业务的过程中，将它作为 AI team 使用，同时也在持续开发。
+```text
+FastAPI Server（轻量控制面 / WebSocket & SSE / Enclave 客户端）
+  ├── MemoryService Process（独立 ChromaDB + Embedding HTTP 宿主进程、SQLite WAL）
+  ├── Anima Root Process: kaito (Manager)
+  │     ├── Front Lane（低延迟即时响应 / 语音通话 / 意图路由）
+  │     ├── Main Chat / Inbox / Heartbeat / Cron Lanes
+  │     └── Task Runner Subprocesses（IPC v2 — 每个重度任务独立子进程隔离执行）
+  ├── Anima Root Process: sora (Lead Engineer)
+  └── Anima Root Process: hina (Assistant)
+```
+
+### 1. 永远“接着昨天的话聊”——多层记忆架构与自主睡眠维护
+不同于每次会话都失忆的普通聊天封装，每位 Anima 都拥有文件系统优先、模拟人脑机制的多层记忆：
+- **6 通道自动记忆激活 (`core/memory/priming/`)**：每次推理前，在动态 Token 预算内自动从 6 个通道检索上下文：(A) 发送者画像、(B) 近期活动、(C) 相关知识、(E) 待办任务、(F) 情景记忆、(G) 图谱社区与近期原子事实。
+- **混合检索流水线 (`core/memory/retrieval/`)**：融合向量检索（ChromaDB）+ BM25 词法检索 + 原子事实（`FactRecord`）+ 实体注册表 + RRF 倒数排名融合 + 置信度门控。支持按全局或单个 Anima 切换 `legacy`（默认）或 **Neo4j 图数据库后端 (`neo4j`)**。
+- **睡眠记忆巩固与主动遗忘 (`core/memory/maintenance/`)**：每天夜间自动将零散的日间活动提炼为结构化知识（Consolidation），并按衰减评分清理低价值陈旧记忆（Active Forgetting），同时严格保护核心身份、流程与未完成任务。
+
+### 2. 按自己的时钟行动——Heartbeat、Cron、SQLite TaskStore 与 GitHub 网关
+- **Heartbeat 与 Cron**：支持自适应间隔与免打扰时段的定期自主巡检（`heartbeat.md`）以及精确到分钟的定时任务（`cron.md`）。
+- **SQLite TaskStore (`shared/taskboard.sqlite3`)**：基于 SQLite WAL 的组织级原子任务看板，支持任务依赖、互斥锁键（`mutex_key`，防止多名 Anima 同时修改同一资源）、委派契约（`delegated_tasks`，下属完成后自动触发上级验收）以及卡死任务的自动回收重试。
+- **GitHub 事件网关**：自动接收 CI 失败、PR 审查评论、合并冲突等 Webhook 事件，去重后转化为任务并精准派发给负责该模块的工程师 Anima。
+
+### 3. 永不雪崩的进程隔离——Phase 3 进程树与 IPC v2
+- **按 Anima 隔离的根进程 + Task Runner 子进程**：每位 Anima 运行在由 `ProcessSupervisor` 监管的独立操作系统进程中；繁重的后台任务与委派任务会进一步通过 IPC v2（`STDIN/STDOUT` JSON-RPC + 二进制帧）派生独立的 `TaskRunner` 子进程执行。即便某个工具卡死或崩溃，也只会回收该子进程，绝不拖垮主服务或其他成员。
+- **独立 MemoryService 进程**：向量库与 Embedding 模型常驻于单一宿主进程（非宿主进程全部通过 `HttpVectorStore` 走本地 HTTP 访问），彻底消除多进程并发读写 ChromaDB 导致的索引损坏与内存翻倍问题。
+
+### 4. 硬件级隐私与凭据隔离——Enclave 与多层信任边界
+- **Enclave (`core/enclave/`)**：将原始 API 密钥、Cookie 与客户隐私（PII）隔离在独立的操作系统用户/权限域中，Anima 进程只能通过 Unix 域套接字调用白名单内的受控操作（如 `gmail_list`、`gmail_send`、`git_push`、`sql_query`）。即便智能体执行任意 Bash 命令也无法读取原始密钥；返回结果还会经过 **Egress PII 自动脱敏**（自动掩码邮箱、电话、卡号及自定义正则）。
+- **多层权限门禁 (`ToolHandler`)**：结合全局 `permissions.global.json`、单智能体 `permissions.json`、危险命令模式拦截以及防提示词注入的信任边界（`trusted` vs `external`），确保安全可控。
+
+### 5. 多引擎执行与混合模型路由
+根据职位自由组合最合适的执行引擎与模型，并支持为 Heartbeat/Cron 配置低成本的 `background_model`：
+
+| 模式 | 执行引擎 | 主要适用模型 | 特性与工具集成 |
+|---|---|---|---|
+| **S** | Claude Agent SDK | `claude-*`（推荐） | 内置 Claude Code 工具链（Read/Write/Edit/Bash/Grep/Glob）+ **stdio MCP (`mcp__aw__*`)** 直连内部工具。支持 Claude Code 订阅登录 |
+| **C** | Codex SDK / CLI | `codex/*`, `openai-codex/*` | Codex 沙箱执行 + AnimaWorks MCP 集成。支持 `codex login` |
+| **D** | Cursor Agent CLI | `cursor/*` | Cursor CLI 会话与 MCP 集成智能体循环 |
+| **G** | Gemini CLI | `gemini/*` | Google Gemini CLI 流式 JSON 与工具循环集成 |
+| **X** | Grok Build CLI | `grok/*` | 基于 ACP stdio 的 Grok Build 智能体循环 |
+| **A** | LiteLLM Autonomous | GPT, Gemini, DeepSeek, Bedrock, Vertex, Azure, Ollama, vLLM 等 | 在任意云端 API 或本地大模型上运行 CC 兼容工具、记忆检索、任务管理与技能创建 |
+
+<p align="center">
+  <img src="docs/images/asset-management.png" alt="AnimaWorks 资产管理 — 角色立绘与表情差分" width="760">
+  <br><em>资产管理：根据性格设定一键生成全身立绘、7 种表情半身像、Q 版角色、像素精灵图与绑定骨骼的 3D 模型，并支持继承上级画风的 Vibe Transfer。</em>
+</p>
 
 ---
 
-## 能做什么
+## 与其他框架的对比
 
-### 仪表板
-
-<p align="center">
-  <img src="docs/images/dashboard.png" alt="AnimaWorks ダッシュボード — リアルタイム組織図" width="720">
-  <br><em>仪表板：显示所有 Anima 实时状态的组织架构图。</em>
-</p>
-
-Web UI 由 6 个页面（哈希路由器 `#/…`）和 Workspace 应用组成：
-
-- **主页** — 显示实时状态的组织架构图、提示需要处理事项的醒目标签、LLM 使用量面板（Claude / OpenAI / nanoGPT）、系统状态栏、近期活动和外部任务组件。可从此处打开各 Anima 的详情页（overview / process / schedule / memory / assets）
-- **聊天** — 与任意 Anima 实时对话：流式响应（SSE）、图片附件、多线程历史记录、右侧标签页（state / activity / heartbeat / cron）、记忆浏览器（episodes / knowledge / procedures）。**会议模式**可将最多 5 名 Anima 与主持人召集到同一房间。长按聊天标签页可打开**语音弹窗**（带有说话动画头像）
-- **Board** — 类似 Slack 的共享 channel 和 DM。Anima 之间可讨论和协作。桥接的 Discord channel 也会显示在此处
-- **任务** — 任务看板：队列、处理中、搁置、抑制、后台执行和结果。还会与 priming 联动，只把当前值得关注的任务带入对话
-- **活动** — 全组织 SVG 泳道时间线、带实时 tool 滚动提示的 Now 看板、session 回放、log
-- **设置** — 4 个标签页（general / activity / API・authentication / users）。首次启动时会显示 `/setup/` 向导
-- **Workspace** — 在独立标签页中打开的独立应用：**3D 办公室**（`/workspace/`，可切换组织架构视图，带有说话的半身像）和**像素办公室**（`/workspace/pixel/`，所有状态标签都对应实际任务的实时 2D 视图）
-- **主题和语言** — 11 种 UI 主题＋动画/写实显示模式。设置向导支持 17 种语言，仪表板主体支持 `ja` / `en` / `ko`
-
-### 创建组织，委派工作
-
-只要告诉领导“我想要这样的人”，它就能判断角色、性格和上下级关系，并创建新成员。无需直接操作 configuration file 或 CLI，也能以对话为起点逐步发展组织。
-
-团队组建完成后，Anima 会利用自己的日程和记忆持续工作：
-
-- **heartbeat** — 定期确认状况，并自行判断接下来要做什么
-- **cron 作业** — 日报、周报、监控。可针对每个 Anima 单独设置，同时支持 LLM 任务和命令执行
-- **任务委派** — 经理会附上验收条件分配任务、跟踪进度并接收汇报
-- **并行任务执行** — 同时提交多个任务。独立任务并行执行，共享排他键的任务则依次执行
-- **GitHub 事件网关** — 受监控仓库中的 CI failure、评审评论和冲突会自动转化为任务
-- **夜间整合** — 白天的 episode 记忆会在睡眠期间升华为 knowledge
-- **团队协作** — 通过共享 channel 和 DM 向需要的对象共享情况
-
-### 记忆系统
-
-传统 AI 代理只能记住能放进上下文窗口的内容。AnimaWorks 的 Anima 拥有基于文件的 long-term memory，需要时会通过 search 回忆。它不会每次都把所有内容塞进上下文，而是只取出与当前对话或行动相关的记忆。
-
-- **自动回忆（Priming）** — 收到 message 时，6 个 channel 会并行运行：发送者档案、近期活动、重要 knowledge、相关 knowledge、待处理任务、episode。相关 knowledge 的 search 也可根据 configuration 使用 legacy NetworkX 图扩散。确定性门控会决定以正文、指针、依据还是抑制的方式呈现检索到的记忆
-- **有意回忆** — 自动回忆不足时，Anima 会通过 `search_memory` 或 `read_memory_file` search 记忆。search 采用混合方式（vector＋BM25＋atomic facts＋实体注册表），并设有置信度门控
-- **行动前的操作规则匹配** — 在外部发送等具有副作用的操作之前，会匹配并呈现相关操作规则。也可以配置为在读取必要记忆之前暂缓执行
-- **整合（Consolidation）** — 日常处理中会汇总 episode，Anima 通过工具循环提取 knowledge。框架会协助维护索引和收集候选项。每周处理中，会将可能重复或矛盾的 knowledge 列为待确认项，由 Anima 判断内容
-- **遗忘（Forgetting）** — 日常处理中会将低活跃度记忆标记为候选项，每周处理中会向 Anima 提供建议归档的记忆。候选项不会自动删除，重要记忆和成熟流程会受到保护规则约束。也支持在发生 failure 后重新审视流程的再巩固
-- **记忆 search** — 结合通过 legacy vector worker 执行的 vector search 与 BM25。也可根据 configuration 使用 NetworkX 图扩散辅助 search 结果
-
-<p align="center">
-  <img src="docs/images/chat-memory.png" alt="AnimaWorks チャット — 複数Animaとのマルチスレッド会話" width="720">
-  <br><em>聊天：经理在审核代码修改，工程师正在汇报进度。</em>
-</p>
-
-### 多模型支持
-
-可以运行在任何 LLM 上。每个 Anima 都可以使用不同的模型。
-
-| 模式 | 引擎 | 对象 | 工具 |
-|--------|----------|------|--------|
-| S (SDK) | Claude Agent SDK | Claude 模型（推荐） | Claude Code 内置（Read/Write/Edit/Bash/Grep/Glob 等）＋ **stdio MCP**（`mcp__aw__*`）提供 AnimaWorks 内部工具。在无法使用 Agent SDK 的环境中，回退到专用的 Anthropic SDK 执行器 |
-| C (Codex) | Codex CLI（SDK 封装器） | OpenAI Codex CLI 模型 | Codex 沙箱＋通过 **AnimaWorks MCP**（`core/mcp/server.py`）使用内部工具 |
-| D (Cursor) | Cursor Agent CLI | `cursor/*` 模型 | 集成 MCP 的代理循环 |
-| G (Gemini CLI) | Gemini CLI | `gemini/*` 模型 | stream-json 解析和工具循环 |
-| X (Grok Build) | Grok Build CLI 封装器（ACP stdio） | `grok/*` 模型 | 通过 ACP stdio 运行 Grok Build 代理循环 |
-| A (Autonomous) | LiteLLM + tool_use | GPT、Gemini、Mistral、Bedrock、Vertex、xAI、DeepSeek 等 | CC 兼容（Read/Write/Edit/Bash/Grep/Glob、**WebSearch/WebFetch**）＋记忆、message、任务、**todo_write**、技能创建等 |
-
-模式解析依次使用 `status.json` 的 `execution_mode`、`models.json` 的表，以及内置的模型名称模式。未知模型会分配到 A。回退遵循各引擎的 configuration 和错误分类。Heartbeat、Cron、Inbox 可以使用与主模型不同的 **background_model** 运行（优化成本）。同时支持扩展思考（Extended thinking）。
-
-### 语音聊天
-
-只需使用浏览器即可与 Anima 语音对话（按住说话或免提，通过 WebSocket 连接）。
-
-- **STT**：faster-whisper（流式处理・LocalAgreement-2 逐步确认）
-- **TTS**：VOICEVOX / Style-BERT-VITS2（AivisSpeech） / ElevenLabs / Irodori。可为每个 Anima 设置声音、语速和音高
-- **低延迟前置通道** — 小型本地模型会立即响应，并根据需要委派给主体代理（`ask_anima`）或读取记忆
-- **主动发言** — 启用前置通道时，如果持续沉默，Anima 会主动开口
-- **动画头像** — 语音弹窗会驱动伪 Live2D 半身像（以 5 帧静态图实现眨眼和口型同步。不使用骨骼绑定或 Live2D SDK）
-
-### 自动生成头像
-
-<p align="center">
-  <img src="docs/images/asset-management.png" alt="AnimaWorks アセット管理 — リアリスティックなアバターと表情バリアント" width="720">
-  <br><em>根据性格设置自动生成全身像、半身像和表情变体。还带有 Vibe Transfer，可自动继承 supervisor 的画风。</em>
-</p>
-
-7 步流水线会生成全身图、带 7 种表情的半身像、图标、Q 版角色，以及（动画风格下）idle/sitting/waving/talking带动画的绑定 3D 模型。后端除 NovelAI（动画风格）、fal.ai/Flux（（风格化/写实）和 Meshy（3D）外，还支持 Codex 图像生成和本地 Diffusers。通过 Vibe Transfer（NovelAI），新的 Anima 可以继承 supervisor 的画风。即使不配置图像服务，主体也能运行。
+| 维度 | AnimaWorks | CrewAI | LangGraph | OpenClaw | OpenAI Agents SDK |
+|---|---|---|---|---|---|
+| **核心单元与设计理念** | **持久化自主智能体组成的“组织”** | 基于角色的任务小队 | 状态图工作流 | 个人 AI 助手 | 轻量多智能体 SDK |
+| **人机交互界面** | **LINE 风格聊天 + 常驻半身像 + D3 记忆图谱 + 3D/像素办公室 + 语音通话** | CLI / 简易日志 | LangSmith Studio（面向开发者） | 聊天 UI | 无（纯代码） |
+| **长期记忆系统** | **脑科学架构**：6 通道预激活、向量+BM25+原子事实+Neo4j、夜间巩固与受保护主动遗忘 | Cognitive Memory | Checkpointer + Store | SuperMemory | 仅限单次会话 |
+| **自主运行触发器** | **Heartbeat + Cron + TaskStore + GitHub 事件网关（24/7 全天候运行）** | 人工触发为主 | 人工/API 触发 | Cron + Heartbeat | 人工/API 触发 |
+| **进程与容错隔离** | **按 Anima 独立根进程 + 隔离 task runner（IPC v2）、自动重启、RAG 索引自愈** | 单一共享进程 | 单一共享进程 | 单一进程 | 单一共享进程 |
+| **凭据与隐私隔离** | **Enclave（独立 OS 用户 + Unix 套接字 + Egress PII 脱敏 + 多层信任边界）** | 无 | 无 | 无 | 仅输入输出护栏 |
+| **多模型执行** | **7 大引擎（Claude SDK / Codex / Cursor / Gemini CLI / Grok / LiteLLM 等）+ 跨提供商限流保护** | LiteLLM | LangChain 模型 | OpenAI 兼容 | OpenAI 为主 |
 
 ---
 
-## 为什么选择 AnimaWorks
+## 为什么做 AnimaWorks
 
-**一个人什么也做不了。所以，我们创建了一个组织。**
+**一个人什么都做不了。所以我创建了一个组织。**
 
-这个项目诞生于三种职业经历的交汇点。
+这个项目诞生于三段职业经历的交汇点。
 
-**作为经营者**——我知道“一个人什么也做不了”。我们需要优秀的工程师，也需要擅长沟通的员工。有默默工作的员工，也有人偶尔能提出犀利的点子。只有天才，组织无法运转。汇聚多种力量，就能完成一个人无法做到的事。
+**作为经营者**——我深知“一个人什么都做不了”。既需要优秀的工程师，也需要擅长沟通的员工。有默默干活的执行者，也有偶尔提出犀利想法的人。仅靠天才，组织是无法运转的。当多元的力量汇聚在一起时，才能完成一个人无法做到的事。
 
-**作为精神科医生**——观察 LLM 的内部结构时，我发现它与人脑有着惊人的相似之处。回忆、学习、遗忘、巩固——如果把大脑处理记忆的机制原样实现为 LLM 的记忆系统，也许就能重现人脑。既然如此，只要把 LLM 当作“拟似人类”来对待，就应该也能像人类一样组建组织。
+**作为精神科医生**——当我观察 LLM 的内部结构时，我发现它与人脑有着惊人的相似之处。回忆、学习、遗忘、巩固——如果把大脑处理记忆的机制原样实现为 LLM 的记忆系统，也许就能重现人脑。既然如此，只要把 LLM 当作“拟似人类”来对待，就应该也能像人类一样组建组织。
 
 **作为工程师**——我写了 30 年代码。我了解构建逻辑的乐趣，也了解自动化带来的快感。只要把所有理想都写进代码，就能创建出我理想中的组织。
 
@@ -329,252 +265,161 @@ Web UI 由 6 个页面（哈希路由器 `#/…`）和 Workspace 应用组成：
 ---
 
 <details>
-<summary><strong>API 密钥参考</strong></summary>
+<summary><strong>API 密钥、认证与外部服务集成参考</strong></summary>
 
-#### LLM 提供商
+#### LLM 提供商与 CLI 订阅登录
 
-| 键 | 服务 | 模式 | 获取方式 |
-|-----|---------|------|--------|
+| 认证方式 / 密钥 | 对应服务 | 执行模式 | 说明 |
+|---|---|---|---|
+| `claude` CLI 登录 | Claude Code 订阅 | S | 无需 API 密钥，在安装向导或设置中启用 |
+| `codex login` | OpenAI Codex CLI | C | 无需 API 密钥，支持 ChatGPT Plus/Pro/Team 账号 |
 | `ANTHROPIC_API_KEY` | Anthropic API | S / A | [console.anthropic.com](https://console.anthropic.com/) |
-| `OPENAI_API_KEY` | OpenAI | A / C（使用 Codex Login 时可省略） | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| `GOOGLE_API_KEY` | Google AI (Gemini) | A | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| `OPENAI_API_KEY` | OpenAI API | A / C | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `GOOGLE_API_KEY` | Google AI (Gemini) | A / G | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| `grok login` | Grok Build CLI | X | 通过 ACP stdio 运行 `grok/*` 模型 |
+| `cursor-agent` 登录 | Cursor Agent CLI | D | 运行 `cursor/*` 模型 |
+| `OLLAMA_SERVERS` | Ollama / vLLM 等本地大模型 | A | 无需 API 密钥（默认：`http://localhost:11434`） |
 
-**OpenAI Codex（Mode C）** 除了使用 `OPENAI_API_KEY` 外，也可以使用本地的 **Codex Login**（`codex login`）。请在设置向导或 Settings 中进行选择。
+- **Azure OpenAI / AWS Bedrock / Google Vertex AI** 同样可通过 `config.json` 的 `credentials` 完整配置。
+- 认证凭据按以下优先级解析：`config.json` → 加密保险库（`animaworks vault`） → 共享凭据 → 环境变量。
 
-**Grok Build（Mode X）** 通过 Grok Build CLI 封装程序（ACP stdio）使用 `grok/*` 模型。请预先安装 `grok` CLI，然后运行 `grok login`。
+#### 图像与 3D 生成（可选）
 
-**Azure OpenAI**、**Vertex AI (Gemini)**、**AWS Bedrock** 和 **vLLM** 可在 `config.json` 的 `credentials` 部分进行 configuration。详情请参阅[架构](docs/zh/architecture/index.md)。
+| 密钥 / 配置 | 服务 | 用途 |
+|---|---|---|
+| `NOVELAI_TOKEN` | NovelAI | 动漫风格头像、表情差分、Vibe Transfer 画风继承 |
+| `FAL_KEY` | fal.ai (Flux) | 写实风格 / 风格化头像生成 |
+| Codex 图像生成 / 本地 Diffusers | OpenAI / Local | 全身图、半身像与像素精灵图（`pixel_sheet.png`）生成 |
+| `MESHY_API_KEY` | Meshy | 绑定骨骼的 3D 角色模型生成（`.glb`） |
 
-**Ollama** 等本地模型无需 API 密钥。请通过 `OLLAMA_SERVERS`（默认值：`http://localhost:11434`）指定连接目标。
+#### 语音通话与紧急电话告警（可选）
 
-authentication 信息按 `config.json` 的 `credentials` → vault → 共享 credentials 文件 → environment variable 的顺序解析，因此许多密钥也可以存放在加密 vault（`animaworks vault`）中。
+| 组件 | 支持引擎 / 服务 |
+|---|---|
+| **STT（语音识别）** | `faster-whisper`（LocalAgreement-2 流式确认，`pip install animaworks[transcribe]`） |
+| **TTS（语音合成）** | VOICEVOX (`:50021`) / Style-BERT-VITS2 · AivisSpeech (`:5000`) / Irodori (`:7861`) / ElevenLabs API |
+| **紧急电话呼叫** | Twilio Voice（`core/phone/` — 发生严重故障时直接拨打人类手机号并语音播报） |
 
-#### 图像生成（可选）
+#### 外部消息平台与 SaaS 集成（可选）
 
-| 密钥 | 服务 | 生成内容 | 获取地址 |
-|-----|---------|-------|--------|
-| `NOVELAI_TOKEN` | NovelAI | 动漫风格角色图像 | [novelai.net](https://novelai.net/) |
-| `FAL_KEY` | fal.ai (Flux) | 风格化 / 照片级写实图像 | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
-| `MESHY_API_KEY` | Meshy | 3D 角色模型 | [meshy.ai](https://www.meshy.ai/) |
-
-#### 语音聊天（可选）
-
-| 要求 | 服务 | 备注 |
-|------|---------|------|
-| `pip install animaworks[transcribe]` | STT（faster-whisper） | 首次使用时自动下载模型。建议使用 GPU |
-| 启动 VOICEVOX Engine | TTS（VOICEVOX） | 默认值：`http://localhost:50021` |
-| 启动 AivisSpeech/SBV2 | TTS（Style-BERT-VITS2） | 默认值：`http://localhost:5000` |
-| 启动 Irodori 服务器 | TTS（Irodori） | 默认值：`http://localhost:7861` |
-| `ELEVENLABS_API_KEY` | TTS（ElevenLabs） | 云端 API（环境变量） |
-
-#### 外部集成（可选）
-
-| 键 | 服务 | 获取位置 |
-|-----|---------|--------|
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（工具＋Socket Mode接收） | [设置指南](docs/zh/integrations/slack.md) |
-| `CHATWORK_API_TOKEN` | Chatwork（工具＋Webhook接收） | [chatwork.com](https://www.chatwork.com/) |
-| `DISCORD_BOT_TOKEN`（或 Anima 单位 `DISCORD_BOT_TOKEN__<名前>`） | Discord（工具＋Gateway接收＋通知） | [Discord Developer Portal](https://discord.com/developers/applications) |
-| `NOTION_API_TOKEN`（或 `NOTION_API_TOKEN__<名前>`） | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
-| `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhook网关（CI/审查/冲突→任务化） | 仓库设置 |
-
-Gmail / Google Calendar / Google Sheets / Google Tasks / X搜索 / AWS收集器 / Zoom会议导入（RTMS）/ 本地LLM工具通过 `config.json` 的 `credentials`（OAuth 或服务账户）进行配置。人工通知渠道：Slack、Chatwork、Discord、LINE、Telegram、ntfy。详情请参阅 [架构](docs/zh/architecture/index.md)。
+| 服务 | 功能 |
+|---|---|
+| **GitHub** | Webhook 网关（CI 失败、PR 审查、合并冲突自动转任务）+ 按 Anima 独立身份执行 `gh` 操作 |
+| **Slack** | Socket Mode 双向对话、共享 Board 同步、**Slack 对话镜像至 Web 聊天界面**、人类通知 |
+| **Discord / Chatwork** | Gateway / Webhook 接收、双向消息、人类通知 |
+| **Zoom RTMS** | 实时采集会议音频与字幕，自动生成会议纪要与待办事项 |
+| **Google Workspace / Notion** | 读写 Gmail、Google Calendar、Google Sheets、Google Tasks 与 Notion 页面 |
+| **通知渠道** | Slack / Discord / Chatwork / LINE / Telegram / ntfy / Twilio 电话呼叫 |
 
 </details>
 
 <details>
-<summary><strong>层级与角色</strong></summary>
+<summary><strong>组织层级、角色模板与多公司（Company）管理</strong></summary>
 
-通过 `supervisor` 字段即可定义上下级关系。未设置则为顶层。
+仅凭 `status.json` 中的 `supervisor` 字段即可定义汇报线（上级与下属）。你甚至可以在聊天中直接吩咐主管 Anima“招聘一位具备某项技能的成员”，由主管自行设计角色、性格与权限并创建新的 Anima。
 
-通过角色模板，根据职位自动应用相应的专业提示词、权限和模型：
+| 角色模板 | 主要职责 | 自动赋予的能力 |
+|---|---|---|
+| `manager` | 决策制定、任务拆解与委派、进度审计 | 主管工具集（`delegate_task`、`org_dashboard`、查看/重启/招聘下属） |
+| `engineer` | 代码实现、测试编写、CI 修复、创建 PR | 隔离 worktree 与临时环境开发规范、Git/GitHub 集成 |
+| `researcher` | 技术调研、竞品分析、文档审查 | Web 搜索、知识结构化、报告生成 |
+| `writer` | 内容创作、文档与发布说明撰写 | 文档质量管理、成果物文件附件输出 |
+| `ops` | 日志监控、例行巡检、基础设施健康检查 | 基于轻量模型（本地大模型等）的低成本全天候监控 |
+| `general` | 助理、日程协调、前台窗口联络 | 跨团队沟通枢纽、会议纪要整理 |
 
-| 角色 | 默认模型 | 用途 |
-|--------|----------------|------|
-| `engineer` | Claude Opus 4.6 | 复杂推理、代码生成 |
-| `manager` | Claude Opus 4.6 | 协调、决策 |
-| `writer` | Claude Sonnet 4.6 | 内容创作 |
-| `researcher` | Claude Sonnet 4.6 | 信息收集 |
-| `ops` | Ollama (GLM-4.7) | 日志监控、常规业务 |
-| `general` | Claude Sonnet 4.6 | 通用 |
-
-管理者会自动获得**主管工具**。任务委派、进度跟踪、下属的重启/停用、组织仪表盘、下属状态读取——与现实中的管理职责相同。
-
-每个Anima的ProcessSupervisor作为独立进程启动，通过本地IPC通信（Unix系使用Unix socket，Windows使用loopback TCP）。
+此外，借助 `animaworks company` 命令集，还可以在同一运行时内定义**多家公司（Company）或事业部**，支持频道作用域隔离、公司拆分（`split`）与导出（`export`）。
 
 </details>
 
 <details>
-<summary><strong>安全</strong></summary>
+<summary><strong>多层安全防御与信任边界</strong></summary>
 
-既然要给自主运行的代理提供工具，安全就必须认真对待。既然要实际用于工作，就不能妥协。AnimaWorks采用多层防御：
+正因为赋予了自主智能体 Shell 与外部工具权限，AnimaWorks 实现了不依赖“性善论”的纵深防御体系（详见 [安全文档](docs/en/security.md) / [Enclave](docs/en/enclave.md)）：
 
-| 层 | 内容 |
-|---------|------|
-| **信任边界标记** | 外部数据（网络搜索、Slack、邮件）按来源进行标签，并在会话中传播所见的最小信任度。明确指示模型不要遵循来自不可信来源的指令 |
-| **记忆来源追踪** | 来自外部内容的记忆会保留到RAG元数据的来源，在回忆时也能与Anima自身的知识区分开 |
-| **命令安全** | 检测shell注入（默认记录，可强制执行） → 全局禁止列表（强制，无 `permissions.global.json` 服务器无法启动） → 单个代理禁止命令 → 单个代理允许列表 → 路径遍历检测 |
-| **文件沙箱** | 每个代理通过 `permissions.json` 限制在自己的目录中。identity和权限文件本身受写保护 |
-| **进程隔离** | 每个代理独立OS进程。通过本地IPC通信（Unix socket，Windows为loopback TCP） |
-| **消息处理** | 同一run中同一目标的重复发送防护、Inbox文件变更唤醒、单次执行、消息聚合、Provider退避。最近的发送历史会注入到提示词中，不因全局预算或深度而拒绝发送 |
-| **认证与会话管理** | Argon2id哈希、48字节随机令牌、最多10个会话、TTL可配置 |
-| **Webhook验证** | Slack、Chatwork、Zoom、GitHub的HMAC签名验证（带防重放） |
-| **SSRF缓解** | 媒体代理阻止私有IP和DNS重绑定，强制HTTPS，验证Content-Type和魔数 |
-| **出站路由** | 未知目标采用fail-closed。没有明确配置时，不允许任意外部发送 |
-| **代理间消息完整性** | 发送者名单核对，以及所有中继消息的origin chain追踪 |
-
-详情：**[安全](docs/zh/security.md)**
+1. **Enclave（PII 与生产数据隔离运行时）**：将个人隐私与生产 DB/S3 凭据封闭在独立操作系统用户的隔离空间内，仅通过 Unix 域套接字（`SO_PEERCRED`）与 Egress PII 脱敏流水线向主组织返回脱敏后的安全事实。
+2. **信任边界标签（Provenance & Trust）**：来自 Web 搜索、Slack、邮件等外部输入均打上不可信（`untrusted`）来源标签，并在会话与 RAG 记忆元数据中全程追踪来源，防止提示词注入导致权限提升。
+3. **5 级命令与路径检查**：Shell 注入检测 → 全局黑名单（若缺失 `permissions.global.json` 则服务端拒绝启动） → 单 Anima 禁用命令 → 单 Anima 白名单 → 包含相对路径在内的目录穿越拦截与符号链接越界防护。
+4. **文件沙箱与门禁工具（Action Gate）**：每个 Anima 仅能写入允许的 `file_roots`，且禁止篡改自身的 `identity.md` 与 `permissions.json`；高风险外部发送工具支持事前规则门禁校验。
+5. **认证、SSRF 防护与 Webhook 验签**：Argon2id 密码哈希、48 字节会话令牌、带防重放保护的 Slack/Chatwork/Zoom/GitHub HMAC 签名验证，以及拦截内网 IP 与 DNS 重绑定的媒体代理。
 
 </details>
 
 <details>
-<summary><strong>CLI命令参考（高级用户）</strong></summary>
+<summary><strong>CLI 命令参考</strong></summary>
 
-CLI面向高级用户和自动化。日常操作使用Web UI即可。
+日常对话与监控均可直接在 Web UI 中完成，同时框架也提供了强大的 CLI（`animaworks` 与供智能体内部调用的 `animaworks-tool`）用于自动化与运维管理（完整说明见 [CLI 参考](docs/en/reference/cli.md)）：
 
-### 服务器与演示
-
-| 命令 | 说明 |
-|---|---|
-| `animaworks start [--host HOST] [--port PORT] [-f]` | 启动服务器（使用 `-f` 在前台运行。默认端口 18500） |
-| `animaworks stop [--force]` / `restart` | 停止 / 重启服务器 |
-| `animaworks demo [--preset NAME] [--port PORT] [--reset]` | 启动演示组织（默认端口 18501，使用专用数据目录） |
-
-### 初始化
-
-| 命令 | 说明 |
-|---|---|
-| `animaworks init [--force] [--template NAME] [--from-md PATH] [--blank]` | 初始化运行时目录 |
-| `animaworks migrate [--dry-run] [--list] [--force] [--resync-db]` | 迁移运行时数据（启动时也会自动执行） |
-| `animaworks reset [--restart]` | 重置运行时目录 |
-| `animaworks import hermes\|openclaw --path P [--apply]` | 从其他框架迁移智能体 |
-
-### Anima管理
-
-| 命令 | 说明 |
-|---|---|
-| `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 新建 |
-| `animaworks anima list / info / status / restart / disable / enable` | 确认与控制 |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima单位配置 |
-| `animaworks anima reload [--all]` | 从status.json热重载 |
-| `animaworks anima delete / rename` | 生命周期操作 |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 集成脚本（不属于CLI本体的维护范围） |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 集成完成后的最终处理 |
-| `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 诊断 |
-
-### 沟通
-
-| 命令 | 说明 |
-|---|---|
-| `animaworks chat ANIMA "メッセージ" [--from NAME]` | 发送消息 |
-| `animaworks send FROM TO "メッセージ"` | Anima 间消息 |
-| `animaworks board read/post/dm-history …` | 读写共享渠道 |
-| `animaworks heartbeat ANIMA` | 手动触发心跳 |
-
-### Configuration・Maintenance
-
-| Command | Description |
-|---|---|
-| `animaworks config list / get KEY / set KEY VALUE` | Configuration |
-| `animaworks status` / `logs [ANIMA]` | System status・logs |
-| `animaworks index [--anima NAME] [--full]` | RAG index management |
-| `animaworks repair-rag --anima NAME --full` / `rag-repair-status` | RAG quarantine・rebuild |
-| `animaworks memory status / migrate / backup / rollback / cleanup` | memory backend and memory data |
-| `animaworks skills install / list / inspect / remove / quarantine` | Skill Hub operations |
-| `animaworks task add / update / list` | Task queue operations |
-| `animaworks vault status / init / get / store / list` | Encrypted credential vault |
-| `animaworks company create / list / assign / adopt / split / export` | Multi-company organization management |
-| `animaworks cost` / `profile` / `models list` / `tmp list/clean` | Cost・profiles・models・temporary file cleanup |
-| `animaworks mcp --anima NAME` | Start an stdio MCP server for external clients |
-
-### Automation Helpers
-
-`python3 -m swe.ci_autofix` is an experimental v0 loop for repairing failed CI runs. It reads the latest failure log with `gh`,
-has the configured Architect make corrections, runs the local gates (ruff / pytest), has the Reviewer assess the changes, and commits them.
-After three failures, it escalates via `call_human`. For details, see
-[`swe/README.md`](swe/README.md#4-ci-auto-fix-loop-v0).
+| 类别 | 常用命令 | 说明 |
+|---|---|---|
+| **服务 / 演示** | `animaworks start [-f] [--port 18500]`<br>`animaworks stop` / `restart`<br>`animaworks demo [--preset ja-business] [--reset]` | 启动、停止或重启服务端<br>启动内置 3 天活动历史的 3 人演示团队（默认端口 18501） |
+| **Anima 管理** | `animaworks anima create / list / info / status`<br>`animaworks anima set-model / set-background-model / set-role`<br>`animaworks anima restart / reload / enable / disable`<br>`animaworks anima audit / permissions / repair-bootstrap` | 创建 Anima、查看状态、切换模型、热重载提示词、权限与安全审计 |
+| **任务管理** | `animaworks task board / list / show / add`<br>`animaworks task claim / release / done / cancel / note`<br>`animaworks task autonomy [--days N]` | 操作 SQLite TaskStore、管理租约、生成**组织自主执行率统计报告** |
+| **对话与联络** | `animaworks chat ANIMA "消息"`<br>`animaworks send FROM TO "消息"`<br>`animaworks board read / post / dm-history`<br>`animaworks heartbeat ANIMA` | 从 CLI 发起聊天、发送智能体间 DM、读写共享看板、手动触发 Heartbeat |
+| **记忆、RAG 与技能** | `animaworks memory status / migrate / backup / cleanup`<br>`animaworks index [--anima NAME] [--full]`<br>`animaworks repair-rag --anima NAME --full`<br>`animaworks skills list / install / inspect / remove` | 管理记忆后端（`legacy` / `neo4j`）、重建 RAG 索引、管理 Skill Hub |
+| **Enclave、Vault 与公司** | `animaworks enclave doctor / status / audit`<br>`animaworks vault init / store / get / list`<br>`animaworks company create / list / assign / split / export`<br>`animaworks cost [--today]` / `models list` | 诊断 Enclave 隔离环境、管理加密凭据、管理多公司架构、统计 LLM 成本 |
 
 </details>
 
 <details>
-<summary><strong>Technology Stack</strong></summary>
+<summary><strong>技术栈与项目目录结构</strong></summary>
 
-| Component | Technology |
-|---|---|
-| Agent execution | Claude Agent SDK / Codex CLI / Cursor Agent CLI / Gemini CLI / Grok Build CLI / Anthropic SDK (fallback) / LiteLLM |
-| Mode S integration | stdio **MCP** (`python -m core.mcp.server`, tool name `mcp__aw__*`) |
-| LLM providers | Anthropic, OpenAI, Google, Azure, Vertex AI, AWS Bedrock, Ollama, vLLM, and others (via LiteLLM) |
-| Web framework | FastAPI + Uvicorn |
-| GitHub integration | Webhook gateway (HMAC validation) → task dispatch, multi-path review orchestration, `gh` CLI tool with per-Anima identity |
-| Real-time | WebSocket (dashboard・voice), SSE (chat・meetings), stream lifecycle management via `StreamRegistry` |
-| Task scheduling | APScheduler (heartbeat・cron・consolidation・health monitoring・RAG repair) |
-| Task management | Task queue (JSONL) + pending task runner with PR-level exclusive keys + TaskBoard (SQLite) |
-| Memory foundation | ChromaDB (via isolated vector worker) + BM25 + sentence-transformers + legacy NetworkX graph + atomic facts + entity registry |
-| Configuration・migration | Pydantic 2.0+ / JSON / Markdown, `core/migrations/` (startup migration) |
-| Internationalization | `core/i18n`'s `t()`. 17 wizard languages・dashboard ja/en/ko |
-| Skill foundation | Skill Hub, explicit skill activation, router, curator, procedure-to-skill promotion |
-| Extension tools | In addition to automatic registration of `core/integrations/*.py`, scans `~/.animaworks/common_tools/` and `animas/<名>/tools/` |
-| Voice chat | faster-whisper (STT) + VOICEVOX / SBV2 / ElevenLabs / Irodori (TTS) + local front-lane model |
-| Messaging | Receive: Slack Socket Mode, Chatwork Webhook, Discord Gateway, Zoom RTMS / Human notifications: Slack, Chatwork, Discord, LINE, Telegram, ntfy |
-| Image generation | NovelAI, fal.ai (Flux), Meshy (3D), Codex image generation, local Diffusers |
-| Workspace app | Three.js 3D office + 2D pixel-art office (powered by the same live event stream) |
-
-</details>
-
-<details>
-<summary><strong>Project Structure</strong></summary>
-
-```
+```text
 animaworks/
-├── main.py              # CLIエントリポイント
-├── core/                # Digital Animaコアエンジン
-│   ├── anima.py, agent.py  # コアエンティティ・オーケストレーション
-│   ├── lifecycle/       # スケジューラ・統合ジョブ・inboxウォッチ等
-│   ├── memory/          # 記憶（priming, consolidation, forgetting, RAG, facts, retrieval）
-│   ├── skills/          # Skill Hub・activation・router・curator・promotion
-│   ├── taskboard/       # TaskBoard ストア・状態・クリーンアップ
-│   ├── execution/       # 実行エンジン（S/C/D/G/X/A/B）＋サニタイズ
-│   ├── mcp/             # Mode S・外部クライアント向け stdio MCP サーバー
-│   ├── platform/        # 子プロセス・ロック・Codex/Cursor/Gemini/Grok 周辺
-│   ├── tooling/         # ToolHandler・スキーマ・権限・外部ディスパッチ
-│   ├── prompt/          # システムプロンプト構築
-│   ├── supervisor/      # ProcessSupervisor・IPC・TaskExec・死活監視・ストリーミング
-│   ├── voice/           # 音声チャット（STT + TTS + フロントレーン）
-│   ├── config/          # 設定（Pydantic・models.json・グローバル権限）
-│   ├── auth/            # UI 認証まわり
-│   ├── notification/    # 人間通知チャネル
-│   ├── migrations/      # ランタイムデータマイグレーション
-│   ├── i18n/            # 翻訳文字列（`t()`）
-│   ├── tools/           # 外部ツール実装（slack, discord, gmail, github, …）
-│   ├── tasks_dispatch.py, review_multipass.py  # GitHubイベント→タスク配線、マルチモデルレビュー
-│   └── …
-├── cli/                 # CLIパッケージ（demo含む）
-├── server/              # FastAPI + 静的Web UI + Workspaceアプリ
-│   ├── app.py           # アプリ生成・lifespan・認証/セットアップガード・静的マウント
-│   ├── github_gateway.py, slack_socket.py, discord_gateway.py, zoom_gateway.py
-│   ├── routes/          # REST/WebSocketルート（chat, room, voice, webhooks, …）
-│   └── static/          # ダッシュボード、setupウィザード、workspace/（3D）、workspace/pixel/
-├── swe/                 # 実験的CI自動修復ループ・SWEハーネス
-├── demo/                # デモプリセットと同梱履歴
-└── templates/           # 初期化テンプレート（ja / en / ko）ロール別作業規約を含む
+├── main.py                  # CLI 入口
+├── core/                    # Digital Anima 核心框架
+│   ├── anima/               # DigitalAnima 外观类、生命周期、Heartbeat、Inbox、附件管理
+│   ├── agent/               # AgentCore、对话循环、Executor 工厂、前置上下文构建
+│   ├── runtime/             # Anima 根进程、task runner 监管器、IPC / IPC v2、流式传输
+│   ├── execution/           # 7 种执行引擎（claude, codex, cursor, gemini, grok, litellm）+ watchdog 与会话存储
+│   ├── memory/              # 长期记忆（priming, retrieval, rag, facts/connections, consolidation, activity）
+│   ├── tasks/               # SQLite TaskStore（board, attempts, leases, wakeups, delegation）与外部任务采集
+│   ├── enclave/             # 机密与 PII 隔离运行时（gateway, egress masker, raw_store, SSM tunnel, guards）
+│   ├── tooling/             # ToolHandler、权限策略、动作门禁、MCP/外部工具分发
+│   ├── integrations/        # 自动发现的外部集成工具（GitHub, Slack, Discord, Notion, Google, 图像生成等）
+│   ├── mcp/                 # 面向 Mode S 与外部客户端的 stdio MCP 服务（mcp__aw__*）
+│   ├── skills/              # Skill Hub、路由器、策展器、从流程记忆提炼技能
+│   ├── prompt/              # 系统提示词、组织上下文与工具指南组装
+│   ├── messaging/           # Anima 间 DM、共享频道与外部发送路由
+│   ├── notification/        # 人类通知（call_human）、内嵌审批与回复路由
+│   ├── voice/               # 语音对话（faster-whisper STT + 多引擎 TTS + 低延迟前排通道）
+│   ├── phone/               # Twilio 紧急电话呼叫告警
+│   ├── org/                 # 多公司（Company）、组织层级与工作区管理
+│   ├── config/              # Pydantic 配置模型、模型解析与全局权限缓存
+│   ├── auth/                # Argon2id 认证与会话管理
+│   └── i18n/                # 多语言消息目录（t()）
+├── server/                  # FastAPI 服务端 + WebSocket/SSE + 网关 + Web UI
+│   ├── app.py               # ASGI 应用、生命周期、Readiness 门禁与基础路径控制
+│   ├── supervisor/          # ProcessSupervisor、健康检查、指数退避重启与自动更新
+│   ├── gateways/            # GitHub Webhook, Slack Socket Mode, Discord Gateway, Zoom RTMS
+│   ├── routes/              # REST / WebSocket / SSE 路由（chat, sessions, memory, assets, attachment_preview 等）
+│   └── static/              # Web UI（LINE 风格聊天、左侧纵列、常驻立绘、D3 记忆弹窗、通话界面、3D/像素办公室）
+├── cli/                     # animaworks / animaworks-tool CLI 实现、演示运行器与 TUI
+├── templates/               # 多语言（ja / en / ko）初始提示词、角色规范与 systemd 模板
+└── demo/                    # 4 种预设（ja/en × business/anime）与内置 3 天活动历史
 ```
 
 </details>
 
 ---
 
-## Documentation
+## 文档导航
 
-**[Documentation Index](docs/zh/README.md)** — Guidance on reading order, detailed architecture, and a list of design specifications.
+可通过 **[文档总索引 (`docs/en/README.md`)](docs/en/README.md)**（[日本語](docs/ja/README.md) / [한국어](docs/ko/README.md)）查阅设计理念、架构详解、运维指南与自动生成的参考手册：
 
-| Documentation | Description |
-|-------------|------|
-| [Design Philosophy](docs/zh/vision.md) | The foundational idea of “collaboration among imperfect individuals” |
-| [Feature Overview](docs/zh/overview.md) | An overview of what AnimaWorks can do |
-| [Memory System](docs/zh/memory/index.md) | Episodic memory・semantic memory・procedural memory・priming・active forgetting |
-| [Security](docs/zh/security.md) | Permission boundaries, data provenance, security operations |
-| [Neuroscience Mapping](docs/zh/brain-mapping.md) | How each module corresponds to the human brain |
-| [Architecture](docs/zh/architecture/index.md) | Execution modes, prompt construction, configuration resolution |
+| 文档 | 内容概要 |
+|---|---|
+| **[设计理念 (Vision)](docs/en/vision.md)** | “不完美个体的协作”核心思想与组织设计原则 |
+| **[功能概览 (Overview)](docs/en/overview.md)** | AnimaWorks 完整功能地图与各详细章节入口 |
+| **[脑科学映射 (Brain Mapping)](docs/en/brain-mapping.md)** | 海马体、杏仁核、前额叶皮层等大脑机制与各模块的对应关系 |
+| **[整体架构 (Architecture)](docs/en/architecture/index.md)** | Phase 3 进程架构、执行模式、生命周期、提示词构建与任务管理 |
+| **[记忆系统 (Memory System)](docs/en/memory/index.md)** | 自动记忆预激活（Priming）、混合检索、日/周记忆巩固与主动遗忘 |
+| **[安全机制 (Security)](docs/en/security.md)** | 信任边界、命令防护、文件沙箱、认证与审计 |
+| **[Enclave（隔离运行时）](docs/en/enclave.md)** | 隔离个人隐私与生产数据的 Enclave 构建、SSM 隧道与 Egress 脱敏运维 |
+| **[参考手册 (References)](docs/en/reference/cli.md)** | [CLI](docs/en/reference/cli.md) / [工具 CLI](docs/en/reference/tool-cli.md) / [HTTP API](docs/en/reference/api.md) / [配置项](docs/en/reference/config.md) / [模块列表](docs/en/reference/modules.md) |
 
-## 许可证
+---
 
-Apache License 2.0。详情请参阅 [LICENSE](LICENSE)。
+## 开源许可 (License)
+
+Apache License 2.0 — 详情请参阅 [LICENSE](LICENSE)。
+

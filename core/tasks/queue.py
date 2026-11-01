@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from core.exceptions import TaskOwnedByOther
 from core.exceptions import TaskPersistenceError as TaskPersistenceError  # noqa: F401
 from core.i18n import t
 from core.schemas import TaskEntry
@@ -129,6 +130,20 @@ class TaskQueueManager:
         if self._store is None:
             self._store = TaskStore.open(task_database_path(self.anima_dir), read_only=self._read_only)
         return self._store
+
+    def delegated_task_target(self, task_id: str) -> tuple[str, str] | None:
+        """Return the owner and canonical ID when *task_id* is a foreign alias."""
+        target = self.store.alias_target(self.anima_dir.name, task_id)
+        if target is None or target[0] == self.anima_dir.name:
+            return None
+        return target
+
+    def assert_task_update_owner(self, task_id: str, status: str) -> tuple[str, str] | None:
+        """Reject delegated task updates by the viewer, allowing cancellation."""
+        target = self.delegated_task_target(task_id)
+        if target is not None and status != "cancelled":
+            raise TaskOwnedByOther(target[0])
+        return target
 
     def submit(
         self,
@@ -296,6 +311,7 @@ class TaskQueueManager:
         Applies the update atomically to the canonical task record.
         Returns the updated task or None if not found.
         """
+        self.assert_task_update_owner(task_id, status)
         if status in _RETIRED_STATUSES:
             raise ValueError(
                 f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."

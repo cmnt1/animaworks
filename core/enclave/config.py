@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -51,6 +52,15 @@ class EnclaveSsmTunnelConfig(BaseModel):
         ge=1024,
         le=65535,
         description="Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset",
+    )
+    local_port_count: int = Field(
+        default=1,
+        ge=1,
+        le=64,
+        description=(
+            "Number of consecutive loopback ports starting at local_port; concurrent processes each "
+            "reserve a different one"
+        ),
     )
 
     @model_validator(mode="after")
@@ -111,6 +121,13 @@ class EnclaveSqlSourceConfig(BaseModel):
     cell_max_chars: int = 2000
     app_key_secret: str | None = None
     decrypt_columns: list[str] = Field(default_factory=list)
+    session_variables: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "User variables set on every connection (``SET @name = 'value'``), e.g. for row-level "
+            "views that filter on a session variable"
+        ),
+    )
 
     @field_validator("host", "database", "user", "password_secret")
     @classmethod
@@ -126,6 +143,17 @@ class EnclaveSqlSourceConfig(BaseModel):
         if value < 1:
             raise ValueError("max_rows must be at least 1")
         return min(value, 1000)
+
+    @field_validator("session_variables")
+    @classmethod
+    def _require_safe_session_variables(cls, value: dict[str, str]) -> dict[str, str]:
+        # The values are inlined into init_command, so reject anything that could leave the quoted literal.
+        for name, variable_value in value.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                raise ValueError(f"invalid session variable name: {name!r}")
+            if any(character in variable_value for character in ("'", "\\", ";")):
+                raise ValueError(f"session variable {name!r} must not contain quotes, backslashes or semicolons")
+        return value
 
 
 class EnclaveConfig(BaseModel):
@@ -146,12 +174,29 @@ class EnclaveConfig(BaseModel):
     # positive value fails a job with error=timeout after that many seconds.
     request_timeout_s: int = 0
     allowed_llm_credentials: list[str] = Field(default_factory=list)
+    # Named model choices a caller may pick per ask, e.g.
+    # {"luna-max": "a:azure/responses/gpt-6-luna", "opus-high": ""}.  An empty
+    # value means the entry anima's own configured model.
+    model_profiles: dict[str, str] = Field(default_factory=dict)
+    # Profile used when an ask names none; "" keeps the entry anima's model.
+    default_model_profile: str = ""
     datasets: dict[str, EnclaveDatasetConfig] = Field(default_factory=dict)
     sql_sources: dict[str, EnclaveSqlSourceConfig] = Field(default_factory=dict)
     aws_sources: dict[str, EnclaveAwsSourceConfig] = Field(default_factory=dict)
     secrets_dir: str | None = None
     raw_dir: str = "raw"
     egress: dict[str, Any] = Field(default_factory=dict)
+    # HOST:PORT targets the OS firewall must block.  The startup guard tries a
+    # TCP connection to each and refuses to boot if one succeeds, so the
+    # enclave never runs while the egress rules are missing.
+    egress_probe: list[str] = Field(default_factory=list)
+    egress_probe_timeout_s: float = 5.0
+
+    @model_validator(mode="after")
+    def _default_profile_must_exist(self) -> EnclaveConfig:
+        if self.default_model_profile and self.default_model_profile not in self.model_profiles:
+            raise ValueError("default_model_profile must name an entry of model_profiles")
+        return self
 
 
 class EnclaveClientConfig(BaseModel):

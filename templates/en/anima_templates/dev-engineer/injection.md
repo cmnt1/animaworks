@@ -1,9 +1,9 @@
 # Development Engineer Guidelines
 
 ## Implementation Lane
-- Perform work in a separate worktree to avoid conflicts with other work.
-- Keep changes to existing code to the minimum necessary, and record out-of-scope fixes as a separate task.
-- For work that is repeated multiple times, standardize the procedure and follow the workflow conventions that leverage machines.
+- To avoid conflicts with other work, isolate work in a worktree. Create worktrees at `$ANIMAWORKS_SCRATCH_DIR`, and create them at `shared/worktrees/` only for work being handed off to another Anima (`common_knowledge/operations/scratch-and-worktrees.md`).
+- Keep changes to existing code to the minimum necessary, and record out-of-scope fixes as separate tasks.
+- For work that is repeated multiple times, document the procedure and follow the conventions for workflows that leverage machines.
 
 ## Creating and Describing PRs
 - Create a PR that summarizes the purpose, changes, and validation method.

@@ -1,6 +1,7 @@
 // ── Pane Host — manages multiple independent Chat pane instances ──
 import { t } from "/shared/i18n.js";
 import { api } from "../../modules/api.js";
+import { escapeHtml } from "../../modules/state.js";
 import { createChatContext, CONSTANTS, modelKey, syncModelSelect, updateModelSelectTitle, scheduleSaveChatUiState } from "./ctx.js";
 import { fetchModelCatalog, populateModelSelect } from "../../shared/chat/model-picker.js";
 import { createAnimaController } from "./anima-controller.js";
@@ -8,10 +9,8 @@ import { createThreadController } from "./thread-controller.js";
 import { createChatRenderer } from "./chat-renderer.js";
 import { createAvatarController } from "./avatar-controller.js";
 import { createActivityController } from "./activity-controller.js";
+import { createMemoryPopover } from "./memory-popover.js";
 import { createStreamingController } from "./streaming-controller.js";
-import { createHistoryController } from "./history-controller.js";
-import { createMemoryController } from "./memory-controller.js";
-import { createSidebarController } from "./sidebar-controller.js";
 import { createEventsController } from "./events-controller.js";
 import { createImageVoiceController } from "./image-voice-controller.js";
 import { createMeetingController } from "./meeting-controller.js";
@@ -19,8 +18,16 @@ import { createWorkIndicatorController } from "./work-indicator-controller.js";
 import { initSplitter } from "./splitter.js";
 import { onEvent } from "../../modules/websocket.js";
 import { invalidateAvatarCache } from "../../modules/avatar-resolver.js";
+import { presence, initPresence } from "../../modules/anima-presence.js";
+import { wireReplyToasts } from "../../modules/presence-ui.js";
+import { createPaneHead } from "./pane-head.js";
+import { createAnimaRail } from "./anima-rail.js";
+import { createPresencePanel } from "./presence-panel.js";
+import { createSlashPalette } from "./slash-palette.js";
+import { startSessionsRefreshFallback } from "./session-refresh.js";
 
 const LAYOUT_KEY = "aw-chat-pane-layout";
+const PHONE_QUERY = window.matchMedia("(max-width: 560px)");
 
 function paneHtml(options = {}) {
   const standaloneClass = options.meetingStandalone ? " meeting-standalone-main" : "";
@@ -29,6 +36,21 @@ function paneHtml(options = {}) {
       <div class="chat-anima-tabs-header" data-chat-id="chatAnimaTabsHeader">
         <button class="chat-unified-hamburger" data-chat-id="chatUnifiedHamburger" aria-label="${t("pane.menu")}">&#x2630;</button>
         <div class="anima-tabs" data-chat-id="chatAnimaTabs"></div>
+        <div class="chat-pane-head-id" data-chat-id="chatPaneHeadId">
+          <img class="chat-pane-head-face" data-chat-id="chatPaneHeadFace" alt="" hidden>
+          <div class="chat-pane-head-text">
+            <div class="chat-pane-head-name" data-chat-id="chatPaneHeadName"></div>
+            <div class="chat-pane-head-status" data-chat-id="chatPaneHeadStatus"></div>
+          </div>
+          <button type="button" class="chat-rail-toggle" data-chat-id="chatRailToggle" aria-expanded="false" aria-label="${t("chat.rail.toggle")}" title="${t("chat.rail.toggle")}">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+        <div class="thread-tabs" data-chat-id="chatThreadTabs">
+          <button class="thread-tab active" data-thread="default">${t("thread.default_label")}</button>
+          <button class="thread-tab-new" data-chat-id="chatNewThreadBtn" title="${t("thread.new")}">＋</button>
+        </div>
+        <div class="chat-pane-head-tools" data-slot="head-tools"></div>
         <div class="chat-header-actions">
           <button type="button" class="meeting-mode-toggle" data-chat-id="meetingModeToggle" title="${t("meeting.toggle")}">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -36,6 +58,12 @@ function paneHtml(options = {}) {
           <div class="chat-add-conversation" data-chat-id="chatAddConversationArea">
             <button type="button" data-chat-id="chatAddConversationBtn" class="chat-add-conversation-btn">${t("chat.anima_select")}</button>
             <div data-chat-id="chatAddConversationMenu" class="chat-add-conversation-menu" role="listbox" aria-label="${t("chat.anima_select")}"></div>
+          </div>
+          <div class="chat-pane-head-tools" data-slot="head-tools">
+            <label class="chat-bg-toggle" title="${t("chat.line.show_background")}">
+              <input type="checkbox" data-chat-id="chatShowBackground" aria-label="${t("chat.line.show_background")}">
+              <span>${t("chat.line.show_background")}</span>
+            </label>
           </div>
         </div>
         <div class="chat-thread-dropdown" data-chat-id="chatThreadDropdown">
@@ -51,8 +79,8 @@ function paneHtml(options = {}) {
         <button class="chat-close-pane-btn" data-chat-id="chatClosePaneBtn" aria-label="${t("pane.close")}" title="${t("pane.close")}" style="display:none">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
-        <button class="chat-unified-info-btn" data-chat-id="chatUnifiedInfoBtn" aria-label="${t("pane.info_panel")}" title="${t("pane.info_panel")}">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <button class="chat-unified-info-btn" data-chat-id="chatUnifiedInfoBtn" aria-label="${t("chat.memory.open")}" title="${t("chat.memory.open")}">
+          <span aria-hidden="true">◎</span><span>${t("chat.memory.open")}</span>
         </button>
         <button class="chat-unified-user-btn" data-chat-id="chatUnifiedUserBtn" aria-label="${t("pane.user")}">
           <span class="chat-unified-user-initial" data-chat-id="chatUnifiedUserInitial">?</span>
@@ -66,23 +94,23 @@ function paneHtml(options = {}) {
       </div>
 
       <div class="meeting-participant-panel" data-chat-id="meetingParticipantPanel" style="display:none"></div>
-      <div class="thread-tabs" data-chat-id="chatThreadTabs">
-        <button class="thread-tab active" data-thread="default">${t("thread.default_label")}</button>
-        <button class="thread-tab-new" data-chat-id="chatNewThreadBtn" title="${t("thread.new")}">＋</button>
-      </div>
 
       <div class="chat-messages-area">
-        <div data-chat-id="chatPageMessages" class="chat-messages" style="flex:1; overflow-y:auto; padding:1rem;">
+        <div data-chat-id="chatPageMessages" class="chat-messages chat-line-talk" style="flex:1; overflow-y:auto; padding:1rem;">
           <div class="chat-empty">${t("chat.anima_select_first")}</div>
         </div>
-        <button type="button" data-chat-id="chatScrollToBottom" class="scroll-to-bottom-btn" aria-label="Scroll to bottom">
+      </div>
+
+      <form data-chat-id="chatPageForm" class="chat-input-form">
+        <button type="button" data-chat-id="chatScrollToBottom" class="scroll-to-bottom-btn" aria-label="${t("chat.line.scroll_bottom")}" title="${t("chat.line.scroll_bottom")}">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
-      </div>
-
-      <form data-chat-id="chatPageForm" class="chat-input-form">
+        <div class="chat-line-reply-chip" data-chat-id="chatReplyChip" hidden>
+          <span data-chat-id="chatReplyText"></span>
+          <button type="button" data-chat-id="chatReplyCancel" aria-label="${t("chat.line.cancel_reply")}">×</button>
+        </div>
         <div class="image-preview-bar" data-chat-id="chatPagePreviewBar" style="display:none"></div>
         <div class="chat-work-indicator" data-chat-id="chatWorkIndicator" hidden></div>
         <div class="pending-queue-bar" data-chat-id="chatPagePending" style="display:none">
@@ -103,11 +131,12 @@ function paneHtml(options = {}) {
             disabled
           ></textarea>
           <div class="chat-input-actions">
-            <button type="button" class="chat-attach-btn" data-chat-id="chatPageAttachBtn" title="${t("chat.attach_image")}">+</button>
+            <button type="button" class="chat-attach-btn" data-chat-id="chatPageAttachBtn" title="${t("chat.attach.add_file")}">+</button>
             <select class="chat-model-select" data-chat-id="chatPageModel" data-i18n-title="chat.model_selector" title="${t("chat.model_selector")}">
               <option value=""></option>
             </select>
             <div class="context-ring-wrap" data-chat-id="chatContextRing" title="${t("chat.context_ring_title")}">
+              <span class="context-ring-label" data-chat-id="chatContextLabel">${t("chat.presence.memory_label")} 0%</span>
               <svg class="context-ring" viewBox="0 0 36 36" aria-hidden="true">
                 <circle class="context-ring-bg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"/>
                 <circle class="context-ring-fg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"
@@ -123,7 +152,7 @@ function paneHtml(options = {}) {
             </button>
           </div>
         </div>
-        <input type="file" data-chat-id="chatPageFileInput" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" />
+        <input type="file" data-chat-id="chatPageFileInput" multiple style="display:none" />
       </form>
     </div>
   `;
@@ -140,6 +169,96 @@ export function createPaneHost(rootContainer, options = {}) {
   let _savedPaneStates = null;
 
   const hostEl = rootContainer.querySelector('[data-chat-id="chatPaneHost"]');
+
+  // ── Presence: shared store, left rail, header / panel refresh ──
+  const _syncedStreaming = new Set();
+  let _refreshQueued = false;
+  const layoutEl = hostEl.parentElement;
+  const railEl = document.createElement("nav");
+  railEl.className = "chat-rail";
+  railEl.setAttribute("aria-label", t("chat.presence.rail_label"));
+  layoutEl.insertBefore(railEl, hostEl);
+
+  /** Phones keep the rail folded away until the header's name is tapped. */
+  function setRailOpen(open) {
+    layoutEl.classList.toggle("rail-open", open);
+    hostEl.querySelectorAll('[data-chat-id="chatRailToggle"]').forEach((btn) => btn.setAttribute("aria-expanded", String(open)));
+  }
+
+  const rail = createAnimaRail({
+    el: railEl,
+    getPanes: () => panes,
+    getFocused,
+    t,
+    escapeHtml,
+    onToolsChanged: () => refreshPresence(),
+    onPick: () => setRailOpen(false),
+  });
+  const _presenceOffs = [];
+
+  /** Pull stream / unread facts the chat controllers already hold into the store. */
+  function _syncPresenceFromPanes() {
+    const streaming = new Set();
+    const shown = new Set(panes.map((p) => p.ctx.state.selectedAnima).filter(Boolean));
+    for (const p of panes) {
+      for (const a of p.ctx.state.animas || []) {
+        if (p.ctx.state.manager?.isStreamingForAnima(a.name)) streaming.add(a.name);
+      }
+    }
+    const fstate = getFocused()?.ctx.state;
+    for (const a of fstate?.animas || []) {
+      const threads = fstate.threads?.[a.name] || [];
+      const tab = fstate.animaTabs.find((x) => x.name === a.name);
+      const n = threads.filter((th) => th.unread).length || (tab?.unreadStar ? 1 : 0);
+      presence.setUnread(a.name, shown.has(a.name) ? 0 : n);
+    }
+    for (const name of streaming) {
+      if (!_syncedStreaming.has(name)) {
+        presence.setWorking(name, true, "stream");
+        presence.setAwaiting(name, false);
+        _syncedStreaming.add(name);
+      }
+    }
+    for (const name of [..._syncedStreaming]) {
+      if (!streaming.has(name)) {
+        presence.setWorking(name, false, "stream");
+        _syncedStreaming.delete(name);
+      }
+    }
+    presence.setVisibleAnimas(panes.map((p) => p.ctx.state.selectedAnima));
+  }
+
+  function _repaintPresence() {
+    _refreshQueued = false;
+    rail.render();
+    for (const p of panes) {
+      p.ctx.controllers.head?.refresh();
+      p.ctx.controllers.presencePanel?.refresh();
+    }
+  }
+
+  /** Re-sync from the chat controllers and repaint (coalesced per frame). */
+  function refreshPresence() {
+    _syncPresenceFromPanes();
+    if (_refreshQueued) return;
+    _refreshQueued = true;
+    requestAnimationFrame(_repaintPresence);
+  }
+
+  function renderRail() { refreshPresence(); }
+
+  initPresence({ api, onEvent });
+  wireReplyToasts();
+  _presenceOffs.push(presence.subscribe(() => { if (!_refreshQueued) { _refreshQueued = true; requestAnimationFrame(_repaintPresence); } }));
+  const _onOpenAnima = (ev) => {
+    const name = ev.detail?.anima;
+    const focused = getFocused();
+    if (!name || !focused) return;
+    presence.takePendingOpen();
+    focused.ctx.controllers.anima.openOrSelectAnima(name);
+  };
+  document.addEventListener("aw:open-anima", _onOpenAnima);
+  _presenceOffs.push(() => document.removeEventListener("aw:open-anima", _onOpenAnima));
 
   function _isMobile() {
     return window.matchMedia("(max-width: 768px)").matches;
@@ -169,21 +288,22 @@ export function createPaneHost(rootContainer, options = {}) {
     ctx.state.rootContainer = rootContainer;
     ctx.state.paneId = id;
     ctx.state.paneIdx = panes.length;
-    ctx.state.paneHost = { splitPane, removePane, savePaneStates, getPaneState };
+    ctx.state.paneHost = { splitPane, removePane, savePaneStates, getPaneState, renderRail };
 
     ctx.controllers.anima = createAnimaController(ctx);
     ctx.controllers.thread = createThreadController(ctx);
     ctx.controllers.renderer = createChatRenderer(ctx);
     ctx.controllers.avatar = createAvatarController(ctx);
     ctx.controllers.activity = createActivityController(ctx);
+    ctx.controllers.memoryPopover = createMemoryPopover(ctx);
     ctx.controllers.streaming = createStreamingController(ctx);
-    ctx.controllers.history = createHistoryController(ctx);
-    ctx.controllers.memory = createMemoryController(ctx);
-    ctx.controllers.sidebar = createSidebarController(ctx);
     ctx.controllers.events = createEventsController(ctx);
     ctx.controllers.imageVoice = createImageVoiceController(ctx);
     ctx.controllers.meeting = createMeetingController(ctx);
     ctx.controllers.workIndicator = createWorkIndicatorController(ctx);
+    ctx.controllers.head = createPaneHead(ctx);
+    ctx.controllers.presencePanel = createPresencePanel(ctx);
+    ctx.controllers.slash = createSlashPalette(ctx);
 
     const pane = { id, el: paneEl, ctx, intervals: [] };
     panes.push(pane);
@@ -193,7 +313,6 @@ export function createPaneHost(rootContainer, options = {}) {
 
     _initModelSelect(ctx, paneEl);
 
-    ctx.controllers.sidebar.initRightPaneVisibility();
     ctx.controllers.events.bindPaneEvents();
     ctx.controllers.meeting.init({ standalone: Boolean(options.meetingStandalone) });
     ctx.controllers.anima.loadAnimas();
@@ -220,6 +339,27 @@ export function createPaneHost(rootContainer, options = {}) {
       CONSTANTS.CHAT_POLL_INTERVAL_MS,
     );
     pane.intervals.push(chatInterval);
+
+    pane.intervals.push(startSessionsRefreshFallback(
+      () => ctx.controllers.anima.refreshSessions(),
+    ));
+
+    let sessionsWsTimer = null;
+    const scheduleSessionsRefresh = (data = {}, eventType = "") => {
+      if (eventType === "anima.status" && ["busy", "running_task", "bootstrapping"].includes(data.status)) return;
+      const selected = ctx.state.selectedAnima;
+      const related = [data.name, data.anima, data.from_person, data.to_person];
+      if (!selected || !related.includes(selected)) return;
+      clearTimeout(sessionsWsTimer);
+      sessionsWsTimer = setTimeout(() => {
+        sessionsWsTimer = null;
+        void ctx.controllers.anima.refreshSessions(selected);
+      }, 250);
+    };
+    for (const eventType of ["anima.status", "anima.heartbeat", "anima.interaction", "anima.proactive_message", "chat.response"]) {
+      pane.intervals.push(onEvent(eventType, (data) => scheduleSessionsRefresh(data, eventType)));
+    }
+    pane.intervals.push(() => clearTimeout(sessionsWsTimer));
 
     const unsubBootstrap = onEvent("anima.bootstrap", (data) => {
       const { name, status: bsStatus } = data;
@@ -291,10 +431,7 @@ export function createPaneHost(rootContainer, options = {}) {
       }
     }, 30000));
 
-    if (panes.length === 1) {
-      focusedIdx = 0;
-      _startFocusedIntervals();
-    }
+    if (panes.length === 1) focusedIdx = 0;
 
     _saveLayout();
     _updatePaneControls();
@@ -352,7 +489,6 @@ export function createPaneHost(rootContainer, options = {}) {
 
     if (focusedIdx >= panes.length) focusedIdx = panes.length - 1;
     _applyFocusVisual();
-    _syncSidebar();
     _saveLayout();
     _updatePaneControls();
   }
@@ -361,46 +497,14 @@ export function createPaneHost(rootContainer, options = {}) {
     const newIdx = panes.findIndex(p => p.id === id);
     if (newIdx < 0 || newIdx === focusedIdx) return;
 
-    _clearFocusedIntervals();
     focusedIdx = newIdx;
     _applyFocusVisual();
-    _syncSidebar();
-    _startFocusedIntervals();
     _syncVoiceToFocused();
   }
 
   function _applyFocusVisual() {
     for (let i = 0; i < panes.length; i++) {
       panes[i].el.classList.toggle("focused", i === focusedIdx);
-    }
-  }
-
-  let _focusedActivityInterval = null;
-
-  function _startFocusedIntervals() {
-    const ctx = getFocused()?.ctx;
-    if (!ctx) return;
-    _focusedActivityInterval = setInterval(
-      () => ctx.controllers.activity.loadActivity(),
-      30000,
-    );
-  }
-
-  function _clearFocusedIntervals() {
-    if (_focusedActivityInterval) {
-      clearInterval(_focusedActivityInterval);
-      _focusedActivityInterval = null;
-    }
-  }
-
-  function _syncSidebar() {
-    const ctx = getFocused()?.ctx;
-    if (!ctx) return;
-    ctx.controllers.activity.renderAnimaState();
-    ctx.controllers.activity.loadActivity();
-    ctx.controllers.memory.loadMemoryTab();
-    if (ctx.state.activeRightTab === "history" && ctx.state.selectedAnima) {
-      ctx.controllers.history.loadSessionList();
     }
   }
 
@@ -424,66 +528,16 @@ export function createPaneHost(rootContainer, options = {}) {
     document.addEventListener("keydown", bustupEscapeHandler);
     _sharedListeners.push({ el: document, event: "keydown", handler: bustupEscapeHandler });
 
-    const $r = (id) => rootContainer.querySelector(`[data-chat-id="${id}"]`);
-
-    function _addShared(id, event, handler) {
-      const el = $r(id);
-      if (!el) return;
-      el.addEventListener(event, handler);
-      _sharedListeners.push({ el, event, handler });
-    }
-
-    for (const tabId of ["chatMobileTabChat", "chatMobileTabInfo"]) {
-      _addShared(tabId, "click", e => {
-        getFocused()?.ctx.controllers.sidebar.switchMobileTab(e.target.dataset.panel);
-      });
-    }
-
-    for (const tabId of ["chatTabState", "chatTabActivity", "chatTabHistory", "chatTabHeartbeat", "chatTabCron"]) {
-      _addShared(tabId, "click", e => {
-        getFocused()?.ctx.controllers.sidebar.switchRightTab(e.target.dataset.tab);
-      });
-    }
-
-    _addShared("chatRightPaneToggleBtn", "click", () => {
-      getFocused()?.ctx.controllers.sidebar.toggleRightPane();
-    });
-
-    rootContainer.querySelectorAll(".memory-tab").forEach(btn => {
-      const handler = () => {
-        const ctx = getFocused()?.ctx;
-        if (!ctx) return;
-        ctx.state.activeMemoryTab = btn.dataset.tab;
-        rootContainer.querySelectorAll(".memory-tab").forEach(b =>
-          b.classList.toggle("active", b.dataset.tab === ctx.state.activeMemoryTab),
-        );
-        const contentArea = ctx.$root("chatMemoryContentArea");
-        const fileList = ctx.$root("chatMemoryFileList");
-        if (contentArea) contentArea.style.display = "none";
-        if (fileList) fileList.style.display = "";
-        ctx.controllers.memory.loadMemoryTab();
-      };
-      btn.addEventListener("click", handler);
-      _sharedListeners.push({ el: btn, event: "click", handler });
-    });
-
-    _addShared("chatMemoryBackBtn", "click", () => {
-      const ctx = getFocused()?.ctx;
-      if (!ctx) return;
-      const ca = ctx.$root("chatMemoryContentArea");
-      const fl = ctx.$root("chatMemoryFileList");
-      if (ca) ca.style.display = "none";
-      if (fl) fl.style.display = "";
-    });
-
-    _addShared("chatHistoryBackBtn", "click", () => {
-      const ctx = getFocused()?.ctx;
-      if (!ctx) return;
-      const detail = ctx.$root("chatHistoryDetail");
-      const list = ctx.$root("chatHistorySessionList");
-      if (detail) detail.style.display = "none";
-      if (list) list.style.display = "";
-    });
+    // Phones: the anima's name in the header folds the rail out; any other tap folds it away.
+    const railToggleHandler = (e) => {
+      if (!PHONE_QUERY.matches) return;
+      const open = layoutEl.classList.contains("rail-open");
+      if (e.target.closest?.(".chat-pane-head-status.wait")) return;
+      if (e.target.closest?.('[data-chat-id="chatRailToggle"], .chat-pane-head-text')) setRailOpen(!open);
+      else if (open) setRailOpen(false);
+    };
+    hostEl.addEventListener("click", railToggleHandler);
+    _sharedListeners.push({ el: hostEl, event: "click", handler: railToggleHandler });
   }
 
   function _destroyPane(pane) {
@@ -494,7 +548,10 @@ export function createPaneHost(rootContainer, options = {}) {
     }
     pane.intervals = [];
     ctx.controllers.renderer.clearBootstrapInterval();
+    ctx.controllers.memoryPopover?.destroy();
     ctx.controllers.workIndicator?.destroy();
+    ctx.controllers.presencePanel?.destroy();
+    ctx.controllers.slash?.destroy();
 
     if (ctx.state.chatUiStateSaveTimer) {
       clearTimeout(ctx.state.chatUiStateSaveTimer);
@@ -517,7 +574,6 @@ export function createPaneHost(rootContainer, options = {}) {
   }
 
   function destroy() {
-    _clearFocusedIntervals();
     for (const { el, event, handler } of _sharedListeners) {
       el.removeEventListener(event, handler);
     }
@@ -526,6 +582,10 @@ export function createPaneHost(rootContainer, options = {}) {
 
     for (const pane of panes) _destroyPane(pane);
     panes.length = 0;
+    for (const off of _presenceOffs) off();
+    _presenceOffs.length = 0;
+    presence.setVisibleAnimas([]);
+    railEl.remove();
     hostEl.innerHTML = "";
   }
 
@@ -591,6 +651,8 @@ export function createPaneHost(rootContainer, options = {}) {
 
   function _updatePaneControls() {
     const multi = panes.length > 1;
+    hostEl.classList.toggle("has-split", multi);
+    refreshPresence();
     const full = panes.length >= MAX_PANES;
     for (const p of panes) {
       const closeBtn = p.el.querySelector('[data-chat-id="chatClosePaneBtn"]');

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 9fd7a2900a851ebd9c8138835b51a8f77e059398684f19efc1579a87846a5bfa -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: ff5cb73c552a3f3120e24e45c13a9f9dafe70ee3bca89987150de3b41d7c5301 -->
 
 # 設定リファレンス
 
@@ -408,6 +408,8 @@
 | `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer strength (0.0-1.0) |
 | `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer information extraction (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | Enable 3D model generation (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | Base pixel sheet; None uses the bundled sample_01.png |
+| `image_gen.pixel_concurrency` | `int` | `4` | Parallel codex image_gen calls for pixel sheet rows |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | Override for realistic style |
@@ -451,9 +453,11 @@
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
+| `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_socket_create_timeout` | `int` | `30` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
+| `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
@@ -652,6 +656,7 @@
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | Include recent chat dialogue in heartbeat context only when the last turn is younger than this many hours; 0 = always include |
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
+| `heartbeat.cron_followup_repeat_suppress_hours` | `float` | `6.0` | Suppress a command cron's LLM follow-up when its output is identical to the previous follow-up for this many hours; 0 disables suppression |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
@@ -736,6 +741,10 @@
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
@@ -753,6 +762,8 @@
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `inbox` | `InboxConfig` | `{InboxConfig}` | anima の受信箱と通知表示。 |
+| `inbox.inbox_quiet_seconds` | `float` | `90.0` | — |
+| `inbox.inbox_quiet_max_wait_seconds` | `float` | `300.0` | — |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |
@@ -850,6 +861,8 @@
 | `enclave.max_concurrency` | `int` | `2` | gateway が同時に処理する質問の最大数。 |
 | `enclave.request_timeout_s` | `int` | `0` | 質問処理と gateway 応答のタイムアウト秒数。 |
 | `enclave.allowed_llm_credentials` | `list[str]` | `[]` | enclave 内の anima が利用できる認証情報名。 |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
 | `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | enclave 内の anima が参照できる JSONL データセット。 |
 | `enclave.datasets.path` | `str` | `"—"` | data directory 内にある JSONL ファイルの相対パス。 |
 | `enclave.datasets.id_field` | `str` | `"—"` | レコードを一意に取得するための ID フィールド。 |
@@ -873,11 +886,13 @@
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
 | `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
+| `enclave.sql_sources.tunnel.local_port_count` | `int` | `1` | Number of consecutive loopback ports starting at local_port; concurrent processes each reserve a different one |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
 | `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.session_variables` | `dict[str, str]` | `{}` | User variables set on every connection (``SET @name = 'value'``), e.g. for row-level views that filter on a session variable |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -889,6 +904,8 @@
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.raw_dir` | `str` | `"raw"` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | 外部へ返す facts を処理する egress ステージ設定。 |
+| `enclave.egress_probe` | `list[str]` | `[]` | — |
+| `enclave.egress_probe_timeout_s` | `float` | `5.0` | — |
 
 ### `enclaves`
 
@@ -942,6 +959,7 @@
 
 | モデル名パターン | モード | コンテキストウィンドウ |
 |---|---|---:|
+| `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
 | `antigravity/*` | `A` | 1000000 |
 | `azure/*` | `A` | 128000 |

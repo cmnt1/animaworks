@@ -7,9 +7,76 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-30
+
 ### Upgrade notes
 
-- Direct upgrades from runtime versions older than 0.14.0 are no longer supported. Upgrade to 0.14 first, then upgrade to the current version.
+- Direct upgrades from runtime versions older than 0.14.0 are no longer supported; startup stops with an explicit message for such runtimes. Upgrade to 0.14 first, then upgrade to the current version.
+- The `core.tools` alias package is removed. The 0.15 startup migration already rewrote runtime tools and skills; any other code must import from `core.integrations`. The `animaworks-tool` entry point now lives at `cli.tool_dispatch:cli_dispatch`.
+- `diffusers` moved from the base install to the optional `image-local` extra (local Stable Diffusion only). `watchdog`, `PyYAML`, `beautifulsoup4` and `python-dateutil` are now declared runtime dependencies, and `litellm` is held below 1.106 (1.106 needs mcp 2.x, while mcp is held below 2).
+- `animaworks-tool submit` queues command tasks in the TaskStore instead of `state/background_tasks/pending/`. Run `animaworks task-store migrate` to move pending descriptors left by an older version.
+- Server shutdown and `anima restart` now let running work finish first, for up to `server.restart_drain_timeout_seconds` (default 600, `0` disables). `--force` keeps the old behaviour. The systemd unit template sets `TimeoutStopSec=720` to match.
+- A startup migration points unmodified dev-engineer `injection.md` worktree lines at `ANIMAWORKS_SCRATCH_DIR` (originals are backed up).
+- Retrieval no longer applies entity, temporal or access boosts and no longer uses the spreading-activation graph; their 19 config keys are ignored. The compact priming profile is the only one.
+
+### Added
+
+- Web chat redesigned as a messenger-style talk screen: an Anima rail, speech bubbles with emotion faces, a live "thinking" bubble with steps, elapsed time and a stop button, a waiting-for-reply list that jumps to the notification, replies to notifications inside the conversation, a user-centered history feed with lazy background groups, a slash palette, and a phone layout that can be added to the home screen.
+- File attachments in the web chat in both directions: users attach files of any type, Animas attach files to a reply with the new `attach_file` tool, and file cards, inline players and a full-screen viewer show them.
+- Memory browser in the chat: a speech-bubble popover with a connections bubble chart built from fact entities (`GET /api/animas/{name}/memory/connections`).
+- Slack exchanges between an Anima and its user appear in the web chat, labeled with the app they were sent on.
+- Phone channel over Twilio: an Anima (`phone.anima`) can place urgent alert calls (also from `call_human`) and hold spoken conversations with its owner on the shared voice session through Media Streams. Inbound calls are accepted only from `phone.owner_numbers` with a PIN.
+- Voice and video-call style call screen in the web chat, with picture-in-picture and call records.
+- Execution mode `Y` for the Antigravity CLI (`agy/*` models).
+- Isolated enclave mode: an enclave Anima reads sensitive data (read-only SQL over an SSM tunnel, AWS read-only sources, decrypted application columns) and returns only masked facts through a fail-closed egress pipeline with an audit log, a built-in masker and an nftables egress limit. Host Animas reach it with `enclave_ask` over a unix socket; asks run as async jobs whose results arrive in the inbox, callers can pick a model profile, and token usage shows in `animaworks cost`. Requires the `enclave` extra.
+- Chat jobs for different threads run in parallel, up to `chat_max_concurrency` (default 1, max 10).
+- Live fact extraction when inbox, chat and task sessions end, and entity and fact extraction in one call, keeping only facts worth recalling a month later.
+- Daily and weekly consolidation run for up to `consolidation.max_concurrent_animas` Animas at once (default 3), with compacted input, per-chunk fact extraction and partial results kept at the deadline.
+- Helper-LLM models (summaries, fact extraction, reconcile, compression and others) resolve through one role registry (`helper_models`).
+- Self-hosted fallback candidates can declare a `busy_probe`, and congested vLLM servers are skipped.
+- Task tools: `delegate_task` returns the existing task for an identical open request; `update_task` takes `waiting_for` and `scope_note`; each task sends one report; `animaworks task autonomy` shows a weekly autonomy report.
+- Inbox: system notices and reports wait for a quiet window (`inbox_quiet_seconds`, default 90) and are handled in one run; senders are told when the recipient's inbox has been busy for a long time.
+- Cron registration flags LLM-heavy entries, and repeated identical follow-ups and errors are muted (`heartbeat.cron_followup_repeat_suppress_hours`, default 6).
+- Per-task scratch directories (`ANIMAWORKS_SCRATCH_DIR`) and shared package caches for Anima child processes, with an hourly sweep of Codex sessions, scratch and idle shared worktrees.
+- A bare `animaworks` opens a chat with the head Anima; `chat` without a name uses `cli.default_anima`.
+- Pixel office is the default workspace renderer (3D stays available with `?renderer=3d`), battle is a third workspace view, and asset generation also makes `pixel_sheet.png`. Realistic assets are derived from the anime character so both styles show the same person.
+- Built-in Web UI notification channel: `call_human` always reaches the browser, so a new team can contact the user without Slack.
+- `scripts/preflight_imports.py` import health check and a retrieval evaluation harness under `benchmarks/`.
+
+### Changed
+
+- Shell-command crons run in the Anima root process instead of a task runner; only the LLM follow-up uses a runner.
+- Large internal restructuring: `server/supervisor` (root) and `core/runtime` (Anima) replace `core/supervisor`; the Anima main process is the only writer of managed state and the root owns `config.json`; Slack, Discord and Chatwork sending moves to `core/channels` with per-Anima tokens; the CLI commands are thin adapters over `ToolHandler`; one file-access policy serves Mode S and `ToolHandler`.
+- JSON state files are written atomically, and `status.json` / `config.json` read-modify-write is locked.
+- The TaskStore database uses rollback-journal mode so read-only sandboxes can open it.
+- `dm_logs` are owner-only (directories 0700, files 0600).
+- Unreadable `status.json` or `config.json` now fails closed.
+- `max` effort is honored on current models, `thinking_effort` applies to Claude 4.7+/5.x, and Codex effort can be set per model.
+- The en, ko and zh READMEs are maintained by hand; `scripts/translate.py` no longer generates them.
+
+### Removed
+
+- API routes for local-LLM presets, `/system/cost`, `/tasks/summary` and `/system/hot-reload`; CLI commands `anima codex-yolo` and `anima repair-bootstrap`.
+- Pre-0.14 migration code and one-off migration steps already applied by 0.14.0.
+- Unread config keys (`system.log_level`, `rag.quick_check_timeout_seconds`, `background_task.result_retention_hours` and others) and 52 unreferenced functions.
+- The `background_tasks` file state machine for submitted tools.
+- The evaluation framework moved from `tests/evaluation` to `benchmarks/evaluation`.
+
+### Fixed
+
+- Atomic facts reach the prompt again (priming channel G was missing).
+- Tasks with long IDs and cron runs with long thread IDs no longer fail with `invalid thread_id`.
+- NUL bytes in prompts no longer stop the engine from starting.
+- Codex Animas reset `/tmp/codex-daemon-<uid>` to 0700 before starting Codex.
+- Reloaded cron entries run after a schedule edit instead of being dropped.
+- Consolidation markers older than 6 hours no longer hide messaging tools.
+- A streamed LiteLLM turn that ends without an answer is reprompted once.
+- Shell commands get `/dev/null` as stdin, and `..` in command arguments resolves from the working directory.
+- Synchronous vector writes and nightly forgetting run off the event loop.
+- Animas can reply to Slack threads addressed to them.
+- Twilio webhooks answer within the 15-second limit.
+- 401 responses send the browser to the login page instead of reloading.
+- Azure gpt-6-luna is priced, and OpenAI cached tokens are no longer counted twice.
 
 ## [0.15.0] - 2026-09-29
 
@@ -2054,7 +2121,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/xuiltul/animaworks/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/xuiltul/animaworks/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/xuiltul/animaworks/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/xuiltul/animaworks/compare/v0.12.0...v0.13.0

@@ -14,6 +14,8 @@ Type=simple
 WorkingDirectory=/path/to/animaworks
 ExecStart=/path/to/animaworks/.venv/bin/animaworks start --foreground
 ExecStop=/path/to/animaworks/.venv/bin/animaworks stop
+# Stop waits for running work: server.restart_drain_timeout_seconds (600) + 60s cleanup + margin.
+TimeoutStopSec=720
 Restart=on-failure
 RestartSec=10
 RestartPreventExitStatus=3

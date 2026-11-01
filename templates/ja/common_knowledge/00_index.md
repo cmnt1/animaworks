@@ -57,6 +57,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | 長時間ツールの実行方法がわからない | `operations/background-tasks.md` |
 | ワークスペースの登録・使い方がわからない | `operations/workspace-guide.md` |
 | Obsidian `_inbox/` の知見昇格レビューを判定したい（GL/COO向け） | `operations/knowledge-promotion-review.md` |
+| worktree・一時ファイル・キャッシュをどこに置くか | `operations/scratch-and-worktrees.md` |
 | 新しいスキルの作り方・メタデータを確認したい | `common_skills/skill-creator/SKILL.md` |
 | プロジェクト設定を変更したい | `reference/operations/project-setup.md` ※技術リファレンス |
 
@@ -146,6 +147,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | `tool-usage-overview.md` | ツール使用の概要（S/C/D/G/A/B モード別のツール体系、内部/外部ツール、呼び出し方法） |
 | `background-tasks.md` | バックグラウンドタスク実行ガイド（submit の使い方、判断基準、結果の受け取り方） |
 | `workspace-guide.md` | ワークスペースガイド（概念・登録・ツールでの使用・トラブルシューティング） |
+| `scratch-and-worktrees.md` | 作業物の置き場所（scratch・共有 worktree・キャッシュ・自動削除） |
 | `model-guide.md` | → `reference/operations/model-guide.md` に移動。モデル選択・設定ガイド |
 | `mode-s-auth-guide.md` | → `reference/operations/mode-s-auth-guide.md` に移動。Mode S 認証モード設定ガイド |
 | `voice-chat-guide.md` | → `reference/operations/voice-chat-guide.md` に移動。音声チャットガイド |
@@ -208,6 +210,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | 実行モード, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | バックグラウンド, submit, 長時間ツール | `operations/background-tasks.md` |
 | ワークスペース, workspace, 作業ディレクトリ, working_directory | `operations/workspace-guide.md` |
+| scratch, worktree, 一時ファイル, キャッシュ, ANIMAWORKS_SCRATCH_DIR | `operations/scratch-and-worktrees.md` |
 | モデル, models.json, credential, set-model, コンテキストウィンドウ | `reference/operations/model-guide.md` |
 | background_model, バックグラウンドモデル, コスト最適化 | `reference/operations/model-guide.md` |
 | Mode S, 認証, API直接, Bedrock, Vertex AI, Max plan | `reference/operations/mode-s-auth-guide.md` |

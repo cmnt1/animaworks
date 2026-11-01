@@ -18,6 +18,7 @@ import core.config.model_catalog as model_catalog
 import core.config.model_discovery as model_discovery
 from core.config.model_discovery import (
     DiscoveredModel,
+    _parse_agy_models,
     _parse_claude_help,
     _parse_codex_models,
     _parse_grok_models,
@@ -42,6 +43,16 @@ Default model: grok-4.6
 Available models:
   * grok-4.6 (default)
   - grok-4.5
+"""
+
+AGY_TEXT = """Available models:
+  * gemini-4-argon (default)
+  | gemini-4-argon-high | high effort |
+  - gemini-3.8-flash-medium
+  claude-opus-5-5-high
+  claude-sonnet-5-5-low
+  gpt-oss-120b-medium
+  gemini-4-argon
 """
 
 
@@ -127,6 +138,41 @@ class TestParseGrok:
 
     def test_empty_text_returns_empty(self):
         assert _parse_grok_models("") == []
+
+
+class TestParseAgy:
+    def test_extracts_known_families_across_layouts(self):
+        result = _parse_agy_models(AGY_TEXT)
+        assert result == [
+            "gemini-4-argon",
+            "gemini-4-argon-high",
+            "gemini-3.8-flash-medium",
+            "claude-opus-5-5-high",
+            "claude-sonnet-5-5-low",
+            "gpt-oss-120b-medium",
+        ]
+
+    def test_unauthenticated_error_returns_empty(self):
+        text = "Fetching available models...\nError: Please sign in to view available models."
+        assert _parse_agy_models(text) == []
+
+
+class TestProbeAgy:
+    def test_builds_mode_y_entries(self, monkeypatch):
+        monkeypatch.setattr(model_discovery.shutil, "which", lambda _name: "/usr/bin/agy")
+        monkeypatch.setattr(
+            model_discovery.subprocess,
+            "run",
+            lambda *_args, **_kwargs: SimpleNamespace(stdout=AGY_TEXT, stderr=""),
+        )
+
+        models = model_discovery._probe_agy()
+
+        assert models[0].id == "y:agy/gemini-4-argon"
+        assert models[0].mode == "y"
+        assert models[0].model == "agy/gemini-4-argon"
+        assert models[0].group == "Antigravity"
+        assert models[0].source == "agy-cli"
 
 
 class TestParseClaude:

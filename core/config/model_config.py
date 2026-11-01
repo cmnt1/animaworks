@@ -168,7 +168,7 @@ def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None
 
 # Engines that authenticate through their own CLI credential store and so
 # need no entry in ``config.credentials``.
-_CLI_AUTH_MODES = frozenset({"C", "D", "G", "X"})
+_CLI_AUTH_MODES = frozenset({"C", "D", "G", "X", "Y"})
 
 
 def _credential_supports_mode(credential: Any, mode: str) -> bool:
@@ -240,7 +240,7 @@ def build_model_override_config(
         logger.warning("Claude CLI alias %r requires execution mode S", model)
         return None
     if resolved_mode in _CLI_AUTH_MODES and credential_name is None:
-        # CLI-auth engines (codex/cursor/gemini/grok) authenticate via their own
+        # CLI-auth engines (codex/cursor/gemini/grok/agy) authenticate via their own
         # CLI credential stores, so the base credential fields are stale here.
         # Clear them explicitly: e.g. an Anthropic-credential anima using a
         # ``g:gemini/...`` override would otherwise leak the Anthropic API key
@@ -354,6 +354,9 @@ def resolve_effective_model_config(
 
         if resolved_mode == "X" and shutil.which("grok") is None:
             logger.debug("Skipping fallback %s:%s: grok CLI is unavailable", mode, model)
+            continue
+        if resolved_mode == "Y" and shutil.which("agy") is None:
+            logger.debug("Skipping fallback %s:%s: agy CLI is unavailable", mode, model)
             continue
         if resolved_mode == "C":
             try:
@@ -748,6 +751,9 @@ _FAMILY_CREDENTIAL_MAP: dict[str, str] = {
     "opencode-go": "opencode-go",
     "grok": "grok",
     "xai": "grok",
+    # Mode Y authenticates through the agy CLI itself, so this mapping only
+    # labels the provider family for catalog/UI purposes.
+    "agy": "google",
     "azure": "azure",
 }
 

@@ -145,6 +145,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
         # Bounded drain time for administrative stop/recovery operations; this
         # is not a streaming-duration health kill.
+        self._restart_drain_timeout_sec: float = 600.0
         self._stream_drain_timeout_sec: int = 1800
         self._anima_startup_ready_timeout: float = 120.0
         self._anima_socket_create_timeout: float = 30.0
@@ -162,6 +163,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             )
             self._anima_stop_timeout = float(getattr(srv, "anima_stop_timeout", 60.0))
             self._spawn_timeout_sec = float(getattr(srv, "spawn_timeout", 300))
+            self._restart_drain_timeout_sec = max(
+                0.0,
+                float(getattr(srv, "restart_drain_timeout_seconds", 600)),
+            )
             if restart_policy is None:
                 retry_count = int(getattr(srv, "supervisor_respawn_max_retries", 3))
                 retry_interval = float(getattr(srv, "supervisor_respawn_retry_interval_seconds", 30.0))
@@ -763,6 +768,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         drain_streams: bool = True,
         drain_background: bool = True,
         drain_timeout: float | None = None,
+        quiesce: bool = False,
     ) -> None:
         """Stop a single Anima process.
 
@@ -776,6 +782,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             drain_timeout: Upper bound for each drain. None
                 uses the process-handle default. Non-urgent stops (RAG repair)
                 pass a longer bound so a response is not cut off mid-turn.
+            quiesce: Stop new autonomous work before draining and stopping.
         """
         lock = self._lifecycle_locks.setdefault(anima_name, asyncio.Lock())
         async with lock:
@@ -786,6 +793,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 # normal no-ops under concurrent disable/reconcile callers.
                 logger.debug("Process not found (no-op stop): %s", anima_name)
                 return
+
+            if quiesce:
+                await self._quiesce_anima(anima_name, handle)
 
             await self._cancel_event_consumer(anima_name)
             await handle.stop(
@@ -808,6 +818,106 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 )
             self._recently_stopped[anima_name] = time.monotonic()
             logger.info("Anima process stopped: %s", anima_name)
+
+    async def _quiesce_anima(self, anima_name: str, handle: ProcessHandle) -> None:
+        """Tell an Anima to stop accepting new autonomous work."""
+        logger.info("Quiescing new work for Anima: %s", anima_name)
+        try:
+            response = await handle.send_request("quiesce", {}, timeout=5.0)
+            error = getattr(response, "error", None)
+            if error:
+                logger.warning("Could not quiesce Anima %s: %s", anima_name, error)
+                return
+            logger.info("Anima quiesced for new autonomous work: %s", anima_name)
+        except Exception as exc:
+            logger.warning("Could not quiesce Anima %s: %s", anima_name, exc)
+
+    async def _wait_for_processes_to_drain(self, timeout: float) -> None:  # noqa: ASYNC109 -- bounds the coordinated shutdown drain
+        """Wait in parallel for all live Animas to finish active work."""
+        if timeout <= 0:
+            logger.info("Skipping Anima work drain because timeout is 0 seconds")
+            return
+
+        handles = {
+            name: handle
+            for name, handle in self.processes.items()
+            if getattr(handle, "process", None) is not None and handle.process.poll() is None
+        }
+        if not handles:
+            logger.info("No live Anima processes to drain")
+            return
+
+        logger.info(
+            "Starting shutdown work drain: animas=%d timeout=%.0fs",
+            len(handles),
+            timeout,
+        )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        waiting: dict[str, set[str]] = {}
+        while handles:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+
+            async def inspect(name: str, handle: ProcessHandle) -> tuple[str, set[str]]:
+                process = getattr(handle, "process", None)
+                if process is None or process.poll() is not None:
+                    return name, set()
+                try:
+                    details = await handle.ping(return_details=True)
+                except Exception:
+                    logger.warning("Could not inspect Anima work while draining: %s", name, exc_info=True)
+                    return name, {"status unavailable"}
+                if not isinstance(details, dict):
+                    return name, {"status unavailable"}
+                work_types: set[str] = set()
+                if bool(getattr(handle, "is_streaming", False)):
+                    work_types.add("interactive stream")
+                if not details.get("success"):
+                    work_types.add("status unavailable")
+                elif details.get("is_busy"):
+                    work_types.add("busy task")
+                return name, work_types
+
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*(inspect(name, handle) for name, handle in handles.items())),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                for name in handles:
+                    waiting.setdefault(name, {"status unavailable"})
+                break
+
+            next_waiting: dict[str, set[str]] = {}
+            for name, work_types in results:
+                if not work_types:
+                    if name in waiting:
+                        logger.info("Anima work drained: anima=%s work=%s", name, ", ".join(sorted(waiting[name])))
+                    continue
+                next_waiting[name] = work_types
+                if waiting.get(name) != work_types:
+                    logger.info(
+                        "Waiting for Anima work: anima=%s work=%s",
+                        name,
+                        ", ".join(sorted(work_types)),
+                    )
+            waiting = next_waiting
+            handles = {name: handle for name, handle in handles.items() if name in waiting}
+            if not handles:
+                logger.info("Shutdown work drain completed")
+                return
+            await asyncio.sleep(min(1.0, max(0.0, deadline - loop.time())))
+
+        for name, work_types in waiting.items():
+            logger.warning(
+                "Shutdown work drain timed out: anima=%s work=%s timeout=%.0fs",
+                name,
+                ", ".join(sorted(work_types)),
+                timeout,
+            )
+        logger.info("Shutdown work drain finished; proceeding with process stop")
 
     async def restart_anima(
         self,
@@ -840,7 +950,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._restarting.add(anima_name)
         try:
             if anima_name in self.processes:
-                await self.stop_anima(anima_name)
+                await self.stop_anima(
+                    anima_name,
+                    quiesce=True,
+                )
             await self.start_anima(anima_name)
         finally:
             self._restarting.discard(anima_name)
@@ -914,6 +1027,20 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 await self._zombie_reaper_task
             except asyncio.CancelledError:
                 pass
+
+        # Quiesce every live Anima before waiting so no new scheduler, inbox,
+        # or pending-task work enters while the shared drain budget is used.
+        live_processes = [
+            (name, handle)
+            for name, handle in list(self.processes.items())
+            if getattr(handle, "process", None) is not None and handle.process.poll() is None
+        ]
+        logger.info("Quiescing Animas for server shutdown: count=%d", len(live_processes))
+        await asyncio.gather(
+            *(self._quiesce_anima(name, handle) for name, handle in live_processes),
+            return_exceptions=True,
+        )
+        await self._wait_for_processes_to_drain(self._restart_drain_timeout_sec)
 
         # Stop all processes. Full shutdown should exit promptly, so skip
         # interactive-stream and background-lane drains here.

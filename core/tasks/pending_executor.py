@@ -11,10 +11,12 @@ BackgroundTaskManager result files and notifications.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
 import os
+import re
 import threading
 import time
 from datetime import UTC, datetime
@@ -32,6 +34,24 @@ if TYPE_CHECKING:
     from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_task_scratch(anima_dir: Path, task_id: str, *, status: str) -> None:
+    """Remove scratch only after TaskStore confirms a terminal task state."""
+    if status not in {"done", "cancelled"}:
+        return
+
+    from core.platform.scratch import remove_scratch_entry, scratch_root, task_scratch_dir
+
+    scratch_dir = task_scratch_dir(anima_dir, task_id)
+    try:
+        if scratch_root(anima_dir).is_symlink():
+            return
+        remove_scratch_entry(scratch_dir)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.debug("Could not remove task scratch directory %s", scratch_dir, exc_info=True)
 
 
 def _request_background_review(anima_dir: Path, trigger: str) -> None:
@@ -65,10 +85,21 @@ _NON_COMPLETING_SENTINELS = {
 _DEPENDENCY_UNFINISHED = "a task this one depends on did not complete"
 
 _CANCEL_POLL_SECONDS = 5.0
+_MAX_THREAD_ID_LEN = 36
+_SAFE_THREAD_ID_RE = re.compile(rf"^[A-Za-z0-9_-]{{1,{_MAX_THREAD_ID_LEN}}}$")
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled"}
 # Statuses a runner-side sync must never walk back: the anima declared them, or
 # a subordinate now owns the work.
 _QUEUE_STICKY_STATUSES = _QUEUE_TERMINAL_STATUSES | {"delegated"}
+
+
+def _task_thread_id(task_id: str) -> str:
+    """Return a session thread id the state writer accepts for *task_id*."""
+    if _SAFE_THREAD_ID_RE.fullmatch(task_id):
+        return task_id
+    # Anima-chosen task ids can exceed 36 chars or contain other characters;
+    # the state writer rejects those, so fall back to a stable hash.
+    return f"task-{hashlib.sha1(task_id.encode('utf-8')).hexdigest()[:31]}"
 
 
 def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
@@ -179,6 +210,8 @@ class PendingTaskExecutor:
         self._anima_name = anima_name
         self._anima_dir = anima_dir
         self._shutdown_event = shutdown_event
+        self._accepting_claims = True
+        self._claim_gate_lock = threading.Lock()
         self._wake_event = asyncio.Event()
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
@@ -483,23 +516,40 @@ class PendingTaskExecutor:
 
     # ── Watcher loop ─────────────────────────────────────────
 
+    async def quiesce(self) -> None:
+        """Stop claiming new TaskStore work while active dispatches continue."""
+        self._accepting_claims = False
+
+        def wait_for_active_claim() -> None:
+            with self._claim_gate_lock:
+                pass
+
+        await asyncio.to_thread(wait_for_active_claim)
+        self.wake()
+
     def _claim_canonical_pending_tasks(self) -> list[dict[str, Any]]:
         """Recover and claim TaskStore inputs with blocking store I/O off-loop."""
+        if not self._accepting_claims:
+            return []
         try:
             from core.tasks.board.tasks import process_identity
 
             store = self._get_task_queue_manager().store
             self._recover_task_attempts(store)
             store.enqueue_stale_wakeups(self._anima_name)
+            store.satisfy_due_time_waits(self._anima_name)
             self._deliver_task_wakeups(store)
             claims = []
             for payload in store.pending(self._anima_name):
-                task_desc = store.claim(
-                    self._anima_name,
-                    str(payload["task_id"]),
-                    process_identity(),
-                    max_active=self._worker_pool_size(),
-                )
+                with self._claim_gate_lock:
+                    if not self._accepting_claims:
+                        break
+                    task_desc = store.claim(
+                        self._anima_name,
+                        str(payload["task_id"]),
+                        process_identity(),
+                        max_active=self._worker_pool_size(),
+                    )
                 if task_desc is not None:
                     claims.append(task_desc)
             return claims
@@ -523,6 +573,16 @@ class PendingTaskExecutor:
 
         while not self._shutdown_event.is_set():
             try:
+                if not self._accepting_claims:
+                    try:
+                        await asyncio.wait_for(
+                            self._wake_event.wait(),
+                            timeout=_PENDING_WATCHER_POLL_INTERVAL,
+                        )
+                        self._wake_event.clear()
+                    except TimeoutError:
+                        pass
+                    continue
                 # One claim transaction owns each task input and its attempt.
                 canonical_poll = asyncio.create_task(asyncio.to_thread(self._claim_canonical_pending_tasks))
                 try:
@@ -607,9 +667,57 @@ class PendingTaskExecutor:
                 reply_to = reply_to.get("name")
             completion = event["reason"] == "completion"
             recipients = set() if completion else {self._anima_name}
-            if isinstance(reply_to, str) and reply_to:
+            if isinstance(reply_to, str) and reply_to and event["reason"] != "wait_satisfied":
                 recipients.add(reply_to)
             try:
+                entry = store.read(self._anima_name, archived=True).get(event["task_id"])
+                if completion and reply_to == self._anima_name:
+                    title = str(payload.get("title") or event["task_id"])
+                    result = str(entry.meta.get("result_note") or entry.summary) if entry else ""
+                    from core.activity.logger import ActivityLogger
+
+                    ActivityLogger(self._anima_dir).log(
+                        "task_completed",
+                        summary=t("pending_executor.task_exec_end", title=title, result=result),
+                        ctx=f"task:{event['task_id']}",
+                        meta={
+                            "task_id": event["task_id"],
+                            "attempt_token": event["attempt_token"],
+                            "result_note": result,
+                            "event": "task_completed",
+                        },
+                    )
+                    store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+                    continue
+
+                reported_to = entry.meta.get("reported_to", []) if entry else []
+                if (
+                    completion
+                    and isinstance(reply_to, str)
+                    and entry is not None
+                    and entry.meta.get("last_attempt_token") == event["attempt_token"]
+                    and isinstance(reported_to, list)
+                    and reply_to in reported_to
+                ):
+                    from core.activity.logger import ActivityLogger
+
+                    ActivityLogger(self._anima_dir).log(
+                        "task_completion_notify_skipped",
+                        summary=t(
+                            "pending_executor.completion_notify_skipped",
+                            title=str(payload.get("title") or event["task_id"]),
+                        ),
+                        ctx=f"task:{event['task_id']}",
+                        meta={
+                            "task_id": event["task_id"],
+                            "attempt_token": event["attempt_token"],
+                            "recipient": reply_to,
+                            "reason": "already_reported",
+                        },
+                    )
+                    store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+                    continue
+
                 if completion:
                     from core.paths import load_prompt
 
@@ -630,6 +738,12 @@ class PendingTaskExecutor:
                     # The run itself ended cleanly; only the declaration is missing.
                     content = t(
                         "pending_executor.task_undeclared_notify",
+                        task_id=event["task_id"],
+                        title=payload.get("title", event["task_id"]),
+                    )
+                elif event["reason"] == "wait_satisfied":
+                    content = t(
+                        "pending_executor.task_wait_satisfied_notify",
                         task_id=event["task_id"],
                         title=payload.get("title", event["task_id"]),
                     )
@@ -668,6 +782,7 @@ class PendingTaskExecutor:
         cancel_watch: asyncio.Task[None] | None = None
         try:
             with attempt_scope(identity):
+                store.update_attempt_meta(token, {"reported_to": []})
                 entries = store.read(self._anima_name, archived=True)
                 task_desc = {
                     **task_desc,
@@ -1003,7 +1118,7 @@ class PendingTaskExecutor:
         else:
             agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
 
-        journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=task_id)
+        journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=_task_thread_id(task_id))
         await asyncio.to_thread(journal.open, trigger=trigger)
 
         model_config_override = self._task_model_config_override(task_desc)
@@ -1050,7 +1165,7 @@ class PendingTaskExecutor:
                     async for chunk in agent.run_cycle_streaming(
                         prompt,
                         trigger=trigger,
-                        thread_id=task_id,
+                        thread_id=_task_thread_id(task_id),
                         model_config_override=model_config_override,
                     ):
                         # A cancel written to TaskStore by another process
@@ -1095,7 +1210,20 @@ class PendingTaskExecutor:
                                 task_failed_reason = result_summary or "task execution failed"
                             await asyncio.to_thread(journal.finalize, summary=result_summary[:500])
                 finally:
+                    if task_desc.get("_attempt_token"):
+                        self._record_attempt_reported_to(task_desc, agent)
                     agent.set_task_cwd(None)
+                    try:
+                        terminal_entry = self._get_task_queue_entry(task_id)
+                    except Exception:
+                        logger.debug("Could not inspect task status for scratch cleanup: %s", task_id, exc_info=True)
+                    else:
+                        if terminal_entry is not None:
+                            _cleanup_task_scratch(
+                                self._anima_dir,
+                                task_id,
+                                status=terminal_entry.status,
+                            )
                     if (
                         interrupt_event is not None
                         and isinstance(interrupt_events, dict)
@@ -1255,6 +1383,22 @@ class PendingTaskExecutor:
 
         logger.info("[%s] LLM task completed: id=%s", self._anima_name, task_id)
         return result_summary
+
+    def _record_attempt_reported_to(self, task_desc: dict[str, Any], agent: Any) -> None:
+        """Persist recipients reached by successful send_message calls in this attempt."""
+        token = str(task_desc.get("_attempt_token") or "")
+        if not token:
+            return
+        handler = getattr(agent, "_tool_handler", None)
+        replied_to_for = getattr(handler, "replied_to_for", None)
+        names = replied_to_for("task") if callable(replied_to_for) else set()
+        reported_to = sorted(name for name in names if isinstance(name, str) and name)
+        try:
+            updated = self._get_task_queue_manager().store.update_attempt_meta(token, {"reported_to": reported_to})
+            if not updated:
+                logger.debug("Task attempt report tracking skipped for inactive attempt %s", token)
+        except Exception:
+            logger.warning("Could not persist task attempt report tracking for %s", token, exc_info=True)
 
     def wake(self) -> None:
         """Signal the watcher to check for new tasks immediately."""

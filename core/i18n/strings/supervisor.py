@@ -77,6 +77,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク実行開始: {title}",
         "en": "Task execution started: {title}",
     },
+    "pending_executor.completion_notify_skipped": {
+        "ja": "報告済みのため完了通知を省略: {title}",
+        "en": "Completion notice skipped because the result was already reported: {title}",
+        "ko": "이미 결과를 보고해 완료 알림 생략: {title}",
+    },
     "pending_executor.model_override": {
         "ja": "タスクのモデル上書き: {requested} で実行（解決: {resolved}）",
         "en": "Task model override: running with {requested} (resolved: {resolved})",
@@ -123,6 +128,50 @@ STRINGS: dict[str, dict[str, str]] = {
             "기존 조치와 결과를 확인하세요. 원래 입력은 보존되지만 자동 재시도되지 않습니다. "
             "계속하려면 update_task(task_id='{task_id}', status='pending', resume=True)를 호출하세요. "
             "불필요하거나 실행 불가라면 취소하고 요청자에게 이유를 알리세요."
+        ),
+    },
+    "task_wait.label": {
+        "ja": "待ち: {target}",
+        "en": "Waiting: {target}",
+        "ko": "대기: {target}",
+    },
+    "task_wait.target_task": {
+        "ja": "タスク {ref} の完了",
+        "en": "task {ref} to finish",
+        "ko": "태스크 {ref} 완료",
+    },
+    "task_wait.target_time": {
+        "ja": "{until} まで",
+        "en": "until {until}",
+        "ko": "{until}까지",
+    },
+    "task_wait.target_message": {
+        "ja": "{ref} からの返事",
+        "en": "a reply from {ref}",
+        "ko": "{ref}의 회신",
+    },
+    "task_wait.target_external": {
+        "ja": "{ref}",
+        "en": "{ref}",
+        "ko": "{ref}",
+    },
+    "task_wait.resumed": {
+        "ja": "待っていた{target}が満たされたので再開",
+        "en": "Resumed because {target} was satisfied",
+        "ko": "기다리던 {target}이(가) 충족되어 재개",
+    },
+    "pending_executor.task_wait_satisfied_notify": {
+        "ja": (
+            "[待ち解除通知]\nタスクID: {task_id}\nタスク: {title}\n"
+            "待っていた条件が満たされました。保存済みの入力を確認して、タスクを再開してください。"
+        ),
+        "en": (
+            "[Wait Satisfied]\nTask ID: {task_id}\nTask: {title}\n"
+            "The condition you were waiting for has been satisfied. Review the saved input and resume the task."
+        ),
+        "ko": (
+            "[대기 해제 알림]\n작업 ID: {task_id}\n작업: {title}\n"
+            "기다리던 조건이 충족되었습니다. 저장된 입력을 확인하고 작업을 재개하세요."
         ),
     },
     "pending_executor.workspace_not_specified": {

@@ -26,6 +26,7 @@ export class LiveClient {
     this.basePath = resolveBasePath();
     this.onConnection = callbacks.onConnection || (() => {});
     this.onUnavailable = callbacks.onUnavailable || (() => {});
+    this.onAssetsUpdated = callbacks.onAssetsUpdated || (() => {});
     this.socket = null;
     this.reconnectTimer = null;
     this.busyPollTimer = null;
@@ -154,6 +155,10 @@ export class LiveClient {
   }
 
   handleEvent(type, data) {
+    if (type === "anima.assets_updated") {
+      this.onAssetsUpdated(data);
+      return;
+    }
     if (type === "anima.status") {
       this.actors.setState(data.name, data.status);
       return;

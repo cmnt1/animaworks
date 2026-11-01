@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=edd56b9e67c756fec1b4eeecac5494f1c0ef7cc4efff2cf7ee64a7501baa0b9f generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI reference: `animaworks`
 
@@ -730,11 +730,12 @@ Show resolved mode and context for a model
 
 List known models
 
-`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
+`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,Y,a,c,d,g,s,x,y}]
+                              [--json]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --mode | option | — | A, C, D, G, S, X, a, c, d, g, s, x | Filter by execution mode |
+| --mode | option | — | A, C, D, G, S, X, Y, a, c, d, g, s, x, y | Filter by execution mode |
 | --json | flag | false | — | Output as JSON |
 
 ## `models show`
@@ -878,7 +879,7 @@ Regenerate character assets using Vibe Transfer to match the art style of a refe
 |---|---|---|---|---|
 | anima | positional | — | — | Name of the anima whose assets to remake |
 | --style-from | option | — | — | Anima name to use as style reference (their fullbody image) |
-| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, 3d, rigging, animations). Default: all steps |
+| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). Default: all steps |
 | --prompt | option | — | — | Override character prompt (default: read from prompt.txt) |
 | --vibe-strength | option | 0.6 | — | Vibe Transfer strength 0.0-1.0 (default: 0.6) |
 | --vibe-info-extracted | option | 0.8 | — | Vibe Transfer information extraction 0.0-1.0 (default: 0.8) |
@@ -929,7 +930,7 @@ Restart the server (stop then start)
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
 | --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1128,7 +1129,7 @@ Stop the running server
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --force | flag | false | — | Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 
@@ -1186,7 +1187,7 @@ Track delegated tasks
 Manage persistent task queue
 
 `usage: animaworks task [-h]
-                       {board,show,claim,release,done,cancel,note,add,update,resume,list}
+                       {board,show,claim,release,done,cancel,note,add,update,resume,list,autonomy}
                        ...`
 
 | Name | Type | Default | Choices | Description |
@@ -1209,6 +1210,18 @@ Publishes an executable TaskExec task; backlog_task only queues tracking work.
 | --summary | option | — | — | 1-line summary (default: instruction[:100]) |
 | --relay-chain | option | — | — | Comma-separated relay chain |
 | --workspace | option | — | — | Workspace alias or path for the task's working_directory |
+
+## `task autonomy`
+
+Aggregate delegation-related autonomy metrics (read-only)
+
+`usage: animaworks task autonomy [-h] [--days DAYS] [--json] [--anima ANIMA]`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| --days | option | 7 | — | Aggregation period (days; default: 7) |
+| --json | flag | false | — | Output as JSON |
+| --anima | option | — | — | Show only this Anima |
 
 ## `task board`
 
@@ -1321,14 +1334,22 @@ Show complete task details
 
 Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
-                              [--summary SUMMARY]`
+`usage: animaworks task update [-h] --task-id TASK_ID [--status STATUS]
+                              [--summary SUMMARY]
+                              [--waiting-for-kind {task,time,message,external}]
+                              [--waiting-for-ref WAITING_FOR_REF]
+                              [--waiting-for-until WAITING_FOR_UNTIL]
+                              [--scope-note SCOPE_NOTE]`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --task-id | option | — | — | Task ID |
-| --status | option | — | — | Status to declare (retired statuses are rejected by update_task) |
+| --status | option | — | — | Status to declare (optional only when --scope-note is given; retired statuses are rejected) |
 | --summary | option | — | — | Updated summary |
+| --waiting-for-kind | option | — | task, time, message, external | What a pending task waits for |
+| --waiting-for-ref | option | — | — | Task ID, person, or free-text wait target |
+| --waiting-for-until | option | — | — | ISO8601 timestamp for kind=time |
+| --scope-note | option | — | — | Append a scope note and notify the requester |
 
 ## `task-store`
 

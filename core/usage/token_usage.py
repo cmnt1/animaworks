@@ -121,6 +121,13 @@ DEFAULT_PRICING: dict[str, dict[str, float]] = {
         "cache_read": 0.08,
         "cache_write": 1.0,
     },
+    # Azure gpt-6-luna (pi-luna rate card). Cached input billed at 10%.
+    "gpt-6-luna": {
+        "input": 0.20,
+        "output": 1.20,
+        "cache_read": 0.02,
+        "cache_write": 0.20,
+    },
     "gpt-4.1": {
         "input": 2.0,
         "output": 8.0,
@@ -221,7 +228,7 @@ class TokenUsageLogger:
             "duration_ms": duration_ms,
             "estimated_cost_usd": round(cost, 6),
             "pricing_status": "estimated" if self._resolve_pricing(model) is not None else "unknown",
-            "input_includes_cache": mode.lower() == "c" or model.startswith(("codex/", "openai-codex/")),
+            "input_includes_cache": self._input_includes_cache(model, mode),
         }
         if auth:
             entry["auth"] = auth
@@ -341,7 +348,7 @@ class TokenUsageLogger:
         # Codex reports cached input as a subset of input_tokens. Anthropic
         # reports cache reads/writes separately; preserve its existing math.
         billable_input = input_tokens
-        if mode.lower() == "c" or model.startswith(("codex/", "openai-codex/")):
+        if self._input_includes_cache(model, mode):
             billable_input = max(0, input_tokens - cache_read_tokens - cache_write_tokens)
         cost = (
             billable_input * pricing.get("input", 0)
@@ -351,10 +358,21 @@ class TokenUsageLogger:
         ) / 1_000_000
         return cost
 
+    @staticmethod
+    def _input_includes_cache(model: str, mode: str) -> bool:
+        """Whether *input_tokens* already contains the cached tokens.
+
+        Codex and OpenAI-style usage (``prompt_tokens_details.cached_tokens``)
+        report cached input as a subset; Anthropic reports it separately.
+        """
+        if mode.lower() == "c" or model.startswith(("codex/", "openai-codex/")):
+            return True
+        return model.rsplit("/", 1)[-1].startswith("gpt-")
+
     def _resolve_pricing(self, model: str) -> dict[str, float] | None:
         """Resolve pricing for a model (longest prefix match)."""
         table = self._load_pricing_table()
-        bare = model.split("/", 1)[-1] if "/" in model else model
+        bare = model.rsplit("/", 1)[-1]
         bare = re.sub(r"^[a-z]{2}\.anthropic\.", "", bare)
         matches = [(p, v) for p, v in table.items() if bare.startswith(p)]
         if not matches:

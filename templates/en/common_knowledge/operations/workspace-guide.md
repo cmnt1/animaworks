@@ -1,6 +1,8 @@
 # Workspace Guide
 
-The concept and usage of the project directory (workspace) where Anima works.
+An overview of the project directory (workspace) where Anima works and how to use it.
+
+See `operations/scratch-and-worktrees.md` for where worktrees, builds, and temporary files are stored during work.
 
 ## What is a Workspace
 

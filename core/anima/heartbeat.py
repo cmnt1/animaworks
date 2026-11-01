@@ -128,6 +128,7 @@ def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
     """Build the oldest-first non-terminal task scoreboard for heartbeat."""
     try:
         from core.tasks.queue import TaskQueueManager
+        from core.tasks.waiting import waiting_label
 
         now = now_local()
         rows: list[tuple[float, str]] = []
@@ -142,12 +143,11 @@ def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
             marker = "⚠️ " if elapsed_seconds > 24 * 60 * 60 else ""
             hours = max(0, int(elapsed_seconds // 3600))
             summary = task.summary.replace("\n", " ")[:80]
-            rows.append(
-                (
-                    elapsed_seconds,
-                    f"- {marker}{task.task_id[:12]} | {task.status} | {hours}h | {summary}",
-                )
-            )
+            label = waiting_label(task.meta.get("waiting_for"))
+            row = f"- {marker}{task.task_id[:12]} | {task.status} | {hours}h | {summary}"
+            if label:
+                row += f" | {label}"
+            rows.append((elapsed_seconds, row))
 
         if not rows:
             return None

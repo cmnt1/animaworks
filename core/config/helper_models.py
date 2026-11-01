@@ -392,6 +392,7 @@ def _credential_family(credential_name: str, credential: Any) -> str | None:
         "azure": "azure",
         "grok": "grok",
         "xai": "grok",
+        "agy": "google",
         "bedrock": "bedrock",
         "codex": "openai",
     }

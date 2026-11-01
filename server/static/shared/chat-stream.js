@@ -293,6 +293,7 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
         switch (event) {
           case "stream_start":
             if (data.response_id) setResponseId(data.response_id);
+            callbacks.onStreamStart?.(data);
             logger.info(`[SSE-FE] EVENT stream_start response_id=${data.response_id} id=${id}`);
             break;
 
@@ -337,6 +338,7 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
               summary: data.summary || null,
               emotion: data.emotion || "neutral",
               images: data.images || data.artifacts || [],
+              files: data.files || [],
               thinkingSummary: data.thinking_summary || null,
               contextUsageRatio: data.context_usage_ratio || 0,
               inputTokens: data.input_tokens || 0,

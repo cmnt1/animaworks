@@ -73,6 +73,10 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gemini-2.0-flash": 1_048_576,
     "gemini-2.5-pro": 1_048_576,
     "gemini-2.5-flash": 1_048_576,
+    # Antigravity CLI (Mode Y) — prefix match covers effort-suffixed variants
+    # such as agy/gemini-4-argon-high and agy/gemini-3.8-flash-medium.
+    "gemini-4-argon": 1_048_576,
+    "gemini-3.8-flash": 1_048_576,
     # Codex CLI models (same context as OpenAI API models)
     "o4-mini": 200_000,
     "o3": 200_000,  # noqa: F601

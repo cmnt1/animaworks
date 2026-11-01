@@ -21,8 +21,8 @@ from core.llm.guard.rate_guard import get_rate_guard
 
 logger = logging.getLogger(__name__)
 
-ENGINE_REALMS: dict[str, str] = {"C": "codex", "D": "cursor", "G": "gemini", "X": "grok"}
-ENGINE_FAMILIES: dict[str, str] = {"S": "anthropic", "C": "openai", "G": "google", "X": "grok"}
+ENGINE_REALMS: dict[str, str] = {"C": "codex", "D": "cursor", "G": "gemini", "X": "grok", "Y": "agy"}
+ENGINE_FAMILIES: dict[str, str] = {"S": "anthropic", "C": "openai", "G": "google", "X": "grok", "Y": "google"}
 GRACEFUL_KILL_WAIT_SECONDS: float = 3.0
 
 

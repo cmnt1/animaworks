@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=e86300b25bfc210b2aa89a78a6bceb84e2e2fca862aa3a0b917b0dbc8af4c142 generated=2026-10-13 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=a4c03b52ba2162ec96ab9ad74c98a9a3b673394395ae37a5d248685cf750d89d generated=2026-10-31 engine=luna model=gpt-6-luna translator=2 -->
 
 # Configuration Reference
 
@@ -394,12 +394,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `image_gen`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation provider and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
-| `image_gen.prefer_codex` | `bool` | `true` | Use codex CLI first for image generation if available |
+| `image_gen.prefer_codex` | `bool` | `true` | Prioritize codex CLI for image generation when available |
 | `image_gen.style_reference` | `str \| None` | `null` | Path to organization-wide style reference image |
 | `image_gen.style_prefix` | `str` | `""` | Common style tags prepended to character prompt |
 | `image_gen.style_suffix` | `str` | `""` | Common style tags appended to character prompt |
@@ -407,6 +407,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.vibe_strength` | `float` | `0.6` | Vibe Transfer strength (0.0-1.0) |
 | `image_gen.vibe_info_extracted` | `float` | `0.8` | Vibe Transfer information extraction (0.0-1.0) |
 | `image_gen.enable_3d` | `bool` | `true` | Enable 3D model generation (Meshy API) |
+| `image_gen.pixel_base_sheet` | `str \| None` | `null` | Base pixel sheet; None uses the bundled sample_01.png |
+| `image_gen.pixel_concurrency` | `int` | `4` | Parallel codex image_gen calls for pixel sheet rows |
 | `image_gen.diffusers_text2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_img2img_model` | `str` | `"auto"` | — |
 | `image_gen.diffusers_text2img_model_realistic` | `str` | `""` | Override for realistic style |
@@ -448,8 +450,10 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
+| `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
+| `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
@@ -633,6 +637,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | Include recent chat dialogue in heartbeat context only when the last turn is younger than this many hours; 0 = always include |
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
+| `heartbeat.cron_followup_repeat_suppress_hours` | `float` | `6.0` | Suppress a command cron's LLM follow-up when its output is identical to the previous follow-up for this many hours; 0 disables suppression |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
@@ -693,7 +698,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `housekeeping`
 
-| Key | Type | Default | Description |
+| Key | Type | Default value | Description |
 |---|---|---|---|
 | `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | Periodic cleanup of runtime data. |
 | `housekeeping.enabled` | `bool` | `true` | — |
@@ -717,6 +722,10 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
 | `housekeeping.codex_log_max_size_mb` | `int` | `200` | — |
 | `housekeeping.codex_tmp_retention_hours` | `int` | `12` | — |
+| `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
+| `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
+| `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
@@ -732,7 +741,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `inbox` | `InboxConfig` | `{InboxConfig}` | Anima's inbox and notification display. |
+| `inbox` | `InboxConfig` | `{InboxConfig}` | anima inbox and notification display. |
+| `inbox.inbox_quiet_seconds` | `float` | `90.0` | — |
+| `inbox.inbox_quiet_max_wait_seconds` | `float` | `300.0` | — |
 | `inbox.ttl_hours` | `float` | `24.0` | — |
 | `inbox.expired_retention_days` | `int` | `7` | — |
 | `inbox.processed_retention_days` | `int` | `30` | — |
@@ -800,22 +811,24 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ### `enclave`
 
-| Key | Type | Default value | Description |
+| Key | Type | Default | Description |
 |---|---|---|---|
-| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks security guards at startup. |
-| `enclave.enabled` | `bool` | `false` | Start this runtime as an isolated enclave. |
+| `enclave` | `EnclaveConfig` | `{EnclaveConfig}` | Server configuration for isolated enclave mode. When enabled, checks the security guard at startup. |
+| `enclave.enabled` | `bool` | `false` | Start this runtime environment as an isolated enclave. |
 | `enclave.name` | `str` | `""` | Identifier returned by the enclave gateway. |
-| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket that the gateway listens on. |
-| `enclave.socket_group` | `str` | `""` | OS group to assign to the gateway socket. |
-| `enclave.entry_anima` | `str` | `""` | Entry anima that handles questions inside the enclave. |
+| `enclave.socket_path` | `str` | `""` | Path to the Unix domain socket the gateway listens on. |
+| `enclave.socket_group` | `str` | `""` | OS group to set on the gateway socket. |
+| `enclave.entry_anima` | `str` | `""` | Entry anima that processes questions inside the enclave. |
 | `enclave.allowed_peer_uids` | `list[int]` | `[]` | OS user UID allowed to connect to the gateway. |
-| `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway handles concurrently. |
+| `enclave.max_concurrency` | `int` | `2` | Maximum number of questions the gateway processes concurrently. |
 | `enclave.request_timeout_s` | `int` | `0` | Timeout in seconds for question processing and gateway responses. |
-| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of authentication credentials available to animas inside the enclave. |
-| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that animas inside the enclave can access. |
-| `enclave.datasets.path` | `str` | `"—"` | Relative path to a JSONL file within the data directory. |
-| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve records uniquely. |
-| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields that allow partial-match searches. |
+| `enclave.allowed_llm_credentials` | `list[str]` | `[]` | Names of credentials available to the anima inside the enclave. |
+| `enclave.model_profiles` | `dict[str, str]` | `{}` | — |
+| `enclave.default_model_profile` | `str` | `""` | — |
+| `enclave.datasets` | `dict[str, EnclaveDatasetConfig]` | `{}` | JSONL datasets that the anima inside the enclave can access. |
+| `enclave.datasets.path` | `str` | `"—"` | Relative path to the JSONL file inside the data directory. |
+| `enclave.datasets.id_field` | `str` | `"—"` | ID field used to retrieve a record uniquely. |
+| `enclave.datasets.searchable_fields` | `list[str]` | `[]` | Fields that allow partial-match search. |
 | `enclave.sql_sources` | `dict[str, EnclaveSqlSourceConfig]` | `{}` | — |
 | `enclave.sql_sources.driver` | `Literal['mysql']` | `"mysql"` | — |
 | `enclave.sql_sources.host` | `str` | `"—"` | Tunnel target (or direct) host |
@@ -835,11 +848,13 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `enclave.sql_sources.tunnel.plugin_path` | `str` | `"/usr/local/bin/session-manager-plugin"` | — |
 | `enclave.sql_sources.tunnel.idle_shutdown_s` | `int` | `600` | — |
 | `enclave.sql_sources.tunnel.local_port` | `int \| None` | `null` | Fixed loopback port for the tunnel (lets a host firewall allow it); random when unset |
+| `enclave.sql_sources.tunnel.local_port_count` | `int` | `1` | Number of consecutive loopback ports starting at local_port; concurrent processes each reserve a different one |
 | `enclave.sql_sources.max_rows` | `int` | `200` | — |
 | `enclave.sql_sources.timeout_s` | `int` | `30` | — |
 | `enclave.sql_sources.cell_max_chars` | `int` | `2000` | — |
 | `enclave.sql_sources.app_key_secret` | `str \| None` | `null` | — |
 | `enclave.sql_sources.decrypt_columns` | `list[str]` | `[]` | — |
+| `enclave.sql_sources.session_variables` | `dict[str, str]` | `{}` | User variables set on every connection (``SET @name = 'value'``), e.g. for row-level views that filter on a session variable |
 | `enclave.aws_sources` | `dict[str, EnclaveAwsSourceConfig]` | `{}` | — |
 | `enclave.aws_sources.region` | `str` | `"—"` | — |
 | `enclave.aws_sources.aws_secret` | `str` | `"—"` | Secret name holding AWS credential JSON |
@@ -851,6 +866,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `enclave.secrets_dir` | `str \| None` | `null` | — |
 | `enclave.raw_dir` | `str` | `"raw"` | — |
 | `enclave.egress` | `dict[str, Any]` | `{}` | Egress stage configuration for processing facts returned externally. |
+| `enclave.egress_probe` | `list[str]` | `[]` | — |
+| `enclave.egress_probe_timeout_s` | `float` | `5.0` | — |
 
 ### `enclaves`
 
@@ -900,10 +917,11 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ## `models.json`
 
-Execution modes and context windows for each model name pattern.
+Execution modes and context windows by model name pattern.
 
 | Model name pattern | Mode | Context window |
-|---|---:|---:|
+|---|---|---:|
+| `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |

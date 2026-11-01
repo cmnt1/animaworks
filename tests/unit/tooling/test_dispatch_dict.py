@@ -55,6 +55,7 @@ EXPECTED_BUILTIN_TOOLS = frozenset(
         "archive_memory_file",
         "send_message",
         "post_channel",
+        "attach_file",
         "read_channel",
         "read_dm_history",
         "read_file",

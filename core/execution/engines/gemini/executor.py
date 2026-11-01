@@ -203,6 +203,9 @@ class GeminiCLIExecutor(CLIStreamExecutor):
         optionally inject ``GEMINI_SYSTEM_MD`` for system prompt override.
         """
         env = dict(os.environ)
+        from core.execution.workspace_env import update_workspace_env
+
+        update_workspace_env(env, self._anima_dir)  # Includes ANIMAWORKS_SCRATCH_DIR and shared tool caches.
         env["GEMINI_CLI_HOME"] = str(self._workspace)
         if system_prompt_path is not None:
             env["GEMINI_SYSTEM_MD"] = str(system_prompt_path)

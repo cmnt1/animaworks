@@ -302,6 +302,33 @@ class TestGetAsset:
         assert resp.status_code == 200
         assert "image/png" in resp.headers.get("content-type", "")
 
+    async def test_attachment_content_disposition_and_nosniff(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        for filename in ("document.pdf", "page.html", "vector.svg", "preview.png", "notes..txt"):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            responses = {
+                filename: await client.get(f"/api/animas/alice/attachments/{filename}")
+                for filename in ("document.pdf", "page.html", "vector.svg", "preview.png", "notes..txt")
+            }
+
+        for filename in ("document.pdf", "page.html", "vector.svg", "preview.png"):
+            assert responses[filename].status_code == 200
+            assert responses[filename].headers.get("x-content-type-options") == "nosniff"
+        for filename in ("document.pdf", "page.html", "vector.svg"):
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("attachment; filename*=UTF-8''")
+            assert filename in disposition
+        assert "content-disposition" not in responses["preview.png"].headers
+        assert "image/png" in responses["preview.png"].headers.get("content-type", "")
+        assert responses["notes..txt"].status_code == 200
+        assert responses["notes..txt"].headers.get("content-disposition", "").startswith("attachment;")
+
     async def test_serve_glb(self, tmp_path):
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
@@ -343,6 +370,64 @@ def _write_test_png(path: Path, size: int = 256) -> Path:
 
 class TestAssetThumbnail:
     """Server-side ?size=S|M|L WebP thumbnail generation."""
+
+    async def test_portrait_sizes_preserve_aspect_ratio_and_use_requested_edge(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        Image.new("RGBA", (1000, 1500), color=(200, 100, 50, 128)).save(assets_dir / "bustup.png")
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            panel = await client.get("/api/animas/alice/assets/bustup.png?size=P")
+            call = await client.get("/api/animas/alice/assets/bustup.png?size=C")
+
+        assert panel.status_code == call.status_code == 200
+        panel_image = Image.open(BytesIO(panel.content))
+        call_image = Image.open(BytesIO(call.content))
+        assert panel_image.format == call_image.format == "WEBP"
+        assert panel_image.size == (360, 540)
+        assert call_image.size == (733, 1100)
+        assert panel_image.mode == call_image.mode == "RGBA"
+        assert (assets_dir / ".thumbs" / "bustup.png.P.webp").is_file()
+        assert (assets_dir / ".thumbs" / "bustup.png.C.webp").is_file()
+
+    async def test_portrait_sizes_regenerate_after_source_update(self, tmp_path):
+        import os
+        import time
+
+        from PIL import Image
+
+        animas_dir = tmp_path / "animas"
+        assets_dir = animas_dir / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = assets_dir / "bustup.png"
+        Image.new("RGB", (1000, 1500), color=(200, 100, 50)).save(source)
+
+        app = _make_test_app(animas_dir=animas_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+            caches = {key: assets_dir / ".thumbs" / f"bustup.png.{key}.webp" for key in ("P", "C")}
+            mtimes = {key: cache.stat().st_mtime_ns for key, cache in caches.items()}
+
+            time.sleep(0.02)
+            Image.new("RGB", (1100, 1600), color=(80, 120, 200)).save(source)
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, max(mtimes.values()) + 1_000_000))
+
+            for key in ("P", "C"):
+                response = await client.get(f"/api/animas/alice/assets/bustup.png?size={key}")
+                assert response.status_code == 200
+
+        assert all(caches[key].stat().st_mtime_ns > mtimes[key] for key in caches)
 
     async def test_size_s_returns_96px_webp(self, tmp_path):
         animas_dir = tmp_path / "animas"
@@ -963,3 +1048,197 @@ class TestListRemakePreviews:
         data = resp.json()
         assert data["previews"] == ["_preview_001_realistic.png", "_preview_002_realistic.png"]
         assert data["backup_id"] == "assets_backup_20260808_113051"
+
+
+class TestFaceAssets:
+    @staticmethod
+    def _write_region_png(path: Path, face_color: tuple[int, int, int]) -> Path:
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(image).rectangle((24, 0, 75, 51), fill=face_color)
+        image.save(path, format="PNG")
+        return path
+
+    async def test_face_crop_cache_and_size(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_smile.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+            second = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert first.status_code == 200
+        assert first.headers["content-type"].startswith("image/webp")
+        image = Image.open(BytesIO(first.content))
+        assert image.size == (96, 96)
+        assert image.getpixel((48, 48))[1] > 150  # the checked upper-center face crop
+        cache = assets_dir / ".thumbs" / "face2_smile_anime.S.webp"
+        assert cache.is_file()
+        assert second.content == first.content
+        assert cache.stat().st_mtime_ns >= source.stat().st_mtime_ns
+
+    async def test_face_cache_rebuilds_when_source_changes(self, tmp_path):
+        import os
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = self._write_region_png(assets_dir / "avatar_bustup_troubled.png", (15, 180, 40))
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/api/animas/alice/assets/face/troubled?size=M")
+            cache = assets_dir / ".thumbs" / "face2_troubled_anime.M.webp"
+            old_mtime = cache.stat().st_mtime_ns
+            self._write_region_png(source, (20, 30, 210))
+            source_stat = source.stat()
+            os.utime(source, ns=(source_stat.st_atime_ns, old_mtime + 1_000_000))
+            response = await client.get("/api/animas/alice/assets/face/troubled?size=M")
+
+        assert response.status_code == 200
+        assert cache.stat().st_mtime_ns > old_mtime
+
+    async def test_face_crop_uses_style_specific_configuration(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image, ImageDraw
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        source = Image.new("RGB", (100, 100), (220, 20, 20))
+        ImageDraw.Draw(source).rectangle((70, 50, 89, 69), fill=(15, 180, 40))
+        source.save(assets_dir / "avatar_bustup_smile.png", format="PNG")
+        (assets_dir / "face_crop.json").write_text(
+            '{"anime":{"x":0.7,"y":0.5,"w":0.2},"realistic":{"x":0.0,"y":0.0,"w":0.2}}',
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/smile?size=S&style=anime")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.getpixel((48, 48))[1] > 150
+
+    async def test_face_uses_style_icon_fallback_when_bustup_missing(self, tmp_path):
+        from io import BytesIO
+
+        from PIL import Image
+
+        assets_dir = tmp_path / "alice" / "assets"
+        assets_dir.mkdir(parents=True)
+        _write_test_png(assets_dir / "icon_realistic.png", size=256)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/laugh?size=M&style=realistic")
+
+        assert response.status_code == 200
+        image = Image.open(BytesIO(response.content))
+        assert image.format == "WEBP"
+        assert image.size == (192, 192)
+        assert (assets_dir / ".thumbs" / "face2_laugh_realistic.M.webp").is_file()
+
+    async def test_invalid_emotion_returns_400(self, tmp_path):
+        (tmp_path / "alice" / "assets").mkdir(parents=True)
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/assets/face/angry")
+        assert response.status_code == 400
+
+
+class TestAttachmentInlineDelivery:
+    async def test_inline_allowed_and_attachment_forced_types(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        filenames = ("report.pdf", "track.mp3", "clip.mp4", "notes.txt", "readme.md", "data.csv", "feed.xml")
+        forced = ("page.html", "vector.svg", "doc.docx", "mystery.bin")
+        for filename in (*filenames, *forced):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            responses = {
+                filename: await client.get(f"/api/animas/alice/attachments/{filename}?inline=1")
+                for filename in (*filenames, *forced)
+            }
+
+        for filename in filenames:
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("inline; filename*=UTF-8''"), filename
+        for filename in forced:
+            disposition = responses[filename].headers.get("content-disposition", "")
+            assert disposition.startswith("attachment; filename*=UTF-8''"), filename
+
+        assert responses["readme.md"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["notes.txt"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["feed.xml"].headers["content-type"] == "text/plain; charset=utf-8"
+        assert responses["data.csv"].headers["content-type"] == "text/csv; charset=utf-8"
+        assert responses["page.html"].headers["content-type"] == "text/html; charset=utf-8"
+        for filename in filenames:
+            assert responses[filename].headers["x-content-type-options"] == "nosniff"
+            assert responses[filename].headers["cache-control"] == "no-store"
+
+    async def test_inline_csp_except_pdf(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        for filename in ("report.pdf", "notes.txt", "track.mp3"):
+            (attachment_dir / filename).write_bytes(b"content")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            pdf = await client.get("/api/animas/alice/attachments/report.pdf?inline=1")
+            text = await client.get("/api/animas/alice/attachments/notes.txt?inline=1")
+            audio = await client.get("/api/animas/alice/attachments/track.mp3?inline=1")
+
+        assert "content-security-policy" not in pdf.headers
+        csp = text.headers["content-security-policy"]
+        assert "sandbox" in csp
+        assert "default-src 'none'" in csp
+        assert "sandbox" in audio.headers["content-security-policy"]
+
+    async def test_range_request_returns_206(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        (attachment_dir / "notes.txt").write_bytes(b"0123456789")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/animas/alice/attachments/notes.txt",
+                headers={"Range": "bytes=0-1"},
+            )
+
+        assert response.status_code == 206
+        assert response.headers["content-range"] == "bytes 0-1/10"
+        assert response.headers["accept-ranges"] == "bytes"
+        assert response.content == b"01"
+
+    async def test_image_without_inline_keeps_existing_behaviour(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        attachment_dir = anima_dir / "attachments"
+        attachment_dir.mkdir(parents=True)
+        (attachment_dir / "preview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/animas/alice/attachments/preview.png")
+
+        assert response.status_code == 200
+        assert "content-disposition" not in response.headers

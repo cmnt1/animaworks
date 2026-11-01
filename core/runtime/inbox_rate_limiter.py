@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.config.models import load_config
+from core.messaging.inbox_quiet_window import classify_unread_messages
 from core.platform.tasks import spawn
 
 if TYPE_CHECKING:
@@ -48,15 +49,33 @@ class InboxRateLimiter:
         self._scheduler_mgr = scheduler_mgr
 
         self._pending_trigger = False
+        self._accepting_work = True
         self._inbox_run_lock = asyncio.Lock()
         self._inbox_wake_event = asyncio.Event()
         self._deferred_timer: asyncio.Handle | None = None
+        self._deferred_trigger_due = False
         self._last_disabled_skip_log = 0.0
         self._failure_retry_until = 0.0
+
+    @staticmethod
+    def _inbox_quiet_window_settings() -> tuple[float, float]:
+        """Read quiet-window settings, failing open to immediate processing."""
+        try:
+            inbox_config = load_config().inbox
+            return float(inbox_config.inbox_quiet_seconds), float(inbox_config.inbox_quiet_max_wait_seconds)
+        except Exception:
+            logger.debug("Could not load inbox quiet-window settings; triggering immediately", exc_info=True)
+            return 0.0, 0.0
 
     def _retry_is_delayed(self) -> bool:
         """Provider failures retain unread messages without hot-looping them."""
         return time.monotonic() < self._failure_retry_until
+
+    def quiesce(self) -> None:
+        """Prevent new inbox work from starting while active work continues."""
+        self._accepting_work = False
+        self.cancel_deferred_timer()
+        self._inbox_wake_event.set()
 
     def _record_processing_failure(self) -> None:
         delay = _PROVIDER_FAILURE_RETRY_MIN_SEC
@@ -130,6 +149,7 @@ class InboxRateLimiter:
 
         def wake_inbox() -> None:
             self._deferred_timer = None
+            self._deferred_trigger_due = True
             self._inbox_wake_event.set()
 
         self._deferred_timer = loop.call_later(delay, wake_inbox)
@@ -137,12 +157,17 @@ class InboxRateLimiter:
 
     async def message_triggered_inbox(self) -> None:
         """Run one inbox job; arrivals during it are coalesced into the next job."""
+        if not self._accepting_work:
+            return
         if self._inbox_run_lock.locked():
             # The active job checks for unread messages on exit and raises one
             # wake for the next batch, so parallel triggers need not queue here.
             return
 
         async with self._inbox_run_lock:
+            if not self._accepting_work:
+                self._pending_trigger = False
+                return
             if not self._anima:
                 self._pending_trigger = False
                 return
@@ -209,25 +234,43 @@ class InboxRateLimiter:
 
         logger.info("Inbox watcher started for %s", self._anima_name)
         observer = self._start_inbox_observer(asyncio.get_running_loop())
+        quiet_wait_started_at: float | None = None
+        quiet_wait_last_arrival_at: float | None = None
+        quiet_wait_message_count = 0
         # Reconcile messages already present at startup, even if they predate
         # the filesystem observer.
         self._inbox_wake_event.set()
         try:
             while not self._shutdown_event.is_set():
                 try:
+                    quiet_seconds, max_wait_seconds = self._inbox_quiet_window_settings()
+                    wait_timeout = _INBOX_RECHECK_INTERVAL_SEC
+                    if quiet_wait_started_at is not None:
+                        if quiet_seconds <= 0:
+                            wait_timeout = 0.0
+                        else:
+                            quiet_deadline = min(
+                                quiet_wait_last_arrival_at + quiet_seconds,
+                                quiet_wait_started_at + max_wait_seconds,
+                            )
+                            wait_timeout = min(wait_timeout, max(quiet_deadline - time.monotonic(), 0.0))
                     try:
                         await asyncio.wait_for(
                             self._inbox_wake_event.wait(),
-                            timeout=_INBOX_RECHECK_INTERVAL_SEC,
+                            timeout=wait_timeout,
                         )
                     except TimeoutError:
                         # Filesystem notifications can be missed on some mounts.
                         pass
                     self._inbox_wake_event.clear()
 
-                    if self._shutdown_event.is_set() or self._pending_trigger:
+                    if self._shutdown_event.is_set() or not self._accepting_work or self._pending_trigger:
                         continue
                     if not self._anima.messenger.has_unread():
+                        quiet_wait_started_at = None
+                        quiet_wait_last_arrival_at = None
+                        quiet_wait_message_count = 0
+                        self._deferred_trigger_due = False
                         continue
                     if self._retry_is_delayed():
                         self.schedule_deferred_trigger()
@@ -243,6 +286,64 @@ class InboxRateLimiter:
                             )
                             self._last_disabled_skip_log = now
                         continue
+
+                    unread_count, all_deferrable = classify_unread_messages(Path(self._anima.messenger.inbox_dir))
+                    deferred_trigger_due = self._deferred_trigger_due
+                    self._deferred_trigger_due = False
+                    if quiet_seconds > 0 and unread_count > 0 and all_deferrable and not deferred_trigger_due:
+                        now = time.monotonic()
+                        if quiet_wait_started_at is None:
+                            quiet_wait_started_at = now
+                            quiet_wait_last_arrival_at = now
+                            quiet_wait_message_count = unread_count
+                            logger.debug(
+                                "Inbox quiet window started for %s: %d message(s), quiet=%.1fs, max_wait=%.1fs",
+                                self._anima_name,
+                                unread_count,
+                                quiet_seconds,
+                                max_wait_seconds,
+                            )
+                        elif unread_count > quiet_wait_message_count:
+                            quiet_wait_last_arrival_at = now
+                            logger.debug(
+                                "Inbox quiet window extended for %s: %d message(s), quiet deadline in %.1fs",
+                                self._anima_name,
+                                unread_count,
+                                quiet_seconds,
+                            )
+                        quiet_wait_message_count = unread_count
+
+                        quiet_deadline = min(
+                            quiet_wait_last_arrival_at + quiet_seconds,
+                            quiet_wait_started_at + max_wait_seconds,
+                        )
+                        if now < quiet_deadline:
+                            continue
+
+                        waited_seconds = max(now - quiet_wait_started_at, 0.0)
+                        logger.debug(
+                            "Inbox quiet window elapsed for %s; starting inbox processing",
+                            self._anima_name,
+                        )
+                        logger.info(
+                            "Inbox quiet window: %s; batching %d message(s) after %.1fs",
+                            self._anima_name,
+                            unread_count,
+                            waited_seconds,
+                        )
+                    elif deferred_trigger_due:
+                        logger.debug("Deferred inbox trigger is due for %s; bypassing quiet window", self._anima_name)
+                    elif quiet_wait_started_at is not None:
+                        waited_seconds = max(time.monotonic() - quiet_wait_started_at, 0.0)
+                        logger.debug(
+                            "Immediate inbox message bypasses quiet window for %s after %.1fs",
+                            self._anima_name,
+                            waited_seconds,
+                        )
+
+                    quiet_wait_started_at = None
+                    quiet_wait_last_arrival_at = None
+                    quiet_wait_message_count = 0
 
                     self._pending_trigger = True
                     try:

@@ -72,8 +72,6 @@ class EgressConfig(BaseModel):
     """Validated ``enclave.egress`` configuration."""
 
     stages: list[Stage]
-    max_fact_chars: int = 2000
-    max_facts: int = 50
 
     @model_validator(mode="after")
     def _check_not_empty(self) -> EgressConfig:

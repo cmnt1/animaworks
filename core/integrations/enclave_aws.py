@@ -18,15 +18,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
-import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.enclave.raw_store import try_save_raw
+from core.enclave.raw_store import save_raw, try_save_raw
 from core.i18n import t
 from core.integrations._base import dispatch_by_table
 
@@ -510,43 +508,24 @@ def _validate_bucket(source_config: Any, bucket: str) -> str:
     return bucket
 
 
-def _download_path(data_dir: Path, bucket: str, key: str) -> tuple[Path, str]:
-    """Return a contained, opaque local path for an S3 object."""
-    root = data_dir.resolve()
-    target_dir = data_dir / "enclave" / "downloads" / bucket
-    if not target_dir.resolve(strict=False).is_relative_to(root):
-        raise _InvalidInputError
-    from core.enclave.egress.fs import ensure_dir_0700
+class _PrefixedBody:
+    """Readable stream that yields already-read bytes before the rest of an S3 body."""
 
-    ensure_dir_0700(target_dir)
-    resolved_dir = target_dir.resolve()
-    if not resolved_dir.is_relative_to(root):
-        raise _InvalidInputError
-    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
-    target = resolved_dir / digest
-    if not target.resolve(strict=False).is_relative_to(root):
-        raise _InvalidInputError
-    return target, digest
+    def __init__(self, initial: bytes, body: Any) -> None:
+        self._initial = initial
+        self._body = body
+
+    def read(self, size: int = -1) -> bytes:
+        if self._initial:
+            chunk, self._initial = self._initial, b""
+            return chunk
+        return self._body.read(size)
 
 
-def _save_s3_body(body: Any, target: Path, initial: bytes = b"") -> None:
-    """Stream an S3 body to an atomically replaced mode-0600 file."""
-    fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
-    temp_path = Path(temporary)
+def _save_s3_body_as_raw(body: Any, suffix: str, initial: bytes = b"") -> Path:
+    """Stream an S3 body into the private raw store (deleted by its retention job)."""
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as stream:
-            if initial:
-                stream.write(initial)
-            while True:
-                chunk = body.read(64 * 1024)
-                if not chunk:
-                    break
-                stream.write(chunk)
-        os.replace(temp_path, target)
-    except Exception:
-        temp_path.unlink(missing_ok=True)
-        raise
+        return save_raw("enclave_s3_get", _PrefixedBody(initial, body), suffix=suffix)
     finally:
         close = getattr(body, "close", None)
         if callable(close):
@@ -560,13 +539,19 @@ def _s3_raw_suffix(key: str, *, is_text: bool) -> str:
     return "txt" if is_text else "bin"
 
 
-def _save_download_as_raw(path: Path, suffix: str) -> Path | None:
-    try:
-        with path.open("rb") as stream:
-            return try_save_raw("enclave_s3_get", stream, suffix=suffix)
-    except Exception as exc:
-        logger.warning("Could not read enclave S3 object for raw storage (%s)", type(exc).__name__)
-        return None
+def _s3_saved_result(source: str, bucket: str, key: str, content_type: str, size: Any, target: Path) -> dict[str, Any]:
+    return {
+        "source": source,
+        "bucket": bucket,
+        "key": key,
+        "content_type": content_type,
+        "content_length": size,
+        "key_sha256": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+        "saved_path": str(target),
+        "raw_path": str(target),
+        "text": "",
+        "truncated": False,
+    }
 
 
 def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
@@ -607,59 +592,23 @@ def enclave_s3_get(source: str, bucket: str, key: str) -> dict[str, Any] | str:
                     extra={"bucket": bucket, "key": key, "content_type": content_type, "content_length": size},
                 )
             # The object changed after HEAD or exceeded its advertised size; preserve it locally.
-            target, digest = _download_path(_get_data_dir(), bucket, key)
-            _save_s3_body(body, target, raw)
+            target = _save_s3_body_as_raw(body, _s3_raw_suffix(key, is_text=True), raw)
             body = None
-            result: dict[str, Any] = {
-                "source": source,
-                "bucket": bucket,
-                "key": key,
-                "content_type": content_type,
-                "content_length": size,
-                "key_sha256": digest,
-                "saved_path": str(target),
-                "text": "",
-                "truncated": False,
-            }
-            raw_path = _save_download_as_raw(target, _s3_raw_suffix(key, is_text=True))
-            if raw_path is not None:
-                result["raw_path"] = str(raw_path)
-            return result
+            return _s3_saved_result(source, bucket, key, content_type, size, target)
 
         obj = client.get_object(Bucket=bucket, Key=key)
         body = obj.get("Body")
         if body is None:
             raise RuntimeError("missing S3 object body")
-        target, digest = _download_path(_get_data_dir(), bucket, key)
-        _save_s3_body(body, target)
+        target = _save_s3_body_as_raw(body, _s3_raw_suffix(key, is_text=is_text))
         body = None
-        result = {
-            "source": source,
-            "bucket": bucket,
-            "key": key,
-            "content_type": content_type,
-            "content_length": size,
-            "key_sha256": digest,
-            "saved_path": str(target),
-            "text": "",
-            "truncated": False,
-        }
-        raw_path = _save_download_as_raw(target, _s3_raw_suffix(key, is_text=is_text))
-        if raw_path is not None:
-            result["raw_path"] = str(raw_path)
-        return result
+        return _s3_saved_result(source, bucket, key, content_type, size, target)
     except Exception as exc:  # noqa: BLE001 - do not expose AWS responses or credentials
         if body is not None:
             close = getattr(body, "close", None)
             if callable(close):
                 close()
         return _tool_error(exc, source)
-
-
-def _get_data_dir() -> Path:
-    from core.paths import get_data_dir
-
-    return get_data_dir()
 
 
 def enclave_s3_list(source: str, bucket: str, prefix: str = "", limit: int = 100) -> dict[str, Any] | str:

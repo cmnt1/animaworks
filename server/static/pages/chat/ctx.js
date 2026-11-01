@@ -4,7 +4,8 @@ import { api } from "../../modules/api.js";
 import { state as appState, escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp } from "../../modules/state.js";
 import { streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress } from "../../shared/chat-stream.js";
 import { createLogger } from "../../shared/logger.js";
-import { createImageInput, initLightbox, renderChatImages } from "../../shared/image-input.js";
+import { createImageInput, initLightbox, renderChatFiles, renderChatImages } from "../../shared/image-input.js";
+import { initFileViewer } from "../../shared/file-viewer.js";
 import { initVoiceUI, updateVoiceUIAnima } from "../../modules/voice-ui.js";
 import { getIcon, getDisplaySummary } from "../../shared/activity-types.js";
 import {
@@ -31,16 +32,17 @@ export const CONSTANTS = Object.freeze({
 
 export function createChatContext() {
   const mgr = ChatSessionManager.getInstance();
+  const fetchChatFeedHistory = async (animaName, limit, before, threadId) => {
+    let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/feed?min_user_items=10`;
+    if (before) url += `&before=${encodeURIComponent(before)}`;
+    url += `&thread_id=${encodeURIComponent(threadId)}`;
+    if (threadId !== "default") url += `&strict_thread=1`;
+    return await api(url);
+  };
   mgr.configure({
     streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress,
     getUser: () => document.getElementById("currentUserLabel")?.textContent || localStorage.getItem("animaworks_user") || "human",
-    fetchHistory: async (animaName, limit, before, threadId) => {
-      let url = `/api/animas/${encodeURIComponent(animaName)}/conversation/history?limit=${limit}`;
-      if (before) url += `&before=${encodeURIComponent(before)}`;
-      url += `&thread_id=${encodeURIComponent(threadId)}`;
-      if (threadId !== "default") url += `&strict_thread=1`;
-      return await api(url);
-    },
+    fetchHistory: fetchChatFeedHistory,
   });
 
   const state = {
@@ -48,12 +50,13 @@ export function createChatContext() {
     // Demo mode is detected once at dashboard start (modules/app.js).
     get demoMode() { return appState.demoMode === true; },
     animas: [],
+    fetchChatFeedHistory,
     users: [],
     selectedAnima: null,
     animaDetail: null,
+    animaDetailLoadedFor: null,
+    animaSummary: null,
     animaTabs: [],
-    activeRightTab: "state",
-    activeMemoryTab: "episodes",
     intervals: [],
     boundListeners: [],
     chatObserver: null,
@@ -63,6 +66,7 @@ export function createChatContext() {
     animaLastAccess: {},
     imageInputManager: null,
     bustupUrl: null,
+    replyTarget: null,
     chatUiStateSaveTimer: null,
     animaTabAvatarUrls: {},
     animaTabAvatarLoading: {},
@@ -70,7 +74,6 @@ export function createChatContext() {
     firstMeetingRequested: new Set(),
     firstMeetingResponses: new Map(),
     firstMeetingFailed: new Set(),
-    rightPaneVisible: true,
     paneIdx: 0,
     modelByThread: {},
     /** @type {ChatSessionManager} */
@@ -81,7 +84,7 @@ export function createChatContext() {
     t, api, escapeHtml, renderMarkdown, renderSafeMarkdown, timeStr, smartTimestamp,
     streamChat, streamMeetingChat, fetchActiveStream, fetchStreamProgress,
     logger,
-    createImageInput, initLightbox, renderChatImages,
+    createImageInput, initLightbox, initFileViewer, renderChatFiles, renderChatImages,
     initVoiceUI, updateVoiceUIAnima,
     getIcon, getDisplaySummary,
   };

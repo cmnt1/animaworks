@@ -341,6 +341,42 @@ def test_guard8_loopback_host_passes(data_dir: Path, host: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Guard 9: egress probe
+# ---------------------------------------------------------------------------
+
+
+def test_guard9_reachable_probe_target_is_violation(data_dir: Path) -> None:
+    import socket
+
+    _prepare_data_dir(data_dir)
+    listener = socket.create_server(("127.0.0.1", 0))
+    try:
+        target = f"127.0.0.1:{listener.getsockname()[1]}"
+        config = _make_config(enclave=_enclave(egress_probe=[target]))
+        assert _has(_violations(config, data_dir), target)
+    finally:
+        listener.close()
+
+
+def test_guard9_blocked_probe_target_passes(data_dir: Path) -> None:
+    import socket
+
+    _prepare_data_dir(data_dir)
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    listener.close()  # nothing listens -> connection refused, as a firewall reject would
+    config = _make_config(enclave=_enclave(egress_probe=[f"127.0.0.1:{port}"]))
+    assert _violations(config, data_dir) == []
+
+
+@pytest.mark.parametrize("target", ["no-port", "host:abc", ":443"])
+def test_guard9_malformed_probe_target_is_violation(data_dir: Path, target: str) -> None:
+    _prepare_data_dir(data_dir)
+    config = _make_config(enclave=_enclave(egress_probe=[target]))
+    assert _has(_violations(config, data_dir), target)
+
+
+# ---------------------------------------------------------------------------
 # enforce_enclave_runtime
 # ---------------------------------------------------------------------------
 
@@ -410,3 +446,12 @@ def test_start_foreground_exits_without_uvicorn(data_dir: Path, monkeypatch: pyt
     assert called["uvicorn"] is False
     # Refused before any side effects (PID file, watchdog).
     assert not (data_dir / "server.pid").exists()
+
+
+def test_guard5_model_profile_credential_must_be_allowed(data_dir: Path) -> None:
+    _prepare_data_dir(data_dir)
+    profiles = {"luna-max": "a:azure/responses/gpt-6-luna", "opus-high": ""}
+    config = _make_config(enclave=_enclave(model_profiles=profiles))
+    assert _has(_violations(config, data_dir), "azure")
+    config = _make_config(enclave=_enclave(allowed_llm_credentials=["anthropic", "azure"], model_profiles=profiles))
+    assert not _has(_violations(config, data_dir), "azure")

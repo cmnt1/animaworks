@@ -6,6 +6,7 @@ import { getState, setState } from "./state.js";
 import { t } from "/shared/i18n.js";
 import { initBustup, setCharacter, setExpression, setTalking, onClick as onBustupClick } from "./live2d.js";
 import { createImageInput, initLightbox } from "../../shared/image-input.js";
+import { initFileViewer } from "../../shared/file-viewer.js";
 import { initTextArtifactHandlers } from "../../shared/text-artifact.js";
 
 import { initHistory, renderConvMessages, loadAndRenderConvMessages, disconnectScrollObserver, refreshSentinel } from "./chat-history.js";
@@ -222,6 +223,7 @@ export function initChatController(dom) {
   }
 
   initLightbox();
+  initFileViewer();
   initTextArtifactHandlers();
 
   setupMobileListeners(dom);

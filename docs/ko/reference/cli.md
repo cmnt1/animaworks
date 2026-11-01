@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=c0bca4e2154a9254d87f9105f9a93978b0b9c215d0b0d84237dad71edba6dcbc generated=2026-10-07 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=edd56b9e67c756fec1b4eeecac5494f1c0ef7cc4efff2cf7ee64a7501baa0b9f generated=2026-10-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -728,14 +728,15 @@ anima용 stdio MCP 서버 실행
 
 ## `models list`
 
-알려진 모델 목록 표시
+List known models
 
-`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
+`usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,Y,a,c,d,g,s,x,y}]
+                              [--json]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --mode | 옵션 | — | A, C, D, G, S, X, a, c, d, g, s, x | 실행 모드로 필터링 |
-| --json | 플래그 | false | — | JSON으로 출력 |
+| --mode | option | — | A, C, D, G, S, X, Y, a, c, d, g, s, x, y | Filter by execution mode |
+| --json | flag | false | — | Output as JSON |
 
 ## `models show`
 
@@ -863,7 +864,7 @@ anima용 stdio MCP 서버 실행
 
 ## `remake-assets`
 
-참조 anima의 아트 스타일에 맞게 Vibe Transfer를 사용하여 캐릭터 에셋 재생성. 선택적 단계 실행 및 자동 백업 지원.
+Regenerate character assets using Vibe Transfer to match the art style of a reference anima. Supports selective step execution and automatic backup.
 
 `usage: animaworks remake-assets [-h] --style-from STYLE_FROM [--steps STEPS]
                                 [--prompt PROMPT]
@@ -876,16 +877,16 @@ anima용 stdio MCP 서버 실행
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | 에셋을 재생성할 anima의 이름 |
-| --style-from | 옵션 | — | — | 스타일 참조로 사용할 anima 이름 (해당 전신 이미지) |
-| --steps | 옵션 | — | — | 실행할 단계의 쉼표 구분 목록 (선택지: fullbody, bustup, icon, chibi, 3d, rigging, animations). 기본값: 모든 단계 |
-| --prompt | 옵션 | — | — | 캐릭터 프롬프트 재정의 (기본값: prompt.txt에서 읽기) |
-| --vibe-strength | 옵션 | 0.6 | — | Vibe Transfer 강도 0.0-1.0 (기본값: 0.6) |
-| --vibe-info-extracted | 옵션 | 0.8 | — | Vibe Transfer 정보 추출 0.0-1.0 (기본값: 0.8) |
-| --seed | 옵션 | — | — | 재현을 위한 시드 (전신 생성 전용) |
-| --image-style | 옵션 | — | anime, realistic | 이미지 스타일 (기본값: config.json image_gen.image_style에서) |
-| --no-backup | 플래그 | false | — | 기존 에셋의 자동 백업 건너뛰기 |
-| --dry-run | 플래그 | false | — | API 호출 없이 수행될 작업만 표시 |
+| anima | positional | — | — | Name of the anima whose assets to remake |
+| --style-from | option | — | — | Anima name to use as style reference (their fullbody image) |
+| --steps | option | — | — | Comma-separated list of steps to run (choices: fullbody, bustup, icon, chibi, pixel, 3d, rigging, animations). Default: all steps |
+| --prompt | option | — | — | Override character prompt (default: read from prompt.txt) |
+| --vibe-strength | option | 0.6 | — | Vibe Transfer strength 0.0-1.0 (default: 0.6) |
+| --vibe-info-extracted | option | 0.8 | — | Vibe Transfer information extraction 0.0-1.0 (default: 0.8) |
+| --seed | option | — | — | Seed for reproducibility (fullbody generation only) |
+| --image-style | option | — | anime, realistic | Image style (default: from config.json image_gen.image_style) |
+| --no-backup | flag | false | — | Skip automatic backup of existing assets |
+| --dry-run | flag | false | — | Show what would be done without making API calls |
 
 ## `repair-rag`
 
@@ -919,7 +920,7 @@ anima용 stdio MCP 서버 실행
 
 ## `restart`
 
-서버를 재시작합니다 (중지 후 시작)
+Restart the server (stop then start)
 
 `usage: animaworks restart [-h] [--host HOST] [--port PORT] [--foreground]
                           [--force]`
@@ -928,8 +929,8 @@ anima용 stdio MCP 서버 실행
 |---|---|---|---|---|
 | --host | option | "0.0.0.0" | — | — |
 | --port | option | 18500 | — | — |
-| --foreground, -f | flag | false | — | 로그 출력과 함께 포그라운드로 실행 (기본값: 데몬화) |
-| --force | flag | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --foreground, -f | flag | false | — | Run in foreground with log output (default: daemonize) |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `send`
 
@@ -1122,13 +1123,13 @@ AnimaWorks 서버 시작
 
 ## `stop`
 
-실행 중인 서버 중지
+Stop the running server
 
 `usage: animaworks stop [-h] [--force]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | 플래그 | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --force | flag | false | — | Immediately send SIGKILL without draining active work |
 
 ## `supervisor`
 
@@ -1183,10 +1184,10 @@ Anima용 슈퍼바이저 도구
 
 ## `task`
 
-영구 작업 큐 관리
+Manage persistent task queue
 
 `usage: animaworks task [-h]
-                       {board,show,claim,release,done,cancel,note,add,update,resume,list}
+                       {board,show,claim,release,done,cancel,note,add,update,resume,list,autonomy}
                        ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
@@ -1209,6 +1210,18 @@ Anima용 슈퍼바이저 도구
 | --summary | option | — | — | 한 줄 요약 (기본값: instruction[:100]) |
 | --relay-chain | option | — | — | 쉼표로 구분된 릴레이 체인 |
 | --workspace | option | — | — | 작업의 working_directory에 사용할 워크스페이스 별칭 또는 경로 |
+
+## `task autonomy`
+
+위임 관련 자율성 지표를 집계한다(읽기 전용)
+
+`usage: animaworks task autonomy [-h] [--days DAYS] [--json] [--anima ANIMA]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --days | option | 7 | — | 집계 기간(일수, 기본값: 7) |
+| --json | flag | false | — | JSON 형식으로 출력한다 |
+| --anima | option | — | — | 이 Anima만 표시한다 |
 
 ## `task board`
 
@@ -1319,16 +1332,24 @@ Anima용 슈퍼바이저 도구
 
 ## `task update`
 
-작업 상태 업데이트
+Update task status
 
-`usage: animaworks task update [-h] --task-id TASK_ID --status STATUS
-                              [--summary SUMMARY]`
+`usage: animaworks task update [-h] --task-id TASK_ID [--status STATUS]
+                              [--summary SUMMARY]
+                              [--waiting-for-kind {task,time,message,external}]
+                              [--waiting-for-ref WAITING_FOR_REF]
+                              [--waiting-for-until WAITING_FOR_UNTIL]
+                              [--scope-note SCOPE_NOTE]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --task-id | option | — | — | 작업 ID |
-| --status | option | — | — | 지정할 상태 (폐기된 상태는 update_task에서 거부됨) |
+| --task-id | option | — | — | Task ID |
+| --status | option | — | — | 선언할 상태(선택 사항. --scope-note가 지정된 경우에만 생략 가능하며, 폐기된 상태는 거부됨) |
 | --summary | option | — | — | 업데이트된 요약 |
+| --waiting-for-kind | option | — | task, time, message, external | 대기 중인 작업이 기다리는 대상 |
+| --waiting-for-ref | option | — | — | 작업 ID, 사람 또는 자유 형식의 대기 대상 |
+| --waiting-for-until | option | — | — | kind=time일 때 사용할 ISO8601 타임스탬프 |
+| --scope-note | option | — | — | 범위 관련 메모를 추가하고 요청자에게 알림 |
 
 ## `task-store`
 

@@ -108,6 +108,7 @@ def _connect(source: Any, host: str, port: int, password: str) -> Any:
         # One statement only: PyMySQL does not enable multi-statements for init_command.
         "init_command": (
             f"SET SESSION transaction_read_only = 1, SESSION max_execution_time = {source.timeout_s * 1000}"
+            + "".join(f", @{name} = '{value}'" for name, value in source.session_variables.items())
         ),
     }
     if source.ssl:

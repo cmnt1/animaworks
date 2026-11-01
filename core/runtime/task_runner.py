@@ -108,9 +108,16 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     )
     success = result.get("exit_code", 1) == 0
     usage: dict[str, int] | None = None
-    from core.runtime.cron_followup import command_followup_output
+    from core.runtime.cron_followup import command_followup_output, should_suppress_cron_followup
 
     command_output = command_followup_output(task, result)
+    anima_dir = getattr(anima, "anima_dir", None)
+    if (
+        command_output is not None
+        and isinstance(anima_dir, Path)
+        and should_suppress_cron_followup(anima_dir, task.name, command_output)
+    ):
+        command_output = None
     followup: dict[str, Any] | None = None
     if command_output is not None:
         followup_result = await anima.run_cron_task(
@@ -325,6 +332,11 @@ async def execute_chat_contract(
                     return response.result or {"response": "", "replied_to": []}
             return {"response": "", "replied_to": []}
 
+        attachment_kwargs: dict[str, Any] = {}
+        if payload.get("display_message") is not None:
+            attachment_kwargs["display_message"] = payload["display_message"]
+        if payload.get("files"):
+            attachment_kwargs["files"] = payload["files"]
         result = await anima.process_message(
             str(payload.get("message") or ""),
             from_person=str(payload.get("from_person") or "human"),
@@ -338,12 +350,14 @@ async def execute_chat_contract(
             meeting_room_id=str(payload.get("meeting_room_id") or ""),
             meeting_participants=payload.get("meeting_participants") or None,
             model=payload.get("model") or None,
+            **attachment_kwargs,
         )
         cycle_result = result if isinstance(result, dict) else {}
         return {
             "response": cycle_result.get("summary", "") if cycle_result else result,
             "cycle_result": cycle_result,
             "images": cycle_result.get("images") or [],
+            "files": cycle_result.get("files") or [],
             "replied_to": [],
             "notifications": anima.drain_notifications(),
         }

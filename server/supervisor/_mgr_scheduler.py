@@ -241,17 +241,34 @@ class SchedulerMixin:
             if hk_cfg is None:
                 hk_cfg = HousekeepingConfig()
 
-            if hk_cfg.enabled:
-                hk_hour, hk_minute = (int(x) for x in hk_cfg.run_time.split(":"))
-                self.scheduler.add_job(
-                    self._run_housekeeping,
-                    CronTrigger(hour=hk_hour, minute=hk_minute),
-                    id="system_housekeeping",
-                    name="System: Housekeeping",
-                    replace_existing=True,
-                    misfire_grace_time=600,
-                )
-                logger.info("System cron: Housekeeping at %s", hk_cfg.run_time)
+            try:
+                if hk_cfg.enabled:
+                    hk_hour, hk_minute = (int(x) for x in hk_cfg.run_time.split(":"))
+                    self.scheduler.add_job(
+                        self._run_housekeeping,
+                        CronTrigger(hour=hk_hour, minute=hk_minute),
+                        id="system_housekeeping",
+                        name="System: Housekeeping",
+                        replace_existing=True,
+                        misfire_grace_time=600,
+                    )
+                    logger.info("System cron: Housekeeping at %s", hk_cfg.run_time)
+            except Exception:
+                logger.debug("Daily housekeeping schedule setup failed", exc_info=True)
+
+            try:
+                if hk_cfg.workspace_sweep_enabled:
+                    self.scheduler.add_job(
+                        self._run_workspace_sweep,
+                        CronTrigger(minute=0),
+                        id="system_workspace_sweep",
+                        name="System: Workspace Sweep",
+                        replace_existing=True,
+                        misfire_grace_time=600,
+                    )
+                    logger.info("System cron: Workspace sweep every hour")
+            except Exception:
+                logger.debug("Workspace sweep schedule setup failed", exc_info=True)
         except Exception:
             logger.debug("Housekeeping schedule setup failed", exc_info=True)
 
@@ -1240,9 +1257,26 @@ class SchedulerMixin:
         async with lock:
             await self._run_housekeeping_impl()
 
-    async def _run_housekeeping_impl(self: _SchedulerMixinHost) -> None:
-        """Run unified housekeeping for all data types."""
-        logger.info("Starting system-wide housekeeping")
+    async def _run_workspace_sweep(self: _SchedulerMixinHost) -> None:
+        """Run the three frequent workspace cleanup rules under the shared lock."""
+        lock = self._get_housekeeping_lock()
+        if lock.locked():
+            logger.info("Housekeeping already running; skipping workspace sweep")
+            return
+        async with lock:
+            await self._run_housekeeping_impl(
+                only={"codex_sessions", "anima_scratch", "shared_worktrees"},
+                mark_complete=False,
+            )
+
+    async def _run_housekeeping_impl(
+        self: _SchedulerMixinHost,
+        *,
+        only: set[str] | None = None,
+        mark_complete: bool = True,
+    ) -> None:
+        """Run unified housekeeping, optionally restricted to named cleanup rules."""
+        logger.info("Starting system-wide housekeeping" if only is None else "Starting workspace sweep")
 
         try:
             from core.config import load_config
@@ -1269,12 +1303,14 @@ class SchedulerMixin:
                 self._get_data_dir(),
                 housekeeping=hk_cfg,
                 inbox=inbox_cfg,
+                only=only,
             )
             logger.info("Housekeeping complete: %s", results)
         except Exception:
             logger.exception("Housekeeping failed")
 
-        _write_marker(_marker_dir(self._get_data_dir()) / "last_housekeeping")
+        if mark_complete:
+            _write_marker(_marker_dir(self._get_data_dir()) / "last_housekeeping")
 
     async def _run_dm_log_rotation(self: _SchedulerMixinHost) -> None:
         """Archive old dm_log entries beyond 7 days."""

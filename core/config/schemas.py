@@ -451,6 +451,8 @@ class ImageGenConfig(BaseModel):
     vibe_strength: float = 0.6  # Vibe Transfer strength (0.0-1.0)
     vibe_info_extracted: float = 0.8  # Vibe Transfer information extraction (0.0-1.0)
     enable_3d: bool = True  # Enable 3D model generation (Meshy API)
+    pixel_base_sheet: str | None = None  # Base pixel sheet; None uses the bundled sample_01.png
+    pixel_concurrency: int = 4  # Parallel codex image_gen calls for pixel sheet rows
     diffusers_text2img_model: str = "auto"
     diffusers_img2img_model: str = "auto"
     diffusers_text2img_model_realistic: str = ""  # Override for realistic style
@@ -677,6 +679,7 @@ class ServerConfig(BaseModel):
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
     runner_liveness_timeout: int = Field(default=900, ge=1)
+    chat_max_concurrency: int = Field(default=1, ge=1, le=10)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     # Seconds to wait for a child to create its IPC socket. The child binds the
     # socket before the heavy DigitalAnima import, so this is normally quick — but
@@ -685,6 +688,8 @@ class ServerConfig(BaseModel):
     # "Socket file not created" startup failures.
     anima_socket_create_timeout: int = Field(default=30, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
+    # Matches the 600-second TaskExec drain; 0 skips waiting for active work.
+    restart_drain_timeout_seconds: int = Field(default=600, ge=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)
@@ -814,6 +819,53 @@ def resolve_background_worker_pool_size(
     return default
 
 
+def resolve_chat_max_concurrency(
+    anima_dir: Path,
+    default: int | None = None,
+) -> int:
+    """Resolve the isolated chat limit, including a per-Anima status override.
+
+    ``status.json`` may set ``chat_max_concurrency`` to allow concurrent chat
+    jobs for different threads. Invalid or unreadable overrides are ignored.
+    """
+    if default is None:
+        try:
+            from core.config.io import load_config
+
+            default = load_config().server.chat_max_concurrency
+        except Exception:
+            logger.debug(
+                "Failed to load chat max concurrency default for %s",
+                anima_dir.name,
+                exc_info=True,
+            )
+            default = 1
+
+    if isinstance(default, bool) or not isinstance(default, int) or not 1 <= default <= 10:
+        default = 1
+
+    status_path = anima_dir / "status.json"
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+    if not isinstance(status, dict) or "chat_max_concurrency" not in status:
+        return default
+
+    override = status["chat_max_concurrency"]
+    if isinstance(override, int) and not isinstance(override, bool) and 1 <= override <= 10:
+        return override
+
+    logger.warning(
+        "Ignoring invalid chat_max_concurrency=%r for anima %s; using %d",
+        override,
+        anima_dir.name,
+        default,
+    )
+    return default
+
+
 class ActivityLogConfig(BaseModel):
     """Configuration for activity log rotation."""
 
@@ -856,6 +908,10 @@ class HousekeepingConfig(BaseModel):
     backup_retention_days: int = Field(default=90, ge=1)
     codex_log_max_size_mb: int = Field(default=200, ge=1)
     codex_tmp_retention_hours: int = Field(default=12, ge=1)
+    codex_sessions_retention_days: int = Field(default=7, ge=1)
+    anima_scratch_retention_hours: int = Field(default=24, ge=1)
+    shared_worktrees_idle_hours: int = Field(default=24, ge=1)
+    workspace_sweep_enabled: bool = True
     anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
     anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)
@@ -882,8 +938,10 @@ class HousekeepingConfig(BaseModel):
 
 
 class InboxConfig(BaseModel):
-    """Configuration for shared inbox stale-file hygiene."""
+    """Configuration for shared inbox processing and stale-file hygiene."""
 
+    inbox_quiet_seconds: float = Field(default=90.0, ge=0)
+    inbox_quiet_max_wait_seconds: float = Field(default=300.0, ge=0)
     ttl_hours: float = Field(default=24.0, gt=0)
     expired_retention_days: int = Field(default=7, ge=1)
     processed_retention_days: int = Field(default=30, ge=1)
@@ -933,6 +991,14 @@ class HeartbeatConfig(BaseModel):
         ge=0,
         le=7200,
         description="Seconds before forcefully terminating the HB session; 0 = disabled",
+    )
+    cron_followup_repeat_suppress_hours: float = Field(
+        default=6.0,
+        ge=0,
+        description=(
+            "Suppress a command cron's LLM follow-up when its output is identical to the "
+            "previous follow-up for this many hours; 0 disables suppression"
+        ),
     )
 
     @model_validator(mode="after")

@@ -10,6 +10,40 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "schema.attach_file.desc": {
+        "ja": (
+            "Webチャットで人間に返信するときに、手元のファイルを返信へ添付する。"
+            "テキスト・Markdown・音声・動画・PDF・Excel・Word・PowerPoint・画像などに対応。"
+            "ファイルの中身を本文に長々と貼る代わりに使う。1回で1ファイル、複数なら複数回呼ぶ。"
+            "添付は返信の送信時にまとめて表示され、相手が画面で開ける。"
+            "パスはAnimaの作業ディレクトリからの相対パスまたは絶対パスで指定する。"
+        ),
+        "en": (
+            "Attach a local file to the reply when responding to a human in a web chat. "
+            "Supports text, Markdown, audio, video, PDF, Excel, Word, PowerPoint, images, and more. "
+            "Use this instead of pasting a long file body into the message. "
+            "Attach one file per call; call it again for multiple files. "
+            "Attachments appear together when the reply is sent, and the recipient can open them on screen. "
+            "Use a path relative to the Anima working directory or an absolute path."
+        ),
+        "ko": (
+            "웹 채팅에서 사람에게 답장할 때 로컬 파일을 답장에 첨부합니다. "
+            "텍스트, Markdown, 오디오, 동영상, PDF, Excel, Word, PowerPoint, 이미지 등에 대응합니다. "
+            "파일 내용을 본문에 길게 붙여넣는 대신 사용하세요. 한 번에 파일 하나를 첨부하고, 여러 개면 여러 번 호출합니다. "
+            "첨부 파일은 답장 전송 시 함께 표시되며 상대방이 화면에서 열 수 있습니다. "
+            "경로는 Anima 작업 디렉터리 기준 상대 경로 또는 절대 경로로 지정합니다."
+        ),
+    },
+    "schema.attach_file.path": {
+        "ja": "添付するファイルのパス（Animaの作業ディレクトリからの相対パスまたは絶対パス）",
+        "en": "Path to the file to attach (relative to the Anima working directory or absolute)",
+        "ko": "첨부할 파일 경로(Anima 작업 디렉터리 기준 상대 경로 또는 절대 경로)",
+    },
+    "schema.attach_file.name": {
+        "ja": "表示名（省略時は元のファイル名）",
+        "en": "Display name (defaults to the source filename)",
+        "ko": "표시 이름(생략 시 원본 파일명)",
+    },
     "schema.audit_subordinate.desc": {
         "ja": (
             "配下のAnimaの行動を監査する。ActivityLogから「何を考えて何をやったか」を抽出し、統計サマリーまたは日報形式で返す。\nname省略で全配下を一括監査。name指定で特定の配下（孫含む）を監査。\nmode='summary'で統計、mode='report'で時系列の日報形式。"
@@ -175,14 +209,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "schema.delegate_task.desc": {
         "ja": (
             "直属部下のAnimaにタスクを委譲する（部下のTaskExecが実行する）。"
+            "subject（と任意の version）を指定すると、同じ相手・同じ対象で未完了の依頼がある場合は"
+            "新しいタスクを作らず既存の依頼のタスクIDを返す。"
             "詳細は operations/task-delegation-guide.md を参照。"
         ),
         "en": (
             "Delegate a task to a direct subordinate Anima (executed by the subordinate's TaskExec). "
+            "When subject (and optionally version) is supplied and an open request for the same "
+            "recipient and subject exists, it returns the existing task ID instead of creating a new task. "
+            "A result with deduplicated=true means the request was consolidated into an existing task. "
             "See operations/task-delegation-guide.md for details."
         ),
         "ko": (
             "직속 부하 Anima에게 태스크를 위임한다(부하의 TaskExec가 실행). "
+            "subject(선택적으로 version)를 지정하면 같은 상대·같은 대상의 미완료 요청이 있을 때 "
+            "새 태스크를 만들지 않고 기존 요청의 태스크 ID를 반환한다. "
+            "deduplicated=true는 기존 요청에 통합되었다는 뜻이다. "
             "상세는 operations/task-delegation-guide.md 참조."
         ),
     },
@@ -239,6 +281,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-5-5' や 'c:codex/gpt-5.6-sol'）。上長がタスクの重さに応じて指定できる。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
         "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-5-5' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
         "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-5-5' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
+    },
+    "schema.delegate_task.subject": {
+        "ja": "任意の対象キー（例: github:owner/repo#123、issue:owner/repo#45、または自由文字列）。同じ委譲元・委譲先・subject・version の未完了依頼があれば、新規作成せず既存の依頼のタスクIDを返す。未指定なら従来どおり毎回新規作成する",
+        "en": "Optional subject key (e.g. github:owner/repo#123, issue:owner/repo#45, or any free-form string). If an open request with the same delegator, recipient, subject and version exists, the existing task ID is returned instead of creating a new task. When unset, every call creates a new task as before",
+        "ko": "임의의 대상 키(예: github:owner/repo#123, issue:owner/repo#45 또는 자유 문자열). 같은 위임자·대상·subject·version의 미완료 요청이 있으면 새로 만들지 않고 기존 요청의 태스크 ID를 반환한다. 미지정이면 기존과 같이 매번 새로 만든다",
+    },
+    "schema.delegate_task.version": {
+        "ja": "任意の版キー（例: 対象の head SHA）。subject と組み合わせて依頼キーにする。版が変われば同じ対象でも別タスクになる",
+        "en": "Optional version key (e.g. the target head SHA). Combined with subject to form the request key; a different version creates a separate task even for the same subject",
+        "ko": "임의의 버전 키(예: 대상 head SHA). subject와 결합해 요청 키를 만든다. 버전이 다르면 같은 대상이라도 별도 태스크가 된다",
     },
     "schema.submit_tasks.resume": {
         "ja": "終了したpendingタスクを保存済みの実行入力で再開する。trueの場合はtask_idとresumeのみ指定。新規タスクにはtitleとdescriptionが必須。",

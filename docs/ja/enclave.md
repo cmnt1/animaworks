@@ -79,6 +79,8 @@ id -u "$HOST_USER"
 
 `allowed_llm_credentials` には、隔離側の各 anima が実際に使う認証情報名だけを列挙する。`external_tasks.enabled` は初期値が `true` なので、隔離側では `false` にする。新しく作った anima の `permissions.json` は `file_roots` が `["/"]` になっているため、anima 自身のディレクトリなど必要な範囲に書き換える（そのままだと起動時ガードが起動を拒否する）。隔離モードでは Slack・Discord・Zoom・GitHub Webhook のゲートウェイを起動しない。ほかの起動時ガードも満たす必要があるため、イベントエクスポートや外部メッセージ連携を有効にせず、各 anima の `permissions.json` でファイルアクセスを必要な範囲に制限する。entry anima の外部ツールを制限する場合は `enclave_records` を許可する。
 
+異なる thread の ask を gateway の `max_concurrency` まで並列実行するには、entry anima の `status.json` に `chat_max_concurrency`（1〜10）を設定し、gateway の `max_concurrency` 以上にする。SQL ソースの SSM トンネルを固定ポート（`tunnel.local_port`）で使う場合は、`tunnel.local_port_count` を同時実行数にそろえる。各プロセスは `local_port` から始まる連続ポートのうち空いているものを1つ予約して使う。egress firewall の `--loopback-ports` にはその範囲を `33061-33070` のように渡す。
+
 masker の `profile` は `default` と `personal_dates` から選ぶ。`default` は日付をすべて `[MASK-DATE]` にする。`personal_dates` は、生年月日などの見出しが付いた日付・「生まれ」が続く日付・和暦の日付・2015年より前の日付だけを伏字にし、障害の発生日時のような日付は残す。不具合の調査結果を返す用途では `personal_dates` を使う。
 
 認証には `auth.json` の password モードを使い、localhost を信頼しない設定にする。パスワードの平文は保存せず、`password_hash` にはアプリが生成した Argon2id ハッシュを設定する。
@@ -114,11 +116,29 @@ systemctl enable --now animaworks-enclave@aw-enclave.service
 
 テンプレートは `User=%i`、専用の `RuntimeDirectory`、`UMask=0077`、`NoNewPrivileges=yes`、`PrivateTmp=yes`、`ProtectSystem=strict` を設定する。書き込み先は `/home/%i/.animaworks` のみにし、`ProtectHome=tmpfs` と `BindPaths=/home/%i` で当該ユーザーの home だけを公開する。例の HTTP ポートは本体側と競合しない値にする。gateway は Unix ソケットで通信するため、HTTP の bind address は loopback に限定する。
 
+## macOS での起動
+
+macOS では systemd の代わりに launchd を使う。隔離用の OS ユーザーとグループを作り、本体側のユーザーをグループに追加する（以下は例。uid は 500 未満の空き番号を使う）。
+
+```bash
+dseditgroup -o create -i 299 animaworks-enclave
+sysadminctl -addUser _awenclave -UID 299 -GID 299 -shell /usr/bin/false -home /Users/_awenclave
+dseditgroup -o edit -a "$HOST_USER" -t user animaworks-enclave
+```
+
+ソケットは再起動で消えない場所に置き、ディレクトリを隔離ユーザーとグループの `0750` にする（例: `/usr/local/var/animaworks-enclave`）。macOS の gateway は接続元 uid を `LOCAL_PEERCRED` で確かめる。`allowed_peer_uids` の指定方法は Linux と同じである。
+
+`templates/_shared/launchd/com.animaworks.enclave.plist` は隔離インスタンスの LaunchDaemon（`UserName`・`Umask=0077`）、`com.animaworks.enclave-egress.plist` は外向き通信の制限を起動時と毎時に適用する root の LaunchDaemon である。ユーザー名・パス・ポートを置き換えて `/Library/LaunchDaemons/` に置き、`launchctl bootstrap system <plist>` で読み込む。秘密は `enclave.secrets_dir` に隔離ユーザー所有の `0600` ファイルで置き、ディレクトリを `0700` にする。
+
+外向き通信の制限は `scripts/enclave/egress_firewall.py --backend pf` で行う。規則は pf のアンカー `com.apple/250.AnimaworksEnclave` に読み込まれ、標準の `/etc/pf.conf` から評価されるため `pf.conf` は書き換えない。macOS では pf が `lo0` を評価対象外（skip）にしていることがあり、そのままでは隔離側から本体の API など loopback 上のサービスに届く。`--apply` は適用のたびに `lo0` の skip を外す。pf の `user` 指定は TCP と UDP にだけ効く。スクリプトは本体側と隔離側のどちらのユーザーも書き換えられない root 所有の場所へコピーして使う。
+
+launchd には unit 間の依存がないため、隔離側 config の `enclave.egress_probe` に遮断されるべき宛先（`HOST:PORT` のリスト）を指定する。起動時ガードは各宛先へ TCP 接続を試し、つながった場合は起動を拒否する。外部の宛先に加えて、本体側の API など loopback 上の宛先も入れておくと、loopback の制限が外れていることも検出できる。制限が読み込まれる前に起動しても、制限なしでは動かない。Linux でも同じ設定を使える。
+
 ## 本体側の接続設定
 
 本体側の `config.json` に接続先を登録する。`allowed_animas` は `enclave_ask` を呼べる本体側 anima の allow-list である。空のリストは誰も許可しない。
 
-`allowed_animas` はアプリ層の制限である。OS の境界はソケットのグループ権限（0660）と、gateway が `SO_PEERCRED` で確かめる接続元 uid（`allowed_peer_uids`）で、同じ uid のプロセスはどれもソケットに接続できる。本体側でソケットのグループに入れるユーザーは最小限にする。
+`allowed_animas` はアプリ層の制限である。OS の境界はソケットのグループ権限（0660）と、gateway が `SO_PEERCRED`（macOS では `LOCAL_PEERCRED`）で確かめる接続元 uid（`allowed_peer_uids`）で、同じ uid のプロセスはどれもソケットに接続できる。本体側でソケットのグループに入れるユーザーは最小限にする。
 
 ```json
 {

@@ -889,6 +889,16 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     logger.info("Server started (startup initialization running in background)")
 
 
+def _enclave_usage_summary(anima_dir: Path, days: int) -> dict[str, object]:
+    """Token usage plus budget fields for one anima, served by the enclave ``/v1/usage``."""
+    from core.usage.token_budget import read_budget_fields
+    from core.usage.token_usage import TokenUsageLogger
+
+    summary = TokenUsageLogger(anima_dir).summarize(days)
+    summary.update(read_budget_fields(anima_dir))
+    return summary
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.tasks.board.tasks import ensure_task_store_schema
@@ -904,7 +914,7 @@ async def lifespan(app: FastAPI):
     # socket-rebinding errors).
     from core.enclave.gateway_server import start_gateway
 
-    await start_gateway(app)
+    await start_gateway(app, usage_reader=_enclave_usage_summary)
 
     from server.enclave_delivery import host_delivery_loop, should_start_host_delivery
 
@@ -928,8 +938,21 @@ async def lifespan(app: FastAPI):
         )
         logger.info("Enclave host result delivery started")
 
+    feed_prewarm_task = None
+    if app.state.setup_complete:
+        feed_prewarm_task = asyncio.create_task(
+            _prewarm_conversation_feeds(app),
+            name="conversation-feed-prewarm",
+        )
+
     yield
     # Shutdown
+    if feed_prewarm_task is not None and not feed_prewarm_task.done():
+        feed_prewarm_task.cancel()
+        try:
+            await feed_prewarm_task
+        except asyncio.CancelledError:
+            pass
     delivery_stop = getattr(app.state, "enclave_host_delivery_stop", None)
     delivery_task = getattr(app.state, "enclave_host_delivery_task", None)
     if delivery_stop is not None:
@@ -988,6 +1011,27 @@ async def lifespan(app: FastAPI):
         if hasattr(app.state, "msg_log_scheduler"):
             app.state.msg_log_scheduler.shutdown(wait=False)
     logger.info("Server stopped")
+
+
+async def _prewarm_conversation_feeds(app: FastAPI) -> None:
+    """Warm the first default-thread feed page after startup has settled."""
+    await asyncio.sleep(60)
+    from core.activity.logger import ActivityLogger
+
+    for name in list(getattr(app.state, "anima_names", []) or []):
+        anima_dir = Path(app.state.animas_dir) / name
+        if not anima_dir.is_dir():
+            continue
+        try:
+            activity = ActivityLogger(anima_dir)
+            await asyncio.to_thread(
+                activity.get_conversation_feed,
+                thread_id="default",
+                min_user_items=10,
+                _schedule_prefetch=False,
+            )
+        except Exception:
+            logger.debug("Conversation feed prewarm failed for %s", name, exc_info=True)
 
 
 def create_app(

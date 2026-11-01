@@ -26,6 +26,7 @@ from core.config.file_access_policy import (
     effective_write_roots,
     evaluate_file_access,
     resolve_effective_denied_roots,
+    shared_tool_cache_write_root,
 )
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -111,6 +112,7 @@ def _check_a1_file_access(
                 Path(tempfile.gettempdir()).resolve(),
                 get_common_knowledge_dir().resolve(),
                 get_common_skills_dir().resolve(),
+                *((cache_root,) if (cache_root := shared_tool_cache_write_root(anima_dir)) is not None else ()),
             )
         else:
             write_roots = ()
@@ -257,7 +259,10 @@ def _guard_bash(tool_input: dict[str, Any], anima_dir: Path) -> dict[str, Any]:
         f'_OUTDIR="{out_dir}"\n'
         f'mkdir -p "$_OUTDIR"\n'
         f'_OUTF="$_OUTDIR/bash_$(date +%s%N).txt"\n'
-        f'{{ {command} ; }} > "$_OUTF" 2>&1\n'
+        # stdin is the SDK's socket: a command that reads stdin (jq with an
+        # empty file list, cat, read) would wait on it forever.  The newline
+        # before "}" lets a command end with a heredoc terminator.
+        f'{{ {command}\n}} < /dev/null > "$_OUTF" 2>&1\n'
         f"_EC=$?\n"
         f'_SZ=$(wc -c < "$_OUTF")\n'
         f'if [ "$_SZ" -gt {_BASH_TRUNCATE_BYTES} ]; then\n'

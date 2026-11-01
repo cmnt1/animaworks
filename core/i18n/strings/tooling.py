@@ -32,6 +32,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{step}: Image generation requires logging in to Codex (ChatGPT) or configuring an image-generation API key.",
         "ko": "{step}: 이미지를 생성하려면 Codex(ChatGPT)에 로그인하거나 이미지 생성 API 키를 설정해야 합니다.",
     },
+    "image_generation.pixel_failed": {
+        "ja": "{step}: Pixel Workspace のシート生成に失敗しました（{error}）。",
+        "en": "{step}: Failed to generate the Pixel Workspace sheet ({error}).",
+        "ko": "{step}: Pixel Workspace 시트 생성에 실패했습니다({error}).",
+    },
     "tooling.task_update_failed": {
         "ja": "エラー: タスクの更新に失敗しました: {error}",
         "en": "Error: failed to update task: {error}",
@@ -117,9 +122,54 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Host built-in tools: Grok CLI's file read/write, shell, and search tools",
         "ko": "호스트 내장 도구: Grok CLI의 파일 읽기·쓰기, 셸, 검색 도구",
     },
+    "tool_guide.host_tools.y": {
+        "ja": "ホストの組込みツール: run_command（シェル）/ view_file・write_to_file・replace_file_content（ファイル）/ grep_search・find_by_name（検索）/ search_web・read_url_content（Web）。AnimaWorks のツールは call_mcp_tool で呼ぶ（ServerName は aw- で始まるサーバ）",
+        "en": "Host built-in tools: run_command (shell) / view_file, write_to_file, replace_file_content (files) / grep_search, find_by_name (search) / search_web, read_url_content (web). Call AnimaWorks tools via call_mcp_tool (ServerName is a server starting with aw-)",
+        "ko": "호스트 내장 도구: run_command(셸) / view_file·write_to_file·replace_file_content(파일) / grep_search·find_by_name(검색) / search_web·read_url_content(웹). AnimaWorks 도구는 call_mcp_tool로 호출합니다(ServerName은 aw-로 시작하는 서버)",
+    },
     "tool_guide.host_tools.a": {
         "ja": "ホストの組込みツール: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
         "en": "Host built-in tools: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
         "ko": "호스트 내장 도구: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
+    },
+    "tooling.attach_file.path_required": {
+        "ja": "path を指定してください",
+        "en": "path is required",
+        "ko": "path를 지정하세요",
+    },
+    "tooling.attach_file.not_found": {
+        "ja": "ファイルが見つかりません: {path}",
+        "en": "File not found: {path}",
+        "ko": "파일을 찾을 수 없습니다: {path}",
+    },
+    "tooling.attach_file.not_found_suggestion": {
+        "ja": "list_directory で正しいパスを確認してください",
+        "en": "Use list_directory to find the correct path",
+        "ko": "list_directory로 올바른 경로를 확인하세요",
+    },
+    "tooling.attach_file.chat_only": {
+        "ja": "attach_file は Web チャットの返信でのみ使用できます",
+        "en": "attach_file is only available while replying in a web chat",
+        "ko": "attach_file은 웹 채팅 답장에서만 사용할 수 있습니다",
+    },
+    "tooling.attach_file.chat_only_suggestion": {
+        "ja": "Web チャットの返信時に使用してください",
+        "en": "Use it while replying in a web chat",
+        "ko": "웹 채팅 답장 시 사용하세요",
+    },
+    "tooling.attach_file.invalid_name": {
+        "ja": "name は文字列で指定してください",
+        "en": "name must be a string",
+        "ko": "name은 문자열로 지정하세요",
+    },
+    "tooling.attach_file.stage_failed": {
+        "ja": "ファイルの添付に失敗しました: {error}",
+        "en": "Failed to attach the file: {error}",
+        "ko": "파일 첨부에 실패했습니다: {error}",
+    },
+    "tooling.attach_file.attached": {
+        "ja": "{name} を返信に添付しました",
+        "en": "Attached {name} to the reply",
+        "ko": "{name}을(를) 답장에 첨부했습니다",
     },
 }

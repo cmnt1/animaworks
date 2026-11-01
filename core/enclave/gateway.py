@@ -20,9 +20,7 @@ bodies.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -45,8 +43,6 @@ from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-
 _MASKED_LINE = "(masked)"
 
 
@@ -57,6 +53,8 @@ class AskRequest(BaseModel):
     from_anima: str
     case_id: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")
     question: str = Field(min_length=1, max_length=8000)
+    # Name of an entry in ``EnclaveConfig.model_profiles``; "" means the default.
+    model_profile: str = Field(default="", pattern=r"^[A-Za-z0-9_.-]{0,32}$")
 
 
 def _request_uid(request: Request) -> int | None:
@@ -71,84 +69,28 @@ def _request_uid(request: Request) -> int | None:
     return uid if isinstance(uid, int) else None
 
 
-def _balanced_json(text: str, start: int) -> str:
-    """Return the smallest ``{...}`` substring starting at *start*."""
-    depth = 0
-    in_str = False
-    esc = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    raise ValueError("unbalanced json")
+UsageReader = Callable[[Path, int], dict[str, Any]]
 
 
-def _extract_answer_json(text: str) -> Any:
-    """Extract a JSON object from an anima answer string.
-
-    Tries, in order: the whole trimmed string, a fenced code block, and the
-    substring from the first ``{`` to its matching ``}``.  Raises
-    :class:`ValueError` when no valid JSON object can be recovered.
-    """
-    if not isinstance(text, str):
-        raise ValueError("empty answer")
-    stripped = text.strip()
-    if stripped:
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError:
-            pass
-    match = _JSON_FENCE_RE.search(text)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    start = text.find("{")
-    if start != -1:
-        try:
-            return json.loads(_balanced_json(text, start))
-        except json.JSONDecodeError:
-            pass
-    raise ValueError("no json object in answer")
+def _valid_anima_name(name: str) -> bool:
+    """Return whether *name* is a safe single anima folder name."""
+    if not name:
+        return False
+    return not (("/" in name) or ("\\" in name) or (".." in name))
 
 
-def _parse_facts(parsed: Any) -> list[Fact]:
-    """Convert a parsed answer into a list of :class:`Fact`.
+# Mirrors core.execution.loop_guards.FINAL_RESPONSE_ERROR_TEXT (enclave must not
+# import execution); tests assert the two stay equal.
+_FINAL_RESPONSE_ERROR_TEXT = "Unable to generate a final response. Please try again."
 
-    Raises :class:`ValueError` when the structure is invalid.
-    """
-    if not isinstance(parsed, dict):
-        raise ValueError("answer not an object")
-    raw_facts = parsed.get("facts")
-    if not isinstance(raw_facts, list):
-        raise ValueError("facts not a list")
-    facts: list[Fact] = []
-    for item in raw_facts:
-        if not isinstance(item, dict):
-            raise ValueError("fact not an object")
-        fact = item.get("fact")
-        evidence = item.get("evidence", [])
-        if not isinstance(fact, str):
-            raise ValueError("fact not a string")
-        if not isinstance(evidence, list) or not all(isinstance(e, str) for e in evidence):
-            raise ValueError("evidence not a string list")
-        facts.append(Fact(fact=fact, evidence=list(evidence)))
-    return facts
+
+def _engine_error_reason(text: str) -> str:
+    """Map an engine placeholder answer to a failure reason ("" if it is a real answer)."""
+    if text == _FINAL_RESPONSE_ERROR_TEXT:
+        return "answer_unfinished"
+    if text.startswith("[Error: prompt too large"):
+        return "context_overflow"
+    return ""
 
 
 def _write_block_audit(
@@ -176,10 +118,17 @@ def _write_block_audit(
 class _Gateway:
     """Holds the per-instance state (semaphore + job store) for one gateway."""
 
-    def __init__(self, config: EnclaveConfig, data_dir: Path, get_supervisor: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        config: EnclaveConfig,
+        data_dir: Path,
+        get_supervisor: Callable[[], Any],
+        usage_reader: UsageReader | None = None,
+    ) -> None:
         self.config = config
         self.data_dir = data_dir
         self.get_supervisor = get_supervisor
+        self.usage_reader = usage_reader
         self.semaphore = asyncio.Semaphore(config.max_concurrency)
         self.pipeline: EgressPipeline | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -254,6 +203,7 @@ class _Gateway:
             "case_id": job.case_id,
             "from_anima": job.from_anima,
             "status": job.status,
+            "model_profile": job.model_profile,
             "queued_ahead": self._queued_ahead(job),
             "created_at": job.created_at,
             "started_at": job.started_at,
@@ -339,6 +289,7 @@ class _Gateway:
                         "from_person": f"enclave:{body.from_anima}",
                         "intent": "question",
                         "thread_id": job.thread_id,
+                        **({"model": model} if (model := self.config.model_profiles.get(job.model_profile)) else {}),
                     },
                     timeout=self._job_timeout(),
                 )
@@ -354,10 +305,15 @@ class _Gateway:
             if job.status == "cancelled":
                 return
             answer_text = answer.get("response") if isinstance(answer, dict) else None
-            try:
-                parsed = _extract_answer_json(answer_text)
-                facts = _parse_facts(parsed)
-            except (ValueError, TypeError):
+            # The whole answer goes out as one fact, JSON or not; the masker
+            # is the only gate on its content.
+            text = answer_text.strip() if isinstance(answer_text, str) else ""
+            facts = [Fact(fact=text, evidence=[])] if text else None
+            engine_error = _engine_error_reason(text)
+            if engine_error:
+                self._mark_failed(job, engine_error)
+                return
+            if facts is None:
                 audit_id = uuid4().hex
                 _write_block_audit(
                     self.data_dir,
@@ -365,9 +321,9 @@ class _Gateway:
                     case_id=body.case_id,
                     from_anima=body.from_anima,
                     audit_id=audit_id,
-                    reason="answer_unparseable",
+                    reason="answer_empty",
                 )
-                self._mark_failed(job, "answer_unparseable", audit_id=audit_id)
+                self._mark_failed(job, "answer_empty", audit_id=audit_id)
                 return
 
             try:
@@ -403,6 +359,12 @@ class _Gateway:
     async def ask(self, body: AskRequest, request: Request) -> JSONResponse:
         if not self._check_peer(request):
             return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
+        profile = body.model_profile or self.config.default_model_profile
+        if profile and profile not in self.config.model_profiles:
+            return JSONResponse(
+                {"error": "unknown_model_profile", "available": sorted(self.config.model_profiles)},
+                status_code=400,
+            )
         existing = self.jobs.find_active(body.from_anima, body.case_id)
         if existing is not None:
             return JSONResponse(
@@ -417,6 +379,7 @@ class _Gateway:
             question=body.question,
             thread_id=make_thread_id(body.case_id),
             status="queued",
+            model_profile=profile,
             created_at=now,
             last_activity_at=now,
         )
@@ -456,6 +419,31 @@ class _Gateway:
         self._mark_finished(job, "cancelled")
         return JSONResponse({"job_id": job.job_id, "status": "cancelled"})
 
+    async def usage(self, days: int, anima: str | None, request: Request) -> JSONResponse:
+        """Return per-anima token usage (tokens + cost, no conversation text)."""
+        if not self._check_peer(request):
+            return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
+        if self.usage_reader is None:
+            return JSONResponse({"error": "usage_unavailable"}, status_code=503)
+        if days < 1 or days > 366:
+            return JSONResponse({"error": "invalid_days"}, status_code=400)
+
+        if anima is not None:
+            if not _valid_anima_name(anima):
+                return JSONResponse({"error": "invalid_anima"}, status_code=400)
+            anima_dir = self.data_dir / "animas" / anima
+            if not (anima_dir / "token_usage").is_dir():
+                return JSONResponse({"error": "not_found"}, status_code=404)
+            result = await asyncio.to_thread(self.usage_reader, anima_dir, days)
+            return JSONResponse({"name": self.config.name, "days": days, "animas": {anima: result}})
+
+        animas_root = self.data_dir / "animas"
+        animas: dict[str, Any] = {}
+        if animas_root.is_dir():
+            for item in sorted(p for p in animas_root.iterdir() if p.is_dir() and (p / "token_usage").is_dir()):
+                animas[item.name] = await asyncio.to_thread(self.usage_reader, item, days)
+        return JSONResponse({"name": self.config.name, "days": days, "animas": animas})
+
     async def list_undelivered(self, from_anima: str | None, request: Request) -> JSONResponse:
         if not self._check_peer(request):
             return JSONResponse({"error": "unauthorized_peer"}, status_code=403)
@@ -486,9 +474,15 @@ def create_gateway_app(
     get_supervisor: Callable[[], Any],
     config: EnclaveConfig,
     data_dir: Path,
+    usage_reader: UsageReader | None = None,
 ) -> FastAPI:
-    """Build the FastAPI application that serves one enclave instance."""
-    gateway = _Gateway(config, data_dir, get_supervisor)
+    """Build the FastAPI application that serves one enclave instance.
+
+    *usage_reader* summarises one anima dir's token usage for ``/v1/usage``.
+    It is injected by the server layer so this module stays below
+    ``core.usage``; without it the endpoint answers 503.
+    """
+    gateway = _Gateway(config, data_dir, get_supervisor, usage_reader)
     app = FastAPI(title=f"enclave-{config.name}", docs_url=None, redoc_url=None, openapi_url=None)
     router = APIRouter()
 
@@ -515,6 +509,10 @@ def create_gateway_app(
     @router.get("/v1/jobs")
     async def jobs_list(request: Request, from_anima: str = "", undelivered: int = 0) -> JSONResponse:
         return await gateway.list_undelivered(from_anima or None, request)
+
+    @router.get("/v1/usage")
+    async def usage(request: Request, days: int = 30, anima: str | None = None) -> JSONResponse:
+        return await gateway.usage(days, anima, request)
 
     app.include_router(router)
     return app

@@ -240,6 +240,19 @@ export function createPixelOffice({ canvas, hud = {}, mock = false, onAnimaClick
         if (!mockStarted) setConnection(mode);
       };
       live.onUnavailable = startMock;
+      live.onAssetsUpdated = async (data) => {
+        const name = data?.name || data?.anima;
+        if (!name || disposed) return;
+        const updated = Array.isArray(data.assets) ? data.assets : [];
+        const pixelChanged = !updated.length ||
+          updated.some((asset) => String(asset).split("/").pop() === "pixel_sheet.png");
+        if (!pixelChanged) return;
+        const image = await assets.reloadRuntimeCharacter(name);
+        if (!image || disposed) return;
+        const actor = actors.get(name);
+        if (!actor || actor.isHuman) return;
+        actor.sprite.image = image;
+      };
       live.connect();
       live.startBusyPolling();
     }
