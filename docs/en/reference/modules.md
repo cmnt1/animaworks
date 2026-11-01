@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=91042b25adcdedc8ed89d6b0d5e5e6eeeefa4bcd37ca510ae445fbef63ac7cd7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=295dfa55e4028737e06f6a5a5a40ed91d686e993400dec9de65ec9b92573169a generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # Module List
 
@@ -574,7 +574,7 @@ Model Context Protocol servers and clients.
 
 Storage, search, and organization of conversation and episodic memory.
 
-| Module | Lines | docstring 1st line |
+| Module | Lines | docstring first line |
 |---|---:|---|
 | `core.memory` | 20 | — |
 | `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
@@ -602,7 +602,6 @@ Storage, search, and organization of conversation and episodic memory.
 | `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
-| `core.memory.graph._search_context（非公開）` | 5 | — |
 | `core.memory.io` | 59 | — |
 | `core.memory.maintenance.activity_compaction` | 479 | — |
 | `core.memory.maintenance.background_review` | 565 | — |

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=91042b25adcdedc8ed89d6b0d5e5e6eeeefa4bcd37ca510ae445fbef63ac7cd7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=295dfa55e4028737e06f6a5a5a40ed91d686e993400dec9de65ec9b92573169a generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
 
 # 모듈 목록
 
@@ -574,17 +574,17 @@ Model Context Protocol 서버와 클라이언트.
 
 대화·에피소드 기억의 저장, 검색, 정리.
 
-| 모듈 | 행 수 | docstring 1행째 |
+| 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.memory` | 20 | — |
 | `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 322 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 497 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
+| `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / 워킹 메모리) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
-| `core.memory.conversation.shortterm` | 313 | Short-term memory (단기 기억) management. |
+| `core.memory.conversation.shortterm` | 313 | 단기 기억(단기 기억) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 495 | — |
 | `core.memory.facts.chunking` | 91 | — |
@@ -602,7 +602,6 @@ Model Context Protocol 서버와 클라이언트.
 | `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
-| `core.memory.graph._search_context（非公開）` | 5 | — |
 | `core.memory.io` | 59 | — |
 | `core.memory.maintenance.activity_compaction` | 479 | — |
 | `core.memory.maintenance.background_review` | 565 | — |

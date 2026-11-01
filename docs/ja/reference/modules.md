@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 373072b47a827e52a6f1c464300601a673f279e24866964497f1bd24d461f3a0 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 903ea4cc92d03c41c82d37b9bd416ca6581b7ba0607e96a4923611eee84e57df -->
 
 # モジュール一覧
 
@@ -602,7 +602,6 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.prompts.ja` | 135 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 430 | — |
-| `core.memory.graph._search_context（非公開）` | 5 | — |
 | `core.memory.io` | 59 | — |
 | `core.memory.maintenance.activity_compaction` | 479 | — |
 | `core.memory.maintenance.background_review` | 565 | — |
