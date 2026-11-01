@@ -46,7 +46,9 @@ def _read_text(path: Path) -> str:
 
 def _write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    # LF on every platform: the export caps are byte limits and the target
+    # formats (OpenClaw/Hermes) expect Unix newlines.
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _copy_text(source: Path, destination: Path, result: ExportResult) -> bool:
