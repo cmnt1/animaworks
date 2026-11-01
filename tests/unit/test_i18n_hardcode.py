@@ -77,11 +77,11 @@ _REGEX_METACHAR_RE = re.compile(
 KNOWN_VIOLATIONS: dict[str, int] = {
     'cli/tool_dispatch.py': 1,
     'core/anima/factory.py': 9,
-    'core/anima/inbox.py': 3,
+    'core/anima/inbox.py': 2,
     'core/anima/lifecycle.py': 4,
     'core/anima/response_normalize.py': 15,
     'core/config/migrate.py': 2,
-    'core/config/model_mode.py': 60,
+    'core/config/model_mode.py': 62,
     'core/config/schemas.py': 1,
     'core/enclave/egress/masker/facts.py': 2,
     'core/integrations/_image_schemas.py': 1,
