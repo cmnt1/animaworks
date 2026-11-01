@@ -50,3 +50,23 @@ def test_gateway_without_peer_credentials_refuses_before_creating_socket(tmp_pat
         gateway_server.prepare_socket(config)
     assert gateway_server.read_peercred(object()) is None
     assert set(tmp_path.iterdir()) == before
+
+
+def test_ssm_tunnel_import_and_nonlinux_reservation_are_safe(tmp_path, monkeypatch):
+    before = set(tmp_path.iterdir())
+    import importlib
+    import sys
+
+    from core.enclave import ssm_tunnel
+    from core.enclave.config import EnclaveSsmTunnelConfig
+
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    importlib.reload(ssm_tunnel)
+    monkeypatch.setattr(ssm_tunnel.sys, "platform", "win32")
+    monkeypatch.setattr("core.paths.get_data_dir", lambda: tmp_path)
+    config = EnclaveSsmTunnelConfig(
+        region="ap-northeast-1", aws_secret="test", target_instance_id="i-test", local_port=33061
+    )
+    with pytest.raises(ssm_tunnel.TunnelError, match="require Linux"):
+        ssm_tunnel._reserve_port(config)
+    assert set(tmp_path.iterdir()) == before

@@ -1546,11 +1546,12 @@ def create_internal_router() -> APIRouter:
             loop = asyncio.get_running_loop()
             entry = await loop.run_in_executor(_native_executor, _persist)
         except Exception as exc:
-            from core.exceptions import TaskOwnedByOther
             from core.tasks.board.tasks import TaskReopenError
 
             if isinstance(exc, TaskReopenError):
-                return JSONResponse(status_code=409, content={"detail": str(exc)})
+                return JSONResponse(status_code=409, content={"error_type": "TaskReopenError", "detail": str(exc)})
+            from core.exceptions import TaskOwnedByOther
+
             if isinstance(exc, TaskOwnedByOther):
                 return JSONResponse(
                     status_code=409,

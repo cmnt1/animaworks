@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.anima.factory import create_from_md
+from core.anima.factory import _get_roles_dir, create_from_md
 from core.config import (
     invalidate_cache,
     load_config,
@@ -127,7 +127,8 @@ class TestCreateFromMdEngineerRole:
         assert permissions.exists(), "permissions.json was not created"
         data = json.loads(permissions.read_text(encoding="utf-8"))
         assert data.get("version") == 1
-        assert data.get("file_roots") == ["/"]
+        expected = json.loads((_get_roles_dir() / "engineer" / "permissions.json").read_text(encoding="utf-8"))
+        assert data == expected, "Engineer role permissions were not preserved"
 
     def test_status_json_contains_engineer_defaults(self, data_dir: Path, tmp_path: Path):
         """status.json should contain model config values from engineer defaults.json."""
@@ -181,15 +182,15 @@ class TestCreateFromMdEngineerRole:
 class TestCreateFromMdGeneralRole:
     """Verify that omitting role defaults to 'general' template."""
 
-    def test_default_role_is_general(self, data_dir: Path, tmp_path: Path):
-        """When no role is specified, role should default to 'general'."""
+    def test_default_role_is_administration(self, data_dir: Path, tmp_path: Path):
+        """When no role is specified, use the current administration default."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, GENERAL_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path)
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
-        assert status["role"] == "general"
+        assert status["role"] == "administration"
 
     def test_general_specialty_prompt_created(self, data_dir: Path, tmp_path: Path):
         """specialty_prompt.md should contain general guidance content."""

@@ -1,7 +1,12 @@
 # Complete Guide to Sending Messages
 
+> **⚠️ Important: Slack has been discontinued (2026-04-08). All external communication must be done via Discord.**
+> - Slack tools such as `slack_channel_post` / `slack_send` cannot be used
+> - For reports and communications, use the Discord channel (`discord_channel_post`) or `send_message` (automatically via Discord)
+> - Destination specification in the `slack:USERID` format will not work. Use `discord:USERID` or a human alias
+
 A comprehensive guide for communicating with other Anima (employees).
-Covers all procedures for sending, receiving, and managing message threads.
+It covers all procedures for sending, receiving, and managing threads for messages.
 
 ## send_message Tool — Parameter Reference
 
@@ -145,6 +150,16 @@ send_message(
 - MUST: When replying, set the original message's `id` as `reply_to`
 - SHOULD NOT: Mix a different topic into an existing thread. Start a new thread for a new topic
 - MAY: If `thread_id` is unknown, it may be omitted (the message is treated as a new thread)
+
+### Principle of Per-Thread Replies (Discord/Channel Posts)
+
+A single inbox batch may contain messages originating from multiple threads (or multiple channels). In this case, do not combine replies.
+
+- MUST: A single `post_channel` (`discord_channel_post`) call must handle **only one case in one thread**. Do not combine multiple cases into one post
+- MUST: When receiving from multiple threads, issue **a separate `post_channel` call for each thread**
+- MUST: For messages with `[reply_instruction: discord_channel_post channel_id="X" thread_id="Y"]` attached, **always respond with a standalone post addressed to channel_id=X / thread_id=Y** (never mix in responses to other messages)
+- MUST NOT: Do not write topics in progress in another thread into this thread. Handle other cases separately by posting to the corresponding thread_id
+- Example: If the inbox contains #ops thread A, #general thread B, and DM C, issue `post_channel` (to A) / `post_channel` (to B) / `send_message` (to C) **in 3 separate calls**
 
 ## Sending Messages via CLI
 

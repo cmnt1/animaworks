@@ -911,7 +911,10 @@ class HousekeepingConfig(BaseModel):
     codex_sessions_retention_days: int = Field(default=7, ge=1)
     anima_scratch_retention_hours: int = Field(default=24, ge=1)
     shared_worktrees_idle_hours: int = Field(default=24, ge=1)
-    workspace_sweep_enabled: bool = True
+    workspace_sweep_enabled: bool = Field(
+        default=True,
+        description="Enable hourly and daily workspace cleanup; skipped without Linux process tracking",
+    )
     anima_tmp_gitdirs_retention_days: int = Field(default=14, ge=1)
     anima_local_log_retention_days: int = Field(default=30, ge=1)
     pending_processing_stale_hours: int = Field(default=24, ge=1)

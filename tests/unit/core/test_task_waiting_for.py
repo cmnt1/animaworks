@@ -60,6 +60,35 @@ def _declare_wait(manager: TaskQueueManager, task_id: str, waiting_for: dict) ->
 
 
 @pytest.mark.parametrize("terminal", ["done", "cancelled"])
+def test_explicit_resume_keeps_new_wait_declaration(anima_dir, terminal):
+    manager = TaskQueueManager(anima_dir)
+    publish_tasks(anima_dir, [payload("ref"), payload("waiter")])
+    manager.update_status("waiter", terminal)
+
+    entry = update_task(manager, "waiter", "pending", resume=True, waiting_for={"kind": "task", "ref": "ref"})
+
+    assert entry is not None and entry.status == "pending"
+    assert _snapshot(manager, "waiter")["ready"] == 0
+    assert _wait_count(manager) == 1
+    manager.update_status("ref", "done")
+    assert _snapshot(manager, "waiter")["ready"] == 1
+    assert _wait_count(manager) == 0
+
+
+def test_scope_note_cannot_bypass_explicit_resume_validation(anima_dir):
+    manager = TaskQueueManager(anima_dir)
+    publish_tasks(anima_dir, [payload("completed")])
+    manager.update_status("completed", "done")
+
+    with pytest.raises(ValueError, match="resume requires"):
+        update_task(manager, "completed", None, resume=True, scope_note="Repeat this work")
+
+    entry = manager.get_task_by_id("completed")
+    assert entry.status == "done"
+    assert "scope_notes" not in entry.meta
+
+
+@pytest.mark.parametrize("terminal", ["done", "cancelled"])
 def test_task_wait_resumes_on_terminal_update(anima_dir, terminal):
     manager = TaskQueueManager(anima_dir)
     publish_tasks(anima_dir, [payload("ref"), payload("waiter")])

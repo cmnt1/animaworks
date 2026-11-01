@@ -6,10 +6,10 @@
 ## Current Time
 Use the value of the `現在時刻` field in the system prompt. Do not infer it from history or schedules.
 
-## Observation Rules
-- If a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` is present, use it as evidence for Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files and do not call the tool again; otherwise call `heartbeat_observe_snapshot` as the fallback
-- During normal Heartbeat, do not use shell / `rtk proxy` / `Get-Content` / `ls` to inspect those fixed locations
-- Only if neither snapshot path returns `status: ok`, do not repeat the same blocked path; record or report the blocker
+## Observation rules
+- If there is a `Current Pre-Observed Heartbeat Snapshot` for `status: ok`, do not stack tool calls to verify Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files. If there is no prior observation, call `heartbeat_observe_snapshot` as a fallback
+- During a normal Heartbeat, do not use shell / `rtk proxy` / `Get-Content` / `ls` to check the fixed scopes above
+- Only when `status: ok` cannot be obtained from either snapshot path, do not repeat the same blocked path; record or report it as a blocker
 
 ## Checklist
 - Check whether there are unread messages in the Inbox

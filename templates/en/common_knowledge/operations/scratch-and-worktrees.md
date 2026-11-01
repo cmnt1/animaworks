@@ -22,10 +22,12 @@ TMP="$(mktemp -d -p "$ANIMAWORKS_SCRATCH_DIR")"
 
 ## Automatic deletion
 
-- Task scratch spaces are deleted when the task is completed or canceled. Any worktrees created inside them are also unregistered from the parent repository.
-- Scratch spaces are deleted after 24 hours of inactivity.
-- `shared/worktrees/` is deleted after 24 hours of inactivity, even if it has uncommitted changes (items currently in use are kept).
-- Cleanup happens automatically, so you don't need to run a deletion command at the end of your work. Move anything you want to keep to the location in the “Read again later” row of the table above.
+Automatic deletion is performed only on Linux, where process usage can be tracked. On Windows, scratch deletion at task termination and periodic cleanup are not performed. `workspace_sweep_enabled=false` applies to both hourly and daily periodic cleanup.
+
+- Scratch for a task disappears when the task completes or is canceled. The registration of worktrees created inside it is also removed from the parent repository.
+- Scratch disappears if it is not touched for 24 hours.
+- In `shared/worktrees/`, only clean linked worktrees that have not been used for 24 hours or more are deleted via Git. Uncommitted changes, standalone clones, and repositories whose Git status cannot be confirmed are retained.
+- On Linux with automatic deletion enabled, there is no need to run a deletion command at the end of work. Move anything you want to keep to the location in the "Read later" row of the table above.
 
 ## Package caches
 

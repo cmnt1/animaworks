@@ -302,6 +302,8 @@ def _evaluate_traversal(
             if any(ch.isspace() for ch in arg) or arg.startswith("/"):
                 continue
             path_part = arg.split("=", 1)[1] if arg.startswith("-") and "=" in arg else arg
+            if Path(path_part).is_absolute():
+                continue
             if ".." not in Path(path_part).parts:
                 continue
             try:

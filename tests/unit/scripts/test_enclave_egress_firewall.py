@@ -63,6 +63,8 @@ def test_nonlinux_operations_fail_before_network_or_firewall_changes(firewall, m
     assert error.value.code == 2
     fetch.assert_not_called()
     run.assert_not_called()
+
+
 def test_allowed_hosts_resolve_to_every_address(firewall, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_getaddrinfo(name, port, proto=0):
         if name == "missing.example":

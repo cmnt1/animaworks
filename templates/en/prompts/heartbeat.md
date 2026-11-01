@@ -13,3 +13,7 @@ Choose necessary actions for unanswered requests, anomalies, or time-sensitive w
 - For an incomplete-run notice, check what was already done before deciding to continue; to continue, use `submit_tasks` with `{{"task_id":"existing-id","resume":true}}` (the original input is saved). If no longer needed, `update_task(status="cancelled", summary="reason")`.
 
 No need to poll for repair or resubmit all pending work. Consult procedures and approval requirements as needed. If nothing needs attention, return only HEARTBEAT_OK.
+
+## Confirmation of Observations and Communications
+
+If a Current Pre-Observed Heartbeat Snapshot is presented, confirm it first as the observation result for the fixed scope. Do not rescan the same range; investigate further only when external confirmation is required. Communications follow `communication/message-quality-protocol.md`, and delegation follows `operations/task-delegation-guide.md`.

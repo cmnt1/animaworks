@@ -18,12 +18,12 @@ plugin's command line.
 from __future__ import annotations
 
 import atexit
-import fcntl
 import json
 import logging
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -84,6 +84,11 @@ def _reserve_port(config: EnclaveSsmTunnelConfig) -> tuple[int, int | None]:
     (an exclusive ``flock`` held for the tunnel's lifetime) and that is free to
     bind is returned together with the lock descriptor.
     """
+    if sys.platform != "linux":
+        raise TunnelError("Enclave SSM tunnels require Linux")
+
+    import fcntl
+
     if config.local_port is None:
         return _free_port(), None
     lock_dir = _port_lock_dir()
@@ -114,6 +119,9 @@ def _port_bindable(port: int) -> bool:
 def _release_port(fd: int | None) -> None:
     if fd is None:
         return
+
+    import fcntl
+
     try:
         fcntl.flock(fd, fcntl.LOCK_UN)
     finally:

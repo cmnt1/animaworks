@@ -33,6 +33,29 @@ thread/debate routing, CLI model aliases and Codex dependency pins. Enclave mode
 is opt-in and requires Linux; importing its CLI or gateway must remain safe in
 normal Windows mode. Phone support remains disabled unless explicitly configured.
 
+The 2026-10-18 integration retains the default chat concurrency of one. Enclave
+SSM port reservations require Linux, but the tunnel module must remain importable
+without `fcntl` on Windows. Firewall hostname allowances must retain the deferred
+`pwd` import and the non-Linux guard before network or firewall changes.
+
+The 2026-10-21 integration preserves explicit resume of completed tasks: resume
+must precede the guarded status update in the same transaction. Keep task
+completion criteria, stale wakeups and Discord origin routing alongside the new
+waiting, scope-note and delegation contracts.
+
+Automatic workspace cleanup requires Linux process tracking. Skip the new Codex
+session, scratch and shared-worktree sweep rules on Windows, including daily
+housekeeping; skip terminal-task scratch removal there too. The workspace sweep
+switch applies to both hourly and daily runs. Shared worktrees with any dirty
+paths, standalone clones, or failed Git inspection are retained regardless of
+age. Remove only clean linked worktrees through Git without `--force`.
+
+The 2026-10-26 integration adopts cwd-relative traversal checks and the login
+redirect fix. Keep Windows shell backslashes intact and recognize native
+absolute paths (drive paths and UNC, including option values) before applying
+the relative-traversal heuristic. Other command and file-access guards remain
+in force.
+
 ---
 
 ## 2. Notion is disabled by default

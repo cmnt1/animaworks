@@ -41,7 +41,15 @@ def _cleanup_task_scratch(anima_dir: Path, task_id: str, *, status: str) -> None
     if status not in {"done", "cancelled"}:
         return
 
-    from core.platform.scratch import remove_scratch_entry, scratch_root, task_scratch_dir
+    from core.platform.scratch import (
+        remove_scratch_entry,
+        scratch_root,
+        task_scratch_dir,
+        workspace_cleanup_supported,
+    )
+
+    if not workspace_cleanup_supported():
+        return
 
     scratch_dir = task_scratch_dir(anima_dir, task_id)
     try:

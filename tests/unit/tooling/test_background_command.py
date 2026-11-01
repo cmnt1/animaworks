@@ -302,7 +302,7 @@ class TestHandleExecuteCommandBackground:
 
 def test_background_command_does_not_wait_on_inherited_stdin(tmp_path: Path) -> None:
     """A stdin reader (cat, jq with no file) gets EOF instead of hanging."""
-    runner = CommandRunner("cat", tmp_path, timeout=10)
+    runner = CommandRunner(f'"{sys.executable}" -c "import sys; sys.stdin.read()"', tmp_path, timeout=10)
     output_dir = tmp_path / "state" / "cmd_output"
     cmd_id = runner.start(output_dir)
     deadline = time.time() + 10

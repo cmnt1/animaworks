@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from core.exceptions import TaskOwnedByOther, TaskPersistenceError
 from core.schemas import TaskEntry
+from core.tasks.board.tasks import TaskReopenError
 from core.tasks.queue import TaskQueueManager
 
 logger = logging.getLogger("animaworks.tasks_dispatch")
@@ -137,12 +138,20 @@ def update_task(
                     payload = {}
                 if payload.get("error_type") == "TaskOwnedByOther":
                     raise TaskOwnedByOther(str(payload.get("owner") or "unknown")) from fallback_exc
+                if payload.get("error_type") == "TaskReopenError":
+                    raise TaskReopenError(
+                        str(payload.get("detail") or "Completed task requires explicit resume")
+                    ) from fallback_exc
                 if payload.get("error_type") == "InvalidArguments":
                     raise ValueError(str(payload.get("detail") or "Invalid task update")) from fallback_exc
             raise
         if response.get("ok") is False:
             if response.get("error_type") == "TaskOwnedByOther":
                 raise TaskOwnedByOther(str(response.get("owner") or "unknown")) from None
+            if response.get("error_type") == "TaskReopenError":
+                raise TaskReopenError(
+                    str(response.get("detail") or "Completed task requires explicit resume")
+                ) from None
             if response.get("error_type") == "InvalidArguments":
                 raise ValueError(str(response.get("detail") or "Invalid task update")) from None
             raise TaskPersistenceError("Task host rejected update-task request") from None
@@ -168,6 +177,8 @@ def persist_task_update(
     from core.time_utils import now_iso
 
     actor = manager.anima_dir.name
+    if resume and status != "pending":
+        raise ValueError("resume requires status='pending'")
     if status is None and scope_note is None:
         raise ValueError("status is required unless scope_note is provided")
     normalized_wait: dict[str, str] | None = None
@@ -184,8 +195,6 @@ def persist_task_update(
             raise TaskOwnedByOther(delegated_target[0])
         if status is not None:
             delegated_target = manager.assert_task_update_owner(task_id, status)
-            if resume and status != "pending":
-                raise ValueError("resume requires status='pending'")
             if status in {"blocked", "failed"}:
                 raise ValueError(
                     f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."

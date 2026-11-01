@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -169,6 +170,14 @@ def test_shared_worktrees_apply_idle_protection_and_git_removal(tmp_path: Path) 
     (stale_dirty / "README.md").write_text("old uncommitted change\n", encoding="utf-8")
     _age_worktree(stale_dirty, old_timestamp)
 
+    stale_clean = company_root / "stale-clean"
+    _add_linked_worktree(repository, stale_clean, "stale-clean")
+    _age_worktree(stale_clean, old_timestamp)
+
+    standalone = company_root / "standalone"
+    subprocess.run(["git", "clone", "-q", str(repository), str(standalone)], check=True, capture_output=True)
+    _age_worktree(standalone, old_timestamp)
+
     recent_commit = company_root / "recent-commit"
     _add_linked_worktree(repository, recent_commit, "recent-commit")
     (recent_commit / "committed.txt").write_text("recent commit\n", encoding="utf-8")
@@ -207,11 +216,13 @@ def test_shared_worktrees_apply_idle_protection_and_git_removal(tmp_path: Path) 
     (old_residue / "partial.bin").write_bytes(b"old")
     _set_tree_age(old_residue, old_timestamp)
     residue_alias = company_root / "broken-residue-alias"
-    residue_alias.symlink_to(old_residue, target_is_directory=True)
+    if os.name != "nt":
+        residue_alias.symlink_to(old_residue, target_is_directory=True)
 
     global_worktrees = data_dir / "shared" / "worktrees"
     global_worktrees.parent.mkdir(parents=True)
-    global_worktrees.symlink_to(company_root, target_is_directory=True)
+    if os.name != "nt":
+        global_worktrees.symlink_to(company_root, target_is_directory=True)
 
     result = housekeeping._cleanup_shared_worktrees(
         data_dir,
@@ -221,7 +232,9 @@ def test_shared_worktrees_apply_idle_protection_and_git_removal(tmp_path: Path) 
 
     assert result["deleted_entries"] == 2
     assert result["failed"] == 0
-    assert not stale_dirty.exists()
+    assert stale_dirty.exists()
+    assert not stale_clean.exists()
+    assert standalone.exists()
     assert recent_commit.exists()
     assert recent_file.exists()
     assert marker.exists()
@@ -230,8 +243,9 @@ def test_shared_worktrees_apply_idle_protection_and_git_removal(tmp_path: Path) 
     assert not old_residue.exists()
     assert not residue_alias.is_symlink()
     worktree_list = _run_git(repository, "worktree", "list", "--porcelain")
-    assert str(stale_dirty) not in worktree_list
-    assert str(recent_commit) in worktree_list
+    assert stale_dirty.as_posix() in worktree_list
+    assert stale_clean.as_posix() not in worktree_list
+    assert recent_commit.as_posix() in worktree_list
 
 
 @pytest.mark.asyncio
@@ -247,6 +261,7 @@ async def test_only_workspace_sweep_rules_collect_in_use_paths_once(
         return set()
 
     monkeypatch.setattr(housekeeping, "_collect_workspace_in_use_paths", collect_paths)
+    monkeypatch.setattr("core.platform.scratch.workspace_cleanup_supported", lambda: True)
     results = await housekeeping.run_housekeeping(
         tmp_path / "data",
         housekeeping=HousekeepingConfig(),
@@ -270,3 +285,85 @@ def test_workspace_sweep_config_defaults_and_validation() -> None:
         HousekeepingConfig(anima_scratch_retention_hours=0)
     with pytest.raises(ValueError):
         HousekeepingConfig(shared_worktrees_idle_hours=0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("only", [None, {"codex_sessions", "anima_scratch", "shared_worktrees"}])
+@pytest.mark.parametrize("enabled,supported", [(False, True), (True, False)])
+async def test_workspace_sweep_guards_apply_to_daily_and_hourly_runs(tmp_path, monkeypatch, only, enabled, supported):
+    monkeypatch.setattr("core.platform.scratch.workspace_cleanup_supported", lambda: supported)
+    collect = Mock(side_effect=AssertionError("Disabled cleanup must not scan processes"))
+    monkeypatch.setattr(housekeeping, "_collect_workspace_in_use_paths", collect)
+    handlers = []
+    for key in ("codex_sessions", "anima_scratch", "shared_worktrees"):
+        handler = Mock(side_effect=AssertionError("Protected workspace must not be deleted"))
+        handlers.append(handler)
+        monkeypatch.setitem(housekeeping._HOUSEKEEPING_HANDLERS, key, handler)
+
+    results = await housekeeping.run_housekeeping(
+        tmp_path / "data", housekeeping=HousekeepingConfig(workspace_sweep_enabled=enabled), only=only
+    )
+
+    collect.assert_not_called()
+    for handler in handlers:
+        handler.assert_not_called()
+    for key in ("codex_sessions", "anima_scratch", "shared_worktrees"):
+        assert results[key]["skipped"] is True
+
+
+def test_terminal_scratch_cleanup_preserves_data_without_process_tracking(tmp_path, monkeypatch):
+    from core.platform.scratch import task_scratch_dir
+    from core.tasks.pending_executor import _cleanup_task_scratch
+
+    monkeypatch.setattr("core.platform.scratch.workspace_cleanup_supported", lambda: False)
+    anima_dir = tmp_path / "alice"
+    scratch = task_scratch_dir(anima_dir, "completed")
+    scratch.mkdir(parents=True)
+    artifact = scratch / "uncommitted.txt"
+    artifact.write_text("keep this work", encoding="utf-8")
+
+    _cleanup_task_scratch(anima_dir, "completed", status="done")
+
+    assert artifact.read_text(encoding="utf-8") == "keep this work"
+
+
+def test_shared_worktrees_keep_repository_when_git_inspection_fails(tmp_path):
+    data_dir = tmp_path / "data"
+    worktree = data_dir / "shared" / "worktrees" / "broken-repository"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("invalid git metadata", encoding="utf-8")
+    artifact = worktree / "work.txt"
+    artifact.write_text("keep this work", encoding="utf-8")
+    _set_tree_age(worktree, time.time() - 25 * 3600)
+
+    result = housekeeping._cleanup_shared_worktrees(data_dir, idle_hours=24)
+
+    assert result["deleted_entries"] == 0
+    assert result["skipped"] == 1
+    assert artifact.read_text(encoding="utf-8") == "keep this work"
+
+
+def test_shared_worktree_changed_after_inspection_is_not_forcibly_removed(tmp_path, monkeypatch):
+    data_dir = tmp_path / "data"
+    repository = tmp_path / "repository"
+    worktree = data_dir / "shared" / "worktrees" / "concurrent-edit"
+    _make_repository(repository)
+    _add_linked_worktree(repository, worktree, "concurrent-edit")
+    old_timestamp = time.time() - 25 * 3600
+    _age_worktree(worktree, old_timestamp)
+    inspect = housekeeping._git_worktree_info
+
+    def edit_after_inspection(path):
+        info = inspect(path)
+        assert not info["changed_paths"]
+        info["last_activity_ts"] = old_timestamp
+        (path / "README.md").write_text("new concurrent work", encoding="utf-8")
+        return info
+
+    monkeypatch.setattr(housekeeping, "_git_worktree_info", edit_after_inspection)
+
+    result = housekeeping._cleanup_shared_worktrees(data_dir, idle_hours=24)
+
+    assert result["deleted_entries"] == 0
+    assert result["failed"] == 1
+    assert (worktree / "README.md").read_text(encoding="utf-8") == "new concurrent work"

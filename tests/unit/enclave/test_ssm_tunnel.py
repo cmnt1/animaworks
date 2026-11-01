@@ -20,6 +20,8 @@ from core.enclave import ssm_tunnel
 from core.enclave.config import EnclaveSsmTunnelConfig
 from tests.helpers.filesystem import DEFAULT_TEST_CONFIG
 
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Enclave requires Linux")
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------

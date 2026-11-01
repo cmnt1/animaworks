@@ -40,14 +40,6 @@ def sockets_dir(tmp_path: Path) -> Path:
     return d
 
 
-@pytest.fixture(autouse=True)
-def _allow_depth_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    limiter.check_depth.return_value = True
-    monkeypatch.setattr("core.cascade_limiter.get_depth_limiter", lambda: limiter)
-
-
 def _make_anima_dir(tmp_path: Path, name: str) -> Path:
     """Create a minimal anima directory with required files."""
     anima_dir = tmp_path / "animas" / name

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -178,6 +179,29 @@ def test_traversal_resolves_from_cwd(tmp_path: Path, cwd_rel: str, command: str,
     ad = (tmp_path / "animas" / "t-anima").resolve()
     ctx, _ad, _dd = make_ctx(tmp_path, cwd=(ad / cwd_rel).resolve() if cwd_rel else ad)
     assert evaluate_command(command, ctx).allowed is allowed
+
+
+@pytest.mark.parametrize("prefix", ["", "--input="])
+def test_traversal_skips_native_absolute_paths(tmp_path: Path, prefix: str) -> None:
+    ctx, _ad, _dd = make_ctx(tmp_path)
+    target = tmp_path / "shared" / ".." / "common_knowledge" / "a.md"
+    assert evaluate_command(f"cat {prefix}{target}", ctx).allowed
+    assert evaluate_command(f"cat {prefix}../other/state/x", ctx).layer == "traversal"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive and UNC path semantics")
+@pytest.mark.parametrize(
+    "target",
+    [
+        "C:/shared/../common_knowledge/a.md",
+        r"C:\shared\..\common_knowledge\a.md",
+        r"\\server\share\work\..\common_knowledge\a.md",
+    ],
+)
+@pytest.mark.parametrize("prefix", ["", "--input="])
+def test_traversal_skips_windows_absolute_paths(tmp_path: Path, target: str, prefix: str) -> None:
+    ctx, _ad, _dd = make_ctx(tmp_path)
+    assert evaluate_command(f"cat {prefix}{target}", ctx).allowed
 
 
 def test_other_anima_write(tmp_path: Path) -> None:

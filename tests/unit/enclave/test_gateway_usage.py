@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,8 @@ import pytest
 
 from core.time_utils import today_local
 from tests.unit.enclave.test_gateway import FakeSupervisor, _running_gateway
+
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Enclave requires Linux")
 
 _BUDGET = {"month": "2026-10", "budget": 1000, "consumed": 150, "remaining": 850, "exceeded": False}
 

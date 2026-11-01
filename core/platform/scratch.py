@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,11 @@ _SAFE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9_.-]")
 _MAX_COMPONENT_LENGTH = 64
 _GIT_LINK_SCAN_DEPTH = 3
 _GIT_PRUNE_TIMEOUT_SECONDS = 10
+
+
+def workspace_cleanup_supported() -> bool:
+    """Automatic cleanup needs Linux process tracking to protect active work."""
+    return sys.platform == "linux" and Path("/proc").is_dir()
 
 
 def safe_scratch_component(value: str, *, fallback: str) -> str:

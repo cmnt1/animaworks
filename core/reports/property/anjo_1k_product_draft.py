@@ -670,7 +670,9 @@ def build_minimini_diff_section(diff: dict | None) -> str:
 
 
 def build_minimini_sections(
-    data: dict, prev_minimini_count: int | None = None, minimini_diff: dict | None = None,
+    data: dict,
+    prev_minimini_count: int | None = None,
+    minimini_diff: dict | None = None,
 ) -> tuple[str, str]:
     # minimini section
     minimini = data.get("minimini_url_snapshot") or {}
@@ -746,9 +748,7 @@ def render_markdown(
     evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{d.replace('-', '')}.json"
 
     minimini_gate = validate_minimini_snapshot(data)
-    minimini_summary_line, minimini_section = build_minimini_sections(
-        data, prev_minimini_count, minimini_diff
-    )
+    minimini_summary_line, minimini_section = build_minimini_sections(data, prev_minimini_count, minimini_diff)
 
     # ROOF TREE (own-property) section
     roof_summary_line, roof_section = build_roof_tree_section(data)
@@ -979,7 +979,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def refresh_existing_minimini(
-    report_path: Path, report_date: str, task_results_dir: Path, script_provenance: dict,
+    report_path: Path,
+    report_date: str,
+    task_results_dir: Path,
+    script_provenance: dict,
 ) -> dict | None:
     """Incorporate a late local capture without rerunning DB extraction or review edits."""
     fm = read_frontmatter(report_path)
@@ -1019,10 +1022,16 @@ def refresh_existing_minimini(
     text, section_count = re.subn(
         r"^## minimini掲載状況\n.*?(?=^## |\Z)",
         lambda _: section.strip() + "\n\n",
-        old_text, count=1, flags=re.M | re.S,
+        old_text,
+        count=1,
+        flags=re.M | re.S,
     )
     text, summary_count = re.subn(
-        r"^- minimini掲載(?:一覧|件数):.*$", lambda _: summary.strip(), text, count=1, flags=re.M,
+        r"^- minimini掲載(?:一覧|件数):.*$",
+        lambda _: summary.strip(),
+        text,
+        count=1,
+        flags=re.M,
     )
     if section_count != 1 or summary_count != 1:
         raise ValueError(f"Cannot locate minimini section and summary in {report_path}")
@@ -1030,16 +1039,25 @@ def refresh_existing_minimini(
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     text = text.replace(fm["source_json_sha256"], digest)
     text = re.sub(
-        r"^updated:.*$", f"updated: {datetime.now(JST).replace(microsecond=0).isoformat()}",
-        text, count=1, flags=re.M,
+        r"^updated:.*$",
+        f"updated: {datetime.now(JST).replace(microsecond=0).isoformat()}",
+        text,
+        count=1,
+        flags=re.M,
     )
     text = text.replace(" miniminiは取得未完了の注記を残し、完了の必須条件にはしません。", "")
     for path in (source_json, copy_json):
         path.write_text(payload, encoding="utf-8", newline="\n")
     report_path.write_text(text, encoding="utf-8", newline="\n")
     return write_evidence(
-        fm["code"], report_date, report_path, copy_json, source_json, digest,
-        task_results_dir=task_results_dir, script_provenance=script_provenance,
+        fm["code"],
+        report_date,
+        report_path,
+        copy_json,
+        source_json,
+        digest,
+        task_results_dir=task_results_dir,
+        script_provenance=script_provenance,
     )
 
 
@@ -1061,7 +1079,10 @@ def main(argv: list[str] | None = None) -> int:
         old_fm = read_frontmatter(existing_today)
         if old_fm.get("status") in {"レビュー待ち", "完了"}:
             evidence = refresh_existing_minimini(
-                existing_today, today_iso, task_results_dir, script_provenance,
+                existing_today,
+                today_iso,
+                task_results_dir,
+                script_provenance,
             )
             if evidence is not None:
                 print(json.dumps(evidence, ensure_ascii=False))

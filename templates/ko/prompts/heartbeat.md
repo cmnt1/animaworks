@@ -13,3 +13,7 @@
 - 미완료 실행 재개는 `submit_tasks`의 tasks에 `{{"task_id":"기존-ID","resume":true}}`를 지정하세요.
 
 복구를 위한 순회나 전체 재제출은 불필요합니다. 필요한 절차·승인 조건은 참조해도 됩니다. 대응할 사항이 없으면 HEARTBEAT_OK만 반환하세요.
+
+## 관측 및 연락 확인
+
+Current Pre-Observed Heartbeat Snapshot이 제시된 경우에는 고정 스코프의 관측 결과로서 먼저 확인한다. 동일한 범위를 재스캔하지 않고, 외부 확인이 필요한 경우에만 추가로 조사한다. 연락은 `communication/message-quality-protocol.md`, 위임은 `operations/task-delegation-guide.md`을 따른다.

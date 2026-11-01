@@ -67,3 +67,7 @@ The result summary of TaskExec is stored in `state/task_results/{task_id}/{attem
 ## Long-running command tools use a separate path
 
 For long-running external tools such as image generation and run_command, use `animaworks-tool submit TOOL ...`. They are registered as `task_type="command"` in the same TaskStore as the `submit_tasks` LLM tasks, and are executed by BackgroundTaskManager. Execution attempts are recorded in TaskStore, and for compatibility, `state/background_tasks/{task_id}.json` and completion notifications are also maintained. Check results with `list_background_tasks` / `check_background_task`. For details, see `operations/background-tasks.md`.
+
+## Source of truth for business outcomes
+
+The source of truth for business outcomes and case management is placed in the Obsidian Vault. In accordance with `common_skills/obsidian-product/SKILL.md`, the TaskStore inside Anima manages execution status and dependencies. Preserve the roles of both, and do not write a duplicate of the execution queue into the Vault.

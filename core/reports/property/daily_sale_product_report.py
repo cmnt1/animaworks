@@ -568,8 +568,7 @@ Sakuraはこの下書きと証跡JSONを確認し、問題がなければ frontm
 """
 
 
-def ensure_property_numbers(report_path: Path, result: dict, comparison: dict | None,
-                            data_dir: Path) -> dict:
+def ensure_property_numbers(report_path: Path, result: dict, comparison: dict | None, data_dir: Path) -> dict:
     numbering = number_report(result, comparison, DATA_ROOT / "property-registry.sqlite3", DATA_ROOT)
     rows = numbering.pop("listings")
     numbered_rows = list(rows)
@@ -577,7 +576,9 @@ def ensure_property_numbers(report_path: Path, result: dict, comparison: dict | 
         for key in ("new_rows", "continued_rows", "deleted_rows", "unconfirmed_rows"):
             numbered_rows.extend(comparison.get(key, []))
     numbered_json = data_dir / "numbered-listings.json"
-    numbered_json.write_text(json.dumps(_sanitize_for_json(rows), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    numbered_json.write_text(
+        json.dumps(_sanitize_for_json(rows), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
     numbered_csv = data_dir / "numbered-listings.csv"
     fields = list(dict.fromkeys(["property_id", "property_match_method", *[k for row in rows for k in row]]))
     with numbered_csv.open("w", encoding="utf-8-sig", newline="") as stream:
@@ -608,23 +609,38 @@ def ensure_property_numbers(report_path: Path, result: dict, comparison: dict | 
     marker = "\n## 物件番号台帳\n"
     text = re.sub(re.escape(marker) + r".*?(?=\n## |\Z)", "", text, flags=re.S)
     inventory = [
-        "", f"掲載{len(rows)}件／重複統合後{numbering['property_count']}物件。番号は日付・媒体・価格変更をまたいで維持する。",
+        "",
+        f"掲載{len(rows)}件／重複統合後{numbering['property_count']}物件。番号は日付・媒体・価格変更をまたいで維持する。",
         "同じ番号は、掲載URLの履歴または所在地・築年月・建物面積・土地面積・戸数の一致に基づく名寄せ。価格・利回りの相違は各掲載値を残す。",
         "| 物件番号 | 掲載元 | 物件 | 価格 | 表面利回り |",
         "|---|---|---|---:|---:|",
-        *[f"| {r['property_id']} | {escape_md_cell(r.get('portal_label'))} | [{escape_md_cell(r.get('title'))}]({r.get('url')}) | {yen(r.get('price_jpy'))} | {pct(r.get('gross_yield_percent'))} |" for r in rows],
-        "", f"番号付JSON: `{numbered_json}`", f"番号付CSV: `{numbered_csv}`", "",
+        *[
+            f"| {r['property_id']} | {escape_md_cell(r.get('portal_label'))} | [{escape_md_cell(r.get('title'))}]({r.get('url')}) | {yen(r.get('price_jpy'))} | {pct(r.get('gross_yield_percent'))} |"
+            for r in rows
+        ],
+        "",
+        f"番号付JSON: `{numbered_json}`",
+        f"番号付CSV: `{numbered_csv}`",
+        "",
     ]
     report_path.write_text(text.rstrip() + "\n" + marker + "\n".join(inventory), encoding="utf-8", newline="\n")
-    return {**numbering, "json_path": str(numbered_json), "json_sha256": sha256_file(numbered_json),
-            "csv_path": str(numbered_csv), "csv_sha256": sha256_file(numbered_csv)}
+    return {
+        **numbering,
+        "json_path": str(numbered_json),
+        "json_sha256": sha256_file(numbered_json),
+        "csv_path": str(numbered_csv),
+        "csv_sha256": sha256_file(numbered_csv),
+    }
 
 
-def ensure_investment_analysis(report_path: Path, comparison: dict | None, report_date: str,
-                               source_json: Path, digest: str) -> dict:
+def ensure_investment_analysis(
+    report_path: Path, comparison: dict | None, report_date: str, source_json: Path, digest: str
+) -> dict:
     if not sha256_matches(source_json, digest):
         raise RuntimeError("Investment analysis source JSON SHA-256 mismatch")
-    bundle = create_bundle(comparison, report_date, source_json.parent, source_json, digest, note_root=PROPERTY_NOTE_ROOT)
+    bundle = create_bundle(
+        comparison, report_date, source_json.parent, source_json, digest, note_root=PROPERTY_NOTE_ROOT
+    )
     text = report_path.read_text(encoding="utf-8-sig")
     marker = "\n## 新規物件の投資可否分析（別レポート）\n"
     if bundle.get("index_path"):
@@ -658,7 +674,11 @@ def write_evidence(
     script_provenance = script_provenance or script_preflight()
     property_numbering = ensure_property_numbers(report_path, result, comparison, data_json_copy.parent)
     investment_analysis = ensure_investment_analysis(
-        report_path, comparison, report_date, data_json_copy, digest,
+        report_path,
+        comparison,
+        report_date,
+        data_json_copy,
+        digest,
     )
     fm = read_frontmatter(report_path)
     checks = {
@@ -774,17 +794,27 @@ def main(argv: list[str] | None = None) -> int:
                     if not sha256_matches(data_json, saved["source_json_sha256"]):
                         raise RuntimeError("Numbering source JSON SHA-256 mismatch")
                     result = json.loads(data_json.read_text(encoding="utf-8-sig"))
-                    saved["property_numbering"] = ensure_property_numbers(existing, result, saved.get("comparison"), data_json.parent)
+                    saved["property_numbering"] = ensure_property_numbers(
+                        existing, result, saved.get("comparison"), data_json.parent
+                    )
                     changed = True
                 if changed or "investment_analysis" not in saved or not validate_bundle(saved["investment_analysis"]):
                     saved["investment_analysis"] = ensure_investment_analysis(
-                        existing, saved.get("comparison"), report_date,
-                        Path(saved["data_json_copy_path"]), saved["source_json_sha256"],
+                        existing,
+                        saved.get("comparison"),
+                        report_date,
+                        Path(saved["data_json_copy_path"]),
+                        saved["source_json_sha256"],
                     )
-                    saved["read_after_write_checks"]["investment_analysis_verified"] = validate_bundle(saved["investment_analysis"])
+                    saved["read_after_write_checks"]["investment_analysis_verified"] = validate_bundle(
+                        saved["investment_analysis"]
+                    )
                     changed = True
                 if changed:
-                    evidence_path.write_text(json.dumps(_sanitize_for_json(saved), ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+                    evidence_path.write_text(
+                        json.dumps(_sanitize_for_json(saved), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                        encoding="utf-8",
+                    )
             print(f"NOOP_ALREADY_CREATED: {existing} status={fm.get('status')}")
             return 0
 

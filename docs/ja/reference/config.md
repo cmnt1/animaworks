@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: e8e8e26572574fe5f75d7fb8d5da19cf939aadbe62cbc9a61f464fb44d51ba1d -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 4cd22563726a6380bb4e4d77495f1ba97f9557bd8a23e01172e8b58eed0c2217 -->
 
 # 設定リファレンス
 
@@ -744,7 +744,7 @@
 | `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
 | `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
 | `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
-| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | Enable hourly and daily workspace cleanup; skipped without Linux process tracking |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |

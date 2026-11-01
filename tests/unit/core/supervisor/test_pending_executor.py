@@ -82,10 +82,11 @@ class TestPendingTaskExecutorInit:
 
 
 @pytest.mark.parametrize("status", ["done", "cancelled"])
-def test_terminal_task_cleanup_removes_scratch(tmp_path: Path, status: str) -> None:
+def test_terminal_task_cleanup_removes_scratch(tmp_path: Path, status: str, monkeypatch) -> None:
     from core.execution.workspace_env import task_scratch_dir
     from core.tasks.pending_executor import _cleanup_task_scratch
 
+    monkeypatch.setattr("core.platform.scratch.workspace_cleanup_supported", lambda: True)
     anima_dir = tmp_path / "animas" / "terminal"
     scratch_dir = task_scratch_dir(anima_dir, "task-1")
     scratch_dir.mkdir(parents=True)

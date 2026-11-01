@@ -128,6 +128,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `default_workspace` | `str` | `""` |  |
+| `tool_compression` | `bool` | `True` |  |
 | `consolidation_enabled` | `bool` | `True` |  |
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
@@ -138,8 +139,8 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 |-----------|------|
 | `version` | 설정 파일 버전 |
 | `setup_complete` | 설정 완료 플래그 |
-| `locale` | 로캘 설정 |
-| `system` | 시스템 설정(모드, 로그 수준) |
+| `locale` | 로케일 설정 |
+| `system` | 시스템 설정 (모드, 로그 레벨) |
 | `credentials` | API 인증 정보 |
 | `model_modes` | 모델명→실행 모드 매핑 |
 | `model_context_windows` |  |
@@ -149,13 +150,13 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `consolidation` | 기억 통합 설정 |
 | `helper_models` |  |
 | `background_review` |  |
-| `rag` | RAG(검색 증강 생성) 설정 |
+| `rag` | RAG (검색 확장 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | 프라이밍(자동 기억 회상) 설정 |
+| `priming` | 프라이밍 (자동 기억 연상) 설정 |
 | `image_gen` | 이미지 생성 설정 |
 | `human_notification` |  |
 | `interaction` |  |
@@ -175,9 +176,11 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
+| `jev` |  |
 | `workspaces` |  |
 | `github_identities` |  |
 | `activity_level` |  |
+| `activity_level_by_provider` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |

@@ -133,7 +133,13 @@ async def run_housekeeping(
             raise ValueError(f"Unknown housekeeping rule(s): {', '.join(sorted(unknown))}")
 
     workspace_in_use_paths: set[Path] | None = None
-    if any(rule.result_key in _WORKSPACE_SWEEP_RULE_KEYS for rule in rules):
+    from core.platform.scratch import workspace_cleanup_supported
+
+    if (
+        housekeeping.workspace_sweep_enabled
+        and workspace_cleanup_supported()
+        and any(rule.result_key in _WORKSPACE_SWEEP_RULE_KEYS for rule in rules)
+    ):
         workspace_in_use_paths = await loop.run_in_executor(None, _collect_workspace_in_use_paths)
 
     for rule in rules:
@@ -162,6 +168,13 @@ def _execute_housekeeping_rule(
     inbox: InboxConfig,
     workspace_in_use_paths: set[Path] | None = None,
 ) -> dict[str, Any]:
+    if rule.result_key in _WORKSPACE_SWEEP_RULE_KEYS:
+        from core.platform.scratch import workspace_cleanup_supported
+
+        if not housekeeping.workspace_sweep_enabled:
+            return {"skipped": True, "reason": "workspace_sweep_disabled"}
+        if not workspace_cleanup_supported():
+            return {"skipped": True, "reason": "workspace_process_tracking_unavailable"}
     root = data_dir if rule.root == "data" else data_dir / "animas"
     target = root / rule.path
     config = inbox if rule.config_section == "inbox" else housekeeping
@@ -1794,23 +1807,17 @@ def _cleanup_shared_worktrees(
             continue
 
         if git_info is not None:
+            # Age never authorizes losing edits or an entire standalone clone.
+            if git_info["changed_paths"] or not git_info["linked"]:
+                totals["skipped"] += 1
+                continue
             if git_info["last_activity_ts"] >= cutoff_ts:
                 totals["skipped"] += 1
                 continue
-            recent_change = False
-            for changed_path in git_info["changed_paths"]:
-                try:
-                    if changed_path.lstat().st_mtime >= cutoff_ts:
-                        recent_change = True
-                        break
-                except FileNotFoundError:
-                    continue
-                except OSError:
-                    recent_change = True
-                    break
-            if recent_change:
-                totals["skipped"] += 1
-                continue
+        elif (worktree / ".git").exists() or (worktree / ".git").is_symlink():
+            # A failed repository inspection is not proof that removal is safe.
+            totals["skipped"] += 1
+            continue
 
         try:
             size = _path_size(worktree)
@@ -1821,7 +1828,6 @@ def _cleanup_shared_worktrees(
                         f"--git-dir={git_info['common_dir']}",
                         "worktree",
                         "remove",
-                        "--force",
                         str(worktree),
                     ],
                     capture_output=True,

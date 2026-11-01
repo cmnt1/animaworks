@@ -36,8 +36,9 @@ Result summaries are handled by `state/task_results/{task_id}/{attempt_token}.md
 
 ## Duplicates and Reporting
 
-If you know an incomplete task exists for the same request, pass additional information to that ID.
-Do not automatically cancel or overwrite old work based only on suspected duplication; verify the assignee and execution status.
-Preserve required approvals and independent reviews. Report results to the requester who needs to make decisions; do not require
-forwarding identical content to all levels or double-recording in separate handwritten ledgers.
-See `common_knowledge/anatomy/task-architecture.md` for storage details.
+If it is known that unfinished work for the same request exists, pass the additional information to that ID.
+Do not automatically cancel or overwrite old work based merely on suspicion of duplication; check the assignee and execution status.
+Preserve any required approvals and independent reviews. Report results to the requester who needs to make a decision, and do not require forwarding the same content to every hierarchy level or dual recording in a separate handwritten ledger.
+For details on storage, refer to `common_knowledge/anatomy/task-architecture.md`.
+
+The TaskBoard title / summary should be a case name that a human can understand on its own; record internal IDs, logs, and long original text in the description / instruction.

@@ -35,6 +35,44 @@ def payload(task_id: str = "task-one", **fields) -> dict:
     }
 
 
+def test_host_fallback_preserves_reopen_guard_and_explicit_resume(anima_dir, monkeypatch):
+    import errno
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from core.tasks.board.tasks import TaskReopenError
+    from server.routes.internal import create_internal_router
+
+    manager = TaskQueueManager(anima_dir)
+    original = payload()
+    publish_tasks(anima_dir, [original])
+    update_task(manager, "task-one", "done", result="Verified")
+    app = FastAPI()
+    app.include_router(create_internal_router(), prefix="/api")
+    client = TestClient(app)
+
+    def deny_local_store(_task_id, _status):
+        raise PermissionError(errno.EROFS, "read-only task store")
+
+    def post_to_host(endpoint, body):
+        response = client.post(f"/api/internal/{endpoint}", json=body)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(manager, "assert_task_update_owner", deny_local_store)
+    monkeypatch.setattr("core.tasks.dispatch._post_tasks", post_to_host)
+
+    with pytest.raises(TaskReopenError, match="Completed task"):
+        update_task(manager, "task-one", "pending")
+    assert manager.get_task_by_id("task-one").status == "done"
+
+    resumed = update_task(manager, "task-one", "pending", resume=True)
+
+    assert resumed.status == "pending"
+    assert manager.store.pending("worker") == [original]
+
+
 def test_resume_cancelled_task_requeues_same_id(anima_dir):
     original = payload()
     publish_tasks(anima_dir, [original])

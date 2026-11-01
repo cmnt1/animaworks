@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 0db049bfc17fb2687ee4bc1920ba3e9eabb54a1389f0567688f606c9d7546c55 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 4ff0005f1ed05adc897d88ce69915192f4d536ce392a18bc4e1a5f8d4a08aa41 -->
 
 # モジュール一覧
 
@@ -106,7 +106,7 @@
 | `core.host_api` | 88 | — |
 | `core.internal_api` | 51 | — |
 | `core.jev_credits` | 273 | Jev (TypeSafe System One) prepaid-credit accounting for the usage dashboard. |
-| `core.paths` | 262 | Centralized path resolution for AnimaWorks. |
+| `core.paths` | 270 | Centralized path resolution for AnimaWorks. |
 | `core.project_threads` | 212 | — |
 | `core.provider_cooldown` | 207 | — |
 | `core.schemas` | 246 | — |
@@ -164,7 +164,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.chat_attachments` | 253 | — |
 | `core.anima.digital_anima` | 702 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
-| `core.anima.export` | 234 | Export an Anima workspace in OpenClaw or Hermes Agent layout. |
+| `core.anima.export` | 238 | Export an Anima workspace in OpenClaw or Hermes Agent layout. |
 | `core.anima.factory` | 919 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 1137 | — |
 | `core.anima.image_artifacts` | 219 | — |
@@ -226,7 +226,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.opencode_go` | 79 | — |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 175 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1620 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1623 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -255,7 +255,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
 | `core.enclave.secrets` | 128 | Read secrets from the enclave credentials store. |
-| `core.enclave.ssm_tunnel` | 371 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
+| `core.enclave.ssm_tunnel` | 379 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -610,7 +610,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.cron_noop` | 241 | — |
 | `core.memory.maintenance.distillation` | 548 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
-| `core.memory.maintenance.housekeeping` | 1964 | — |
+| `core.memory.maintenance.housekeeping` | 1970 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 669 | — |
 | `core.memory.maintenance.resolution_tracker` | 60 | — |
@@ -844,7 +844,7 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.platform.process` | 444 | — |
 | `core.platform.process_role` | 68 | Low-level environment access for process-role metadata. |
 | `core.platform.processing_lease` | 349 | — |
-| `core.platform.scratch` | 99 | — |
+| `core.platform.scratch` | 105 | — |
 | `core.platform.state_writer` | 1025 | — |
 | `core.platform.status_store` | 54 | — |
 | `core.platform.subprocess_entries` | 23 | — |
@@ -873,10 +873,10 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.reports` | 1 | Report generation modules managed in the AnimaWorks repository. |
 | `core.reports.pending_review_surfacer` | 450 | Surface product drafts that are stuck in レビュー待ち back to their reviewer. |
 | `core.reports.property._listing_runs（非公開）` | 123 | Listing-run tracking shared by the daily property reports. |
-| `core.reports.property.anjo_1k_product_draft` | 1201 | Create the Anjo 1K daily Products draft for Sakura review. |
-| `core.reports.property.daily_sale_product_report` | 864 | Create the daily property sale portal Products draft for Sakura review. |
-| `core.reports.property.sale_investment_analysis` | 216 | Evidence-linked preliminary investment reports for newly observed sale listings. |
-| `core.reports.property.sale_property_registry` | 144 | Persistent physical-property numbers, independent of portal and asking price. |
+| `core.reports.property.anjo_1k_product_draft` | 1222 | Create the Anjo 1K daily Products draft for Sakura review. |
+| `core.reports.property.daily_sale_product_report` | 894 | Create the daily property sale portal Products draft for Sakura review. |
+| `core.reports.property.sale_investment_analysis` | 289 | Evidence-linked preliminary investment reports for newly observed sale listings. |
+| `core.reports.property.sale_property_registry` | 171 | Persistent physical-property numbers, independent of portal and asking price. |
 
 ## `core.reports.property`
 
@@ -986,7 +986,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.board.readiness` | 34 | Read-only boundary between legacy task files and canonical execution. |
 | `core.tasks.board.tasks` | 1664 | Durable execution records; the single source of truth for the TaskBoard. |
 | `core.tasks.board.view` | 119 | Single TaskBoard view built directly from the canonical TaskStore. |
-| `core.tasks.dispatch` | 525 | — |
+| `core.tasks.dispatch` | 534 | — |
 | `core.tasks.external.collector` | 211 | Multi-source external tasks collector with per-source fault isolation. |
 | `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
 | `core.tasks.external.sources.chatwork` | 228 | Chatwork external tasks collector (open my-tasks + unreplied To). |
@@ -994,7 +994,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1725 | Execute claimed TaskStore work in background lanes. |
+| `core.tasks.pending_executor` | 1733 | Execute claimed TaskStore work in background lanes. |
 | `core.tasks.queue` | 554 | — |
 | `core.tasks.waiting` | 81 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
@@ -1061,7 +1061,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.org_helpers` | 158 | — |
 | `core.tooling.permissions` | 344 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
-| `core.tooling.policy.command_policy` | 506 | — |
+| `core.tooling.policy.command_policy` | 508 | — |
 | `core.tooling.policy.registry` | 65 | — |
 | `core.tooling.policy.schemas.admin` | 221 | — |
 | `core.tooling.policy.schemas.builder` | 79 | — |
@@ -1201,7 +1201,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.ci_autofix` | 276 | — |
 | `server.routes.config_routes` | 464 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1573 | — |
+| `server.routes.internal` | 1574 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 532 | — |

@@ -106,7 +106,7 @@ async def test_shutdown_timeout_proceeds_to_stop_when_work_remains(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_shutdown_keeps_waiting_when_busy_status_is_unavailable(tmp_path: Path) -> None:
+async def test_shutdown_keeps_waiting_when_busy_status_is_unavailable(tmp_path: Path, caplog) -> None:
     supervisor = _make_supervisor(tmp_path)
     events: list[str] = []
     handle = _FakeHandle(events, [{"success": False, "is_busy": False}])
@@ -119,8 +119,10 @@ async def test_shutdown_keeps_waiting_when_busy_status_is_unavailable(tmp_path: 
     with patch("server.supervisor.manager.asyncio.sleep", side_effect=finish_timeout) as sleep:
         await supervisor._wait_for_processes_to_drain(0.05)
 
-    assert events == ["ping"]
-    sleep.assert_awaited_once()
+    assert events and set(events) == {"ping"}
+    sleep.assert_awaited()
+    assert "Shutdown work drain timed out" in caplog.text
+    assert "status unavailable" in caplog.text
 
 
 @pytest.mark.asyncio

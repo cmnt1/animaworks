@@ -25,15 +25,16 @@ After reading, follow the table of contents below for details on each topic.
 
 ### Communication
 
-| Issue | Reference |
+| Problem | Reference |
 |---------|--------|
 | I don't know how to send a message | `reference/communication/messaging-guide.md` |
-| I don't know how to use Board (shared channel) | `communication/board-guide.md` |
+| I don't know how to use the Board (shared channel) | `communication/board-guide.md` |
+| I'm unsure which channel to use for announcements (#ops / #general / department channel / thread) | `communication/broadcasting-guide.md` |
 | I don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
-| I want to check the required items for delegation, completion reports, and escalation | `communication/message-quality-protocol.md` |
-| I want to check the behavior of Inbox startup and message sending | `communication/sending-limits.md` |
+| I want to confirm the required items for delegation, completion reports, and escalation | `communication/message-quality-protocol.md` |
+| I want to confirm the behavior of Inbox startup and message sending | `communication/sending-limits.md` |
 | I don't know how to notify humans | `communication/call-human-guide.md` |
-| I don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` ※Technical reference |
+| I don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` *Technical reference |
 
 ### Organization & Hierarchy
 
@@ -45,17 +46,19 @@ After reading, follow the table of contents below for details on each topic.
 
 ### Tasks and Operations
 
-| Issue | Reference |
+| Problem | Reference |
 |---------|--------|
 | I don't know how to manage tasks | `reference/operations/task-management.md` |
 | I want to use the task board (human-facing dashboard) | `operations/task-board-guide.md` |
-| I don't know how to configure heartbeats or cron | `reference/operations/heartbeat-cron-guide.md` |
+| I don't know how to configure Heartbeat or cron | `reference/operations/heartbeat-cron-guide.md` |
+| I want to confirm the Heartbeat observation path and how to avoid policy blocked | `operations/heartbeat-observe-guide.md` |
 | I want to add confirmation rules before sending, posting, or writing to memory | `operations/action-rules-guide.md` |
 | I don't know how to run long-running tools | `operations/background-tasks.md` |
-| I don't know how to register or use workspaces | `operations/workspace-guide.md` |
-| Where to put worktrees, temporary files, and caches | `operations/scratch-and-worktrees.md` |
-| I want to learn how to create a new skill and check its metadata | `common_skills/skill-creator/SKILL.md` |
-| I want to change project settings | `reference/operations/project-setup.md` ※Technical reference |
+| I don't know how to register or use a workspace | `operations/workspace-guide.md` |
+| I want to judge Obsidian `_inbox/` knowledge promotion reviews (for GL/COO) | `operations/knowledge-promotion-review.md` |
+| Where should I put worktrees, temporary files, and caches? | `operations/scratch-and-worktrees.md` |
+| I want to confirm how to create new skills and their metadata | `common_skills/skill-creator/SKILL.md` |
+| I want to change project configuration | `reference/operations/project-setup.md` *Technical reference |
 
 ### Tools, Models & Technology
 
@@ -119,15 +122,16 @@ After reading, follow the table of contents below for details on each topic.
 
 ### communication/ — Communication
 
-| File | Description |
+| File | Overview |
 |---------|------|
-| `messaging-guide.md` | Guide for sending and receiving messages (send_message parameters, thread management, reply policy) |
-| `board-guide.md` | Board (shared channel) guide (how to use post_channel / read_channel, posting rules) |
-| `instruction-patterns.md` | Patterns for giving instructions (how to write clear instructions, delegation patterns, progress checks) |
-| `reporting-guide.md` | Reporting and escalation methods (report timing, format, urgent vs. periodic) |
-| `message-quality-protocol.md` | Message quality protocol (mandatory checks: 4 items for delegation, 3 items for completion reports, 4 items for escalation) |
-| `sending-limits.md` | Inbox file wake, message aggregation, duplicate prevention within runs, loop avoidance |
-| `call-human-guide.md` | Guide for notifying humans (how to use call_human, receiving replies, notification channel configuration) |
+| `messaging-guide.md` | Guide to message sending and receiving (send_message parameters, thread management, reply policy) |
+| `board-guide.md` | Board (shared channel) guide (how to use post_channel / read_channel properly, posting rules) |
+| `broadcasting-guide.md` | Guide to choosing announcement channels (#ops is for owner notifications only, Anima-to-Anima is basically #general, departments use domain channels + threads) |
+| `instruction-patterns.md` | Collection of instruction patterns (how to write clear instructions, delegation patterns, progress checks) |
+| `reporting-guide.md` | How to report and escalate (reporting timing, format, urgent vs. regular) |
+| `message-quality-protocol.md` | Message quality protocol (mandatory checks for 4 delegation items, 3 completion report items, 4 escalation items) |
+| `sending-limits.md` | Inbox file wake, message aggregation, duplicate prevention within a run, loop avoidance |
+| `call-human-guide.md` | Guide to notifying humans (how to use call_human, receiving replies, notification channel configuration) |
 | `slack-bot-token-guide.md` | → Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration guide |
 
 ### operations/ — Operations and Task Management
@@ -181,6 +185,7 @@ After reading, follow the table of contents below for details on each topic.
 | Fundamentals, introduction, overview, essentials, getting started, summary | `anatomy/essentials.md` |
 | Message, send_message, send, reply, thread, inbox | `reference/communication/messaging-guide.md` |
 | Board, channel, post_channel, read_channel | `communication/board-guide.md` |
+| announcement, broadcast, company-wide sharing, #ops, #general, department channel, thread, escalation | `communication/broadcasting-guide.md` |
 | DM history, read_dm_history, past conversations | `communication/board-guide.md` |
 | Instruction, delegation, task request, delegation | `reference/communication/instruction-patterns.md` |
 | Report, daily report, summary, completion report, escalation | `reference/communication/reporting-guide.md` |

@@ -1,6 +1,11 @@
 # 메시지 전송 완전 가이드
 
-다른 Anima(사원)와 커뮤니케이션하기 위한 종합 가이드.
+> **⚠️ 중요: Slack은 폐지되었습니다(2026-04-08). 모든 외부 커뮤니케이션은 Discord에서 수행하세요.**
+> - `slack_channel_post` / `slack_send` 등의 Slack 도구는 사용할 수 없습니다
+> - 보고·연락은 Discord 채널(`discord_channel_post`) 또는 `send_message`(자동으로 Discord 경유)을 사용하세요
+> - `slack:USERID` 형식의 수신자 지정은 작동하지 않습니다. `discord:USERID` 또는 인간 에일리어스를 사용하세요
+
+다른 Anima(사원)와 커뮤니케이션하기 위한 포괄적 가이드.
 메시지 전송·수신·스레드 관리의 모든 절차를 망라한다.
 
 ## send_message 도구 — 파라미터 참조
@@ -145,6 +150,16 @@ send_message(
 - MUST: 답장 시에는 원본 메시지의 `id`을 `reply_to`에 설정할 것
 - SHOULD NOT: 다른 주제를 기존 스레드에 섞지 말 것. 새 주제는 새 스레드로 시작
 - MAY: `thread_id`이 불명확하면 생략해도 됨(새 스레드로 취급됨)
+
+### 스레드별 답장의 원칙(Discord／채널 게시)
+
+1회의 inbox 배치에 여러 스레드(또는 여러 채널)에서 온 메시지가 포함될 수 있다. 이때 답변을 한데 묶어서는 안 된다.
+
+- MUST: 1회의 `post_channel`(`discord_channel_post`) 호출은 **1개의 스레드의 1개 건만**을 다룰 것. 여러 건을 1개 게시물로 묶지 말 것
+- MUST: 여러 스레드에서 수신한 경우에는 **스레드마다 별도의 `post_channel` 호출**을 발행할 것
+- MUST: `[reply_instruction: discord_channel_post channel_id="X" thread_id="Y"]`이 붙은 메시지에는 **반드시 channel_id=X / thread_id=Y宛て의 단독 게시**로 응답할 것(다른 메시지에 대한 응답을 절대 섞지 말 것)
+- MUST NOT: 다른 스레드에서 진행 중인 화제를 이 스레드에 쓰지 말 것. 다른 건은 해당 thread_id에서 별도로 게시할 것
+- 예: inbox에 #ops 스레드 A, #general 스레드 B, DM C가 들어 있었다면, `post_channel`(A宛)／`post_channel`(B宛)／`send_message`(C宛)과 같이 **3회로 나누어** 발행한다
 
 ## CLI로 메시지 전송
 
