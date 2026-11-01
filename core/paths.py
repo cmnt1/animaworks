@@ -164,6 +164,14 @@ def _resolve_at_imports(text: str) -> str:
     return "".join(out)
 
 
+def read_text_with_imports(path: Path) -> str:
+    """Read a UTF-8 workspace file with its ``@<absolute_path>`` shim lines inlined.
+
+    Raises ``OSError`` / ``UnicodeDecodeError`` like :meth:`Path.read_text`.
+    """
+    return _resolve_at_imports(path.read_text(encoding="utf-8"))
+
+
 def _get_locale() -> str:
     """Get locale from config lazily to avoid circular imports."""
     try:

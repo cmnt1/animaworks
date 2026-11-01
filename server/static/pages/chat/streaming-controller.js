@@ -251,6 +251,18 @@ export function createStreamingController(ctx) {
     ctx.controllers.renderer?.renderChat?.(!ctx.controllers.renderer?.isUserDetached?.());
   }
 
+  /** Send options for a dequeued message; keeps skipLocalEcho so a visibly queued message is not echoed twice. */
+  function queuedSendOptions(next, extra = {}) {
+    return {
+      images: next.images,
+      displayImages: next.displayImages,
+      files: next.files,
+      displayFiles: next.displayFiles,
+      skipLocalEcho: !!next.skipLocalEcho,
+      ...extra,
+    };
+  }
+
   function markQueuedUserMessageSent(anima, thread, text) {
     const messages = mgr.getMessages(anima, thread) || [];
     const queued = messages.find((msg) => msg?.role === "user" && msg?.queued && (msg.text || "") === (text || ""));
@@ -345,7 +357,7 @@ export function createStreamingController(ctx) {
       const next = mgr.dequeue(name, tid);
       showPendingIndicator();
       if (mgr.getPendingQueue(name, tid).length === 0) hidePendingIndicator();
-      sendChat(next.text, { images: next.images, displayImages: next.displayImages, files: next.files, displayFiles: next.displayFiles });
+      sendChat(next.text, queuedSendOptions(next));
       return;
     }
 
@@ -361,7 +373,7 @@ export function createStreamingController(ctx) {
         displayFiles,
         skipLocalEcho: true,
       });
-      addVisibleQueuedUserMessage(name, tid, msg, displayImages, displayFiles.length ? { files: displayFiles } : {});
+      addVisibleQueuedUserMessage(name, tid, msg, displayImages, { files: displayFiles });
       input.value = "";
       input.style.height = "auto";
       saveDraft(name, "", tid);
@@ -780,15 +792,7 @@ export function createStreamingController(ctx) {
             const next = mgr.dequeue(name, tid);
             showPendingIndicator();
             if (mgr.getPendingQueue(name, tid).length === 0) hidePendingIndicator();
-            setTimeout(() => sendChat(next.text, {
-              images: next.images,
-              displayImages: next.displayImages,
-              files: next.files,
-              displayFiles: next.displayFiles,
-              targetAnima: name,
-              targetThread: tid,
-              skipLocalEcho: !!next.skipLocalEcho,
-            }), 150);
+            setTimeout(() => sendChat(next.text, queuedSendOptions(next, { targetAnima: name, targetThread: tid })), 150);
           }
         }
       },
@@ -1274,7 +1278,7 @@ export function createStreamingController(ctx) {
             const next = mgr.dequeue(animaName, tid);
             showPendingIndicator();
             if (mgr.getPendingQueue(animaName, tid).length === 0) hidePendingIndicator();
-            setTimeout(() => sendChat(next.text, { images: next.images, displayImages: next.displayImages, files: next.files, displayFiles: next.displayFiles, targetAnima: animaName, targetThread: tid }), 150);
+            setTimeout(() => sendChat(next.text, queuedSendOptions(next, { targetAnima: animaName, targetThread: tid })), 150);
           }
         }
       },

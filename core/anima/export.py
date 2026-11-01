@@ -20,6 +20,7 @@ from core.anima.workspace_files import (
     IDENTITY_FILE,
     SOUL_FILE,
 )
+from core.paths import read_text_with_imports
 from core.skills.migration._common import redact_credentials
 from core.time_utils import now_iso
 
@@ -41,7 +42,8 @@ class ExportResult:
 
 
 def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    # Inline @import shims so the export is self-contained.
+    return read_text_with_imports(path)
 
 
 def _write_text(path: Path, text: str) -> None:

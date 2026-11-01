@@ -554,12 +554,12 @@ def heal_stale_bootstrap_artifact(anima_dir: Path, *, retry_counts_file: Path | 
     A ``bootstrap.md.auto_resolved`` / ``bootstrap.md.failed`` file left behind
     by an old run keeps :func:`get_bootstrap_status` reporting ``needs_repair``
     forever even though the Anima is fully defined and operating normally.
-    When the Anima is unambiguously complete — identity and injection defined,
+    When the Anima is unambiguously complete — IDENTITY.md and AGENTS.md defined,
     no ``character_sheet.md``, no pending ``BOOTSTRAP.md`` awaiting processing,
     and no ``bootstrap-*`` pending tasks — the artifact is archived and the
     state is marked completed (delegating to :func:`repair_bootstrap_complete`).
 
-    Genuinely incomplete states (undefined identity/injection, an unprocessed
+    Genuinely incomplete states (undefined IDENTITY.md/AGENTS.md, an unprocessed
     character sheet, a BOOTSTRAP.md still present, or queued bootstrap tasks)
     are left untouched so real failures keep surfacing for manual repair.
 

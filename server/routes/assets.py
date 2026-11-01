@@ -23,7 +23,7 @@ from core.anima.workspace_files import IDENTITY_FILE, SOUL_FILE
 from core.i18n import t
 from core.integrations.image.nanogpt import NANOGPT_IMG2IMG_MODELS, NANOGPT_SUBSCRIPTION_MODELS
 from core.integrations.image.openai import OPENAI_IMAGE_MODELS, OPENAI_IMG2IMG_MODELS
-from core.paths import _resolve_at_imports, get_data_dir
+from core.paths import get_data_dir, read_text_with_imports
 from core.platform.tasks import spawn
 from server.events import emit
 from server.routes.attachment_preview import AttachmentPreviewError, preview_attachment
@@ -639,8 +639,8 @@ def _read_identity_texts(anima_dir: Path) -> list[str]:
             continue
         try:
             # IDENTITY.md / SOUL.md may be 1-line @import shims into the Obsidian vault.
-            text = _resolve_at_imports(path.read_text(encoding="utf-8"))
-        except OSError:
+            text = read_text_with_imports(path)
+        except (OSError, UnicodeDecodeError):
             logger.debug("Failed to read appearance source: %s", path, exc_info=True)
             continue
         if text.strip():
@@ -1102,14 +1102,14 @@ def create_assets_router() -> APIRouter:
         identity_path = anima_dir / IDENTITY_FILE
         if identity_path.exists():
             try:
-                text = identity_path.read_text(encoding="utf-8")
+                text = read_text_with_imports(identity_path)
                 match = re.search(
                     r"(?:\u30a4\u30e1\u30fc\u30b8\u30ab\u30e9\u30fc|image[_ ]?color|\u30ab\u30e9\u30fc)\s*[:\uff1a]\s*.*?(#[0-9A-Fa-f]{6})",
                     text,
                 )
                 if match:
                     result["colors"] = {"image_color": match.group(1)}
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 pass
 
         from starlette.responses import JSONResponse as _StlJSONResponse
