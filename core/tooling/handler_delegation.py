@@ -197,7 +197,9 @@ class DelegationMixin(OrgHelpersMixin):
                     from core.messaging.discord_origin_threads import active_origin, record_origin
 
                     discord_origin = active_origin(
-                        self._anima_dir, getattr(self, "_current_discord_origin", None) or {}, getattr(self, "_trigger", "")
+                        self._anima_dir,
+                        getattr(self, "_current_discord_origin", None) or {},
+                        getattr(self, "_trigger", ""),
                     )
                     if discord_origin:
                         record_origin(self._anima_dir, dm.thread_id, discord_origin)

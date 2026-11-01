@@ -44,11 +44,22 @@ def _upload_files(png_files: list[Path]) -> list[str]:
             info.mode = 0o644
             with open(p, "rb") as f:
                 tar.addfile(info, f)
-    cmd = ["ssh", "-i", _SSH_KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", _SSH_DEST,
-           f"tar -xf - -C {_REMOTE_DIR}"]
+    cmd = [
+        "ssh",
+        "-i",
+        _SSH_KEY,
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=20",
+        _SSH_DEST,
+        f"tar -xf - -C {_REMOTE_DIR}",
+    ]
     res = subprocess.run(cmd, input=buf.getvalue(), capture_output=True, timeout=120)
     if res.returncode != 0:
-        raise RuntimeError(f"ssh avatar upload failed (rc={res.returncode}): {res.stderr.decode('utf-8', 'replace')[-300:]}")
+        raise RuntimeError(
+            f"ssh avatar upload failed (rc={res.returncode}): {res.stderr.decode('utf-8', 'replace')[-300:]}"
+        )
     return [p.stem for p in png_files]
 
 
