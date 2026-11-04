@@ -184,13 +184,13 @@ function _modelPickerHtml({ prefix, models, currentModel, allowNone = false }) {
 
   return `
     <div class="model-picker" data-prefix="${escapeHtml(prefix)}" style="flex:1; min-width:0; display:grid; grid-template-columns:minmax(110px,0.7fr) minmax(135px,0.8fr) minmax(220px,1.5fr); gap:0.5rem;">
-      <select id="${prefix}RouteSelect" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+      <select id="${prefix}RouteSelect" aria-label="${escapeHtml(t("animas.model_route"))}" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
         ${_selectOptionsHtml(routes, selectedRoute, routePlaceholder)}
       </select>
-      <select id="${prefix}ProviderSelect" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+      <select id="${prefix}ProviderSelect" aria-label="${escapeHtml(t("animas.model_provider"))}" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
         ${_selectOptionsHtml(providers, selectedProvider, t("animas.model_provider"))}
       </select>
-      <select id="${prefix}ModelSelect" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+      <select id="${prefix}ModelSelect" aria-label="${escapeHtml(t("animas.model_select_label"))}" ${allowNone && !selectedRoute ? "disabled" : ""} style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
         ${modelOptions.map(m => {
           const selectedAttr = m.id === effectiveSelected?.id ? " selected" : "";
           return `<option value="${escapeHtml(m.id)}" data-credential="${escapeHtml(m.credential || "")}"${selectedAttr}>${escapeHtml(m.model_name)}</option>`;
@@ -1032,7 +1032,7 @@ function _aliasesCardHtml(aliases) {
   const tagsHtml = (aliases || []).map((a, i) => `
     <span class="alias-tag" style="display:inline-flex; align-items:center; gap:0.3rem; background:var(--color-primary-light,#e8f0fe); color:var(--color-primary,#0066cc); border-radius:12px; padding:0.2rem 0.6rem; font-size:0.85rem; margin:0.15rem;">
       ${escapeHtml(a)}
-      <button class="alias-remove-btn" data-idx="${i}" style="background:none; border:none; cursor:pointer; color:var(--text-secondary,#666); font-size:0.85rem; padding:0; line-height:1;">✕</button>
+      <button class="alias-remove-btn" data-idx="${i}" aria-label="${escapeHtml(t("animas.alias_remove", { alias: a }))}" style="background:none; border:none; cursor:pointer; color:var(--text-secondary,#666); font-size:0.85rem; padding:0; line-height:1;">✕</button>
     </span>
   `).join("");
 
@@ -1050,7 +1050,7 @@ function _aliasesCardHtml(aliases) {
           ${tagsHtml || `<span style="color:var(--text-secondary,#888); font-size:0.85rem;">${t("animas.aliases_empty")}</span>`}
         </div>
         <div style="display:flex; gap:0.4rem; margin-top:0.4rem;">
-          <input type="text" id="aliasInput" placeholder="${t("animas.aliases_add_placeholder")}"
+          <input type="text" id="aliasInput" placeholder="${t("animas.aliases_add_placeholder")}" aria-label="${t("animas.aliases_input")}"
             style="flex:1; padding:0.3rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#f9f9f9); color:var(--text-primary,#333);">
           <button class="btn-secondary" id="aliasAddBtn" style="font-size:0.85rem; padding:0.3rem 0.6rem;">${t("animas.aliases_add")}</button>
         </div>
@@ -1077,7 +1077,7 @@ function _bindAliasesCard(name, initialAliases) {
     tagList.innerHTML = aliases.map((a, i) => `
       <span class="alias-tag" style="display:inline-flex; align-items:center; gap:0.3rem; background:var(--color-primary-light,#e8f0fe); color:var(--color-primary,#0066cc); border-radius:12px; padding:0.2rem 0.6rem; font-size:0.85rem; margin:0.15rem;">
         ${escapeHtml(a)}
-        <button class="alias-remove-btn" data-idx="${i}" style="background:none; border:none; cursor:pointer; color:var(--text-secondary,#666); font-size:0.85rem; padding:0; line-height:1;">✕</button>
+        <button class="alias-remove-btn" data-idx="${i}" aria-label="${escapeHtml(t("animas.alias_remove", { alias: a }))}" style="background:none; border:none; cursor:pointer; color:var(--text-secondary,#666); font-size:0.85rem; padding:0; line-height:1;">✕</button>
       </span>
     `).join("");
     tagList.querySelectorAll(".alias-remove-btn").forEach(btn => {

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "file_roots": [
+    "/",
+    "E:\\OneDriveBiz\\Obsidian"
+  ],
+  "commands": {
+    "allow_all": true,
+    "allow": [],
+    "deny": []
+  },
+  "external_tools": {
+    "allow_all": true,
+    "allow": [
+      "discord_channel_post",
+      "discord_send",
+      "discord_channel_history",
+      "discord_unreplied",
+      "notebooklm"
+    ],
+    "deny": [
+      "notion"
+    ]
+  },
+  "tool_creation": {
+    "personal": true,
+    "shared": false
+  }
+}

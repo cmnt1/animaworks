@@ -863,7 +863,7 @@ export function createMeetingController(ctx) {
             <span>${escapeHtml(name)}</span>
             ${isChair ? " 👑" : ""}
             ${makeChairBtn}
-            ${!isChair ? `<button type="button" class="chip-remove" data-name="${escapeHtml(name)}" title="${t("meeting.remove")}">✕</button>` : ""}
+            ${!isChair ? `<button type="button" class="chip-remove" data-name="${escapeHtml(name)}" title="${t("meeting.remove")}" aria-label="${escapeHtml(t("meeting.remove_participant", { name }))}">✕</button>` : ""}
           </span>`;
       })
       .join("");

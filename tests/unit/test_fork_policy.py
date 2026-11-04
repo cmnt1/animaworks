@@ -18,7 +18,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _TEMPLATES = _REPO_ROOT / "templates"
-_LOCALES = ("en", "ja", "ko")
+_LOCALES = ("en", "ja", "ko", "zh")
 
 # Every role template must carry the Notion opt-out.
 _NOTION_DENIED_ROLE_DIRS = ("administration", "engineer", "general", "manager", "ops", "researcher", "writer")
@@ -125,3 +125,19 @@ class TestLivenessProbeIsWindowsSafe:
             "os.kill maps to TerminateProcess and would kill the process being checked. "
             "See docs/fork-policy.md #4."
         )
+
+
+def test_chinese_anima_templates_deny_notion() -> None:
+    paths = sorted((_TEMPLATES / "zh" / "anima_templates").glob("*/permissions.json"))
+    assert paths
+    for path in paths:
+        external = _load(path)["external_tools"]
+        assert "notion" in external["deny"]
+        assert "notion" not in external["allow"]
+
+
+def test_chinese_task_prompt_retains_closure_policy() -> None:
+    text = (_TEMPLATES / "zh" / "prompts" / "task_exec.md").read_text(encoding="utf-8")
+    assert "TASK_CLOSURE:" in text
+    assert "仅说明无法实施的理由不能视为完成" in text
+    assert "waiting_for" in text and "scope_note" in text

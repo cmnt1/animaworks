@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 4cd22563726a6380bb4e4d77495f1ba97f9557bd8a23e01172e8b58eed0c2217 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 8248a1823b0e6668b554ce8ebd9c86409b9bf37c29498ad72ccc4a85ababca12 -->
 
 # 設定リファレンス
 
@@ -694,6 +694,8 @@
 | `voice.gemini.api_key_env` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.vault_key` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.chunk_seconds` | `float` | `1.0` | — |
+| `voice.silero` | `SileroConfig` | `{SileroConfig}` | — |
+| `voice.silero.base_url` | `str` | `"http://localhost:8000"` | — |
 
 ### `phone`
 

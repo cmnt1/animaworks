@@ -1099,6 +1099,10 @@ class GeminiTTSVoiceConfig(BaseModel):
     chunk_seconds: float = 1.0
 
 
+class SileroConfig(BaseModel):
+    base_url: str = "http://localhost:8000"
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1126,6 +1130,7 @@ class VoiceConfig(BaseModel):
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
     irodori: IrodoriConfig = IrodoriConfig()
     gemini: GeminiTTSVoiceConfig = GeminiTTSVoiceConfig()
+    silero: SileroConfig = SileroConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1599,6 +1604,7 @@ __all__ = [
     "InteractionConfig",
     "IrodoriConfig",
     "GeminiTTSVoiceConfig",
+    "SileroConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
