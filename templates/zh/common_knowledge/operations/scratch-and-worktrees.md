@@ -22,10 +22,12 @@ TMP="$(mktemp -d -p "$ANIMAWORKS_SCRATCH_DIR")"
 
 ## 自动删除
 
-- 任务用的 scratch 会在任务完成・取消时消失。其中创建的 worktree 注册也会从父仓库中移除。
-- scratch 若 24 小时未被触碰就会消失。
-- `shared/worktrees/` 若 24 小时未被触碰，即使有未提交变更也会消失（使用中的会保留）。
-- 清理会自动进行，因此无需在作业最后执行删除命令。需要保留的内容请移到上表“日后回看”行的位置。
+自动删除仅在可以追踪进程使用情况的 Linux 上运行。Windows 不会在任务结束时删除 scratch，也不会执行定期清理。`workspace_sweep_enabled=false` 同时关闭每小时和每日定期清理。
+
+- 在支持自动清理的 Linux 上，任务完成或取消时删除任务 scratch，并从父仓库移除其中的 worktree 注册。
+- 24 小时未使用的 scratch 会被清理；正在使用的目录会保留。
+- `shared/worktrees/` 中，仅清理超过 24 小时未使用且没有未提交变更的 linked worktree，通过 Git 删除。存在未提交变更、独立 clone 或无法检查 Git 状态的仓库会保留。
+- 在自动清理启用的 Linux 上，不需要在作业结束时手动删除临时目录。需要长期保留的成果请移到上表的位置。
 
 ## 包缓存
 
