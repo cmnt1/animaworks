@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
 import base64
 import hashlib
 import hmac
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+import io
 import json
+import wave
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -47,6 +50,46 @@ def test_twilio_signature_rejects_tampering_and_wrong_public_url() -> None:
     assert validate_signature(secret, url, params, "") is False
     assert validate_signature(secret, url, params, "☃") is False
     assert validate_signature("", url, params, signature) is False
+
+
+@pytest.mark.parametrize(
+    ("signed_url", "public_url"),
+    [
+        ("https://phone.example.test/voice?alert=a", "https://phone.example.test:8443/voice?alert=a"),
+        ("https://phone.example.test:8443/voice?alert=a", "https://phone.example.test:8443/voice?alert=a"),
+        ("https://phone.example.test:443/voice", "https://phone.example.test/voice"),
+        ("http://phone.example.test:80/voice", "http://phone.example.test/voice"),
+    ],
+)
+def test_twilio_signature_accepts_the_url_with_or_without_its_port(signed_url: str, public_url: str) -> None:
+    secret = "phone-test-auth-token"
+    params = {"CallSid": "CA0001"}
+
+    assert validate_signature(secret, public_url, params, _signature(secret, signed_url, params)) is True
+
+
+@pytest.mark.parametrize(
+    "signed_url",
+    [
+        "https://phone.example.test:9000/voice",
+        "https://other.example.test:8443/voice",
+        "https://other.example.test/voice",
+        "http://phone.example.test:8443/voice",
+    ],
+)
+def test_twilio_signature_rejects_another_port_host_or_scheme(signed_url: str) -> None:
+    secret = "phone-test-auth-token"
+    params = {"CallSid": "CA0001"}
+    signature = _signature(secret, signed_url, params)
+
+    assert validate_signature(secret, "https://phone.example.test:8443/voice", params, signature) is False
+
+
+def test_twilio_signature_handles_a_url_it_cannot_parse_a_port_from() -> None:
+    secret = "phone-test-auth-token"
+    url = "https://phone.example.test:not-a-port/voice"
+
+    assert validate_signature(secret, url, {}, _signature(secret, url, {})) is True
 
 
 def test_twilio_signature_sorts_multi_value_parameters() -> None:
@@ -215,6 +258,30 @@ async def test_speech_synthesis_uses_voice_factory_and_caches_fixed_phrase(tmp_p
     factory.assert_called_once_with("gemini", voice_config)
     provider.synthesize_full.assert_awaited_once_with("Please wait", TTSConfig(provider="gemini", voice_id="Aoede"))
     speech.clear_static_audio_cache()
+
+
+@pytest.mark.asyncio
+async def test_speech_synthesis_returns_telephone_quality_wav(tmp_path, monkeypatch) -> None:
+    from core.phone import speech
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(24_000)
+        wav_file.writeframes(b"\x10\x00" * 24_000)
+    provider = SimpleNamespace(synthesize_full=AsyncMock(return_value=buffer.getvalue()))
+    monkeypatch.setattr(speech, "create_tts_provider", MagicMock(return_value=provider))
+
+    audio = await speech.synthesize_speech(
+        "aoi",
+        "Disk failure",
+        animas_dir=tmp_path / "animas",
+        voice_config=SimpleNamespace(default_tts_provider="voicevox"),
+    )
+
+    assert audio[20:22] == b"\x07\x00"
+    assert len(audio) < len(buffer.getvalue()) / 5
 
 
 def test_phone_prompts_have_japanese_and_english_translations() -> None:

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 903ea4cc92d03c41c82d37b9bd416ca6581b7ba0607e96a4923611eee84e57df -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 5bb7e7f89d0e0cc088f237d42f1fd22603b5ab4465acc3cc6afbf6b1ecc3d8bd -->
 
 # モジュール一覧
 
@@ -106,7 +106,7 @@
 | `core.host_api` | 88 | — |
 | `core.internal_api` | 51 | — |
 | `core.jev_credits` | 273 | Jev (TypeSafe System One) prepaid-credit accounting for the usage dashboard. |
-| `core.paths` | 270 | Centralized path resolution for AnimaWorks. |
+| `core.paths` | 287 | Centralized path resolution for AnimaWorks. |
 | `core.project_threads` | 212 | — |
 | `core.provider_cooldown` | 207 | — |
 | `core.schemas` | 246 | — |
@@ -210,7 +210,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.anima_registry` | 314 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.antigravity_oauth` | 433 | — |
 | `core.config.env_slots` | 92 | — |
-| `core.config.file_access_policy` | 604 | — |
+| `core.config.file_access_policy` | 624 | — |
 | `core.config.global_permissions` | 259 | — |
 | `core.config.helper_models` | 500 | — |
 | `core.config.io` | 437 | Configuration I/O: singleton cache, load, and save. |
@@ -226,7 +226,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.opencode_go` | 79 | — |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 175 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1623 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1629 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 461 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.enclave`
@@ -446,7 +446,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.infra.execution_sdk_preflight` | 128 | — |
 | `core.infra.gpu` | 173 | — |
 | `core.infra.logging_config` | 650 | Centralized logging configuration for AnimaWorks. |
-| `core.infra.runtime_init` | 430 | First-launch initialization: copy templates to runtime data directory. |
+| `core.infra.runtime_init` | 451 | First-launch initialization: copy templates to runtime data directory. |
 | `core.infra.startup_progress` | 191 | — |
 | `core.infra.tmp_cleanup` | 254 | — |
 
@@ -764,7 +764,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations.registry` | 149 | — |
 | `core.migrations.standard_files_rollback` | 161 | Rollback support for the standard workspace-file migration (A2). |
 | `core.migrations.steps` | 1474 | Migration step implementations for AnimaWorks runtime data. |
-| `core.migrations.template_sync` | 137 | — |
+| `core.migrations.template_sync` | 142 | — |
 | `core.migrations.tracker` | 157 | — |
 
 ## `core.notification`
@@ -814,13 +814,13 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.phone` | 7 | — |
-| `core.phone.alert` | 218 | — |
+| `core.phone.alert` | 235 | — |
 | `core.phone.audio_store` | 81 | — |
 | `core.phone.session` | 66 | — |
-| `core.phone.speech` | 83 | — |
+| `core.phone.speech` | 96 | — |
 | `core.phone.stream_tokens` | 101 | — |
 | `core.phone.stream_transport` | 120 | — |
-| `core.phone.twilio_client` | 194 | — |
+| `core.phone.twilio_client` | 227 | — |
 | `core.phone.urgent` | 46 | — |
 
 ## `core.platform`
@@ -860,7 +860,7 @@ Twilio 電話チャネルの音声合成、通話状態、Webhook 管理。
 | `core.prompt.assembler` | 307 | — |
 | `core.prompt.builder` | 1342 | — |
 | `core.prompt.context` | 497 | Context window usage tracker. |
-| `core.prompt.messaging` | 147 | — |
+| `core.prompt.messaging` | 148 | — |
 | `core.prompt.org_context` | 379 | — |
 | `core.prompt.sections` | 52 | — |
 
@@ -1050,10 +1050,10 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.handler_delegation` | 320 | — |
 | `core.tooling.handler_exec` | 374 | — |
 | `core.tooling.handler_files` | 899 | — |
-| `core.tooling.handler_memory` | 1516 | — |
+| `core.tooling.handler_memory` | 1517 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 203 | — |
-| `core.tooling.handler_perms` | 446 | — |
+| `core.tooling.handler_perms` | 448 | — |
 | `core.tooling.handler_skills` | 874 | — |
 | `core.tooling.handler_subordinate_control` | 457 | — |
 | `core.tooling.handler_workspace` | 279 | — |
@@ -1118,7 +1118,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
-| `core.voice.audio_codec` | 161 | — |
+| `core.voice.audio_codec` | 183 | — |
 | `core.voice.emotion_style` | 114 | — |
 | `core.voice.front` | 385 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.front_conversation` | 694 | Transport-agnostic front-lane conversation and delegation handling. |
@@ -1131,10 +1131,11 @@ LLM 利用量とコストの記録・集計。
 | `core.voice.transport` | 21 | Transport protocol for voice-session output. |
 | `core.voice.tts_base` | 63 | TTS abstract base — provider interface and config. |
 | `core.voice.tts_elevenlabs` | 133 | ElevenLabs TTS provider — REST API streaming. |
-| `core.voice.tts_factory` | 47 | TTS provider factory. |
+| `core.voice.tts_factory` | 49 | TTS provider factory. |
 | `core.voice.tts_gemini` | 220 | Gemini TTS provider — Gemini API ``streamGenerateContent`` (SSE streaming). |
 | `core.voice.tts_irodori` | 79 | Irodori-TTS provider — HTTP API. |
 | `core.voice.tts_sbv2` | 112 | Style-BERT-VITS2 / AivisSpeech TTS provider. |
+| `core.voice.tts_silero` | 132 | Silero TTS provider for AnimaWorks. |
 | `core.voice.tts_voicevox` | 110 | VOICEVOX TTS provider — Engine HTTP API. |
 | `core.voice.turn_detector` | 398 | — |
 | `core.voice.voice_config` | 76 | — |
@@ -1205,7 +1206,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 532 | — |
-| `server.routes.phone` | 404 | — |
+| `server.routes.phone` | 419 | — |
 | `server.routes.phone_stream` | 258 | — |
 | `server.routes.room` | 1082 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 734 | — |

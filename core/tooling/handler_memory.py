@@ -288,15 +288,16 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
     """
     original = raw
     raw = raw.strip()
+    is_absolute = Path(raw).is_absolute()
     raw = raw.replace("\\", "/")  # normalise Windows backslashes before any checks
-    raw = re.sub(r"/+", "/", raw)
+    raw = "//" + re.sub(r"/+", "/", raw[2:]) if raw.startswith("//") else re.sub(r"/+", "/", raw)
     if raw.endswith("/") and raw != "/":
         raw = raw[:-1]
     while raw.startswith("./"):
         raw = raw[2:]
 
     # Fast path: no absolute path and no .. in path
-    if not raw.startswith("/") and ".." not in raw:
+    if not is_absolute and not raw.startswith("/") and ".." not in raw:
         result = _PathNormResult(rel=raw)
         if result.rel != original:
             logger.info("memory path normalized: %r → %r", original, result.rel)
@@ -309,7 +310,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
         return _PathNormResult(rel=raw)
 
     # Resolve to absolute
-    if raw.startswith("/"):
+    if is_absolute or raw.startswith("/"):
         resolved = Path(raw).resolve()
     else:
         resolved = (anima_dir / raw).resolve()
@@ -374,13 +375,13 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
         except ValueError:
             pass
 
-    from core.org.company_resources import company_resource_pointer, get_company_resources
+    from core.org.company_resources import get_company_resources
 
     company_resources = get_company_resources(anima_dir)
     if company_resources is not None and resolved.is_relative_to(company_resources.root):
-        pointer = company_resource_pointer(resolved)
-        if pointer is not None:
-            return _PathNormResult(rel=pointer)
+        # The permission check decides what is readable; a path left unmapped
+        # here would be misread as relative to the Anima directory.
+        return _PathNormResult(rel=resolved.relative_to(company_resources.root.parent.parent).as_posix())
 
     channels_dir = (get_data_dir() / "shared" / "channels").resolve()
     if resolved.is_relative_to(channels_dir):

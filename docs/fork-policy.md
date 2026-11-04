@@ -60,7 +60,7 @@ in force.
 
 ## 2. Notion is disabled by default
 
-**Where:** `templates/{en,ja,ko}/roles/*/permissions.json`,
+**Where:** `templates/{en,ja,ko,zh}/roles/*/permissions.json`,
 `templates/*/anima_templates/_blank/permissions.json`
 
 **Upstream:** ships `notion` in `external_tools.allow`.
@@ -154,3 +154,5 @@ changing behaviour, so coverage is retained on CI:
 Fix the test instead of skipping when the flake is a resolution/ordering
 artifact that can be made platform-independent (see
 `tests/unit/core/supervisor/test_task_runner_hang_busy.py`).
+
+The 2026-11-04 integration extends the Notion denial and task-closure policy to Chinese templates, including bundled Anima templates. Preserve locale normalization alongside fork @import resolution and keep the Anima management page and meeting controls.
