@@ -1,1 +1,1 @@
-声明任务结果。验证后为 status='done'，有等待理由时为 'pending'，中止时为 'cancelled'。in_progress 由主机管理，不自行设置。要刻意重新开始已中断的未完成任务，向 submit_tasks 传入现有 task_id 和 resume=true。保留已保存的输入和历史。
+声明任务结果：工作及验证完成后设 status="done"，未完成设 "pending"，取消设 "cancelled"；in_progress 由主机管理。审批、评审、最终报告和 Inbox 整理应分别建任务，不要将已完成的修复或证据提交任务退回 pending。只有需要重新执行原工作本身时，才对已有任务明确调用 update_task(status="pending", resume=true)，复用保存的输入与历史。done 仅表示所托工作完成，并不等于正式审批或生产部署许可。
