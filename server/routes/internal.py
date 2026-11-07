@@ -233,6 +233,7 @@ class InternalPostChannelRequest(BaseModel):
     from_name: str | None = None
     request_id: str | None = None
     suppress_mentions: bool = False
+    triggers: list[dict[str, Any]] | None = None
 
 
 class InternalNotifyWebRequest(BaseModel):
@@ -1247,6 +1248,7 @@ def create_internal_router() -> APIRouter:
             human_principal,
             operator_principal,
             post_to_board,
+            reply_metadata_for_post,
         )
 
         if caller is None and body.source != "anima":
@@ -1275,6 +1277,9 @@ def create_internal_router() -> APIRouter:
         else:
             principal = anima_principal(body.from_anima, animas_dir=animas_dir)
 
+        reply_to, trigger = (
+            reply_metadata_for_post(body.channel, body.triggers) if principal.kind == "anima" else (None, None)
+        )
         post = post_to_board(
             body.channel,
             body.text,
@@ -1283,6 +1288,8 @@ def create_internal_router() -> APIRouter:
             origin="mirror" if body.source == "human" and body.suppress_mentions else "internal",
             notify=not body.suppress_mentions,
             shared_dir=shared_dir,
+            reply_to=reply_to,
+            trigger=trigger,
         )
         if post.error == "not_found":
             return JSONResponse(status_code=404, content={"detail": "Channel not found"})

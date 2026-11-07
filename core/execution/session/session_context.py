@@ -74,13 +74,14 @@ class RuntimeSessionContext:
     def to_env(self) -> dict[str, str]:
         import json
 
-        from core.execution.session.board_reply import board_reply_channels_env
+        from core.execution.session.board_reply import board_reply_channels_env, run_triggers_env
         from core.execution.session.meeting import meeting_context, meeting_mode
         from core.tasks.board.tasks import current_attempt_identity
 
         identity = current_attempt_identity()
         return {
             **board_reply_channels_env(),
+            **run_triggers_env(),
             "ANIMAWORKS_REQUEST_ID": self.request_id,
             "ANIMAWORKS_SESSION_TYPE": self.session_type,
             "ANIMAWORKS_THREAD_ID": self.thread_id,

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 41a2f9c3e518d72f1ca914a31e7e1fec2a58556e036e0c201f5749f2e35bf6c2 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 0d6db0116f7aa9811581b8071a5a981a0168c88f67a338cc04bbde7a4d1413df -->
 
 # API リファレンス
 
@@ -99,9 +99,14 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/channels` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all shared channels with metadata including ACL info. | `server/routes/channels.py:list_channels` |
 | GET | `/api/channels/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get messages from a specific channel. | `server/routes/channels.py:get_channel_messages` |
 | POST | `/api/channels/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Post a message to a channel (human-originated). | `server/routes/channels.py:post_to_channel` |
+| GET | `/api/channels/{name}/info` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the informational panel for one Board channel. | `server/routes/channels.py:get_channel_info` |
 | GET | `/api/channels/{name}/mentions/{anima}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get messages mentioning a specific anima in a channel. | `server/routes/channels.py:get_channel_mentions` |
+| POST | `/api/channels/{name}/read` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Advance the requesting human's stored read position in one channel. | `server/routes/channels.py:mark_channel_read` |
+| GET | `/api/channels/{name}/reads` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the stored read positions for one Board channel. | `server/routes/channels.py:get_channel_reads` |
+| PUT | `/api/channels/{name}/settings` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update a Board's description, visibility, and members (owner/admin only). | `server/routes/channels.py:update_channel_settings` |
 | GET | `/api/dm` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List all DM conversation pairs with metadata. | `server/routes/channels.py:list_dm_pairs` |
 | GET | `/api/dm/{pair}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get DM history for a specific pair. | `server/routes/channels.py:get_dm_history` |
+| GET | `/api/flows` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return Board/DM calls and their summary for the flow view. | `server/routes/channels.py:list_flows` |
 
 ## `server/routes/chat.py`
 
