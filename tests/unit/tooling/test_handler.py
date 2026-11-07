@@ -436,9 +436,14 @@ class TestHandleRouting:
         self,
         handler_with_messenger: ToolHandler,
         monkeypatch: pytest.MonkeyPatch,
+        anima_dir: Path,
     ):
         callback = MagicMock()
         handler_with_messenger.on_message_sent = callback
+        shared_dir = anima_dir.parent.parent / "shared"
+        (shared_dir / "channels").mkdir(parents=True)
+        (shared_dir / "channels" / "general.jsonl").touch()
+        handler_with_messenger._messenger.shared_dir = shared_dir
         monkeypatch.setattr(
             "core.messaging.board_client.post_via_server",
             lambda *_args, **_kwargs: {
