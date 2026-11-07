@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 8b80ae9fec5638aede5897139fd3d3d51d8460bb33fe857cfdcfba14af809210 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 86e7ccf7c5a0e61239fa3314725279730315faff118ece8b9e7729d4b115631a -->
 
 # モジュール一覧
 
@@ -753,7 +753,7 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging.inbox_quiet_window` | 38 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
 | `core.messaging.mentions` | 32 | — |
-| `core.messaging.messenger` | 1077 | — |
+| `core.messaging.messenger` | 1104 | — |
 | `core.messaging.outbound` | 448 | — |
 | `core.messaging.outbound_auto` | 638 | — |
 | `core.messaging.recipient_status` | 79 | — |

@@ -257,6 +257,15 @@ class InboxItem:
     path: Path
 
 
+def _restrict_dm_log_mode(filepath: Path) -> None:
+    """Keep DM logs readable by the runtime owner only (dir 0700, file 0600)."""
+    try:
+        filepath.parent.chmod(0o700)
+        filepath.chmod(0o600)
+    except OSError:
+        logger.debug("Failed to restrict dm_log mode: %s", filepath, exc_info=True)
+
+
 class Messenger:
     """File-system based messaging.
 
@@ -660,6 +669,24 @@ class Messenger:
         """Get DM log file path (pair names sorted alphabetically)."""
         pair = sorted([self.anima_name, peer])
         return self.shared_dir / "dm_logs" / f"{pair[0]}-{pair[1]}.jsonl"
+
+    def _append_dm_log(self, peer: str, content: str, *, intent: str = "") -> None:
+        """Append a DM entry to the legacy dm_logs/ file."""
+        from core.platform.atomic_io import append_jsonl_locked
+        from core.time_utils import now_iso
+
+        filepath = self._get_dm_log_path(peer)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        entry_dict: dict[str, Any] = {
+            "ts": now_iso(),
+            "from": self.anima_name,
+            "to": peer,
+            "text": content,
+        }
+        if intent:
+            entry_dict["intent"] = intent
+        append_jsonl_locked(filepath, entry_dict)
+        _restrict_dm_log_mode(filepath)
 
     def receive(self) -> list[Message]:
         known_animas: set[str] | None = None
