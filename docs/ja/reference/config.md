@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 8248a1823b0e6668b554ce8ebd9c86409b9bf37c29498ad72ccc4a85ababca12 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 79c80f7a9ec3898de8fe279ed684e8a6fbab441482cf872079e1623eba829d49 -->
 
 # 設定リファレンス
 
@@ -282,6 +282,7 @@
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
 | `rag.embedding_max_seq_length` | `int` | `2048` | Cap on the embedding model's max sequence length (tokens). Long-context models like ruri-v3 default to 8192, which blows up GPU activation memory during bulk encode. 0 = use model default. |
 | `rag.use_gpu` | `bool` | `false` | — |
+| `rag.chroma_native_threads` | `int` | `4` | Upper limit on each of chroma's tokio and rayon thread pools, which otherwise take one thread per CPU in every process that opens a vector store. Takes effect when the process starts. 0 = chroma default. |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
 | `rag.repair_enabled` | `bool` | `true` | — |
@@ -315,10 +316,12 @@
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 利用とデバイス選択の設定。 |
-| `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
-| `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
+| `gpu.embedding_device` | `Literal['auto', 'cuda', 'mps', 'cpu']` | `"auto"` | — |
+| `gpu.reranker_device` | `Literal['auto', 'cuda', 'mps', 'cpu']` | `"cpu"` | — |
 | `gpu.embedding_batch_size` | `int` | `32` | — |
 | `gpu.embedding_bulk_yield_batches` | `int` | `5` | Maximum consecutive embedding batches bulk work may yield to waiting interactive work. |
+| `gpu.torch_num_threads` | `int` | `4` | torch intra-op CPU threads for embedding and reranking. 0 = torch default (one per core). |
+| `gpu.torch_num_interop_threads` | `int` | `1` | torch inter-op CPU threads for embedding and reranking. 0 = torch default (one per core). |
 
 ### `memory`
 
@@ -480,7 +483,7 @@
 | `server.media_proxy.rate_limit_requests` | `int` | `30` | — |
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
-| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
+| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"enforce"` | /api/internal/* caller verification |
 
 ### `llm_rate_guard`
 
@@ -515,6 +518,7 @@
 | `external_messaging.slack` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.slack.enabled` | `bool` | `false` | — |
 | `external_messaging.slack.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.slack.channel_discovery` | `bool` | `false` | run Slack channel auto-discovery (SlackChannelSync); Slack only |
 | `external_messaging.slack.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = ignore this channel) |
 | `external_messaging.slack.default_anima` | `str` | `""` | fallback anima for unmapped channels |
 | `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (per-Anima webhook routing) |
@@ -533,6 +537,7 @@
 | `external_messaging.chatwork` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.chatwork.enabled` | `bool` | `false` | — |
 | `external_messaging.chatwork.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.chatwork.channel_discovery` | `bool` | `false` | run Slack channel auto-discovery (SlackChannelSync); Slack only |
 | `external_messaging.chatwork.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = ignore this channel) |
 | `external_messaging.chatwork.default_anima` | `str` | `""` | fallback anima for unmapped channels |
 | `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (per-Anima webhook routing) |
@@ -551,6 +556,7 @@
 | `external_messaging.discord` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.discord.enabled` | `bool` | `false` | — |
 | `external_messaging.discord.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.discord.channel_discovery` | `bool` | `false` | run Slack channel auto-discovery (SlackChannelSync); Slack only |
 | `external_messaging.discord.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = ignore this channel) |
 | `external_messaging.discord.default_anima` | `str` | `""` | fallback anima for unmapped channels |
 | `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (per-Anima webhook routing) |

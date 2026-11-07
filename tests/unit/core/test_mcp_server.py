@@ -22,7 +22,6 @@ EXPECTED_INTERNAL_TOOL_NAMES: frozenset[str] = frozenset(
         "heartbeat_observe_snapshot",
         "write_memory_file",
         "send_message",
-        "post_channel",
         "call_human",
         "delegate_task",
         "submit_tasks",
@@ -66,6 +65,7 @@ class TestMcpToolSchemas:
 
         actual_names = {t.name for t in MCP_TOOLS}
         assert "discover_tools" not in actual_names
+        assert "post_channel" not in actual_names
 
     def test_permission_checked_file_tools_are_exposed(self) -> None:
         """Mode S/C can use host-side file tools when native shell access fails."""

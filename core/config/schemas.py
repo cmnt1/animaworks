@@ -170,6 +170,15 @@ class RAGConfig(BaseModel):
         ),
     )
     use_gpu: bool = False
+    chroma_native_threads: int = Field(
+        default=4,
+        ge=0,
+        description=(
+            "Upper limit on each of chroma's tokio and rayon thread pools, which otherwise "
+            "take one thread per CPU in every process that opens a vector store. "
+            "Takes effect when the process starts. 0 = chroma default."
+        ),
+    )
     min_retrieval_score: float = 0.3
     skill_match_min_score: float = 0.75
     repair_enabled: bool = True
@@ -226,13 +235,23 @@ class RAGConfig(BaseModel):
 class GPUConfig(BaseModel):
     """GPU device preferences for local ML components."""
 
-    embedding_device: Literal["auto", "cuda", "cpu"] = "auto"
-    reranker_device: Literal["auto", "cuda", "cpu"] = "cpu"
+    embedding_device: Literal["auto", "cuda", "mps", "cpu"] = "auto"
+    reranker_device: Literal["auto", "cuda", "mps", "cpu"] = "cpu"
     embedding_batch_size: int = Field(default=32, ge=1)
     embedding_bulk_yield_batches: int = Field(
         default=5,
         ge=1,
         description="Maximum consecutive embedding batches bulk work may yield to waiting interactive work.",
+    )
+    torch_num_threads: int = Field(
+        default=4,
+        ge=0,
+        description="torch intra-op CPU threads for embedding and reranking. 0 = torch default (one per core).",
+    )
+    torch_num_interop_threads: int = Field(
+        default=1,
+        ge=0,
+        description="torch inter-op CPU threads for embedding and reranking. 0 = torch default (one per core).",
     )
 
 
@@ -539,6 +558,7 @@ class ExternalMessagingChannelConfig(BaseModel):
 
     enabled: bool = False
     mode: str = "socket"  # "socket" | "webhook"
+    channel_discovery: bool = False  # run Slack channel auto-discovery (SlackChannelSync); Slack only
     anima_mapping: dict[str, str] = {}  # channel_id → anima_name ("" = ignore this channel)
     default_anima: str = ""  # fallback anima for unmapped channels
     app_id_mapping: dict[str, str] = {}  # api_app_id → anima_name (per-Anima webhook routing)
@@ -708,7 +728,7 @@ class ServerConfig(BaseModel):
     ollama_total_timeout: int = 0  # Hard upper bound (seconds) on a single Ollama generation call; 0 = unlimited
     media_proxy: MediaProxyConfig = MediaProxyConfig()
     base_path: str = ""  # Reverse proxy sub-path (e.g. "/app"); empty = root deploy
-    internal_api_auth: Literal["off", "log", "enforce"] = "log"  # /api/internal/* caller verification
+    internal_api_auth: Literal["off", "log", "enforce"] = "enforce"  # /api/internal/* caller verification
 
     @model_validator(mode="after")
     def _validate_intervals(self) -> ServerConfig:

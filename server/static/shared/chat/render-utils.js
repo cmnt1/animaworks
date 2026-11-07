@@ -679,6 +679,12 @@ export function renderHistoryMessage(msg, opts) {
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
   const avatarMap = opts.avatarMap || null;
 
+  if (msg.type === "thread_summary") {
+    const label = t("chat.feed.compressed_summary", { count: msg.compressed_turn_count || 0 });
+    return `<details class="chat-thread-summary"><summary>${escapeHtml(label)}</summary>` +
+      `<div class="chat-thread-summary-body">${escapeHtml(msg.content || "").replace(/\n/g, "<br>")}</div></details>`;
+  }
+
   if (opts.lineChat && (msg.type === "human_notify" || msg.type === "human_reply" || msg.role !== "system")) {
     return _lineMessage(msg, opts);
   }
@@ -704,10 +710,7 @@ export function renderHistoryMessage(msg, opts) {
   }
 
   if (msg.role === "assistant") {
-    const speakerName = msg.speaker || opts.animaName;
-    const speakerLabel = msg.speaker
-      ? `<div class="chat-speaker-label">${escapeHtml(msg.speaker)}</div>`
-      : "";
+    const speakerName = opts.animaName;
     const rawText = _normalizeDisplayText(msg.content || "");
     const content = rawText ? renderMarkdown(rawText, opts.animaName) : "";
     const toolHtml = opts.think
@@ -728,7 +731,7 @@ export function renderHistoryMessage(msg, opts) {
     const metaHtml = _renderMessageMeta(msg, escapeHtml);
     const actionsHtml = _bubbleActionsHtml(rawText);
     const dataAttr = rawText ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
-    const bubble = `<div class="chat-bubble assistant"${dataAttr}>${actionsHtml}${speakerLabel}${metaHtml}${thinkingHtml}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
+    const bubble = `<div class="chat-bubble assistant"${dataAttr}>${actionsHtml}${metaHtml}${thinkingHtml}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
     return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap, opts.companyColors));
   }
 
@@ -1184,6 +1187,38 @@ export function renderFeedHiddenCount(count) {
 }
 
 /**
+ * A failed history fetch: visibly not an empty history, and retryable.
+ * @param {object} opts
+ * @param {function} opts.escapeHtml
+ * @param {object} [options]
+ * @param {boolean} [options.older=false] - An older page failed while the rest stays on screen.
+ * @returns {string} HTML string
+ */
+export function renderHistoryError(opts, { older = false } = {}) {
+  const { escapeHtml } = opts;
+  const wrapperClass = older ? "chat-history-error chat-history-error--older" : "chat-empty chat-history-error";
+  const message = t(older ? "chat.history_older_failed" : "chat.history_load_failed");
+  return `<div class="${wrapperClass}" role="alert">` +
+    `<span>${escapeHtml(message)}</span>` +
+    `<button type="button" class="chat-history-retry" data-history-retry>${escapeHtml(t("chat.history_retry"))}</button>` +
+    `</div>`;
+}
+
+/**
+ * Bind the retry button of renderHistoryError.
+ * @param {HTMLElement|null} container
+ * @param {function} onRetry
+ */
+export function bindHistoryRetry(container, onRetry) {
+  container?.querySelectorAll("[data-history-retry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      onRetry();
+    });
+  });
+}
+
+/**
  * Bind expand/collapse and "show more" event handlers for tool calls.
  * This is the only DOM-dependent function in this module.
  * @param {HTMLElement|null} container
@@ -1411,10 +1446,7 @@ export function renderLiveBubble(msg, opts) {
   }
 
   // assistant
-  const speakerName = msg.speaker || opts.animaName;
-  const speakerLabel = msg.speaker
-    ? `<div class="chat-speaker-label">${escapeHtml(msg.speaker)}${msg.speakerRole === "chair" ? " 👑" : ""}</div>`
-    : "";
+  const speakerName = opts.animaName;
 
   const streamClass = msg.streaming ? " streaming" : "";
   const streamIdAttr = msg.streaming && msg.streamId
@@ -1461,7 +1493,7 @@ export function renderLiveBubble(msg, opts) {
   const rawText = _normalizeDisplayText(msg.text || "");
   const actionsHtml = msg.streaming ? "" : _bubbleActionsHtml(rawText);
   const dataRawAttr = rawText && !msg.streaming ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
-  const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}${dataRawAttr}>${actionsHtml}${speakerLabel}${metaHtml}${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
+  const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}${dataRawAttr}>${actionsHtml}${metaHtml}${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
   const avatarHtml = _renderAvatar(speakerName, avatarMap, opts.companyColors);
   return _wrapRow("assistant", bubble, think ? think.avatar(avatarHtml, msg, speakerName) : avatarHtml);
 }
@@ -1473,12 +1505,8 @@ export function renderLiveBubble(msg, opts) {
  */
 export function renderStreamingBubbleInner(msg, opts) {
   const { escapeHtml } = opts;
-  const speakerLabel = msg.speaker
-    ? `<div class="chat-speaker-label">${escapeHtml(msg.speaker)}${msg.speakerRole === "chair" ? " 👑" : ""}</div>`
-    : "";
   const metaHtml = _renderMessageMeta(msg, escapeHtml);
-  return speakerLabel
-    + metaHtml
+  return metaHtml
     + `<div class="streaming-zone-text">${_renderTextZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-tools">${_renderToolZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-thinking">${_renderThinkingZoneContent(msg, opts)}</div>`;

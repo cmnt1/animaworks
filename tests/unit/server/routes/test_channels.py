@@ -37,15 +37,6 @@ def _write_channel(shared_dir: Path, name: str, entries: list[dict]) -> None:
     filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_dm(shared_dir: Path, pair: str, entries: list[dict]) -> None:
-    """Write JSONL entries to a DM log file."""
-    dm_dir = shared_dir / "dm_logs"
-    dm_dir.mkdir(parents=True, exist_ok=True)
-    filepath = dm_dir / f"{pair}.jsonl"
-    lines = [json.dumps(e, ensure_ascii=False) for e in entries]
-    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def _write_activity_log(
     data_dir: Path,
     anima_name: str,
@@ -377,7 +368,7 @@ class TestPostToChannel:
         # Unauthenticated requests force from_name to "human"
         assert last["from"] == "human"
 
-    async def test_post_broadcasts_websocket_event(self, tmp_path: Path):
+    async def test_post_returns_post_result_without_emitting_directly(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
         _write_channel(shared_dir, "general", [])
@@ -385,18 +376,17 @@ class TestPostToChannel:
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            await client.post(
+            response = await client.post(
                 "/api/channels/general",
                 json={"text": "broadcast test"},
             )
 
+        assert response.status_code == 200
+        post = response.json()["post"]
+        assert post["committed"] is True
+        assert post["id"]
         ws = app.state.ws_manager
-        ws.broadcast.assert_awaited_once()
-        call_data = ws.broadcast.call_args[0][0]
-        assert call_data["type"] == "board.post"
-        assert call_data["data"]["channel"] == "general"
-        assert call_data["data"]["text"] == "broadcast test"
-        assert call_data["data"]["source"] == "human"
+        ws.broadcast.assert_not_awaited()
 
     async def test_post_to_nonexistent_channel_returns_404(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
@@ -450,10 +440,8 @@ class TestPostToChannel:
                 json={"text": "no from_name"},
             )
         assert resp.status_code == 200
-
-        ws = app.state.ws_manager
-        call_data = ws.broadcast.call_args[0][0]
-        assert call_data["data"]["from"] == "human"
+        entry = json.loads((shared_dir / "channels" / "general.jsonl").read_text(encoding="utf-8"))
+        assert entry["from"] == "human"
 
     async def test_post_missing_text_returns_422(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
@@ -533,8 +521,8 @@ class TestGetChannelMentions:
 
 
 class TestListDMPairs:
-    async def test_empty_when_no_dm_dir(self, tmp_path: Path):
-        """No animas dir and no dm_logs dir returns empty list."""
+    async def test_empty_when_no_data(self, tmp_path: Path):
+        """No anima activity logs returns an empty list."""
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
         app = _make_test_app(shared_dir)
@@ -543,40 +531,6 @@ class TestListDMPairs:
             resp = await client.get("/api/dm")
         assert resp.status_code == 200
         assert resp.json() == []
-
-    @patch("core.config.models.load_config", side_effect=Exception("no config"))
-    async def test_lists_dm_pairs(self, _mock_load_config: MagicMock, tmp_path: Path):
-        """Legacy dm_logs entries are picked up by the fallback path."""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi Bob", "source": "anima"},
-                {"ts": "2026-02-17T11:00:00", "from": "bob", "text": "Hi Alice", "source": "anima"},
-            ],
-        )
-        _write_dm(
-            shared_dir,
-            "mio-sakura",
-            [
-                {"ts": "2026-02-17T09:00:00", "from": "mio", "text": "Report", "source": "anima"},
-            ],
-        )
-
-        app = _make_test_app(shared_dir)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/dm")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-
-        ab = next(p for p in data if p["pair"] == "alice-bob")
-        assert ab["message_count"] == 2
-        assert ab["participants"] == ["alice", "bob"]
-        assert ab["last_message_ts"] == "2026-02-17T11:00:00"
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_self_addressed_entries_are_not_a_dm_pair(
@@ -667,59 +621,12 @@ class TestListDMPairs:
         assert pair["message_count"] == 4
         assert pair["last_message_ts"] == f"{today}T10:10:00"
 
-    @patch("core.config.models.load_config", side_effect=Exception("no config"))
-    async def test_merges_activity_log_and_legacy_dm_logs(
-        self,
-        _mock_load_config: MagicMock,
-        tmp_path: Path,
-    ):
-        """Activity log entries and legacy dm_logs are merged into a single pair."""
-        data_dir = tmp_path
-        shared_dir = data_dir / "shared"
-        shared_dir.mkdir()
-        today = _today()
-
-        # Activity log: 1 entry from alice
-        _write_activity_log(
-            data_dir,
-            "alice",
-            today,
-            [
-                {"ts": f"{today}T12:00:00", "type": "dm_sent", "content": "New message", "from": "alice", "to": "bob"},
-            ],
-        )
-
-        # Legacy dm_logs: 2 older entries
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Old msg 1", "source": "anima"},
-                {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Old msg 2", "source": "anima"},
-            ],
-        )
-
-        app = _make_test_app(shared_dir)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/dm")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-
-        pair = data[0]
-        assert pair["pair"] == "alice-bob"
-        # 1 from activity_log + 2 from legacy dm_logs = 3
-        assert pair["message_count"] == 3
-        # The activity_log entry is newer
-        assert pair["last_message_ts"] == f"{today}T12:00:00"
-
     async def test_empty_when_no_data_sources(self, tmp_path: Path):
-        """No animas dir and no dm_logs dir returns empty list."""
+        """No anima activity logs returns an empty list."""
         data_dir = tmp_path
         shared_dir = data_dir / "shared"
         shared_dir.mkdir()
-        # Do NOT create animas/ or dm_logs/
+        # Do NOT create animas/.
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -789,33 +696,6 @@ class TestListDMPairs:
         assert len(data) == 1
         assert data[0]["pair"] == "alice-bob"
 
-    @patch("core.config.models.load_config", side_effect=Exception("no config"))
-    async def test_excludes_zero_count_pairs(
-        self,
-        _mock_load_config: MagicMock,
-        tmp_path: Path,
-    ):
-        """Pairs with count=0 (e.g. empty dm_logs file) are excluded."""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-            ],
-        )
-        _write_dm(shared_dir, "zero-pair", [])  # Empty file → count=0
-
-        app = _make_test_app(shared_dir)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/dm")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["pair"] == "alice-bob"
-
     @patch("core.config.models.load_config")
     async def test_fallback_when_config_load_fails(
         self,
@@ -826,19 +706,18 @@ class TestListDMPairs:
         mock_load_config.side_effect = Exception("config not found")
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-            ],
+        today = _today()
+        _write_activity_log(
+            tmp_path,
+            "alice",
+            today,
+            [{"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hi", "from": "alice", "to": "bob"}],
         )
-        _write_dm(
-            shared_dir,
-            "spam-random",
-            [
-                {"ts": "2026-02-17T11:00:00", "from": "spam", "text": "Spam", "source": "anima"},
-            ],
+        _write_activity_log(
+            tmp_path,
+            "spam",
+            today,
+            [{"ts": f"{today}T11:00:00", "type": "message_sent", "content": "Spam", "from": "spam", "to": "random"}],
         )
 
         app = _make_test_app(shared_dir)
@@ -854,20 +733,26 @@ class TestListDMPairs:
 
 
 class TestGetDMHistory:
-    async def test_returns_dm_messages(self, tmp_path: Path):
-        """Legacy dm_logs are returned via the fallback path."""
+    async def test_returns_recent_messages_with_limit(self, tmp_path: Path):
+        """DM history pagination returns the newest activity log entries."""
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        entries = [
-            {
-                "ts": f"2026-02-17T{h:02d}:00:00",
-                "from": "alice" if h % 2 == 0 else "bob",
-                "text": f"msg{h}",
-                "source": "anima",
-            }
-            for h in range(10)
-        ]
-        _write_dm(shared_dir, "alice-bob", entries)
+        today = _today()
+        _write_activity_log(
+            tmp_path,
+            "alice",
+            today,
+            [
+                {
+                    "ts": f"{today}T{h:02d}:00:00",
+                    "type": "message_sent",
+                    "from": "alice",
+                    "to": "bob",
+                    "content": f"msg{h}",
+                }
+                for h in range(10)
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -1062,43 +947,14 @@ class TestGetDMHistory:
         assert data["total"] == 1
         assert data["messages"][0]["text"] == "Hello Bob"
 
-    async def test_falls_back_to_legacy_dm_logs(self, tmp_path: Path):
-        """When no activity_log exists, legacy dm_logs are returned."""
-        data_dir = tmp_path
-        shared_dir = data_dir / "shared"
-        shared_dir.mkdir()
-        # No animas dir at all
-
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Legacy hello", "source": "anima"},
-                {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Legacy reply", "source": "anima"},
-            ],
-        )
-
-        app = _make_test_app(shared_dir)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/dm/alice-bob?limit=50")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["pair"] == "alice-bob"
-        assert data["total"] == 2
-        assert data["messages"][0]["text"] == "Legacy hello"
-
     async def test_404_when_no_data_anywhere(self, tmp_path: Path):
-        """No activity_log and no dm_logs for a pair returns 404."""
+        """No activity log for either participant returns 404."""
         data_dir = tmp_path
         shared_dir = data_dir / "shared"
         shared_dir.mkdir()
         # Create animas dir but no activity_log for alice/bob
         (data_dir / "animas" / "alice").mkdir(parents=True)
         (data_dir / "animas" / "bob").mkdir(parents=True)
-        # Create empty dm_logs dir
-        (shared_dir / "dm_logs").mkdir()
-
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -1108,8 +964,6 @@ class TestGetDMHistory:
     async def test_404_for_nonexistent_dm(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        (shared_dir / "dm_logs").mkdir()
-
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -1119,12 +973,12 @@ class TestGetDMHistory:
     async def test_returns_all_when_limit_exceeds_total(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(
-            shared_dir,
-            "alice-bob",
-            [
-                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-            ],
+        today = _today()
+        _write_activity_log(
+            tmp_path,
+            "alice",
+            today,
+            [{"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hi", "from": "alice", "to": "bob"}],
         )
 
         app = _make_test_app(shared_dir)
@@ -1145,3 +999,39 @@ class TestGetDMHistory:
             # Dots and uppercase violate the safe name regex
             resp = await client.get("/api/dm/..secret")
         assert resp.status_code == 400
+
+
+# ── Board read access ───────────────────────────────────
+
+
+class TestChannelReadBoardAccess:
+    async def test_get_denies_channel_with_unreadable_meta(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "Hello", "source": "human"}],
+        )
+        (shared_dir / "channels" / "general.meta.json").write_text("{not json", encoding="utf-8")
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general")
+        assert resp.status_code == 403
+
+    async def test_list_skips_channel_with_unreadable_meta(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "Hello", "source": "human"}],
+        )
+        (shared_dir / "channels" / "general.meta.json").write_text("{not json", encoding="utf-8")
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels")
+        assert resp.status_code == 200
+        assert resp.json() == []

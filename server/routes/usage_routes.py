@@ -1287,7 +1287,7 @@ def create_usage_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/usage")
-    async def get_usage(request: Request, skip_cache: bool = False) -> dict[str, Any]:
+    def get_usage(request: Request, skip_cache: bool = False) -> dict[str, Any]:
         """Return combined Claude + OpenAI + nanoGPT usage data + governor status."""
         governor = getattr(request.app.state, "usage_governor", None)
         governor_info: dict[str, Any] = {"active": False}

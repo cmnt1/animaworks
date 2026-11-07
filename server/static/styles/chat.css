@@ -620,16 +620,6 @@
     width: 100%;
   }
 
-  .chat-header-actions .meeting-mode-toggle {
-    width: 40px;
-    height: 40px;
-    border-radius: 999px;
-  }
-  .chat-header-actions .meeting-mode-toggle svg {
-    width: 18px;
-    height: 18px;
-  }
-
   .chat-add-conversation {
     width: 100%;
     display: flex;
@@ -665,20 +655,15 @@
     grid-row: 1;
   }
 
-  .meeting-participant-panel {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
   .chat-messages-area {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
     min-height: 0;
   }
 
   [data-chat-id="chatPageForm"] {
     grid-column: 2;
-    grid-row: 4;
+    grid-row: 3;
   }
 }
 
@@ -3552,6 +3537,68 @@ button.chat-file-card-open {
 .history-loading-more .tool-spinner {
   border-color: var(--aw-color-text-placeholder);
   border-top-color: transparent;
+}
+
+/* ── History Load Failure ── */
+
+.chat-history-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-history-error--older {
+  flex-direction: row;
+  justify-content: center;
+  padding: 12px;
+  color: var(--aw-color-text-muted);
+  font-size: 0.8rem;
+}
+
+.chat-history-retry {
+  padding: 4px 14px;
+  border: 1px solid var(--aw-color-text-placeholder);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-history-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Feed With No Conversation ── */
+
+.chat-feed-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  color: var(--aw-color-text-muted);
+  font-size: 0.8rem;
+}
+
+/* ── Compressed Thread Summary ── */
+
+.chat-thread-summary {
+  padding: 8px 12px;
+  color: var(--aw-color-text-muted);
+  font-size: 0.8rem;
+}
+
+.chat-thread-summary summary {
+  text-align: center;
+  cursor: pointer;
+}
+
+.chat-thread-summary-body {
+  margin-top: 8px;
 }
 
 /* ── Thinking Block ──────────────────────── */

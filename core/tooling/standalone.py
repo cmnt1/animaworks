@@ -220,18 +220,25 @@ def _wrap_cli_handler_with_runtime_session(handler: Any) -> Any:
         tool_use_id: str | None = None,
     ) -> str:
         from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.platform.env import get_env
+        from core.tooling.handler_base import meeting_context, meeting_mode
 
         ctx = RuntimeSessionContext.from_env()
         session_type = ctx.session_type if ctx is not None else "unknown"
         if ctx is not None:
             handler.bind_runtime_session(ctx)
         session_token = handler.set_active_session_type(session_type)
+        raw_meeting = get_env("ANIMAWORKS_MEETING_CONTEXT", "")
+        meeting_token = meeting_mode.set(bool(raw_meeting))
+        meeting_context_token = meeting_context.set(_json.loads(raw_meeting) if raw_meeting else None)
         try:
             if ctx is None:
                 return original_handle(name, args, tool_use_id=tool_use_id)
             with runtime_session_scope(ctx):
                 return original_handle(name, args, tool_use_id=tool_use_id)
         finally:
+            meeting_context.reset(meeting_context_token)
+            meeting_mode.reset(meeting_token)
             session_token.var.reset(session_token)
 
     handler.handle = _handle_with_runtime_session

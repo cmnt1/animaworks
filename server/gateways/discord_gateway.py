@@ -24,7 +24,6 @@ from typing import Any
 
 from core.config.models import load_config
 from core.credentials import get_credential
-from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.i18n import t
 from core.integrations._discord_markdown import clean_discord_markup
 from core.messaging.messenger import Messenger
@@ -166,6 +165,7 @@ def _route_to_board(
     message_id: str = "",
     board_mapping: dict[str, str] | None = None,
     source: str = "discord",
+    external_kind: str = "user",
 ) -> None:
     """Post a Discord message to the mapped AnimaWorks board (if any)."""
     if message_id:
@@ -183,11 +183,17 @@ def _route_to_board(
         board_name = board_mapping.get(channel_id)
         if not board_name:
             return
-        messenger = Messenger(get_shared_dir(), user_name or source)
-        messenger.post_channel(board_name, text, source=source, from_name=user_name or source)
-    except (ChannelNotFoundError, ChannelAccessDeniedError) as exc:
-        # Mapped board is missing or closed: the message is dropped, so make it visible
-        logger.warning("Board routing dropped for channel %s -> #%s: %s", channel_id, board_name, exc)
+        from core.messaging.board import external_principal, post_to_board
+
+        result = post_to_board(
+            board_name,
+            text,
+            external_principal(user_name or source, external_kind="bot" if external_kind == "bot" else "user"),
+            request_id=f"discord:{message_id}" if message_id else None,
+            origin=source,
+        )
+        if result.error:
+            logger.warning("Board routing dropped for channel %s -> #%s: %s", channel_id, board_name, result.error)
     except Exception:
         logger.debug("Board routing failed for channel %s", channel_id, exc_info=True)
 
@@ -969,13 +975,15 @@ class DiscordGatewayManager:
         # DMs are mirrored to the mapped `dm-{name}` board too — otherwise the
         # human side of a DM conversation has no record on the AnimaWorks board
         # and only the Anima's replies (via webhook echo) would show up.
-        _route_to_board(
+        await asyncio.to_thread(
+            _route_to_board,
             routing_channel_id,
             cleaned_text,
             board_from,
             message_id=msg_id,
             board_mapping=discord_cfg.board_mapping,
             source=board_source,
+            external_kind="bot" if getattr(message.author, "bot", False) or message.webhook_id is not None else "user",
         )
 
         # Debate threads route to every participant (see discord_debate_threads).
@@ -1023,7 +1031,8 @@ class DiscordGatewayManager:
                     # For threads: external_channel_id = parent channel (webhook target),
                     # external_thread_ts = thread channel ID (for webhook thread_id param).
                     # For normal channels: external_channel_id = channel, thread_ts = "".
-                    messenger.receive_external(
+                    await asyncio.to_thread(
+                        messenger.receive_external,
                         content=full_content,
                         source="discord",
                         source_message_id=msg_id,

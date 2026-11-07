@@ -139,6 +139,61 @@ Outbound communication restrictions are implemented with `scripts/enclave/egress
 
 Because launchd has no dependencies between units, specify in the isolated-side configuration’s `enclave.egress_probe` the destinations that should be blocked (the list in `HOST:PORT`). The startup guard attempts a TCP connection to each destination and refuses startup if a connection succeeds. In addition to external destinations, include loopback destinations such as host-side APIs so that a disabled loopback restriction can also be detected. The isolated instance will not run without the restrictions, even if it starts before they are loaded. The same configuration can also be used on Linux.
 
+## Placing multiple isolated instances on one machine
+
+Place one isolated instance per trust boundary. When adding isolated instances that handle different data or different conversation partners to the same macOS, separate the OS user, group, data directory, socket directory, port, LaunchDaemon, and pf anchor per instance. This is because anima instances running under the same OS user can read each other's files from a shell.
+
+`scripts/enclave/render_instance.py` writes all of these out from a single JSON specification file. An example specification is in `templates/_shared/enclave/instance.example.json`. The required items are `name`, `user`, `uid`, `group`, `gid`, `host_user`, and `port`, and the label, paths, and log location are determined from `name`.
+
+```bash
+python3 scripts/enclave/render_instance.py --spec example.json --out build/example
+```
+
+The following files are created in the output destination.
+
+| File | Contents |
+|---|---|
+| `com.animaworks.enclave.<name>.plist` | LaunchDaemon for the isolated instance |
+| `com.animaworks.enclave.<name>-egress.plist` | Root LaunchDaemon that applies outbound communication restrictions at startup and every hour (with `--name <name>`) |
+| `com.animaworks.enclave.<name>-boot-prep.plist`, `boot-prep.sh` | Root LaunchDaemon and script that recreate the socket directory at startup and delete `server.pid` left over from the previous startup |
+| `install.sh` | Installation procedure to run as root, stage by stage |
+| `enclave-config.json` | Configuration for `enclave` placed in the isolated-side `config.json` |
+| `host-config.json` | Configuration for `enclaves` placed in the main-side `config.json` |
+
+`install.sh` is run as root in the following order. Any stage may be redone.
+
+1. `sh install.sh prepare`: Create the group, user, and directories, and add the main-side user to the group. Because macOS system daemons also frequently use numbers from 200 to 400 for uid and gid, it stops if the number is already used under another name. The user created by `sysadminctl` appears on the login screen and has a password, so macOS treats it as a member of the `staff` group. Since `staff` can read the main-side user's home (`drwxr-x---`), make the isolated user a hidden user, disable the password, and verify that it is not in `staff`.
+2. `sh install.sh code <bundle> [uv.lock]`: Extract the code from the git bundle under the isolated user's permissions, create a virtual environment, and fetch the embedding model. Since `uv.lock` is not managed by git, pass the main instance's `uv.lock` to use the same version of dependencies as the main instance. This requires internet access, so do it before loading the outbound communication restrictions.
+3. Run `animaworks init` under the isolated user's permissions and put the contents of `enclave-config.json` into `config.json`. Set `auth.json` to password mode and `trust_localhost: false`, create the anima, and place the secret in `secrets_dir`.
+4. `sh install.sh daemons`: Load the pre-startup processing and the outbound communication restrictions.
+5. `sh install.sh start`: Start the isolated instance.
+6. Put the contents of `host-config.json` into the main-side `config.json` and restart the main instance. The main instance's processes do not join the new group until it is restarted.
+
+When `--name` is added, the outbound communication restrictions are loaded into the per-instance anchor `com.apple/250.AnimaworksEnclave-<name>` (table `aw_enclave_egress_<name>` in nftables). Existing instances without `--name` continue to run with the previous anchor. Applying a second instance without `--name` replaces the first instance's rules. Omitting `--region` prevents opening the AWS destination.
+
+Instead of writing files out, `--check` compares the installed LaunchDaemons and pre-startup scripts with the specification. By writing `label`, `base_dir`, `socket_name`, and `boot_prep_script` in the specification file and leaving `egress_anchor_name` empty, instances installed manually before this script can also be represented.
+
+```bash
+python3 scripts/enclave/render_instance.py --spec existing.json --check
+```
+
+### Using a Claude subscription
+
+Because the isolated user has no login keychain, Claude Code's login cannot be used as is. Place the long-term token created with `claude setup-token` in `secrets_dir` using the file in `0600`, and write that file name in the credential's `keys.oauth_token_secret`. Mode S and single-shot LLM calls, when on the Max plan, pass that token to Claude Code as `CLAUDE_CODE_OAUTH_TOKEN`. Single-shot calls read the credential named `anthropic`, so use this name.
+
+```json
+{
+  "credentials": {
+    "anthropic": {
+      "type": "claude_code_login",
+      "keys": {"oauth_token_secret": "claude-oauth-token"}
+    }
+  }
+}
+```
+
+In the outbound communication restrictions, allow `--allow-hosts api.anthropic.com:443`. `animaworks enclave doctor` checks whether the secret referenced by name in the credential (`oauth_token_secret`, `aws_secret`) is present.
+
 ## Host-Side Connection Configuration
 
 Register the connection destination in the host-side `config.json`. `allowed_animas` is the allow-list of host-side anima instances allowed to call `enclave_ask`. An empty list allows no one.

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 8f4b34fe1fd3037240a65020bca4cf881a4ae6cf5eff8ad48ba73cc612ce2b77 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 4b42f1a8521c0232a2bed6e4766676821f13450b30b9cc001c528fceca9375bc -->
 
 # CLI リファレンス: `animaworks`
 
@@ -250,15 +250,14 @@ Read DM history with peer
 
 ## `board post`
 
-Post to channel
+チャネルに投稿します。形式: board post <channel> [<text> | -]。本文を省略するか '-' を指定すると標準入力から読みます。旧形式: board post <from> <channel> <text>。
 
-`usage: animaworks board post [-h] from_anima channel text`
+`usage: animaworks board post [-h] [--as NAME] ARG [ARG ...]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| from_anima | positional | — | — | Sender anima name |
-| channel | positional | — | — | Channel name |
-| text | positional | — | — | Message text |
+| post_args | positional | — | — | <channel> [<text> \| -]、または旧形式 <from> <channel> <text> |
+| --as | option | — | — | 投稿者名（ホストからの投稿） |
 
 ## `board read`
 

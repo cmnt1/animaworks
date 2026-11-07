@@ -126,7 +126,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | ファイル | 概要 |
 |---------|------|
 | `messaging-guide.md` | メッセージ送受信のガイド（send_message のパラメータ、スレッド管理、返信方針） |
-| `board-guide.md` | Board（共有チャネル）ガイド（post_channel / read_channel の使い分け、投稿ルール） |
+| `board-guide.md` | Board（共有チャネル）ガイド（CLIでの読み出し・投稿方法、投稿ルール） |
 | `broadcasting-guide.md` | 周知チャネル選択ガイド（#ops はオーナー通知専用、Anima 間は #general 基本、部門はドメインチャネル＋スレッド） |
 | `instruction-patterns.md` | 指示の出し方パターン集（明確な指示の書き方、委任パターン、進捗確認） |
 | `reporting-guide.md` | 報告・エスカレーションの方法（報告タイミング、フォーマット、緊急 vs 定期） |
@@ -187,9 +187,9 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 |-----------|--------|
 | 基礎, 入門, 全体像, エッセンシャル, 始め方, 概要 | `anatomy/essentials.md` |
 | メッセージ, send_message, 送信, 返信, スレッド, inbox | `reference/communication/messaging-guide.md` |
-| Board, チャネル, post_channel, read_channel | `communication/board-guide.md` |
+| Board, チャネル, `animaworks-tool board read`, `animaworks-tool board post` | `communication/board-guide.md` |
+| DM履歴, `animaworks-tool board dm-history`, 過去の会話 | `communication/board-guide.md` |
 | 周知, ブロードキャスト, 全体共有, #ops, #general, 部門チャネル, スレッド, エスカレーション | `communication/broadcasting-guide.md` |
-| DM履歴, read_dm_history, 過去の会話 | `communication/board-guide.md` |
 | 指示, 委任, タスク依頼, デリゲーション | `reference/communication/instruction-patterns.md` |
 | 報告, 日報, サマリー, 完了報告, エスカレーション | `reference/communication/reporting-guide.md` |
 | 品質プロトコル, 必須項目, 検証根拠, 完了条件, 委譲チェック | `communication/message-quality-protocol.md` |

@@ -58,6 +58,24 @@ class TestMeetingModeToolBlocking:
         "read_channel",
     ]
 
+    def test_cli_preserves_meeting_restrictions(self, tmp_path, monkeypatch):
+        from core.execution.session.session_context import RuntimeSessionContext
+        from core.tooling.standalone import _wrap_cli_handler_with_runtime_session
+
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="room", trigger="meeting")
+        token = meeting_mode_var.set(True)
+        context_token = meeting_context.set({"room_id": "room-1", "participants": ["test", "rin"]})
+        try:
+            env = ctx.to_env()
+        finally:
+            meeting_context.reset(context_token)
+            meeting_mode_var.reset(token)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        handler = _wrap_cli_handler_with_runtime_session(_make_handler(tmp_path))
+        assert "会議中" in handler.handle("post_channel", {"channel": "general", "text": "hello"})
+        assert not meeting_mode_var.get()
+
     @pytest.mark.parametrize("tool_name", BLOCKED_TOOLS)
     def test_blocked_tool_returns_error_in_meeting_mode(self, tmp_path, tool_name):
         handler = _make_handler(tmp_path)

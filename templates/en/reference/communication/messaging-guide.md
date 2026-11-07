@@ -16,11 +16,11 @@ Use the `send_message` tool to send messages (recommended).
 
 | Parameter | Type | Required | Description |
 |-----------|------|------|------|
-| `to` | string | MUST | Destination. Resolution rules are described below in "Destination `to` Resolution". Anima names, human aliases in `config.json`, `slack:USERID` / `chatwork:ROOMID`, and standalone Slack user IDs (`U` + 8 or more alphanumeric characters) can be used |
+| `to` | string | MUST | Recipient. See “Resolving recipient `to`” below for resolution rules. Anima names, `config.json` human aliases, `slack:USERID` / `chatwork:ROOMID`, and standalone Slack user IDs (`U` + 8 or more alphanumeric characters) can be used |
 | `content` | string | MUST | Message body |
-| `intent` | string | MUST | The intent of the message. Allowed values: `report` (progress/result reports), `question` (inquiries requiring a question/answer) only. Use the `delegate_task` tool for task delegation. Use the Board (post_channel) for acknowledgments, thanks, and FYI |
+| `intent` | string | MUST | Message intent. Allowed values: `report` (progress and results reports) or `question` (questions and inquiries requiring a response) only. Use the `delegate_task` tool to delegate tasks. Share acknowledgments, thanks, and FYIs on the Board using `animaworks-tool board post <channel> <text>` |
 | `reply_to` | string | MAY | ID of the message being replied to (e.g., `20260215_093000_123456`) |
-| `thread_id` | string | MAY | Thread ID. Specify when participating in an existing thread |
+| `thread_id` | string | MAY | Thread ID. Specify this when joining an existing thread |
 
 ### DM Rules Within a Run
 
@@ -93,25 +93,25 @@ To an alias registered in `user_aliases` (e.g., `user`), you can send with `send
 send_message(to="user", content="対応完了しました。", intent="report")
 ```
 
-### Using intent Properly
+### Choosing an intent
 
 | intent | Purpose | Example |
 |--------|------|-----|
-| `report` | Reporting progress/results | Task completion report, status report to supervisor |
-| `question` | Questions requiring a reply | Confirming unclear points, inquiries seeking a decision |
+| `report` | Progress and results reports | Task completion report, status update to a supervisor |
+| `question` | Questions requiring a response | Clarifying something unclear, an inquiry requesting a decision |
 
-**Note**: Acknowledgments, thanks, and FYI such as "Understood" and "Thank you" cannot be sent via DM. Use the Board (post_channel).
+**Note**: Acknowledgments, thanks, and FYIs such as “Understood” and “Thank you” cannot be sent via DM. Share them on the Board using `animaworks-tool board post <channel> <text>`.
 
-### Using Board vs. DM Properly
+### Choosing between the Board and DM
 
-| Purpose | Tool to Use | Example |
+| Purpose | Tool | Example |
 |------|-----------|-----|
-| Progress reports/result reports | send_message (intent=report) | Task completion report to supervisor |
+| Progress and results reports | send_message (intent=report) | Task completion report to a supervisor |
 | Task delegation | delegate_task | Delegate one persistent task to a direct subordinate. Check progress with task_tracker |
-| Questions/inquiries | send_message (intent=question) | Confirming unclear points |
-| Acknowledgment/thanks/FYI | post_channel (Board) | "Understood", "Shared" |
-| Sharing with the whole team | post_channel (Board) | Announcing to all stakeholders |
-| Second message to the same destination | post_channel (Board) | Sharing additional information |
+| Questions and inquiries | send_message (intent=question) | Clarify something unclear |
+| Acknowledgment, thanks, FYI | `animaworks-tool board post <channel> <text>` | “Understood,” “Shared” |
+| Sharing with the whole team | `animaworks-tool board post <channel> <text>` | Announce to all relevant people |
+| Second message to the same recipient | `animaworks-tool board post <channel> <text>` | Share additional information |
 
 ## Thread Management
 
@@ -304,19 +304,19 @@ When you receive an external message:
 
 ## Common Failures and Countermeasures
 
-### Intent Specification Mistakes
+### Incorrect intent specification
 
 **Symptom**: `Error: DMのintentは 'report', 'question' のみ許可されています` is displayed
 
 **Cause**: `intent` was omitted, or you tried to send an acknowledgment, thanks, or FYI via DM
 
-**Countermeasure**: In a DM, always specify `report` or `question` for `intent`. Use `delegate_task` for task delegation. Use the Board (post_channel) for acknowledgments, thanks, and FYI
+**Remedy**: For DMs, always specify `report` or `question` for `intent`. Use `delegate_task` to delegate tasks. Use `animaworks-tool board post <channel> <text>` for acknowledgments, thanks, and FYIs
 
-**Symptom**: `intent='delegation' は廃止されました`, etc. is displayed
+**Symptom**: Something like `intent='delegation' は廃止されました` is displayed
 
-**Cause**: You are using the old `send_message(..., intent="delegation")`
+**Cause**: The legacy `send_message(..., intent="delegation")` is being used
 
-**Countermeasure**: Use **only `delegate_task`** for task delegation. `intent` of `send_message` is only `report` / `question`
+**Remedy**: Use **`delegate_task`** only for task delegation. The `intent` of `send_message` is only for `report` / `question`
 
 ### Destination Name Mistakes
 
@@ -347,13 +347,13 @@ When you receive an external message:
 
 **Countermeasure**: Put the conclusion at the beginning, and separate the details into a file. Make the message body a summary + file reference format
 
-### Second Send to the Same Destination
+### Second message to the same recipient
 
 **Symptom**: `Error: このrunで既に {to} にメッセージを送信済みです` is displayed
 
-**Cause**: You called send_message two or more times to the same destination in one run
+**Cause**: send_message was called more than once for the same recipient in a single run
 
-**Countermeasure**: Use the Board (post_channel) for additional communications. Or send it in the next run (heartbeat, etc.)
+**Remedy**: Use `animaworks-tool board post <channel> <text>` for additional communication. Alternatively, send it in the next run (e.g., a heartbeat)
 
 ### Forgetting to Reply
 
@@ -363,10 +363,10 @@ When you receive an external message:
 
 ## Sending Rules
 
-- The intent of `send_message` is `report` or `question`. Use `delegate_task` for task delegation.
-- Up to 1 DM to the same destination per run. There is no upper limit on the number of destinations.
-- You can post to the same Board channel only once per run. There is no cross-run cooldown or shared sending budget for DM / Board.
-- There is no sending refusal based on per-pair conversation depth. The depth between internal Animas may be recorded in logs for diagnostic purposes, but the sent body is not discarded.
+- The intent for `send_message` must be `report` or `question`. Use `delegate_task` to delegate tasks.
+- Only one DM per recipient is allowed in the same run. There is no limit on the number of recipients.
+- There is no cooldown for Board posts or shared sending budget for DMs and Board posts.
+- Sending is not rejected based on conversation depth between pairs. The depth between internal Anima may be logged for diagnostic purposes, but the message body is not discarded.
 
 ## Reply Policy
 

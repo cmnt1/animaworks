@@ -30,11 +30,26 @@ def _ensure_channel(shared_dir: Path, name: str) -> Path:
     return path
 
 
+def test_dm_membership_respects_closed_and_unreadable_metadata(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    _ensure_channel(shared, "dm-alice")
+    assert is_channel_member(shared, "dm-alice", "alice")
+    assert not is_channel_member(shared, "dm-alice", "bob")
+    save_channel_meta(shared, "dm-alice", ChannelMeta(members=[], closed=True))
+    assert not is_channel_member(shared, "dm-alice", "alice")
+    (shared / "channels" / "dm-alice.meta.json").write_text("{bad", encoding="utf-8")
+    assert not is_channel_member(shared, "dm-alice", "alice")
+
+
 @pytest.fixture
 def shared_dir(tmp_path: Path) -> Path:
     d = tmp_path / "shared"
     d.mkdir()
     (d / "channels").mkdir()
+    for name in ("alice", "bob", "charlie"):
+        anima_dir = tmp_path / "animas" / name
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
     return d
 
 
@@ -193,6 +208,14 @@ class TestIsChannelMember:
     def test_human_source_bypasses_even_strict_channel(self, shared_dir: Path):
         save_channel_meta(shared_dir, "secret", ChannelMeta(members=["alice"]))
         assert is_channel_member(shared_dir, "secret", "unknown", source="human") is True
+
+    def test_unreadable_meta_denies_anima_but_keeps_human_access(self, shared_dir: Path):
+        meta_path = shared_dir / "channels" / "broken.meta.json"
+        meta_path.write_text("not valid json{{{", encoding="utf-8")
+
+        assert is_channel_member(shared_dir, "broken", "alice") is False
+        assert is_channel_member(shared_dir, "broken", "alice", source="human") is True
+        assert load_channel_meta(shared_dir, "broken") is None
 
 
 # ── post_channel with ACL ────────────────────────────────

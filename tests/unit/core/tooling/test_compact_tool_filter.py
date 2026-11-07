@@ -21,6 +21,7 @@ class TestCompactToolFilter:
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
         names = _tool_names(tools)
         assert names == COMPACT_TOOL_NAMES
+        assert "post_channel" not in COMPACT_TOOL_NAMES
 
     def test_compact_includes_all_expected(self):
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
@@ -37,7 +38,6 @@ class TestCompactToolFilter:
             "write_memory_file",
             "heartbeat_observe_snapshot",
             "send_message",
-            "post_channel",
         ]:
             assert expected in names, f"{expected} missing from compact tools"
 

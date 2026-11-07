@@ -40,12 +40,15 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.lifecycle", 5),
     ("core.anima.emotion_tag", 2),  # Pure emotion-tag parser (only core.schemas); used by chat history.
     ("core.anima.workspace_files", 0),  # Pure filename constants and splitter shared by every layer.
+    ("core.infra.gpu", 2),  # Device choice and GPU failure state (only core.config); used by memory RAG.
+    ("core.infra.inference", 2),  # Dedicated torch threads (only core.config); used by memory RAG.
     ("core.voice.emotion_style", 4),  # Shared prompt policy used by the lower-level prompt builder.
     ("core.voice", 5),
     ("core.phone", 5),  # Phone channel built on the voice stack (TTS, voice config).
     ("core.mcp", 5),
     ("core.execution.session.session_types", 2),
     ("core.execution.session.session_context", 2),
+    ("core.execution.session.board_reply", 2),  # Board reply channel set; imports only core.platform.
     ("core.activity", 2),  # Planned package; no current modules expected.
     ("core.trust", 2),  # Planned package; no current modules expected.
     ("core.text", 2),  # Planned package; no current modules expected.

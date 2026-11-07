@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.i18n import t
 from core.memory import MemoryManager
 from core.messaging.messenger import Messenger
 from core.tooling.handler import ToolHandler
@@ -29,8 +30,36 @@ def shared_dir(tmp_path: Path) -> Path:
     channels_dir.mkdir()
     for name in ("general", "ops", "dev"):
         (channels_dir / f"{name}.jsonl").write_text("", encoding="utf-8")
-    (d / "dm_logs").mkdir()
     return d
+
+
+@pytest.fixture(autouse=True)
+def _direct_board_client(shared_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route sandbox tool posts into the central writer without a live server."""
+    from core.messaging.board import anima_principal, post_to_board
+
+    def post_direct(
+        channel: str,
+        text: str,
+        *,
+        from_anima: str,
+        source: str = "anima",
+        from_name: str | None = None,
+        request_id: str | None = None,
+        suppress_mentions: bool = False,
+    ) -> dict:
+        result = post_to_board(
+            channel,
+            text,
+            anima_principal(from_anima, animas_dir=shared_dir.parent / "animas"),
+            request_id=request_id,
+            origin="internal",
+            notify=not suppress_mentions,
+            shared_dir=shared_dir,
+        )
+        return {"post": result.to_dict()}
+
+    monkeypatch.setattr("core.messaging.board_client.post_via_server", post_direct)
 
 
 @pytest.fixture
@@ -48,7 +77,7 @@ def _make_anima_dir(tmp_path: Path, name: str) -> Path:
         f"# {name}\n\nテスト用Anima。\n",
         encoding="utf-8",
     )
-    (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+    (anima_dir / "status.json").write_text('{"enabled": true}', encoding="utf-8")
     (anima_dir / "permissions.md").write_text(
         "# Permissions\n\n## メッセージング\n- send_message: OK\n- post_channel: OK\n",
         encoding="utf-8",
@@ -103,7 +132,7 @@ class TestBoardMentionFanout:
         shared_dir: Path,
         sockets_dir: Path,
     ) -> None:
-        """@all fanout delivers board_mention DMs to all running Animas except sender."""
+        """@all fanout delivers board_mention DMs to all enabled Animas except sender."""
         # Setup anima directories
         alice_dir = _make_anima_dir(tmp_path, "alice")
         _make_anima_dir(tmp_path, "bob")
@@ -128,7 +157,10 @@ class TestBoardMentionFanout:
                 },
             )
 
-        assert "Posted to #general" in result
+        assert result.splitlines() == [
+            t("handler.channel_post_success", channel="general"),
+            t("handler.channel_post_notified", names="bob, charlie"),
+        ]
 
         # Bob and Charlie should each have a board_mention DM
         bob_msgs = _read_inbox(shared_dir, "bob")
@@ -179,7 +211,10 @@ class TestBoardMentionFanout:
                 },
             )
 
-        assert "Posted to #ops" in result
+        assert result.splitlines() == [
+            t("handler.channel_post_success", channel="ops") + " (linked call_human callback: cb-test-ops)",
+            t("handler.channel_post_notified", names="bob"),
+        ]
 
         # Bob should have a board_mention DM
         bob_msgs = _read_inbox(shared_dir, "bob")
@@ -241,7 +276,7 @@ class TestBoardMentionFanout:
         shared_dir: Path,
         sockets_dir: Path,
     ) -> None:
-        """@all fanout reaches both running and stopped Animas (inbox saved for pickup)."""
+        """@all fanout reaches only running Animas."""
         alice_dir = _make_anima_dir(tmp_path, "alice")
         _make_anima_dir(tmp_path, "bob")
         _make_anima_dir(tmp_path, "charlie")
@@ -269,9 +304,7 @@ class TestBoardMentionFanout:
         bob_board = [m for m in bob_msgs if m.get("type") == "board_mention"]
         assert len(bob_board) == 1, f"Expected 1 board_mention for bob, got {len(bob_board)}"
 
-        # Charlie (stopped) should NOT receive a board_mention (Fix 8: running only)
+        # Charlie is stopped, so no inbox message is sent.
         charlie_msgs = _read_inbox(shared_dir, "charlie")
         charlie_board = [m for m in charlie_msgs if m.get("type") == "board_mention"]
-        assert len(charlie_board) == 0, (
-            "Charlie (stopped) should NOT receive board_mention — only running Animas are targets"
-        )
+        assert not charlie_board, "Stopped Animas must not receive a Board mention"

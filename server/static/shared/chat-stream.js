@@ -120,6 +120,8 @@ export async function fetchStreamProgress(animaName, responseId) {
  * @param {function({speaker: string, role: string}): void} [callbacks.onSpeakerStart] - Meeting speaker started
  * @param {function({speaker: string}): void} [callbacks.onSpeakerEnd] - Meeting speaker ended
  * @param {function({speakers: Array<string>}): void} [callbacks.onSpeakerQueue] - Meeting speaker queue resolved
+ * @param {object} [options]
+ * @param {number} [options.idleTimeoutMs=SSE_IDLE_TIMEOUT_MS] - Reject when no bytes arrive for this long
  * @returns {Promise<void>}
  * @throws {Error} On HTTP error (non-ok response), network failure, or idle timeout
  *   (`err.name === "SseIdleTimeoutError"`) after reconnection attempts are exhausted
