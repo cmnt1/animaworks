@@ -93,10 +93,12 @@ def test_tool_handler_bind_runtime_session_clears_new_context_only(tmp_path):
     handler.bind_runtime_session(ctx)
     handler._replied_to["heartbeat"].add("owner")
     handler._posted_channels["heartbeat"].add("ops")
+    handler._interactive_human_notifications["heartbeat"] = ["callback-1"]
 
     handler.bind_runtime_session(ctx)
     assert handler._replied_to["heartbeat"] == {"owner"}
     assert handler._posted_channels["heartbeat"] == {"ops"}
+    assert handler._interactive_human_notifications["heartbeat"] == ["callback-1"]
 
     new_ctx = RuntimeSessionContext.create(
         session_type="heartbeat",
@@ -107,3 +109,4 @@ def test_tool_handler_bind_runtime_session_clears_new_context_only(tmp_path):
 
     assert handler._replied_to["heartbeat"] == set()
     assert handler._posted_channels["heartbeat"] == set()
+    assert handler._interactive_human_notifications["heartbeat"] == []

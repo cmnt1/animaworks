@@ -352,6 +352,12 @@ class TestBoardMentionFanout:
                     assert second._consume_ops_human_escalation() == "callback-1"
                 with first._shared_comms_state("post_channel"):
                     assert not first._has_ops_human_escalation()
+            other = RuntimeSessionContext.create(session_type="chat", thread_id="thread-b", trigger="message")
+            with runtime_session_scope(other), first._shared_comms_state("call_human"):
+                assert not first._has_ops_human_escalation()
+                first._record_ops_human_escalation("callback-other")
+            with runtime_session_scope(ctx), first._shared_comms_state("post_channel"):
+                assert not first._has_ops_human_escalation()
         finally:
             active_session_type.reset(token)
 

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 86e7ccf7c5a0e61239fa3314725279730315faff118ece8b9e7729d4b115631a -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: a5cc9a679337dbfd2ac2d814b07d9d1f697e46a14d78da9c851cf8b28898427e -->
 
 # モジュール一覧
 
@@ -1048,7 +1048,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling._handler_protocols（非公開）` | 234 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
-| `core.tooling.handler` | 988 | — |
+| `core.tooling.handler` | 992 | — |
 | `core.tooling.handler_base` | 340 | — |
 | `core.tooling.handler_chat_files` | 87 | — |
 | `core.tooling.handler_comms` | 1186 | — |

@@ -465,6 +465,7 @@ class ToolHandler(
             self._min_trust_seen = 2
             self._replied_to.setdefault(ctx.session_type, set()).clear()
             self._posted_channels.setdefault(ctx.session_type, set()).clear()
+            self._interactive_human_notifications.setdefault(ctx.session_type, []).clear()
         self._session_origin = ctx.origin
         self._session_origin_chain = list(ctx.origin_chain)
         self._replied_to.setdefault(ctx.session_type, set())
@@ -611,11 +612,14 @@ class ToolHandler(
 
         key = hashlib.sha256(f"{ctx.request_id}\0{ctx.tool_session_id}".encode()).hexdigest()
         path = self._anima_dir / "run" / "comms_sessions" / f"{key}.json"
-        with locked_path(path.with_suffix(".lock"), thread_lock=True):
+        with locked_path(path.parent / ".lock", thread_lock=True):
             if path.exists():
                 state = _json.loads(path.read_text(encoding="utf-8"))
                 self._posted_channels[ctx.session_type] = set(state["posted_channels"])
                 self._interactive_human_notifications[ctx.session_type] = list(state["callbacks"])
+            else:
+                self._posted_channels[ctx.session_type] = set()
+                self._interactive_human_notifications[ctx.session_type] = []
             try:
                 yield
             finally:
