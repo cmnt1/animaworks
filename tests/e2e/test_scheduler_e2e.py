@@ -191,10 +191,9 @@ class TestProcessSupervisorSystemCronE2E:
 
         assert sup.is_scheduler_running() is True
         jobs = sup.scheduler.get_jobs()
-        # Root-owned activity schedule polling was added in 72e47cf4.
-        assert (
-            len(jobs) == 7
-        )  # daily + weekly + indexing + activity schedule + activity log + housekeeping + workspace sweep
+        # Includes the fork's legacy DM log rotation alongside upstream jobs.
+        assert len(jobs) == 8
+        assert sup.scheduler.get_job("system_dm_log_rotation") is not None
 
         # Check job details
         daily = sup.scheduler.get_job("system_daily_consolidation")
