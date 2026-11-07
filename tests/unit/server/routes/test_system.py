@@ -66,6 +66,8 @@ class TestRuntimeRefs:
         webhook_manager.rewrite_anima_reference.return_value = 2
         app.state.discord_gateway_manager = MagicMock()
         app.state.github_gateway_manager = MagicMock()
+        app.state.room_manager = MagicMock()
+        app.state.room_manager.list_rooms.return_value = [{"id": "room-1"}]
         reload_manager = MagicMock()
         reload_manager.reload_all = AsyncMock(return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}})
         app.state.reload_manager = reload_manager
@@ -82,6 +84,7 @@ class TestRuntimeRefs:
         assert response.json() == {
             "discord_mappings_updated": 2,
             "bootstrap_retry_removed": True,
+            "rooms_reloaded": 1,
             "discord_gateway_reloaded": True,
             "github_gateway_reloaded": True,
             "config_reloaded": True,
@@ -91,6 +94,8 @@ class TestRuntimeRefs:
         app.state.supervisor._save_bootstrap_retries.assert_called_once_with()
         app.state.discord_gateway_manager.reload.assert_called_once_with()
         app.state.github_gateway_manager.reload.assert_called_once_with()
+        app.state.room_manager.load_all_rooms.assert_called_once_with()
+        app.state.room_manager.list_rooms.assert_called_once_with(include_closed=True)
         reload_manager.reload_all.assert_awaited_once_with()
 
 
