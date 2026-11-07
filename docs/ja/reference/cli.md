@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 4b42f1a8521c0232a2bed6e4766676821f13450b30b9cc001c528fceca9375bc -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: c84f9a9fba72d370062cdedac1e83b1c8e31195f5746dd71d15082ff164659b2 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -263,13 +263,15 @@ Read DM history with peer
 
 Read channel messages
 
-`usage: animaworks board read [-h] [--limit LIMIT] [--human-only] channel`
+`usage: animaworks board read [-h] [--limit LIMIT] [--human-only] [--latest]
+                             channel`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | channel | positional | — | — | Channel name (e.g. general, ops) |
 | --limit | option | 20 | — | Max messages |
 | --human-only | flag | false | — | Show human messages only |
+| --latest | flag | false | — | Show only the latest messages and keep the read position unchanged |
 
 ## `chat`
 

@@ -363,9 +363,14 @@ class Messenger:
                 anima_dir = self.shared_dir.parent / "animas" / self.anima_name
                 if anima_dir.exists():
                     activity = ActivityLogger(anima_dir)
-                    meta: dict[str, Any] = {"from_type": "anima"}
+                    meta: dict[str, Any] = {"from_type": "anima", "message_id": msg.id}
                     if intent:
                         meta["intent"] = intent
+                    if msg.reply_to:
+                        meta["reply_to"] = msg.reply_to
+                    trigger_id = msg.meta.get("trigger_id")
+                    if isinstance(trigger_id, str) and trigger_id:
+                        meta["trigger_id"] = trigger_id
                     activity.log(
                         "message_sent",
                         content=content,
@@ -440,9 +445,23 @@ class Messenger:
             principal = anima_principal(self.anima_name, animas_dir=self.shared_dir.parent / "animas")
             origin = "anima"
 
-        from core.messaging.board import post_to_board_in_shared_dir
+        from core.messaging.board import post_to_board_in_shared_dir, reply_metadata_for_post
 
-        result = post_to_board_in_shared_dir(self.shared_dir, channel, text, principal, origin=origin)
+        reply_to: str | None = None
+        trigger: dict[str, str] | None = None
+        if principal.kind == "anima":
+            from core.execution.session.board_reply import current_run_triggers
+
+            reply_to, trigger = reply_metadata_for_post(channel, current_run_triggers())
+        result = post_to_board_in_shared_dir(
+            self.shared_dir,
+            channel,
+            text,
+            principal,
+            origin=origin,
+            reply_to=reply_to,
+            trigger=trigger,
+        )
         if result.committed or result.duplicate:
             return
         if result.error == "not_found":

@@ -284,28 +284,6 @@
       ],
       "translator_version": "2"
     },
-    "docs/en/inbox-task-submission.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "e7cd2a2102563ebd7a74a47f4459e84f8e22de66f15ea287560aab92ddddccd1",
-        "8c73c4096d25c146bd3c6c6da9450ac8ef8d54de9abccc62c1397e763435fcc8",
-        "2b9843e5702d93f1432b386e4a19f2ddcc23d961b5686d7c2f0df141d24fb02b",
-        "13f525f9e56ef1e9b3e73bb21650c75e8cdcb7dfde3abe8b3b1e486b70ce4aa9",
-        "79c250e8f021a72104f9c7e5d4bef13abec05ff696c9a9ba00694ef92a69b489"
-      ],
-      "source": "docs/ja/inbox-task-submission.md",
-      "source_sha256": "80ab667f58d4c9d8b5d2766739d2c5ea1c83000ca891481342a035bb236bb81e",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "docs/en/integrations/index.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -604,32 +582,6 @@
       ],
       "translator_version": "2"
     },
-    "docs/en/operations/property-report-discord-delivery.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "8ae37e62e49d2f30067171b8f497cb5552446f70547aaf4cd6df1922ebfe6a28",
-        "7d3a0d6542b9f4809d164b21a9b2d140cf506d717d5f8584aa3e910260bd37b4",
-        "475c5406065ad1b4b66e5f5d2fdfdcf59c77735efcae37447a5892bb6e451a52",
-        "50d531387db798ae6e1fd1571a05b8b3e1001430e960ea5f86ad19c21a1457cb",
-        "76b98f380e9e1f74a0ec4e31731dcca7daa699af6bd18a89ddeb500bbd946d3c",
-        "25ad77e090ecfb184b4b52848d3f4a5cd39439b67e533bf7431995a8897d29e8",
-        "dc9dc024b615133fde397b4360dc5e52d45e2bf19eb2f7184472a128858579de"
-      ],
-      "source": "docs/ja/operations/property-report-discord-delivery.md",
-      "source_sha256": "b3aaea8100ef0ae39fab0b7284164f0edc9fb85cc6acd08a0ae9559608866515",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "docs/en/operations/slim-runtime-migration.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -702,7 +654,7 @@
     },
     "docs/en/reference/README.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
@@ -716,7 +668,7 @@
     },
     "docs/en/reference/api.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
@@ -784,7 +736,7 @@
     },
     "docs/en/reference/cli.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
@@ -1050,7 +1002,7 @@
     },
     "docs/en/reference/config.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
@@ -1170,7 +1122,7 @@
     },
     "docs/en/reference/modules.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "634f8af831c4c84dc0818d00f302b452444ae5feac0e7795950d99440e29cc3a",
@@ -1326,7 +1278,7 @@
     },
     "docs/en/reference/tool-cli.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-01",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "65d9351f3b425f27f858e62bfb900ea492d25a7fe9cc14344a86c7410a1b6283",
@@ -1746,28 +1698,6 @@
       ],
       "translator_version": "2"
     },
-    "docs/ko/inbox-task-submission.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "e7cd2a2102563ebd7a74a47f4459e84f8e22de66f15ea287560aab92ddddccd1",
-        "8c73c4096d25c146bd3c6c6da9450ac8ef8d54de9abccc62c1397e763435fcc8",
-        "2b9843e5702d93f1432b386e4a19f2ddcc23d961b5686d7c2f0df141d24fb02b",
-        "13f525f9e56ef1e9b3e73bb21650c75e8cdcb7dfde3abe8b3b1e486b70ce4aa9",
-        "79c250e8f021a72104f9c7e5d4bef13abec05ff696c9a9ba00694ef92a69b489"
-      ],
-      "source": "docs/ja/inbox-task-submission.md",
-      "source_sha256": "80ab667f58d4c9d8b5d2766739d2c5ea1c83000ca891481342a035bb236bb81e",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "docs/ko/integrations/index.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -2066,32 +1996,6 @@
       ],
       "translator_version": "2"
     },
-    "docs/ko/operations/property-report-discord-delivery.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "8ae37e62e49d2f30067171b8f497cb5552446f70547aaf4cd6df1922ebfe6a28",
-        "7d3a0d6542b9f4809d164b21a9b2d140cf506d717d5f8584aa3e910260bd37b4",
-        "475c5406065ad1b4b66e5f5d2fdfdcf59c77735efcae37447a5892bb6e451a52",
-        "50d531387db798ae6e1fd1571a05b8b3e1001430e960ea5f86ad19c21a1457cb",
-        "76b98f380e9e1f74a0ec4e31731dcca7daa699af6bd18a89ddeb500bbd946d3c",
-        "25ad77e090ecfb184b4b52848d3f4a5cd39439b67e533bf7431995a8897d29e8",
-        "dc9dc024b615133fde397b4360dc5e52d45e2bf19eb2f7184472a128858579de"
-      ],
-      "source": "docs/ja/operations/property-report-discord-delivery.md",
-      "source_sha256": "b3aaea8100ef0ae39fab0b7284164f0edc9fb85cc6acd08a0ae9559608866515",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "docs/ko/operations/slim-runtime-migration.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -2164,7 +2068,7 @@
     },
     "docs/ko/reference/README.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "69fc9f98d468132ae81b36ce8ae41796c64f9ad4f4c619ea31c4027e964babbe"
@@ -2178,7 +2082,7 @@
     },
     "docs/ko/reference/api.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "1fe0ea496cefc0d345c8bf349423560f2187e00c5b485750d072bbb1e16e2ed0",
@@ -2246,7 +2150,7 @@
     },
     "docs/ko/reference/cli.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "cd0fe5af9c4fa5a24a4f71e50cf0fd4c5fd80945ee9817e6ab7882fb80bc7088",
@@ -2512,7 +2416,7 @@
     },
     "docs/ko/reference/config.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "a0b9dc46470423ca1cbb1378367859e04d8af300406f30128dbd4e40021044b3",
@@ -2632,7 +2536,7 @@
     },
     "docs/ko/reference/modules.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "634f8af831c4c84dc0818d00f302b452444ae5feac0e7795950d99440e29cc3a",
@@ -2788,7 +2692,7 @@
     },
     "docs/ko/reference/tool-cli.md": {
       "engine": "nanogpt",
-      "generated": "2026-11-01",
+      "generated": "2026-11-07",
       "model": "deepseek/deepseek-v4.1-flash",
       "section_hashes": [
         "65d9351f3b425f27f858e62bfb900ea492d25a7fe9cc14344a86c7410a1b6283",
@@ -3774,42 +3678,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/en/common_knowledge/communication/broadcasting-guide.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "9214f177565e1461bf8d0239137a1a567ac67c7110b76af63bc4cc9de5f180ce",
-        "97abc78f6aecd6e76f968a405440ebb31d856589e76006c15ab659ef6ac28e63",
-        "f9a8982367b25c6a99a367d90ba060c7e86153e4fd1512b8771f1fdecbc95351",
-        "9da7b8f20e359ee0d762db57972f37156a7f6576f6c994cfffe919ba9198a641",
-        "51b14a139b8f0d6d85579d9083b20f32d3c6747e596c84ae1e6d10eb74d216bb",
-        "cdb0d5cf8b77c7b05e96148ff30efdaff7e3851ca1b7709e9e94b609eeb29ae5",
-        "aa8ddf2e72b83f7df7881cd5aca45799d4dd3597605e85526f5a55870130ac21",
-        "9a08afea31805c5e70038f7cbb6f2ab73f47b7ac0fdce74e9222e27f3770a688",
-        "b50abda43bf50b5aa9456d5889fb86148cdde70a688d2093afca0c3ef243ec02",
-        "506ac0606785572ed8ff605fb33aafd0bb4042981d6c99a82812cc524b524155",
-        "d243856691f16ea59dc40c800e86cec7e6657d70b98e39e885a53924459172bd",
-        "d605048b46f5232e260fc0eb7ba84a50ed89680361206d6d19b544bd78d8570c"
-      ],
-      "source": "templates/ja/common_knowledge/communication/broadcasting-guide.md",
-      "source_sha256": "0a93725e379cd820dbb96a14b87bfe9a3e3949ac04a71bf79b0febc37d7d2788",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/en/common_knowledge/communication/call-human-guide.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -3976,54 +3844,6 @@
         "translated",
         "translated",
         "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/en/common_knowledge/operations/heartbeat-observe-guide.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "6567ff05126a6e89075083275a30d5e55b2b6eac7a2b505e77a313f37ce19d34",
-        "453ee7d0f49d21daaf41c5c3eae96cbe2bf3fea78d66507b290e195fcbe10c58",
-        "33389affcc654e4e2792b057ec69aef9c4ee9e8ca040b4916db95466a437c58b",
-        "11e0012c637268f4205b7dd35dedd4a9d02fa4583b5a24a462020e88b869b8e0"
-      ],
-      "source": "templates/ja/common_knowledge/operations/heartbeat-observe-guide.md",
-      "source_sha256": "52ba1adf82dd661ac9ecfd7621b4c32e2ff1127bae880073d05d0032827557d8",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/en/common_knowledge/operations/knowledge-promotion-review.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "eb4b7e2c8dc8b8822774972eb30dd352b163c0d277615a7a6a27bf1e5eff6d37",
-        "533d0d4c01fae16f33e267fe479803741d42c2980a73c357143069a3a463e795",
-        "78691297f169cf38457886d36ed64e770fd2688041480b20a030112c6cbb6d09",
-        "bb4de6d3e99d0e87ca8e1e734c7deb47cd1725d9debc05ebd45926b785dca5fe",
-        "837dcf123e5fb4b630676c8c81bd733c110a326a55f81076dcef07b17a5717d2",
-        "a0a454fa5cab95f6637fe26750e0643af42ef1f0501dd07d53a945970133a065",
-        "35f3035dd4789cb274c4002d575457c16e491be5730562eb23f53b8b00e0f19f",
-        "41067ea2cf043ed33220e2f3d9f6a3a15c1295890f1faf0fcadce4c2b8dc8650"
-      ],
-      "source": "templates/ja/common_knowledge/operations/knowledge-promotion-review.md",
-      "source_sha256": "38000659c183e5593095835ea899032796cd1f1e15a51a4ff3688a422b81f657",
-      "statuses": [
         "translated",
         "translated",
         "translated",
@@ -4365,7 +4185,7 @@
         "593276ba7d2339f1de57d41345d8fc9b22cd2b1bb398140a3b37211acf35d2a2",
         "7184242766536eb163354e1db05805ea7f832e5d75019af536e7ac19adf44227",
         "f86e64d33c9d2a1b1b58ba7abdc43c68df8d2170b4128ad25e5656ad1e1081f3",
-        "2bfc36e0824b5cbd3471c216d56e1f97ef4040b5478158ec9466f1a348ad742b",
+        "218f71f57baebeff36ed1738e15d344bab8b2a70eebb6d51953e3709e8d718c6",
         "2040de0c956ea4dddb8501773f27095c001a8b858f2f4ffc4d12c328f43308a1",
         "637aa6e52f75064f2ab384be345a495f069249f49f1b9189bed0baea24c1ebb9",
         "2c9e978e56bbf87dfdac4f7d555e79f0faac7e43039d77066202f1c3b783a559",
@@ -4384,7 +4204,7 @@
         "f1e9168116221277627015aa7bda1eeeaf865add59b4dab60e1b8bddd635161c"
       ],
       "source": "templates/ja/common_skills/animaworks-guide/SKILL.md",
-      "source_sha256": "4184999238ce65129981bfeb7eff8c3c023f25f0f55b40f98ffbc1dba4b7aee9",
+      "source_sha256": "ab1d670b2a0460dea7daa19dfe6a3eeffab25926a399f409c1906c1cf8610bce",
       "statuses": [
         "translated",
         "translated",
@@ -4443,36 +4263,6 @@
       "source_sha256": "66cedfb2e24b8f5ab9f127e1653e10cc4f3f29ed7f663fec8669dfc09eef939a",
       "statuses": [
         "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/en/common_skills/bluesky-market-scan/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "d8101605552a25c1c50286d89a921051dfa012f552286f192776f415dcf23c48",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "d05b516eb71ba193f76638bf99ae66196d8384ad74fe2d657c6ec29004fccfb7",
-        "5b5f50dfd006bdf305ac46e1e7bec803848feb6f5730ef932d528ab3e78240e8",
-        "ed0f223df4fa473a30fadbc38c249087adc021659c36567c04281e44c7466901",
-        "0fc1054accad921eebe17621992aa65eb0126a4441dce7b54b47022d3580a595",
-        "ac60f390868bfbcf7a64e3e1fe8f2686a7ee77fdf12a0109df16f09992196a17",
-        "e0355b073d02ec4de10c9ad719d7448744a271ead125ae126acb84c4aac57cb7",
-        "6804a53a667afb17e346eaa879bd2ce44debf89fb330dc36f60027701d23f3f9"
-      ],
-      "source": "templates/ja/common_skills/bluesky-market-scan/SKILL.md",
-      "source_sha256": "324d5313dcb8ed4ceca382d77c865128eaa94554cad499fb4f420b266b17efd1",
-      "statuses": [
         "translated",
         "translated",
         "translated",
@@ -4905,56 +4695,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/en/common_skills/notebooklm-tool/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "722ea22cb07b6f9ba4adf6668678a3bb4fdb37e379e264ebf383256a5ea95c9a",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "3e6271f9d43936ffd018dcd2b65408130323288077a55d1615f3d510eb4bf56e",
-        "f0ffe972659ad4056a01975a4ea6847ddf4145223a183ab9e45314e18948195e",
-        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
-        "ace72737cd4723fac78e3622424c8420208f9193878e93e6d1deb401d6787d7b",
-        "7b25a635f470d70c864e6d1fb9bb905c0b561a79f4c5b041e7a63aad467f236c",
-        "681d85c419090ca6036f8d7a42b125069f96407e0229a4a22822fdd15c77ae3f",
-        "839dac588446b1efd31a6be349b4df1a79a7aa470a2b8914967cb2db408e22c9",
-        "7feadec6a804fc44d2c870b90fe0e2501c1380615e4480fdce4d0afd4667a738",
-        "fe6b819ebf9e3f422116f319c55a300a44fd60e4aaa72f1c29ab0e9a8dd6e526",
-        "72abeafa154662cdd4f1770fe600907d0482682dd52a867a701fc98533ab41d5",
-        "ca144e84403099c3b9f0a4d92f8caaf60ada4a7633906cdb42a6caaefeda0143",
-        "920c248a6927654f8135b015b373b7e1d1abc2e138b47f9244c7ab6ebe75a2d7",
-        "d8d745fc81f564608494f9036459b6b91a459bb72382c6025603189f4dad4f52",
-        "e9b04cea8935f49e61bb75ed1030fdecb1867c6f9457e3f2bcee8dd388b3ee66",
-        "53ac9f763809956a322904813f7a79e3ee95acb8db68e5dd5d54bfc77bfc8956",
-        "92df8a1eb0236384a06c5aef243411ee82b2ec2ff35c1a9d1514a17015e8d115",
-        "cc7d87a14793be7ad629823969f7a2d0cd7864a96374e78c46baad52da4feadd"
-      ],
-      "source": "templates/ja/common_skills/notebooklm-tool/SKILL.md",
-      "source_sha256": "5c4d8da66c61224b6ad39c31cf5117dba126542fa74fd97165b0a530a48f02ed",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/en/common_skills/notion-tool/SKILL.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -4979,52 +4719,6 @@
       "source": "templates/ja/common_skills/notion-tool/SKILL.md",
       "source_sha256": "ca2decb56f1f4f1c57fd6faaf21c370de8329071365cdf35ce9bb8fb0d94d867",
       "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/en/common_skills/obsidian-product/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "3397a248f2158d2616cd8647f0d3bfaf3bee3c311f8f865f1aae069ce799063c",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "67347c4432576959f1a3590e1dcaae4903237bc7e9bc8a140abe8de71e69600e",
-        "a6cb769da81598c380619ba117aadb14aa9c9b0a6843a7cf28da581f20cd644f",
-        "97cfc5014d59617f521c9e62429dc3d258c4d0dcc9bd947ead70d6a43e2aeeb9",
-        "6c71f9ec5d6359e384d1e1c04c129c5168b2d7923932858b7f2df8144f5e0d29",
-        "31521be44ee7eb4c16e737be7a955c6577aa992d881ac744ea4d63c05bf244d7",
-        "7b74d54ac2a5b0e1602fb796f56ab233bca623f40cdb09f10bebeffb2c8bdd0d",
-        "c5cfa53c8fcfc12bbb80391df021f9fc1ab8152f353fd052bd0d24daf967e591",
-        "36848396f5287aede7c85708341ac66f171c0575ab90173d3e85eaae339fd90d",
-        "e0f4838847ecfaeeb4e79f801f6abfc385ae1db9028618d5fe8ff4b0015fef6a",
-        "9752e9d1c262f1ef28294f8b80fb3b0f41bcea6a95f60911f8c4c07b1b618cf8",
-        "ba19710740c4d28ff412d9a8845d49e229a63fb29af53063afac57738b387baa",
-        "a596a4d47f37868e0dad5d18bfdd957133bbed1d0f80c1732ae384913d712200",
-        "9654623dff13cd11f0f3232a5dcabaa62acf92fcb81df8396f942c3f8d139084",
-        "a93d5d790be96b315aba97aafa58be89c93a3e6fb7c660beb7c03e7369313797",
-        "1a53d1fa83e6962184178de9bd7ae8f3223aa77e3921c6b75ecf1a07f11fdbdb"
-      ],
-      "source": "templates/ja/common_skills/obsidian-product/SKILL.md",
-      "source_sha256": "ec49f64f1a2110e196bd4e2369a0c09357a64340eacc27e5f68d402076ac102b",
-      "statuses": [
-        "translated",
-        "translated",
         "translated",
         "translated",
         "translated",
@@ -8737,30 +8431,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/en/roles/administration/permissions.json": {
-      "engine": "copy",
-      "generated": "2026-11-01",
-      "model": "copy",
-      "section_hashes": [],
-      "source": "templates/ja/roles/administration/permissions.json",
-      "source_sha256": "bfb6448b841d240f28be702f52df6391f445ac78b52683817fa649454ffe0bbe",
-      "statuses": [],
-      "translator_version": "2"
-    },
-    "templates/en/roles/administration/specialty_prompt.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "8318cd08d5fe2a0ec04b18a071d33cf25bb521ab71b07a7f4deb05b7b9c1c7f7"
-      ],
-      "source": "templates/ja/roles/administration/specialty_prompt.md",
-      "source_sha256": "30434ff3c8dcd725ce76a2e382122a893b10863711c68e47ae6532067aeb091d",
-      "statuses": [
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/en/roles/engineer/permissions.json": {
       "engine": "copy",
       "generated": "2026-11-01",
@@ -9789,42 +9459,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/ko/common_knowledge/communication/broadcasting-guide.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "9214f177565e1461bf8d0239137a1a567ac67c7110b76af63bc4cc9de5f180ce",
-        "97abc78f6aecd6e76f968a405440ebb31d856589e76006c15ab659ef6ac28e63",
-        "f9a8982367b25c6a99a367d90ba060c7e86153e4fd1512b8771f1fdecbc95351",
-        "9da7b8f20e359ee0d762db57972f37156a7f6576f6c994cfffe919ba9198a641",
-        "51b14a139b8f0d6d85579d9083b20f32d3c6747e596c84ae1e6d10eb74d216bb",
-        "cdb0d5cf8b77c7b05e96148ff30efdaff7e3851ca1b7709e9e94b609eeb29ae5",
-        "aa8ddf2e72b83f7df7881cd5aca45799d4dd3597605e85526f5a55870130ac21",
-        "9a08afea31805c5e70038f7cbb6f2ab73f47b7ac0fdce74e9222e27f3770a688",
-        "b50abda43bf50b5aa9456d5889fb86148cdde70a688d2093afca0c3ef243ec02",
-        "506ac0606785572ed8ff605fb33aafd0bb4042981d6c99a82812cc524b524155",
-        "d243856691f16ea59dc40c800e86cec7e6657d70b98e39e885a53924459172bd",
-        "d605048b46f5232e260fc0eb7ba84a50ed89680361206d6d19b544bd78d8570c"
-      ],
-      "source": "templates/ja/common_knowledge/communication/broadcasting-guide.md",
-      "source_sha256": "0a93725e379cd820dbb96a14b87bfe9a3e3949ac04a71bf79b0febc37d7d2788",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/ko/common_knowledge/communication/call-human-guide.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -9991,54 +9625,6 @@
         "translated",
         "translated",
         "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/ko/common_knowledge/operations/heartbeat-observe-guide.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "6567ff05126a6e89075083275a30d5e55b2b6eac7a2b505e77a313f37ce19d34",
-        "453ee7d0f49d21daaf41c5c3eae96cbe2bf3fea78d66507b290e195fcbe10c58",
-        "33389affcc654e4e2792b057ec69aef9c4ee9e8ca040b4916db95466a437c58b",
-        "11e0012c637268f4205b7dd35dedd4a9d02fa4583b5a24a462020e88b869b8e0"
-      ],
-      "source": "templates/ja/common_knowledge/operations/heartbeat-observe-guide.md",
-      "source_sha256": "52ba1adf82dd661ac9ecfd7621b4c32e2ff1127bae880073d05d0032827557d8",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/ko/common_knowledge/operations/knowledge-promotion-review.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "eb4b7e2c8dc8b8822774972eb30dd352b163c0d277615a7a6a27bf1e5eff6d37",
-        "533d0d4c01fae16f33e267fe479803741d42c2980a73c357143069a3a463e795",
-        "78691297f169cf38457886d36ed64e770fd2688041480b20a030112c6cbb6d09",
-        "bb4de6d3e99d0e87ca8e1e734c7deb47cd1725d9debc05ebd45926b785dca5fe",
-        "837dcf123e5fb4b630676c8c81bd733c110a326a55f81076dcef07b17a5717d2",
-        "a0a454fa5cab95f6637fe26750e0643af42ef1f0501dd07d53a945970133a065",
-        "35f3035dd4789cb274c4002d575457c16e491be5730562eb23f53b8b00e0f19f",
-        "41067ea2cf043ed33220e2f3d9f6a3a15c1295890f1faf0fcadce4c2b8dc8650"
-      ],
-      "source": "templates/ja/common_knowledge/operations/knowledge-promotion-review.md",
-      "source_sha256": "38000659c183e5593095835ea899032796cd1f1e15a51a4ff3688a422b81f657",
-      "statuses": [
         "translated",
         "translated",
         "translated",
@@ -10380,7 +9966,7 @@
         "593276ba7d2339f1de57d41345d8fc9b22cd2b1bb398140a3b37211acf35d2a2",
         "7184242766536eb163354e1db05805ea7f832e5d75019af536e7ac19adf44227",
         "f86e64d33c9d2a1b1b58ba7abdc43c68df8d2170b4128ad25e5656ad1e1081f3",
-        "2bfc36e0824b5cbd3471c216d56e1f97ef4040b5478158ec9466f1a348ad742b",
+        "218f71f57baebeff36ed1738e15d344bab8b2a70eebb6d51953e3709e8d718c6",
         "2040de0c956ea4dddb8501773f27095c001a8b858f2f4ffc4d12c328f43308a1",
         "637aa6e52f75064f2ab384be345a495f069249f49f1b9189bed0baea24c1ebb9",
         "2c9e978e56bbf87dfdac4f7d555e79f0faac7e43039d77066202f1c3b783a559",
@@ -10399,7 +9985,7 @@
         "f1e9168116221277627015aa7bda1eeeaf865add59b4dab60e1b8bddd635161c"
       ],
       "source": "templates/ja/common_skills/animaworks-guide/SKILL.md",
-      "source_sha256": "4184999238ce65129981bfeb7eff8c3c023f25f0f55b40f98ffbc1dba4b7aee9",
+      "source_sha256": "ab1d670b2a0460dea7daa19dfe6a3eeffab25926a399f409c1906c1cf8610bce",
       "statuses": [
         "translated",
         "translated",
@@ -10458,36 +10044,6 @@
       "source_sha256": "66cedfb2e24b8f5ab9f127e1653e10cc4f3f29ed7f663fec8669dfc09eef939a",
       "statuses": [
         "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/ko/common_skills/bluesky-market-scan/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "d8101605552a25c1c50286d89a921051dfa012f552286f192776f415dcf23c48",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "d05b516eb71ba193f76638bf99ae66196d8384ad74fe2d657c6ec29004fccfb7",
-        "5b5f50dfd006bdf305ac46e1e7bec803848feb6f5730ef932d528ab3e78240e8",
-        "ed0f223df4fa473a30fadbc38c249087adc021659c36567c04281e44c7466901",
-        "0fc1054accad921eebe17621992aa65eb0126a4441dce7b54b47022d3580a595",
-        "ac60f390868bfbcf7a64e3e1fe8f2686a7ee77fdf12a0109df16f09992196a17",
-        "e0355b073d02ec4de10c9ad719d7448744a271ead125ae126acb84c4aac57cb7",
-        "6804a53a667afb17e346eaa879bd2ce44debf89fb330dc36f60027701d23f3f9"
-      ],
-      "source": "templates/ja/common_skills/bluesky-market-scan/SKILL.md",
-      "source_sha256": "324d5313dcb8ed4ceca382d77c865128eaa94554cad499fb4f420b266b17efd1",
-      "statuses": [
         "translated",
         "translated",
         "translated",
@@ -10920,56 +10476,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/ko/common_skills/notebooklm-tool/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "722ea22cb07b6f9ba4adf6668678a3bb4fdb37e379e264ebf383256a5ea95c9a",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "3e6271f9d43936ffd018dcd2b65408130323288077a55d1615f3d510eb4bf56e",
-        "f0ffe972659ad4056a01975a4ea6847ddf4145223a183ab9e45314e18948195e",
-        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
-        "ace72737cd4723fac78e3622424c8420208f9193878e93e6d1deb401d6787d7b",
-        "7b25a635f470d70c864e6d1fb9bb905c0b561a79f4c5b041e7a63aad467f236c",
-        "681d85c419090ca6036f8d7a42b125069f96407e0229a4a22822fdd15c77ae3f",
-        "839dac588446b1efd31a6be349b4df1a79a7aa470a2b8914967cb2db408e22c9",
-        "7feadec6a804fc44d2c870b90fe0e2501c1380615e4480fdce4d0afd4667a738",
-        "fe6b819ebf9e3f422116f319c55a300a44fd60e4aaa72f1c29ab0e9a8dd6e526",
-        "72abeafa154662cdd4f1770fe600907d0482682dd52a867a701fc98533ab41d5",
-        "ca144e84403099c3b9f0a4d92f8caaf60ada4a7633906cdb42a6caaefeda0143",
-        "920c248a6927654f8135b015b373b7e1d1abc2e138b47f9244c7ab6ebe75a2d7",
-        "d8d745fc81f564608494f9036459b6b91a459bb72382c6025603189f4dad4f52",
-        "e9b04cea8935f49e61bb75ed1030fdecb1867c6f9457e3f2bcee8dd388b3ee66",
-        "53ac9f763809956a322904813f7a79e3ee95acb8db68e5dd5d54bfc77bfc8956",
-        "92df8a1eb0236384a06c5aef243411ee82b2ec2ff35c1a9d1514a17015e8d115",
-        "cc7d87a14793be7ad629823969f7a2d0cd7864a96374e78c46baad52da4feadd"
-      ],
-      "source": "templates/ja/common_skills/notebooklm-tool/SKILL.md",
-      "source_sha256": "5c4d8da66c61224b6ad39c31cf5117dba126542fa74fd97165b0a530a48f02ed",
-      "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/ko/common_skills/notion-tool/SKILL.md": {
       "engine": "nanogpt",
       "generated": "2026-11-01",
@@ -10994,52 +10500,6 @@
       "source": "templates/ja/common_skills/notion-tool/SKILL.md",
       "source_sha256": "ca2decb56f1f4f1c57fd6faaf21c370de8329071365cdf35ce9bb8fb0d94d867",
       "statuses": [
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated",
-        "translated"
-      ],
-      "translator_version": "2"
-    },
-    "templates/ko/common_skills/obsidian-product/SKILL.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "3397a248f2158d2616cd8647f0d3bfaf3bee3c311f8f865f1aae069ce799063c",
-        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
-        "67347c4432576959f1a3590e1dcaae4903237bc7e9bc8a140abe8de71e69600e",
-        "a6cb769da81598c380619ba117aadb14aa9c9b0a6843a7cf28da581f20cd644f",
-        "97cfc5014d59617f521c9e62429dc3d258c4d0dcc9bd947ead70d6a43e2aeeb9",
-        "6c71f9ec5d6359e384d1e1c04c129c5168b2d7923932858b7f2df8144f5e0d29",
-        "31521be44ee7eb4c16e737be7a955c6577aa992d881ac744ea4d63c05bf244d7",
-        "7b74d54ac2a5b0e1602fb796f56ab233bca623f40cdb09f10bebeffb2c8bdd0d",
-        "c5cfa53c8fcfc12bbb80391df021f9fc1ab8152f353fd052bd0d24daf967e591",
-        "36848396f5287aede7c85708341ac66f171c0575ab90173d3e85eaae339fd90d",
-        "e0f4838847ecfaeeb4e79f801f6abfc385ae1db9028618d5fe8ff4b0015fef6a",
-        "9752e9d1c262f1ef28294f8b80fb3b0f41bcea6a95f60911f8c4c07b1b618cf8",
-        "ba19710740c4d28ff412d9a8845d49e229a63fb29af53063afac57738b387baa",
-        "a596a4d47f37868e0dad5d18bfdd957133bbed1d0f80c1732ae384913d712200",
-        "9654623dff13cd11f0f3232a5dcabaa62acf92fcb81df8396f942c3f8d139084",
-        "a93d5d790be96b315aba97aafa58be89c93a3e6fb7c660beb7c03e7369313797",
-        "1a53d1fa83e6962184178de9bd7ae8f3223aa77e3921c6b75ecf1a07f11fdbdb"
-      ],
-      "source": "templates/ja/common_skills/obsidian-product/SKILL.md",
-      "source_sha256": "ec49f64f1a2110e196bd4e2369a0c09357a64340eacc27e5f68d402076ac102b",
-      "statuses": [
-        "translated",
-        "translated",
         "translated",
         "translated",
         "translated",
@@ -14752,30 +14212,6 @@
       ],
       "translator_version": "2"
     },
-    "templates/ko/roles/administration/permissions.json": {
-      "engine": "copy",
-      "generated": "2026-11-01",
-      "model": "copy",
-      "section_hashes": [],
-      "source": "templates/ja/roles/administration/permissions.json",
-      "source_sha256": "bfb6448b841d240f28be702f52df6391f445ac78b52683817fa649454ffe0bbe",
-      "statuses": [],
-      "translator_version": "2"
-    },
-    "templates/ko/roles/administration/specialty_prompt.md": {
-      "engine": "nanogpt",
-      "generated": "2026-11-01",
-      "model": "deepseek/deepseek-v4.1-flash",
-      "section_hashes": [
-        "8318cd08d5fe2a0ec04b18a071d33cf25bb521ab71b07a7f4deb05b7b9c1c7f7"
-      ],
-      "source": "templates/ja/roles/administration/specialty_prompt.md",
-      "source_sha256": "30434ff3c8dcd725ce76a2e382122a893b10863711c68e47ae6532067aeb091d",
-      "statuses": [
-        "translated"
-      ],
-      "translator_version": "2"
-    },
     "templates/ko/roles/engineer/permissions.json": {
       "engine": "copy",
       "generated": "2026-11-01",
@@ -15744,7 +15180,7 @@
     },
     "templates/zh/common_knowledge/communication/board-guide.md": {
       "engine": "luna",
-      "generated": "2026-11-06",
+      "generated": "2026-11-07",
       "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "46cf2a896d4d7dcb17a7ca7e9ebbdd7cdc190f9425d3efbc20f8296cf906cc4b",
@@ -15758,7 +15194,7 @@
         "5a4c1c98d007a7f5dfba97e83730b06674ae3120c535f58880411c32698bf87a",
         "3cad755cf486cf3d8bf46411d48cdc97b9f07afaf9b50bf25a999ddc1c39483a",
         "1987350365a12eec1ca300e7208c7dd2547b45f1778d96f0a9c0ec3a209c7073",
-        "166f3745a17e29b0b6ed68d58f22b3cafcece8fdaa29fa59019056ea56ed9bba",
+        "f0e66d12d6fccbc41f84174bcbf934e22fb072f5f0b69852a8f96cb8bba800d0",
         "5e31ff91b4961fa3f35c0e5d66eb5aac4a400fc02092d61383b0dd6cf8af930e",
         "f6a8da42396e575b4bee2953e27c28d6b7438025b5637dfcbb92bc56a66ccb07",
         "843bd84c03670a9c14e43a47509219bbb0f3d56000e54a9d5cd4651632220989",
@@ -15773,7 +15209,7 @@
         "4392ddb04495a870522c1f6b6b34d686302716455940c42c0dc481be0a3a9837"
       ],
       "source": "templates/ja/common_knowledge/communication/board-guide.md",
-      "source_sha256": "09cfafdd0193db7a3a6aae90b733bc22b89864d93de0af5f199ce7d36260e097",
+      "source_sha256": "1b19981f4122f14c69fbe05e0e7a5e2ff72db9692dded24871a9ee36c4d1362b",
       "statuses": [
         "translated",
         "translated",
@@ -16285,9 +15721,9 @@
       "translator_version": "2"
     },
     "templates/zh/common_skills/animaworks-guide/SKILL.md": {
-      "engine": "local",
-      "generated": "2026-11-01",
-      "model": "deepseek-v4.1-flash-1017-abl",
+      "engine": "luna",
+      "generated": "2026-11-07",
+      "model": "gpt-6-luna-2026-09-22",
       "section_hashes": [
         "a4d6885c42dcb040768b4e31c7ed4be138abd34c27688a49f2b03bbe06718886",
         "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
@@ -16306,7 +15742,7 @@
         "593276ba7d2339f1de57d41345d8fc9b22cd2b1bb398140a3b37211acf35d2a2",
         "7184242766536eb163354e1db05805ea7f832e5d75019af536e7ac19adf44227",
         "f86e64d33c9d2a1b1b58ba7abdc43c68df8d2170b4128ad25e5656ad1e1081f3",
-        "2bfc36e0824b5cbd3471c216d56e1f97ef4040b5478158ec9466f1a348ad742b",
+        "218f71f57baebeff36ed1738e15d344bab8b2a70eebb6d51953e3709e8d718c6",
         "2040de0c956ea4dddb8501773f27095c001a8b858f2f4ffc4d12c328f43308a1",
         "637aa6e52f75064f2ab384be345a495f069249f49f1b9189bed0baea24c1ebb9",
         "2c9e978e56bbf87dfdac4f7d555e79f0faac7e43039d77066202f1c3b783a559",
@@ -16325,7 +15761,7 @@
         "f1e9168116221277627015aa7bda1eeeaf865add59b4dab60e1b8bddd635161c"
       ],
       "source": "templates/ja/common_skills/animaworks-guide/SKILL.md",
-      "source_sha256": "4184999238ce65129981bfeb7eff8c3c023f25f0f55b40f98ffbc1dba4b7aee9",
+      "source_sha256": "ab1d670b2a0460dea7daa19dfe6a3eeffab25926a399f409c1906c1cf8610bce",
       "statuses": [
         "translated",
         "translated",
@@ -20712,6 +20148,570 @@
         "translated",
         "translated",
         "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "docs/en/inbox-task-submission.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "e7cd2a2102563ebd7a74a47f4459e84f8e22de66f15ea287560aab92ddddccd1",
+        "8c73c4096d25c146bd3c6c6da9450ac8ef8d54de9abccc62c1397e763435fcc8",
+        "2b9843e5702d93f1432b386e4a19f2ddcc23d961b5686d7c2f0df141d24fb02b",
+        "13f525f9e56ef1e9b3e73bb21650c75e8cdcb7dfde3abe8b3b1e486b70ce4aa9",
+        "79c250e8f021a72104f9c7e5d4bef13abec05ff696c9a9ba00694ef92a69b489"
+      ],
+      "source": "docs/ja/inbox-task-submission.md",
+      "source_sha256": "80ab667f58d4c9d8b5d2766739d2c5ea1c83000ca891481342a035bb236bb81e",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "docs/en/operations/property-report-discord-delivery.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "8ae37e62e49d2f30067171b8f497cb5552446f70547aaf4cd6df1922ebfe6a28",
+        "7d3a0d6542b9f4809d164b21a9b2d140cf506d717d5f8584aa3e910260bd37b4",
+        "475c5406065ad1b4b66e5f5d2fdfdcf59c77735efcae37447a5892bb6e451a52",
+        "50d531387db798ae6e1fd1571a05b8b3e1001430e960ea5f86ad19c21a1457cb",
+        "76b98f380e9e1f74a0ec4e31731dcca7daa699af6bd18a89ddeb500bbd946d3c",
+        "25ad77e090ecfb184b4b52848d3f4a5cd39439b67e533bf7431995a8897d29e8",
+        "dc9dc024b615133fde397b4360dc5e52d45e2bf19eb2f7184472a128858579de"
+      ],
+      "source": "docs/ja/operations/property-report-discord-delivery.md",
+      "source_sha256": "b3aaea8100ef0ae39fab0b7284164f0edc9fb85cc6acd08a0ae9559608866515",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "docs/ko/inbox-task-submission.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "e7cd2a2102563ebd7a74a47f4459e84f8e22de66f15ea287560aab92ddddccd1",
+        "8c73c4096d25c146bd3c6c6da9450ac8ef8d54de9abccc62c1397e763435fcc8",
+        "2b9843e5702d93f1432b386e4a19f2ddcc23d961b5686d7c2f0df141d24fb02b",
+        "13f525f9e56ef1e9b3e73bb21650c75e8cdcb7dfde3abe8b3b1e486b70ce4aa9",
+        "79c250e8f021a72104f9c7e5d4bef13abec05ff696c9a9ba00694ef92a69b489"
+      ],
+      "source": "docs/ja/inbox-task-submission.md",
+      "source_sha256": "80ab667f58d4c9d8b5d2766739d2c5ea1c83000ca891481342a035bb236bb81e",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "docs/ko/operations/property-report-discord-delivery.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "8ae37e62e49d2f30067171b8f497cb5552446f70547aaf4cd6df1922ebfe6a28",
+        "7d3a0d6542b9f4809d164b21a9b2d140cf506d717d5f8584aa3e910260bd37b4",
+        "475c5406065ad1b4b66e5f5d2fdfdcf59c77735efcae37447a5892bb6e451a52",
+        "50d531387db798ae6e1fd1571a05b8b3e1001430e960ea5f86ad19c21a1457cb",
+        "76b98f380e9e1f74a0ec4e31731dcca7daa699af6bd18a89ddeb500bbd946d3c",
+        "25ad77e090ecfb184b4b52848d3f4a5cd39439b67e533bf7431995a8897d29e8",
+        "dc9dc024b615133fde397b4360dc5e52d45e2bf19eb2f7184472a128858579de"
+      ],
+      "source": "docs/ja/operations/property-report-discord-delivery.md",
+      "source_sha256": "b3aaea8100ef0ae39fab0b7284164f0edc9fb85cc6acd08a0ae9559608866515",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_knowledge/communication/broadcasting-guide.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "9214f177565e1461bf8d0239137a1a567ac67c7110b76af63bc4cc9de5f180ce",
+        "97abc78f6aecd6e76f968a405440ebb31d856589e76006c15ab659ef6ac28e63",
+        "f9a8982367b25c6a99a367d90ba060c7e86153e4fd1512b8771f1fdecbc95351",
+        "9da7b8f20e359ee0d762db57972f37156a7f6576f6c994cfffe919ba9198a641",
+        "51b14a139b8f0d6d85579d9083b20f32d3c6747e596c84ae1e6d10eb74d216bb",
+        "cdb0d5cf8b77c7b05e96148ff30efdaff7e3851ca1b7709e9e94b609eeb29ae5",
+        "aa8ddf2e72b83f7df7881cd5aca45799d4dd3597605e85526f5a55870130ac21",
+        "9a08afea31805c5e70038f7cbb6f2ab73f47b7ac0fdce74e9222e27f3770a688",
+        "b50abda43bf50b5aa9456d5889fb86148cdde70a688d2093afca0c3ef243ec02",
+        "506ac0606785572ed8ff605fb33aafd0bb4042981d6c99a82812cc524b524155",
+        "d243856691f16ea59dc40c800e86cec7e6657d70b98e39e885a53924459172bd",
+        "d605048b46f5232e260fc0eb7ba84a50ed89680361206d6d19b544bd78d8570c"
+      ],
+      "source": "templates/ja/common_knowledge/communication/broadcasting-guide.md",
+      "source_sha256": "0a93725e379cd820dbb96a14b87bfe9a3e3949ac04a71bf79b0febc37d7d2788",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_knowledge/operations/heartbeat-observe-guide.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "6567ff05126a6e89075083275a30d5e55b2b6eac7a2b505e77a313f37ce19d34",
+        "453ee7d0f49d21daaf41c5c3eae96cbe2bf3fea78d66507b290e195fcbe10c58",
+        "33389affcc654e4e2792b057ec69aef9c4ee9e8ca040b4916db95466a437c58b",
+        "11e0012c637268f4205b7dd35dedd4a9d02fa4583b5a24a462020e88b869b8e0"
+      ],
+      "source": "templates/ja/common_knowledge/operations/heartbeat-observe-guide.md",
+      "source_sha256": "52ba1adf82dd661ac9ecfd7621b4c32e2ff1127bae880073d05d0032827557d8",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_knowledge/operations/knowledge-promotion-review.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "eb4b7e2c8dc8b8822774972eb30dd352b163c0d277615a7a6a27bf1e5eff6d37",
+        "533d0d4c01fae16f33e267fe479803741d42c2980a73c357143069a3a463e795",
+        "78691297f169cf38457886d36ed64e770fd2688041480b20a030112c6cbb6d09",
+        "bb4de6d3e99d0e87ca8e1e734c7deb47cd1725d9debc05ebd45926b785dca5fe",
+        "837dcf123e5fb4b630676c8c81bd733c110a326a55f81076dcef07b17a5717d2",
+        "a0a454fa5cab95f6637fe26750e0643af42ef1f0501dd07d53a945970133a065",
+        "35f3035dd4789cb274c4002d575457c16e491be5730562eb23f53b8b00e0f19f",
+        "41067ea2cf043ed33220e2f3d9f6a3a15c1295890f1faf0fcadce4c2b8dc8650"
+      ],
+      "source": "templates/ja/common_knowledge/operations/knowledge-promotion-review.md",
+      "source_sha256": "38000659c183e5593095835ea899032796cd1f1e15a51a4ff3688a422b81f657",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_skills/bluesky-market-scan/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "d8101605552a25c1c50286d89a921051dfa012f552286f192776f415dcf23c48",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "d05b516eb71ba193f76638bf99ae66196d8384ad74fe2d657c6ec29004fccfb7",
+        "5b5f50dfd006bdf305ac46e1e7bec803848feb6f5730ef932d528ab3e78240e8",
+        "ed0f223df4fa473a30fadbc38c249087adc021659c36567c04281e44c7466901",
+        "0fc1054accad921eebe17621992aa65eb0126a4441dce7b54b47022d3580a595",
+        "ac60f390868bfbcf7a64e3e1fe8f2686a7ee77fdf12a0109df16f09992196a17",
+        "e0355b073d02ec4de10c9ad719d7448744a271ead125ae126acb84c4aac57cb7",
+        "6804a53a667afb17e346eaa879bd2ce44debf89fb330dc36f60027701d23f3f9"
+      ],
+      "source": "templates/ja/common_skills/bluesky-market-scan/SKILL.md",
+      "source_sha256": "324d5313dcb8ed4ceca382d77c865128eaa94554cad499fb4f420b266b17efd1",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_skills/notebooklm-tool/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "722ea22cb07b6f9ba4adf6668678a3bb4fdb37e379e264ebf383256a5ea95c9a",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "3e6271f9d43936ffd018dcd2b65408130323288077a55d1615f3d510eb4bf56e",
+        "f0ffe972659ad4056a01975a4ea6847ddf4145223a183ab9e45314e18948195e",
+        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
+        "ace72737cd4723fac78e3622424c8420208f9193878e93e6d1deb401d6787d7b",
+        "7b25a635f470d70c864e6d1fb9bb905c0b561a79f4c5b041e7a63aad467f236c",
+        "681d85c419090ca6036f8d7a42b125069f96407e0229a4a22822fdd15c77ae3f",
+        "839dac588446b1efd31a6be349b4df1a79a7aa470a2b8914967cb2db408e22c9",
+        "7feadec6a804fc44d2c870b90fe0e2501c1380615e4480fdce4d0afd4667a738",
+        "fe6b819ebf9e3f422116f319c55a300a44fd60e4aaa72f1c29ab0e9a8dd6e526",
+        "72abeafa154662cdd4f1770fe600907d0482682dd52a867a701fc98533ab41d5",
+        "ca144e84403099c3b9f0a4d92f8caaf60ada4a7633906cdb42a6caaefeda0143",
+        "920c248a6927654f8135b015b373b7e1d1abc2e138b47f9244c7ab6ebe75a2d7",
+        "d8d745fc81f564608494f9036459b6b91a459bb72382c6025603189f4dad4f52",
+        "e9b04cea8935f49e61bb75ed1030fdecb1867c6f9457e3f2bcee8dd388b3ee66",
+        "53ac9f763809956a322904813f7a79e3ee95acb8db68e5dd5d54bfc77bfc8956",
+        "92df8a1eb0236384a06c5aef243411ee82b2ec2ff35c1a9d1514a17015e8d115",
+        "cc7d87a14793be7ad629823969f7a2d0cd7864a96374e78c46baad52da4feadd"
+      ],
+      "source": "templates/ja/common_skills/notebooklm-tool/SKILL.md",
+      "source_sha256": "5c4d8da66c61224b6ad39c31cf5117dba126542fa74fd97165b0a530a48f02ed",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/common_skills/obsidian-product/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "3397a248f2158d2616cd8647f0d3bfaf3bee3c311f8f865f1aae069ce799063c",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "67347c4432576959f1a3590e1dcaae4903237bc7e9bc8a140abe8de71e69600e",
+        "a6cb769da81598c380619ba117aadb14aa9c9b0a6843a7cf28da581f20cd644f",
+        "97cfc5014d59617f521c9e62429dc3d258c4d0dcc9bd947ead70d6a43e2aeeb9",
+        "6c71f9ec5d6359e384d1e1c04c129c5168b2d7923932858b7f2df8144f5e0d29",
+        "31521be44ee7eb4c16e737be7a955c6577aa992d881ac744ea4d63c05bf244d7",
+        "7b74d54ac2a5b0e1602fb796f56ab233bca623f40cdb09f10bebeffb2c8bdd0d",
+        "c5cfa53c8fcfc12bbb80391df021f9fc1ab8152f353fd052bd0d24daf967e591",
+        "36848396f5287aede7c85708341ac66f171c0575ab90173d3e85eaae339fd90d",
+        "e0f4838847ecfaeeb4e79f801f6abfc385ae1db9028618d5fe8ff4b0015fef6a",
+        "9752e9d1c262f1ef28294f8b80fb3b0f41bcea6a95f60911f8c4c07b1b618cf8",
+        "ba19710740c4d28ff412d9a8845d49e229a63fb29af53063afac57738b387baa",
+        "a596a4d47f37868e0dad5d18bfdd957133bbed1d0f80c1732ae384913d712200",
+        "9654623dff13cd11f0f3232a5dcabaa62acf92fcb81df8396f942c3f8d139084",
+        "a93d5d790be96b315aba97aafa58be89c93a3e6fb7c660beb7c03e7369313797",
+        "1a53d1fa83e6962184178de9bd7ae8f3223aa77e3921c6b75ecf1a07f11fdbdb"
+      ],
+      "source": "templates/ja/common_skills/obsidian-product/SKILL.md",
+      "source_sha256": "ec49f64f1a2110e196bd4e2369a0c09357a64340eacc27e5f68d402076ac102b",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/en/roles/administration/permissions.json": {
+      "engine": "copy",
+      "generated": "2026-11-01",
+      "model": "copy",
+      "section_hashes": [],
+      "source": "templates/ja/roles/administration/permissions.json",
+      "source_sha256": "bfb6448b841d240f28be702f52df6391f445ac78b52683817fa649454ffe0bbe",
+      "statuses": [],
+      "translator_version": "2"
+    },
+    "templates/en/roles/administration/specialty_prompt.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "8318cd08d5fe2a0ec04b18a071d33cf25bb521ab71b07a7f4deb05b7b9c1c7f7"
+      ],
+      "source": "templates/ja/roles/administration/specialty_prompt.md",
+      "source_sha256": "30434ff3c8dcd725ce76a2e382122a893b10863711c68e47ae6532067aeb091d",
+      "statuses": [
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_knowledge/communication/broadcasting-guide.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "9214f177565e1461bf8d0239137a1a567ac67c7110b76af63bc4cc9de5f180ce",
+        "97abc78f6aecd6e76f968a405440ebb31d856589e76006c15ab659ef6ac28e63",
+        "f9a8982367b25c6a99a367d90ba060c7e86153e4fd1512b8771f1fdecbc95351",
+        "9da7b8f20e359ee0d762db57972f37156a7f6576f6c994cfffe919ba9198a641",
+        "51b14a139b8f0d6d85579d9083b20f32d3c6747e596c84ae1e6d10eb74d216bb",
+        "cdb0d5cf8b77c7b05e96148ff30efdaff7e3851ca1b7709e9e94b609eeb29ae5",
+        "aa8ddf2e72b83f7df7881cd5aca45799d4dd3597605e85526f5a55870130ac21",
+        "9a08afea31805c5e70038f7cbb6f2ab73f47b7ac0fdce74e9222e27f3770a688",
+        "b50abda43bf50b5aa9456d5889fb86148cdde70a688d2093afca0c3ef243ec02",
+        "506ac0606785572ed8ff605fb33aafd0bb4042981d6c99a82812cc524b524155",
+        "d243856691f16ea59dc40c800e86cec7e6657d70b98e39e885a53924459172bd",
+        "d605048b46f5232e260fc0eb7ba84a50ed89680361206d6d19b544bd78d8570c"
+      ],
+      "source": "templates/ja/common_knowledge/communication/broadcasting-guide.md",
+      "source_sha256": "0a93725e379cd820dbb96a14b87bfe9a3e3949ac04a71bf79b0febc37d7d2788",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_knowledge/operations/heartbeat-observe-guide.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "6567ff05126a6e89075083275a30d5e55b2b6eac7a2b505e77a313f37ce19d34",
+        "453ee7d0f49d21daaf41c5c3eae96cbe2bf3fea78d66507b290e195fcbe10c58",
+        "33389affcc654e4e2792b057ec69aef9c4ee9e8ca040b4916db95466a437c58b",
+        "11e0012c637268f4205b7dd35dedd4a9d02fa4583b5a24a462020e88b869b8e0"
+      ],
+      "source": "templates/ja/common_knowledge/operations/heartbeat-observe-guide.md",
+      "source_sha256": "52ba1adf82dd661ac9ecfd7621b4c32e2ff1127bae880073d05d0032827557d8",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_knowledge/operations/knowledge-promotion-review.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "eb4b7e2c8dc8b8822774972eb30dd352b163c0d277615a7a6a27bf1e5eff6d37",
+        "533d0d4c01fae16f33e267fe479803741d42c2980a73c357143069a3a463e795",
+        "78691297f169cf38457886d36ed64e770fd2688041480b20a030112c6cbb6d09",
+        "bb4de6d3e99d0e87ca8e1e734c7deb47cd1725d9debc05ebd45926b785dca5fe",
+        "837dcf123e5fb4b630676c8c81bd733c110a326a55f81076dcef07b17a5717d2",
+        "a0a454fa5cab95f6637fe26750e0643af42ef1f0501dd07d53a945970133a065",
+        "35f3035dd4789cb274c4002d575457c16e491be5730562eb23f53b8b00e0f19f",
+        "41067ea2cf043ed33220e2f3d9f6a3a15c1295890f1faf0fcadce4c2b8dc8650"
+      ],
+      "source": "templates/ja/common_knowledge/operations/knowledge-promotion-review.md",
+      "source_sha256": "38000659c183e5593095835ea899032796cd1f1e15a51a4ff3688a422b81f657",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_skills/bluesky-market-scan/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "d8101605552a25c1c50286d89a921051dfa012f552286f192776f415dcf23c48",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "d05b516eb71ba193f76638bf99ae66196d8384ad74fe2d657c6ec29004fccfb7",
+        "5b5f50dfd006bdf305ac46e1e7bec803848feb6f5730ef932d528ab3e78240e8",
+        "ed0f223df4fa473a30fadbc38c249087adc021659c36567c04281e44c7466901",
+        "0fc1054accad921eebe17621992aa65eb0126a4441dce7b54b47022d3580a595",
+        "ac60f390868bfbcf7a64e3e1fe8f2686a7ee77fdf12a0109df16f09992196a17",
+        "e0355b073d02ec4de10c9ad719d7448744a271ead125ae126acb84c4aac57cb7",
+        "6804a53a667afb17e346eaa879bd2ce44debf89fb330dc36f60027701d23f3f9"
+      ],
+      "source": "templates/ja/common_skills/bluesky-market-scan/SKILL.md",
+      "source_sha256": "324d5313dcb8ed4ceca382d77c865128eaa94554cad499fb4f420b266b17efd1",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_skills/notebooklm-tool/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "722ea22cb07b6f9ba4adf6668678a3bb4fdb37e379e264ebf383256a5ea95c9a",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "3e6271f9d43936ffd018dcd2b65408130323288077a55d1615f3d510eb4bf56e",
+        "f0ffe972659ad4056a01975a4ea6847ddf4145223a183ab9e45314e18948195e",
+        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
+        "ace72737cd4723fac78e3622424c8420208f9193878e93e6d1deb401d6787d7b",
+        "7b25a635f470d70c864e6d1fb9bb905c0b561a79f4c5b041e7a63aad467f236c",
+        "681d85c419090ca6036f8d7a42b125069f96407e0229a4a22822fdd15c77ae3f",
+        "839dac588446b1efd31a6be349b4df1a79a7aa470a2b8914967cb2db408e22c9",
+        "7feadec6a804fc44d2c870b90fe0e2501c1380615e4480fdce4d0afd4667a738",
+        "fe6b819ebf9e3f422116f319c55a300a44fd60e4aaa72f1c29ab0e9a8dd6e526",
+        "72abeafa154662cdd4f1770fe600907d0482682dd52a867a701fc98533ab41d5",
+        "ca144e84403099c3b9f0a4d92f8caaf60ada4a7633906cdb42a6caaefeda0143",
+        "920c248a6927654f8135b015b373b7e1d1abc2e138b47f9244c7ab6ebe75a2d7",
+        "d8d745fc81f564608494f9036459b6b91a459bb72382c6025603189f4dad4f52",
+        "e9b04cea8935f49e61bb75ed1030fdecb1867c6f9457e3f2bcee8dd388b3ee66",
+        "53ac9f763809956a322904813f7a79e3ee95acb8db68e5dd5d54bfc77bfc8956",
+        "92df8a1eb0236384a06c5aef243411ee82b2ec2ff35c1a9d1514a17015e8d115",
+        "cc7d87a14793be7ad629823969f7a2d0cd7864a96374e78c46baad52da4feadd"
+      ],
+      "source": "templates/ja/common_skills/notebooklm-tool/SKILL.md",
+      "source_sha256": "5c4d8da66c61224b6ad39c31cf5117dba126542fa74fd97165b0a530a48f02ed",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_skills/obsidian-product/SKILL.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "3397a248f2158d2616cd8647f0d3bfaf3bee3c311f8f865f1aae069ce799063c",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "67347c4432576959f1a3590e1dcaae4903237bc7e9bc8a140abe8de71e69600e",
+        "a6cb769da81598c380619ba117aadb14aa9c9b0a6843a7cf28da581f20cd644f",
+        "97cfc5014d59617f521c9e62429dc3d258c4d0dcc9bd947ead70d6a43e2aeeb9",
+        "6c71f9ec5d6359e384d1e1c04c129c5168b2d7923932858b7f2df8144f5e0d29",
+        "31521be44ee7eb4c16e737be7a955c6577aa992d881ac744ea4d63c05bf244d7",
+        "7b74d54ac2a5b0e1602fb796f56ab233bca623f40cdb09f10bebeffb2c8bdd0d",
+        "c5cfa53c8fcfc12bbb80391df021f9fc1ab8152f353fd052bd0d24daf967e591",
+        "36848396f5287aede7c85708341ac66f171c0575ab90173d3e85eaae339fd90d",
+        "e0f4838847ecfaeeb4e79f801f6abfc385ae1db9028618d5fe8ff4b0015fef6a",
+        "9752e9d1c262f1ef28294f8b80fb3b0f41bcea6a95f60911f8c4c07b1b618cf8",
+        "ba19710740c4d28ff412d9a8845d49e229a63fb29af53063afac57738b387baa",
+        "a596a4d47f37868e0dad5d18bfdd957133bbed1d0f80c1732ae384913d712200",
+        "9654623dff13cd11f0f3232a5dcabaa62acf92fcb81df8396f942c3f8d139084",
+        "a93d5d790be96b315aba97aafa58be89c93a3e6fb7c660beb7c03e7369313797",
+        "1a53d1fa83e6962184178de9bd7ae8f3223aa77e3921c6b75ecf1a07f11fdbdb"
+      ],
+      "source": "templates/ja/common_skills/obsidian-product/SKILL.md",
+      "source_sha256": "ec49f64f1a2110e196bd4e2369a0c09357a64340eacc27e5f68d402076ac102b",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/roles/administration/permissions.json": {
+      "engine": "copy",
+      "generated": "2026-11-01",
+      "model": "copy",
+      "section_hashes": [],
+      "source": "templates/ja/roles/administration/permissions.json",
+      "source_sha256": "bfb6448b841d240f28be702f52df6391f445ac78b52683817fa649454ffe0bbe",
+      "statuses": [],
+      "translator_version": "2"
+    },
+    "templates/ko/roles/administration/specialty_prompt.md": {
+      "engine": "nanogpt",
+      "generated": "2026-11-01",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "section_hashes": [
+        "8318cd08d5fe2a0ec04b18a071d33cf25bb521ab71b07a7f4deb05b7b9c1c7f7"
+      ],
+      "source": "templates/ja/roles/administration/specialty_prompt.md",
+      "source_sha256": "30434ff3c8dcd725ce76a2e382122a893b10863711c68e47ae6532067aeb091d",
+      "statuses": [
         "translated"
       ],
       "translator_version": "2"

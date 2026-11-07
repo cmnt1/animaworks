@@ -116,6 +116,16 @@ class TestListChannels:
 
 
 class TestGetChannelMessages:
+    async def test_unicode_channel_remains_readable(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(shared_dir, "日本語", [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "hello"}])
+        app = _make_test_app(shared_dir)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/channels/日本語")
+        assert resp.status_code == 200
+        assert resp.json()["messages"][0]["text"] == "hello"
+
     async def test_returns_messages(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
@@ -809,6 +819,60 @@ class TestGetDMHistory:
         assert "How are you?" in texts
         assert "I am fine" in texts
 
+    async def test_dm_rows_include_message_id_and_reply_to(self, tmp_path: Path):
+        """DM rows expose reply metadata when the activity log has it."""
+        data_dir = tmp_path
+        shared_dir = data_dir / "shared"
+        shared_dir.mkdir()
+        today = _today()
+
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "dm_sent",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                    "meta": {"message_id": "msg-1"},
+                },
+                {
+                    "ts": f"{today}T10:05:00",
+                    "type": "dm_sent",
+                    "content": "Follow up",
+                    "from": "alice",
+                    "to": "bob",
+                    "meta": {"message_id": "msg-2", "reply_to": "msg-1"},
+                },
+                {
+                    "ts": f"{today}T10:10:00",
+                    "type": "dm_sent",
+                    "content": "No metadata",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm/alice-bob?limit=50")
+        assert resp.status_code == 200
+        rows = resp.json()["messages"]
+        assert len(rows) == 3
+
+        by_text = {row["text"]: row for row in rows}
+        assert by_text["Hello Bob"]["message_id"] == "msg-1"
+        assert "reply_to" not in by_text["Hello Bob"]
+        assert by_text["Follow up"]["message_id"] == "msg-2"
+        assert by_text["Follow up"]["reply_to"] == "msg-1"
+        assert "message_id" not in by_text["No metadata"]
+        assert "reply_to" not in by_text["No metadata"]
+
     async def test_deduplicates_entries(self, tmp_path: Path):
         """Same message in both participants' activity logs appears only once."""
         data_dir = tmp_path
@@ -1035,3 +1099,114 @@ class TestChannelReadBoardAccess:
             resp = await client.get("/api/channels")
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+class TestChannelReads:
+    async def test_get_returns_empty_read_state_for_new_channel(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "Hello", "source": "human", "id": "p1"}],
+        )
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general/reads")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"channel": "general", "readers": {}, "picked": {}}
+
+    async def test_get_missing_channel_returns_404(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/missing/reads")
+
+        assert resp.status_code == 404
+
+    async def test_get_unreadable_channel_returns_403(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "restricted",
+            [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "Hello", "source": "human", "id": "p1"}],
+        )
+        (shared_dir / "channels" / "restricted.meta.json").write_text("{not json", encoding="utf-8")
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/restricted/reads")
+
+        assert resp.status_code == 403
+
+    async def test_post_advances_and_get_reflects_the_position(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "owner", "text": "First", "source": "human", "id": "p1"},
+                {"ts": "2026-02-17T11:00:00", "from": "owner", "text": "Second", "source": "human", "id": "p2"},
+            ],
+        )
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/channels/general/read", json={"upto_id": "p2"})
+            assert resp.status_code == 200
+            assert resp.json() == {
+                "changed": True,
+                "upto_id": "p2",
+                "upto_ts": "2026-02-17T11:00:00",
+            }
+
+            reads = await client.get("/api/channels/general/reads")
+
+        assert reads.status_code == 200
+        assert reads.json()["readers"]["human:human"]["upto_id"] == "p2"
+
+    async def test_post_never_moves_backwards(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "owner", "text": "First", "source": "human", "id": "p1"},
+                {"ts": "2026-02-17T11:00:00", "from": "owner", "text": "Second", "source": "human", "id": "p2"},
+            ],
+        )
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/channels/general/read", json={"upto_id": "p2"})
+            resp = await client.post("/api/channels/general/read", json={"upto_id": "p1"})
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "changed": False,
+            "upto_id": "p2",
+            "upto_ts": "2026-02-17T11:00:00",
+        }
+
+    async def test_post_unknown_id_returns_404_without_writing(self, tmp_path: Path) -> None:
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(
+            shared_dir,
+            "general",
+            [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "First", "source": "human", "id": "p1"}],
+        )
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/channels/general/read", json={"upto_id": "missing"})
+
+        assert resp.status_code == 404
+        assert not (shared_dir / "reads" / "board" / "general.json").exists()

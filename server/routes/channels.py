@@ -11,21 +11,36 @@ import json
 import logging
 import re
 import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from core.activity.logger import ActivityLogger
-from core.messaging.board import board_access, human_principal
-from core.messaging.messenger import Messenger
+from core.i18n import t
+from core.messaging.board import Principal, board_access, human_principal, operator_principal, post_to_board
+from core.messaging.board_deliveries import attach_deliveries
+from core.messaging.messenger import ChannelMeta, Messenger, load_channel_meta, save_channel_meta
+from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.routes.channels")
 
 # Allow Unicode channel names (e.g. Discord Japanese channels) while
 # blocking path-traversal characters (/, \, ..) and control chars.
 _SAFE_NAME_RE = re.compile(r"^[^\x00-\x1f/\\]{1,60}$")
+_JST = ZoneInfo("Asia/Tokyo")
+_ACTIVITY_DAYS = 14
+
+_KIND_FILTERS: dict[str, set[str]] = {
+    "anima": {"anima"},
+    "human": {"human"},
+    "external": {"external_user", "external_bot"},
+    "operator": {"operator"},
+}
 
 # ── Caches ────────────────────────────────────────
 # Channel metadata cache: keyed by file path, invalidated on mtime/size change
@@ -36,16 +51,43 @@ _dm_cache: dict[str, object] = {"data": None, "ts": 0.0, "key": ""}
 _DM_CACHE_TTL = 60.0
 
 
+def _ts_date(ts: Any) -> date | None:
+    """Return the JST calendar date for an ISO timestamp, or None."""
+    value = str(ts or "").strip()
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_JST)
+    return parsed.astimezone(_JST).date()
+
+
+def _activity_14d(records: list[dict], today: date) -> list[int]:
+    """Count posts per JST day for the last 14 days (oldest first)."""
+    counts = [0] * _ACTIVITY_DAYS
+    start = today - timedelta(days=_ACTIVITY_DAYS - 1)
+    for record in records:
+        day = _ts_date(record.get("ts"))
+        if day is None or day < start or day > today:
+            continue
+        counts[(day - start).days] += 1
+    return counts
+
+
 def _get_channel_meta(f: Path) -> dict:
-    """Return {count, last_ts} for a channel file, cached by mtime+size."""
+    """Return {count, last_ts, last_from, activity_14d} cached by mtime+size."""
     key = str(f)
     try:
         stat = f.stat()
     except OSError:
-        return {"count": 0, "last_ts": ""}
+        return {"count": 0, "last_ts": "", "last_from": "", "activity_14d": [0] * _ACTIVITY_DAYS}
 
+    today = datetime.now(_JST).date()
     cached = _channel_meta_cache.get(key)
-    if cached and cached["_mtime"] == stat.st_mtime and cached["_size"] == stat.st_size:
+    if cached and cached["_mtime"] == stat.st_mtime and cached["_size"] == stat.st_size and cached.get("_day") == today:
         return cached
 
     try:
@@ -53,23 +95,132 @@ def _get_channel_meta(f: Path) -> dict:
     except OSError:
         raw = b""
 
+    entry: dict = {
+        "count": 0,
+        "last_ts": "",
+        "last_from": "",
+        "activity_14d": [0] * _ACTIVITY_DAYS,
+        "_mtime": stat.st_mtime,
+        "_size": stat.st_size,
+        "_day": today,
+    }
     if not raw:
-        entry = {"count": 0, "last_ts": "", "_mtime": stat.st_mtime, "_size": stat.st_size}
         _channel_meta_cache[key] = entry
         return entry
 
-    count = raw.count(b"\n") + 1
+    entry["count"] = raw.count(b"\n") + 1
 
-    last_ts = ""
-    try:
-        last_line = raw.rsplit(b"\n", 1)[-1]
-        last_ts = json.loads(last_line).get("ts", "")
-    except (json.JSONDecodeError, IndexError):
-        pass
+    records: list[dict] = []
+    for line in raw.splitlines():
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(record, dict):
+            records.append(record)
 
-    entry = {"count": count, "last_ts": last_ts, "_mtime": stat.st_mtime, "_size": stat.st_size}
+    if records:
+        # Keep the existing "last physical line" behaviour for last_ts.
+        try:
+            last_line = raw.rsplit(b"\n", 1)[-1]
+            last_record = json.loads(last_line)
+        except (json.JSONDecodeError, IndexError):
+            last_record = records[-1]
+        if isinstance(last_record, dict):
+            entry["last_ts"] = str(last_record.get("ts", "") or "")
+            entry["last_from"] = str(last_record.get("from", "") or "")
+        entry["activity_14d"] = _activity_14d(records, today)
+
     _channel_meta_cache[key] = entry
     return entry
+
+
+def _channel_entry(
+    shared_dir: Path,
+    name: str,
+    channel_file: Path,
+    principal: Principal,
+    slack_flags: dict[str, dict[str, bool]],
+) -> dict:
+    """Build one Board entry in the same shape as ``GET /api/channels``."""
+    meta_info = _get_channel_meta(channel_file)
+    meta = load_channel_meta(shared_dir, name)
+    members = list(meta.members) if meta is not None and meta.members else []
+    if meta is not None and meta.closed:
+        access = "closed"
+    elif members:
+        access = "members"
+    else:
+        access = "open"
+
+    return {
+        "name": name,
+        "message_count": meta_info["count"],
+        "last_post_ts": meta_info["last_ts"],
+        "last_from": meta_info["last_from"],
+        "access": access,
+        "writable": board_access(shared_dir, name, principal, "write").allowed,
+        "company": (meta.company if meta is not None else "") or "",
+        "members": members,
+        "description": (meta.description if meta is not None else "") or "",
+        "slack": slack_flags.get(name, {"inbound": False, "outbound": False}),
+        "activity_14d": meta_info["activity_14d"],
+        "unread": _human_unread(shared_dir, name, principal.name),
+    }
+
+
+def _request_username(request: Request) -> str:
+    """Return the authenticated username, falling back to "human"."""
+    user = getattr(request.state, "user", None)
+    username = getattr(user, "username", "") if user is not None else ""
+    return str(username or "human")
+
+
+def _slack_sync_flags(names: list[str]) -> dict[str, dict[str, bool]]:
+    """Return inbound/outbound Slack sync flags for each board name."""
+    flags = {name: {"inbound": False, "outbound": False} for name in names}
+    try:
+        from core.config.models import load_config
+
+        slack_cfg = load_config().external_messaging.slack
+    except Exception:
+        logger.debug("Could not read Slack settings for board list", exc_info=True)
+        return flags
+
+    try:
+        from core.messaging.outbound_auto import board_slack_outbound_enabled
+
+        mapping = getattr(slack_cfg, "board_mapping", {}) or {}
+        inbound_names = {value for value in mapping.values() if isinstance(value, str)}
+        for name in names:
+            flags[name] = {
+                "inbound": name in inbound_names,
+                "outbound": board_slack_outbound_enabled(slack_cfg, name),
+            }
+    except Exception:
+        logger.warning("Could not evaluate Slack settings for board list", exc_info=True)
+    return flags
+
+
+def _kind_from_source(source: Any) -> str:
+    """Infer a post kind from its legacy ``source`` value."""
+    value = str(source or "").lower()
+    if value == "anima":
+        return "anima"
+    if value == "human":
+        return "human"
+    if value in {"slack", "discord"}:
+        return "external_user"
+    return "operator"
+
+
+def _with_kind(record: dict) -> dict:
+    """Copy a post row and backfill ``kind`` from ``source`` when absent."""
+    message = dict(record)
+    if not message.get("kind"):
+        message["kind"] = _kind_from_source(message.get("source"))
+        message["kind_inferred"] = True
+    return message
 
 
 def _validate_name(name: str) -> JSONResponse | None:
@@ -85,6 +236,87 @@ def _validate_name(name: str) -> JSONResponse | None:
 class ChannelPostRequest(BaseModel):
     text: str = Field(max_length=10000)
     from_name: str = Field(default="human", min_length=1)
+    reply_to: str | None = None
+
+
+class ChannelSettingsRequest(BaseModel):
+    description: str | None = None
+    access: Literal["open", "members", "closed"] | None = None
+    members: list[str] | None = None
+
+
+def _access_of(meta: ChannelMeta | None) -> str:
+    """Return the public access label for *meta*."""
+    if meta is not None and meta.closed:
+        return "closed"
+    if meta is not None and meta.members:
+        return "members"
+    return "open"
+
+
+def _settings_record_lines(old_meta: ChannelMeta | None, new_meta: ChannelMeta) -> list[str]:
+    """Describe the changed settings as one line per changed item."""
+    lines: list[str] = []
+    old_members = list(old_meta.members) if old_meta is not None else []
+    new_members = list(new_meta.members)
+    if new_members != old_members:
+        added = [member for member in new_members if member not in old_members]
+        removed = [member for member in old_members if member not in new_members]
+        if added:
+            lines.append(t("server.channel_settings_members_added", names=", ".join(added)))
+        if removed:
+            lines.append(t("server.channel_settings_members_removed", names=", ".join(removed)))
+
+    old_access = _access_of(old_meta)
+    new_access = _access_of(new_meta)
+    if new_access != old_access:
+        lines.append(t(f"server.channel_settings_access_{new_access}"))
+
+    old_description = old_meta.description if old_meta is not None else ""
+    if new_meta.description != old_description:
+        lines.append(t("server.channel_settings_description_changed"))
+    return lines
+
+
+def _record_settings_post(shared_dir: Path, name: str, username: str, lines: list[str]) -> None:
+    """Append the settings-change record to the Board as an operator post."""
+    result = post_to_board(
+        name,
+        "\n".join(lines),
+        operator_principal(username),
+        origin="settings",
+        shared_dir=shared_dir,
+        notify=False,
+    )
+    if result.error:
+        logger.warning("Could not record board settings change on #%s: %s", name, result.error)
+
+
+def _channel_has_post(channel_file: Path, post_id: str) -> bool:
+    """Return whether *post_id* exists in the channel log."""
+    try:
+        lines = channel_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and record.get("id") == post_id:
+            return True
+    return False
+
+
+class ChannelReadRequest(BaseModel):
+    upto_id: str = ""
+
+
+def _human_username(request: Request) -> str:
+    """Return the authenticated username, falling back to the anonymous human."""
+    user = getattr(request.state, "user", None)
+    username = getattr(user, "username", "") if user is not None else ""
+    return username or "human"
 
 
 def _get_messenger(shared_dir: Path) -> Messenger:
@@ -92,8 +324,38 @@ def _get_messenger(shared_dir: Path) -> Messenger:
     return Messenger(shared_dir, anima_name="human")
 
 
+def _human_unread(shared_dir: Path, channel: str, username: str) -> int:
+    """Return how many posts the human has not read on *channel* (0 on errors)."""
+    try:
+        from core.messaging.board_reads import unread_summary
+
+        return int(unread_summary(shared_dir, channel, f"human:{username}", self_name=username)["unread"])
+    except Exception:
+        logger.debug("Could not compute unread count for #%s", channel, exc_info=True)
+        return 0
+
+
 def create_channels_router() -> APIRouter:
     router = APIRouter()
+
+    # ── Call-flow endpoint ───────────────────────────────────
+
+    @router.get("/flows")
+    def list_flows(request: Request, days: str = "30", via: str = "all"):
+        """Return Board/DM calls and their summary for the flow view."""
+        try:
+            days_value = int(days)
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": f"Invalid days: {days!r}"})
+        if days_value not in (7, 30):
+            return JSONResponse(status_code=400, content={"detail": f"Invalid days: {days!r}"})
+        if via not in ("all", "board", "dm"):
+            return JSONResponse(status_code=400, content={"detail": f"Invalid via: {via!r}"})
+        shared_dir: Path = request.app.state.shared_dir
+
+        from core.messaging.flows import build_flows
+
+        return build_flows(shared_dir, days=days_value, via=via, username=_request_username(request))
 
     # ── Channel endpoints ────────────────────────────────────
 
@@ -105,30 +367,102 @@ def create_channels_router() -> APIRouter:
         if not channels_dir.exists():
             return []
 
-        from core.messaging.messenger import load_channel_meta
-
-        principal = human_principal("human")
-        channels: list[dict] = []
+        principal = human_principal(_request_username(request))
+        board_files: list[tuple[str, Path]] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
             name = f.stem
             if not board_access(shared_dir, name, principal, "read").allowed:
                 continue
-            meta_info = _get_channel_meta(f)
+            board_files.append((name, f))
 
-            channel_info: dict = {
-                "name": name,
-                "message_count": meta_info["count"],
-                "last_post_ts": meta_info["last_ts"],
-            }
+        slack_flags = _slack_sync_flags([name for name, _ in board_files])
+        return [_channel_entry(shared_dir, name, f, principal, slack_flags) for name, f in board_files]
 
-            meta = load_channel_meta(shared_dir, name)
-            if meta is not None and meta.members:
-                channel_info["members"] = meta.members
-                channel_info["description"] = meta.description
+    @router.put("/channels/{name}/settings")
+    def update_channel_settings(request: Request, name: str, body: ChannelSettingsRequest):
+        """Update a Board's description, visibility, and members (owner/admin only)."""
+        if err := _validate_name(name):
+            return err
 
-            channels.append(channel_info)
+        caller = getattr(request.state, "user", None)
+        role = getattr(caller, "role", None) if caller is not None else None
+        if role not in {"owner", "admin"}:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": t("server.channel_settings_forbidden")},
+            )
+        username = str(getattr(caller, "username", "") or "human")
 
-        return channels
+        shared_dir: Path = request.app.state.shared_dir
+        channel_file = shared_dir / "channels" / f"{name}.jsonl"
+        if not channel_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Channel '{name}' not found"},
+            )
+
+        old_meta = load_channel_meta(shared_dir, name)
+
+        if body.description is not None and len(body.description) > 500:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": t("server.channel_settings_description_too_long")},
+            )
+        if body.members is not None:
+            animas_dir = shared_dir.parent / "animas"
+            for member in body.members:
+                if not _SAFE_NAME_RE.match(member) or not (animas_dir / member).is_dir():
+                    return JSONResponse(
+                        status_code=400,
+                        content={"detail": t("server.channel_settings_member_not_found", name=member)},
+                    )
+
+        new_members = list(old_meta.members) if old_meta is not None else []
+        if body.members is not None:
+            new_members = list(body.members)
+        new_description = old_meta.description if old_meta is not None else ""
+        if body.description is not None:
+            new_description = body.description
+        new_closed = bool(old_meta.closed) if old_meta is not None else False
+        if body.access == "open":
+            new_members = []
+            new_closed = False
+        elif body.access == "members":
+            new_closed = False
+        elif body.access == "closed":
+            new_closed = True
+
+        if body.access == "members" and not new_members:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": t("server.channel_settings_members_required")},
+            )
+
+        new_meta = ChannelMeta(
+            members=new_members,
+            created_by=old_meta.created_by if old_meta is not None else username,
+            created_at=old_meta.created_at if old_meta is not None else now_iso(),
+            description=new_description,
+            closed=new_closed,
+            slack_sync_disabled=old_meta.slack_sync_disabled if old_meta is not None else False,
+            slack_deleted_at=old_meta.slack_deleted_at if old_meta is not None else "",
+            company=old_meta.company if old_meta is not None else "",
+        )
+
+        lines = _settings_record_lines(old_meta, new_meta)
+        if lines:
+            # A closed Board cannot accept posts, so close (and stay-closed)
+            # changes are recorded before the metadata write. Opening is
+            # recorded afterwards, once writes are allowed again.
+            if new_closed:
+                _record_settings_post(shared_dir, name, username, lines)
+            save_channel_meta(shared_dir, name, new_meta)
+            if not new_closed:
+                _record_settings_post(shared_dir, name, username, lines)
+
+        principal = human_principal(_request_username(request))
+        slack_flags = _slack_sync_flags([name])
+        return _channel_entry(shared_dir, name, channel_file, principal, slack_flags)
 
     @router.get("/channels/{name}")
     def get_channel_messages(
@@ -137,6 +471,9 @@ def create_channels_router() -> APIRouter:
         limit: int = 50,
         offset: int = 0,
         since: str = "",
+        q: str = "",
+        kind: str = "",
+        around: str = "",
     ):
         """Get messages from a specific channel.
 
@@ -144,6 +481,10 @@ def create_channels_router() -> APIRouter:
 
         When *since* is provided (ISO timestamp), only messages strictly
         newer than that timestamp are returned (for incremental polling).
+
+        *q* filters by a case-insensitive substring of the text or sender, while
+        *kind* accepts ``anima``, ``human``, ``external`` (both external kinds),
+        or ``operator``. *around* returns a page centered on a message id.
         """
         if err := _validate_name(name):
             return err
@@ -168,20 +509,26 @@ def create_channels_router() -> APIRouter:
             all_lines = []
         all_lines = [line for line in all_lines if line.strip()]
 
-        total = len(all_lines)
+        records: list[dict] = []
+        for line in all_lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                records.append(_with_kind(record))
+        total = len(records)
 
         if since:
-            # Incremental mode: scan from the tail for new messages only
+            # Incremental mode: scan from the tail for new messages only.
+            # Filters are ignored here so polling keeps its existing contract.
             new_msgs: list[dict] = []
-            for line in reversed(all_lines):
-                try:
-                    msg = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if msg.get("ts", "") <= since:
+            for msg in reversed(records):
+                if str(msg.get("ts", "")) <= since:
                     break
                 new_msgs.append(msg)
             new_msgs.reverse()
+            new_msgs = attach_deliveries(shared_dir, name, new_msgs)
             return {
                 "channel": name,
                 "messages": new_msgs,
@@ -192,19 +539,54 @@ def create_channels_router() -> APIRouter:
                 "incremental": True,
             }
 
+        if around:
+            center = next((index for index, msg in enumerate(records) if msg.get("id") == around), None)
+            if center is None:
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": f"Message '{around}' not found in channel '{name}'"},
+                )
+            page_size = max(1, limit)
+            start = max(0, center - page_size // 2)
+            if start + page_size > total:
+                start = max(0, total - page_size)
+            end = min(total, start + page_size)
+            return {
+                "channel": name,
+                "messages": attach_deliveries(shared_dir, name, records[start:end]),
+                "total": total,
+                "offset": start,
+                "limit": limit,
+                "has_more": start > 0,
+                "has_newer": end < total,
+            }
+
+        filtered = records
+        if q:
+            needle = q.casefold()
+            filtered = [
+                msg
+                for msg in filtered
+                if needle in str(msg.get("text", "")).casefold() or needle in str(msg.get("from", "")).casefold()
+            ]
+        if kind:
+            allowed_kinds = _KIND_FILTERS.get(kind)
+            if allowed_kinds is None:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": f"Invalid kind: {kind!r}"},
+                )
+            filtered = [msg for msg in filtered if msg.get("kind") in allowed_kinds]
+
+        total = len(filtered)
+
         # Reverse pagination: offset=0 → newest N messages
         start = max(0, total - offset - limit)
         end = max(0, total - offset)
-        sliced_lines = all_lines[start:end]
-
-        paginated: list[dict] = []
-        for line in sliced_lines:
-            try:
-                paginated.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        paginated = filtered[start:end] if end > start else []
 
         has_more = start > 0
+        paginated = attach_deliveries(shared_dir, name, paginated)
 
         return {
             "channel": name,
@@ -213,6 +595,87 @@ def create_channels_router() -> APIRouter:
             "offset": offset,
             "limit": limit,
             "has_more": has_more,
+        }
+
+    @router.get("/channels/{name}/reads")
+    def get_channel_reads(request: Request, name: str):
+        """Return the stored read positions for one Board channel."""
+        if err := _validate_name(name):
+            return err
+        shared_dir: Path = request.app.state.shared_dir
+        channel_file = shared_dir / "channels" / f"{name}.jsonl"
+        if not channel_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Channel '{name}' not found"},
+            )
+        if not board_access(shared_dir, name, human_principal(_human_username(request)), "read").allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Access denied to channel '{name}'"},
+            )
+
+        from core.messaging.board_reads import load_reads
+
+        reads = load_reads(shared_dir, name)
+        return {"channel": name, "readers": reads["readers"], "picked": reads["picked"]}
+
+    @router.get("/channels/{name}/info")
+    def get_channel_info(request: Request, name: str):
+        """Return the informational panel for one Board channel."""
+        if err := _validate_name(name):
+            return err
+        shared_dir: Path = request.app.state.shared_dir
+        channel_file = shared_dir / "channels" / f"{name}.jsonl"
+        if not channel_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Channel '{name}' not found"},
+            )
+        if not board_access(shared_dir, name, human_principal(_human_username(request)), "read").allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Access denied to channel '{name}'"},
+            )
+
+        from core.messaging.flows import channel_info
+
+        return channel_info(shared_dir, name)
+
+    @router.post("/channels/{name}/read")
+    def mark_channel_read(request: Request, name: str, body: ChannelReadRequest):
+        """Advance the requesting human's stored read position in one channel."""
+        if err := _validate_name(name):
+            return err
+        shared_dir: Path = request.app.state.shared_dir
+        channel_file = shared_dir / "channels" / f"{name}.jsonl"
+        if not channel_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Channel '{name}' not found"},
+            )
+        if not board_access(shared_dir, name, human_principal(_human_username(request)), "read").allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Access denied to channel '{name}'"},
+            )
+
+        from core.messaging.board_reads import advance_upto, find_post_ts, load_reads
+
+        post_ts = find_post_ts(shared_dir, name, body.upto_id)
+        if post_ts is None:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Post '{body.upto_id}' not found in channel '{name}'"},
+            )
+
+        reader = f"human:{_request_username(request)}"
+        changed = advance_upto(shared_dir, name, reader, post_id=body.upto_id, post_ts=post_ts)
+        current = load_reads(shared_dir, name)["readers"].get(reader, {})
+        return {
+            "changed": changed,
+            "upto_id": current.get("upto_id", body.upto_id),
+            "upto_ts": current.get("upto_ts", post_ts),
         }
 
     @router.post("/channels/{name}")
@@ -233,6 +696,15 @@ def create_channels_router() -> APIRouter:
 
         from core.messaging.board import human_principal, post_to_board
 
+        channel_file = shared_dir / "channels" / f"{name}.jsonl"
+        if body.reply_to is not None and not _channel_has_post(channel_file, body.reply_to):
+            from core.i18n import t
+
+            return JSONResponse(
+                status_code=400,
+                content={"detail": t("server.channel_reply_to_not_found", post_id=body.reply_to)},
+            )
+
         post = await asyncio.to_thread(
             post_to_board,
             name,
@@ -240,6 +712,7 @@ def create_channels_router() -> APIRouter:
             human_principal(body.from_name),
             origin="http",
             shared_dir=shared_dir,
+            reply_to=body.reply_to,
         )
         if post.error == "not_found":
             return JSONResponse(
@@ -399,14 +872,20 @@ def create_channels_router() -> APIRouter:
                     involving=other,
                 )
                 for e in entries:
-                    messages.append(
-                        {
-                            "ts": e.ts,
-                            "from": e.from_person or name,
-                            "text": e.content,
-                            "source": "activity_log",
-                        }
-                    )
+                    meta = e.meta if isinstance(e.meta, dict) else {}
+                    row = {
+                        "ts": e.ts,
+                        "from": e.from_person or name,
+                        "text": e.content,
+                        "source": "activity_log",
+                    }
+                    # Keep DM rows jumpable to the original message. These are
+                    # additive fields only; existing clients ignore them.
+                    if meta.get("message_id"):
+                        row["message_id"] = str(meta["message_id"])
+                    if meta.get("reply_to"):
+                        row["reply_to"] = str(meta["reply_to"])
+                    messages.append(row)
             except Exception:
                 logger.debug(
                     "Failed to read DM activity_log for %s",
