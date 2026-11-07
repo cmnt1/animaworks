@@ -38,6 +38,10 @@ def test_fanout_uses_complete_known_names_and_punctuation(tmp_path: Path) -> Non
     for name in ("alice", "team-lead", "bob", "unknown"):
         (animas_dir / name).mkdir(parents=True)
         (animas_dir / name / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    sockets_dir = tmp_path / "run" / "sockets"
+    sockets_dir.mkdir(parents=True)
+    for name in ("team-lead", "bob"):
+        (sockets_dir / f"{name}.sock").touch()
     post = BoardPost(
         channel="general",
         ts="2026-01-01T00:00:00+00:00",
