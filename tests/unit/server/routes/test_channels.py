@@ -116,6 +116,16 @@ class TestListChannels:
 
 
 class TestGetChannelMessages:
+    async def test_unicode_channel_remains_readable(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_channel(shared_dir, "日本語", [{"ts": "2026-02-17T10:00:00", "from": "owner", "text": "hello"}])
+        app = _make_test_app(shared_dir)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/channels/日本語")
+        assert resp.status_code == 200
+        assert resp.json()["messages"][0]["text"] == "hello"
+
     async def test_returns_messages(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
