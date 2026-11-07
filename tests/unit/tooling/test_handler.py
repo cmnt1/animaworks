@@ -435,19 +435,30 @@ class TestHandleRouting:
     def test_post_channel_notifies_server_with_channel_target(
         self,
         handler_with_messenger: ToolHandler,
+        monkeypatch: pytest.MonkeyPatch,
+        anima_dir: Path,
     ):
         callback = MagicMock()
         handler_with_messenger.on_message_sent = callback
-        handler_with_messenger._channel_company_boundary_error = MagicMock(return_value=None)
-        handler_with_messenger._fire_board_slack_sync = MagicMock()
-        with patch("core.messaging.messenger.is_channel_member", return_value=True):
-            result = handler_with_messenger.handle(
-                "post_channel",
-                {"channel": "general", "text": "hello"},
-            )
+        shared_dir = anima_dir.parent.parent / "shared"
+        (shared_dir / "channels").mkdir(parents=True)
+        (shared_dir / "channels" / "general.jsonl").touch()
+        handler_with_messenger._messenger.shared_dir = shared_dir
+        monkeypatch.setattr(
+            "core.messaging.board_client.post_via_server",
+            lambda *_args, **_kwargs: {
+                "post": {"committed": True, "duplicate": False, "id": "post-1", "notified": [], "not_notified": {}}
+            },
+        )
+        result = handler_with_messenger.handle(
+            "post_channel",
+            {"channel": "general", "text": "hello"},
+        )
 
-        assert result == "Posted to #general"
-        callback.assert_called_once_with("test-anima", "#channel:general", "hello", message_id="")
+        from core.i18n import t
+
+        assert result == t("handler.channel_post_success", channel="general")
+        callback.assert_not_called()
 
     def test_send_message_on_message_sent_error_swallowed(
         self,
@@ -1667,7 +1678,10 @@ class TestMemoryWriteSecurity:
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
-        assert "resolves outside your directory" in parsed["message"]
+        message = parsed["message"]
+        assert "resolves outside your directory" in message or "自分のディレクトリ外" in message
+        assert "`animaworks-tool board read`" in message
+        assert "`animaworks-tool board post`" in message
 
     def test_read_memory_file_normal_access_allowed(
         self,

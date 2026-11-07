@@ -77,7 +77,6 @@ class TestActionRulesGuideTemplate:
         required_tools = {
             "call_human",
             "send_message",
-            "post_channel",
             "write_memory_file",
             "gmail_draft",
             "gmail_send",
@@ -105,6 +104,7 @@ class TestActionRulesGuideTemplate:
             assert "slack_post" not in content
             for tool in required_tools:
                 assert f"`{tool}`" in content, f"{locale} action-rules-guide missing {tool}"
+            assert "`animaworks-tool board post`" in content, f"{locale} action-rules-guide missing Board CLI"
             for cli in cli_mappings:
                 assert cli in content, f"{locale} action-rules-guide missing {cli}"
 
@@ -136,7 +136,7 @@ class TestActionRulesGuideTemplate:
             if not any(part in historical_dirs for part in path.parts)
         )
         pattern = re.compile(
-            r"Channel D|channel D|channel_d|D:\s*Skill Match|"
+            r"Channel D|channel D|\bchannel_d\b|D:\s*Skill Match|"
             r"`skill`\s*(?:/|\||tool|ツール|도구)|`skill` tool|skill tool"
         )
         for path in paths:

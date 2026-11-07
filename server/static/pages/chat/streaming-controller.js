@@ -129,7 +129,6 @@ export function createStreamingController(ctx) {
     const streamCtx = name ? mgr.getStreamingContext(name) : null;
     const isChatStreaming = streamCtx && streamCtx.thread === tid;
     const pendingQueue = name ? mgr.getPendingQueue(name, tid) : [];
-    const isMeetingStreaming = state.meetingStreaming === true;
 
     if (!sendBtn) return;
 
@@ -295,7 +294,6 @@ export function createStreamingController(ctx) {
     const hasImages = state.imageInputManager && state.imageInputManager.getImageCount() > 0;
     const hasFiles = state.imageInputManager && state.imageInputManager.getFileCount() > 0;
     if (state.imageInputManager?.isProcessingFiles()) return;
-    const meetingActive = ctx.controllers.meeting?.isActive?.();
     const name = state.selectedAnima;
     const tid = state.selectedThreadId;
     const streamCtx = name ? mgr.getStreamingContext(name) : null;
@@ -422,15 +420,6 @@ export function createStreamingController(ctx) {
   }
 
   async function sendChat(message, overrideImages = null) {
-    if (ctx.controllers.meeting?.isActive?.()) {
-      if (overrideImages?.files?.length || state.imageInputManager?.getFileCount()) {
-        state.imageInputManager?.setAttachmentError("chat.attach.meeting_unsupported");
-        return;
-      }
-      sendMeetingChat(message, overrideImages);
-      return;
-    }
-
     const name = overrideImages?.targetAnima || state.selectedAnima;
     const images = overrideImages?.images || state.imageInputManager?.getPendingImages() || [];
     const displayImages = overrideImages?.displayImages || state.imageInputManager?.getDisplayImages() || [];

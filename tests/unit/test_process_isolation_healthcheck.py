@@ -413,6 +413,7 @@ class TestReconciliationAutoRecovery:
         self._make_enabled_anima(supervisor, tmp_path, "alice", enabled=True)
         ctl = supervisor._restart_ctl
         ctl.record_failure("alice", "e")  # BACKOFF, next attempt in the future
+        ctl.is_due = MagicMock(return_value=False)
         supervisor._ensure_restart_worker = MagicMock()
         supervisor.start_anima = AsyncMock()
 

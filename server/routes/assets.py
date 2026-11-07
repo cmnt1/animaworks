@@ -1145,7 +1145,7 @@ def create_assets_router() -> APIRouter:
         }
 
     @router.get("/animas/{name}/assets/face/{emotion}")
-    async def get_face_asset(
+    def get_face_asset(
         name: str,
         emotion: str,
         request: Request,
@@ -1190,7 +1190,7 @@ def create_assets_router() -> APIRouter:
 
     @router.get("/animas/{name}/assets/{filename}")
     @router.head("/animas/{name}/assets/{filename}", include_in_schema=False)
-    async def get_asset(
+    def get_asset(
         name: str,
         filename: str,
         request: Request,

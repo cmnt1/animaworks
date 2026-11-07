@@ -125,14 +125,14 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 | 파일 | 개요 |
 |---------|------|
-| `messaging-guide.md` | 메시지 송수신 가이드(send_message의 파라미터, 스레드 관리, 답장 방침) |
-| `board-guide.md` | Board(공유 채널) 가이드(post_channel / read_channel 구분 사용, 게시 규칙) |
+| `messaging-guide.md` | 메시지 송수신 가이드（send_message 매개변수, 스레드 관리, 답변 방침） |
+| `board-guide.md` | Board（공유 채널）가이드（CLI에서 읽기·게시하는 방법, 게시 규칙） |
+| `instruction-patterns.md` | 지침 작성 패턴 모음（명확한 지침 작성법, 위임 패턴, 진행 상황 확인） |
+| `reporting-guide.md` | 보고 및 에스컬레이션 방법（보고 시점, 형식, 긴급 vs 정기） |
+| `message-quality-protocol.md` | 메시지 품질 프로토콜（위임 4개 항목·완료 보고 3개 항목·에스컬레이션 4개 항목 필수 점검） |
+| `sending-limits.md` | Inbox 파일 wake·메시지 취합·run 내 중복 방지·루프 회피 |
+| `call-human-guide.md` | 사람에게 알림을 보내는 가이드（call_human 사용법, 답변 수신, 알림 채널 설정） |
 | `broadcasting-guide.md` | 공지 채널 선택 가이드(#ops는 오너 알림 전용, Anima 간은 #general 기본, 부서는 도메인 채널＋스레드) |
-| `instruction-patterns.md` | 지침 내리기 패턴집(명확한 지침 작성법, 위임 패턴, 진행 상황 확인) |
-| `reporting-guide.md` | 보고·에스컬레이션 방법(보고 타이밍, 포맷, 긴급 vs 정기) |
-| `message-quality-protocol.md` | 메시지 품질 프로토콜(위임 4항목·완료 보고 3항목·에스컬레이션 4항목의 필수 체크) |
-| `sending-limits.md` | Inbox의 파일 wake·메시지 집약·run 내 중복 방지·루프 회피 |
-| `call-human-guide.md` | 인간에게 알림 가이드(call_human 사용법, 답장 수신, 알림 채널 설정) |
 | `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md`로 이동. Slack 봇 토큰 설정 가이드 |
 
 ### operations/ — 운영·작업 관리
@@ -185,24 +185,24 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 | 키워드 | 참조처 |
 |-----------|--------|
-| 기초, 입문, 전체상, 에센셜, 시작 방법, 개요 | `anatomy/essentials.md` |
-| 메시지, send_message, 전송, 답장, 스레드, inbox | `reference/communication/messaging-guide.md` |
-| Board, 채널, post_channel, read_channel | `communication/board-guide.md` |
-| 공지, 브로드캐스트, 전체 공유, #ops, #general, 부서 채널, 스레드, 에스컬레이션 | `communication/broadcasting-guide.md` |
-| DM 이력, read_dm_history, 과거 대화 | `communication/board-guide.md` |
+| 기초, 입문, 전체 개요, 에센셜, 시작하기, 개요 | `anatomy/essentials.md` |
+| 메시지, send_message, 전송, 답변, 스레드, inbox | `reference/communication/messaging-guide.md` |
+| Board, 채널, `animaworks-tool board read`, `animaworks-tool board post` | `communication/board-guide.md` |
+| DM 기록, `animaworks-tool board dm-history`, 과거 대화 | `communication/board-guide.md` |
 | 지침, 위임, 작업 요청, 델리게이션 | `reference/communication/instruction-patterns.md` |
-| 보고, 일보, 요약, 완료 보고, 에스컬레이션 | `reference/communication/reporting-guide.md` |
-| 품질 프로토콜, 필수 항목, 검증 근거, 완료 조건, 위임 체크 | `communication/message-quality-protocol.md` |
-| Inbox wake, 메시지 집약, 중복 전송 방지, 확인에 대한 답장, 대화 루프 | `communication/sending-limits.md` |
-| call_human, 인간 알림, 인간에게 연락, 알림 채널 | `communication/call-human-guide.md` |
+| 보고, 일일 보고, 요약, 완료 보고, 에스컬레이션 | `reference/communication/reporting-guide.md` |
+| 품질 프로토콜, 필수 항목, 검증 근거, 완료 조건, 위임 점검 | `communication/message-quality-protocol.md` |
+| Inbox wake, 메시지 취합, 중복 전송 방지, 확인 답변, 대화 루프 | `communication/sending-limits.md` |
+| call_human, 사람 알림, 사람에게 연락, 알림 채널 | `communication/call-human-guide.md` |
 | Slack, 봇 토큰, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 조직, supervisor, 상급자, 부하, 동료 | `reference/organization/structure.md` |
-| 역할, 책임, speciality, 전문 | `reference/organization/roles.md` |
+| 역할, 책임, speciality, 전문 분야 | `reference/organization/roles.md` |
+| 공지, 브로드캐스트, 전체 공유, #ops, #general, 부서 채널, 스레드, 에스컬레이션 | `communication/broadcasting-guide.md` |
 | 계층, 통신 경로, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
 | delegate_task, 작업 위임, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
 | 작업, current_state, pending, 진행 상황, 우선순위 | `reference/operations/task-management.md` |
 | 작업 큐, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
-| 작업 보드, 대시보드, 인간용 | `operations/task-board-guide.md` |
+| 작업 보드, 대시보드, 사람용 | `operations/task-board-guide.md` |
 | 설정, config, status.json, SSoT, reload | `reference/operations/project-setup.md` |
 | 하트비트, heartbeat, 정기 체크 | `reference/operations/heartbeat-cron-guide.md` |
 | cron, 스케줄, 정시 작업 | `reference/operations/heartbeat-cron-guide.md` |
@@ -216,7 +216,7 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | Mode S, 인증, API 직접, Bedrock, Vertex AI, Max plan | `reference/operations/mode-s-auth-guide.md` |
 | 음성, voice, STT, TTS, VOICEVOX, ElevenLabs | `reference/operations/voice-chat-guide.md` |
 | WebSocket, /ws/voice, barge-in, VAD, PTT | `reference/operations/voice-chat-guide.md` |
-| Anima, 자기 자신, 구성, 설계, 라이프사이클 | `anatomy/what-is-anima.md` |
+| Anima, 자신, 구성, 설계, 수명 주기 | `anatomy/what-is-anima.md` |
 | IDENTITY.md, SOUL.md, AGENTS.md, 인격, 프로필, 행동 지침, 불변, 가변 | `reference/anatomy/anima-anatomy.md` |
 | permissions.json, bootstrap, HEARTBEAT.md, cron.md | `reference/anatomy/anima-anatomy.md` |
 | 기억, memory, episodes, knowledge, procedures | `reference/anatomy/memory-system.md` |
@@ -226,11 +226,11 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | skills, 스킬 검색, common_skills, search_memory scope="skills" | `reference/anatomy/memory-system.md`, `reference/operations/tool-usage-overview.md` |
 | activity_log, BM25, RRF, 최근 로그 검색 | `reference/anatomy/memory-system.md`, `reference/troubleshooting/common-issues.md` |
 | 프롬프트 인젝션, trust, untrusted, 경계 태그 | `security/prompt-injection-awareness.md` |
-| 오류, 문제, 작동하지 않음, 권한, 블록 명령 | `reference/troubleshooting/common-issues.md` |
-| 플로차트, 판단, 망설임, 긴급, 보안 | `reference/troubleshooting/escalation-flowchart.md` |
+| 오류, 문제, 작동하지 않음, 권한, 차단 명령 | `reference/troubleshooting/common-issues.md` |
+| 순서도, 판단, 망설임, 긴급, 보안 | `reference/troubleshooting/escalation-flowchart.md` |
 | Gmail, token.json, OAuth, pickle | `reference/troubleshooting/gmail-credential-setup.md` |
 | 티어, tiered, T1, T2, T3, T4 | `reference/troubleshooting/common-issues.md` |
-| 유스케이스, 활용 예, 무엇을 할 수 있는가 | `reference/usecases/usecase-overview.md` |
+| 사용 사례, 활용 예시, 무엇을 할 수 있는가 | `reference/usecases/usecase-overview.md` |
 
 ---
 

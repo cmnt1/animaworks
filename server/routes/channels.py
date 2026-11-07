@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from core.messaging.outbound_auto import BoardDiscordSync
-from core.platform.env import get_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Board (shared channel) and DM history API routes."""
 
+import asyncio
 import json
 import logging
 import re
@@ -20,9 +18,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from core.activity.logger import ActivityLogger
+from core.messaging.board import board_access, human_principal
 from core.messaging.messenger import Messenger
-from core.time_utils import now_iso
-from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.channels")
 
@@ -101,7 +98,7 @@ def create_channels_router() -> APIRouter:
     # ── Channel endpoints ────────────────────────────────────
 
     @router.get("/channels")
-    async def list_channels(request: Request):
+    def list_channels(request: Request):
         """List all shared channels with metadata including ACL info."""
         shared_dir: Path = request.app.state.shared_dir
         channels_dir = shared_dir / "channels"
@@ -110,9 +107,12 @@ def create_channels_router() -> APIRouter:
 
         from core.messaging.messenger import load_channel_meta
 
+        principal = human_principal("human")
         channels: list[dict] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
             name = f.stem
+            if not board_access(shared_dir, name, principal, "read").allowed:
+                continue
             meta_info = _get_channel_meta(f)
 
             channel_info: dict = {
@@ -131,7 +131,7 @@ def create_channels_router() -> APIRouter:
         return channels
 
     @router.get("/channels/{name}")
-    async def get_channel_messages(
+    def get_channel_messages(
         request: Request,
         name: str,
         limit: int = 50,
@@ -140,7 +140,7 @@ def create_channels_router() -> APIRouter:
     ):
         """Get messages from a specific channel.
 
-        Web UI requests are treated as ``human`` source and bypass ACL.
+        Web UI requests are treated as human principals and follow ``board_access``.
 
         When *since* is provided (ISO timestamp), only messages strictly
         newer than that timestamp are returned (for incremental polling).
@@ -154,6 +154,12 @@ def create_channels_router() -> APIRouter:
             return JSONResponse(
                 status_code=404,
                 content={"detail": f"Channel '{name}' not found"},
+            )
+
+        if not board_access(shared_dir, name, human_principal("human"), "read").allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"Access denied to channel '{name}'"},
             )
 
         try:
@@ -225,56 +231,33 @@ def create_channels_router() -> APIRouter:
             body.from_name = "human"
         shared_dir: Path = request.app.state.shared_dir
 
-        # Existence/ACL enforced by Messenger.post_channel (no implicit create)
-        from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
+        from core.messaging.board import human_principal, post_to_board
 
-        messenger = _get_messenger(shared_dir)
-        try:
-            messenger.post_channel(
-                name,
-                body.text,
-                source="human",
-                from_name=body.from_name,
-            )
-        except ChannelNotFoundError:
+        post = await asyncio.to_thread(
+            post_to_board,
+            name,
+            body.text,
+            human_principal(body.from_name),
+            origin="http",
+            shared_dir=shared_dir,
+        )
+        if post.error == "not_found":
             return JSONResponse(
                 status_code=404,
                 content={"detail": f"Channel '{name}' not found"},
             )
-        except ChannelAccessDeniedError:
+        if post.error and post.error.startswith("denied:"):
             return JSONResponse(
                 status_code=403,
                 content={"detail": f"Access denied to channel '{name}'"},
             )
-
-        # Broadcast WebSocket event
-        event_data = {
-            "channel": name,
-            "from": body.from_name,
-            "text": body.text,
-            "source": "human",
-            "ts": now_iso(),
-        }
-        await emit(request, "board.post", event_data)
-
-        # Sync to mapped Slack channel unless tests or embedded apps disable external side effects.
-        sync_disabled = get_env("ANIMAWORKS_DISABLE_EXTERNAL_SYNC") == "1" or bool(
-            getattr(request.app.state, "disable_external_sync", False)
-        )
-        if not sync_disabled:
-            try:
-                sync = BoardDiscordSync()
-                sync.sync_board_post(
-                    board_name=name,
-                    text=body.text,
-                    from_person=body.from_name,
-                    source="human",
-                )
-            except Exception:
-                logger.debug("Board→Discord sync failed for #%s", name, exc_info=True)
+        if post.error == "invalid_name":
+            return JSONResponse(status_code=400, content={"detail": f"Invalid name: {name!r}"})
+        if post.error:
+            return JSONResponse(status_code=500, content={"detail": post.error})
 
         logger.info("Human posted to #%s: %s", name, body.text[:80])
-        return {"status": "ok", "channel": name}
+        return {"status": "ok", "channel": name, "post": post.to_dict()}
 
     @router.get("/channels/{name}/mentions/{anima}")
     async def get_channel_mentions(
@@ -299,11 +282,10 @@ def create_channels_router() -> APIRouter:
     # ── DM endpoints ─────────────────────────────────────────
 
     @router.get("/dm")
-    async def list_dm_pairs(request: Request):
+    def list_dm_pairs(request: Request):
         """List all DM conversation pairs with metadata.
 
-        Primary source: per-Anima activity_log/ (message_sent/message_received).
-        Fallback: legacy shared/dm_logs/ for historical data.
+        Source: per-Anima activity_log/ (message_sent/message_received).
         Uses a TTL cache to avoid scanning all activity logs on every request.
         """
         shared_dir: Path = request.app.state.shared_dir
@@ -355,22 +337,6 @@ def create_channels_router() -> APIRouter:
                         exc_info=True,
                     )
 
-        # ── Fallback: legacy dm_logs/ ─────────────────────────
-        dm_logs_dir = shared_dir / "dm_logs"
-        if dm_logs_dir.exists():
-            for f in dm_logs_dir.glob("*.jsonl"):
-                pair_name = f.stem
-                meta = _get_channel_meta(f)
-                count = meta["count"]
-                last_ts = meta["last_ts"]
-
-                if pair_name in pair_map:
-                    pair_map[pair_name]["count"] += count
-                    if last_ts > pair_map[pair_name]["last_ts"]:
-                        pair_map[pair_name]["last_ts"] = last_ts
-                else:
-                    pair_map[pair_name] = {"count": count, "last_ts": last_ts}
-
         # ── Build response: filter + sort by last_message_ts desc ─
         pairs: list[dict] = []
         for pair_key, info in pair_map.items():
@@ -395,7 +361,7 @@ def create_channels_router() -> APIRouter:
         return pairs
 
     @router.get("/dm/{pair}")
-    async def get_dm_history(
+    def get_dm_history(
         request: Request,
         pair: str,
         limit: int = 50,
@@ -403,9 +369,8 @@ def create_channels_router() -> APIRouter:
         """Get DM history for a specific pair.
 
         Reads only ``message_sent`` (+ alias ``dm_sent``) from each
-        participant's activity_log.  Because each DM is recorded once on
+        participant's activity_log. Because each DM is recorded once on
         the sender side, duplicates are structurally impossible.
-        Falls back to legacy shared/dm_logs/ for historical data.
         """
         if err := _validate_name(pair):
             return err
@@ -419,8 +384,6 @@ def create_channels_router() -> APIRouter:
             )
 
         messages: list[dict] = []
-        seen: set[str] = set()
-
         # ── Primary: read message_sent from each participant ──
         for name in participants:
             other = participants[1] if name == participants[0] else participants[0]
@@ -450,31 +413,6 @@ def create_channels_router() -> APIRouter:
                     name,
                     exc_info=True,
                 )
-
-        # Track activity_log messages for legacy dedup
-        for m in messages:
-            seen.add(f"{m['ts']}|{m['text']}")
-
-        # ── Fallback: legacy dm_logs/ ─────────────────────────
-        dm_file = shared_dir / "dm_logs" / f"{pair}.jsonl"
-        if dm_file.exists():
-            try:
-                lines = dm_file.read_text(encoding="utf-8").strip().splitlines()
-            except OSError:
-                lines = []
-
-            for line in lines:
-                if not line.strip():
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                dedup_key = f"{entry.get('ts', '')}|{entry.get('text', entry.get('content', ''))}"
-                if dedup_key in seen:
-                    continue
-                seen.add(dedup_key)
-                messages.append(entry)
 
         if not messages:
             return JSONResponse(

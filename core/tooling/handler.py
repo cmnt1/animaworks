@@ -22,10 +22,12 @@ The class is composed from responsibility-specific Mixins:
   - PermissionsMixin  (handler_perms.py)
 """
 
+import hashlib
 import json as _json
 import logging
 import uuid
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -51,6 +53,7 @@ from core.tooling.handler_base import (  # noqa: F401
     active_session_type,
     meeting_mode,
     suppress_board_fanout,
+    suppress_board_fanout_channels,
 )
 
 # ── Import Mixins ──
@@ -67,6 +70,7 @@ from core.tooling.result_compressor import compress_tool_result
 from core.tooling.tool_context import ToolContext
 
 logger = logging.getLogger("animaworks.tool_handler")
+
 
 _MEETING_BLOCKED_TOOLS: frozenset[str] = frozenset(
     {
@@ -461,6 +465,7 @@ class ToolHandler(
             self._min_trust_seen = 2
             self._replied_to.setdefault(ctx.session_type, set()).clear()
             self._posted_channels.setdefault(ctx.session_type, set()).clear()
+            self._interactive_human_notifications.setdefault(ctx.session_type, []).clear()
         self._session_origin = ctx.origin
         self._session_origin_chain = list(ctx.origin_chain)
         self._replied_to.setdefault(ctx.session_type, set())
@@ -595,6 +600,37 @@ class ToolHandler(
 
     _MAX_TOOL_OUTPUT_BYTES = 50_000
 
+    @contextmanager
+    def _shared_comms_state(self, name: str):
+        """Serialize per-run communication guards across CLI and agent processes."""
+        ctx = current_runtime_session() or self._runtime_session_context
+        if name not in {"post_channel", "call_human"} or ctx is None:
+            yield
+            return
+        from core.platform.atomic_io import atomic_write_json
+        from core.platform.locks import locked_path
+
+        key = hashlib.sha256(f"{ctx.request_id}\0{ctx.tool_session_id}".encode()).hexdigest()
+        path = self._anima_dir / "run" / "comms_sessions" / f"{key}.json"
+        with locked_path(path.parent / ".lock", thread_lock=True):
+            if path.exists():
+                state = _json.loads(path.read_text(encoding="utf-8"))
+                self._posted_channels[ctx.session_type] = set(state["posted_channels"])
+                self._interactive_human_notifications[ctx.session_type] = list(state["callbacks"])
+            else:
+                self._posted_channels[ctx.session_type] = set()
+                self._interactive_human_notifications[ctx.session_type] = []
+            try:
+                yield
+            finally:
+                atomic_write_json(
+                    path,
+                    {
+                        "posted_channels": sorted(self._posted_channels.get(ctx.session_type, set())),
+                        "callbacks": self._interactive_human_notifications_for(ctx.session_type),
+                    },
+                )
+
     def _attach_action_rules(self, name: str, args: dict[str, Any], result: str) -> str:
         """Append any relevant ACTION-RULE bodies to a side-effect tool result."""
         try:
@@ -630,7 +666,8 @@ class ToolHandler(
 
             handler = self._dispatch.get(name)
             if handler is not None:
-                result = handler(args)
+                with self._shared_comms_state(name):
+                    result = handler(args)
             else:
                 # ── Background execution for eligible external tools ──
                 if self._background_manager and self._background_manager.is_eligible(name):
@@ -700,7 +737,6 @@ class ToolHandler(
     # ── Activity logging ──────────────────────────────────────
 
     _ACTIVITY_TYPE_MAP: dict[str, str] = {
-        "post_channel": "channel_post",
         "read_channel": "channel_read",
         "read_dm_history": "channel_read",
         "call_human": "human_notify",
@@ -719,16 +755,6 @@ class ToolHandler(
 
             if activity_type is None:
                 self._activity.log("tool_use", tool=name, summary=str(args)[:200], meta=meta or None)
-            elif name == "post_channel":
-                ch = args.get("channel", "")
-                txt = args.get("text", "")
-                self._activity.log(
-                    activity_type,
-                    content=txt[:200],
-                    channel=ch,
-                    summary=f"#{ch}: {txt[:80]}" if ch else txt[:80],
-                    meta=meta or None,
-                )
             elif name == "read_channel":
                 self._activity.log(
                     activity_type,

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 406ffe3412650341cf3037c42b48d92c0531afcd1e2df99f7427403019e8293e -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 41a2f9c3e518d72f1ca914a31e7e1fec2a58556e036e0c201f5749f2e35bf6c2 -->
 
 # API リファレンス
 
@@ -154,7 +154,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/notification-mapping` | 内部 | — | `server/routes/internal.py:internal_notification_mapping` |
 | POST | `/api/internal/notify-web` | 内部 | Push a call_human notification into connected Web UI clients. | `server/routes/internal.py:internal_notify_web` |
 | POST | `/api/internal/phone/alert` | 内部 | Start an urgent phone alert for the configured Anima. | `server/routes/internal.py:internal_phone_alert` |
-| POST | `/api/internal/post-channel` | 内部 | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
+| POST | `/api/internal/post-channel` | 内部 | Post to a shared channel through the centralized Board writer. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 内部 | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | 内部 | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
 | POST | `/api/internal/settings/anima-icon-template` | 内部 | Persist icon-template defaults on behalf of an authenticated worker. | `server/routes/internal.py:internal_persist_anima_icon_template` |

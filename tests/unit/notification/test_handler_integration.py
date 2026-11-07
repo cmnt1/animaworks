@@ -71,6 +71,7 @@ def anima_dir(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "test-anima"
     d.mkdir(parents=True)
     (d / "permissions.md").write_text("", encoding="utf-8")
+    (d / "status.json").write_text("{}", encoding="utf-8")
     return d
 
 
@@ -123,6 +124,7 @@ def handler_with_notifier_and_messenger(
     anima_dir: Path,
     memory: MagicMock,
     notifier: HumanNotifier,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> ToolHandler:
     shared_dir = tmp_path / "shared"
     (shared_dir / "inbox").mkdir(parents=True, exist_ok=True)
@@ -130,6 +132,14 @@ def handler_with_notifier_and_messenger(
     channels_dir.mkdir(parents=True, exist_ok=True)
     for channel_name in ("general", "ops"):
         (channels_dir / f"{channel_name}.jsonl").touch()
+
+    def post_to_board(channel, text, **kwargs):
+        from core.messaging.board import anima_principal, post_to_board as write_board
+
+        post = write_board(channel, text, anima_principal(anima_dir.name, animas_dir=anima_dir.parent), origin="internal", shared_dir=shared_dir)
+        return {"post": post.to_dict()}
+
+    monkeypatch.setattr("core.messaging.board_client.post_via_server", post_to_board)
     handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
@@ -386,7 +396,9 @@ class TestCallHumanHandler:
             {"channel": "ops", "text": "Routine status report"},
         )
 
-        assert "Posted to #general" in result
+        from core.i18n import t
+
+        assert t("handler.channel_post_success", channel="general") in result
         assert "redirected from #ops" in result
 
     def test_noninteractive_call_human_ops_post_falls_back_to_general(
@@ -407,7 +419,9 @@ class TestCallHumanHandler:
             {"channel": "ops", "text": "Escalation-looking text after non-interactive notify"},
         )
 
-        assert "Posted to #general" in post_result
+        from core.i18n import t
+
+        assert t("handler.channel_post_success", channel="general") in post_result
         assert "redirected from #ops" in post_result
 
     def test_interactive_call_human_allows_one_ops_post(
@@ -454,7 +468,9 @@ class TestCallHumanHandler:
             )
 
         assert json.loads(notify_result)["callback_id"] == "cb_ops_1"
-        assert "Posted to #ops" in first_post
+        from core.i18n import t
+
+        assert t("handler.channel_post_success", channel="ops") in first_post
         assert "cb_ops_1" in first_post
-        assert "Posted to #general" in second_post
+        assert t("handler.channel_post_success", channel="general") in second_post
         assert "redirected from #ops" in second_post

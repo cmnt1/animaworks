@@ -36,6 +36,7 @@ class _ReconcileMixinHost(Protocol):
     _bootstrapping: Any
     _broadcast_event: Any
     _check_config_freshness: Any
+    _scan_desired_state: Any
     _ensure_restart_worker: Any
     _flush_task_notices: Any
     _last_config_hash: Any
@@ -72,7 +73,6 @@ class _SchedulerMixinHost(Protocol):
     _run_activity_log_rotation: Any
     _run_daily_consolidation: Any
     _run_daily_indexing: Any
-    _run_dm_log_rotation: Any
     _run_housekeeping: Any
     _run_housekeeping_impl: Any
     _run_project_archive_consolidations: Any

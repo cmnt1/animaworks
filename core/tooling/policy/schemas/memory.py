@@ -163,7 +163,7 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
             "with intent 'report' or 'question' only. "
             "For task delegation, use delegate_task instead. "
             "For acknowledgments, FYI, or messages to 3+ people, "
-            "use post_channel (Board) instead."
+            "use `animaworks-tool board post <channel> <text>` (Board) instead."
         ),
         "parameters": {
             "type": "object",
@@ -185,7 +185,7 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                         "Message intent (REQUIRED for DM), permitted values: "
                         "'report' (status/result to supervisor) or 'question' "
                         "(ask a specific question). For task assignment use "
-                        "delegate_task; acknowledgments and FYI use post_channel."
+                        "delegate_task; acknowledgments and FYI use `animaworks-tool board post <channel> <text>`."
                     ),
                 },
             },

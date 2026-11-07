@@ -20,32 +20,27 @@ from core.config.file_access_policy import (
     evaluate_protected_write,
 )
 from core.exceptions import MemoryWriteError, ToolExecutionError  # noqa: F401
+from core.execution.session.board_reply import (  # noqa: F401
+    BOARD_REPLY_CHANNELS_ENV,
+    board_reply_channels,
+    board_reply_channels_env,
+    suppress_board_fanout_channels,
+)
+from core.execution.session.meeting import meeting_context, meeting_mode  # noqa: F401
 from core.i18n import t
 from core.time_utils import now_iso  # noqa: F401
 
 logger = logging.getLogger("animaworks.tool_handler")
 
-# ── Board fanout suppression (context-scoped for background tasks) ──
-suppress_board_fanout: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "suppress_board_fanout",
-    default=False,
-)
+# ── Board fanout suppression (see core.execution.session.board_reply) ──
+# Backward-compatible alias for callers that imported the previous name.
+suppress_board_fanout = suppress_board_fanout_channels
+
 
 # ── Active session type (context-scoped for concurrent HB+conversation) ──
 active_session_type: contextvars.ContextVar[str] = contextvars.ContextVar(
     "active_session_type",
     default="unknown",
-)
-
-# ── Meeting mode: block Anima-to-Anima communication tools during meetings ──
-meeting_mode: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "meeting_mode",
-    default=False,
-)
-
-meeting_context: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
-    "meeting_context",
-    default=None,
 )
 
 # Type alias for the message-sent callback (from, to, content).

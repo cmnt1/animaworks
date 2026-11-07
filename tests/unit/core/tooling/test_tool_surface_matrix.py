@@ -29,7 +29,6 @@ MCP_SCOPED = frozenset(
         "create_skill",
         "grant_workspace_access",
         "list_tasks",
-        "post_channel",
         "read_memory_file",
         "report_knowledge_outcome",
         "report_procedure_outcome",
@@ -50,7 +49,6 @@ MCP_FULL_WITH_SUBMIT = frozenset(
         "delete_skill",
         "grant_workspace_access",
         "list_tasks",
-        "post_channel",
         "promote_procedure_to_skill",
         "read_memory_file",
         "report_knowledge_outcome",
@@ -69,7 +67,6 @@ MCP_FULL_WITH_SUBMIT |= {"heartbeat_observe_snapshot", "read_file", "write_file"
 # grant_workspace_access now follows Mode A's stricter consolidation surface.
 MCP_CONSOLIDATION = MCP_FULL_WITH_SUBMIT - {
     "grant_workspace_access",
-    "post_channel",
     "send_message",
     "submit_tasks",
 }
@@ -99,7 +96,6 @@ _BUILDER_BASE = frozenset(
         "create_skill",
         "grant_workspace_access",
         "list_tasks",
-        "post_channel",
         "read_memory_file",
         "report_knowledge_outcome",
         "report_procedure_outcome",
@@ -114,7 +110,7 @@ _BUILDER_BASE |= {"heartbeat_observe_snapshot"}
 BUILDER_FULL = _BUILDER_BASE | _BUILDER_SKILL_MANAGEMENT
 # During consolidation Mode A already withheld workspace, messaging, and
 # delegation tools; the shared resolver applies the same restrictions to MCP.
-BUILDER_CONSOLIDATION = BUILDER_FULL - {"grant_workspace_access", "post_channel", "send_message"}
+BUILDER_CONSOLIDATION = BUILDER_FULL - {"grant_workspace_access", "send_message"}
 
 
 def _expected_mcp(

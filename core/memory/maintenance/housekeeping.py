@@ -636,17 +636,6 @@ def _cleanup_shared_inbox(
     return totals
 
 
-def _cleanup_dm_archives(dm_logs_dir: Path, retention_days: int) -> dict[str, Any]:
-    """Delete DM log archive files older than *retention_days*."""
-    return _delete_old_files(
-        dm_logs_dir,
-        "*.archive.jsonl",
-        retention_days,
-        error_label="dm archive",
-        success_log="DM archive cleanup: deleted %d files",
-    )
-
-
 def _cleanup_cron_logs(animas_dir: Path, retention_days: int) -> dict[str, Any]:
     """Delete filename-dated cron logs, with the historical 14-day cap."""
     return _delete_old_files(
