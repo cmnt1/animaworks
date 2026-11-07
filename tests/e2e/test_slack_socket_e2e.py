@@ -53,6 +53,8 @@ def _make_socket_manager(data_dir, anima_mapping, monkeypatch):
     # Capture event handler registrations instead of connecting to Slack
     captured_handlers: dict[str, list] = {}
     mock_async_app = MagicMock()
+    mock_async_app.client.auth_test = AsyncMock(return_value={"user_id": "U_TEST_BOT"})
+    monkeypatch.setattr(SlackSocketModeManager, "_discover_per_anima_bots", staticmethod(lambda: []))
 
     def _capture_event(event_type):
         def decorator(func):
