@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: a5cc9a679337dbfd2ac2d814b07d9d1f697e46a14d78da9c851cf8b28898427e -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 9c41fad0d6ae481c890f67de6ca93b7618daf50cc9030f445f86ce90d456a622 -->
 
 # モジュール一覧
 
@@ -318,6 +318,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.reminder` | 128 | — |
 | `core.execution.session.board_reply` | 38 | — |
 | `core.execution.session.engine_session` | 160 | — |
+| `core.execution.session.meeting` | 9 | — |
 | `core.execution.session.session_context` | 118 | — |
 | `core.execution.session.session_ids` | 116 | — |
 | `core.execution.session.session_store` | 139 | — |
@@ -1049,7 +1050,7 @@ anima メインの実行時コンポーネント、プロセス間通信、タ�
 | `core.tooling.codex_command_hook` | 31 | Core command-policy decision for Codex's PreToolUse hook. |
 | `core.tooling.dispatch` | 256 | — |
 | `core.tooling.handler` | 992 | — |
-| `core.tooling.handler_base` | 340 | — |
+| `core.tooling.handler_base` | 330 | — |
 | `core.tooling.handler_chat_files` | 87 | — |
 | `core.tooling.handler_comms` | 1186 | — |
 | `core.tooling.handler_create_anima` | 101 | — |

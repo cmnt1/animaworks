@@ -26,6 +26,7 @@ from core.execution.session.board_reply import (  # noqa: F401
     board_reply_channels_env,
     suppress_board_fanout_channels,
 )
+from core.execution.session.meeting import meeting_context, meeting_mode  # noqa: F401
 from core.i18n import t
 from core.time_utils import now_iso  # noqa: F401
 
@@ -40,17 +41,6 @@ suppress_board_fanout = suppress_board_fanout_channels
 active_session_type: contextvars.ContextVar[str] = contextvars.ContextVar(
     "active_session_type",
     default="unknown",
-)
-
-# ── Meeting mode: block Anima-to-Anima communication tools during meetings ──
-meeting_mode: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "meeting_mode",
-    default=False,
-)
-
-meeting_context: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
-    "meeting_context",
-    default=None,
 )
 
 # Type alias for the message-sent callback (from, to, content).

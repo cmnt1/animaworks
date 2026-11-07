@@ -219,9 +219,9 @@ def _wrap_cli_handler_with_runtime_session(handler: Any) -> Any:
         args: dict[str, Any],
         tool_use_id: str | None = None,
     ) -> str:
+        from core.execution.session.meeting import meeting_context, meeting_mode
         from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
         from core.platform.env import get_env
-        from core.tooling.handler_base import meeting_context, meeting_mode
 
         ctx = RuntimeSessionContext.from_env()
         session_type = ctx.session_type if ctx is not None else "unknown"

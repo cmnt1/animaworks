@@ -75,8 +75,8 @@ class RuntimeSessionContext:
         import json
 
         from core.execution.session.board_reply import board_reply_channels_env
+        from core.execution.session.meeting import meeting_context, meeting_mode
         from core.tasks.board.tasks import current_attempt_identity
-        from core.tooling.handler_base import meeting_context, meeting_mode
 
         identity = current_attempt_identity()
         return {
