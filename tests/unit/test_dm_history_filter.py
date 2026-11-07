@@ -66,6 +66,14 @@ def _make_entry(
 # ── Tests: read_dm_history direction filter ────────────────
 
 
+def test_legacy_dm_history_remains_readable(messenger, shared_dir):
+    logs = shared_dir / "dm_logs"
+    logs.mkdir()
+    entry = {"ts": datetime.now(tz=UTC).isoformat(), "from": "peer", "to": "testanima", "text": "legacy"}
+    (logs / "peer-testanima.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    assert messenger.read_dm_history("peer") == [entry]
+
+
 class TestReadDmHistoryDirection:
     def test_direction_sent_only(self, messenger, anima_dir):
         entries = [
