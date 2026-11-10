@@ -81,7 +81,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     'core/anima/lifecycle.py': 4,
     'core/anima/response_normalize.py': 15,
     'core/config/migrate.py': 2,
-    'core/config/model_mode.py': 62,
+    'core/config/model_mode.py': 64,  # Japanese model notes are user-visible labels.
     'core/config/schemas.py': 1,
     'core/enclave/egress/masker/facts.py': 2,
     'core/integrations/_image_schemas.py': 1,
