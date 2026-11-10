@@ -28,6 +28,13 @@ logger = logging.getLogger("animaworks.token_usage")
 # Override via ~/.animaworks/pricing.json
 DEFAULT_PRICING: dict[str, dict[str, float]] = {
     # Claude 5 family (claude-api skill model table, 2026-09-25).
+    # Fable 5.2: $8/$40, cache reads at 2.5% of input (models overview, 2026-11-10).
+    "claude-fable-5-2": {
+        "input": 8.0,
+        "output": 40.0,
+        "cache_read": 0.20,
+        "cache_write": 10.0,
+    },
     "claude-fable-5": {
         "input": 10.0,
         "output": 50.0,

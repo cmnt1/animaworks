@@ -120,8 +120,9 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "openai/deepseek-v4-flash-0731", "mode": "A", "note": ""},
     {"name": "gemini/gemini-2.5-flash", "mode": "G", "note": ""},
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
+    {"name": "claude-fable-5-2", "mode": "S", "note": "Fable 5.2・最新・長時間エージェント処理"},
     {"name": "claude-opus-5-5", "mode": "S", "note": "Opus 5.5・最新"},
-    {"name": "claude-fable-5-1", "mode": "S", "note": "Fable 5.1・長時間エージェント処理"},
+    {"name": "claude-fable-5-1", "mode": "S", "note": "Fable 5.1・旧版"},
     {"name": "claude-fable-5", "mode": "S", "note": "最高性能・長時間タスク（usage credits）"},
     {"name": "claude-opus-5", "mode": "S", "note": "Opus最高性能・最新"},
     {"name": "claude-opus-4-8", "mode": "S", "note": "Opus最高性能・推奨"},
@@ -130,6 +131,7 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "claude-sonnet-5", "mode": "S", "note": "次世代Sonnet・最新"},
     {"name": "claude-sonnet-4-6", "mode": "S", "note": "バランス型・推奨"},
     {"name": "claude-sonnet-5-5", "mode": "S", "note": "バランス型・推奨"},
+    {"name": "claude-haiku-5-5", "mode": "S", "note": "軽量・高速・最新"},
     {"name": "claude-haiku-4-5-20251001", "mode": "S", "note": "軽量・高速"},
     # Legacy (still available)
     {"name": "claude-opus-4-5-20251101", "mode": "S", "note": "旧フラッグシップ"},

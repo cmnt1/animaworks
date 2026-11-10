@@ -75,8 +75,9 @@ _CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos|haiku)-(\d+)
 def is_adaptive_model(model: str) -> bool:
     """Return True if *model* uses Anthropic adaptive thinking + ``effort``.
 
-    Opus/Sonnet 4.6 and every Opus/Sonnet/Fable/Mythos release from 4.7 on.
-    These reject ``budget_tokens`` (4.7+) and are tuned through ``effort``.
+    Opus/Sonnet 4.6, every Opus/Sonnet/Fable/Mythos release from 4.7 on,
+    and Haiku from 5.5 on.  These reject ``budget_tokens`` (4.7+) and are
+    tuned through ``effort``.
     """
     bare = _bare_model_name(model)
     if is_claude_cli_alias(bare):
@@ -87,7 +88,7 @@ def is_adaptive_model(model: str) -> bool:
         return False
     family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
     if family == "haiku":
-        return False
+        return (major, minor) >= (5, 5)
     if (major, minor) >= (4, 7):
         return True
     return (major, minor) == (4, 6) and family in ("opus", "sonnet")
