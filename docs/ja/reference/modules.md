@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 62c5084e9b37610bd10bf17417e0453e45be2ec93965bca024ffa949263754ac -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: df6eb68a91d2067444d7cfe58a4c3ec80a5e94316daa737bfc02dc033f20f862 -->
 
 # モジュール一覧
 
@@ -220,7 +220,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_catalog` | 212 | Static model catalog and per-request model override validation. |
 | `core.config.model_config` | 899 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 698 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
-| `core.config.model_mode` | 597 | Model execution mode resolution for canonical S/C/D/G/X/Y/A modes. |
+| `core.config.model_mode` | 599 | Model execution mode resolution for canonical S/C/D/G/X/Y/A modes. |
 | `core.config.models` | 103 | Central configuration module — facade re-exporting split modules. |
 | `core.config.nanogpt` | 56 | Read nanoGPT credentials from the local source on each request. |
 | `core.config.opencode_go` | 79 | — |
@@ -286,7 +286,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution._shortterm_handoff（非公開）` | 145 | — |
 | `core.execution._streaming（非公開）` | 368 | — |
 | `core.execution._tool_summary（非公開）` | 103 | — |
-| `core.execution.base` | 932 | — |
+| `core.execution.base` | 933 | — |
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 328 | — |
 | `core.execution.engine_base` | 76 | — |
@@ -1119,7 +1119,7 @@ LLM 利用量とコストの記録・集計。
 |---|---:|---|
 | `core.usage` | 1 | Token usage accounting and per-Anima token budgets. |
 | `core.usage.token_budget` | 73 | — |
-| `core.usage.token_usage` | 605 | — |
+| `core.usage.token_usage` | 612 | — |
 
 ## `core.voice`
 
