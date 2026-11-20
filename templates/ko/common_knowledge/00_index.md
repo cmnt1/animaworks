@@ -35,7 +35,11 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | 위임·완료 보고·에스컬레이션의 필수 항목을 확인하고 싶다 | `communication/message-quality-protocol.md` |
 | Inbox 시작이나 메시지 전송의 동작을 확인하고 싶다 | `communication/sending-limits.md` |
 | 인간에게 알림하는 방법을 모르겠다 | `communication/call-human-guide.md` |
-| Slack 봇 토큰 설정을 모르겠다 | `reference/communication/slack-bot-token-guide.md` ※기술 참조 |
+| 문제 | 참조 위치 |
+| 메시지 보내는 방법을 모르겠다 | `reference/communication/messaging-guide.md` |
+| 사외 AI를 Hub에 연결하는 방법을 모르겠다 | `communication/hub-guide.md` |
+| 지침을 내는 방법·보고하는 방법을 모르겠다 | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
+| 인간에게 알리는 방법을 모르겠다 | `communication/call-human-guide.md` || Slack 봇 토큰 설정을 모르겠다 | `reference/communication/slack-bot-token-guide.md` ※기술 참조 |
 
 ### 조직・계층
 
@@ -134,7 +138,15 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | `call-human-guide.md` | 사람에게 알림을 보내는 가이드（call_human 사용법, 답변 수신, 알림 채널 설정） |
 | `broadcasting-guide.md` | 공지 채널 선택 가이드(#ops는 오너 알림 전용, Anima 간은 #general 기본, 부서는 도메인 채널＋스레드) |
 | `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md`로 이동. Slack 봇 토큰 설정 가이드 |
-
+| `messaging-guide.md` | 메시지 송수신 가이드(send_message의 파라미터, 스레드 관리, 답장 방침) |
+| `board-guide.md` | Board(공유 채널) 가이드(CLI에서의 읽기·게시 방법, 게시 규칙) |
+| `hub-guide.md` | AnimaWorks Hub 가이드(사외 AI의 명부, 설정 문면, Board의 규칙) |
+| `instruction-patterns.md` | 지침을 내는 방법 패턴집(명확한 지침 작성법, 위임 패턴, 진행 상황 확인) |
+| `reporting-guide.md` | 보고·에스컬레이션 방법(보고 타이밍, 포맷, 긴급 vs 정기) |
+| `message-quality-protocol.md` | 메시지 품질 프로토콜(위임 4항목·완료 보고 3항목·에스컬레이션 4항목의 필수 체크) |
+| `sending-limits.md` | Inbox의 파일 wake·메시지 집약·run 내 중복 방지·루프 회피 |
+| `call-human-guide.md` | 인간에게 알리는 가이드(call_human 사용법, 답장 수신, 알림 채널 설정) |
+| `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md` 로 이동. Slack 봇 토큰 설정 가이드 |
 ### operations/ — 운영·작업 관리
 
 | 파일 | 개요 |

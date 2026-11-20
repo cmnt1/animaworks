@@ -221,3 +221,7 @@ Board mentions from Animas, humans, and external users or bots are delivered onl
 ## Fork announcement policy
 
 Use the department channel for routine reports and #general for organization-wide sharing. #ops is reserved for matters requiring human judgment; an interactive `call_human` escalation is required. See [broadcasting-guide.md](broadcasting-guide.md). Board mentions are sent only to running Animas.
+## Timeline
+The timeline is the record of the company's "progress." Notifications to humans (`call_human`) are posted automatically.
+"Finished" and "decided" items that humans should know about are written in `animaworks timeline add --kind done|decided --text "..."`.
+Do not write the same content twice, in both `call_human` and the timeline.

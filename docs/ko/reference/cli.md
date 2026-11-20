@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=56531efc9ba7f7a93ae89c823b50b1e811a264db5b4a9d3cf4613f11aadfb2a7 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=ddb8566c643f0429ef232f44cca58443c7c9c62f41c1b8d9ebfa7bc58bd94d96 generated=2026-11-10 engine=local model=deepseek-v4.1-flash-1017-abl translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -46,15 +46,15 @@ Anima 프로세스 관리
 
 `usage: animaworks anima create [-h] [--name NAME] [--template TEMPLATE]
                                [--from-md PATH] [--supervisor SUPERVISOR]
-                               [--role {engineer,researcher,manager,writer,ops,administration}]`
+                               [--role {engineer,researcher,manager,writer,ops,general}]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --name | option | — | — | Anima 이름 (빈 항목에는 필수, template/md에는 선택) |
-| --template | option | — | — | 이름이 지정된 템플릿에서 생성 |
+| --name | option | — | — | 애니마 이름 (빈칸일 때 필수, template/md일 때 선택) |
+| --template | option | — | — | 이름이 있는 템플릿에서 생성 |
 | --from-md | option | — | — | MD 파일에서 생성 |
-| --supervisor | option | — | — | 슈퍼바이저 애니마 이름 (캐릭터 시트를 덮어씀) |
-| --role | option | — | engineer, researcher, manager, writer, ops, administration | 적용할 역할 템플릿 (기본값: administration) |
+| --supervisor | option | — | — | 상위 애니마 이름 (캐릭터 시트 재정의) |
+| --role | option | — | engineer, researcher, manager, writer, ops, general | 적용할 역할 템플릿 (기본값: general) |
 
 ## `anima delete`
 
@@ -169,17 +169,16 @@ status.json에서 애니마 설정 핫 리로드
 heartbeat/cron 모델 설정
 
 `usage: animaworks anima set-background-model [-h] [--credential CREDENTIAL]
-                                             [--all] [--clear] [--force]
+                                             [--all] [--clear]
                                              [anima] [model]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 |
-| model | positional | — | — | 백그라운드 모델 이름 |
+| anima | positional | — | — | 애니마 이름 |
+| model | positional | — | — | 배경 모델 이름 |
 | --credential | option | — | — | 자격 증명 이름 |
 | --all | flag | false | — | 활성화된 모든 애니마에 적용 |
-| --clear | flag | false | — | 백그라운드 모델 재정의 제거 |
-| --force | flag | false | — | tool_use 기능 확인 프롬프트 건너뛰기 (low/none 모델). |
+| --clear | flag | false | — | 배경 모델 재정의 제거 |
 
 ## `anima set-model`
 
@@ -250,27 +249,28 @@ heartbeat/cron 모델 설정
 
 ## `board post`
 
-채널에 게시
+채널에 게시합니다. 형식: board post <channel> [<text> | -]. 본문을 생략하거나 '-'를 지정하면 표준 입력에서 읽습니다. 이전 형식: board post <from> <channel> <text>。
 
-`usage: animaworks board post [-h] from_anima channel text`
+`usage: animaworks board post [-h] [--as NAME] ARG [ARG ...]`
 
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| from_anima | 위치 인자 | — | — | 보내는 애니마 이름 |
-| channel | 위치 인자 | — | — | 채널 이름 |
-| text | 위치 인자 | — | — | 메시지 내용 |
+| post_args | 위치 인수 | — | — | <channel> [<text> \| -] 또는 이전 형식 <from> <channel> <text> |
+| --as | 옵션 | — | — | 게시자 이름(호스트에서 게시) |
 
 ## `board read`
 
 채널 메시지 읽기
 
-`usage: animaworks board read [-h] [--limit LIMIT] [--human-only] channel`
+`사용법: animaworks board read [-h] [--limit LIMIT] [--human-only] [--latest]
+                             channel`
 
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| channel | 위치 인자 | — | — | 채널 이름 (예: general, ops) |
+| channel | 위치 인수 | — | — | 채널 이름(예: general, ops) |
 | --limit | 옵션 | 20 | — | 최대 메시지 수 |
 | --human-only | 플래그 | false | — | 사람 메시지만 표시 |
+| --latest | 플래그 | false | — | 최신 메시지만 표시하고 읽기 위치는 변경하지 않음 |
 
 ## `chat`
 
@@ -490,6 +490,113 @@ cli.cost_help
 | anima | 위치 인자 | — | — | Anima 이름 |
 | --local | 플래그 | false | — | (더 이상 사용되지 않음) 직접 모드 (게이트웨이 없음) |
 
+## `hub`
+
+허브의 명부와 외부 AI의 멤버를 관리
+
+`usage: animaworks hub [-h] {setup-prompt,member} ...`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member`
+
+허브의 멤버를 관리
+
+`usage: animaworks hub member [-h]
+                             {add,list,set-token,disable,enable,set-avatar}
+                             ...`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member add`
+
+멤버를 명부에 추가
+
+`usage: animaworks hub member add [-h] --company COMPANY --route {webhook,poll}
+                                 [--url-ref URL_REF] [--key-ref KEY_REF]
+                                 [--expect-every EXPECT_EVERY]
+                                 [--display-name DISPLAY_NAME] [--kind KIND]
+                                 ID`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+| --company | option | — | — | 멤버의 회사 ID |
+| --route | option | — | webhook, poll | 연락 방법 (webhook 또는 poll) |
+| --url-ref | option | — | — | webhook URL의 vault 키 이름 (shared 섹션) |
+| --key-ref | option | — | — | webhook 인증 키의 vault 키 이름 (shared 섹션) |
+| --expect-every | option | — | — | 기대하는 연락 간격 (30m / 3h / 1d 등) |
+| --display-name | option | — | — | 표시 이름 (기본은 ID) |
+| --kind | option | "vendor_bot" | — | 멤버의 종류 (기본: vendor_bot) |
+
+## `hub member disable`
+
+멤버를 비활성화
+
+`usage: animaworks hub member disable [-h] ID`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+
+## `hub member enable`
+
+멤버를 활성화
+
+`usage: animaworks hub member enable [-h] ID`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+
+## `hub member list`
+
+허브의 멤버 목록을 표시 (토큰은 표시하지 않음)
+
+`usage: animaworks hub member list [-h]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member set-avatar`
+
+멤버의 아바타 이미지를 등록 (256x256 PNG로 변환)
+
+`usage: animaworks hub member set-avatar [-h] [--clear] ID [file]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+| file | positional | — | — | 이미지 파일 (PNG / JPEG / WebP / GIF, 최대 5MB) |
+| --clear | flag | false | — | 등록된 아바타를 삭제 |
+
+## `hub member set-token`
+
+환경 변수에서 베어러 토큰의 SHA-256을 등록
+
+`usage: animaworks hub member set-token [-h] --from-env VAR ID`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+| --from-env | option | — | — | 토큰을 저장한 환경 변수 이름 |
+
+## `hub setup-prompt`
+
+사외 AI용 설정 문면을 표시
+
+`usage: animaworks hub setup-prompt [-h] [--url URL] ID`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| member_id | positional | — | — | 멤버 ID (영소문자로 시작하는 2~32자) |
+| --url | option | — | — | 접속 대상 URL (기본: public_hosts의 첫 번째) |
+
 ## `import`
 
 Hermes 또는 OpenClaw 데이터를 AnimaWorks로 가져오기
@@ -652,18 +759,16 @@ Anima 사용을 위한 내부 도구
 
 ## `logs`
 
-애니마 로그 보기
+anima 로그 보기
 
-`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [--follow]
-                       [anima]`
+`usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [anima]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 (--all이 아니면 필수) |
-| --all | flag | false | — | 모든 로그 표시 (서버 + 모든 애니마) |
-| --lines | option | 50 | — | 표시할 줄 수 (기본값: 50) |
-| --date | option | — | — | 특정 날짜 (YYYYMMDD 형식) |
-| --follow | flag | false | — | 새 로그 줄 계속 스트리밍 |
+| anima | 위치 인자 | — | — | Anima 이름 (--all이 아니면 필수) |
+| --all | 플래그 | false | — | 모든 로그 표시 (서버 + 모든 anima) |
+| --lines | 옵션 | 50 | — | 표시할 줄 수 (기본값: 50) |
+| --date | 옵션 | — | — | 특정 날짜 (YYYYMMDD 형식) |
 
 ## `mcp`
 
@@ -1445,6 +1550,41 @@ WAL 포함 DB 백업 새로 생성
 |---|---|---|---|---|
 | --anima | option | — | — | 대상 담당자 이름 |
 
+## `timeline`
+
+회사 타임라인에 "끝났다" "정해졌다"를 추가
+
+`usage: animaworks timeline [-h] {add,read} ...`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `timeline add`
+
+회사 타임라인에 "끝났다" "정해졌다"를 추가
+
+`usage: animaworks timeline add [-h] --kind {done,decided} --text TEXT
+                               [--about ABOUT] [--ref REF] [--from NAME]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --kind | option | — | done, decided | 항목의 종류(done 또는 decided) |
+| --text | option | — | — | 타임라인에 게시할 본문 |
+| --about | option | — | — | 업데이트할 원본 항목 ID(tl_...) |
+| --ref | option | — | — | 참조 URL 등 |
+| --from | option | — | — | 기록자 이름(오퍼레이터 런타임에만) |
+
+## `timeline read`
+
+회사 타임라인을 읽기(최근 24시간)
+
+`usage: animaworks timeline read [-h] [--limit LIMIT]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --limit | option | 20 | — | 가져올 최대 건수 |
+
 ## `tmp`
 
 AnimaWorks 임시 디렉터리 검사 및 정리
@@ -1484,11 +1624,13 @@ tmp 사용량 요약 표시
 
 ## `vault`
 
-암호화된 볼트 값 관리
+암호화된 vault 값 관리
 
-`usage: animaworks vault [-h] {status,init,get,store,list,delete} ...`
+`usage: animaworks vault [-h]
+                        {status,init,migrate-config,get,store,list,delete,sources,sync,rollback,register-1p}
+                        ...`
 
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1534,6 +1676,83 @@ tmp 사용량 요약 표시
 |---|---|---|---|---|
 | --shared | flag | false | — | 공유 섹션만 조회 (ANIMAWORKS_ANIMA_DIR가 필요하지 않음) |
 
+## `vault migrate-config`
+
+평문 설정 자격 증명을 vault로 이동
+
+`usage: animaworks vault migrate-config [-h] [--commit]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --commit | flag | false | — | 나열된 자격 증명을 지금 이동 |
+
+## `vault register-1p`
+
+1Password에 공유 키 등록
+
+`usage: animaworks vault register-1p [-h] --vault VAULT [--title TITLE]
+                                    [--field FIELD] [--commit]
+                                    key`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| key | positional | — | — | 공유 vault 키 |
+| --vault | option | — | — | 1Password vault 이름 |
+| --title | option | — | — | 1Password 항목 제목 (기본값: 키) |
+| --field | option | "credential" | — | 1Password 필드 이름 (기본값: credential) |
+| --commit | flag | false | — | 항목 생성 (기본값: 미리보기만) |
+
+## `vault rollback`
+
+키의 이전 공유 값 복원
+
+`usage: animaworks vault rollback [-h] key`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| key | positional | — | — | 공유 vault 키 |
+
+## `vault sources`
+
+공유 키와 1Password 참조 매핑 관리
+
+`usage: animaworks vault sources [-h] {list,add,remove} ...`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `vault sources add`
+
+공유 키에 대한 1Password 참조 등록
+
+`usage: animaworks vault sources add [-h] key ref`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| key | positional | — | — | 공유 vault 키 |
+| ref | positional | — | — | 1Password 참조 (op://Vault/Item/field) |
+
+## `vault sources list`
+
+등록된 1Password 참조 목록
+
+`usage: animaworks vault sources list [-h] [--json]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| --json | flag | false | — | JSON 출력 (기본값) |
+
+## `vault sources remove`
+
+1Password 참조 제거
+
+`usage: animaworks vault sources remove [-h] key`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| key | positional | — | — | 공유 vault 키 |
+
 ## `vault status`
 
 값 없이 키와 암호화 상태 표시
@@ -1555,3 +1774,16 @@ tmp 사용량 요약 표시
 | key | positional | — | — | 저장할 키 |
 | value | positional | — | — | 아니마 네임스페이스에 저장할 값 |
 | --shared | flag | false | — | 운영자 전용: stdin 또는 숨겨진 프롬프트를 통해 공유 섹션에 저장 |
+
+## `vault sync`
+
+1Password에서 공유 키 동기화
+
+`usage: animaworks vault sync [-h] [--check] [--yes] [--json] [keys ...]`
+
+| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| keys | positional | — | — | 이 키만 동기화 (기본값: 등록된 모든 키) |
+| --check | flag | false | — | 값만 비교; 쓰지 않음 |
+| --yes | flag | false | — | 프롬프트 없이 변경 적용 |
+| --json | flag | false | — | 비밀 값 없이 JSON 출력 |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 79c80f7a9ec3898de8fe279ed684e8a6fbab441482cf872079e1623eba829d49 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 2cf9f5a9d404bde94b20e45df9df5a7dcaf7c3e92fbfdb4fb2949a16b5e5c46e -->
 
 # 設定リファレンス
 
@@ -401,7 +401,7 @@
 | キー | 型 | 既定値 | 説明 |
 |---|---|---|---|
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 画像生成プロバイダーと既定パラメーター。 |
-| `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
+| `image_gen.backend` | `Literal['api', 'diffusers']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | codex CLIがあれば画像生成に最優先で使う |
 | `image_gen.style_reference` | `str \| None` | `null` | Path to organization-wide style reference image |
@@ -484,6 +484,18 @@
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
 | `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"enforce"` | /api/internal/* caller verification |
+
+### `hub`
+
+| キー | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `hub` | `HubConfig` | `{HubConfig}` | 会社のタイムラインとハブの設定。 |
+| `hub.enabled` | `bool` | `false` | — |
+| `hub.timeline_enabled` | `bool` | `false` | — |
+| `hub.company` | `str` | `""` | — |
+| `hub.board` | `str` | `"hub"` | — |
+| `hub.public_hosts` | `list[str]` | `[]` | — |
+| `hub.max_posts_per_hour` | `int` | `20` | — |
 
 ### `llm_rate_guard`
 

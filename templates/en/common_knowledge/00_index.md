@@ -35,7 +35,15 @@ After reading, follow the table of contents below for details on each topic.
 | I want to check the behavior of Inbox startup and message sending | `communication/sending-limits.md` |
 | I don't know how to notify humans | `communication/call-human-guide.md` |
 | I don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` *Technical reference |
-
+| Problem | Where to look |
+| Don't know how to send a message | `reference/communication/messaging-guide.md` |
+| Don't know how to use the Board (shared channel) | `communication/board-guide.md` |
+| Don't know how to connect an external AI to the Hub | `communication/hub-guide.md` |
+| Don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
+| Want to check the required items for delegation, completion reports, and escalation | `communication/message-quality-protocol.md` |
+| Want to check the behavior of Inbox startup and message sending | `communication/sending-limits.md` |
+| Don't know how to notify humans | `communication/call-human-guide.md` |
+| Don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` *Technical reference |
 ### Organization & Hierarchy
 
 | Issue | Reference |
@@ -133,7 +141,15 @@ After reading, follow the table of contents below for details on each topic.
 | `call-human-guide.md` | Guide to notifying humans (using call_human, receiving replies, configuring notification channels) |
 | `slack-bot-token-guide.md` | Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration guide |
 | `broadcasting-guide.md` | Guide to choosing announcement channels (#ops is exclusively for owner notifications, Anima-to-Anima is basically #general, departments use domain channels + threads) |
-
+| `messaging-guide.md` | Guide to sending and receiving messages (send_message parameters, thread management, reply policy) |
+| `board-guide.md` | Board (shared channel) guide (how to read and post via CLI, posting rules) |
+| `hub-guide.md` | AnimaWorks Hub guide (external AI roster, setup text, Board rules) |
+| `instruction-patterns.md` | Instruction patterns collection (how to write clear instructions, delegation patterns, progress checks) |
+| `reporting-guide.md` | How to report and escalate (report timing, format, urgent vs. periodic) |
+| `message-quality-protocol.md` | Message quality protocol (mandatory checks for 4 delegation items, 3 completion report items, 4 escalation items) |
+| `sending-limits.md` | Inbox file wake, message aggregation, deduplication within a run, loop avoidance |
+| `call-human-guide.md` | Guide to notifying humans (how to use call_human, receiving replies, notification channel configuration) |
+| `slack-bot-token-guide.md` | → Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration guide |
 ### operations/ — Operations and Task Management
 
 | File | Overview |

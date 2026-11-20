@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 from core.config.anima_registry import read_anima_company_checked
 from core.exceptions import RecipientNotFoundError
+from core.hub.members import HubMember
 from core.messaging.messenger import _validate_name, load_channel_meta_state
 from core.platform.atomic_io import append_jsonl_locked
 from core.platform.locks import locked_path
@@ -24,7 +25,7 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.messaging.board")
 
-PrincipalKind = Literal["anima", "human", "operator", "external"]
+PrincipalKind = Literal["anima", "human", "operator", "external", "hub"]
 Action = Literal["read", "write", "mention_target", "outbound"]
 ExternalKind = Literal["user", "bot"]
 HookStatus = Literal["sent", "skipped", "failed"]
@@ -142,6 +143,11 @@ def external_principal(name: str, *, external_kind: ExternalKind = "user") -> Pr
     return Principal(kind="external", name=name or "external", external_kind=external_kind)
 
 
+def hub_principal(member: HubMember) -> Principal:
+    """Build the Board identity for a registered external hub member."""
+    return Principal(kind="hub", name=member.id, company=member.company)
+
+
 def _decision(allowed: bool, reason: str = "allowed") -> Decision:
     return Decision(allowed=allowed, reason=reason)
 
@@ -162,6 +168,9 @@ def board_access(shared_dir: Path, channel: str, principal: Principal, action: A
 
     if principal.kind in {"human", "operator"}:
         return _decision(True)
+
+    if principal.kind == "hub":
+        return _hub_board_access(shared_dir, channel, principal, action, meta)
 
     if principal.kind == "external":
         if action != "write":
@@ -217,6 +226,46 @@ def board_access(shared_dir: Path, channel: str, principal: Principal, action: A
     return _decision(True)
 
 
+def _hub_board_access(
+    shared_dir: Path,
+    channel: str,
+    principal: Principal,
+    action: Action,
+    meta: Any,
+) -> Decision:
+    """Apply the hub member ACL: one configured board, same company, enabled."""
+    if action not in {"read", "write", "mention_target"}:
+        return _decision(False, "action_not_allowed")
+
+    try:
+        from core.config.models import load_config
+
+        hub_config = load_config().hub
+    except Exception:
+        logger.warning("Could not read hub settings for #%s", channel, exc_info=True)
+        return _decision(False, "hub_unreadable")
+
+    if not hub_config.enabled:
+        return _decision(False, "hub_disabled")
+
+    from core.hub.members import load_members
+
+    member = load_members(shared_dir).get(principal.name)
+    if member is None or not member.enabled:
+        return _decision(False, "not_enabled")
+    if principal.company is None or principal.company != member.company:
+        return _decision(False, "company_mismatch")
+
+    board = str(hub_config.board or "hub")
+    if channel != board:
+        return _decision(False, "not_hub_board")
+
+    board_company = str((meta.company if meta is not None else "") or "").strip()
+    if not board_company or board_company != member.company:
+        return _decision(False, "company_mismatch")
+    return _decision(True)
+
+
 def register_post_hook(name: str, fn: PostHook) -> None:
     """Register or replace a synchronous post-commit hook."""
     with _post_hooks_lock:
@@ -268,6 +317,8 @@ def _source_for(principal: Principal, origin: str) -> str:
         return "system_agent"
     if principal.kind == "anima":
         return "anima"
+    if principal.kind == "hub":
+        return "hub"
     if principal.kind in {"human", "operator"}:
         return "human"
     if origin in {"slack", "discord", "system_agent"}:
@@ -278,6 +329,8 @@ def _source_for(principal: Principal, origin: str) -> str:
 def _kind_for(principal: Principal) -> str:
     if principal.kind == "external":
         return f"external_{principal.external_kind or 'user'}"
+    if principal.kind == "hub":
+        return "external_agent"
     return principal.kind
 
 
@@ -405,6 +458,17 @@ def post_to_board_in_shared_dir(
             result.notified, result.not_notified = fanout_board_mentions(shared_dir, post)
         except Exception:
             logger.exception("Board mention fan-out failed for #%s", channel)
+    elif principal.kind == "anima" and origin != "mirror":
+        # An anima's reply during a reply-triggered run is saved with
+        # notify=False so other animas are not woken again.  External hub
+        # members still need the reply: they cannot see the board without it.
+        try:
+            from core.messaging.board_fanout import fanout_board_mentions, hub_board_name
+
+            if channel == hub_board_name():
+                result.notified, result.not_notified = fanout_board_mentions(shared_dir, post, externals_only=True)
+        except Exception:
+            logger.exception("Board external fan-out failed for #%s", channel)
 
     if result.notified or result.not_notified:
         try:

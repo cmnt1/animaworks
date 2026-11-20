@@ -36,78 +36,10 @@ export function fetchAnimas() {
   return request("/api/animas");
 }
 
-export function fetchAnimaDetail(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}`);
-}
-
-// ── Chat ──────────────────────
-
-export function greetAnima(name) {
-  return post(`/api/animas/${encodeURIComponent(name)}/greet`, {});
-}
-
-export function sendChat(name, message, userName) {
-  return post(`/api/animas/${encodeURIComponent(name)}/chat`, {
-    message,
-    from_person: userName || "human",
-  });
-}
-
-// ── Memory ──────────────────────
-
-export function fetchEpisodes(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}/episodes`);
-}
-
-export function fetchEpisode(name, date) {
-  return request(`/api/animas/${encodeURIComponent(name)}/episodes/${encodeURIComponent(date)}`);
-}
-
-export function fetchKnowledge(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}/knowledge`);
-}
-
-export function fetchKnowledgeTopic(name, topic) {
-  return request(`/api/animas/${encodeURIComponent(name)}/knowledge/${encodeURIComponent(topic)}`);
-}
-
-export function fetchProcedures(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}/procedures`);
-}
-
-export function fetchProcedure(name, proc) {
-  return request(`/api/animas/${encodeURIComponent(name)}/procedures/${encodeURIComponent(proc)}`);
-}
-
-// ── Session ──────────────────────
-
-export function fetchSessions(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}/sessions`);
-}
-
-export function fetchSession(name, sessionId) {
-  return request(`/api/animas/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`);
-}
-
-export function fetchConversationHistory(name, limit = 50, before = null, threadId = "default") {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (before) params.set("before", before);
-  params.set("thread_id", threadId);
-  return request(`/api/animas/${encodeURIComponent(name)}/conversation/history?${params}`);
-}
-
-export function fetchTranscript(name, date) {
-  return request(`/api/animas/${encodeURIComponent(name)}/transcripts/${encodeURIComponent(date)}`);
-}
-
 // ── System ──────────────────────
 
 export function fetchSystemStatus() {
   return request("/api/system/status");
-}
-
-function fetchAvailableModels() {
-  return request("/api/system/available-models");
 }
 
 export function fetchSharedUsers() {
@@ -142,10 +74,6 @@ export function deleteSnsSearchEntry(id) {
 
 export function assetUrl(name, filename) {
   return `${BASE}/api/animas/${encodeURIComponent(name)}/assets/${encodeURIComponent(filename)}`;
-}
-
-function fetchAssets(name) {
-  return request(`/api/animas/${encodeURIComponent(name)}/assets`);
 }
 
 export function fetchAssetMetadata(name) {

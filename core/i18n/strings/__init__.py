@@ -33,6 +33,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         tooling,
         tooling_schema,
         tooling_schema_ext,
+        vault,
         zoom,
     )
 
@@ -59,6 +60,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         migrate,
         models,
         phone,
+        vault,
         zoom,
     ):
         merged.update(mod.STRINGS)

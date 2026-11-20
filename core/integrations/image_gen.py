@@ -86,7 +86,6 @@ from core.integrations._image_pipeline import ImageGenPipeline, PipelineResult
 
 # ── Re-exports: _image_schemas ─────────────────────────────
 from core.integrations._image_schemas import get_tool_schemas
-from core.integrations.image.atlascloud import AtlasCloudImageClient
 from core.schemas import VALID_EMOTIONS as _VALID_EXPRESSION_NAMES
 
 _MUTABLE_GLB_ATTRS = {"_FBX2GLTF_PATH", "_GLTF_MODULES_DIR"}
@@ -158,17 +157,7 @@ def _build_fullbody_api_client(image_config: Any) -> Any:
     raise RuntimeError("No image generation backend configured. Enable Diffusers or set NOVELAI_TOKEN/FAL_KEY.")
 
 
-def _build_fullbody_client(image_config: Any, *, generation_model: str | None = None) -> Any:
-    if generation_model and generation_model.startswith("nanogpt:"):
-        from core.integrations.image.nanogpt import NanoGPTImageClient
-
-        return NanoGPTImageClient(model=generation_model.split(":", 1)[1])
-    if generation_model and generation_model.startswith("openai:"):
-        from core.integrations.image.openai import OpenAIImageClient
-
-        return OpenAIImageClient(model=generation_model.split(":", 1)[1])
-    if getattr(image_config, "backend", "api") == "atlascloud":
-        return AtlasCloudImageClient()
+def _build_fullbody_client(image_config: Any) -> Any:
     if _use_diffusers_backend(image_config):
         return LocalDiffusersClient(image_config)
     if getattr(image_config, "prefer_codex", True) and codex_available():
@@ -180,8 +169,6 @@ def _build_fullbody_client(image_config: Any, *, generation_model: str | None = 
 
 
 def _build_reference_client(image_config: Any) -> Any:
-    if getattr(image_config, "backend", "api") == "atlascloud":
-        return AtlasCloudImageClient()
     if _use_diffusers_backend(image_config):
         return LocalDiffusersClient(image_config)
     if getattr(image_config, "prefer_codex", True) and codex_available():

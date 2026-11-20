@@ -14,6 +14,7 @@ from server.routes.chat import create_chat_router
 from server.routes.chat_ui_state import create_chat_ui_state_router
 from server.routes.config_routes import create_config_router
 from server.routes.external_tasks import create_external_tasks_router
+from server.routes.hub import create_hub_router
 from server.routes.internal import create_internal_router
 from server.routes.logs_routes import create_logs_router
 from server.routes.memory_routes import create_memory_router
@@ -24,8 +25,10 @@ from server.routes.skills import create_skills_router
 from server.routes.sns_search import create_sns_search_router
 from server.routes.system import create_system_router
 from server.routes.taskboard import create_taskboard_router
+from server.routes.timeline import create_timeline_router
 from server.routes.usage_routes import create_usage_router
 from server.routes.users import create_users_router
+from server.routes.vault_routes import create_vault_router
 from server.routes.voice import create_voice_router
 from server.routes.webhooks import create_webhooks_router
 from server.routes.websocket_route import create_websocket_router
@@ -51,10 +54,13 @@ def create_router() -> APIRouter:
     api.include_router(create_logs_router())
     api.include_router(create_assets_router())
     api.include_router(create_internal_router())
+    api.include_router(create_timeline_router())
     api.include_router(create_auth_router())
     api.include_router(create_users_router())
     api.include_router(create_external_tasks_router())
+    api.include_router(create_hub_router())
     api.include_router(create_usage_router())
+    api.include_router(create_vault_router())
     api.include_router(create_webhooks_router())
     api.include_router(create_phone_router())
 

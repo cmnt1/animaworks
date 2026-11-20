@@ -460,7 +460,17 @@ class HelperModelsConfig(BaseModel):
 class ImageGenConfig(BaseModel):
     """Configuration for image generation and style consistency."""
 
-    backend: Literal["api", "diffusers", "atlascloud"] = "api"
+    backend: Literal["api", "diffusers"] = "api"
+
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _map_removed_backend(cls, v: object) -> object:
+        """Load configs that still name the removed Atlas Cloud backend as the default one."""
+        if v == "atlascloud":
+            logger.warning('image_gen.backend "atlascloud" was removed; using "api". Update config.json.')
+            return "api"
+        return v
+
     image_style: Literal["anime", "realistic"] = "realistic"
     prefer_codex: bool = True  # codex CLIがあれば画像生成に最優先で使う
     style_reference: str | None = None  # Path to organization-wide style reference image
@@ -683,6 +693,17 @@ class MediaProxyConfig(BaseModel):
     timeout_read_s: float = 10.0
     rate_limit_requests: int = 30
     rate_limit_window_s: int = 60
+
+
+class HubConfig(BaseModel):
+    """Hub (company timeline / external MCP surface) configuration."""
+
+    enabled: bool = False
+    timeline_enabled: bool = False
+    company: str = ""
+    board: str = "hub"
+    public_hosts: list[str] = Field(default_factory=list)
+    max_posts_per_hour: int = 20
 
 
 class UsageGovernorConfig(BaseModel):
@@ -1538,6 +1559,7 @@ class AnimaWorksConfig(BaseModel):
     human_notification: HumanNotificationConfig = HumanNotificationConfig()
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
+    hub: HubConfig = HubConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
     mcp: MCPConfig = MCPConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
@@ -1617,6 +1639,7 @@ __all__ = [
     "HelperModelRole",
     "HelperModelsConfig",
     "HousekeepingConfig",
+    "HubConfig",
     "HumanNotificationConfig",
     "ImageGenConfig",
     "InboxConfig",

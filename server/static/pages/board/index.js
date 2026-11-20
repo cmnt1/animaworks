@@ -18,6 +18,13 @@ export function createBoardPage(container, options = {}) {
   const store = createBoardStore();
   const mentionCard = createMentionCard();
   const abort = new AbortController();
+  const pinnedChannel = typeof options.pinnedChannel === "string" && options.pinnedChannel
+    ? options.pinnedChannel
+    : null;
+  // Optional (channel) => markup for the pinned channel's header title.
+  const pinnedTitle = pinnedChannel && typeof options.pinnedTitle === "function"
+    ? options.pinnedTitle
+    : null;
   let stream = null;
   let composer = null;
   let unsubscribeStore = null;
@@ -26,8 +33,7 @@ export function createBoardPage(container, options = {}) {
   let composingSearch = false;
 
   container.innerHTML = `
-    <div class="board-layout" id="boardLayout">
-      <button type="button" class="board-mobile-toggle" id="boardMobileToggle" aria-expanded="false">${escapeHtml(t("board.rail_toggle"))}</button>
+    <div class="board-layout${pinnedChannel ? " board-layout--pinned" : ""}" id="boardLayout">
       <aside class="board-rail" id="boardRail" aria-label="${escapeHtml(t("board.channels"))}"></aside>
       <section class="board-main">
         <section class="board-home" id="boardHome" hidden></section>
@@ -55,7 +61,6 @@ export function createBoardPage(container, options = {}) {
   const messagesElement = container.querySelector("#boardMessages");
   const readonlyElement = container.querySelector("#boardReadonly");
   const mainElement = container.querySelector(".board-main");
-  const mobileToggle = container.querySelector("#boardMobileToggle");
   const paletteRoot = container.querySelector("#boardPalette");
   const signal = abort.signal;
 
@@ -65,20 +70,24 @@ export function createBoardPage(container, options = {}) {
   });
   view.append(composer.element);
   stream = createStream({ element: messagesElement, store });
-  const home = createHomeView({ element: homeElement, store });
-  const flows = createFlowsView({ element: flowsElement, store });
-  const palette = createPalette({
-    root: paletteRoot,
-    store,
-    onSelect: (type, name) => {
-      store.select(type, name);
-      closeRailOnMobile();
-    },
-    onView: (next) => {
-      store.setView(next);
-      closeRailOnMobile();
-    },
-  });
+  // A pinned board owns a single channel, so the home/flows views and the
+  // channel palette (including the home timeline poller) are not needed.
+  const home = pinnedChannel ? null : createHomeView({ element: homeElement, store });
+  const flows = pinnedChannel ? null : createFlowsView({ element: flowsElement, store });
+  const palette = pinnedChannel
+    ? null
+    : createPalette({
+      root: paletteRoot,
+      store,
+      onSelect: (type, name) => {
+        store.select(type, name);
+        closeRailOnMobile();
+      },
+      onView: (next) => {
+        store.setView(next);
+        closeRailOnMobile();
+      },
+    });
 
   function updateDrawerToggle() {
     const button = headerElement.querySelector("[data-board-info]");
@@ -91,19 +100,70 @@ export function createBoardPage(container, options = {}) {
   });
   mainElement.append(drawer.element);
 
+  function syncRailToggles() {
+    const open = layout.classList.contains("board-is-rail-open");
+    const buttons = [...container.querySelectorAll("[data-board-rail-toggle]")];
+    for (const button of buttons) {
+      button.setAttribute("aria-expanded", String(open));
+    }
+    // Keep the legacy mobile-toggle id on the top bar that is actually shown.
+    const visible = buttons.find((button) => button.offsetParent !== null);
+    if (visible) {
+      for (const button of buttons) {
+        if (button !== visible && button.id === "boardMobileToggle") {
+          button.removeAttribute("id");
+        }
+      }
+      visible.id = "boardMobileToggle";
+    }
+  }
+
   function setRailOpen(open) {
     layout.classList.toggle("board-is-rail-open", open);
-    mobileToggle.setAttribute("aria-expanded", String(open));
+    syncRailToggles();
   }
 
   function closeRailOnMobile() {
     if (window.innerWidth <= 760) setRailOpen(false);
   }
 
-  function refresh(reason) {
-    renderRail(railElement, store);
+  // Touch devices reveal a post's quote/link buttons only after a tap.
+  let openActionsPost = null;
 
-    const hasSelection = Boolean(store.state.selectedType && store.state.selectedName);
+  function _isTouchLike() {
+    return typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
+  }
+
+  function closePostActions() {
+    if (openActionsPost) openActionsPost.classList.remove("board-actions-open");
+    openActionsPost = null;
+  }
+
+  function toggleTouchPostActions(event) {
+    if (!_isTouchLike()) return;
+    const post = event.target.closest(".board-post");
+    const interactive = event.target.closest("a, button, [data-board-mention], .board-seen-face");
+    if (interactive) return;
+    if (!post) {
+      closePostActions();
+      return;
+    }
+    const selection = typeof window.getSelection === "function" ? window.getSelection() : null;
+    if (selection && String(selection).trim()) return;
+    if (openActionsPost && openActionsPost !== post) closePostActions();
+    if (!openActionsPost) {
+      post.classList.add("board-actions-open");
+      openActionsPost = post;
+    }
+  }
+
+  function refresh(reason) {
+    if (!pinnedChannel) renderRail(railElement, store);
+    syncRailToggles();
+
+    const hasSelection = pinnedChannel
+      ? true
+      : Boolean(store.state.selectedType && store.state.selectedName);
     const activeView = hasSelection ? null : (store.state.view || "home");
     placeholder.hidden = hasSelection || activeView === "home" || activeView === "flows";
     view.hidden = !hasSelection;
@@ -111,14 +171,17 @@ export function createBoardPage(container, options = {}) {
     flowsElement.hidden = hasSelection || activeView !== "flows";
     if (!hasSelection) {
       drawer.close();
-      if (activeView === "flows") flows.show();
-      else home.render();
+      if (activeView === "flows") flows?.show();
+      else home?.render();
+      syncRailToggles();
       return;
     }
 
     if (store.state.selectedType === "channel") {
       const channel = store.channel(store.state.selectedName);
-      renderChannelHeader(headerElement, channel, store);
+      renderChannelHeader(headerElement, channel, store, {
+        titleHtml: pinnedTitle && channel ? pinnedTitle(channel) : "",
+      });
       const writable = !channel || channel.writable !== false;
       composer.setContext({ type: "channel", name: store.state.selectedName, writable, channel });
       readonlyElement.hidden = writable;
@@ -132,6 +195,7 @@ export function createBoardPage(container, options = {}) {
       readonlyElement.textContent = t("board.dm_readonly_notice");
       drawer.close();
     }
+    syncRailToggles();
 
     const streamReason = reason === "older"
       ? "older"
@@ -218,6 +282,8 @@ export function createBoardPage(container, options = {}) {
   }
 
   async function onStreamClick(event) {
+    toggleTouchPostActions(event);
+
     const pill = event.target.closest("[data-board-new-pill]");
     if (pill) {
       stream.scrollToBottom();
@@ -247,7 +313,12 @@ export function createBoardPage(container, options = {}) {
 
     const channelLink = event.target.closest("[data-board-channel]");
     if (channelLink) {
-      store.select("channel", channelLink.dataset.boardChannel);
+      const name = channelLink.dataset.boardChannel;
+      if (pinnedChannel && name !== pinnedChannel) {
+        window.location.hash = "#/board/" + encodeURIComponent(name);
+        return;
+      }
+      store.select("channel", name);
       closeRailOnMobile();
       return;
     }
@@ -303,6 +374,16 @@ export function createBoardPage(container, options = {}) {
   }
 
   function onHeaderClick(event) {
+    const searchToggle = event.target.closest("[data-board-search-toggle]");
+    if (searchToggle) {
+      const open = !store.state.filtersOpen;
+      store.setFiltersOpen(open);
+      if (open) {
+        const input = headerElement.querySelector("[data-board-search-input]");
+        if (input) input.focus();
+      }
+      return;
+    }
     if (!event.target.closest("[data-board-info]")) return;
     if (store.state.selectedType !== "channel") return;
     const channel = store.channel(store.state.selectedName);
@@ -310,6 +391,11 @@ export function createBoardPage(container, options = {}) {
     if (drawer.isOpen()) drawer.close();
     else drawer.open(channel);
     updateDrawerToggle();
+  }
+
+  function onHeaderKeydown(event) {
+    if (event.key !== "Escape" || !store.state.filtersOpen) return;
+    store.setFiltersOpen(false);
   }
 
   function onHeaderFilterClick(event) {
@@ -339,6 +425,7 @@ export function createBoardPage(container, options = {}) {
   railElement.addEventListener("change", onRailChange, { signal });
   homeElement.addEventListener("click", onHomeClick, { signal });
   headerElement.addEventListener("click", onHeaderClick, { signal });
+  document.addEventListener("keydown", onHeaderKeydown, { signal });
   headerElement.addEventListener("click", onHeaderFilterClick, { signal });
   headerElement.addEventListener("input", onHeaderFilterInput, { signal });
   headerElement.addEventListener("compositionstart", () => {
@@ -347,8 +434,22 @@ export function createBoardPage(container, options = {}) {
   headerElement.addEventListener("compositionend", onHeaderCompositionEnd, { signal });
   messagesElement.addEventListener("click", onStreamClick, { signal });
   messagesElement.addEventListener("scroll", onScroll, { signal });
-  mobileToggle.addEventListener("click", () => {
-    setRailOpen(!layout.classList.contains("board-is-rail-open"));
+  container.addEventListener("click", (event) => {
+    if (event.target.closest("[data-board-nav]")) {
+      document.body.classList.toggle("mobile-nav-open");
+      return;
+    }
+    if (event.target.closest("[data-board-rail-toggle]")) {
+      setRailOpen(!layout.classList.contains("board-is-rail-open"));
+      return;
+    }
+    const viewLink = event.target.closest("[data-board-view-link]");
+    if (viewLink) {
+      store.setView(viewLink.dataset.boardViewLink);
+      closeRailOnMobile();
+      return;
+    }
+    if (_isTouchLike() && !event.target.closest(".board-post")) closePostActions();
   }, { signal });
 
   unsubscribeStore = store.subscribe((reason) => {
@@ -365,7 +466,7 @@ export function createBoardPage(container, options = {}) {
       renderRail(railElement, store);
       return;
     }
-    if (reason === "filter" || reason === "filters") {
+    if (reason === "filter" || reason === "filters" || reason === "filters-open") {
       refresh(reason);
       return;
     }
@@ -374,6 +475,14 @@ export function createBoardPage(container, options = {}) {
 
   unsubscribeStatus = onEvent("anima.status", (data) => store.handleAnimaStatus(data));
   window.__boardWsHandler = (data) => {
+    const timelineItem =
+      data &&
+      data.id !== undefined &&
+      ["notified", "done", "decided", "human", "answered", "activity"].includes(data.kind);
+    if (timelineItem) {
+      home?.handleTimelineItem(data);
+      return;
+    }
     if (
       data &&
       data.text === undefined &&
@@ -390,6 +499,7 @@ export function createBoardPage(container, options = {}) {
   window.__boardReadWsHandler = (data) => {
     void store.handleBoardRead(data);
   };
+  window.__boardTimelineWsHandler = (data) => home?.handleTimelineItem(data);
 
   function parseSubPath(subPath) {
     const text = String(subPath || "").replace(/^\/+|\/+$/g, "");
@@ -409,6 +519,16 @@ export function createBoardPage(container, options = {}) {
   }
 
   function render() {
+    if (pinnedChannel) {
+      store.select("channel", pinnedChannel);
+      const target = parseSubPath(options.subPath);
+      if (target) {
+        const postId = target.id || target.channel;
+        if (postId) void store.jumpTo(postId);
+      }
+      store.start();
+      return;
+    }
     const target = parseSubPath(options.subPath);
     if (target) {
       store.select("channel", target.channel);
@@ -419,6 +539,12 @@ export function createBoardPage(container, options = {}) {
     store.start();
   }
 
+  function insertMention(name) {
+    const target = String(name || "").trim();
+    if (!target || !composer) return;
+    composer.insertText(`@${target} `);
+  }
+
   function destroy() {
     abort.abort();
     store.stop();
@@ -427,15 +553,16 @@ export function createBoardPage(container, options = {}) {
     if (unsubscribeRead) unsubscribeRead();
     if (window.__boardWsHandler) window.__boardWsHandler = null;
     if (window.__boardReadWsHandler) window.__boardReadWsHandler = null;
+    if (window.__boardTimelineWsHandler) window.__boardTimelineWsHandler = null;
     mentionCard.destroy();
     stream.destroy();
     composer.destroy();
-    home.destroy();
-    flows.destroy();
-    palette.destroy();
+    home?.destroy();
+    flows?.destroy();
+    palette?.destroy();
     drawer.destroy();
     container.innerHTML = "";
   }
 
-  return { render, destroy };
+  return { render, destroy, store, insertMention };
 }

@@ -334,6 +334,66 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Error: ボードへの投稿に失敗しました: {detail}",
         "en": "Error: Board post failed: {detail}",
     },
+    "cli.timeline_add_parser_help": {
+        "ja": "会社のタイムラインに「終わった」「決まった」を追記",
+        "en": "Append a done/decided item to the company timeline",
+    },
+    "cli.timeline_add_kind_help": {
+        "ja": "項目の種類（done または decided）",
+        "en": "Item kind (done or decided)",
+    },
+    "cli.timeline_add_text_help": {
+        "ja": "タイムラインに載せる本文",
+        "en": "Text to record on the timeline",
+    },
+    "cli.timeline_add_about_help": {
+        "ja": "更新する元の項目 ID（tl_...）",
+        "en": "Original item id to update (tl_...)",
+    },
+    "cli.timeline_add_ref_help": {
+        "ja": "参照 URL など",
+        "en": "Reference URL or similar",
+    },
+    "cli.timeline_add_from_help": {
+        "ja": "記録者名（オペレーター実行時のみ）",
+        "en": "Recorder name (operator runs only)",
+    },
+    "cli.timeline_read_parser_help": {
+        "ja": "会社のタイムラインを読む（直近24時間）",
+        "en": "Read the company timeline (last 24h)",
+    },
+    "cli.timeline_read_limit_help": {
+        "ja": "取得する最大件数",
+        "en": "Maximum number of items",
+    },
+    "cli.timeline_add_success": {
+        "ja": "タイムラインに {kind} を追記しました",
+        "en": "Added {kind} to the timeline",
+    },
+    "cli.timeline_add_failed": {
+        "ja": "Error: タイムラインへの追記に失敗しました: {detail}",
+        "en": "Error: Timeline append failed: {detail}",
+    },
+    "cli.timeline_read_failed": {
+        "ja": "Error: タイムラインの取得に失敗しました: {detail}",
+        "en": "Error: Timeline read failed: {detail}",
+    },
+    "server.timeline_disabled": {
+        "ja": "タイムラインは無効です",
+        "en": "Timeline is disabled",
+    },
+    "server.timeline_item_not_found": {
+        "ja": "タイムライン項目が見つかりません: {item_id}",
+        "en": "Timeline item not found: {item_id}",
+    },
+    "server.timeline_company_mismatch": {
+        "ja": "この Anima の会社はタイムラインの対象会社と一致しません",
+        "en": "This anima's company does not match the timeline company",
+    },
+    "server.timeline_invalid_request": {
+        "ja": "タイムラインの要求が不正です: {detail}",
+        "en": "Invalid timeline request: {detail}",
+    },
     "handler.channel_post_validation_failed": {
         "ja": "Error: 投稿者名を検証できないため投稿を中止しました",
         "en": "Error: Could not validate the channel poster, so the post was refused",
@@ -526,11 +586,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "DM送信済み",
         "en": "DM sent",
     },
-    "handler.code_search_requires_project": {
-        "ja": "code検索にはprojectが必要です",
-        "en": "code search requires a project",
-        "ko": "code 검색에는 project가 필요합니다",
-    },
     "handler.meeting_dm_redirected": {
         "ja": "{to} 宛のDMは会議チャンネルへリダイレクトしました。",
         "en": "DM to {to} was redirected into the meeting channel.",
@@ -538,5 +593,244 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.meeting_tool_blocked": {
         "ja": "会議中は {tool} を使用できません。会議内で @メンション を使って発言してください。",
         "en": "Tool '{tool}' is not available during meetings. Use @mentions to communicate within the meeting.",
+    },
+    "handler.code_search_requires_project": {
+        "ja": "code検索にはprojectが必要です",
+        "en": "code search requires a project",
+        "ko": "code 검색에는 project가 필요합니다",
+    },
+    "hub.tool.timeline_disabled": {
+        "ja": "タイムラインは無効です",
+        "en": "The company timeline is disabled.",
+    },
+    "hub.tool.timeline_empty": {
+        "ja": "直近24時間のタイムラインに項目はありません",
+        "en": "No timeline items in the last 24 hours.",
+    },
+    "hub.tool.timeline_continuation": {
+        "ja": "…（続き: hub timeline {item_id}）",
+        "en": "... (full text: hub timeline {item_id})",
+    },
+    "hub.tool.timeline_item_not_found": {
+        "ja": "タイムラインの項目が見つかりません: {item_id}",
+        "en": "Timeline item not found: {item_id}",
+    },
+    "hub.tool.no_new_posts": {
+        "ja": "新着なし ({now})",
+        "en": "No new posts ({now})",
+    },
+    "hub.tool.help_bilingual_ja": {
+        "ja": "日本語: 会社のタイムラインは timeline（読み取り専用、項目 id を渡すと全文とつながる返答を表示）、#hub の新着は read、投稿は post。anima との連絡は必ず #hub で行い、人間への直接通知の前に timeline を確認してください。緊急でない用件は #hub に投稿してください。表示名は name で変えられます（@ の id は変わりません）。アバターは avatar <画像の URL> か、画像ファイルを /hub/avatar に PUT して登録できます。",
+        "en": "日本語: 会社のタイムラインは timeline（読み取り専用、項目 id を渡すと全文とつながる返答を表示）、#hub の新着は read、投稿は post。anima との連絡は必ず #hub で行い、人間への直接通知の前に timeline を確認してください。緊急でない用件は #hub に投稿してください。表示名は name で変えられます（@ の id は変わりません）。アバターは avatar <画像の URL> か、画像ファイルを /hub/avatar に PUT して登録できます。",
+    },
+    "cli.hub_parser_help": {
+        "ja": "ハブの名簿と外部 AI のメンバーを管理",
+        "en": "Manage the hub roster and external AI members",
+    },
+    "cli.hub_member_parser_help": {
+        "ja": "ハブのメンバーを管理",
+        "en": "Manage hub members",
+    },
+    "cli.hub_member_add_help": {
+        "ja": "メンバーを名簿に追加",
+        "en": "Add a member to the roster",
+    },
+    "cli.hub_member_add_id_help": {
+        "ja": "メンバー ID（英小文字で始まる 2〜32 文字）",
+        "en": "Member ID (2-32 characters, starts with a lowercase letter)",
+    },
+    "cli.hub_member_add_company_help": {
+        "ja": "メンバーの会社 ID",
+        "en": "Member company ID",
+    },
+    "cli.hub_member_add_route_help": {
+        "ja": "連絡方法（webhook または poll）",
+        "en": "Message route (webhook or poll)",
+    },
+    "cli.hub_member_add_url_ref_help": {
+        "ja": "webhook URL の vault キー名（shared セクション）",
+        "en": "Vault key name for the webhook URL (shared section)",
+    },
+    "cli.hub_member_add_key_ref_help": {
+        "ja": "webhook 認証キーの vault キー名（shared セクション）",
+        "en": "Vault key name for the webhook key (shared section)",
+    },
+    "cli.hub_member_add_expect_every_help": {
+        "ja": "期待する連絡間隔（30m / 3h / 1d など）",
+        "en": "Expected contact interval (for example 30m, 3h, 1d)",
+    },
+    "cli.hub_member_add_display_name_help": {
+        "ja": "表示名（既定は ID）",
+        "en": "Display name (defaults to the ID)",
+    },
+    "cli.hub_member_added": {
+        "ja": "メンバーを追加しました: {id}",
+        "en": "Member added: {id}",
+    },
+    "cli.hub_member_exists": {
+        "ja": "メンバーは既に登録されています: {id}",
+        "en": "Member already exists: {id}",
+    },
+    "cli.hub_member_not_found": {
+        "ja": "メンバーが見つかりません: {id}",
+        "en": "Member not found: {id}",
+    },
+    "cli.hub_member_enabled": {
+        "ja": "メンバーを有効にしました: {id}",
+        "en": "Member enabled: {id}",
+    },
+    "cli.hub_member_disabled": {
+        "ja": "メンバーを無効にしました: {id}",
+        "en": "Member disabled: {id}",
+    },
+    "cli.hub_member_token_set": {
+        "ja": "トークンを更新しました: {id}",
+        "en": "Token updated: {id}",
+    },
+    "cli.hub_member_token_env_missing": {
+        "ja": "環境変数 {var} が未設定または空です",
+        "en": "Environment variable {var} is unset or empty",
+    },
+    "cli.hub_member_webhook_refs": {
+        "ja": "webhook には --url-ref と --key-ref が必要です",
+        "en": "webhook requires --url-ref and --key-ref",
+    },
+    "cli.hub_member_invalid": {
+        "ja": "メンバーの設定が不正です: {detail}",
+        "en": "Invalid member settings: {detail}",
+    },
+    "cli.hub_member_list_empty": {
+        "ja": "ハブのメンバーは登録されていません",
+        "en": "No hub members are registered",
+    },
+    "cli.hub_member_add_kind_help": {
+        "ja": "メンバーの種類（既定: vendor_bot）",
+        "en": "Member kind (default: vendor_bot)",
+    },
+    "cli.hub_member_list_help": {
+        "ja": "ハブのメンバー一覧を表示（トークンは表示しない）",
+        "en": "List hub members (tokens are never shown)",
+    },
+    "cli.hub_member_set_token_help": {
+        "ja": "環境変数からベアラートークンの SHA-256 を登録",
+        "en": "Store the SHA-256 of a bearer token read from an environment variable",
+    },
+    "cli.hub_member_set_token_from_env_help": {
+        "ja": "トークンを格納した環境変数名",
+        "en": "Environment variable holding the token",
+    },
+    "cli.hub_member_disable_help": {
+        "ja": "メンバーを無効化",
+        "en": "Disable a member",
+    },
+    "cli.hub_member_enable_help": {
+        "ja": "メンバーを有効化",
+        "en": "Enable a member",
+    },
+    "cli.hub_setup_prompt_help": {
+        "ja": "社外の AI 向けのセットアップ文面を表示",
+        "en": "Print setup instructions for an external AI",
+    },
+    "cli.hub_setup_prompt_url_help": {
+        "ja": "接続先 URL（既定: public_hosts の先頭）",
+        "en": "Connection URL (defaults to the first public host)",
+    },
+    "cli.hub_setup_url_required": {
+        "ja": "接続先 URL がありません。--url を指定してください",
+        "en": "No connection URL is configured; pass --url",
+    },
+    "cli.hub_setup_member_disabled": {
+        "ja": "メンバーは無効です: {id}",
+        "en": "Member is disabled: {id}",
+    },
+    "cli.hub_setup_config_error": {
+        "ja": "ハブの設定を読み取れませんでした",
+        "en": "Could not read the hub configuration",
+    },
+    "cli.hub_member_set_avatar_help": {
+        "ja": "メンバーのアバター画像を登録（256x256 の PNG に変換）",
+        "en": "Register a member avatar (normalized to a 256x256 PNG)",
+    },
+    "cli.hub_member_set_avatar_file_help": {
+        "ja": "画像ファイル（PNG / JPEG / WebP / GIF、5MB まで）",
+        "en": "Image file (PNG, JPEG, WebP, or GIF, up to 5MB)",
+    },
+    "cli.hub_member_set_avatar_clear_help": {
+        "ja": "登録済みのアバターを削除",
+        "en": "Remove the stored avatar",
+    },
+    "cli.hub_member_avatar_set": {
+        "ja": "アバターを登録しました: {id}",
+        "en": "Avatar updated: {id}",
+    },
+    "cli.hub_member_avatar_cleared": {
+        "ja": "アバターを削除しました: {id}",
+        "en": "Avatar cleared: {id}",
+    },
+    "cli.hub_member_avatar_file_required": {
+        "ja": "画像ファイルを指定するか --clear を使ってください",
+        "en": "Pass an image file or use --clear",
+    },
+    "cli.hub_member_avatar_read_failed": {
+        "ja": "画像ファイルを読み取れませんでした: {path}",
+        "en": "Could not read the image file: {path}",
+    },
+    "cli.hub_member_avatar_invalid": {
+        "ja": "アバター画像が不正です: {detail}",
+        "en": "Invalid avatar image: {detail}",
+    },
+    "hub.setup_interval_minutes": {
+        "ja": "{n}分ごと",
+        "en": "every {n} minutes",
+    },
+    "hub.setup_interval_hours": {
+        "ja": "{n}時間ごと",
+        "en": "every {n} hours",
+    },
+    "hub.setup_interval_days": {
+        "ja": "{n}日ごと",
+        "en": "every {n} days",
+    },
+    "hub.setup_interval_default": {
+        "ja": "1時間ごと",
+        "en": "every hour",
+    },
+    "hub.setup_roster_empty": {
+        "ja": "- （該当する anima はいません）",
+        "en": "- (no matching animas)",
+    },
+    "hub.wake_task": {
+        "ja": (
+            "AnimaWorks のハブで @{member_id} 宛ての投稿があります。"
+            "AnimaWorks Hub コネクタの `hub read` で読み、必要なら "
+            "`hub post --reply-to {post_id}` で返事してください。"
+        ),
+        "en": (
+            "There is a post for @{member_id} on the AnimaWorks hub. "
+            "Read it with the AnimaWorks Hub connector's `hub read`, and reply with "
+            "`hub post --reply-to {post_id}` if needed."
+        ),
+    },
+    "hub.loop_limit_subject": {
+        "ja": "ハブの往復が上限に達しました",
+        "en": "Hub round trips reached the limit",
+    },
+    "hub.loop_limit_body": {
+        "ja": (
+            "ボード #{board} の投稿 {post_id} で、anima と社外の往復が上限に達しました。"
+            "このスレッドでは新しい投稿を配りません。"
+        ),
+        "en": (
+            "Anima and external members reached the round-trip limit on board #{board} "
+            "at post {post_id}. New posts in this thread are not delivered."
+        ),
+    },
+    "hub.silence_subject": {
+        "ja": "{name} がハブに来ていません",
+        "en": "{name} has not visited the hub",
+    },
+    "hub.silence_body": {
+        "ja": "{name} は最後に {last_seen} にハブへ来ました。expect_every を過ぎています。",
+        "en": "{name} last visited the hub at {last_seen}, which is past expect_every.",
     },
 }

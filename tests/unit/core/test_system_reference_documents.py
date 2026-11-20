@@ -912,6 +912,7 @@ _EXPECTED_FILES = [
     "anatomy/what-is-anima.md",
     "communication/board-guide.md",
     "communication/broadcasting-guide.md",
+    "communication/hub-guide.md",
     "communication/call-human-guide.md",
     "communication/message-quality-protocol.md",
     "communication/sending-limits.md",

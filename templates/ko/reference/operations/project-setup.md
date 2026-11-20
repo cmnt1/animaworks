@@ -102,7 +102,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 
 #### 기본값 (anima_defaults)
 
-| 필드 | 유형 | 기본값 | 설명 |
+| 필드 | 타입 | 기본값 | 설명 |
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-5-5"` |  |
 | `fallback_model` | `str | None` | None |  |
@@ -127,7 +127,6 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `default_workspace` | `str` | `""` |  |
-| `tool_compression` | `bool` | `True` |  |
 | `consolidation_enabled` | `bool` | `True` |  |
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
@@ -149,17 +148,18 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `consolidation` | 기억 통합 설정 |
 | `helper_models` |  |
 | `background_review` |  |
-| `rag` | RAG (검색 증강 생성) 설정 |
+| `rag` | RAG (검색 확장 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | 프라이밍 (자동 기억 연상) 설정 |
+| `priming` | 프라이밍 (자동 기억 회상) 설정 |
 | `image_gen` | 이미지 생성 설정 |
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |
+| `hub` |  |
 | `llm_rate_guard` |  |
 | `mcp` |  |
 | `external_messaging` |  |
@@ -175,11 +175,9 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `housekeeping` |  |
 | `inbox` |  |
 | `local_llm` |  |
-| `jev` |  |
 | `workspaces` |  |
 | `github_identities` |  |
 | `activity_level` |  |
-| `activity_level_by_provider` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |
 | `ui` |  |

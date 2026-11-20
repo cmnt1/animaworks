@@ -3,13 +3,17 @@
 // (initial fetch / incremental refetch / WebSocket / optimistic send) go
 // through mergeMessages(), keyed by server id (falling back to ts+from), so
 // the same post can never be rendered twice.
+import { basePath } from "/shared/base-path.js";
 import { api } from "../../modules/api.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
+import { animaHashColor } from "../../shared/avatar-utils.js";
 import { kindGroup } from "./avatar.js";
 
 const REFRESH_MS = 30_000;
 const COMPACT_WINDOW_MS = 10 * 60 * 1000;
 const USER_KEY = "animaworks_user";
+const IMAGE_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const ANIMA_COLOR_STYLE_ID = "boardAnimaColors";
 
 export function currentUser() {
   try {
@@ -69,6 +73,7 @@ export function createBoardStore() {
     animaByName: new Map(),
     statusOverrides: new Map(),
     avatars: new Map(),
+    hubMembers: new Map(),
     mode: "board", // "board" | "dm"
     view: "home", // "home" | "flows" (null while a channel/DM is open)
     selectedType: null, // "channel" | "dm"
@@ -102,6 +107,8 @@ export function createBoardStore() {
     // 5-1: server-side search / kind filter and the per-kind counts.
     kindFilter: "all",
     query: "",
+    // 5-4: the filter row is collapsed until the search button opens it.
+    filtersOpen: false,
     filterCounts: { all: 0, anima: 0, human: 0, external: 0, operator: 0 },
     filterTotal: 0,
     boardTotal: 0,
@@ -132,7 +139,9 @@ export function createBoardStore() {
     const unique = [...new Set((names || []).filter(Boolean))];
     const pending = [];
     for (const name of unique) {
-      if (state.avatars.has(name)) continue;
+      // Hub members own their avatar (loaded with the roster); never probe
+      // anima assets for them.
+      if (state.avatars.has(name) || state.hubMembers.has(name)) continue;
       // Reserve the slot so concurrent loads do not probe the same name twice.
       state.avatars.set(name, null);
       pending.push(
@@ -151,8 +160,51 @@ export function createBoardStore() {
     return true;
   }
 
+  // The API returns a root-relative path; deployments under a base path
+  // (e.g. /app behind a proxy) only route it with the prefix.
+  function _hubAvatarUrl(member) {
+    const url = typeof member?.avatar_url === "string" ? member.avatar_url : "";
+    return url.startsWith("/api/") ? `${basePath}${url}` : null;
+  }
+
   function avatarUrl(name) {
+    // The roster wins over a late anima-asset probe for the same name.
+    const member = state.hubMembers.get(name);
+    if (member) return _hubAvatarUrl(member);
     return state.avatars.get(name) || null;
+  }
+
+  function _hubSignature(map) {
+    return [...map.values()]
+      .map((member) => `${member.id}\u0000${member.display_name || ""}\u0000${member.avatar_url || ""}`)
+      .sort()
+      .join("\n");
+  }
+
+  /** Replace the hub roster; re-render only when a name or avatar changed. */
+  function setHubMembers(list) {
+    const next = new Map(
+      (Array.isArray(list) ? list : [])
+        .filter((member) => member && member.id)
+        .map((member) => [String(member.id), member]),
+    );
+    const changed = _hubSignature(next) !== _hubSignature(state.hubMembers);
+    state.hubMembers = next;
+    if (changed) emit("avatars");
+  }
+
+  async function loadHubMembers() {
+    let list = [];
+    try {
+      list = await api("/api/hub/members");
+    } catch {
+      list = [];
+    }
+    setHubMembers(list);
+  }
+
+  function hubMember(name) {
+    return state.hubMembers.get(name) || null;
   }
 
   // ── Read positions ─────────────────────────
@@ -421,6 +473,30 @@ export function createBoardStore() {
     });
   }
 
+  function syncAnimaColorStyles() {
+    if (typeof document === "undefined") return;
+    let style = document.getElementById(ANIMA_COLOR_STYLE_ID);
+    const rules = state.animas
+      .map((anima) => {
+        const name = String(anima?.name || "");
+        if (!name) return "";
+        return `.board-post[data-board-from="${CSS.escape(name)}"] { --board-post-accent: ${animaColor(name)}; }`;
+      })
+      .filter(Boolean);
+    if (!style) {
+      if (rules.length === 0) return;
+      style = document.createElement("style");
+      style.id = ANIMA_COLOR_STYLE_ID;
+      document.head.append(style);
+    }
+    style.textContent = rules.join("\n");
+  }
+
+  function animaColor(name) {
+    const color = String(anima(name)?.image_color || "");
+    return IMAGE_COLOR_RE.test(color) ? color : animaHashColor(String(name || ""));
+  }
+
   // ── Anima directory / status ───────────────
   async function loadAnimas() {
     try {
@@ -430,6 +506,7 @@ export function createBoardStore() {
       state.animas = [];
     }
     state.animaByName = new Map(state.animas.map((anima) => [anima.name, anima]));
+    syncAnimaColorStyles();
     await ensureAvatars(state.animas.map((anima) => anima.name));
     emit("animas");
   }
@@ -582,6 +659,13 @@ export function createBoardStore() {
     emit("filter");
   }
 
+  function setFiltersOpen(open) {
+    const next = Boolean(open);
+    if (next === state.filtersOpen) return;
+    state.filtersOpen = next;
+    emit("filters-open");
+  }
+
   // ── 5-1: search / kind filters ─────────────
   function isFiltered() {
     return state.kindFilter !== "all" || Boolean(state.query) || Boolean(state.personFilter);
@@ -703,6 +787,7 @@ export function createBoardStore() {
     state.selectedType = null;
     state.selectedName = null;
     state.personFilter = "";
+    state.filtersOpen = false;
     state.kindFilter = "all";
     state.query = "";
     state.filterTotal = 0;
@@ -724,6 +809,7 @@ export function createBoardStore() {
     _resetMessages();
     // 5-1: switching boards always drops the previous search / kind filter.
     state.personFilter = "";
+    state.filtersOpen = false;
     state.focusId = "";
     state.liveKeys = new Set();
     _resetReads();
@@ -997,6 +1083,7 @@ export function createBoardStore() {
     void loadChannels();
     void loadDmPairs();
     void loadAnimas();
+    void loadHubMembers();
     if (state.pollTimer) clearInterval(state.pollTimer);
     state.pollTimer = setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
@@ -1024,8 +1111,11 @@ export function createBoardStore() {
     // avatars
     ensureAvatars,
     avatarUrl,
+    hubMember,
+    setHubMembers,
     // directory
     anima,
+    animaColor,
     hasAnima,
     statusOf,
     handleAnimaStatus,
@@ -1050,6 +1140,7 @@ export function createBoardStore() {
     setPersonFilter,
     // filters
     isFiltered,
+    setFiltersOpen,
     setKindFilter,
     setQuery,
     loadFilterCounts,
