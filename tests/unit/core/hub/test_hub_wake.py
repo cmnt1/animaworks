@@ -132,6 +132,7 @@ def test_webhook_wake_sends_bearer_payload_and_records_notified(
     )
     save_member(shared, member)
     vault = VaultManager(tmp_path)
+    assert vault.generate_key()
     vault.store("shared", "hub.url", "https://hooks.example.com/wake")
     vault.store("shared", "hub.key", "s3cret")
 
