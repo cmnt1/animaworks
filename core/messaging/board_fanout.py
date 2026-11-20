@@ -144,11 +144,12 @@ def fanout_board_mentions(
         if loop_limit:
             not_notified[target] = "loop_limit"
             continue
-        if target not in running:
-            not_notified[target] = "not_running"
-            continue
 
         if target in anima_names:
+            if target not in running:
+                not_notified[target] = "not_running"
+                continue
+
             target_dir = animas_dir / target
             enabled, reason = _read_enabled(target_dir)
             if not enabled:
