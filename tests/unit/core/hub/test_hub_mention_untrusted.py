@@ -33,6 +33,11 @@ def test_hub_mention_arrives_as_untrusted_board_mention(tmp_path: Path, monkeypa
     alice_dir.mkdir(parents=True)
     (alice_dir / "status.json").write_text(json.dumps({"enabled": True, "company": "a"}), encoding="utf-8")
 
+    # Board fanout only delivers to running Animas; this fake socket records that state.
+    sockets_dir = shared_dir.parent / "run" / "sockets"
+    sockets_dir.mkdir(parents=True)
+    (sockets_dir / "alice.sock").touch()
+
     config = SimpleNamespace(
         hub=SimpleNamespace(
             enabled=True,
