@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 9ea0a2a00833a94f98877fe07770d83f52428546feba53ca3d7947d231c8c28d -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: af134b84df9f6aebc1df34feeddefe589e46386be2ebd27bce37d672e2dbf7c2 -->
 
 # モジュール一覧
 
@@ -536,7 +536,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.image.openai` | 397 | Codex built-in GPT Image client for character portrait generation. |
 | `core.integrations.image.prompts` | 279 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 169 | Shared utilities for image/3D generation clients. |
-| `core.integrations.image_gen` | 420 | Character image & 3-D model generation tool for AnimaWorks. |
+| `core.integrations.image_gen` | 428 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
 | `core.integrations.notebooklm` | 627 | AnimaWorks NotebookLM tool -- Google NotebookLM integration. |
 | `core.integrations.notion` | 861 | Notion integration for AnimaWorks. |

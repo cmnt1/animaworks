@@ -157,7 +157,15 @@ def _build_fullbody_api_client(image_config: Any) -> Any:
     raise RuntimeError("No image generation backend configured. Enable Diffusers or set NOVELAI_TOKEN/FAL_KEY.")
 
 
-def _build_fullbody_client(image_config: Any) -> Any:
+def _build_fullbody_client(image_config: Any, *, generation_model: str | None = None) -> Any:
+    if generation_model and generation_model.startswith("nanogpt:"):
+        from core.integrations.image.nanogpt import NanoGPTImageClient
+
+        return NanoGPTImageClient(model=generation_model.split(":", 1)[1])
+    if generation_model and generation_model.startswith("openai:"):
+        from core.integrations.image.openai import OpenAIImageClient
+
+        return OpenAIImageClient(model=generation_model.split(":", 1)[1])
     if _use_diffusers_backend(image_config):
         return LocalDiffusersClient(image_config)
     if getattr(image_config, "prefer_codex", True) and codex_available():
