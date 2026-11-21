@@ -291,6 +291,9 @@ def test_external_all_wakes_nobody_and_anima_all_skips_external(
     shared = _shared(tmp_path)
     _anima(shared, "alice")
     _anima(shared, "bob")
+    sockets = shared.parent / "run" / "sockets"
+    sockets.mkdir(parents=True, exist_ok=True)
+    (sockets / "bob.sock").touch()
     member = _member("muse", message_route={"type": "poll"})
     save_member(shared, member)
 
@@ -315,6 +318,9 @@ def test_hub_member_to_anima_cross_company_is_not_notified(tmp_path: Path, monke
     _hub_config(monkeypatch)
     shared = _shared(tmp_path)
     _anima(shared, "alice", company="b")
+    sockets = shared.parent / "run" / "sockets"
+    sockets.mkdir(parents=True, exist_ok=True)
+    (sockets / "alice.sock").touch()
     member = _member("grok", company="a", message_route={"type": "poll"})
     save_member(shared, member)
 
