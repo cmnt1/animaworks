@@ -333,7 +333,7 @@ class TestKnowledgeReconsolidation:
 
 
 class TestIndexerMetadataExtraction:
-    def test_extracts_failure_tracking_fields(self, tmp_path: Path) -> None:
+    def test_extracts_failure_tracking_fields(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify that indexing picks up the new tracking fields in ChromaDB."""
         pytest.importorskip("chromadb")
 
