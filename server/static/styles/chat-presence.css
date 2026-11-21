@@ -247,7 +247,10 @@ body[data-theme="dark"] {
 /* Desktop: the per-pane vertical icon column is gone (the rail replaces it);
    the header becomes one horizontal row across the pane. */
 @media (min-width: 769px) {
-  .chat-page-main { grid-template-columns: minmax(0, 1fr); }
+  .chat-page-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
   .chat-anima-tabs-header {
     grid-column: 1;
     grid-row: 1;
