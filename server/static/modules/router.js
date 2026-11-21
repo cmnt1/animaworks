@@ -129,6 +129,7 @@ function registerRoutes() {
   routes["/chat"] = () => import("../pages/chat.js" + _v);
   routes["/meeting"] = () => import("../pages/meeting.js" + _v);
   routes["/board"] = () => import("../pages/board.js" + _v);
+  routes["/hub"] = () => import("../pages/hub.js" + _v);
   routes["/task-board"] = () => import("../pages/task-board.js" + _v);
   routes["/scheduler"] = () => import("../pages/scheduler-page.js" + _v);
   routes["/sns-search"] = () => import("../pages/sns-search.js" + _v);

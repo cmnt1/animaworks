@@ -119,6 +119,7 @@ class TestListAnimas:
                 "last_busy_since": None,
                 "busy": None,
                 "appearance": None,
+                "image_color": None,
                 "supervisor": None,
                 "speciality": None,
                 "role": "finance",

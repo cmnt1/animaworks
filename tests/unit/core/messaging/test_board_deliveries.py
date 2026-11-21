@@ -92,6 +92,7 @@ def test_post_to_board_records_delivery_outside_channels(tmp_path: Path) -> None
     sockets_dir = tmp_path / "run" / "sockets"
     sockets_dir.mkdir(parents=True)
     (sockets_dir / "bob.sock").touch()
+    (sockets_dir / "carol.sock").touch()
     channels_before = sorted(path.name for path in (shared / "channels").iterdir())
 
     result = post_to_board(

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 0d6db0116f7aa9811581b8071a5a981a0168c88f67a338cc04bbde7a4d1413df -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: be3b2e3ac721cebdc1d62593707d379cbc0200c4c4baec9c80c43c09ba0a706e -->
 
 # API リファレンス
 
@@ -141,6 +141,12 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 ## `server/routes/external_tasks.py`
 
 | GET | `/api/external-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get external tasks for the widget from the snapshot store. | `server/routes/external_tasks.py:get_external_tasks` |
+
+## `server/routes/hub.py`
+
+| GET | `/api/hub/info` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/hub.py:hub_info` |
+| GET | `/api/hub/members` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/hub.py:list_hub_members` |
+| GET | `/api/hub/members/{member_id}/avatar` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/hub.py:hub_member_avatar` |
 
 ## `server/routes/internal.py`
 
@@ -307,6 +313,13 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/task-board/summary` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return TaskBoard summary counts for dashboard use. | `server/routes/taskboard.py:get_task_board_summary` |
 | POST | `/api/task-board/{anima_name}/{task_id}/cancel` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Explicitly cancel a task, overriding any outstanding lease (human operation). | `server/routes/taskboard.py:cancel_task` |
 
+## `server/routes/timeline.py`
+
+| GET | `/api/internal/timeline` | 内部 | Return the caller company's timeline for the Anima CLI. | `server/routes/timeline.py:internal_timeline` |
+| POST | `/api/internal/timeline/add` | 内部 | Append a timeline item on behalf of the verified caller. | `server/routes/timeline.py:internal_timeline_add` |
+| GET | `/api/timeline` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the company timeline newest first, with the caller's read flags. | `server/routes/timeline.py:get_timeline` |
+| POST | `/api/timeline/read` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Advance the requesting human's read position in the timeline. | `server/routes/timeline.py:mark_timeline_read` |
+
 ## `server/routes/usage_routes.py`
 
 | GET | `/api/usage` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return combined Claude + OpenAI + nanoGPT usage data + governor status. | `server/routes/usage_routes.py:get_usage` |
@@ -323,6 +336,18 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/users` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Add a new user (owner only). | `server/routes/users.py:add_user` |
 | PUT | `/api/users/me/password` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Change (or initially set) the current user's password. | `server/routes/users.py:change_password` |
 | DELETE | `/api/users/{username}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Delete a user (owner only, cannot delete self). | `server/routes/users.py:delete_user` |
+
+## `server/routes/vault_routes.py`
+
+| POST | `/api/vault/check` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_check` |
+| POST | `/api/vault/hub-members/{member_id}/reissue-token` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_reissue_hub_token` |
+| POST | `/api/vault/migrate-config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_migrate_config` |
+| GET | `/api/vault/overview` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_overview` |
+| PUT | `/api/vault/shared/{key}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_set_shared` |
+| POST | `/api/vault/shared/{key}/delete` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_delete_shared` |
+| POST | `/api/vault/shared/{key}/rollback` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_rollback_shared` |
+| POST | `/api/vault/sync/apply` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_sync_apply` |
+| POST | `/api/vault/sync/plan` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/vault_routes.py:vault_sync_plan` |
 
 ## `server/routes/voice.py`
 

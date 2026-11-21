@@ -160,6 +160,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |
+| `hub` |  |
 | `llm_rate_guard` |  |
 | `mcp` |  |
 | `external_messaging` |  |

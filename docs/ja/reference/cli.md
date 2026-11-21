@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: c84f9a9fba72d370062cdedac1e83b1c8e31195f5746dd71d15082ff164659b2 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: d73c83fdbb8796ae84c4a6a138a035e78a45e99ebe34fbd910899554bef3d44e -->
 
 # CLI リファレンス: `animaworks`
 
@@ -490,6 +490,113 @@ Trigger heartbeat
 |---|---|---|---|---|
 | anima | positional | — | — | Anima name |
 | --local | flag | false | — | (deprecated) Direct mode (no gateway) |
+
+## `hub`
+
+ハブの名簿と外部 AI のメンバーを管理
+
+`usage: animaworks hub [-h] {setup-prompt,member} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member`
+
+ハブのメンバーを管理
+
+`usage: animaworks hub member [-h]
+                             {add,list,set-token,disable,enable,set-avatar}
+                             ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member add`
+
+メンバーを名簿に追加
+
+`usage: animaworks hub member add [-h] --company COMPANY --route {webhook,poll}
+                                 [--url-ref URL_REF] [--key-ref KEY_REF]
+                                 [--expect-every EXPECT_EVERY]
+                                 [--display-name DISPLAY_NAME] [--kind KIND]
+                                 ID`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+| --company | option | — | — | メンバーの会社 ID |
+| --route | option | — | webhook, poll | 連絡方法（webhook または poll） |
+| --url-ref | option | — | — | webhook URL の vault キー名（shared セクション） |
+| --key-ref | option | — | — | webhook 認証キーの vault キー名（shared セクション） |
+| --expect-every | option | — | — | 期待する連絡間隔（30m / 3h / 1d など） |
+| --display-name | option | — | — | 表示名（既定は ID） |
+| --kind | option | "vendor_bot" | — | メンバーの種類（既定: vendor_bot） |
+
+## `hub member disable`
+
+メンバーを無効化
+
+`usage: animaworks hub member disable [-h] ID`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+
+## `hub member enable`
+
+メンバーを有効化
+
+`usage: animaworks hub member enable [-h] ID`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+
+## `hub member list`
+
+ハブのメンバー一覧を表示（トークンは表示しない）
+
+`usage: animaworks hub member list [-h]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `hub member set-avatar`
+
+メンバーのアバター画像を登録（256x256 の PNG に変換）
+
+`usage: animaworks hub member set-avatar [-h] [--clear] ID [file]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+| file | positional | — | — | 画像ファイル（PNG / JPEG / WebP / GIF、5MB まで） |
+| --clear | flag | false | — | 登録済みのアバターを削除 |
+
+## `hub member set-token`
+
+環境変数からベアラートークンの SHA-256 を登録
+
+`usage: animaworks hub member set-token [-h] --from-env VAR ID`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+| --from-env | option | — | — | トークンを格納した環境変数名 |
+
+## `hub setup-prompt`
+
+社外の AI 向けのセットアップ文面を表示
+
+`usage: animaworks hub setup-prompt [-h] [--url URL] ID`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| member_id | positional | — | — | メンバー ID（英小文字で始まる 2〜32 文字） |
+| --url | option | — | — | 接続先 URL（既定: public_hosts の先頭） |
 
 ## `import`
 
@@ -1446,6 +1553,41 @@ WAL込みのDBバックアップを新規作成
 |---|---|---|---|---|
 | --anima | option | — | — | 対象の担当者名 |
 
+## `timeline`
+
+会社のタイムラインに「終わった」「決まった」を追記
+
+`usage: animaworks timeline [-h] {add,read} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `timeline add`
+
+会社のタイムラインに「終わった」「決まった」を追記
+
+`usage: animaworks timeline add [-h] --kind {done,decided} --text TEXT
+                               [--about ABOUT] [--ref REF] [--from NAME]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --kind | option | — | done, decided | 項目の種類（done または decided） |
+| --text | option | — | — | タイムラインに載せる本文 |
+| --about | option | — | — | 更新する元の項目 ID（tl_...） |
+| --ref | option | — | — | 参照 URL など |
+| --from | option | — | — | 記録者名（オペレーター実行時のみ） |
+
+## `timeline read`
+
+会社のタイムラインを読む（直近24時間）
+
+`usage: animaworks timeline read [-h] [--limit LIMIT]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --limit | option | 20 | — | 取得する最大件数 |
+
 ## `tmp`
 
 Inspect and clean AnimaWorks tmp directories
@@ -1487,7 +1629,9 @@ Show tmp usage summary
 
 Manage encrypted vault values
 
-`usage: animaworks vault [-h] {status,init,get,store,list,delete} ...`
+`usage: animaworks vault [-h]
+                        {status,init,migrate-config,get,store,list,delete,sources,sync,rollback,register-1p}
+                        ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
@@ -1535,6 +1679,83 @@ List keys in the own and shared namespaces
 |---|---|---|---|---|
 | --shared | flag | false | — | List only the shared section (does not require ANIMAWORKS_ANIMA_DIR) |
 
+## `vault migrate-config`
+
+Move plaintext config credentials into the vault
+
+`usage: animaworks vault migrate-config [-h] [--commit]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --commit | flag | false | — | Move the listed credentials now |
+
+## `vault register-1p`
+
+Register a shared key with 1Password
+
+`usage: animaworks vault register-1p [-h] --vault VAULT [--title TITLE]
+                                    [--field FIELD] [--commit]
+                                    key`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| key | positional | — | — | Shared vault key |
+| --vault | option | — | — | 1Password vault name |
+| --title | option | — | — | 1Password item title (default: the key) |
+| --field | option | "credential" | — | 1Password field name (default: credential) |
+| --commit | flag | false | — | Create the item (default: preview only) |
+
+## `vault rollback`
+
+Restore the previous shared value for a key
+
+`usage: animaworks vault rollback [-h] key`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| key | positional | — | — | Shared vault key |
+
+## `vault sources`
+
+Manage the shared-key to 1Password reference mapping
+
+`usage: animaworks vault sources [-h] {list,add,remove} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `vault sources add`
+
+Register a 1Password reference for a shared key
+
+`usage: animaworks vault sources add [-h] key ref`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| key | positional | — | — | Shared vault key |
+| ref | positional | — | — | 1Password reference (op://Vault/Item/field) |
+
+## `vault sources list`
+
+List registered 1Password references
+
+`usage: animaworks vault sources list [-h] [--json]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --json | flag | false | — | Emit JSON (the default) |
+
+## `vault sources remove`
+
+Remove a 1Password reference
+
+`usage: animaworks vault sources remove [-h] key`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| key | positional | — | — | Shared vault key |
+
 ## `vault status`
 
 Show key and encryption status without values
@@ -1556,3 +1777,16 @@ Store a key-value pair
 | key | positional | — | — | Key to store |
 | value | positional | — | — | Value to store in the anima namespace |
 | --shared | flag | false | — | Operator-only: store in shared via stdin or a hidden prompt |
+
+## `vault sync`
+
+Sync shared keys from 1Password
+
+`usage: animaworks vault sync [-h] [--check] [--yes] [--json] [keys ...]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| keys | positional | — | — | Only sync these keys (default: all registered keys) |
+| --check | flag | false | — | Only compare values; do not write |
+| --yes | flag | false | — | Apply changes without prompting |
+| --json | flag | false | — | Emit JSON without secret values |

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=be154f29f10935c02684776bf74c452d5b66273fc995bc1ab0b0f990e7c40998 generated=2026-11-01 engine=nanogpt model=deepseek/deepseek-v4.1-flash translator=2 -->
+<!-- i18n: source-sha256=ee60555182064bdba002ab8b3f958a80b4e8a1b16696077c8f1d058316fe0461 generated=2026-11-14 engine=local model=deepseek-v4.1-flash-1017-abl translator=2 -->
 
 # 설정 참조
 
@@ -81,18 +81,17 @@
 | `anima_defaults.task_compaction_max` | `int` | `6` | — |
 | `anima_defaults.max_session_age_hours` | `float` | `24.0` | — |
 | `anima_defaults.conversation_history_threshold` | `float` | `0.3` | — |
-| `anima_defaults.execution_mode` | `str \| None` | `null` | None = auto-detect from model |
+| `anima_defaults.execution_mode` | `str \| None` | `null` | None = 모델에서 자동 감지 |
 | `anima_defaults.supervisor` | `str \| None` | `null` | — |
 | `anima_defaults.speciality` | `str \| None` | `null` | — |
 | `anima_defaults.extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
-| `anima_defaults.thinking` | `bool \| None` | `null` | Extended thinking (Bedrock: reasoning_effort, Ollama: think) |
-| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (default: "high") |
+| `anima_defaults.thinking` | `bool \| None` | `null` | 확장 사고 (Bedrock: reasoning_effort, Ollama: think) |
+| `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (기본값: "high") |
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S 인증: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
-| `anima_defaults.tool_compression` | `bool` | `true` | Enable RTK-inspired tool result compression |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기인 HB·cron은 영향 없음 |
-| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기반 HB·cron은 영향 없음 |
+| `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = 월간 토큰 사용량 무제한 |
 
 ### `animas`
 
@@ -167,95 +166,87 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `helper_models` | `HelperModelsConfig` | `{HelperModelsConfig}` | 보조 LLM 호출별 모델, 인증 정보, 명시적 대체 후보 및 원샷 정책. |
+| `helper_models` | `HelperModelsConfig` | `{HelperModelsConfig}` | 보조 LLM 호출별 모델, 인증 정보, 명시적 대체 모델 및 원샷 정책. |
 | `helper_models.episode_summary` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.episode_summary.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.episode_summary.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.episode_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.episode_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.episode_summary.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.episode_summary.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.episode_summary.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.episode_summary.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.episode_summary.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.episode_summary.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.fact_extraction` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.fact_extraction.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.fact_extraction.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.fact_extraction.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.fact_extraction.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.fact_extraction.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.fact_extraction.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.fact_extraction.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.fact_extraction.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.fact_extraction.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.fact_extraction.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.fact_reconcile` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.fact_reconcile.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.fact_reconcile.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.fact_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.fact_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.fact_reconcile.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.fact_reconcile.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.fact_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.fact_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.fact_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.fact_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.weekly_consolidation` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.weekly_consolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.weekly_consolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.weekly_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.weekly_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.weekly_consolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.weekly_consolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.weekly_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.weekly_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.weekly_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.weekly_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.project_consolidation` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.project_consolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.project_consolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.project_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.project_consolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.project_consolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.project_consolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.project_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.project_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.project_consolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.project_consolidation.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.conversation_compression` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.conversation_compression.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.conversation_compression.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.conversation_compression.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.conversation_compression.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.conversation_compression.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.conversation_compression.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.conversation_compression.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.conversation_compression.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.conversation_compression.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.conversation_compression.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.distillation` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.distillation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.distillation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.distillation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.distillation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.distillation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.distillation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.distillation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.distillation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.distillation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.distillation.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.reconsolidation` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.reconsolidation.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.reconsolidation.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.reconsolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.reconsolidation.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.reconsolidation.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.reconsolidation.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.reconsolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.reconsolidation.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.reconsolidation.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.reconsolidation.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.asset_reconcile` | `HelperModelRole \| None` | `null` | — |
 | `helper_models.asset_reconcile.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.asset_reconcile.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.asset_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.asset_reconcile.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.asset_reconcile.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.asset_reconcile.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.asset_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.asset_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
-| `helper_models.meeting_summary` | `HelperModelRole \| None` | `null` | — |
-| `helper_models.meeting_summary.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
-| `helper_models.meeting_summary.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.meeting_summary.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
-| `helper_models.meeting_summary.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
-| `helper_models.meeting_summary.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.meeting_summary.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.meeting_summary.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.asset_reconcile.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.asset_reconcile.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 | `helper_models.default` | `HelperModelRole` | `{HelperModelRole}` | — |
 | `helper_models.default.model` | `str \| None` | `null` | 기본 보조 모델 식별자. |
 | `helper_models.default.credential` | `str \| None` | `null` | 기본 모델의 인증 정보 이름. |
-| `helper_models.default.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델 목록. |
+| `helper_models.default.fallbacks` | `list[HelperModelFallback]` | `[]` | 순서가 지정된 명시적 대체 모델. |
 | `helper_models.default.fallbacks.model` | `str` | `"—"` | 대체 모델 식별자. |
 | `helper_models.default.fallbacks.credential` | `str \| None` | `null` | 대체 모델의 인증 정보 이름. |
-| `helper_models.default.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK로 대체되도록 허용합니다. |
-| `helper_models.default.max_output_tokens` | `int \| None` | `null` | 이 역할에서 수행하는 원샷 호출의 최대 출력 토큰 수. |
+| `helper_models.default.allow_agent_sdk_fallback` | `bool` | `false` | 이 역할의 원샷 호출이 Claude Agent SDK를 대체 수단으로 사용할 수 있도록 허용합니다. |
+| `helper_models.default.max_output_tokens` | `int \| None` | `null` | 이 역할이 수행하는 원샷 호출의 최대 출력 토큰 수. |
 
 ### `background_review`
 
@@ -274,14 +265,15 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `rag` | `RAGConfig` | `{RAGConfig}` | 검색 증강 생성 및 기억 검색 설정. |
+| `rag` | `RAGConfig` | `{RAGConfig}` | 검색 확장 생성과 기억 검색 설정. |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
-| `rag.embedding_e5_prefix_enabled` | `bool` | `false` | 활성화하면 쿼리 임베딩 앞에 embedding_query_prefix를, 인덱싱된 문서 임베딩 앞에 embedding_document_prefix를 추가합니다. E5 계열 절제 실험을 위해 마련된 기능이며, 문서 접두사 변경 사항을 적용하려면 다시 인덱싱해야 합니다. |
+| `rag.embedding_e5_prefix_enabled` | `bool` | `false` | When enabled, prefix query embeddings with embedding_query_prefix and indexed document embeddings with embedding_document_prefix. This is intended for E5-family ablations and requires re-indexing for document-prefix changes to take effect. |
 | `rag.embedding_query_prefix` | `str` | `"query: "` | — |
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
-| `rag.embedding_max_seq_length` | `int` | `2048` | 임베딩 모델의 최대 시퀀스 길이(토큰) 제한입니다. ruri-v3와 같은 긴 컨텍스트 모델의 기본값은 8192이며, 대량 인코딩 중 GPU 활성화 메모리 사용량이 급증합니다. 0 = 모델 기본값 사용. |
+| `rag.embedding_max_seq_length` | `int` | `2048` | 임베딩 모델의 최대 시퀀스 길이(토큰) 상한. ruri-v3 같은 장문맥 모델은 기본값이 8192라서 대량 인코딩 시 GPU 활성화 메모리가 폭증한다. 0 = 모델 기본값 사용. |
 | `rag.use_gpu` | `bool` | `false` | — |
+| `rag.chroma_native_threads` | `int` | `4` | chroma의 tokio 및 rayon 스레드 풀 각각의 상한. 기본적으로는 벡터 스토어를 여는 모든 프로세스에서 CPU당 하나의 스레드를 사용한다. 프로세스 시작 시 적용된다. 0 = chroma 기본값. |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
 | `rag.repair_enabled` | `bool` | `true` | — |
@@ -302,23 +294,25 @@
 | `rag.confidence_threshold` | `float` | `0.35` | — |
 | `rag.rrf_confidence_threshold` | `float` | `0.02` | — |
 | `rag.facts_extraction_enabled` | `bool` | `true` | — |
-| `rag.fact_extraction_timeout_seconds` | `int` | `120` | 기존 원자 사실 추출에 사용하는 LLM 호출의 기본 시간 제한(초)입니다. Anima별 status.json extraction_timeout 값이 이 값을 재정의합니다. |
-| `rag.fact_extraction_max_tokens` | `int` | `8192` | 기존 원자 사실 추출 LLM 호출의 최대 출력 토큰 수입니다. |
-| `rag.facts_extraction_single_call` | `bool` | `true` | 지원되는 경우 단일 LLM 호출로 기존 원자 사실과 해당 엔터티를 추출합니다. |
-| `rag.facts_reconcile_enabled` | `bool` | `true` | 추가하기 전에 기존 원자 사실 조정을 활성화합니다. 실패하면 ADD로 대체합니다. |
-| `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | 엄격한 LLM duplicate/contradiction/complement 라벨링을 적용하기 위한 사실 벡터 유사도 최소값입니다. |
-| `rag.facts_reconcile_top_k` | `int` | `5` | 기존 사실 조정 중 고려할 유사한 활성 사실의 최대 수입니다. |
+| `rag.fact_extraction_timeout_seconds` | `int` | `120` | 레거시 원자 사실 추출에 사용되는 LLM 호출의 기본 타임아웃(초). Anima별 status.json extraction_timeout이 이 값을 덮어쓴다. |
+| `rag.fact_extraction_max_tokens` | `int` | `8192` | 레거시 원자 사실 추출 LLM 호출의 최대 출력 토큰 수. |
+| `rag.facts_extraction_single_call` | `bool` | `true` | 지원되는 경우 레거시 원자 사실과 그 엔티티를 한 번의 LLM 호출로 추출한다. |
+| `rag.facts_reconcile_enabled` | `bool` | `true` | 추가 전에 레거시 원자 사실 조정을 활성화한다. 실패 시 ADD로 폴백한다. |
+| `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | 엄격한 LLM duplicate/contradiction/complement 라벨링 전 최소 사실 벡터 유사도. |
+| `rag.facts_reconcile_top_k` | `int` | `5` | 레거시 사실 조정 중 고려되는 유사한 활성 사실의 최대 수. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
 
 ### `gpu`
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 사용 및 장치 선택 설정. |
-| `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
-| `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
+| `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 사용과 디바이스 선택 설정. |
+| `gpu.embedding_device` | `Literal['auto', 'cuda', 'mps', 'cpu']` | `"auto"` | — |
+| `gpu.reranker_device` | `Literal['auto', 'cuda', 'mps', 'cpu']` | `"cpu"` | — |
 | `gpu.embedding_batch_size` | `int` | `32` | — |
-| `gpu.embedding_bulk_yield_batches` | `int` | `5` | 대량 작업이 대기 중인 대화형 작업에 양보할 수 있는 임베딩 배치의 연속 처리 최대 횟수입니다. |
+| `gpu.embedding_bulk_yield_batches` | `int` | `5` | 대량 작업이 대기 중인 대화형 작업에 양보할 수 있는 최대 연속 임베딩 배치 수. |
+| `gpu.torch_num_threads` | `int` | `4` | 임베딩 및 리랭킹용 torch intra-op CPU 스레드 수. 0 = torch 기본값(코어당 하나). |
+| `gpu.torch_num_interop_threads` | `int` | `1` | 임베딩 및 리랭킹용 torch inter-op CPU 스레드 수. 0 = torch 기본값(코어당 하나). |
 
 ### `memory`
 
@@ -398,7 +392,7 @@
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 공급자 및 기본 매개변수. |
-| `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
+| `image_gen.backend` | `Literal['api', 'diffusers']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | codex CLI가 있으면 이미지 생성에 최우선으로 사용 |
 | `image_gen.style_reference` | `str \| None` | `null` | 조직 전체에서 사용할 스타일 참조 이미지 경로 |
@@ -448,14 +442,11 @@
 |---|---|---|---|
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증, 사용량 제어 설정. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
-| `server.usage_governor` | `UsageGovernorConfig` | `{UsageGovernorConfig}` | — |
-| `server.usage_governor.enabled` | `bool` | `false` | — |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
 | `server.chat_max_concurrency` | `int` | `1` | — |
 | `server.anima_startup_ready_timeout` | `int` | `120` | — |
-| `server.anima_socket_create_timeout` | `int` | `30` | — |
 | `server.anima_stop_timeout` | `float` | `60.0` | — |
 | `server.restart_drain_timeout_seconds` | `int` | `600` | — |
 | `server.health_check_warmup_seconds` | `int` | `300` | — |
@@ -480,7 +471,20 @@
 | `server.media_proxy.rate_limit_requests` | `int` | `30` | — |
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
-| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"log"` | /api/internal/* caller verification |
+| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"enforce"` | /api/internal/* caller verification |
+
+### `hub`
+
+| 키 | 유형 | 기본값 | 설명 |
+|---|---|---|---|
+| `hub` | `HubConfig` | `{HubConfig}` | 회사의 타임라인과 허브 설정. |
+| `hub.enabled` | `bool` | `false` | — |
+| `hub.timeline_enabled` | `bool` | `false` | — |
+| `hub.company` | `str` | `""` | — |
+| `hub.board` | `str` | `"hub"` | — |
+| `hub.public_hosts` | `list[str]` | `[]` | — |
+| `hub.max_posts_per_hour` | `int` | `20` | — |
+| `hub.max_round_trips` | `int` | `4` | — |
 
 ### `llm_rate_guard`
 
@@ -502,11 +506,11 @@
 
 ### `external_messaging`
 
-| 키 | 유형 | 기본값 | 설명 |
+| 키 | 형식 | 기본값 | 설명 |
 |---|---|---|---|
-| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack 등 외부 메시징 연동. |
-| `external_messaging.preferred_channel` | `str` | `"discord"` | "slack" \| "chatwork" \| "discord" |
-| `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
+| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack 등의 외부 메시징 연동. |
+| `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
+| `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | 별칭 → 연락처 정보 |
 | `external_messaging.user_aliases.slack_user_id` | `str` | `""` | — |
 | `external_messaging.user_aliases.chatwork_room_id` | `str` | `""` | — |
 | `external_messaging.user_aliases.discord_user_id` | `str` | `""` | — |
@@ -515,63 +519,51 @@
 | `external_messaging.slack` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.slack.enabled` | `bool` | `false` | — |
 | `external_messaging.slack.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.slack.channel_discovery` | `bool` | `false` | Slack 채널 자동 검색(SlackChannelSync) 실행; Slack 전용 |
 | `external_messaging.slack.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
-| `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
-| `external_messaging.slack.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
-| `external_messaging.slack.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
-| `external_messaging.slack.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
-| `external_messaging.slack.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
-| `external_messaging.slack.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
+| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 anima |
+| `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
+| `external_messaging.slack.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
+| `external_messaging.slack.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
+| `external_messaging.slack.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보내 동기화할 보드 이름(허용 목록) |
+| `external_messaging.slack.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있을 때 매핑된 모든 보드 동기화를 허용 |
+| `external_messaging.slack.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
 | `external_messaging.slack.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.slack.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
-| `external_messaging.slack.system_agents.name` | `str` | `""` | — |
-| `external_messaging.slack.system_agents.kind` | `str` | `"system_agent"` | — |
-| `external_messaging.slack.system_agents.board_from` | `str` | `""` | — |
-| `external_messaging.slack.system_agents.route_to_animas` | `bool` | `false` | — |
-| `external_messaging.slack.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
+| `external_messaging.slack.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 출처 표시 안 함) |
 | `external_messaging.chatwork` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.chatwork.enabled` | `bool` | `false` | — |
 | `external_messaging.chatwork.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.chatwork.channel_discovery` | `bool` | `false` | Slack 채널 자동 검색(SlackChannelSync) 실행; Slack 전용 |
 | `external_messaging.chatwork.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
-| `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
-| `external_messaging.chatwork.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
-| `external_messaging.chatwork.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
-| `external_messaging.chatwork.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
-| `external_messaging.chatwork.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
-| `external_messaging.chatwork.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
+| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 anima |
+| `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
+| `external_messaging.chatwork.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
+| `external_messaging.chatwork.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
+| `external_messaging.chatwork.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보내 동기화할 보드 이름(허용 목록) |
+| `external_messaging.chatwork.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있을 때 매핑된 모든 보드 동기화를 허용 |
+| `external_messaging.chatwork.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
 | `external_messaging.chatwork.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.chatwork.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
-| `external_messaging.chatwork.system_agents.name` | `str` | `""` | — |
-| `external_messaging.chatwork.system_agents.kind` | `str` | `"system_agent"` | — |
-| `external_messaging.chatwork.system_agents.board_from` | `str` | `""` | — |
-| `external_messaging.chatwork.system_agents.route_to_animas` | `bool` | `false` | — |
-| `external_messaging.chatwork.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
+| `external_messaging.chatwork.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 출처 표시 안 함) |
 | `external_messaging.discord` | `ExternalMessagingChannelConfig` | `{ExternalMessagingChannelConfig}` | — |
 | `external_messaging.discord.enabled` | `bool` | `false` | — |
 | `external_messaging.discord.mode` | `str` | `"socket"` | "socket" \| "webhook" |
+| `external_messaging.discord.channel_discovery` | `bool` | `false` | Slack 채널 자동 검색(SlackChannelSync) 실행; Slack 전용 |
 | `external_messaging.discord.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
-| `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 webhook 라우팅) |
-| `external_messaging.discord.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
-| `external_messaging.discord.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채움) |
-| `external_messaging.discord.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 아웃바운드 동기화할 보드 이름 (화이트리스트) |
-| `external_messaging.discord.board_outbound_sync_all` | `bool` | `false` | 화이트리스트가 비어 있을 때 매핑된 모든 보드 동기화에 옵트인 |
-| `external_messaging.discord.guild_id` | `str` | `""` | Discord guild snowflake ID (Discord 전용) |
+| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널의 대체 anima |
+| `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
+| `external_messaging.discord.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼에 자동 게시 |
+| `external_messaging.discord.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 입력) |
+| `external_messaging.discord.board_outbound_sync` | `list[str]` | `[]` | 이 플랫폼으로 내보내 동기화할 보드 이름(허용 목록) |
+| `external_messaging.discord.board_outbound_sync_all` | `bool` | `false` | 허용 목록이 비어 있을 때 매핑된 모든 보드 동기화를 허용 |
+| `external_messaging.discord.guild_id` | `str` | `""` | Discord 길드 스노플레이크 ID (Discord 전용) |
 | `external_messaging.discord.channel_members` | `dict[str, list[str]]` | `{}` | channel_id → [anima_name, ...] (Discord 전용) |
-| `external_messaging.discord.system_agents` | `dict[str, SystemAgentConfig]` | `{}` | external_user_id -> SystemAgentConfig |
-| `external_messaging.discord.system_agents.name` | `str` | `""` | — |
-| `external_messaging.discord.system_agents.kind` | `str` | `"system_agent"` | — |
-| `external_messaging.discord.system_agents.board_from` | `str` | `""` | — |
-| `external_messaging.discord.system_agents.route_to_animas` | `bool` | `false` | — |
-| `external_messaging.discord.default_channel_company` | `str` | `""` | 자동 생성 보드의 company (비어 있으면 귀속 없음) |
+| `external_messaging.discord.default_channel_company` | `str` | `""` | 자동 생성된 보드의 회사 (비어 있으면 출처 표시 안 함) |
 | `external_messaging.zoom` | `ZoomRTMSConfig` | `{ZoomRTMSConfig}` | — |
 | `external_messaging.zoom.enabled` | `bool` | `false` | — |
-| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의의 폴백 anima |
+| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의의 대체 anima |
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
-| `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | 버퍼링된 transcript의 flush 간격 |
-| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (둘 중 먼저 도달하는 쪽에서 flush) |
+| `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | 버퍼링된 대화록의 플러시 간격 |
+| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (먼저 도달하는 조건에 따라 플러시) |
 
 ### `external_tasks`
 
@@ -694,6 +686,8 @@
 | `voice.gemini.api_key_env` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.vault_key` | `str` | `"GEMINI_API_KEY"` | — |
 | `voice.gemini.chunk_seconds` | `float` | `1.0` | — |
+| `voice.silero` | `SileroConfig` | `{SileroConfig}` | — |
+| `voice.silero.base_url` | `str` | `"http://localhost:8000"` | — |
 
 ### `phone`
 
@@ -719,7 +713,7 @@
 
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
-| `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | 런타임 데이터의 정기 정리. |
+| `housekeeping` | `HousekeepingConfig` | `{HousekeepingConfig}` | 런타임 데이터 정기 정리. |
 | `housekeeping.enabled` | `bool` | `true` | — |
 | `housekeeping.run_time` | `str` | `"05:30"` | — |
 | `housekeeping.prompt_log_retention_days` | `int` | `3` | — |
@@ -728,7 +722,6 @@
 | `housekeeping.anima_log_retention_days` | `int` | `30` | — |
 | `housekeeping.anima_log_total_max_size_mb` | `int` | `200` | — |
 | `housekeeping.frontend_log_backup_count` | `int` | `7` | — |
-| `housekeeping.dm_log_archive_retention_days` | `int` | `30` | — |
 | `housekeeping.cron_log_retention_days` | `int` | `14` | — |
 | `housekeeping.shortterm_retention_days` | `int` | `7` | — |
 | `housekeeping.shortterm_archive_retention_days` | `int` | `30` | — |
@@ -744,12 +737,11 @@
 | `housekeeping.codex_sessions_retention_days` | `int` | `7` | — |
 | `housekeeping.anima_scratch_retention_hours` | `int` | `24` | — |
 | `housekeeping.shared_worktrees_idle_hours` | `int` | `24` | — |
-| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | 시간별 및 일별 워크스페이스 정리를 활성화합니다. Linux 프로세스 추적이 없으면 건너뜁니다. |
+| `housekeeping.workspace_sweep_enabled` | `bool` | `true` | — |
 | `housekeeping.anima_tmp_gitdirs_retention_days` | `int` | `14` | — |
 | `housekeeping.anima_local_log_retention_days` | `int` | `30` | — |
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
 | `housekeeping.background_running_stale_hours` | `int` | `48` | — |
-| `housekeeping.cron_queue_stale_minutes` | `int` | `30` | — |
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
@@ -781,18 +773,6 @@
 | `local_llm.presets` | `dict[str, str]` | `{"coding":"ollama/qwen2.5-coder:14b","general":"ollama/glm4:9b","reasoning":"ollama/deepseek-r1:8b"}` | — |
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 
-### `jev`
-
-| 키 | 유형 | 기본값 | 설명 |
-|---|---|---|---|
-| `jev` | `JevConfig` | `{JevConfig}` | Jev 프로바이더의 비용 기록 및 예산 설정. |
-| `jev.monthly_budget_usd` | `float \| None` | `null` | 월간 Jev 지출 예산(USD). None이면 예산 표시줄을 숨깁니다. |
-| `jev.balance_usd` | `float \| None` | `null` | TypeSafe 콘솔에서 읽은 크레딧 잔액(USD). |
-| `jev.balance_checked_at` | `str \| None` | `null` | balance_usd 판독값의 ISO 8601 타임스탬프. 이 시점 이후의 원장 행은 여기서 차감됩니다. None은 '현재 기준'을 의미합니다. |
-| `jev.input_usd_per_mtok` | `float` | `0.042` | 1M 토큰당 입력 가격. cost_usd가 없는 원장 행에만 사용됩니다. |
-| `jev.output_usd_per_mtok` | `float` | `0.0` | 1M 토큰당 출력 가격(jev-1.13.0에서는 무료). |
-| `jev.ledger_dir` | `str` | `""` | 지출 원장 디렉터리 재정의. 비어 있으면 <abconfig>/jev_usage.을 사용합니다. |
-
 ### `workspaces`
 
 | 키 | 유형 | 기본값 | 설명 |
@@ -810,12 +790,6 @@
 | 키 | 유형 | 기본값 | 설명 |
 |---|---|---|---|
 | `activity_level` | `int` | `100` | 전체 활동 빈도를 조정하는 배율. |
-
-### `activity_level_by_provider`
-
-| 키 | 유형 | 기본값 | 설명 |
-|---|---|---|---|
-| `activity_level_by_provider` | `dict[str, int]` | `{}` | 프로바이더별 활동 빈도 재정의. |
 
 ### `activity_schedule`
 
@@ -955,13 +929,12 @@
 
 ## `models.json`
 
-모델 이름 패턴별 실행 모드와 컨텍스트 윈도우입니다.
+모델명 패턴별 실행 모드와 컨텍스트 윈도우입니다.
 
-| 모델 이름 패턴 | 모드 | 컨텍스트 윈도우 |
+| 모델명 패턴 | 모드 | 컨텍스트 윈도우 |
 |---|---|---:|
 | `agy/*` | `Y` | 1000000 |
 | `anthropic/claude-*` | `A` | 200000 |
-| `antigravity/*` | `A` | 1000000 |
 | `azure/*` | `A` | 128000 |
 | `azure/gpt-4.1*` | `A` | 1000000 |
 | `bedrock/*` | `A` | 200000 |
@@ -969,8 +942,6 @@
 | `bedrock/qwen.*` | `A` | 131072 |
 | `claude-*` | `S` | 200000 |
 | `claude-opus-4-6` | `S` | 200000 |
-| `claude-opus-4-7` | `S` | 200000 |
-| `claude-opus-4-8` | `S` | 200000 |
 | `claude-opus-5-5` | `S` | 200000 |
 | `claude-sonnet-4-6` | `S` | 200000 |
 | `claude-sonnet-5-5` | `S` | 200000 |
@@ -1007,14 +978,5 @@
 | `openai/qwen3.6-27b*` | `A` | 32768 |
 | `openai/qwen3.6-35b*` | `A` | 32768 |
 | `openai/zai.glm*` | `A` | 131072 |
-| `opencode-go/*` | `A` | 131072 |
-| `opencode-go/deepseek-v4-flash` | `A` | 131072 |
-| `opencode-go/deepseek-v4-pro` | `A` | 131072 |
-| `opencode-go/glm-5` | `A` | 202752 |
-| `opencode-go/glm-5.1` | `A` | 202752 |
-| `opencode-go/kimi-k2.5` | `A` | 262144 |
-| `opencode-go/kimi-k2.6` | `A` | 262144 |
-| `opencode-go/qwen3.5-plus` | `A` | 262144 |
-| `opencode-go/qwen3.6-plus` | `A` | 262144 |
 | `vertex_ai/*` | `A` | 1000000 |
 | `xai/*` | `A` | 256000 |

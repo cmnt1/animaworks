@@ -96,6 +96,70 @@ def _should_report_unknown_governor(anima_name: str) -> bool:
     return True
 
 
+def _record_timeline_notification(
+    subject: str,
+    body: str,
+    priority: str,
+    *,
+    anima_name: str,
+    delivered: bool,
+    callback_id: str | None = None,
+) -> None:
+    """Append a timeline ``notified`` item without affecting notification delivery."""
+    try:
+        from core.config.models import load_config, read_anima_company_checked
+
+        hub = load_config().hub
+        if not hub.timeline_enabled:
+            return
+
+        company = hub.company
+        from_name = "system"
+        source = "system"
+        if anima_name:
+            from core.paths import get_animas_dir
+
+            readable, anima_company = read_anima_company_checked(get_animas_dir() / anima_name)
+            if not readable or anima_company != hub.company:
+                return
+            company = anima_company
+            from_name = anima_name
+            source = "anima"
+
+        subject_text = str(subject or "").strip()
+        body_text = str(body or "").strip()
+        if subject_text and body_text:
+            text = f"{subject_text}: {body_text}"
+        else:
+            text = subject_text or body_text
+
+        normalized_priority = priority if priority in PRIORITY_LEVELS else "normal"
+        from core.hub.timeline import append_item
+        from core.notification import notification_key_for
+
+        append_item(
+            _shared_dir(),
+            from_name=from_name,
+            company=company,
+            kind="notified",
+            text=text,
+            source=source,
+            urgent=normalized_priority in ("high", "urgent"),
+            priority=normalized_priority,
+            delivered=delivered,
+            key=notification_key_for(subject, body),
+            callback_id=callback_id,
+        )
+    except Exception:
+        logger.warning("Failed to record timeline notification", exc_info=True)
+
+
+def _shared_dir():
+    from core.paths import get_shared_dir
+
+    return get_shared_dir()
+
+
 # ── Abstract base ───────────────────────────────────────────
 
 
@@ -247,6 +311,14 @@ class HumanNotifier:
         Failed channels return error strings instead of raising.
         """
         if not self._channels:
+            _record_timeline_notification(
+                subject,
+                body,
+                priority,
+                anima_name=anima_name,
+                delivered=False,
+                callback_id=interaction.callback_id if interaction is not None else None,
+            )
             return ["No notification channels configured"]
 
         governor_name = _governor_anima_name(subject, body, anima_name)
@@ -316,6 +388,14 @@ class HumanNotifier:
                 priority,
                 len(self._channels),
             )
+        _record_timeline_notification(
+            subject,
+            body,
+            priority,
+            anima_name=anima_name,
+            delivered=len(status) > failed_count,
+            callback_id=interaction.callback_id if interaction is not None else None,
+        )
         return status
 
 

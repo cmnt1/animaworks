@@ -1028,10 +1028,9 @@ class DiscordGatewayManager:
                         continue
 
                     messenger = Messenger(get_shared_dir(), target_anima)
-                    # For threads: external_channel_id = parent channel (webhook target),
-                    # external_thread_ts = thread channel ID (for webhook thread_id param).
-                    # For normal channels: external_channel_id = channel, thread_ts = "".
-                    await asyncio.to_thread(
+                    # For threads, use the parent channel for webhook routing and the thread
+                    # channel ID as the external thread identifier.
+                    delivered = await asyncio.to_thread(
                         messenger.receive_external,
                         content=full_content,
                         source="discord",
@@ -1041,6 +1040,21 @@ class DiscordGatewayManager:
                         external_thread_ts=channel_id if is_thread else "",
                         intent=intent,
                     )
+                    if delivered is not None:
+                        try:
+                            from core.hub.timeline_human import record_human, resolve_person
+
+                            person = resolve_person(via="discord", external_user_id=str(message.author.id))
+                            if person:
+                                record_human(
+                                    person=person,
+                                    anima=target_anima,
+                                    text=cleaned_text,
+                                    via="discord",
+                                    ref=str(getattr(delivered, "id", "") or "") or None,
+                                )
+                        except Exception:
+                            logger.warning("Failed to record Discord human message on the timeline", exc_info=True)
 
                     logger.info(
                         "Discord message routed: %s -> %s (channel=%s, intent=%s)",

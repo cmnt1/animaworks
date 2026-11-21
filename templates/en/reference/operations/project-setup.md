@@ -160,6 +160,7 @@ Role of each section:
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |
+| `hub` |  |
 | `llm_rate_guard` |  |
 | `mcp` |  |
 | `external_messaging` |  |

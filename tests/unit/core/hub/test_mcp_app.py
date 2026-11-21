@@ -1,0 +1,708 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+import json
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from PIL import Image
+from starlette.applications import Starlette
+from starlette.routing import Mount
+
+from core.hub import timeline
+from core.hub.avatar import AvatarError, avatar_path
+from core.hub.mcp_app import build_hub_mcp_app, run_hub_command
+from core.hub.members import (
+    HubMember,
+    last_seen,
+    save_member,
+    state_path,
+    token_digest,
+    update_member_state,
+)
+from core.messaging.board import clear_post_hooks
+from core.messaging.messenger import ChannelMeta, save_channel_meta
+from core.time_utils import now_iso
+
+
+@pytest.fixture
+def shared_dir(tmp_path: Path) -> Path:
+    shared = tmp_path / "shared"
+    (shared / "channels").mkdir(parents=True)
+    return shared
+
+
+@pytest.fixture(autouse=True)
+def _clear_hooks():
+    clear_post_hooks()
+    yield
+    clear_post_hooks()
+
+
+@pytest.fixture
+def member() -> HubMember:
+    return HubMember(
+        id="grok",
+        display_name="Grok",
+        company="a",
+        token_sha256=token_digest("token"),
+        message_route={"type": "poll"},
+    )
+
+
+def _hub_config(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    enabled: bool = True,
+    timeline_enabled: bool = True,
+    board: str = "hub",
+    max_posts_per_hour: int = 20,
+) -> None:
+    config = SimpleNamespace(
+        hub=SimpleNamespace(
+            enabled=enabled,
+            timeline_enabled=timeline_enabled,
+            company="a",
+            board=board,
+            public_hosts=[],
+            max_posts_per_hour=max_posts_per_hour,
+            max_round_trips=4,
+        )
+    )
+    monkeypatch.setattr("core.hub.mcp_app.load_config", lambda: config)
+    monkeypatch.setattr("core.config.models.load_config", lambda: config)
+
+
+def _make_board(shared_dir: Path, name: str = "hub", *, company: str | None = "a") -> None:
+    (shared_dir / "channels" / f"{name}.jsonl").touch()
+    save_channel_meta(shared_dir, name, ChannelMeta(members=[], company=company))
+
+
+def _append_board(shared_dir: Path, records: list[dict[str, object]], name: str = "hub") -> None:
+    path = shared_dir / "channels" / f"{name}.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def test_help_and_argument_errors(shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch) -> None:
+    _hub_config(monkeypatch)
+    help_text = run_hub_command(shared_dir, member, "help")
+    assert "commands:" in help_text
+    assert "timeline" in help_text and "read" in help_text and "post" in help_text
+    assert "avatar" in help_text
+
+    assert run_hub_command(shared_dir, member, "").startswith("error: missing command")
+    assert run_hub_command(shared_dir, member, "nope").startswith("error: unknown command")
+    assert run_hub_command(shared_dir, member, "timeline", "body").startswith("error: text is only accepted")
+    assert run_hub_command(shared_dir, member, "help", "body").startswith("error: text is only accepted")
+    assert run_hub_command(shared_dir, member, "post").startswith("error: post requires text")
+    assert run_hub_command(shared_dir, member, "post unexpected", "body").startswith("error: unexpected argument")
+
+
+def test_timeline_marks_new_and_human_read(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    item = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="done",
+        text="finished the report",
+        source="anima",
+    )
+
+    first = run_hub_command(shared_dir, member, "timeline")
+    assert "[新]" in first
+    assert item["id"] in first
+    assert "human_read=no" in first
+
+    second = run_hub_command(shared_dir, member, "timeline")
+    assert "[新]" not in second
+
+    timeline.advance_timeline_read(shared_dir, "human:operator", str(item["id"]))
+    third = run_hub_command(shared_dir, member, "timeline")
+    assert "human_read=yes" in third
+
+
+def test_timeline_list_truncates_text_and_includes_activity(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    long_item = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="notified",
+        text="z" * 1000,
+        source="anima",
+    )
+    activity = timeline.append_item(
+        shared_dir,
+        from_name="bob",
+        company="a",
+        kind="activity",
+        text="heartbeat tick",
+        source="anima",
+        label="heartbeat",
+    )
+
+    output = run_hub_command(shared_dir, member, "timeline")
+
+    assert "z" * 300 in output
+    assert "z" * 301 not in output
+    assert f"hub timeline {long_item['id']}" in output
+    assert "kind=activity" in output
+    assert "label=heartbeat" in output
+    assert "heartbeat tick" in output
+    assert activity["id"] in output
+
+
+def test_timeline_list_is_capped_at_300_lines(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    for index in range(301):
+        timeline.append_item(
+            shared_dir,
+            from_name="alice",
+            company="a",
+            kind="activity",
+            text=f"tick {index}",
+            source="anima",
+        )
+
+    output = run_hub_command(shared_dir, member, "timeline")
+
+    assert len(output.splitlines()) == 300
+
+
+def test_timeline_detail_returns_full_thread_without_advancing_read(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    root = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="notified",
+        text="root " + "R" * 500,
+        source="anima",
+    )
+    child = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="answered",
+        text="child reply",
+        source="anima",
+        to="human",
+        about=root["id"],
+    )
+    grandchild = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="decided",
+        text="grandchild follow-up",
+        source="anima",
+        about=child["id"],
+    )
+    unrelated = timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="done",
+        text="unrelated work",
+        source="anima",
+    )
+
+    output = run_hub_command(shared_dir, member, f"timeline {root['id']}")
+
+    assert "root " + "R" * 500 in output
+    assert "child reply" in output
+    assert "grandchild follow-up" in output
+    assert output.index(root["id"]) < output.index(child["id"]) < output.index(grandchild["id"])
+    assert unrelated["id"] not in output
+    reads = timeline.load_timeline_reads(shared_dir)
+    assert reads.get("readers", {}).get(f"hub:{member.id}") is None
+
+    listing = run_hub_command(shared_dir, member, "timeline")
+    assert "[新]" in listing and root["id"] in listing
+
+
+def test_timeline_detail_rejects_unknown_or_malformed_ids(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    missing = run_hub_command(shared_dir, member, "timeline tl_0123456789abcdef")
+    assert missing.startswith("error:")
+    assert "tl_0123456789abcdef" in missing
+    assert run_hub_command(shared_dir, member, "timeline not-an-id").startswith("error:")
+    assert run_hub_command(shared_dir, member, "timeline tl_0123456789abcdef extra").startswith("error:")
+
+
+def test_timeline_disabled_and_empty(shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch) -> None:
+    _hub_config(monkeypatch, timeline_enabled=False)
+    assert "無効" in run_hub_command(shared_dir, member, "timeline")
+
+    _hub_config(monkeypatch)
+    assert "項目はありません" in run_hub_command(shared_dir, member, "timeline")
+
+
+def test_read_lists_new_posts_mentions_first_and_advances(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    _make_board(shared_dir)
+    save_member(shared_dir, member)
+    _append_board(
+        shared_dir,
+        [
+            {"id": "p1", "ts": "2026-01-01T00:00:01+00:00", "from": "bob", "text": "hello @grok", "kind": "anima"},
+            {"id": "p2", "ts": "2026-01-01T00:00:02+00:00", "from": "carol", "text": "general news", "kind": "anima"},
+            {"id": "p3", "ts": "2026-01-01T00:00:03+00:00", "from": "grok", "text": "my own", "kind": "external_agent"},
+        ],
+    )
+
+    output = run_hub_command(shared_dir, member, "read")
+    assert output.splitlines()[0].startswith("[to you] p1")
+    assert "p2" in output
+    assert "p3" not in output
+
+    assert "新着なし" in run_hub_command(shared_dir, member, "read")
+
+
+def test_post_writes_to_hub_and_supports_idempotency(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    _make_board(shared_dir)
+    save_member(shared_dir, member)
+
+    first = run_hub_command(shared_dir, member, "post --request-id req-1", "hello hub")
+    assert first.startswith("posted ")
+    post_id = first.split()[1]
+
+    duplicate = run_hub_command(shared_dir, member, "post --request-id req-1", "hello hub")
+    assert duplicate == f"duplicate post: {post_id}"
+
+    record = json.loads((shared_dir / "channels" / "hub.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert record["source"] == "hub"
+    assert record["kind"] == "external_agent"
+    assert record["request_id"] == "req-1"
+
+
+def test_post_validates_reply_target_and_rate_limit(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch, max_posts_per_hour=1)
+    _make_board(shared_dir)
+    save_member(shared_dir, member)
+    _append_board(
+        shared_dir,
+        [{"id": "p1", "ts": now_iso(), "from": "bob", "text": "parent", "kind": "anima"}],
+    )
+
+    assert "reply target not found" in run_hub_command(shared_dir, member, "post --reply-to missing", "x")
+    first = run_hub_command(shared_dir, member, "post --reply-to p1", "reply")
+    assert first.startswith("posted ")
+    second = run_hub_command(shared_dir, member, "post", "one more")
+    assert "post limit reached" in second
+
+
+async def test_mcp_endpoint_authenticates_and_runs_tool(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    _make_board(shared_dir)
+    _append_board(
+        shared_dir,
+        [{"id": "b1", "ts": now_iso(), "from": "bob", "text": "board message", "kind": "anima"}],
+    )
+    timeline.append_item(
+        shared_dir,
+        from_name="alice",
+        company="a",
+        kind="done",
+        text="timeline item",
+        source="anima",
+    )
+
+    hub_app, session_manager = build_hub_mcp_app(lambda: shared_dir)
+    root = Starlette(routes=[Mount("/hub", app=hub_app)])
+    url = "http://127.0.0.1:8000/hub/mcp"
+
+    def factory(headers=None, timeout=None, auth=None):
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=root),
+            base_url="http://127.0.0.1:8000",
+            headers=headers,
+            timeout=timeout or httpx.Timeout(10.0),
+            auth=auth,
+        )
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    async with session_manager.run():
+        async with streamablehttp_client(
+            url,
+            headers={"Authorization": "Bearer token"},
+            httpx_client_factory=factory,
+        ) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                assert [tool.name for tool in tools.tools] == ["hub"]
+
+                help_result = await session.call_tool("hub", {"command": "help"})
+                assert help_result.isError is False
+                assert "commands:" in help_result.content[0].text
+                assert "日本語:" in help_result.content[0].text
+
+                timeline_result = await session.call_tool("hub", {"command": "timeline"})
+                assert "timeline item" in timeline_result.content[0].text
+
+                read_result = await session.call_tool("hub", {"command": "read"})
+                assert "board message" in read_result.content[0].text
+
+                post_result = await session.call_tool(
+                    "hub", {"command": "post", "text": "hello from an external agent"}
+                )
+                assert post_result.content[0].text.startswith("posted ")
+
+    assert last_seen(shared_dir, "grok") is not None
+
+
+async def test_mcp_endpoint_returns_404_and_401(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def request(app, headers: dict[str, str] | None = None):
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/mcp",
+            "raw_path": b"/mcp",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [
+                (b"host", b"127.0.0.1:8000"),
+                (b"content-type", b"application/json"),
+                *[(name.encode(), value.encode()) for name, value in (headers or {}).items()],
+            ],
+            "client": ("127.0.0.1", 1234),
+            "server": ("127.0.0.1", 8000),
+        }
+        messages: list[dict] = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+
+        async def send(message):
+            messages.append(message)
+
+        return scope, receive, send, messages
+
+    _hub_config(monkeypatch, enabled=False)
+    hub_app, _session_manager = build_hub_mcp_app(lambda: shared_dir)
+    scope, receive, send, messages = request(hub_app)
+    await hub_app(scope, receive, send)
+    assert messages[0]["status"] == 404
+
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    hub_app, session_manager = build_hub_mcp_app(lambda: shared_dir)
+    scope, receive, send, messages = request(hub_app)
+    await hub_app(scope, receive, send)
+    assert messages[0]["status"] == 401
+
+    scope, receive, send, messages = request(hub_app, {"Authorization": "Bearer wrong"})
+    await hub_app(scope, receive, send)
+    assert messages[0]["status"] == 401
+
+    scope, receive, send, messages = request(hub_app, {"authorization": "bearer token"})
+    async with session_manager.run():
+        await hub_app(scope, receive, send)
+    assert messages[0]["status"] != 401
+    assert last_seen(shared_dir, "grok") is not None
+
+
+def test_other_company_member_cannot_read_timeline_or_hub(shared_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A member whose company differs from hub.company gets no data back."""
+    _hub_config(monkeypatch)
+    _make_board(shared_dir)
+    outsider = HubMember(id="outsider", display_name="Outsider", company="b", token_sha256=token_digest("x"))
+    save_member(shared_dir, outsider)
+    for command in ("timeline", "read"):
+        assert run_hub_command(shared_dir, outsider, command).startswith("error: this hub belongs to another company")
+
+
+def _avatar_png() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (300, 200), (10, 20, 30)).save(output, format="PNG")
+    return output.getvalue()
+
+
+def test_avatar_command_saves_image_and_records_update(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    png = _avatar_png()
+    monkeypatch.setattr("core.hub.mcp_app.fetch_avatar_url", lambda url: png)
+
+    result = run_hub_command(shared_dir, member, "avatar https://hub.example.com/me.png")
+
+    assert result == "avatar updated (256x256)"
+    assert avatar_path(shared_dir, "grok").is_file()
+    member_file = json.loads((shared_dir / "hub" / "members" / "grok.json").read_text(encoding="utf-8"))
+    assert "avatar_url" not in member_file
+    state = json.loads(state_path(shared_dir, "grok").read_text(encoding="utf-8"))
+    assert len(state["avatar_updates"]) == 1
+
+
+def test_avatar_command_accepts_url_from_text(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    monkeypatch.setattr("core.hub.mcp_app.fetch_avatar_url", lambda url: _avatar_png())
+
+    assert run_hub_command(shared_dir, member, "avatar", text="https://hub.example.com/me.png") == (
+        "avatar updated (256x256)"
+    )
+
+
+def test_avatar_command_rate_limit_is_five_per_day(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    update_member_state(shared_dir, "grok", avatar_updates=[now_iso()] * 5)
+    called: list[str] = []
+    monkeypatch.setattr(
+        "core.hub.mcp_app.fetch_avatar_url",
+        lambda url: called.append(url) or _avatar_png(),
+    )
+
+    result = run_hub_command(shared_dir, member, "avatar https://hub.example.com/me.png")
+
+    assert "limit reached" in result
+    assert called == []
+    assert not avatar_path(shared_dir, "grok").exists()
+
+
+def test_avatar_command_rejects_failed_fetch(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    def fail_fetch(url: str) -> bytes:
+        raise AvatarError("url not allowed")
+
+    monkeypatch.setattr("core.hub.mcp_app.fetch_avatar_url", fail_fetch)
+
+    result = run_hub_command(shared_dir, member, "avatar https://private.example.com/me.png")
+
+    assert result.startswith("error: url not allowed")
+    assert not avatar_path(shared_dir, "grok").exists()
+
+
+def _member_file(shared_dir: Path, member_id: str = "grok") -> dict[str, object]:
+    return json.loads((shared_dir / "hub" / "members" / f"{member_id}.json").read_text(encoding="utf-8"))
+
+
+def test_name_command_sets_display_name_and_keeps_the_record(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    result = run_hub_command(shared_dir, member, "name ゆき")
+
+    assert result == "name updated: ゆき (your id stays @grok)"
+    record = _member_file(shared_dir)
+    assert record["display_name"] == "ゆき"
+    assert record["id"] == "grok"
+    assert record["token_sha256"] == token_digest("token")
+    assert record["message_route"] == {"type": "poll"}
+    state = json.loads(state_path(shared_dir, "grok").read_text(encoding="utf-8"))
+    assert len(state["name_updates"]) == 1
+
+
+def test_name_command_accepts_name_from_text(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    result = run_hub_command(shared_dir, member, "name", text="  Yuki's   Muse ")
+
+    assert result.startswith("name updated: Yuki's Muse")
+    assert _member_file(shared_dir)["display_name"] == "Yuki's Muse"
+
+
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("mei", "already used"),
+        ("Other Bot", "already used"),
+        ("other", "already used"),
+        ("taka", "already used"),
+        ("@mei", "must not contain @"),
+        ("x" * 33, "longer than 32"),
+    ],
+)
+def test_name_command_rejects_taken_or_invalid_names(
+    shared_dir: Path,
+    member: HubMember,
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+    reason: str,
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    save_member(
+        shared_dir,
+        HubMember(id="other", display_name="Other Bot", company="a", message_route={"type": "poll"}),
+    )
+    (shared_dir.parent / "animas" / "mei").mkdir(parents=True)
+    (shared_dir / "users" / "taka").mkdir(parents=True)
+
+    result = run_hub_command(shared_dir, member, "name", text=value)
+
+    assert result.startswith("error: ")
+    assert reason in result
+    assert _member_file(shared_dir)["display_name"] == "Grok"
+
+
+def test_name_command_allows_own_id_in_another_case(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    assert run_hub_command(shared_dir, member, "name GROK").startswith("name updated: GROK")
+
+
+def test_name_command_rate_limit_is_five_per_day(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    update_member_state(shared_dir, "grok", name_updates=[now_iso()] * 5)
+
+    result = run_hub_command(shared_dir, member, "name ゆき")
+
+    assert "limit reached" in result
+    assert _member_file(shared_dir)["display_name"] == "Grok"
+
+
+def test_help_mentions_name_command(shared_dir: Path, member: HubMember) -> None:
+    assert "name <display name>" in run_hub_command(shared_dir, member, "help")
+
+
+def _upload_client(shared_dir: Path) -> httpx.AsyncClient:
+    hub_app, _session_manager = build_hub_mcp_app(lambda: shared_dir)
+    root = Starlette(routes=[Mount("/hub", app=hub_app)])
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=root), base_url="http://127.0.0.1:8000")
+
+
+async def test_avatar_upload_takes_raw_body(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    fetched: list[str] = []
+    monkeypatch.setattr("core.hub.mcp_app.fetch_avatar_url", lambda url: fetched.append(url) or b"")
+
+    async with _upload_client(shared_dir) as client:
+        response = await client.put(
+            "/hub/avatar",
+            content=_avatar_png(),
+            headers={"Authorization": "Bearer token", "Content-Type": "image/png"},
+        )
+
+    assert response.status_code == 200
+    assert response.text.startswith("avatar updated (256x256)")
+    with Image.open(avatar_path(shared_dir, "grok")) as image:
+        assert image.size == (256, 256)
+    state = json.loads(state_path(shared_dir, "grok").read_text(encoding="utf-8"))
+    assert len(state["avatar_updates"]) == 1
+    assert fetched == []
+
+
+async def test_avatar_upload_takes_multipart_file(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    async with _upload_client(shared_dir) as client:
+        response = await client.post(
+            "/hub/avatar",
+            files={"file": ("me.png", _avatar_png(), "image/png")},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    assert response.status_code == 200
+    assert avatar_path(shared_dir, "grok").is_file()
+
+
+async def test_avatar_upload_rejects_bad_requests(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+
+    async with _upload_client(shared_dir) as client:
+        no_token = await client.put("/hub/avatar", content=_avatar_png())
+        not_image = await client.put("/hub/avatar", content=b"not an image", headers={"Authorization": "Bearer token"})
+        too_large = await client.put(
+            "/hub/avatar",
+            content=b"x" * (6 * 1024 * 1024),
+            headers={"Authorization": "Bearer token"},
+        )
+        no_file = await client.post(
+            "/hub/avatar",
+            data={"note": "no file here"},
+            files={"other": ("", b"", "application/octet-stream")},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    assert no_token.status_code == 401
+    assert not_image.status_code == 400
+    assert not_image.text.startswith("error: unsupported image")
+    assert too_large.status_code == 413
+    assert no_file.status_code == 400
+    assert not avatar_path(shared_dir, "grok").exists()
+    assert not state_path(shared_dir, "grok").exists() or "avatar_updates" not in json.loads(
+        state_path(shared_dir, "grok").read_text(encoding="utf-8")
+    )
+
+
+async def test_avatar_upload_shares_daily_limit(
+    shared_dir: Path, member: HubMember, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_config(monkeypatch)
+    save_member(shared_dir, member)
+    update_member_state(shared_dir, "grok", avatar_updates=[now_iso()] * 5)
+
+    async with _upload_client(shared_dir) as client:
+        response = await client.put("/hub/avatar", content=_avatar_png(), headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 429
+    assert "limit reached" in response.text
+    assert not avatar_path(shared_dir, "grok").exists()

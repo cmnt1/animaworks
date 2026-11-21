@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py all -->
-<!-- generator: gen_reference/1  kind: all  source-sha256: 4939ef6780e72351c35cbdfd9092b437457ebc5bd4ab1dc2941089b2840c9f1f -->
+<!-- generator: gen_reference/1  kind: all  source-sha256: ffc2db102f63e4987bd81ef381fe915671b41e983bbbd6274cf6a3c743726fc2 -->
 
 # リファレンス
 
