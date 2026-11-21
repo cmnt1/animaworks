@@ -525,10 +525,10 @@ class SchedulerMixin:
             async with maintenance_lock:
                 mark_started("daily")
                 try:
-                    await self._broadcast_event("system.consolidation_status", build_status_payload())
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-                try:
+                    try:
+                        await self._broadcast_event("system.consolidation_status", build_status_payload())
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
                     summary = await self._run_daily_consolidation_inner()
                     if summary.get("marker_written"):
                         mark_succeeded("daily")
@@ -537,6 +537,9 @@ class SchedulerMixin:
                             summary.get("failure_reason") or "daily consolidation did not process any running Anima"
                         )
                         mark_failed("daily", reason)
+                except asyncio.CancelledError:
+                    mark_failed("daily", "interrupted by server shutdown or cancellation")
+                    raise
                 except Exception as exc:
                     mark_failed("daily", str(exc))
                     raise
@@ -823,12 +826,15 @@ class SchedulerMixin:
             async with maintenance_lock:
                 mark_started("weekly")
                 try:
-                    await self._broadcast_event("system.consolidation_status", build_status_payload())
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-                try:
+                    try:
+                        await self._broadcast_event("system.consolidation_status", build_status_payload())
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
                     await self._run_weekly_integration_inner()
                     mark_succeeded("weekly")
+                except asyncio.CancelledError:
+                    mark_failed("weekly", "interrupted by server shutdown or cancellation")
+                    raise
                 except Exception as exc:
                     mark_failed("weekly", str(exc))
                     raise

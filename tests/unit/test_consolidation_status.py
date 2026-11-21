@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -440,6 +441,39 @@ class TestClearStaleRunning:
         clear_stale_running()
         status = load_status()
         assert status["daily"]["last_status"] == "never"
+
+
+@pytest.mark.parametrize("job_type", ["daily", "weekly"])
+@pytest.mark.parametrize("stage", ["initial_broadcast", "work"])
+async def test_cancelled_consolidation_marks_interrupted(status_dir, job_type, stage):
+    from core.lifecycle.system_status import load_status
+    from server.supervisor._mgr_scheduler import SchedulerMixin
+
+    entered = asyncio.Event()
+
+    async def wait_for_cancellation():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def broadcast(*_args):
+        if stage == "initial_broadcast" and not entered.is_set():
+            await wait_for_cancellation()
+
+    method = "_run_daily_consolidation" if job_type == "daily" else "_run_weekly_integration"
+    host = SimpleNamespace(
+        _broadcast_event=broadcast,
+        **{f"{method}_inner": wait_for_cancellation},
+    )
+    task = asyncio.create_task(getattr(SchedulerMixin, method)(host))
+    await entered.wait()
+    assert load_status()[job_type]["running"] is True
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    result = load_status()[job_type]
+    assert result["running"] is False
+    assert result["last_status"] == "failed"
+    assert "interrupted" in result["last_error"]
 
 
 # ── Lock-based double execution prevention ───────────────

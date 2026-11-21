@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: af134b84df9f6aebc1df34feeddefe589e46386be2ebd27bce37d672e2dbf7c2 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: ddb443769f2c46976ef49ed62e5efa0c49c6332a109b725ce9b4f63a3ae7432f -->
 
 # モジュール一覧
 
@@ -1179,7 +1179,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1615 | — |
+| `server.app` | 1622 | — |
 | `server.avatar_upload` | 116 | — |
 | `server.board_hooks` | 203 | — |
 | `server.enclave_delivery` | 327 | Collect completed enclave ask jobs and deliver them to host inboxes. |
@@ -1278,7 +1278,7 @@ LLM 利用量とコストの記録・集計。
 | `server.supervisor._mgr_health（非公開）` | 496 | Health check mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_rag_repair（非公開）` | 278 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `server.supervisor._mgr_reconcile（非公開）` | 338 | Reconciliation mixin for ProcessSupervisor. |
-| `server.supervisor._mgr_scheduler（非公開）` | 1538 | System scheduler mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_scheduler（非公開）` | 1544 | System scheduler mixin for ProcessSupervisor. |
 | `server.supervisor.activity_schedule` | 100 | — |
 | `server.supervisor.auto_updater` | 198 | — |
 | `server.supervisor.manager` | 1361 | Process Supervisor - Manages lifecycle of Anima child processes. |

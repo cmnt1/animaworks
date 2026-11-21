@@ -958,6 +958,7 @@ def _enclave_usage_summary(anima_dir: Path, days: int) -> dict[str, object]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.lifecycle.system_status import clear_stale_running
     from core.tasks.board.tasks import ensure_task_store_schema
     from server.board_hooks import register_board_post_hooks, unregister_board_post_hooks
 
@@ -967,6 +968,12 @@ async def lifespan(app: FastAPI):
         await hub_session_cm.__aenter__()
 
     register_board_post_hooks(app)
+    # A prior server may have exited before recording cancellation. Reconcile
+    # persisted state before this server accepts consolidation requests.
+    try:
+        await asyncio.to_thread(clear_stale_running)
+    except Exception:
+        logger.exception("Failed to reconcile interrupted consolidation status on startup")
     loop_watchdog = LoopLagWatchdog()
     loop_watchdog.start()
 

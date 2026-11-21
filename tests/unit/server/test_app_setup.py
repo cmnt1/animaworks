@@ -53,6 +53,25 @@ def _make_app(setup_complete: bool, tmp_path: Path):
 
 
 class TestTaskboardStartup:
+    async def test_lifespan_marks_previous_consolidation_interrupted(self, tmp_path: Path, monkeypatch) -> None:
+        from fastapi import FastAPI
+
+        from core.lifecycle.system_status import load_status, mark_started
+        from server.app import lifespan
+
+        status_path = tmp_path / "shared" / "system" / "consolidation_status.json"
+        monkeypatch.setattr("core.lifecycle.system_status._status_path", lambda: status_path)
+        monkeypatch.setattr("core.tasks.board.tasks.ensure_task_store_schema", lambda path: None)
+        mark_started("weekly")
+        app = FastAPI()
+        app.state.shared_dir = tmp_path / "shared"
+        app.state.setup_complete = False
+        async with lifespan(app):
+            weekly = load_status()["weekly"]
+            assert weekly["running"] is False
+            assert weekly["last_status"] == "failed"
+            assert "server restart" in weekly["last_error"]
+
     async def test_root_lifespan_ensures_taskboard_schema_once(self, tmp_path: Path, monkeypatch) -> None:
         from fastapi import FastAPI
 
