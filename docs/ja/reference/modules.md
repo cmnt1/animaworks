@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: db691c602dae3960a22bae3dad68a6ce2e6214160b3cb3235bd8d4085bc060fa -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 9ea0a2a00833a94f98877fe07770d83f52428546feba53ca3d7947d231c8c28d -->
 
 # モジュール一覧
 
@@ -771,7 +771,7 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging.board` | 504 | — |
 | `core.messaging.board_client` | 55 | — |
 | `core.messaging.board_deliveries` | 137 | — |
-| `core.messaging.board_fanout` | 222 | — |
+| `core.messaging.board_fanout` | 223 | — |
 | `core.messaging.board_reads` | 306 | — |
 | `core.messaging.discord_origin_threads` | 105 | — |
 | `core.messaging.discord_webhooks` | 506 | — |
