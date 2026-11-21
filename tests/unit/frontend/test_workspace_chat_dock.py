@@ -108,7 +108,7 @@ class TestPaneHostEmbeddedSupport:
         src = _read(STATIC / "pages" / "chat" / "pane-host.js")
         assert "if (embedded) hostEl.classList.add" in src
         assert "if (embedded) return;" in src
-        assert "if (embedded || _isMobile()) return null;" in src
+        assert "if (options.singlePane || embedded || _isMobile()) return null;" in src
 
     def test_embedded_does_not_save_ui_state(self) -> None:
         src = _read(STATIC / "pages" / "chat" / "ctx.js")
