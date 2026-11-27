@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: ddb443769f2c46976ef49ed62e5efa0c49c6332a109b725ce9b4f63a3ae7432f -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: d720f0158dc39930662ca85157a8d4a2fbfcb1fb2c1f7a3d9d259837239b445c -->
 
 # モジュール一覧
 
@@ -172,7 +172,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1322 | — |
 | `core.anima.inbox_overflow` | 100 | — |
-| `core.anima.lifecycle` | 1897 | — |
+| `core.anima.lifecycle` | 1920 | — |
 | `core.anima.messaging` | 1434 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -214,7 +214,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.env_slots` | 92 | — |
 | `core.config.file_access_policy` | 624 | — |
 | `core.config.global_permissions` | 259 | — |
-| `core.config.helper_models` | 500 | — |
+| `core.config.helper_models` | 630 | — |
 | `core.config.io` | 650 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.jev` | 83 | Locate the Jev (TypeSafe System One) API key and its local spend ledger. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
@@ -229,7 +229,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.opencode_go` | 79 | — |
 | `core.config.ops` | 203 | Application operations for reading and updating AnimaWorks configuration. |
 | `core.config.resolver` | 175 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1672 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1682 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 476 | Credential vault with PyNaCl SealedBox encryption. |
 | `core.config.vault_ops` | 615 | Core operator operations for the vault and its 1Password mapping. |
 | `core.config.vault_sources` | 219 | Mapping between vault keys and 1Password references. |
@@ -254,13 +254,13 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.enclave.egress.stages` | 236 | Stage implementations for the egress pipeline. |
 | `core.enclave.gateway` | 521 | Gateway: the ingress point of an enclave instance. |
 | `core.enclave.gateway_server` | 224 | Lifecycle and Unix-socket wiring for the enclave gateway. |
-| `core.enclave.guards` | 276 | Startup guards for enclave mode. |
+| `core.enclave.guards` | 277 | Startup guards for enclave mode. |
 | `core.enclave.jobs` | 254 | Persistent query jobs for the enclave gateway. |
 | `core.enclave.laravel_crypt` | 115 | Helpers for decrypting Laravel ``Crypt::encryptString`` payloads. |
 | `core.enclave.ops` | 78 | Operational helpers for enclave health checks and audit summaries. |
 | `core.enclave.raw_store` | 150 | Private storage for unmodified results read by enclave tools. |
 | `core.enclave.secrets` | 150 | Read secrets from the enclave credentials store. |
-| `core.enclave.ssm_tunnel` | 379 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
+| `core.enclave.ssm_tunnel` | 636 | SSM Session Manager port-forward tunnels for enclave SQL sources. |
 
 ## `core.enclave.egress`
 
@@ -412,9 +412,10 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 |---|---:|---|
 | `core.hub` | 41 | — |
 | `core.hub.avatar` | 167 | — |
-| `core.hub.mcp_app` | 660 | — |
+| `core.hub.boards` | 61 | — |
+| `core.hub.mcp_app` | 722 | — |
 | `core.hub.members` | 328 | — |
-| `core.hub.setup_prompt` | 163 | — |
+| `core.hub.setup_prompt` | 186 | — |
 | `core.hub.silence` | 123 | — |
 | `core.hub.timeline` | 361 | — |
 | `core.hub.timeline_activity` | 159 | — |
@@ -433,7 +434,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.config` | 860 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 54 | — |
 | `core.i18n.strings.execution` | 270 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 836 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler` | 870 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 393 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 452 | Domain-specific i18n strings. |
@@ -443,7 +444,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n.strings.models` | 70 | Localized CLI messages for model inspection. |
 | `core.i18n.strings.phone` | 127 | — |
 | `core.i18n.strings.room_manager` | 41 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 405 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 411 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 195 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 175 | Domain-specific i18n strings (tool prompts and tooling). |
@@ -576,7 +577,7 @@ LLM エラー分類、レート制御、リトライの共通機能。
 | `core.llm.guard.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.llm.guard.rate_guard` | 341 | Cross-process LLM rate guard (fleet-wide circuit breaker). |
 | `core.llm.helper_completion` | 145 | — |
-| `core.llm.oneshot` | 955 | Shared LLM helper utilities for memory-management modules. |
+| `core.llm.oneshot` | 998 | Shared LLM helper utilities for memory-management modules. |
 
 ## `core.llm.guard`
 
@@ -605,7 +606,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory` | 20 | — |
 | `core.memory._llm_parse（非公開）` | 185 | Shared LLM-output parsing helpers for the memory pipeline. |
 | `core.memory.config_reader` | 31 | — |
-| `core.memory.conversation.compression` | 322 | Compression logic for conversation memory. |
+| `core.memory.conversation.compression` | 324 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 497 | Session finalization for conversation memory. |
 | `core.memory.conversation.memory` | 349 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
@@ -771,7 +772,7 @@ anima 間および外部とのメッセージ配送。
 | `core.messaging.board` | 504 | — |
 | `core.messaging.board_client` | 55 | — |
 | `core.messaging.board_deliveries` | 137 | — |
-| `core.messaging.board_fanout` | 223 | — |
+| `core.messaging.board_fanout` | 237 | — |
 | `core.messaging.board_reads` | 306 | — |
 | `core.messaging.discord_origin_threads` | 105 | — |
 | `core.messaging.discord_webhooks` | 506 | — |
@@ -814,7 +815,7 @@ anima 間および外部とのメッセージ配送。
 | `core.notification.channels.telegram` | 91 | — |
 | `core.notification.channels.web` | 65 | — |
 | `core.notification.interactive` | 630 | — |
-| `core.notification.notifier` | 418 | — |
+| `core.notification.notifier` | 485 | — |
 | `core.notification.reply_routing` | 584 | — |
 | `core.notification.slack_names` | 67 | — |
 
@@ -1222,7 +1223,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.assets` | 2323 | — |
 | `server.routes.attachment_preview` | 741 | — |
 | `server.routes.auth` | 147 | — |
-| `server.routes.channels` | 939 | — |
+| `server.routes.channels` | 973 | — |
 | `server.routes.chat` | 496 | — |
 | `server.routes.chat_chunk_handler` | 289 | — |
 | `server.routes.chat_emotion` | 8 | — |
@@ -1236,7 +1237,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.ci_autofix` | 276 | — |
 | `server.routes.config_routes` | 464 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.hub` | 99 | — |
+| `server.routes.hub` | 102 | — |
 | `server.routes.internal` | 1631 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
