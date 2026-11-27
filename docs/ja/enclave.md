@@ -77,9 +77,9 @@ id -u "$HOST_USER"
 }
 ```
 
-`allowed_llm_credentials` には、隔離側の各 anima が実際に使う認証情報名だけを列挙する。`external_tasks.enabled` は初期値が `true` なので、隔離側では `false` にする。新しく作った anima の `permissions.json` は `file_roots` が `["/"]` になっているため、anima 自身のディレクトリなど必要な範囲に書き換える（そのままだと起動時ガードが起動を拒否する）。隔離モードでは Slack・Discord・Zoom・GitHub Webhook のゲートウェイを起動しない。ほかの起動時ガードも満たす必要があるため、イベントエクスポートや外部メッセージ連携を有効にせず、各 anima の `permissions.json` でファイルアクセスを必要な範囲に制限する。entry anima の外部ツールを制限する場合は `enclave_records` を許可する。
+`allowed_llm_credentials` には、隔離側の各 anima が実際に使う認証情報名だけを列挙する。`external_tasks.enabled` は初期値が `true` なので、隔離側では `false` にする。新しく作った anima の `permissions.json` は `file_roots` が `["/"]` になっているため、anima 自身のディレクトリなど必要な範囲に書き換える（そのままだと起動時ガードが起動を拒否する）。隔離モードでは Slack・Discord・Zoom・GitHub Webhook のゲートウェイを起動しない。`human_notification`（call_human の送り先）は有効にできる。外部の送り先へ出る件名と本文は、ゲートウェイの答えと同じ egress のステージを通って監査記録に残り、ステージが止めたものは外へ出ない（隔離側の Web UI には元の文面で届く）。送り先へ通信するには、pf の外向き制限でその宛先を許可しておく。ほかの起動時ガードも満たす必要があるため、イベントエクスポートや外部メッセージ連携を有効にせず、各 anima の `permissions.json` でファイルアクセスを必要な範囲に制限する。entry anima の外部ツールを制限する場合は `enclave_records` を許可する。
 
-異なる thread の ask を gateway の `max_concurrency` まで並列実行するには、entry anima の `status.json` に `chat_max_concurrency`（1〜10）を設定し、gateway の `max_concurrency` 以上にする。SQL ソースの SSM トンネルを固定ポート（`tunnel.local_port`）で使う場合は、`tunnel.local_port_count` を同時実行数にそろえる。各プロセスは `local_port` から始まる連続ポートのうち空いているものを1つ予約して使う。egress firewall の `--loopback-ports` にはその範囲を `33061-33070` のように渡す。
+異なる thread の ask を gateway の `max_concurrency` まで並列実行するには、entry anima の `status.json` に `chat_max_concurrency`（1〜10）を設定し、gateway の `max_concurrency` 以上にする。SQL ソースの SSM トンネルは、ソースごとに1本をすべてのプロセスで共有する（同時に走るクエリは1本のトンネルの中で多重化される）。固定ポート（`tunnel.local_port`）で使う場合、トンネルを張り直すときは `local_port` から始まる連続ポートのうち空いているものを1つ予約する。前のトンネルがポートを手放す前に張り直すことがあるので、`tunnel.local_port_count` は 2 以上にする。egress firewall の `--loopback-ports` にはその範囲を `33061-33070` のように渡す。
 
 masker の `profile` は `default` と `personal_dates` から選ぶ。`default` は日付をすべて `[MASK-DATE]` にする。`personal_dates` は、生年月日などの見出しが付いた日付・「生まれ」が続く日付・和暦の日付・2015年より前の日付だけを伏字にし、障害の発生日時のような日付は残す。不具合の調査結果を返す用途では `personal_dates` を使う。
 
@@ -130,9 +130,9 @@ dseditgroup -o edit -a "$HOST_USER" -t user animaworks-enclave
 
 macOS の更新でソケットのディレクトリが消えることがある。親ディレクトリに隔離ユーザーが書き込めない配置では、隔離インスタンスはディレクトリを作り直せず、起動に失敗し続ける。`com.animaworks.enclave-rundir.plist` を読み込んでおくと、起動時に root がディレクトリを作り直す。
 
-`templates/_shared/launchd/com.animaworks.enclave.plist` は隔離インスタンスの LaunchDaemon（`UserName`・`Umask=0077`）、`com.animaworks.enclave-egress.plist` は外向き通信の制限を起動時と毎時に適用する root の LaunchDaemon、`com.animaworks.enclave-rundir.plist` はソケットのディレクトリを起動時に作り直す root の LaunchDaemon である。ユーザー名・パス・ポートを置き換えて `/Library/LaunchDaemons/` に置き、`launchctl bootstrap system <plist>` で読み込む。秘密は `enclave.secrets_dir` に隔離ユーザー所有の `0600` ファイルで置き、ディレクトリを `0700` にする。
+`templates/_shared/launchd/com.animaworks.enclave.plist` は隔離インスタンスの LaunchDaemon（`UserName`・`Umask=0077`・`ProcessType=Interactive`）、`com.animaworks.enclave-egress.plist` は外向き通信の制限を起動時と毎時に適用する root の LaunchDaemon、`com.animaworks.enclave-rundir.plist` はソケットのディレクトリを起動時に作り直す root の LaunchDaemon である。ユーザー名・パス・ポートを置き換えて `/Library/LaunchDaemons/` に置き、`launchctl bootstrap system <plist>` で読み込む。`ProcessType` を書かないと launchd が CPU と I/O を絞る。ホストが混んでいると、サーバーの起動に数分かかり、anima のプロセスがソケットを作る期限（15 秒）に間に合わず、隔離インスタンスへの依頼がすべて `Anima not found` で失敗する。`ProcessType` を足したり変えたりしたときは、`kickstart` ではなく `bootout` してから `bootstrap` し直す（`kickstart` は plist を読み直さない）。秘密は `enclave.secrets_dir` に隔離ユーザー所有の `0600` ファイルで置き、ディレクトリを `0700` にする。
 
-外向き通信の制限は `scripts/enclave/egress_firewall.py --backend pf` で行う。規則は pf のアンカー `com.apple/250.AnimaworksEnclave` に読み込まれ、標準の `/etc/pf.conf` から評価されるため `pf.conf` は書き換えない。macOS では pf が `lo0` を評価対象外（skip）にしていることがあり、そのままでは隔離側から本体の API など loopback 上のサービスに届く。`--apply` は適用のたびに `lo0` の skip を外す。pf の `user` 指定は TCP と UDP にだけ効く。スクリプトは本体側と隔離側のどちらのユーザーも書き換えられない root 所有の場所へコピーして使う。
+外向き通信の制限は `scripts/enclave/egress_firewall.py --backend pf` で行う。規則は pf のアンカー `com.apple/250.AnimaworksEnclave` に読み込まれ、標準の `/etc/pf.conf` から評価されるため `pf.conf` は書き換えない。macOS では pf が `lo0` を評価対象外（skip）にしていることがあり、そのままでは隔離側から本体の API など loopback 上のサービスに届く。`--apply` は適用のたびに `lo0` の skip を外す。pf の `user` 指定は TCP と UDP にだけ効く。pf は新しい接続の最初の SYN や UDP でソケットの持ち主を引けないことがあり（macOS の実測で負荷時に数千回に 1 回）、そのパケットはどの `user` 規則にも当たらず既定で通る。そのため pf の規則は、このホストのアドレスから出る持ち主不明の SYN を止める。これはホストの全ユーザーに効く（SYN は再送で通る。転送の通信には当てない）。持ち主不明の UDP には Tailscale の STUN や NAT-PMP が常にあるので止めず、隔離側の UDP は同じ割合で漏れうる。スクリプトは本体側と隔離側のどちらのユーザーも書き換えられない root 所有の場所へコピーして使う。
 
 launchd には unit 間の依存がないため、隔離側 config の `enclave.egress_probe` に遮断されるべき宛先（`HOST:PORT` のリスト）を指定する。起動時ガードは各宛先へ TCP 接続を試し、つながった場合は起動を拒否する。外部の宛先に加えて、本体側の API など loopback 上の宛先も入れておくと、loopback の制限が外れていることも検出できる。制限が読み込まれる前に起動しても、制限なしでは動かない。Linux でも同じ設定を使える。
 
@@ -285,6 +285,8 @@ install -m 0600 -o root -g root aws-creds  /etc/credstore/animaworks-enclave/aw-
   }
 }
 ```
+
+トンネル（`session-manager-plugin` のプロセス）は、張ったプロセスが終わっても残り、次のクエリのプロセスがそのまま使う。`idle_shutdown_s` のあいだ使われなければ、次に使うプロセスか、張ったプロセスがまだ動いていればその見回りが閉じる。どちらも無いときは Session Manager のアイドルタイムアウトで切れる。トンネルの記録は `<data_dir>/run/ssm-tunnels/<ソース名>.json`（`0600`）に置く。`aws_secret` の鍵は、プラグインの環境変数で渡す（コマンドラインには載せない）。プラグインはこの鍵で `OpenDataChannel` に SigV4 で署名する。AWS は 2027-05-28 から、この署名と IAM の `ssmmessages:OpenDataChannel` の許可を必須にする。プラグインは 1.2.764.0 以上を使い、IAM ユーザーには自分のセッション（`arn:aws:ssm:*:*:session/${aws:username}-*`）への `ssmmessages:OpenDataChannel` を許可する。
 
 `app_key_secret` は Laravel の APP_KEY を 1 行 1 鍵で保存した秘密ファイル名です。`base64:` 形式と UTF-8 の鍵を扱い、先頭行を現行鍵、後続行を旧鍵として試します。`decrypt_columns` は結果列名（alias 適用後）に `re.search` で照合する正規表現です。対応する列の文字列セルは Laravel AES-256-CBC 形式の復号を試し、復号できない値はそのまま返します。SQL の取得行は復号後・セル切り詰め前に raw ファイルへ保存され、ツール結果の `raw_path` から全文を Read できます。SSL は既定で必須です。RDS の CA を使う場合は `ssl_ca` に CA のパス、ホスト名検証の無効化が必要なら `ssl_verify_identity: false`（既定）のままトンネル越しのためホスト名一致しない点を考慮してください。
 

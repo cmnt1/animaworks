@@ -32,6 +32,28 @@ logger = logging.getLogger("animaworks.routes.channels")
 # Allow Unicode channel names (e.g. Discord Japanese channels) while
 # blocking path-traversal characters (/, \, ..) and control chars.
 _SAFE_NAME_RE = re.compile(r"^[^\x00-\x1f/\\]{1,60}$")
+
+
+def _company_of_members(animas_dir: Path, members: list[str]) -> tuple[bool, str]:
+    """Return the single company shared by *members* (``""`` when all are unassigned).
+
+    The boolean is ``False`` when a member's company cannot be read or the
+    members belong to more than one company.
+    """
+    from core.config.anima_registry import read_anima_company_checked
+
+    companies: set[str] = set()
+    for member in members:
+        known, company = read_anima_company_checked(animas_dir / member)
+        if not known:
+            return False, ""
+        if company:
+            companies.add(company)
+    if len(companies) > 1:
+        return False, ""
+    return True, next(iter(companies), "")
+
+
 _JST = ZoneInfo("Asia/Tokyo")
 _ACTIVITY_DAYS = 14
 
@@ -440,6 +462,18 @@ def create_channels_router() -> APIRouter:
                 content={"detail": t("server.channel_settings_members_required")},
             )
 
+        new_company = (old_meta.company if old_meta is not None else "") or ""
+        if not new_company and not new_closed and not new_members and old_meta is not None and old_meta.members:
+            # A Board without a company is reachable only by unassigned Animas
+            # once its member list is cleared, so it takes the former members'
+            # company when they share exactly one.
+            resolved, new_company = _company_of_members(shared_dir.parent / "animas", old_meta.members)
+            if not resolved:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": t("server.channel_settings_company_unresolved")},
+                )
+
         new_meta = ChannelMeta(
             members=new_members,
             created_by=old_meta.created_by if old_meta is not None else username,
@@ -448,7 +482,7 @@ def create_channels_router() -> APIRouter:
             closed=new_closed,
             slack_sync_disabled=old_meta.slack_sync_disabled if old_meta is not None else False,
             slack_deleted_at=old_meta.slack_deleted_at if old_meta is not None else "",
-            company=old_meta.company if old_meta is not None else "",
+            company=new_company,
         )
 
         lines = _settings_record_lines(old_meta, new_meta)
