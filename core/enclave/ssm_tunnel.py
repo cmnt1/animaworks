@@ -143,12 +143,12 @@ def _reserve_port(config: EnclaveSsmTunnelConfig) -> tuple[int, int | None]:
             _release_port(fd)
             continue
         return port, fd
+    raise TunnelError("no free loopback port for the SSM tunnel")
 
 
 def _require_supported_platform() -> None:
     if sys.platform not in {"linux", "darwin"} or fcntl is None:
         raise TunnelError("Enclave SSM tunnels require Linux or macOS")
-    raise TunnelError("no free loopback port for the SSM tunnel")
 
 
 def _port_bindable(port: int) -> bool:
